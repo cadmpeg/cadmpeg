@@ -14,59 +14,36 @@ fn points() -> Vec<Vec<Point3>> {
 
 #[test]
 fn bspline_constructor_admits_each_scan_row_and_pole_before_its_visit() {
-    // Two knot axes cost 14; two shape visits and the nested 2x2 collectors cost 11, for 25.
-    let visits = [
-        "IR NURBS knot finiteness",
-        "IR NURBS knot finiteness",
-        "IR NURBS knot finiteness",
+    for operation in [
         "IR NURBS knot finiteness",
         "IR NURBS knot order",
-        "IR NURBS knot order",
-        "IR NURBS knot order",
-        "IR NURBS knot finiteness",
-        "IR NURBS knot finiteness",
-        "IR NURBS knot finiteness",
-        "IR NURBS knot finiteness",
-        "IR NURBS knot order",
-        "IR NURBS knot order",
-        "IR NURBS knot order",
-        "IR NURBS grid row shape",
         "IR NURBS grid row shape",
         "IR admitted B-spline grid rows",
         "IR admitted B-spline grid poles",
-        "IR admitted B-spline grid poles",
-        "IR admitted B-spline grid poles",
-        "IR admitted B-spline grid rows",
-        "IR admitted B-spline grid poles",
-        "IR admitted B-spline grid poles",
-        "IR admitted B-spline grid poles",
-        "IR admitted B-spline grid rows",
-    ];
-    for (cap, operation) in visits.into_iter().enumerate() {
-        let cap = u64::try_from(cap).expect("visit count");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let Err(CodecError::ResourceLimit(limit)) = BsplineSurface::new(
-            &ctx,
-            1,
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![0.0, 0.0, 1.0, 1.0],
-            points(),
-        ) else {
-            panic!("B-spline construction must refuse before the next visit");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, operation);
-        assert_eq!(limit.used, cap);
-        assert_eq!(limit.additional, 1);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        BsplineSurface::new(
+                            ctx,
+                            1,
+                            1,
+                            vec![0., 0., 1., 1.],
+                            vec![0., 0., 1., 1.],
+                            points(),
+                        )
+                    },
+                )
+            },
         );
     }
-    let cap = 25;
+    // Two nine-probe knot axes, a two-probe shape search and nine collection probes.
+    let cap = 29;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = cap;
@@ -125,8 +102,8 @@ fn bspline_constructor_preserves_storage_refusal_wire_and_source_order() {
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Two knot axes, two shape visits, and the nested 2x2 collectors cost 25 work units.
-    policy.limits.max_work_units = 25;
+    // Two nine-probe knot axes, two shape probes and nine collection probes.
+    policy.limits.max_work_units = 29;
     policy.limits.max_collection_items = 6;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let knots = vec![0.0, 0.0, 1.0, 1.0];

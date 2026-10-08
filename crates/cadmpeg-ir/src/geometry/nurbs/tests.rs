@@ -1134,429 +1134,45 @@ fn a_bspline_surface_holds_its_admitted_knots_and_poles() {
 }
 
 #[test]
-fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
-    use crate::features::FinitePoint3;
-    use crate::geometry::nurbs::{
-        bezier::positive_controls, NurbsCurve, NurbsError, NurbsPoles3, NurbsSurfaceAxis,
-        NurbsSurfaceLanes,
-    };
-    use crate::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles, PolarPcurveNurbs};
-    use crate::math::Point2;
-    use crate::scalar::{FiniteReal, NonZeroReal};
-    use crate::test_support::nurbs::{pcurve, polar};
-    use crate::units::FinitePoint2;
-
-    let curve = curve();
-    let held: &NurbsPoles3<FinitePoint3> = curve.pole_rows();
-    assert_eq!(
-        NurbsCurve::new(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            curve.knots().to_vec(),
-            held.clone(),
-            true
-        )
-        .expect("fixture final NURBS admission"),
-        Ok(curve.clone())
-    );
-    assert_eq!(held.to_raw().points(), curve.pole_rows().raw_points());
-    assert_eq!(
-        NurbsCurve::from_checked_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            curve.knots().clone(),
-            curve.control_points(),
-            curve.weights(),
-            true,
-        )
-        .expect("fixture pole pairing admission"),
-        Ok(curve.clone())
-    );
-    let weight = NonZeroReal::new(1.0).unwrap();
-    assert_eq!(
-        NurbsCurve::from_checked_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            curve.knots().clone(),
-            curve.control_points(),
-            Some(vec![weight]),
-            true,
-        )
-        .expect("fixture pole pairing admission"),
-        Err(NurbsError::WeightLaneLength {
-            field: "poles".to_owned(),
-            poles: 2,
-            weights: 1,
-        })
-    );
-    let non_finite = vec![Point3::new(f64::NAN, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
-    let raw_refusal = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        non_finite.clone(),
-        None,
-        false,
-    )
-    .expect("fixture constructor admission")
-    .unwrap_err();
-    assert_eq!(
-        NurbsCurve::from_checked_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            super::KnotVector::new(
-                &cadmpeg_test_support::service_decode_context(),
-                vec![0.0, 0.0, 1.0, 1.0]
-            )
-            .expect("fixture knot admission")
-            .unwrap(),
-            non_finite,
-            None,
-            false,
-        )
-        .expect("fixture pole pairing admission"),
-        Err(raw_refusal)
-    );
-    assert_eq!(
-        NurbsCurve::from_checked_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            4,
-            super::KnotVector::new(
-                &cadmpeg_test_support::service_decode_context(),
-                vec![0.0, 0.0, 1.0, 1.0]
-            )
-            .expect("fixture knot admission")
-            .unwrap(),
-            vec![Point3::new(f64::NAN, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            None,
-            false,
-        )
-        .expect("fixture pole pairing admission"),
-        Err(NurbsError::Structure(
-            "control_points must contain more than degree 4 poles, found 2".into()
-        ))
-    );
-    // At t = 3 the weights -1 and 2 blend to -1 * 2/3 + 2 * 1/3 = 0, so the
-    // homogeneous point has no projection.
-    assert_eq!(
-        crate::eval::decode::nurbs_curve_point_at(
-            crate::eval::admission::EvaluationAdmission::Standard,
-            &curve,
-            3.0
-        ),
-        Err(crate::eval::EvaluationFailure::NoValue)
-    );
-
-    let mut mapped = curve.clone();
-    let refusal = mapped
-        .try_map_control_points(
-            |_, _| Err(NurbsError::EditRefused("kept".into())),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission");
-    assert_eq!(refusal, Err(NurbsError::EditRefused("kept".into())));
-    assert_eq!(mapped, curve);
-    mapped
-        .try_map_control_points(
-            |_, point| Ok::<_, NurbsError>(point.negated()),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
-        .unwrap();
-    assert_eq!(
-        mapped.control_points(),
-        vec![Point3::new(-1.0, -2.0, -3.0), Point3::new(-4.0, -5.0, -6.0)]
-    );
-    assert_eq!(mapped.weights(), curve.weights());
-
-    let surface = surface();
-    let u = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true);
-    let v = || NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false);
-    assert_eq!(
-        crate::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
-            u(),
-            v(),
-            surface.pole_grid().clone(),
-            true
-        )
-        .expect("fixture final NURBS admission"),
-        Ok(surface.clone())
-    );
-    assert_eq!(
-        crate::geometry::nurbs::NurbsSurface::from_checked_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            NurbsSurfaceAxis::new(1, surface.u_knots().clone(), true),
-            NurbsSurfaceAxis::new(1, surface.v_knots().clone(), false),
-            NurbsSurfaceLanes::new(surface.control_grid(), surface.weights()),
-            true,
-        )
-        .expect("fixture pole pairing admission"),
-        Ok(surface.clone())
-    );
-    assert_eq!(
-        positive_controls(
-            &cadmpeg_test_support::service_decode_context(),
-            &surface.poles(),
-            Some(&[1.0, 1.0, 2.0, 2.0]),
-            "Bezier positive controls"
-        )
-        .expect("resource allocation did not fail")
-        .map(|output| output.to_vec()),
-        positive_controls(
-            &cadmpeg_test_support::service_decode_context(),
-            &surface.pole_grid().raw_points().concat(),
-            Some(&[1.0, 1.0, 2.0, 2.0]),
-            "Bezier positive controls"
-        )
-        .expect("resource allocation did not fail")
-        .map(|output| output.to_vec())
-    );
-    assert_eq!(
-        positive_controls(
-            &cadmpeg_test_support::service_decode_context(),
-            &surface.poles(),
-            None,
-            "Bezier positive controls"
-        )
-        .expect("resource allocation did not fail")
-        .map(|output| output.to_vec()),
-        positive_controls(
-            &cadmpeg_test_support::service_decode_context(),
-            &surface.poles(),
-            Some(&[1.0; 4]),
-            "Bezier positive controls"
-        )
-        .expect("resource allocation did not fail")
-        .map(|output| output.to_vec())
-    );
-    assert_eq!(
-        positive_controls(
-            &cadmpeg_test_support::service_decode_context(),
-            &[Point3::new(f64::INFINITY, 0.0, 0.0)],
-            Some(&[1.0]),
-            "Bezier positive controls"
-        )
-        .expect("resource allocation did not fail")
-        .map(|output| output.to_vec()),
-        None
-    );
-    let mut mapped = surface.clone();
-    mapped
-        .try_map_control_points(
-            |_, point| Ok::<_, NurbsError>(point.negated()),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
-        .unwrap();
-    assert_eq!(
-        mapped.pole(1, 1).map(FinitePoint3::get),
-        Some(Point3::new(-1.0, -1.0, 0.0))
-    );
-    assert_eq!(mapped.weights(), surface.weights());
-
-    let pcurve = pcurve();
-    let held: &PcurveNurbsPoles<FinitePoint2> = pcurve.pole_rows();
-    assert_eq!(
-        PcurveNurbs::new(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            pcurve.knots().to_vec(),
-            held.clone(),
-            true
-        )
-        .expect("fixture pcurve construction admission"),
-        Ok(pcurve.clone())
-    );
-    assert_eq!(
-        PcurveNurbs::from_checked_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            pcurve.knots().clone(),
-            pcurve.control_points(),
-            pcurve.weights(),
-            true,
-        )
-        .expect("fixture pcurve construction admission"),
-        Ok(pcurve.clone())
-    );
-    let mut mapped = pcurve.clone();
-    mapped
-        .try_map_control_points(
-            |_, point| Ok::<_, NurbsError>(point.negated()),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
-        .unwrap();
-    assert_eq!(
-        mapped.control_points(),
-        vec![Point2::new(-1.0, -2.0), Point2::new(-3.0, -4.0)]
-    );
-    let lifted = pcurve
-        .lift(|point| Point3::new(point.u, point.v, 0.0))
-        .unwrap();
-    assert_eq!(lifted.weights(), pcurve.weights());
-    assert_eq!(
-        pcurve.lift(|_| Point3::new(f64::NAN, 0.0, 0.0)),
-        Err(NurbsError::Structure(
-            "control_points contains a non-finite point".into()
-        ))
-    );
-
-    let polar = polar();
-    assert_eq!(
-        PolarPcurveNurbs::new(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            polar.knots().to_vec(),
-            polar.pole_rows().clone(),
-            true
-        )
-        .expect("fixture pcurve construction admission"),
-        Ok(polar.clone())
-    );
-    assert_eq!(
-        PolarPcurveNurbs::from_checked_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            polar.knots().clone(),
-            polar.poles(),
-            polar.weights(),
-            true,
-        )
-        .expect("fixture pcurve construction admission"),
-        Ok(polar.clone())
-    );
-    assert_eq!(
-        polar.axial_control_values(),
-        vec![FiniteReal::new(5.0).unwrap(), FiniteReal::new(6.0).unwrap()]
-    );
-}
-
-#[test]
-fn context_free_pole_reconstruction_does_not_enter_a_decode_constructor() {
-    use super::{NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurfaceAxis, PoleValue};
-    use crate::features::FinitePoint3;
-
-    #[derive(Clone, Copy)]
-    struct Pole(Point3);
-    impl PoleValue<FinitePoint3> for Pole {
-        fn admit(self) -> Option<FinitePoint3> {
-            FinitePoint3::new(self.0)
-        }
-        fn admit_curve_poles<E>(
-            poles: NurbsPoles3<Self>,
-            convert: impl FnOnce(NurbsPoles3<Self>) -> Result<NurbsPoles3<FinitePoint3>, E>,
-        ) -> Result<NurbsPoles3<FinitePoint3>, E> {
-            assert!(
-                std::any::type_name::<E>() == std::any::type_name::<NurbsError>(),
-                "context-free curve reconstruction must not start a decode session"
-            );
-            convert(poles)
-        }
-        fn admit_surface_poles<E>(
-            grid: NurbsPoleGrid<Self>,
-            convert: impl FnOnce(NurbsPoleGrid<Self>) -> Result<NurbsPoleGrid<FinitePoint3>, E>,
-        ) -> Result<NurbsPoleGrid<FinitePoint3>, E> {
-            assert!(
-                std::any::type_name::<E>() == std::any::type_name::<NurbsError>(),
-                "context-free surface reconstruction must not start a decode session"
-            );
-            convert(grid)
-        }
-    }
-    let points = vec![
-        Pole(Point3::new(0.0, 0.0, 0.0)),
-        Pole(Point3::new(1.0, 0.0, 0.0)),
-    ];
-    let curve = super::build_curve(
-        &super::StandardNurbsAdmission,
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        NurbsPoles3::Polynomial {
-            points: points.clone(),
-        },
-        false,
-    )
-    .unwrap();
-    assert_eq!(
-        curve.control_points(),
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
-    );
-    let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
-    let surface = super::build_surface(
-        &super::StandardNurbsAdmission,
-        axis(),
-        axis(),
-        NurbsPoleGrid::Polynomial {
-            rows: vec![points.clone(), points],
-        },
-        false,
-    )
-    .unwrap();
-    assert_eq!(surface.u_count(), 2);
-    assert_eq!(surface.v_count(), 2);
-    assert_eq!(
-        serde_json::from_value::<NurbsCurve>(serde_json::to_value(&curve).unwrap()).unwrap(),
-        curve
-    );
-    assert_eq!(
-        serde_json::from_value::<NurbsSurface>(serde_json::to_value(&surface).unwrap()).unwrap(),
-        surface
-    );
-}
-
-#[test]
 fn weighted_pole_pairing_admits_each_slot_and_visit_before_weight() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+    use cadmpeg_core::decode::ResourceDimension;
     use std::cell::Cell;
-
-    for (dimension, cap, completed) in [
-        (ResourceDimension::RetainedBytes, 0, 0),
-        (ResourceDimension::CollectionItems, 0, 0),
-        (ResourceDimension::MaterializedBytes, 0, 0),
-        (ResourceDimension::WorkUnits, 0, 0),
-        (ResourceDimension::WorkUnits, 1, 1),
+    for dimension in [
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::WorkUnits,
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-            _ => panic!("fixture dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut storage = ctx.reserve_scoped(0, "test pairing scope").expect("scope");
-        let visits = Cell::new(0);
-        let run = || {
-            super::weighted_poles(
-                vec![3_u32, 7],
-                vec![1.0, 2.0],
-                |output| ctx.reserve_vec(output, 1, "test weighted pairing"),
-                || ctx.charge_work(1, "test weighted pairing"),
-                |_, value| {
-                    visits.set(visits.get() + 1);
-                    Ok::<_, CodecError>(crate::scalar::NonZeroReal::new(value).expect("weight"))
-                },
-            )
-        };
-        let result = if dimension == ResourceDimension::MaterializedBytes {
-            storage.with_storage(run)
-        } else {
-            run()
-        };
-        let Err(CodecError::ResourceLimit(limit)) = result else {
-            panic!("pair admission must refuse before conversion");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert_eq!(limit.operation, "test weighted pairing");
-        assert_eq!(visits.get(), completed);
-        drop(storage);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        cadmpeg_test_support::refusal::resource_limit_at(
+            dimension,
+            "test weighted pairing",
+            |cap| {
+                crate::geometry::tests::budget::with_limit(dimension, cap, |ctx| {
+                    let mut storage = ctx.reserve_scoped(0, "test pairing scope")?;
+                    let visits = Cell::new(0);
+                    let run = || {
+                        super::admitted::finish(super::weighted_poles(
+                            ctx,
+                            vec![3_u32, 7],
+                            vec![1.0, 2.0],
+                            &mut None,
+                            "test weighted pairing",
+                            |_, value| {
+                                visits.set(visits.get() + 1);
+                                Ok(crate::scalar::NonZeroReal::new(value).expect("weight"))
+                            },
+                        ))
+                        .map(|_| ())
+                    };
+                    let result = if dimension == ResourceDimension::MaterializedBytes {
+                        storage.with_storage(run)
+                    } else {
+                        run()
+                    };
+                    assert_eq!(visits.get(), 0);
+                    result
+                })
+            },
         );
     }
 }
@@ -1638,7 +1254,7 @@ fn raw_lane_constructors_share_caller_work_and_keep_refusal() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 8;
+    policy.limits.max_work_units = 9;
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -1661,7 +1277,7 @@ fn raw_lane_constructors_share_caller_work_and_keep_refusal() {
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "IR NURBS grid row shape");
-    assert_eq!(limit.used, 8);
+    assert_eq!(limit.used, 9);
     assert_eq!(limit.additional, 1);
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
@@ -1864,37 +1480,30 @@ fn surface_shape_visits_refuse_before_each_row_and_keep_semantic_order() {
     use super::{NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use crate::features::FinitePoint3;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
 
     let point = FinitePoint3::new(Point3::new(2.0, 3.0, 5.0)).expect("point");
     for ragged in [false, true] {
         let rows = vec![vec![point; 2], vec![point; if ragged { 1 } else { 2 }]];
-        for cap in [0, 1] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = super::require_surface_shape(
-                &ctx,
-                1,
-                4,
-                1,
-                4,
-                &NurbsPoleGrid::Polynomial { rows: rows.clone() },
-            );
-            let Err(super::admitted::ConstructionError::Resource(CodecError::ResourceLimit(limit))) =
-                result
-            else {
-                panic!("each row width needs caller work before comparison");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, "IR NURBS grid row shape");
-            assert_eq!(limit.used, cap);
-            assert_eq!(limit.additional, 1);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
-        }
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "IR NURBS grid row shape",
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        super::admitted::finish(super::require_surface_shape(
+                            ctx,
+                            1,
+                            4,
+                            1,
+                            4,
+                            &NurbsPoleGrid::Polynomial { rows: rows.clone() },
+                        ))
+                    },
+                )
+            },
+        );
         let standard = super::require_surface_shape(
             &super::StandardNurbsAdmission,
             1,
@@ -1944,41 +1553,37 @@ fn surface_shape_visits_refuse_before_each_row_and_keep_semantic_order() {
 }
 
 #[test]
-fn surface_pairing_rows_refuse_first_and_later_visits() {
+fn surface_pairing_rows_preserve_named_caller_refusals() {
     use super::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use crate::features::FinitePoint3;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+    use cadmpeg_core::decode::ResourceDimension;
     let point = FinitePoint3::new(Point3::new(2.0, 3.0, 5.0)).expect("point");
-    for (cap, operation) in [
-        (0, "IR NURBS paired grid rows"),
-        (1, "IR NURBS paired poles"),
-        (3, "IR NURBS paired grid rows"),
-        (4, "IR NURBS paired poles"),
-        (6, "IR NURBS grid row shape"),
-        (7, "IR NURBS grid row shape"),
+    for operation in [
+        "IR NURBS paired grid rows",
+        "IR NURBS paired poles",
+        "IR NURBS grid row shape",
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = NurbsSurface::from_lanes(
-            &ctx,
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceLanes::new(vec![vec![point; 2]; 2], Some(vec![vec![3.0; 2]; 2])),
-            false,
-        );
-        let Err(CodecError::ResourceLimit(limit)) = result else {
-            panic!("pair and shape visits must use the same caller account");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, operation);
-        assert_eq!(limit.used, cap);
-        assert_eq!(limit.additional, 1);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        NurbsSurface::from_lanes(
+                            ctx,
+                            NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
+                            NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
+                            NurbsSurfaceLanes::new(
+                                vec![vec![point; 2]; 2],
+                                Some(vec![vec![3.; 2]; 2]),
+                            ),
+                            false,
+                        )
+                    },
+                )
+            },
         );
     }
 }
@@ -1998,3 +1603,7 @@ mod reflected_reversal;
 mod knot_order;
 
 mod knot_admission;
+
+mod budget;
+
+mod storage_admission;
