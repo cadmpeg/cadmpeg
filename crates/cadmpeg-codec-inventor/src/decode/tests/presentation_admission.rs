@@ -339,15 +339,20 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
     let id_len = "inventor:presentation:rendering-style#segment-1".len();
     let token_len = "segment".len();
     let mut policy = DecodePolicy::service();
+    // Retain wire ID, token and digest, four initial slots, then issue token and message.
+    let retained_needed = id_len + token_len + 64
+        + 4 * std::mem::size_of::<crate::record_issue::RecordIssue>()
+        + token_len + issue.len();
     policy.limits.max_retained_bytes =
-        u64::try_from(id_len + token_len + 64 + issue.len() - 1).expect("issue budget fits");
+        u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
         presentation_native_projection::project(&ctx, &mut inventory),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor rendering conversion issue"
+                && limit.operation == "retain Inventor rendering issue detail"
     ));
+    assert!(inventory.issues.is_empty());
     policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
@@ -366,8 +371,16 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "admit Inventor rendering conversion issue"
     ));
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
-    presentation_native_projection::project(&ctx, &mut inventory)
+    policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained_needed).expect("full issue budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
+    let projection = presentation_native_projection::project(&ctx, &mut inventory)
         .expect("admitted rendering issue");
+    assert!(projection.rendering_styles.is_empty());
+    assert_eq!(inventory.issues.len(), 1);
+    assert_eq!(inventory.issues[0].family, crate::record_issue::RecordIssueFamily::Presentation);
+    assert_eq!(inventory.issues[0].segment_token, token);
+    assert_eq!(inventory.issues[0].record_ordinal, 1);
+    assert_eq!(inventory.issues[0].detail, issue);
 }

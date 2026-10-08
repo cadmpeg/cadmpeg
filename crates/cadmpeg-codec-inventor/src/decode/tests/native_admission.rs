@@ -1092,9 +1092,14 @@ fn structural_issue_refuses_collection_limit_before_record_creation() {
 fn protein_conversion_issue_refuses_before_failure_text_creation() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
+    let scope = "asset";
+    let issue_id = "inventor:rse:structural-issue#asset";
+    let issue_detail = "entry_name must end with InstanceProperties.bin";
+    // Retain four initial vector slots, then the issue ID, scope and message.
+    let retained_needed = 4 * std::mem::size_of::<StructuralIssueRecord>()
+        + issue_id.len() + scope.len() + issue_detail.len();
     policy.limits.max_retained_bytes =
-        u64::try_from("entry_name must end with InstanceProperties.bin".len() - 1)
-            .expect("detail length fits");
+        u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let wire: crate::native::protein::ProteinAssetRecordWire =
         serde_json::from_value(serde_json::json!({
@@ -1108,16 +1113,17 @@ fn protein_conversion_issue_refuses_before_failure_text_creation() {
         crate::decode::admit_ufrx_record(
             &ctx,
             wire.into_record(&ctx),
-            format_args!("asset"),
+            format_args!("{scope}"),
             &mut issues,
         ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor Protein asset conversion issue"
+                && limit.operation == "retain Inventor structural issue detail"
     ));
     assert!(issues.is_empty());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained_needed).expect("full issue budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
     let wire: crate::native::protein::ProteinAssetRecordWire =
         serde_json::from_value(serde_json::json!({
             "id": "asset", "entry_name": "bad.bin", "ordinal": 3,
@@ -1128,12 +1134,15 @@ fn protein_conversion_issue_refuses_before_failure_text_creation() {
     assert!(crate::decode::admit_ufrx_record(
         &ctx,
         wire.into_record(&ctx),
-        format_args!("asset"),
+        format_args!("{scope}"),
         &mut issues,
     )
     .expect("service admission")
     .is_none());
     assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].id, issue_id);
+    assert_eq!(issues[0].scope, scope);
+    assert_eq!(issues[0].detail, issue_detail);
 }
 
 #[test]
@@ -1157,28 +1166,34 @@ fn ufrx_model_state_conversion_issue_refuses_before_failure_text_creation() {
         .checked_add(state.name.len())
         .and_then(|bytes| bytes.checked_add(64))
         .expect("preceding retained bytes fit");
-    // The cap admits the ID, name and digest, then refuses the issue text.
-    let retained_cap = retained_before_issue
-        .checked_add(issue_detail.len() - 1)
-        .expect("retained byte cap fits");
+    let issue_scope = "ufrx-model-state-0";
+    let issue_id = "inventor:rse:structural-issue#ufrx-model-state-0";
+    // Retain wire text, four initial vector slots, then issue ID, scope and message.
+    let retained_needed = retained_before_issue
+        + 4 * std::mem::size_of::<StructuralIssueRecord>()
+        + issue_id.len() + issue_scope.len() + issue_detail.len();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
-        u64::try_from(retained_cap).expect("retained byte cap fits u64");
+        u64::try_from(retained_needed - 1).expect("retained byte cap fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut issues = Vec::new();
     assert!(matches!(
         project_ufrx_model_state(&ctx, 0, &state, &mut issues),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor UFRx model-state conversion issue"
+                && limit.operation == "retain Inventor structural issue detail"
     ));
     assert!(issues.is_empty());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained_needed).expect("full issue budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
     assert!(project_ufrx_model_state(&ctx, 0, &state, &mut issues)
         .expect("service admission")
         .is_none());
     assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].id, issue_id);
+    assert_eq!(issues[0].scope, issue_scope);
+    assert_eq!(issues[0].detail, issue_detail);
 }
 
 #[test]
@@ -1251,30 +1266,36 @@ fn ufrx_external_conversion_issue_refuses_before_failure_text_creation() {
         .checked_add(32)
         .and_then(|bytes| bytes.checked_add(32))
         .expect("preceding retained bytes fit");
-    // The cap admits the ID and both hex IDs, then refuses the issue text.
-    let retained_cap = retained_before_issue
-        .checked_add(issue_detail.len() - 1)
-        .expect("retained byte cap fits");
+    let issue_scope = "ufrx-external-reference-0";
+    let issue_id = "inventor:rse:structural-issue#ufrx-external-reference-0";
+    // Retain wire text, four initial vector slots, then issue ID, scope and message.
+    let retained_needed = retained_before_issue
+        + 4 * std::mem::size_of::<StructuralIssueRecord>()
+        + issue_id.len() + issue_scope.len() + issue_detail.len();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
-        u64::try_from(retained_cap).expect("retained byte cap fits u64");
+        u64::try_from(retained_needed - 1).expect("retained byte cap fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut issues = Vec::new();
     assert!(matches!(
         project_ufrx_external_reference(&ctx, 0, &reference, &mut issues),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor UFRx external conversion issue"
+                && limit.operation == "retain Inventor structural issue detail"
     ));
     assert!(issues.is_empty());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained_needed).expect("full issue budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
     assert!(
         project_ufrx_external_reference(&ctx, 0, &reference, &mut issues)
             .expect("service admission")
             .is_none()
     );
     assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].id, issue_id);
+    assert_eq!(issues[0].scope, issue_scope);
+    assert_eq!(issues[0].detail, issue_detail);
 }
 
 #[test]
@@ -1740,58 +1761,90 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
 
 #[test]
 fn placement_conversion_issue_refuses_before_failure_text_creation() {
-    let wire: AssemblyPlacementRecordWire = serde_json::from_value(serde_json::json!({
+    let fixture = serde_json::json!({
         "id": "inventor:assembly:placement#segment-1", "segment_token": "segment", "record_ordinal": 1,
         "header_id": 0, "owner_reference": 0, "attribute_reference": 0, "state": 0,
         "transform_prefix": false, "transform_encoding": [0, 0],
         "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
         "branch": 0, "graphics_state": 0, "occurrence_id": 1, "graphics_index": 0,
         "object_reference": 0, "suffix_len": 0, "suffix_sha256": "0".repeat(64)
-    }))
-    .expect("placement wire");
+    });
+    let wire: AssemblyPlacementRecordWire =
+        serde_json::from_value(fixture.clone()).expect("placement wire");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
+    let issue_detail = "suffix_len must not be zero";
+    // Retain four initial vector slots, then the issue segment token and message.
+    let token_len = wire.segment_token.len();
+    let retained_needed = 4 * std::mem::size_of::<crate::record_issue::RecordIssue>()
+        + token_len + issue_detail.len();
     policy.limits.max_retained_bytes =
-        u64::try_from("suffix_len must not be zero".len() - 1).expect("detail length fits");
+        u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let mut issues = Vec::new();
     assert!(matches!(
         admit_assembly_placement(&ctx, wire, &mut issues),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor placement conversion issue"
+                && limit.operation == "retain Inventor placement issue detail"
     ));
     assert!(issues.is_empty());
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained_needed).expect("full issue budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
+    let wire = serde_json::from_value(fixture).expect("placement wire");
+    assert!(admit_assembly_placement(&ctx, wire, &mut issues)
+        .expect("full admission")
+        .is_none());
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].family, RecordIssueFamily::Assembly);
+    assert_eq!(issues[0].segment_token.as_str(), "segment");
+    assert_eq!(issues[0].record_ordinal, 1);
+    assert_eq!(issues[0].detail, issue_detail);
 }
 
 #[test]
 fn uppercase_placement_digest_refuses_before_failure_text_creation() {
-    let wire: AssemblyPlacementRecordWire = serde_json::from_value(serde_json::json!({
+    let fixture = serde_json::json!({
         "id": "inventor:assembly:placement#segment-1", "segment_token": "segment", "record_ordinal": 1,
         "header_id": 0, "owner_reference": 0, "attribute_reference": 0, "state": 0,
         "transform_prefix": false, "transform_encoding": [0, 0],
         "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
         "branch": 0, "graphics_state": 0, "occurrence_id": 1, "graphics_index": 0,
         "object_reference": 0, "suffix_len": 48, "suffix_sha256": "A".repeat(64)
-    }))
-    .expect("placement wire");
+    });
+    let wire: AssemblyPlacementRecordWire =
+        serde_json::from_value(fixture.clone()).expect("placement wire");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(
-        "suffix_sha256: sha256 digest must contain exactly 64 lowercase hexadecimal characters"
-            .len()
-            - 1,
-    )
-    .expect("detail length fits");
+    let issue_detail = "suffix_sha256: sha256 digest must contain exactly 64 lowercase hexadecimal characters";
+    // Retain four initial vector slots, then the issue segment token and message.
+    let token_len = wire.segment_token.len();
+    let retained_needed = 4 * std::mem::size_of::<crate::record_issue::RecordIssue>()
+        + token_len + issue_detail.len();
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let mut issues = Vec::new();
     assert!(matches!(
         admit_assembly_placement(&ctx, wire, &mut issues),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor placement conversion issue"
+                && limit.operation == "retain Inventor placement issue detail"
     ));
     assert!(issues.is_empty());
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained_needed).expect("full issue budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
+    let wire = serde_json::from_value(fixture).expect("placement wire");
+    assert!(admit_assembly_placement(&ctx, wire, &mut issues)
+        .expect("full admission")
+        .is_none());
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].family, RecordIssueFamily::Assembly);
+    assert_eq!(issues[0].segment_token.as_str(), "segment");
+    assert_eq!(issues[0].record_ordinal, 1);
+    assert_eq!(issues[0].detail, issue_detail);
 }
 
 fn assert_ufrx_issue(ir: &cadmpeg_ir::document::CadIr, scope: &str, field: &str) {

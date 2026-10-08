@@ -2368,7 +2368,7 @@ fn admit_ufrx_record<T>(
         }
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(CodecError::Malformed(detail)) => {
-            structural_issue(ctx, issues, scope, detail)?;
+            structural_issue(ctx, issues, scope, &detail)?;
             Ok(None)
         }
         Err(error) => Err(error),
@@ -2393,6 +2393,7 @@ fn admit_assembly_placement(
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(CodecError::Malformed(detail)) => {
             ctx.charge_entities(1, "admit Inventor placement conversion issue")?;
+            ctx.reserve_capacity(issues, 1, "retain Inventor native structural records")?;
             token_reservation.commit()?;
             let key_work = segment_token.len().checked_mul(2).ok_or_else(|| {
                 ctx.refuse_codec_limit(
@@ -2412,7 +2413,10 @@ fn admit_assembly_placement(
                     segment_token: cadmpeg_ir::ids::IdentityKey::try_new(segment_token)
                         .map_err(CodecError::malformed)?,
                     record_ordinal,
-                    detail,
+                    detail: ctx.copy_retained_text(
+                        &detail,
+                        "retain Inventor placement issue detail",
+                    )?,
                 },
                 "retain Inventor native structural records",
             )?;
@@ -2429,6 +2433,7 @@ fn structural_issue(
     detail: impl cadmpeg_core::decode::text::TextSource,
 ) -> Result<(), CodecError> {
     ctx.charge_entities(1, "admit Inventor structural issue")?;
+    ctx.reserve_capacity(issues, 1, "collect Inventor structural issue")?;
     let record = StructuralIssueRecord {
         id: ctx.format_retained(
             format_args!("inventor:rse:structural-issue#{scope}"),
