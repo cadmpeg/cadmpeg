@@ -166,25 +166,22 @@ fn expression_dependency_reaches(
     start: usize,
     target: usize,
 ) -> Result<bool, CodecError> {
-    let mut pending = ctx.alloc_filled(1, start, "creo curve-expression pending dependency")?;
-    let mut visited = ctx.alloc_filled(
+    let mut storage = ctx.reserve_scoped(0, "creo curve-expression dependency scratch")?;
+    let mut pending = storage.with_storage(|| ctx.alloc_filled(1, start, "creo curve-expression pending dependency"))?;
+    let mut visited = storage.with_storage(|| ctx.alloc_filled(
         dependencies.len(),
         false,
         "creo curve-expression visited dependencies",
-    )?;
-    while let Some(index) = pending.pop() {
-        ctx.charge_work(1, "walk Creo curve-expression dependencies")?;
+    ))?;
+    while let Some(index) = ctx.next_charged(&mut std::iter::from_fn(|| pending.pop()), "walk Creo curve-expression dependencies")? {
         if index == target {
             return Ok(true);
         }
         if !visited[index] {
             visited[index] = true;
-            ctx.reserve_vec(
-                &mut pending,
-                dependencies[index].len(),
-                "creo curve-expression pending dependencies",
-            )?;
-            pending.extend(dependencies[index].iter().copied());
+            storage.with_storage(|| ctx.extend_vec(&mut pending,
+                &dependencies[index],
+                "creo curve-expression pending dependencies"))?;
         }
     }
     Ok(false)
@@ -200,17 +197,17 @@ fn curve_expression_parameter_order(
         "creo curve-expression dependency rows",
         |_| Ok(Vec::new()),
     )?;
-    for (row, assignment) in dependencies.iter_mut().zip(&record.assignments) {
-        for name in &assignment.dependencies {
+    for (row, assignment) in ctx.admit_iter(&mut dependencies, "creo curve-expression ordering rows")?.zip(&record.assignments) {
+        for name in ctx.admit_iter(&assignment.dependencies, "creo curve-expression dependency traversal")? {
             let (mut key, _reservation) = ctx.format_scoped(
                 format_args!("{name}"),
                 "creo curve-expression ordering lookup",
             )?;
             ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-            let Some(&index) = unique_assignment_indices.get(&key) else {
+            let Some(&index) = ctx.get_btree_map(unique_assignment_indices, &key, "creo curve-expression assignment lookup")? else {
                 continue;
             };
-            if row.contains(&index) {
+            if ctx.any_by(&*row, |known| Ok(*known == index), "creo curve-expression duplicate edge scan")? {
                 continue;
             }
             ctx.reserve_vec(row, 1, "creo curve-expression dependency indices")?;
@@ -218,8 +215,8 @@ fn curve_expression_parameter_order(
         }
     }
     let mut cyclic_edges = HashSet::new();
-    for (consumer, dependency_indices) in dependencies.iter().enumerate() {
-        for &dependency in dependency_indices {
+    for (consumer, dependency_indices) in ctx.admit_iter(&dependencies, "creo curve-expression cycle rows")?.enumerate() {
+        for &dependency in ctx.admit_iter(dependency_indices, "creo curve-expression cycle edges")? {
             if expression_dependency_reaches(ctx, &dependencies, dependency, consumer)? {
                 ctx.insert_hash_set(
                     &mut cyclic_edges,
@@ -239,13 +236,13 @@ fn curve_expression_parameter_order(
         false,
         "creo curve-expression assigned ordinals",
     )?;
-    for ordinal in 0..dependencies.len() {
-        let Some(index) = (0..dependencies.len()).find(|&candidate| {
-            !assigned[candidate]
-                && dependencies[candidate].iter().all(|dependency| {
-                    cyclic_edges.contains(&(candidate, *dependency)) || assigned[*dependency]
-                })
-        }) else {
+    let mut ordinal_steps = 0..dependencies.len();
+    while let Some(ordinal) = ctx.next_charged(&mut ordinal_steps, "creo curve-expression ordinal traversal")? {
+        let Some(index) = ctx.find_by(0..dependencies.len(), |&candidate| {
+            Ok(!assigned[candidate] && ctx.all_by(&dependencies[candidate], |dependency| {
+                Ok(cyclic_edges.contains(&(candidate, *dependency)) || assigned[*dependency])
+            }, "creo curve-expression ready edges")?)
+        }, "creo curve-expression ready candidates")? else {
             return Ok(None);
         };
         let Ok(ordinal) = u32::try_from(ordinal) else {
@@ -265,7 +262,7 @@ fn curve_expression_parameter_names(
     assignments: &[crate::curve::CurveExpressionAssignment],
 ) -> Result<Vec<Option<String>>, CodecError> {
     let mut counts = BTreeMap::new();
-    for assignment in assignments {
+    for assignment in ctx.admit_iter(assignments, "creo curve-expression name traversal")? {
         if let Some((name, _)) = assignment.parameter_target() {
             let mut key = ctx.copy_retained_text(name, "creo curve-expression name key")?;
             ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
@@ -281,11 +278,11 @@ fn curve_expression_parameter_names(
     }
     let mut occurrences = BTreeMap::new();
     let mut names = Vec::new();
-    for assignment in assignments {
+    for assignment in ctx.admit_iter(assignments, "creo curve-expression name traversal")? {
         let name = if let Some((name, _)) = assignment.parameter_target() {
             let mut key = ctx.copy_retained_text(name, "creo curve-expression occurrence key")?;
             ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-            if counts[&key] == 1 {
+            if *ctx.get_btree_map(&counts, &key, "creo curve-expression name count lookup")?.ok_or_else(|| CodecError::malformed("curve expression name count is absent"))? == 1 {
                 Some(ctx.copy_retained_text(name, "creo curve-expression parameter name")?)
             } else {
                 let occurrence = ctx
@@ -340,7 +337,7 @@ fn curve_expression_assignment_indices(
     record: &crate::curve::CurveExpressionRecord,
 ) -> Result<AssignmentIndices, CodecError> {
     let mut by_name = BTreeMap::<String, Option<usize>>::new();
-    for (ordinal, assignment) in record.assignments.iter().enumerate() {
+    for (ordinal, assignment) in ctx.admit_iter(&record.assignments, "creo curve-expression assignment traversal")?.enumerate() {
         if assignment.activation == crate::curve::CurveExpressionActivation::Inactive {
             continue;
         }
@@ -363,7 +360,7 @@ fn curve_expression_assignment_indices(
         }
     }
     let mut unique = BTreeMap::new();
-    for (name, index) in &by_name {
+    for (name, index) in ctx.admit_iter(&by_name, "creo curve-expression index traversal")? {
         if let Some(index) = index {
             let key = ctx.copy_retained_text(name, "creo curve-expression unique key")?;
             ctx.insert_btree_map(
@@ -382,15 +379,11 @@ fn curve_expression_emitted_ordinals(
     record: &crate::curve::CurveExpressionRecord,
     parameter_ordinals: &[u32],
 ) -> Result<BTreeMap<usize, u32>, CodecError> {
-    let count = ctx
-        .admit_iter(&record.assignments, "creo emitted assignment count")?
-        .filter(|assignment| assignment.parameter_target().is_some())
-        .count();
+    let mut indices_storage = ctx.reserve_scoped(0, "creo curve-expression emitted scratch")?;
     let mut indices = Vec::new();
-    ctx.reserve_vec(&mut indices, count, "creo curve-expression emitted indices")?;
-    for (index, assignment) in record.assignments.iter().enumerate() {
+    for (index, assignment) in ctx.admit_iter(&record.assignments, "creo emitted assignment traversal")?.enumerate() {
         if assignment.parameter_target().is_some() {
-            indices.push(index);
+            indices_storage.with_storage(|| ctx.push_vec(&mut indices, index, "creo curve-expression emitted indices"))?;
         }
     }
     ctx.stable_sort_by_key(
@@ -400,7 +393,7 @@ fn curve_expression_emitted_ordinals(
         "creo curve expression emitted ordinals indices ordering",
     )?;
     let mut emitted = BTreeMap::new();
-    for (ordinal, index) in indices.into_iter().enumerate() {
+    for (ordinal, index) in ctx.admit_iter(indices, "creo curve-expression emitted index traversal")?.enumerate() {
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::malformed("curve expression parameter ordinal exceeds u32"))?;
         ctx.insert_btree_map(
@@ -419,43 +412,15 @@ fn joined_dependency_names(
     include: impl Fn(&str) -> Result<bool, CodecError>,
     operation: &'static str,
 ) -> Result<Option<String>, CodecError> {
-    let mut count = 0usize;
-    let mut bytes = 0usize;
-    for name in names {
+    let mut storage = ctx.reserve_scoped(0, "creo curve-expression joined names scratch")?;
+    let mut selected = Vec::new();
+    for name in ctx.admit_iter(names, operation)? {
         if include(name)? {
-            bytes = bytes.checked_add(name.len()).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    operation,
-                    cadmpeg_core::decode::u64_from_index(usize::MAX),
-                    u64::MAX,
-                )
-            })?;
-            count += 1;
+            storage.with_storage(|| ctx.push_vec(&mut selected, name.as_str(), operation))?;
         }
     }
-    if count == 0 {
-        return Ok(None);
-    }
-    bytes = bytes.checked_add(count - 1).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            operation,
-            cadmpeg_core::decode::u64_from_index(usize::MAX),
-            u64::MAX,
-        )
-    })?;
-    let mut joined = String::new();
-    ctx.try_reserve_retained_text(&mut joined, bytes, operation)?;
-    let mut emitted = false;
-    for name in names {
-        if include(name)? {
-            if emitted {
-                joined.push(',');
-            }
-            joined.push_str(name);
-            emitted = true;
-        }
-    }
-    Ok(Some(joined))
+    if selected.is_empty() { return Ok(None); }
+    Ok(Some(ctx.join_retained(&selected, ",", operation)?))
 }
 
 fn insert_curve_expression_property(
@@ -478,60 +443,18 @@ fn join_cyclic_dependency_names(
     ctx: &DecodeContext<'_>,
     names: &[&str],
 ) -> Result<String, CodecError> {
-    let bytes = names
-        .iter()
-        .try_fold(0usize, |total, name| total.checked_add(name.len()))
-        .and_then(|total| total.checked_add(if names.is_empty() { 0 } else { names.len() - 1 }))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "creo curve-expression cyclic dependency text",
-                cadmpeg_core::decode::u64_from_index(usize::MAX),
-                u64::MAX,
-            )
-        })?;
-    let mut joined = String::new();
-    ctx.try_reserve_retained_text(
-        &mut joined,
-        bytes,
-        "creo curve-expression cyclic dependency text",
-    )?;
-    for (index, name) in names.iter().enumerate() {
-        if index > 0 {
-            joined.push(',');
-        }
-        joined.push_str(name);
-    }
-    Ok(joined)
+    ctx.join_retained(names, ",", "creo curve-expression cyclic dependency text")
 }
 
 fn curve_expression_source_text(
     ctx: &DecodeContext<'_>,
     lines: &[crate::curve::CurveExpressionLine],
 ) -> Result<String, CodecError> {
-    let bytes = lines
-        .iter()
-        .try_fold(0usize, |total, line| total.checked_add(line.text.len()))
-        .and_then(|total| total.checked_add(if lines.is_empty() { 0 } else { lines.len() - 1 }))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "creo curve-expression feature source text",
-                cadmpeg_core::decode::u64_from_index(usize::MAX),
-                u64::MAX,
-            )
-        })?;
-    let mut text = String::new();
-    ctx.try_reserve_retained_text(
-        &mut text,
-        bytes,
-        "creo curve-expression feature source text",
-    )?;
-    for (index, line) in lines.iter().enumerate() {
-        if index > 0 {
-            text.push('\n');
-        }
-        text.push_str(&line.text);
-    }
-    Ok(text)
+    let mut storage = ctx.reserve_scoped(0, "creo curve-expression source text scratch")?;
+    let parts = storage.with_storage(|| ctx.collect_vec(
+        ctx.admit_iter(lines, "creo curve-expression source line traversal")?.map(|line| line.text.as_str()),
+        "creo curve-expression source text parts"))?;
+    ctx.join_retained(&parts, "\n", "creo curve-expression feature source text")
 }
 
 fn curve_expression_properties(
@@ -562,8 +485,8 @@ fn curve_expression_properties(
             )?;
             ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
             Ok(key != "t"
-                && !assignment_indices_by_name.contains_key(&key)
-                && !dimension_parameters.contains_key(&key))
+                && !ctx.contains_key_btree_map(assignment_indices_by_name, &key, "creo curve-expression assignment lookup")?
+                && !ctx.contains_key_btree_map(dimension_parameters, &key, "creo curve-expression dimension lookup")?)
         },
         "creo curve-expression external dependency text",
     )?;
@@ -576,7 +499,7 @@ fn curve_expression_properties(
                 "creo curve-expression ambiguous lookup",
             )?;
             ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-            Ok(matches!(assignment_indices_by_name.get(&key), Some(None)))
+            Ok(matches!(ctx.get_btree_map(assignment_indices_by_name, &key, "creo curve-expression assignment lookup")?, Some(None)))
         },
         "creo curve-expression ambiguous dependency text",
     )?;
@@ -642,7 +565,7 @@ fn curve_expression_properties(
             )?,
         )?;
     }
-    if parameter_name != assignment_name {
+    if !ctx.equal(parameter_name, assignment_name, "creo curve-expression source name comparison")? {
         let source_name =
             ctx.copy_retained_text(assignment_name, "creo curve-expression source name")?;
         insert_curve_expression_property(ctx, &mut properties, "source_name", source_name)?;
@@ -651,14 +574,13 @@ fn curve_expression_properties(
         insert_curve_expression_property(ctx, &mut properties, "independent_variables", value)?;
     }
     let mut cyclic_dependencies = Vec::new();
-    for name in &assignment.dependencies {
+    for name in ctx.admit_iter(&assignment.dependencies, "creo curve-expression dependency traversal")? {
         let (mut key, _reservation) = ctx.format_scoped(
             format_args!("{name}"),
             "creo curve-expression cyclic lookup",
         )?;
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-        if unique_assignment_indices
-            .get(&key)
+        if ctx.get_btree_map(unique_assignment_indices, &key, "creo curve-expression assignment lookup")?
             .is_some_and(|dependency| cyclic_edges.contains(&(assignment_ordinal, *dependency)))
         {
             ctx.reserve_vec(
@@ -675,7 +597,7 @@ fn curve_expression_properties(
         Ord::cmp,
         "creo curve-expression cyclic dependency name sort",
     )?;
-    cyclic_dependencies.dedup();
+    ctx.dedup_vec(&mut cyclic_dependencies, "creo curve-expression cyclic name deduplication")?;
     if !cyclic_dependencies.is_empty() {
         let value = join_cyclic_dependency_names(ctx, &cyclic_dependencies)?;
         insert_curve_expression_property(ctx, &mut properties, "cyclic_dependencies", value)?;
@@ -760,15 +682,15 @@ fn curve_expression_parameter_dependencies(
     let mut seen = BTreeSet::new();
     let mut dependencies = Vec::new();
     let mut dimension_dependencies = Vec::new();
-    for name in &assignment.dependencies {
+    for name in ctx.admit_iter(&assignment.dependencies, "creo curve-expression dependency traversal")? {
         let (mut key, _key_reservation) = ctx.format_scoped(
             format_args!("{name}"),
             "creo curve-expression dependency key",
         )?;
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-        if let Some(&dependency) = unique_assignment_indices.get(&key) {
+        if let Some(&dependency) = ctx.get_btree_map(unique_assignment_indices, &key, "creo curve-expression assignment lookup")? {
             if cyclic_edges.contains(&(assignment_ordinal, dependency))
-                || seen.contains(&dependency)
+                || ctx.contains_btree_set(&seen, &dependency, "creo curve-expression dependency lookup")?
             {
                 continue;
             }
@@ -789,13 +711,13 @@ fn curve_expression_parameter_dependencies(
                 "creo curve-expression dependency identity",
             )?);
         }
-        if assignment_indices_by_name.contains_key(&key) {
+        if ctx.contains_key_btree_map(assignment_indices_by_name, &key, "creo curve-expression assignment lookup")? {
             continue;
         }
-        let Some(parameter) = dimension_parameters.get(&key) else {
+        let Some(parameter) = ctx.get_btree_map(dimension_parameters, &key, "creo curve-expression dimension lookup")? else {
             continue;
         };
-        if dependencies.contains(parameter) || dimension_dependencies.contains(&parameter) {
+        if ctx.any_by(&dependencies, |known| ctx.equal(known.as_str(), parameter.as_str(), "creo curve-expression dimension identity comparison"), "creo curve-expression dependency identity scan")? || ctx.any_by(&dimension_dependencies, |known: &&ParameterId| ctx.equal(known.as_str(), parameter.as_str(), "creo curve-expression dimension identity comparison"), "creo curve-expression dimension identity scan")? {
             continue;
         }
         ctx.reserve_vec(
@@ -805,7 +727,7 @@ fn curve_expression_parameter_dependencies(
         )?;
         dimension_dependencies.push(parameter);
     }
-    for parameter in dimension_dependencies {
+    for parameter in ctx.admit_iter(dimension_dependencies, "creo curve-expression dimension traversal")? {
         ctx.reserve_vec(
             &mut dependencies,
             1,
@@ -831,18 +753,12 @@ pub(super) fn transfer_curve_expression_features(
     dimension_parameters: &BTreeMap<String, ParameterId>,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let ordinal_base = ir
-        .model
-        .features
-        .iter()
+    let ordinal_base = ctx.admit_iter(&ir.model.features, "creo curve-expression feature ordinal traversal")?
         .map(|feature| feature.ordinal)
         .max()
         .map_or(0, |value| value + 1);
     let mut transferred_parameter_count = 0;
-    for (expression_ordinal, record) in scan
-        .curves
-        .expressions
-        .iter()
+    for (expression_ordinal, record) in ctx.admit_iter(&scan.curves.expressions, "creo curve-expression record traversal")?
         .filter(|record| !record.backup)
         .enumerate()
     {
@@ -874,11 +790,11 @@ pub(super) fn transfer_curve_expression_features(
             "creo curve-expression source content",
         )?;
         let parameter_start = ir.model.parameters.len();
-        for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
+        for (assignment_ordinal, assignment) in ctx.admit_iter(&record.assignments, "creo curve-expression assignment traversal")?.enumerate() {
             let Some((_assignment_name, _declared_unit)) = assignment.parameter_target() else {
                 continue;
             };
-            let Some(&ordinal) = emitted_ordinals.get(&assignment_ordinal) else {
+            let Some(&ordinal) = ctx.get_btree_map(&emitted_ordinals, &assignment_ordinal, "creo curve-expression emitted lookup")? else {
                 continue;
             };
             let Some(parameter_name) = parameter_names
@@ -921,12 +837,6 @@ pub(super) fn transfer_curve_expression_features(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model parameters")?;
-            for prior_members in 0..dependencies.len() {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(prior_members),
-                    "validate Creo curve-expression dependency uniqueness",
-                )?;
-            }
             let value = match assignment.value.as_ref() {
                 Some(crate::curve::CurveExpressionValue::String(value)) => {
                     Some(ParameterValue::String(ctx.copy_retained_text(
@@ -995,9 +905,9 @@ pub(super) fn transfer_curve_expression_features(
             ));
         }
         let mut parameter_index = parameter_start;
-        for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
+        for (assignment_ordinal, assignment) in ctx.admit_iter(&record.assignments, "creo curve-expression assignment traversal")?.enumerate() {
             if assignment.parameter_target().is_none()
-                || !emitted_ordinals.contains_key(&assignment_ordinal)
+                || !ctx.contains_key_btree_map(&emitted_ordinals, &assignment_ordinal, "creo curve-expression emitted lookup")?
             {
                 continue;
             }
@@ -1091,18 +1001,15 @@ pub(super) fn transfer_curve_expression_features(
                 axis_id,
                 "validate nonblank text",
             )?;
-            (|| {
-                Some(IrFeatureDefinition::Operation(
-                    IrFeatureOperation::HelixNativeAxis {
-                        axis_native_ref: axis_id?,
-                        axial_rise: Length::new(helix.height.get())?,
-                        pitch: Length::new(helix.height.get() / helix.revolutions.get())?,
-                        revolutions: helix.revolutions,
-                        start_angle: helix.start_angle,
-                        clockwise: helix.clockwise,
-                    },
-                ))
-            })()
+            match (axis_id, Length::new(helix.height.get()), Length::new(helix.height.get() / helix.revolutions.get())) {
+                (Some(axis_native_ref), Some(axial_rise), Some(pitch)) => Some(IrFeatureDefinition::Operation(IrFeatureOperation::HelixNativeAxis {
+                    axis_native_ref, axial_rise, pitch,
+                    revolutions: helix.revolutions,
+                    start_angle: helix.start_angle,
+                    clockwise: helix.clockwise,
+                })),
+                _ => None,
+            }
         } else {
             None
         };
