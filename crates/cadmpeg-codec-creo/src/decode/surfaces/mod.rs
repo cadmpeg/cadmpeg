@@ -7,6 +7,7 @@ pub(super) mod intersection_candidates;
 pub(super) mod intersection_resolve;
 pub(super) mod intersections;
 pub(super) mod nurbs_boundaries;
+mod model_ids;
 pub(super) mod positional;
 pub(super) mod prototypes;
 pub(super) mod transfer_curves;
@@ -696,6 +697,8 @@ pub(super) fn transfer_fc05_cap_circles(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut curves_index = model_ids::ModelIdentityIndex::new(ctx)?;
+    let mut surfaces_index = model_ids::ModelIdentityIndex::new(ctx)?;
     for circle in ctx.admit_iter(
         &scan.curves.fc05_circles,
         "creo transfer fc05 cap circles fc05 circles traversal",
@@ -780,13 +783,7 @@ pub(super) fn transfer_fc05_cap_circles(
             circle.curve_id,
             "creo FC05 cap circle identity",
         )?;
-        let mut identity_present = false;
-        for curve in ctx.admit_iter(&ir.model.curves, "creo cap circle model curve search")? {
-            if ctx.equal(&curve.id, &id, "creo model identity comparison")? {
-                identity_present = true;
-                break;
-            }
-        }
+        let identity_present = curves_index.lookup(ctx, &ir.model.curves, |record| record.id.as_str(), id.as_str())?.is_some();
         if !identity_present {
             let Ok(circle_curve) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::from(center),
@@ -842,13 +839,7 @@ pub(super) fn transfer_fc05_cap_circles(
             cylinder_id,
             "creo FC05 axis cylinder identity",
         )?;
-        let mut identity_present = false;
-        for surface in ctx.admit_iter(&ir.model.surfaces, "creo cap circle model surface search")? {
-            if ctx.equal(&surface.id, &surface_id, "creo model identity comparison")? {
-                identity_present = true;
-                break;
-            }
-        }
+        let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), surface_id.as_str())?.is_some();
         if identity_present {
             continue;
         }
