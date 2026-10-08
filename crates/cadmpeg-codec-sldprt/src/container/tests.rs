@@ -1050,3 +1050,15 @@ fn configuration_attribute_map_scoped_refusal_preserves_replacement_semantics() 
             && limit.operation == "collect SLDPRT configuration attributes"
             && limit.additional > 0));
 }
+
+#[test]
+fn active_configuration_name_length_mismatch_needs_no_comparison_work() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut active = super::ManifestActiveConfiguration::Unique(1, Some("a".into()));
+    active.merge(&ctx, super::ManifestActiveConfiguration::Unique(1, Some("b".repeat(4096)))).unwrap();
+    assert_eq!(active, super::ManifestActiveConfiguration::Ambiguous);
+    ctx.finish_session().unwrap();
+}
