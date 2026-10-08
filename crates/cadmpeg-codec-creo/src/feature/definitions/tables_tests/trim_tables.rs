@@ -6,16 +6,17 @@ use super::{
 };
 use crate::feature::definitions::order_table as parse_order_table;
 use crate::feature::definitions::positional_order_table as parse_positional_order_table;
-use crate::feature::definitions::positional_trim_entity_table as parse_positional_trim_entity_table;
-use crate::feature::definitions::positional_trim_vertex_table as parse_positional_trim_vertex_table;
+use crate::feature::definitions::trim::positional_trim_entity_table as parse_positional_trim_entity_table;
+use crate::feature::definitions::trim::positional_trim_vertex_table as parse_positional_trim_vertex_table;
 use crate::feature::definitions::test_support::with_points;
-use crate::feature::definitions::trim_buckets as parse_trim_buckets;
-use crate::feature::definitions::trim_vertex_entry as parse_trim_vertex_entry;
+use crate::feature::definitions::trim::trim_buckets as parse_trim_buckets;
+use crate::feature::definitions::trim::trim_vertex_entry as parse_trim_vertex_entry;
 use crate::feature::definitions::{
-    trim_table_header, FeatureOrderRow, FeatureSectionPoint, FeatureSegment, FeatureSegmentKind,
+    FeatureOrderRow, FeatureSectionPoint, FeatureSegment, FeatureSegmentKind,
     FeatureSegmentTable, FeatureVariableRow, FeatureVariableTable, ScalarLane, TrimEntityKind,
-    TrimEntryKind, TrimTableClasses, TrimTableHeader, VariableType,
+    VariableType,
 };
+use crate::feature::definitions::trim::{trim_table_header, TrimEntryKind, TrimTableClasses, TrimTableHeader};
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 
