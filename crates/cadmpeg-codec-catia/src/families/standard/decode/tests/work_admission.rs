@@ -843,3 +843,39 @@ fn limit_curve_candidate_selection_stops_after_a_third_supported_point() {
         vec![Vec::new()]
     );
 }
+
+#[test]
+fn standard_route_setup_retains_no_data_before_payload_emission() {
+    let bytes = crate::test_support::test_container::tetrahedron_topology_catpart();
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, &bytes).expect("synthetic container")
+    });
+    let result = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::try_decode_standard(ctx, &scan, &mut crate::nurbs::LaneRefusals::new())
+    });
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+        panic!("first emitted identity requires retained storage");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    );
+    assert_eq!(limit.operation, "catia_standard_payload_id");
+    assert_eq!(limit.used, 0);
+}
+
+#[test]
+fn unselected_e5_surface_carriers_use_only_temporary_storage() {
+    let stream = crate::test_support::test_e5::e5_torus_stream();
+    crate::test_support::with_retained_limit(0, |ctx| {
+        assert!(super::super::associate_standard_freeform_e5_surfaces(
+            ctx,
+            &[],
+            &stream,
+            &std::collections::HashMap::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("unselected carriers are scratch")
+        .is_empty());
+    });
+}
