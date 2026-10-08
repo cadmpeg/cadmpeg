@@ -653,16 +653,6 @@ impl Decoder<'_> {
                 return Ok(None);
             };
             if removed {
-                let shifted = self
-                    .active
-                    .len()
-                    .checked_sub(index)
-                    .and_then(|count| count.checked_sub(1))
-                    .ok_or_else(|| CodecError::malformed("JT active index escapes lane"))?;
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(shifted),
-                    "shift JT active faces",
-                )?;
                 self.active.remove(index);
             } else {
                 let Some(candidate) = self.faces.get(face) else {

@@ -150,10 +150,10 @@ impl TryFrom<ChartWire> for ParasolidChartRecord {
             .points
             .into_iter()
             .map(|[x, y, z]| Point3::new(x, y, z))
-            .collect();
+            .collect::<Vec<_>>();
         let data = match (wire.point_layout, wire.native_parameters, wire.ext_support_uv) {
-            (ChartPointLayout::Xyz3, None, [None, None]) => SourceChartData::xyz3(points)?,
-            (ChartPointLayout::Ext11, Some(parameters), support_uv) => SourceChartData::ext11(points, parameters, support_uv)?,
+            (ChartPointLayout::Xyz3, None, [None, None]) => SourceChartData::xyz3(&points)?,
+            (ChartPointLayout::Ext11, Some(parameters), support_uv) => SourceChartData::ext11(&points, &parameters, support_uv)?,
             _ => return Err("point_layout/native_parameters/ext_support_uv: fields do not match the Hvec layout"),
         };
         if wire.count != data.count() {

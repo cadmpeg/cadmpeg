@@ -141,8 +141,12 @@ fn control_form_route_refusal(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("control form fixture");
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
-        .expect("cached control form section");
+    crate::test_support::with_decode_context(|ctx| {
+        container
+            .indexed_om_sections(ctx)
+            .map(|(sections, _storage)| sections)
+    })
+    .expect("cached control form section");
     let forms = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_forms(ctx, &container)
     })
@@ -509,8 +513,12 @@ fn control_reference_route_refusal(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("control reference fixture");
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
-        .expect("cached control reference section");
+    crate::test_support::with_decode_context(|ctx| {
+        container
+            .indexed_om_sections(ctx)
+            .map(|(sections, _storage)| sections)
+    })
+    .expect("cached control reference section");
     let references = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_references(ctx, &container)
     })
@@ -561,7 +569,15 @@ fn data_block_control_reference_route_refuses_retained_limit() {
 
 #[test]
 fn data_block_control_reference_route_refuses_scoped_limit() {
-    let error = control_reference_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX control reference block id",
+        |limit| {
+            Err::<(), _>(control_reference_route_refusal(|policy| {
+                policy.limits.max_materialized_bytes = limit;
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
@@ -613,8 +629,12 @@ fn control_value_route_refusal(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("offset-store control fixture");
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
-        .expect("cached offset-store section");
+    crate::test_support::with_decode_context(|ctx| {
+        container
+            .indexed_om_sections(ctx)
+            .map(|(sections, _storage)| sections)
+    })
+    .expect("cached offset-store section");
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_values(ctx, &container)
     })
@@ -877,7 +897,11 @@ fn data_blocks_refuses_identity_work_at_caller_limit() {
     crate::test_support::with_decode_context_over(
         &[0],
         |_| {},
-        |ctx| container.indexed_om_sections(ctx),
+        |ctx| {
+            container
+                .indexed_om_sections(ctx)
+                .map(|(sections, _storage)| sections)
+        },
     )
     .expect("cached control section");
     let values = crate::test_support::with_decode_context_over(
@@ -959,8 +983,12 @@ fn control_index_value_route_refusal(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("product-anchored control fixture");
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
-        .expect("cached product-anchored section");
+    crate::test_support::with_decode_context(|ctx| {
+        container
+            .indexed_om_sections(ctx)
+            .map(|(sections, _storage)| sections)
+    })
+    .expect("cached product-anchored section");
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_index_values(ctx, &container)
     })
@@ -1093,8 +1121,12 @@ fn data_block_control_index_value_target_refuses_retained_limit() {
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("in-range control target fixture");
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
-        .expect("cached in-range section");
+    crate::test_support::with_decode_context(|ctx| {
+        container
+            .indexed_om_sections(ctx)
+            .map(|(sections, _storage)| sections)
+    })
+    .expect("cached in-range section");
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_index_values(ctx, &container)
     })

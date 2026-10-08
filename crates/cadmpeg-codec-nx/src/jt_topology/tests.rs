@@ -261,20 +261,15 @@ fn jt_active_suffix_refuses_before_the_next_pop() {
 }
 
 #[test]
-fn jt_active_shift_refuses_before_moving_the_lane() {
+fn jt_active_shift_is_bounded_by_the_window() {
     let mut decoder = active_frontier(3);
     decoder.removed[1] = true;
     crate::test_support::with_decode_context_over(
         &[],
         |policy| policy.limits.max_work_units = 1,
         |ctx| {
-            let error = decoder.next_active_face(ctx).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "shift JT active faces" && limit.additional == 1)
-            );
-            assert_eq!(decoder.active, [0, 1, 2]);
+            assert_eq!(decoder.next_active_face(ctx).unwrap(), Some(2));
+            assert_eq!(decoder.active, [0, 2]);
         },
     );
 }
@@ -285,8 +280,8 @@ fn jt_active_face_window_charges_before_visiting_variable_tail() {
     decoder.removed[..63].fill(true);
     crate::test_support::with_decode_context_over(
         &[],
-        // One suffix probe, 63 single-element shifts, and 48 visits beyond 16.
-        |policy| policy.limits.max_work_units = 1 + 63 + 48,
+        // One suffix probe and 48 visits beyond the first sixteen.
+        |policy| policy.limits.max_work_units = 1 + 48,
         |ctx| {
             assert_eq!(decoder.next_active_face(ctx).unwrap(), Some(63));
             assert_eq!(decoder.active, [63]);

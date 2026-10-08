@@ -217,7 +217,7 @@ pub(super) fn offset_store_control_counts(
 ) -> Result<(usize, usize), CodecError> {
     let mut total = 0;
     let mut classified = 0;
-    let sections = container.indexed_om_sections(ctx)?;
+    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
     for (_, section) in ctx.admit_iter(&sections, "nx offset-store control blocks")? {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;

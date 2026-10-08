@@ -25,7 +25,7 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
-use cadmpeg_core::decode::{bounded_len, u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, u64_from_index, DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 
 use crate::layout::directory_entry as dir_entry;
@@ -472,10 +472,10 @@ impl<'a> Container<'a> {
     }
 
     /// Locate independently size-framed NX object-model sections.
-    pub(crate) fn om_sections(
+    pub(crate) fn om_sections<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<(EntryRef<'_>, crate::om::Section<'_>)>, CodecError> {
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<SectionReaders<'_, 'ctx, crate::om::Section<'_>>, CodecError> {
         if self.om_section_cache.get().is_none() {
             let cache = match &self.data {
                 SourceImage::Borrowed(view) => {
@@ -498,7 +498,7 @@ impl<'a> Container<'a> {
             .om_section_cache
             .get()
             .ok_or_else(|| ctx.refuse_codec_limit("nx framed OM cache", 0, 1))?;
-        let mut result = ctx.collection_vec(
+        let (mut result, storage) = ctx.temporary_vec(
             match framed_cache {
                 FramedSectionCache::Borrowed { sections } => sections.len(),
                 FramedSectionCache::Owned { layouts } => layouts.len(),
@@ -527,14 +527,14 @@ impl<'a> Container<'a> {
                 }
             }
         }
-        Ok(result)
+        Ok((result, storage))
     }
 
     /// Locate indexed NX object-model sections in catalogued file entries.
-    pub(crate) fn indexed_om_sections(
+    pub(crate) fn indexed_om_sections<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<(EntryRef<'_>, crate::om::IndexedSection<'_>)>, CodecError> {
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<SectionReaders<'_, 'ctx, crate::om::IndexedSection<'_>>, CodecError> {
         if self.indexed_section_layouts.get().is_none() {
             let cache = match &self.data {
                 SourceImage::Borrowed(view) => {
@@ -601,7 +601,7 @@ impl<'a> Container<'a> {
             .indexed_section_layouts
             .get()
             .ok_or_else(|| ctx.refuse_codec_limit("nx indexed OM cache", 0, 1))?;
-        let mut result = ctx.collection_vec(
+        let (mut result, storage) = ctx.temporary_vec(
             match cache {
                 IndexedSectionCache::Borrowed { sections, .. } => sections.len(),
                 IndexedSectionCache::Owned { layouts } => layouts.len(),
@@ -630,7 +630,7 @@ impl<'a> Container<'a> {
                 }
             }
         }
-        Ok(result)
+        Ok((result, storage))
     }
 
     /// Return the cached bytes and source offsets of every borrowed offset-store block.
@@ -649,24 +649,25 @@ impl<'a> Container<'a> {
     }
 
     /// Extract child-part paths from catalogued external-reference payloads.
-    pub(crate) fn external_reference_paths(
+    pub(crate) fn external_reference_paths<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<String>, CodecError> {
-        let strings = self.external_reference_strings(ctx)?;
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<ExternalReferencePaths<'ctx>, CodecError> {
+        let (strings, _strings_storage) = self.external_reference_strings(ctx)?;
         let count = strings.len();
-        let mut paths = ctx.collection_vec(count, "nx external reference paths")?;
+        let (mut paths, storage) = ctx.temporary_vec(count, "nx external reference paths")?;
         for (_, _, path) in ctx.admit_iter(strings, "project NX external reference paths")? {
-            paths.push(path);
+            paths.push(ctx.copy_retained_text(path, "nx external reference string")?);
         }
-        Ok(paths)
+        Ok((paths, storage))
     }
 
     /// Extract child-part strings with their owning entry and payload offset.
-    pub(crate) fn external_reference_strings(
+    pub(crate) fn external_reference_strings<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<(&DirEntry, usize, String)>, CodecError> {
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<ExternalReferenceStrings<'_, 'ctx>, CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "NX external reference projection scratch")?;
         let mut out = Vec::new();
         for entry in &self.entries {
             ctx.charge_work(1, "scan NX external reference entries")?;
@@ -689,20 +690,22 @@ impl<'a> Container<'a> {
             let Some(payload) = self.data.get(offset..end) else {
                 continue;
             };
-            let Some((_, strings)) = parse_extref_string_table(ctx, payload)? else {
+            let Some(((_, strings), _table_storage)) = parse_extref_string_table(ctx, payload)?
+            else {
                 continue;
             };
             for (relative, value) in
                 ctx.admit_iter(strings, "project NX external reference strings")?
             {
-                ctx.push_vec(
+                ctx.push_scoped_vec(
+                    &mut storage,
                     &mut out,
                     (entry, relative, value),
                     "nx external reference strings",
                 )?;
             }
         }
-        Ok(out)
+        Ok((out, storage))
     }
 
     /// Decode indexed EXTREFSTREAM record prefixes and sorted handle lanes.
@@ -968,16 +971,20 @@ fn locate_extref_string_table(
     Ok(None)
 }
 
-type ExtrefStringTable = (usize, Vec<(usize, String)>);
+type ExternalReferencePaths<'ctx> = (Vec<String>, ScopedReservation<'ctx>);
+type ExternalReferenceStrings<'a, 'ctx> =
+    (Vec<(&'a DirEntry, usize, &'a str)>, ScopedReservation<'ctx>);
+type ExtrefStringTable<'bytes, 'ctx> =
+    ((usize, Vec<(usize, &'bytes str)>), ScopedReservation<'ctx>);
 
-fn parse_extref_string_table(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<Option<ExtrefStringTable>, CodecError> {
+fn parse_extref_string_table<'bytes, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    payload: &'bytes [u8],
+) -> Result<Option<ExtrefStringTable<'bytes, 'ctx>>, CodecError> {
     let Some((marker, count, start)) = locate_extref_string_table(ctx, payload)? else {
         return Ok(None);
     };
-    let mut out = ctx.collection_vec(count, "nx external reference string table")?;
+    let (mut out, storage) = ctx.temporary_vec(count, "nx external reference string table")?;
     let mut pos = start;
     let mut visits = 0..count;
     while ctx
@@ -999,11 +1006,10 @@ fn parse_extref_string_table(
         let Ok(value) = ctx.validate_utf8(raw, "read NX external reference UTF-8")? else {
             return Ok(None);
         };
-        let copy = ctx.copy_retained_text(value, "nx external reference string")?;
-        out.push((string_offset, copy));
+        out.push((string_offset, value));
         pos = end;
     }
-    Ok(Some((marker, out)))
+    Ok(Some(((marker, out), storage)))
 }
 
 fn parse_extref_records(
@@ -1304,6 +1310,9 @@ pub(crate) enum FramedSectionCache<'a> {
         layouts: Vec<(usize, crate::om::cache::SectionLayout)>,
     },
 }
+
+/// Reader slots are scratch; each section's shared children keep their own admission.
+type SectionReaders<'a, 'ctx, T> = (Vec<(EntryRef<'a>, T)>, ScopedReservation<'ctx>);
 
 type FramedSections<'a> = Vec<(usize, crate::om::Section<'a>)>;
 type FramedSectionLayouts = Vec<(usize, crate::om::cache::SectionLayout)>;
