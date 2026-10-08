@@ -94,16 +94,20 @@ fn linked_feature_lookup_propagates_scan_refusal() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits, Some("creo linked model feature lookup"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_work_units = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        Some("creo linked model feature lookup"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
 
-    let target =
-        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#2").expect("feature identity");
-    unique_model_feature_index(&ctx, &ir, &target).map(|_| ())
-            });
+            let target = cadmpeg_ir::features::FeatureId::mint("creo:model:feature#2")
+                .expect("feature identity");
+            unique_model_feature_index(&ctx, &ir, &target).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
 
     let target =
@@ -161,15 +165,19 @@ fn history_link_refuses_dependency_vector_before_growth() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo sketch history dependencies"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let mut ir = ir.clone();
-let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo sketch history dependencies"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let mut ir = ir.clone();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
 
-    link_feature_sketch_history(&ctx, &scan, &mut ir).map(|_| ())
-            });
+            link_feature_sketch_history(&ctx, &scan, &mut ir).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
 
     let error = link_feature_sketch_history(&ctx, &scan, &mut ir)
@@ -260,21 +268,26 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits, Some("creo generated surface feature tables"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_work_units = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    section_entity_is_generated_profile(
-        &ctx,
-        true,
-        Some(7),
-        11,
-        &[crate::surface::SurfaceKind::Plane],
-        std::slice::from_ref(&table),
-        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
-    ).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        Some("creo generated surface feature tables"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            section_entity_is_generated_profile(
+                &ctx,
+                true,
+                Some(7),
+                11,
+                &[crate::surface::SurfaceKind::Plane],
+                std::slice::from_ref(&table),
+                &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = section_entity_is_generated_profile(
         &ctx,
@@ -332,7 +345,12 @@ fn blind_generated_profile_kind_gate_stays_lazy() {
     assert!(!crate::test_support::assert_work_boundaries(
         &["creo generated profile rowless tables"],
         |ctx| section_entity_is_generated_profile(
-            ctx, true, Some(7), 11, &plane, &tables,
+            ctx,
+            true,
+            Some(7),
+            11,
+            &plane,
+            &tables,
             &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         ),
     ));
@@ -468,16 +486,20 @@ fn ordered_binding_fixture() -> (
 fn ordered_binding_limit_error(operation: &'static str) {
     let (table, order, rows) = ordered_binding_fixture();
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::CollectionItems, operation,
-        |ctx| { ordered_family_surface_bindings_for_feature(
-        ctx,
-        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
-        17,
-        &[table.clone()],
-        &order,
-        [9],
-        crate::surface::SurfaceKind::TorusOrSphere,
-    ) },
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            ordered_family_surface_bindings_for_feature(
+                ctx,
+                &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+                17,
+                &[table.clone()],
+                &order,
+                [9],
+                crate::surface::SurfaceKind::TorusOrSphere,
+            )
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -539,14 +561,17 @@ fn profile_segment_ids_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo profile segment ID nodes"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    profile_segment_ids(&ctx, 2, &[&segment], &profiles).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo profile segment ID nodes"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            profile_segment_ids(&ctx, 2, &[&segment], &profiles).map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = profile_segment_ids(&ctx, 2, &[&segment], &profiles)
@@ -574,16 +599,23 @@ fn transformed_surface_kind_walks_bases_and_preserves_family() {
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
         cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-    ).expect("plane fixture");
+    )
+    .expect("plane fixture");
     let mut geometry = cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane);
     for _ in 0..3 {
         geometry = cadmpeg_ir::geometry::SolvedSurfaceGeometry::Transformed(
             cadmpeg_ir::geometry::PlacedSurface::try_new(
-                Box::new(geometry), cadmpeg_ir::transform::Transform::identity(),
-            ).expect("placed plane fixture"),
+                Box::new(geometry),
+                cadmpeg_ir::transform::Transform::identity(),
+            )
+            .expect("placed plane fixture"),
         );
     }
     let geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(geometry);
-    assert_eq!(crate::test_support::assert_work_boundaries(&["creo transformed surface bases"],
-        |ctx| super::surface_kind_for_geometry(ctx, &geometry)), Some(crate::surface::SurfaceKind::Plane));
+    assert_eq!(
+        crate::test_support::assert_work_boundaries(&["creo transformed surface bases"], |ctx| {
+            super::surface_kind_for_geometry(ctx, &geometry)
+        }),
+        Some(crate::surface::SurfaceKind::Plane)
+    );
 }

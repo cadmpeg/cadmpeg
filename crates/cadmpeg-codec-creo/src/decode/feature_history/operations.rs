@@ -13,16 +13,32 @@ pub(super) struct OperationRows<'scan, 'ctx> {
 }
 
 impl<'scan, 'ctx> OperationRows<'scan, 'ctx> {
-    pub(super) fn new(ctx: &'ctx DecodeContext<'_>, operations: &'scan [FeatureOperation]) -> Result<Self, CodecError> {
+    pub(super) fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        operations: &'scan [FeatureOperation],
+    ) -> Result<Self, CodecError> {
         let mut storage = ctx.reserve_scoped(0, "creo current operation index")?;
         let mut rows = HashMap::new();
         for operation in ctx.admit_iter(operations, "creo current operation rows")? {
-            match storage.with_storage(|| ctx.entry_hash_map(&mut rows, operation.feature_id, "creo current operation index nodes"))? {
-                std::collections::hash_map::Entry::Vacant(entry) => { entry.insert(Some(operation)); }
-                std::collections::hash_map::Entry::Occupied(mut entry) => { entry.insert(None); }
+            match storage.with_storage(|| {
+                ctx.entry_hash_map(
+                    &mut rows,
+                    operation.feature_id,
+                    "creo current operation index nodes",
+                )
+            })? {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(operation));
+                }
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    entry.insert(None);
+                }
             }
         }
-        Ok(Self { rows, _storage: storage })
+        Ok(Self {
+            rows,
+            _storage: storage,
+        })
     }
 
     pub(super) fn get(&self, feature_id: u32) -> Option<&'scan FeatureOperation> {
@@ -30,21 +46,38 @@ impl<'scan, 'ctx> OperationRows<'scan, 'ctx> {
     }
 }
 
-pub(super) fn feature_recipe(ctx: &DecodeContext<'_>, scan: &ContainerScan, feature_id: u32) -> Result<Option<FeatureRecipe>, CodecError> {
-    Ok(crate::decode::uniqueness::exactly_one_by(ctx, &scan.features.operations,
-        |operation| Ok(operation.feature_id == feature_id), "creo current feature operation lookup")?
-        .and_then(|operation| operation.recipe.resolved()))
+pub(super) fn feature_recipe(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Result<Option<FeatureRecipe>, CodecError> {
+    Ok(crate::decode::uniqueness::exactly_one_by(
+        ctx,
+        &scan.features.operations,
+        |operation| Ok(operation.feature_id == feature_id),
+        "creo current feature operation lookup",
+    )?
+    .and_then(|operation| operation.recipe.resolved()))
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::{feature_recipe, OperationRows};
-    use crate::feature::operations::{FeatureOperation, FeatureRecipe, OperationKind, OperationName};
+    use crate::feature::operations::{
+        FeatureOperation, FeatureRecipe, OperationKind, OperationName,
+    };
 
     fn operation(feature_id: u32, recipe: FeatureRecipe) -> FeatureOperation {
-        FeatureOperation { feature_id, kind: OperationKind::Native, name: OperationName::Derived,
-            recipe: Some(recipe).into(), display_state_conflict: false, depdb: None, offset: 0, state_offset: 0 }
+        FeatureOperation {
+            feature_id,
+            kind: OperationKind::Native,
+            name: OperationName::Derived,
+            recipe: Some(recipe).into(),
+            display_state_conflict: false,
+            depdb: None,
+            offset: 0,
+            state_offset: 0,
+        }
     }
 
     #[test]
@@ -59,16 +92,29 @@ mod tests {
             let rows = OperationRows::new(ctx, &scan.features.operations)?;
             assert!(rows.get(7).is_none());
             assert!(rows.get(8).is_none());
-            assert!(std::ptr::eq(rows.get(9).expect("unique operation"), &scan.features.operations[1]));
+            assert!(std::ptr::eq(
+                rows.get(9).expect("unique operation"),
+                &scan.features.operations[1]
+            ));
             assert_eq!(feature_recipe(ctx, &scan, 7)?, None);
-            assert_eq!(feature_recipe(ctx, &scan, 9)?, Some(FeatureRecipe::CutExtrude));
+            assert_eq!(
+                feature_recipe(ctx, &scan, 9)?,
+                Some(FeatureRecipe::CutExtrude)
+            );
             Ok::<_, cadmpeg_core::CodecError>(())
-        }).expect("service current operation queries");
-        let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            "creo current operation index nodes", |ctx| {
+        })
+        .expect("service current operation queries");
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "creo current operation index nodes",
+            |ctx| {
                 let rows = OperationRows::new(ctx, &scan.features.operations)?;
                 Ok::<_, cadmpeg_core::CodecError>(rows.get(9).and_then(|row| row.recipe.resolved()))
-            });
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource) if resource.operation == "creo current operation index nodes"));
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource) if resource.operation == "creo current operation index nodes")
+        );
     }
 }

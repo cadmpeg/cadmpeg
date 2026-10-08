@@ -1,20 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{bodies_containing_edges, CadIr, BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, Body, BodyKind, Coedge, Face, IrLoop, Region, Sense, Shell, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use super::{
+    bodies_containing_edges, Body, BodyId, BodyKind, CadIr, Coedge, CoedgeId, DecodeArena,
+    DecodeContext, DecodePolicy, EdgeId, Face, FaceId, IrLoop, LoopId, Region, RegionId,
+    ResourceDimension, Sense, Shell, ShellId, SurfaceId,
+};
 
 #[test]
 fn selected_edge_refuses_before_btree_node() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo selected edge nodes"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let edge = EdgeId::mint("creo:test:edge#1").expect("identity grammar");
-    bodies_containing_edges(&ctx, &CadIr::empty(), &[edge]).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo selected edge nodes"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let edge = EdgeId::mint("creo:test:edge#1").expect("identity grammar");
+            bodies_containing_edges(&ctx, &CadIr::empty(), &[edge]).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let edge = EdgeId::mint("creo:test:edge#1").expect("identity grammar");
     let error = bodies_containing_edges(&ctx, &CadIr::empty(), &[edge])
@@ -95,14 +103,18 @@ fn selected_shell_refuses_before_btree_node() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo selected shell nodes"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let edge = edge.clone();
-let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    bodies_containing_edges(&ctx, &ir, &[edge]).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo selected shell nodes"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let edge = edge.clone();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            bodies_containing_edges(&ctx, &ir, &[edge]).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = bodies_containing_edges(&ctx, &ir, &[edge])
         .expect_err("selected edge and shell need separate nodes");
@@ -190,7 +202,12 @@ fn selected_wire_shell_membership_short_circuits_after_first_match() {
             let result = bodies_containing_edges(ctx, &ir, std::slice::from_ref(&selected));
             if let Some(resource) = ctx.resource_refusal() {
                 if resource.operation == "creo selected shell wire edge lookup" {
-                    named_needs.borrow_mut().insert(resource.used.checked_add(resource.additional).expect("work need"));
+                    named_needs.borrow_mut().insert(
+                        resource
+                            .used
+                            .checked_add(resource.additional)
+                            .expect("work need"),
+                    );
                 }
             }
             result
@@ -202,10 +219,7 @@ fn selected_wire_shell_membership_short_circuits_after_first_match() {
         named_refusals, 1,
         "work route reaches one wire membership query"
     );
-    assert_eq!(
-        bounded_result,
-        vec![body.clone()]
-    );
+    assert_eq!(bounded_result, vec![body.clone()]);
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             bodies_containing_edges(ctx, &ir, std::slice::from_ref(&selected))
@@ -221,14 +235,18 @@ fn selected_body_refuses_before_output_row() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo bodies containing selected edges"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let edge = edge.clone();
-let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    bodies_containing_edges(&ctx, &ir, &[edge]).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo bodies containing selected edges"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let edge = edge.clone();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            bodies_containing_edges(&ctx, &ir, &[edge]).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = bodies_containing_edges(&ctx, &ir, &[edge])
         .expect_err("body row exceeds the two node allowance");
@@ -425,4 +443,3 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         .is_empty()
     );
 }
-

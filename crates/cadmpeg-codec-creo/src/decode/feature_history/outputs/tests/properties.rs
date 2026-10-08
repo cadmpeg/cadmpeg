@@ -1,33 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{insert_feature_parameter, insert_feature_source_property, replace_feature_parameter, BTreeMap, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use super::{
+    insert_feature_parameter, insert_feature_source_property, replace_feature_parameter, BTreeMap,
+    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 
 #[test]
 fn feature_parameter_refuses_before_btree_node() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo feature parameter nodes"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let mut text_storage = ctx
-        .reserve_scoped(0, "creo feature parameter text")
-        .expect("parameter text lease");
-    let mut node_storage = ctx
-        .reserve_scoped(0, "creo feature parameter nodes")
-        .expect("parameter node lease");
-    let mut parameters = BTreeMap::new();
-    insert_feature_parameter(
-        &ctx,
-        &mut text_storage,
-        &mut node_storage,
-        &mut parameters,
-        "choice.value",
-        "x",
-    ).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo feature parameter nodes"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let mut text_storage = ctx
+                .reserve_scoped(0, "creo feature parameter text")
+                .expect("parameter text lease");
+            let mut node_storage = ctx
+                .reserve_scoped(0, "creo feature parameter nodes")
+                .expect("parameter node lease");
+            let mut parameters = BTreeMap::new();
+            insert_feature_parameter(
+                &ctx,
+                &mut text_storage,
+                &mut node_storage,
+                &mut parameters,
+                "choice.value",
+                "x",
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let mut text_storage = ctx
         .reserve_scoped(0, "creo feature parameter text")
@@ -57,27 +65,32 @@ fn feature_parameter_staging_node_refuses_materialized_storage() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo feature parameter nodes"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_materialized_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let mut text_storage = ctx
-        .reserve_scoped(0, "creo feature parameter text")
-        .expect("parameter text lease");
-    let mut node_storage = ctx
-        .reserve_scoped(0, "creo feature parameter nodes")
-        .expect("parameter node lease");
-    let mut parameters = BTreeMap::new();
-    insert_feature_parameter(
-        &ctx,
-        &mut text_storage,
-        &mut node_storage,
-        &mut parameters,
-        "choice.value",
-        "x",
-    ).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        Some("creo feature parameter nodes"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let mut text_storage = ctx
+                .reserve_scoped(0, "creo feature parameter text")
+                .expect("parameter text lease");
+            let mut node_storage = ctx
+                .reserve_scoped(0, "creo feature parameter nodes")
+                .expect("parameter node lease");
+            let mut parameters = BTreeMap::new();
+            insert_feature_parameter(
+                &ctx,
+                &mut text_storage,
+                &mut node_storage,
+                &mut parameters,
+                "choice.value",
+                "x",
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let mut text_storage = ctx
         .reserve_scoped(0, "creo feature parameter text")
@@ -108,27 +121,32 @@ fn feature_parameter_refuses_before_staging_value() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo feature parameter value"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_materialized_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let mut text_storage = ctx
-        .reserve_scoped(0, "creo feature parameter text")
-        .expect("parameter text lease");
-    let mut node_storage = ctx
-        .reserve_scoped(0, "creo feature parameter nodes")
-        .expect("parameter node lease");
-    let mut parameters = BTreeMap::new();
-    insert_feature_parameter(
-        &ctx,
-        &mut text_storage,
-        &mut node_storage,
-        &mut parameters,
-        "choice.value",
-        "x",
-    ).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        Some("creo feature parameter value"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let mut text_storage = ctx
+                .reserve_scoped(0, "creo feature parameter text")
+                .expect("parameter text lease");
+            let mut node_storage = ctx
+                .reserve_scoped(0, "creo feature parameter nodes")
+                .expect("parameter node lease");
+            let mut parameters = BTreeMap::new();
+            insert_feature_parameter(
+                &ctx,
+                &mut text_storage,
+                &mut node_storage,
+                &mut parameters,
+                "choice.value",
+                "x",
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let mut text_storage = ctx
         .reserve_scoped(0, "creo feature parameter text")
@@ -158,27 +176,32 @@ fn feature_parameter_refuses_before_scoped_key_candidate() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo feature parameter key candidate"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_materialized_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let mut text_storage = ctx
-        .reserve_scoped(0, "creo feature parameter text")
-        .expect("parameter text lease");
-    let mut node_storage = ctx
-        .reserve_scoped(0, "creo feature parameter nodes")
-        .expect("parameter node lease");
-    let mut parameters = BTreeMap::new();
-    insert_feature_parameter(
-        &ctx,
-        &mut text_storage,
-        &mut node_storage,
-        &mut parameters,
-        "choice.value",
-        "x",
-    ).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        Some("creo feature parameter key candidate"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let mut text_storage = ctx
+                .reserve_scoped(0, "creo feature parameter text")
+                .expect("parameter text lease");
+            let mut node_storage = ctx
+                .reserve_scoped(0, "creo feature parameter nodes")
+                .expect("parameter node lease");
+            let mut parameters = BTreeMap::new();
+            insert_feature_parameter(
+                &ctx,
+                &mut text_storage,
+                &mut node_storage,
+                &mut parameters,
+                "choice.value",
+                "x",
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let mut text_storage = ctx
         .reserve_scoped(0, "creo feature parameter text")
@@ -208,30 +231,33 @@ fn feature_parameter_native_text_transfer_refuses_retained_storage() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo feature parameter text"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let mut text_storage = ctx
-        .reserve_scoped(0, "creo feature parameter text")
-        .expect("parameter text lease");
-    let mut node_storage = ctx
-        .reserve_scoped(0, "creo feature parameter nodes")
-        .expect("parameter node lease");
-    let mut parameters = BTreeMap::new();
-    insert_feature_parameter(
-        &ctx,
-        &mut text_storage,
-        &mut node_storage,
-        &mut parameters,
-        "choice.value",
-        "x",
-    )
-    .expect("staging text fits materialized storage");
-    text_storage
-        .commit().map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo feature parameter text"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let mut text_storage = ctx
+                .reserve_scoped(0, "creo feature parameter text")
+                .expect("parameter text lease");
+            let mut node_storage = ctx
+                .reserve_scoped(0, "creo feature parameter nodes")
+                .expect("parameter node lease");
+            let mut parameters = BTreeMap::new();
+            insert_feature_parameter(
+                &ctx,
+                &mut text_storage,
+                &mut node_storage,
+                &mut parameters,
+                "choice.value",
+                "x",
+            )
+            .expect("staging text fits materialized storage");
+            text_storage.commit().map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let mut text_storage = ctx
         .reserve_scoped(0, "creo feature parameter text")
@@ -364,24 +390,28 @@ fn feature_source_property_refuses_before_btree_node() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo feature source property nodes"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let mut node_storage = ctx
-        .reserve_scoped(0, "creo feature source property nodes")
-        .expect("source property node lease");
-    let mut properties = BTreeMap::new();
-    insert_feature_source_property(
-        &ctx,
-        &mut node_storage,
-        &mut properties,
-        "recipe",
-        "Extrude",
-    ).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo feature source property nodes"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            let mut node_storage = ctx
+                .reserve_scoped(0, "creo feature source property nodes")
+                .expect("source property node lease");
+            let mut properties = BTreeMap::new();
+            insert_feature_source_property(
+                &ctx,
+                &mut node_storage,
+                &mut properties,
+                "recipe",
+                "Extrude",
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut node_storage = ctx
@@ -409,24 +439,28 @@ fn feature_source_property_staging_node_refuses_materialized_storage() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo feature source property nodes"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_materialized_bytes = cap;
-                let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let mut node_storage = ctx
-        .reserve_scoped(0, "creo feature source property nodes")
-        .expect("source property node lease");
-    let mut properties = BTreeMap::new();
-    insert_feature_source_property(
-        &ctx,
-        &mut node_storage,
-        &mut properties,
-        "recipe",
-        "Extrude",
-    ).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        Some("creo feature source property nodes"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            let mut node_storage = ctx
+                .reserve_scoped(0, "creo feature source property nodes")
+                .expect("source property node lease");
+            let mut properties = BTreeMap::new();
+            insert_feature_source_property(
+                &ctx,
+                &mut node_storage,
+                &mut properties,
+                "recipe",
+                "Extrude",
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut node_storage = ctx
@@ -453,24 +487,28 @@ fn feature_source_property_refuses_before_key_copy() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo feature source property key"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let mut node_storage = ctx
-        .reserve_scoped(0, "creo feature source property nodes")
-        .expect("source property node lease");
-    let mut properties = BTreeMap::new();
-    insert_feature_source_property(
-        &ctx,
-        &mut node_storage,
-        &mut properties,
-        "recipe",
-        "Extrude",
-    ).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo feature source property key"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            let mut node_storage = ctx
+                .reserve_scoped(0, "creo feature source property nodes")
+                .expect("source property node lease");
+            let mut properties = BTreeMap::new();
+            insert_feature_source_property(
+                &ctx,
+                &mut node_storage,
+                &mut properties,
+                "recipe",
+                "Extrude",
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut node_storage = ctx
@@ -497,24 +535,28 @@ fn feature_source_property_refuses_before_value_copy() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo feature source property value"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let mut node_storage = ctx
-        .reserve_scoped(0, "creo feature source property nodes")
-        .expect("source property node lease");
-    let mut properties = BTreeMap::new();
-    insert_feature_source_property(
-        &ctx,
-        &mut node_storage,
-        &mut properties,
-        "recipe",
-        "Extrude",
-    ).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo feature source property value"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            let mut node_storage = ctx
+                .reserve_scoped(0, "creo feature source property nodes")
+                .expect("source property node lease");
+            let mut properties = BTreeMap::new();
+            insert_feature_source_property(
+                &ctx,
+                &mut node_storage,
+                &mut properties,
+                "recipe",
+                "Extrude",
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut node_storage = ctx
@@ -563,29 +605,35 @@ fn feature_source_property_named_output_node_remains_retained() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("named entry map nodes"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let mut node_storage = ctx
-        .reserve_scoped(0, "creo feature source property nodes")
-        .expect("source property node lease");
-    let mut properties = BTreeMap::new();
-    insert_feature_source_property(
-        &ctx,
-        &mut node_storage,
-        &mut properties,
-        "recipe",
-        "Extrude",
-    )
-    ?;
-    cadmpeg_core::text::named_entries_for_decode(&ctx, "feature", properties).map(|_| ()).map_err(|error| match error {
-        cadmpeg_core::text::NamedEntryError::ResourceRefusal(resource) => cadmpeg_core::CodecError::ResourceLimit(resource),
-        error => panic!("unexpected named entry refusal: {error:?}"),
-    })
-            });
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("named entry map nodes"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            let mut node_storage = ctx
+                .reserve_scoped(0, "creo feature source property nodes")
+                .expect("source property node lease");
+            let mut properties = BTreeMap::new();
+            insert_feature_source_property(
+                &ctx,
+                &mut node_storage,
+                &mut properties,
+                "recipe",
+                "Extrude",
+            )?;
+            cadmpeg_core::text::named_entries_for_decode(&ctx, "feature", properties)
+                .map(|_| ())
+                .map_err(|error| match error {
+                    cadmpeg_core::text::NamedEntryError::ResourceRefusal(resource) => {
+                        cadmpeg_core::CodecError::ResourceLimit(resource)
+                    }
+                    error => panic!("unexpected named entry refusal: {error:?}"),
+                })
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut node_storage = ctx

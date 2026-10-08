@@ -41,16 +41,29 @@ pub(in super::super) fn resolved_revolution_axis(
     let points = scratch.with_storage(|| resolved_section_points(ctx, definition))?;
     let mut axis = None;
     let mut rows = segments.rows.as_slice().iter();
-    while let Some(row) = ctx.next_charged(&mut rows, "creo revolution axis section segment rows")? {
+    while let Some(row) =
+        ctx.next_charged(&mut rows, "creo revolution axis section segment rows")?
+    {
         let crate::feature::segment_rows::SegmentRow::Ordinary(segment) = row else {
             continue;
         };
-        if !matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Line(_)) {
+        if !matches!(
+            segment.kind,
+            crate::feature::definitions::FeatureSegmentKind::Line(_)
+        ) {
             continue;
         }
         let (Some(start), Some(end)) = (
-            ctx.get_btree_map(&points, &segment.point_ids()[0], "creo revolution axis start point")?,
-            ctx.get_btree_map(&points, &segment.point_ids()[1], "creo revolution axis end point")?,
+            ctx.get_btree_map(
+                &points,
+                &segment.point_ids()[0],
+                "creo revolution axis start point",
+            )?,
+            ctx.get_btree_map(
+                &points,
+                &segment.point_ids()[1],
+                "creo revolution axis end point",
+            )?,
         ) else {
             continue;
         };
@@ -68,7 +81,14 @@ pub(in super::super) fn resolved_revolution_axis(
         ) else {
             continue;
         };
-        if axis.replace(RevolutionAxis { origin, direction, reference: None }).is_some() {
+        if axis
+            .replace(RevolutionAxis {
+                origin,
+                direction,
+                reference: None,
+            })
+            .is_some()
+        {
             return Ok(None);
         }
     }
@@ -102,41 +122,69 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     let mut sphere_centers = Vec::new();
     let mut saw_row = false;
     while let Some(row) = ctx.next_charged(&mut rows, "creo full-turn revolution surface rows")? {
-        if row.feature_id != feature_id { continue; }
+        if row.feature_id != feature_id {
+            continue;
+        }
         saw_row = true;
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
             return Ok(None);
         }
         let Some(surface) = crate::decode::uniqueness::exactly_one_by(
-            ctx, &ir.model.surfaces,
-            |surface| Ok(crate::identity::matches_numbered_identity(surface.id.as_str(), "creo:visibgeom:surface#", row.id)),
+            ctx,
+            &ir.model.surfaces,
+            |surface| {
+                Ok(crate::identity::matches_numbered_identity(
+                    surface.id.as_str(),
+                    "creo:visibgeom:surface#",
+                    row.id,
+                ))
+            },
             "creo full-turn model surfaces",
-        )? else {
+        )?
+        else {
             return Ok(None);
         };
         match source_carriers.surface_geometry(surface) {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin().get();
-                scratch.with_storage(|| ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes"))?;
+                scratch.with_storage(|| {
+                    ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes")
+                })?;
                 axes.push((origin, *cylinder_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = cone_surface.origin().get();
-                scratch.with_storage(|| ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes"))?;
+                scratch.with_storage(|| {
+                    ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes")
+                })?;
                 axes.push((origin, *cone_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let center = torus_surface.center().get();
-                scratch.with_storage(|| ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes"))?;
+                scratch.with_storage(|| {
+                    ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes")
+                })?;
                 axes.push((center, *torus_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                scratch.with_storage(|| ctx.reserve_vec(&mut plane_normals, 1, "creo full-turn revolution plane normals"))?;
+                scratch.with_storage(|| {
+                    ctx.reserve_vec(
+                        &mut plane_normals,
+                        1,
+                        "creo full-turn revolution plane normals",
+                    )
+                })?;
                 plane_normals.push(*plane_surface.frame().axis());
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let center = sphere_surface.center().get();
-                scratch.with_storage(|| ctx.reserve_vec(&mut sphere_centers, 1, "creo full-turn revolution sphere centers"))?;
+                scratch.with_storage(|| {
+                    ctx.reserve_vec(
+                        &mut sphere_centers,
+                        1,
+                        "creo full-turn revolution sphere centers",
+                    )
+                })?;
                 sphere_centers.push(center);
             }
             _ => return Ok(None),
@@ -159,7 +207,9 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     let first_origin = [first_origin.x, first_origin.y, first_origin.z];
     let axial = dot(first_origin, direction);
     let origin: [f64; 3] = std::array::from_fn(|axis| first_origin[axis] - axial * direction[axis]);
-    let scale = first_origin.iter().copied()
+    let scale = first_origin
+        .iter()
+        .copied()
         .chain(
             ctx.admit_iter(rest, "creo full-turn revolution axis scale rest")?
                 .flat_map(|(origin, _)| [origin.x, origin.y, origin.z]),
@@ -174,7 +224,9 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         .map(f64::abs)
         .fold(1.0, f64::max);
     let mut items = rest.iter();
-    while let Some((candidate_origin, candidate_direction)) = ctx.next_charged(&mut items, "creo full-turn revolution remaining axes")? {
+    while let Some((candidate_origin, candidate_direction)) =
+        ctx.next_charged(&mut items, "creo full-turn revolution remaining axes")?
+    {
         let candidate_direction = unit_length(*candidate_direction);
         if !matches!(
             ((dot(direction, candidate_direction).abs() - 1.0).abs())
@@ -197,7 +249,9 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         }
     }
     let mut normal_iter = plane_normals.iter();
-    while let Some(normal) = ctx.next_charged(&mut normal_iter, "creo full-turn revolution plane normals")? {
+    while let Some(normal) =
+        ctx.next_charged(&mut normal_iter, "creo full-turn revolution plane normals")?
+    {
         let normal = unit_length(*normal);
         if !matches!(
             ((dot(direction, normal).abs() - 1.0).abs()).partial_cmp(&(EPS_AXIS_ALIGNMENT)),
@@ -207,7 +261,9 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         }
     }
     let mut center_iter = sphere_centers.iter();
-    while let Some(center) = ctx.next_charged(&mut center_iter, "creo full-turn revolution sphere centers")? {
+    while let Some(center) =
+        ctx.next_charged(&mut center_iter, "creo full-turn revolution sphere centers")?
+    {
         let displacement = [
             center.x - origin[0],
             center.y - origin[1],
@@ -344,8 +400,19 @@ mod full_turn_carrier_allocation_tests {
         .expect("service profile admits carrier evidence")
         .is_some());
         let error = crate::test_support::last_refusal_at(
-            &[], ResourceDimension::CollectionItems, operation,
-            |ctx| full_turn_revolution_carrier_axis(ctx, &scan, &ir, &source_carriers, 7, Some(&extent)),
+            &[],
+            ResourceDimension::CollectionItems,
+            operation,
+            |ctx| {
+                full_turn_revolution_carrier_axis(
+                    ctx,
+                    &scan,
+                    &ir,
+                    &source_carriers,
+                    7,
+                    Some(&extent),
+                )
+            },
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -357,10 +424,7 @@ mod full_turn_carrier_allocation_tests {
 
     #[test]
     fn full_turn_carrier_axes_refuse_collection_limit() {
-        assert_limit(
-            ExtraCarrier::None,
-            "creo full-turn revolution carrier axes",
-        );
+        assert_limit(ExtraCarrier::None, "creo full-turn revolution carrier axes");
     }
 
     #[test]
@@ -414,8 +478,12 @@ pub(super) fn feature_revolution_axis_for_transfer(
         &scan.features.section_transforms,
         feature_id,
     )?;
-    let transform = crate::decode::uniqueness::exactly_one_by(ctx, &scan.features.section_transforms,
-        |transform| Ok(transform.feature_id == Some(feature_id)), "creo revolution feature transform lookup")?;
+    let transform = crate::decode::uniqueness::exactly_one_by(
+        ctx,
+        &scan.features.section_transforms,
+        |transform| Ok(transform.feature_id == Some(feature_id)),
+        "creo revolution feature transform lookup",
+    )?;
     let axis = match definition.zip(transform) {
         Some((definition, transform)) => revolution_axis_for_transfer(
             ctx,
@@ -441,12 +509,23 @@ pub(in super::super) fn section_profile_ref(
     native_ref: String,
 ) -> Result<ProfileRef, CodecError> {
     let native_scope = native_ref.strip_prefix("creo:featdefs:sketch#");
-    let matching_sketch = crate::decode::uniqueness::exactly_one_by(ctx, &ir.model.sketches, |sketch| {
-        match native_scope {
-            Some(scope) => ctx.equal(&sketch.id.as_str().strip_prefix("creo:model:sketch#"), &Some(scope), "creo section profile sketch identity comparison"),
-            None => ctx.equal(sketch.id.as_str(), native_ref.as_str(), "creo section profile sketch identity comparison"),
-        }
-    }, "creo section profile sketch lookup")?;
+    let matching_sketch = crate::decode::uniqueness::exactly_one_by(
+        ctx,
+        &ir.model.sketches,
+        |sketch| match native_scope {
+            Some(scope) => ctx.equal(
+                &sketch.id.as_str().strip_prefix("creo:model:sketch#"),
+                &Some(scope),
+                "creo section profile sketch identity comparison",
+            ),
+            None => ctx.equal(
+                sketch.id.as_str(),
+                native_ref.as_str(),
+                "creo section profile sketch identity comparison",
+            ),
+        },
+        "creo section profile sketch lookup",
+    )?;
     let Some(sketch) = matching_sketch else {
         return Ok(ProfileRef::Planar(PlanarProfileRef::Native(native_ref)));
     };
@@ -517,12 +596,19 @@ pub(in super::super) fn geometry_generator_features(
     let mut map_storage = ctx.reserve_scoped(0, "Creo generator map storage")?;
     let mut generators = BTreeMap::<u32, GeometryGeneratorFeature>::new();
     for row in ctx.admit_iter(&*scan.surfaces.rows, "creo generator surface rows")? {
-        if row.feature_id == 0 || operation_feature_ids.contains(&row.feature_id)
-            || row_feature_ids.contains(&row.feature_id) || datum_feature_ids.contains(&row.feature_id) {
+        if row.feature_id == 0
+            || operation_feature_ids.contains(&row.feature_id)
+            || row_feature_ids.contains(&row.feature_id)
+            || datum_feature_ids.contains(&row.feature_id)
+        {
             continue;
         }
         let generator = match map_storage.with_storage(|| {
-            ctx.entry_btree_map(&mut generators, row.feature_id, "creo generator feature map nodes")
+            ctx.entry_btree_map(
+                &mut generators,
+                row.feature_id,
+                "creo generator feature map nodes",
+            )
         })? {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -539,12 +625,19 @@ pub(in super::super) fn geometry_generator_features(
         generator.surface_ids.push(row.id);
     }
     for row in ctx.admit_iter(&scan.curves.topology_rows, "creo generator curve rows")? {
-        if row.feature_id == 0 || operation_feature_ids.contains(&row.feature_id)
-            || row_feature_ids.contains(&row.feature_id) || datum_feature_ids.contains(&row.feature_id) {
+        if row.feature_id == 0
+            || operation_feature_ids.contains(&row.feature_id)
+            || row_feature_ids.contains(&row.feature_id)
+            || datum_feature_ids.contains(&row.feature_id)
+        {
             continue;
         }
         let generator = match map_storage.with_storage(|| {
-            ctx.entry_btree_map(&mut generators, row.feature_id, "creo generator feature map nodes")
+            ctx.entry_btree_map(
+                &mut generators,
+                row.feature_id,
+                "creo generator feature map nodes",
+            )
         })? {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -609,7 +702,11 @@ pub(in super::super) fn model_feature_ids(
                 .map(|generator| generator.feature_id),
         )
     {
-        if ctx.contains_btree_set(&numeric_ids, &feature_id, "creo numeric feature identity lookup")? {
+        if ctx.contains_btree_set(
+            &numeric_ids,
+            &feature_id,
+            "creo numeric feature identity lookup",
+        )? {
             continue;
         }
         numeric_storage.with_storage(|| {
@@ -668,13 +765,17 @@ mod allocation_tests {
     fn generator_limit_error(model_ids: bool, operation: &'static str) {
         let scan = generator_scan();
         let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::CollectionItems, operation,
-        |ctx| { if model_ids {
-            model_feature_ids(ctx, &scan).map(|_| ())
-        } else {
-            geometry_generator_features(ctx, &scan).map(|_| ())
-        } },
-    );
+            &[],
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            |ctx| {
+                if model_ids {
+                    model_feature_ids(ctx, &scan).map(|_| ())
+                } else {
+                    geometry_generator_features(ctx, &scan).map(|_| ())
+                }
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
@@ -687,16 +788,18 @@ mod allocation_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some(operation), |cap| {
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some(operation),
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = policy;
                 policy.limits.max_collection_items = cap;
-                let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let mut ids = BTreeSet::new();
-        ctx
-            .insert_btree_set(&mut ids, 50, operation).map(|_| ())
-            });
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root is admitted");
+                let mut ids = BTreeSet::new();
+                ctx.insert_btree_set(&mut ids, 50, operation).map(|_| ())
+            },
+        );
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let mut ids = BTreeSet::new();
@@ -778,13 +881,18 @@ mod allocation_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo unresolved section profile identity"), |cap| {
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo unresolved section profile identity"),
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = policy;
                 policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        unresolved_feature_profile_ref(&ctx, 50, "creo unresolved section profile identity").map(|_| ())
-            });
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                unresolved_feature_profile_ref(&ctx, 50, "creo unresolved section profile identity")
+                    .map(|_| ())
+            },
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error =
             unresolved_feature_profile_ref(&ctx, 50, "creo unresolved section profile identity")
@@ -813,13 +921,18 @@ mod allocation_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo unresolved named profile identity"), |cap| {
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo unresolved named profile identity"),
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = policy;
                 policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        unresolved_feature_profile_ref(&ctx, 50, "creo unresolved named profile identity").map(|_| ())
-            });
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                unresolved_feature_profile_ref(&ctx, 50, "creo unresolved named profile identity")
+                    .map(|_| ())
+            },
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error =
             unresolved_feature_profile_ref(&ctx, 50, "creo unresolved named profile identity")

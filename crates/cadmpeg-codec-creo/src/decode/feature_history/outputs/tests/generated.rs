@@ -4,7 +4,11 @@ use cadmpeg_ir::features::{
     FaceSelection, Feature, FeatureDefinition, FeatureOperation, GeneratedEdgeRef, GeneratedFaceRef,
 };
 
-use super::{feature_output_bodies, generated_edge_output_bodies, generated_input_output_bodies, CadIr, BodyId, FaceId, LoopId, RegionId, ShellId, SurfaceId, Body, BodyKind, Face, Region, Sense, Shell, BTreeMap, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use super::{
+    feature_output_bodies, generated_edge_output_bodies, generated_input_output_bodies, BTreeMap,
+    Body, BodyId, BodyKind, CadIr, DecodeArena, DecodeContext, DecodePolicy, Face, FaceId, LoopId,
+    Region, RegionId, ResourceDimension, Sense, Shell, ShellId, SurfaceId,
+};
 
 #[test]
 fn generated_input_lookup_refuses_before_scoped_text() {
@@ -13,20 +17,18 @@ fn generated_input_lookup_refuses_before_scoped_text() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo generated input feature lookup"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_materialized_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let mut history = super::super::FeatureOutputHistory::new(&ctx, &ir)?;
-    generated_input_output_bodies(
-        &ctx,
-        &scan,
-        &ir,
-        40,
-        &mut history,
-    ).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        Some("creo generated input feature lookup"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let mut history = super::super::FeatureOutputHistory::new(&ctx, &ir)?;
+            generated_input_output_bodies(&ctx, &scan, &ir, 40, &mut history).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = generated_input_output_bodies(
         &ctx,
@@ -82,13 +84,17 @@ fn generated_surface_body_refuses_before_feature_output_row() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo feature output bodies"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    feature_output_bodies(&ctx, &scan, &ir, 10).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo feature output bodies"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            feature_output_bodies(&ctx, &scan, &ir, 10).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = feature_output_bodies(&ctx, &scan, &ir, 10)
         .expect_err("visited node and body row need two collection items");
@@ -122,20 +128,18 @@ fn generated_edge_body_refuses_before_merge_row() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo generated edge output bodies"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let mut history = super::super::FeatureOutputHistory::new(&ctx, &ir)?;
-    generated_edge_output_bodies(
-        &ctx,
-        &scan,
-        &ir,
-        &edges,
-        &mut history,
-    ).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo generated edge output bodies"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let mut history = super::super::FeatureOutputHistory::new(&ctx, &ir)?;
+            generated_edge_output_bodies(&ctx, &scan, &ir, &edges, &mut history).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = generated_edge_output_bodies(
         &ctx,
@@ -201,20 +205,18 @@ fn generated_input_body_refuses_before_merge_row() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo generated input output bodies"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let mut history = super::super::FeatureOutputHistory::new(&ctx, &ir)?;
-    generated_input_output_bodies(
-        &ctx,
-        &scan,
-        &ir,
-        10,
-        &mut history,
-    ).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo generated input output bodies"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let mut history = super::super::FeatureOutputHistory::new(&ctx, &ir)?;
+            generated_input_output_bodies(&ctx, &scan, &ir, 10, &mut history).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = generated_input_output_bodies(
         &ctx,
@@ -254,18 +256,32 @@ fn reconciled_output_refuses_before_update_row() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo reconciled output update rows"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let mut ir = ir.clone();
-let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    super::super::super::dependencies::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new()).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo reconciled output update rows"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let mut ir = ir.clone();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            super::super::super::dependencies::reconcile_feature_links(
+                &ctx,
+                &scan,
+                &mut ir,
+                &BTreeMap::new(),
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error =
-        super::super::super::dependencies::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new())
-            .expect_err("visiting node and update row need two collection items");
+    let error = super::super::super::dependencies::reconcile_feature_links(
+        &ctx,
+        &scan,
+        &mut ir,
+        &BTreeMap::new(),
+    )
+    .expect_err("visiting node and update row need two collection items");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -386,7 +402,12 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
     );
 
     crate::decode::with_test_decode_ctx(|ctx| {
-        super::super::super::dependencies::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
+        super::super::super::dependencies::reconcile_feature_links(
+            ctx,
+            &scan,
+            &mut ir,
+            &BTreeMap::new(),
+        )
     })
     .expect("the fixture feature links reconcile");
     assert_eq!(
@@ -671,4 +692,3 @@ fn generated_input_feature_scan_refuses_before_identity_comparison() {
     );
     assert!(outputs.is_empty());
 }
-
