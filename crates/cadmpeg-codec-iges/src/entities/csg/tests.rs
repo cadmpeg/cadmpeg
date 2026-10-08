@@ -653,3 +653,123 @@ fn csg_ordered_queries_preserve_work_refusals() {
         assert_csg_refusal(&selected, operation, ResourceDimension::WorkUnits);
     }
 }
+
+fn profile_proof_model() -> CadIr {
+    let mut ir = CadIr::empty();
+    for sequence in [1, 3, 5, 7] {
+        ir.model.curves.push(Curve {
+            id: CurveId::mint(format!("iges:model:curve#D{sequence}")).unwrap(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                ).unwrap(),
+            )),
+            source_object: None,
+        });
+    }
+    for (slot, position) in [Point3::new(1.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 0.0)]
+        .into_iter().enumerate()
+    {
+        let point = PointId::mint(format!("test:model:point#{slot}")).unwrap();
+        ir.model.points.push(Point::new(
+            point.clone(), cadmpeg_ir::features::FinitePoint3::new(position).unwrap(), None,
+        ));
+        ir.model.vertices.push(Vertex {
+            id: VertexId::mint(format!("test:model:vertex#{slot}")).unwrap(),
+            point,
+            tolerance: None,
+        });
+    }
+    for (slot, sequence, end) in [(0, 1, 0), (1, 3, 1), (2, 5, 0), (3, 5, 1)] {
+        let range = if end == 0 { std::f64::consts::TAU } else { std::f64::consts::PI };
+        ir.model.edges.push(Edge {
+            id: EdgeId::mint(format!("test:model:edge#{slot}")).unwrap(),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(CurveId::mint(format!("iges:model:curve#D{sequence}")).unwrap()),
+                Some([0.0, range]),
+            ).unwrap(),
+            start: VertexId::mint("test:model:vertex#0").unwrap(),
+            end: VertexId::mint(format!("test:model:vertex#{end}")).unwrap(),
+            tolerance: None,
+        });
+    }
+    ir
+}
+
+#[test]
+fn repeated_profile_closure_reuses_the_complete_source_proof() {
+    const REPEATS: u64 = 20_000;
+    let ir = profile_proof_model();
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let mut policy = DecodePolicy::service();
+    // One single-key cache comparison reads u32+u64 (12 bytes). The 4,096
+    // unit allowance covers one proof over two point/vertex searches and
+    // one B-tree node insertion for this four-curve, two-point fixture.
+    policy.limits.max_work_units = REPEATS * 12 + 4_096;
+    crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        let mut proofs = super::ProfileClosureProofs {
+            proven: std::collections::BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "iges solid profile closure proofs").unwrap(),
+        };
+        for _ in 0..REPEATS {
+            assert_eq!(proofs.closed(1, &index, &[&ir.model.edges[0]], EPS_PROFILE_CLOSURE, ctx)
+                .unwrap(), Some(true));
+        }
+    });
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut proofs = super::ProfileClosureProofs {
+            proven: std::collections::BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "iges solid profile closure proofs").unwrap(),
+        };
+        assert_eq!(proofs.closed(3, &index, &[&ir.model.edges[1]], EPS_PROFILE_CLOSURE, ctx)
+            .unwrap(), Some(false));
+        assert_eq!(proofs.closed(3, &index, &[&ir.model.edges[1]], 3.0, ctx)
+            .unwrap(), Some(true));
+        for _ in 0..2 {
+            assert_eq!(proofs.closed(5, &index, &[&ir.model.edges[2], &ir.model.edges[3]],
+                EPS_PROFILE_CLOSURE, ctx).unwrap(), None);
+            assert_eq!(proofs.closed(7, &index, &[], EPS_PROFILE_CLOSURE, ctx).unwrap(), None);
+        }
+        assert_eq!(proofs.proven.len(), 4);
+    });
+}
+
+#[test]
+fn profile_closure_proof_cache_preserves_refusal_boundaries() {
+    let ir = profile_proof_model();
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    for (dimension, operation) in [
+        (ResourceDimension::WorkUnits, "iges solid profile closure lookup"),
+        (ResourceDimension::CollectionItems, "iges solid profile closure proofs"),
+        (ResourceDimension::MaterializedBytes, "iges solid profile closure proofs"),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let mut proofs = super::ProfileClosureProofs {
+                proven: std::collections::BTreeMap::new(),
+                storage: ctx.reserve_scoped(0, "iges solid profile closure proofs")?,
+            };
+            let result = proofs.closed(1, &index, &[&ir.model.edges[0]], EPS_PROFILE_CLOSURE, &ctx)
+                .and_then(|_| proofs.closed(1, &index, &[&ir.model.edges[0]], EPS_PROFILE_CLOSURE, &ctx));
+            drop(proofs);
+            if let Err(CodecError::ResourceLimit(ref limit)) = result {
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual))
+                    if actual == *limit));
+            } else {
+                ctx.finish_session()?;
+            }
+            result
+        });
+    }
+}
