@@ -5,19 +5,19 @@ use super::{
     ANGULAR_TOLERANCE,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 
 #[test]
 fn analytic_arc_conversion_refuses_each_decode_lane() {
-    for (operation, cap, parabola) in [
-        ("iges analytic arc knots", 0, false),
-        ("iges analytic arc weighted poles", 6, false),
-        ("iges parabolic arc knots", 0, true),
-        ("iges parabolic arc poles", 6, true),
+    for (operation, parabola) in [
+        ("iges analytic arc knots", false),
+        ("iges analytic arc weighted poles", false),
+        ("iges parabolic arc knots", true),
+        ("iges parabolic arc poles", true),
     ] {
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
@@ -42,11 +42,8 @@ fn analytic_arc_conversion_refuses_each_decode_lane() {
                 &ctx,
             )
         };
-        assert!(
-            matches!(result, Err(CurveConversionError::Resource(CodecError::ResourceLimit(limit)))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == operation)
-        );
+        result.map_err(|error| match error { CurveConversionError::Resource(error) => error, other => panic!("unexpected conversion refusal: {other:?}") })
+        });
     }
 }
 

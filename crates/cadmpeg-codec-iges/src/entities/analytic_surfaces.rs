@@ -290,7 +290,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
     // The transform resolver requires sequence maps. Their storage is local to this projection.
     let mut transform_storage = ctx.reserve_scoped(0, "iges analytic-surface transform indexes")?;

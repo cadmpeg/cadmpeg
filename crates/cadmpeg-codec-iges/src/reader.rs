@@ -234,7 +234,7 @@ fn append_generic_losses(
     ctx: &DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
     directory: &[directory::DirectoryEntry],
-    projection: &entities::geometry::Projection,
+    projection: &entities::geometry::Projection<'_>,
     attributed: &mut BTreeSet<u32>,
     global_table: global::GlobalTable,
 ) -> Result<(), CodecError> {
@@ -339,7 +339,7 @@ fn annotate_representation(
 
 fn mark_quarantined_placements(
     ctx: &DecodeContext<'_>,
-    projection: &mut entities::geometry::Projection,
+    projection: &mut entities::geometry::Projection<'_>,
     directory: &[directory::DirectoryEntry],
     quarantined: &BTreeSet<u32>,
 ) -> Result<(), CodecError> {

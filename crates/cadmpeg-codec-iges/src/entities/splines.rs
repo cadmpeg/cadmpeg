@@ -161,7 +161,7 @@ fn add_edge(
     entry: &DirectoryEntry,
     nurbs: NurbsCurve,
     parameter_range: [FiniteReal; 2],
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<EdgeId>, CodecError> {
     let Some(parameter_range) =
@@ -255,7 +255,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<WireProjectionOutcome, CodecError> {
     // The transform resolver requires sequence maps. Their storage is local to this projection.
     let mut transform_storage = ctx.reserve_scoped(0, "iges splines transform indexes")?;
