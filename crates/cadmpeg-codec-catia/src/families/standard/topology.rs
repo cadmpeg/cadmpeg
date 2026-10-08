@@ -443,12 +443,12 @@ impl StandardTopologyDraft {
         let domains = storage.with_storage(|| {
             ctx.try_collect_vec(
                 ctx.admit_iter(&constrained, "catia standard vertex point domain entries")?
-                    .map(|domain| -> Result<HashSet<usize>, CodecError> {
-                        let mut points = HashSet::new();
+                    .map(|domain| -> Result<Vec<usize>, CodecError> {
+                        let mut points = Vec::new();
                         match domain {
                             Some(constrained) => {
                                 for &point in constrained.iter().flatten() {
-                                    ctx.insert_hash_set(
+                                    ctx.push_vec(
                                         &mut points,
                                         point,
                                         "catia standard vertex point domain entries",
@@ -460,7 +460,7 @@ impl StandardTopologyDraft {
                                     0..point_count,
                                     "catia standard vertex point domain entries",
                                 )? {
-                                    ctx.insert_hash_set(
+                                    ctx.push_vec(
                                         &mut points,
                                         point,
                                         "catia standard vertex point domain entries",

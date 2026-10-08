@@ -4,6 +4,7 @@
 //! state is solver scratch held in scoped storage for one call; a returned
 //! matching is charged to the caller's storage.
 
+use cadmpeg_core::decode::iter_source::IterSource;
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
@@ -13,7 +14,10 @@ pub(super) fn domains_have_distinct_matching<'a>(
     domains: impl IntoIterator<Item = &'a [usize]>,
     point_count: usize,
 ) -> Result<bool, CodecError> {
-    Ok(distinct_domain_matching_with_budget(ctx, domains, point_count, None, None)?.is_some())
+    let (mates, _storage) = ctx.with_scoped_storage("catia_match_scratch", || {
+        distinct_domain_mates(ctx, domains, point_count, None, None)
+    })?;
+    Ok(mates.is_some())
 }
 
 /// Charges one domain-point visit to the session and, when present, to the
@@ -527,7 +531,7 @@ pub(crate) fn unique_coordinate_bijection<D>(
     points: &[[f64; 3]],
 ) -> Result<Option<Vec<usize>>, CodecError>
 where
-    for<'d> &'d D: IntoIterator<Item = &'d usize>,
+    for<'d> &'d D: IterSource + IntoIterator<Item = &'d usize>,
 {
     if domains.len() != points.len() {
         return Ok(None);
@@ -580,7 +584,7 @@ fn unique_coordinate_classes<D>(
     points: &[[f64; 3]],
 ) -> Result<Option<CoordinateClasses>, CodecError>
 where
-    for<'d> &'d D: IntoIterator<Item = &'d usize>,
+    for<'d> &'d D: IterSource + IntoIterator<Item = &'d usize>,
 {
     let count = points.len();
     let mut point_classes = ctx.collection_vec(count, "catia_bijection_point_classes")?;
