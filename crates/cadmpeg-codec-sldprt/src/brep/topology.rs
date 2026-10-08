@@ -24,7 +24,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::topology::Sense;
 
@@ -492,6 +492,35 @@ pub(crate) struct Tables {
     points: BTreeMap<u16, Point>,
 }
 
+/// A scanned non-primary stream whose tables remain charged until merge.
+pub(super) struct MergeSource<'ctx> {
+    tables: Tables,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx> MergeSource<'ctx> {
+    pub(super) fn scan(
+        ctx: &'ctx DecodeContext<'_>,
+        scan: impl FnOnce() -> Result<Tables, CodecError>,
+    ) -> Result<Self, CodecError> {
+        let (tables, storage) =
+            ctx.with_scoped_storage("hold Parasolid topology merge source", scan)?;
+        Ok(Self { tables, storage })
+    }
+
+    pub(super) fn merge_into(
+        self,
+        ctx: &DecodeContext<'_>,
+        target: &mut Tables,
+        selected_bridge_attrs: Option<&BTreeSet<u16>>,
+    ) -> Result<(), CodecError> {
+        let Self { tables, storage } = self;
+        target.merge_deltas(ctx, tables, selected_bridge_attrs)?;
+        drop(storage);
+        Ok(())
+    }
+}
+
 impl Tables {
     pub(super) fn bridges(&self) -> &BTreeMap<u16, Bridge> {
         &self.bridges
@@ -611,7 +640,12 @@ impl Tables {
             if let Some(selected_bridge_attrs) = selected_bridge_attrs {
                 retain_selected_bridges(ctx, &mut deltas.bridges, selected_bridge_attrs)?;
             }
-            self.bridges = deltas.bridges;
+            merge_missing(
+                ctx,
+                &mut self.bridges,
+                deltas.bridges,
+                "merge Parasolid topology bridges",
+            )?;
         } else if let Some(selected_bridge_attrs) = selected_bridge_attrs {
             retain_selected_bridges(ctx, &mut deltas.bridges, selected_bridge_attrs)?;
             merge_missing(
@@ -1186,12 +1220,97 @@ fn scan_with_point_framing(
 mod tests {
     use super::{
         parse_bridge, parse_point, parse_vertex_use, patch_point, patch_point_values, scan,
-        scan_deltas_with_curve_attrs_excluding, scan_with_curve_attrs_excluding, EdgeReferences,
-        MAGIC,
+        scan_deltas_with_curve_attrs_excluding, scan_with_curve_attrs_excluding, Bridge,
+        EdgeReferences, MergeSource, Tables, MAGIC,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::topology::Sense;
     use std::collections::BTreeSet;
+
+    fn btree_node_storage_bound<K, V>() -> u64 {
+        let alignment = std::mem::align_of::<K>()
+            .max(std::mem::align_of::<V>())
+            .max(std::mem::align_of::<usize>());
+        let bytes = std::mem::size_of::<K>()
+            .checked_add(std::mem::size_of::<V>())
+            .and_then(|bytes| bytes.checked_mul(11))
+            .and_then(|bytes| {
+                16_usize
+                    .checked_mul(std::mem::size_of::<usize>())
+                    .and_then(|metadata| bytes.checked_add(metadata))
+            })
+            .and_then(|bytes| {
+                2_usize
+                    .checked_mul(alignment)
+                    .and_then(|padding| bytes.checked_add(padding))
+            })
+            .expect("bounded test node size");
+        u64::try_from(bytes).expect("bounded test node size")
+    }
+
+    #[test]
+    fn duplicate_stream_topology_tables_release_source_map_storage() {
+        let body = topology_bridge(10, 20);
+        let node_bytes = btree_node_storage_bound::<u16, Bridge>();
+        let cap = node_bytes.checked_mul(2).expect("two live bridge maps");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).expect("root");
+        let mut target_storage = ctx
+            .reserve_scoped(0, "hold test topology target")
+            .expect("target storage");
+        let mut target = target_storage
+            .with_storage(|| scan(&ctx, &body))
+            .expect("base table");
+
+        for _ in 0..32 {
+            let source = MergeSource::scan(&ctx, || scan(&ctx, &body))
+                .expect("source table fits beside target");
+            target_storage
+                .with_storage(|| source.merge_into(&ctx, &mut target, None))
+                .expect("duplicate bridges are ignored");
+        }
+
+        assert_eq!(target.bridges.len(), 1);
+        drop((target, target_storage));
+        ctx.finish_session().expect("all table storage released");
+    }
+
+    #[test]
+    fn empty_target_bridge_merge_recharges_destination_after_source_drop() {
+        let body = topology_bridge(10, 20);
+        let node_bytes = btree_node_storage_bound::<u16, Bridge>();
+        let cap = node_bytes.checked_mul(2).expect("source and destination maps");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).expect("root");
+        let mut target_storage = ctx
+            .reserve_scoped(0, "hold test topology target")
+            .expect("target storage");
+        let mut target = Tables::default();
+        let source = MergeSource::scan(&ctx, || scan(&ctx, &body)).expect("source table");
+
+        target_storage
+            .with_storage(|| source.merge_into(&ctx, &mut target, None))
+            .expect("empty target receives the bridge");
+        assert_eq!(target.bridges.len(), 1);
+
+        let destination_probe = ctx
+            .reserve_scoped(node_bytes, "verify destination table remains charged")
+            .expect("source charge released, destination charge retained");
+        assert!(matches!(
+            ctx.reserve_scoped(node_bytes, "verify destination table remains charged"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes
+                    && limit.used == cap
+                    && limit.additional == node_bytes
+        ));
+        drop((destination_probe, target, target_storage));
+    }
 
     #[test]
     fn topology_scan_refuses_collection_limit() {
