@@ -969,7 +969,6 @@ pub(crate) fn admit_btree_append<K: Ord, V>(
         longest = longest.max(key_len(key));
         ctx.admit_btree_node_storage::<K, V>(len, operation)?;
         ctx.charge_collection_items(1, operation)?;
-        ctx.charge_work(1, operation)?;
     }
     let work = left
         .len()
@@ -1111,13 +1110,11 @@ impl Annotations {
                         operation,
                     )?;
                     ctx.charge_collection_items(1, operation)?;
-                    ctx.charge_work(1, operation)?;
                     ctx.admit_btree_node_storage::<String, ExactnessNote>(
                         exactness_count,
                         operation,
                     )?;
                     ctx.charge_collection_items(1, operation)?;
-                    ctx.charge_work(1, operation)?;
                     provenance_count += 1;
                     exactness_count += 1;
                     Destination::Both {
@@ -1131,7 +1128,6 @@ impl Annotations {
                         operation,
                     )?;
                     ctx.charge_collection_items(1, operation)?;
-                    ctx.charge_work(1, operation)?;
                     provenance_count += 1;
                     Destination::Provenance(target)
                 }
@@ -1141,16 +1137,11 @@ impl Annotations {
                         operation,
                     )?;
                     ctx.charge_collection_items(1, operation)?;
-                    ctx.charge_work(1, operation)?;
                     exactness_count += 1;
                     Destination::Exactness(target)
                 }
                 (false, false) => continue,
             };
-            ctx.charge_work(
-                u64_from_index(std::mem::size_of::<(String, Destination)>()),
-                operation,
-            )?;
             destinations.push((id, destination));
         }
         let mut remapped = Self::default();

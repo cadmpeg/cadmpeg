@@ -566,7 +566,7 @@ impl SketchProfiles {
     pub fn retain_uses(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        mut keep: impl FnMut(&SketchEntityUse) -> bool,
+        mut keep: impl FnMut(&SketchEntityUse) -> Result<bool, cadmpeg_core::CodecError>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         const OPERATION: &str = "filter sketch profile uses";
         let count = ctx
@@ -579,7 +579,7 @@ impl SketchProfiles {
         let (mut decisions, _decision_storage) = ctx.temporary_vec(count, OPERATION)?;
         for profile in ctx.admit_iter(&self.0, OPERATION)? {
             for usage in ctx.admit_iter(profile, OPERATION)? {
-                decisions.push(keep(usage));
+                decisions.push(keep(usage)?);
             }
         }
         // Admit visits in both retention passes before changing any profile.

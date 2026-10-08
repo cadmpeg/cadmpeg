@@ -84,32 +84,9 @@ impl AttributeValue {
     pub fn vector(values: impl IntoIterator<Item = f64>) -> Option<Self> {
         values
             .into_iter()
-            .map(Self::vector_component)
+            .map(FiniteReal::new)
             .collect::<Option<Vec<_>>>()
             .map(Self::Vector)
-    }
-
-    fn vector_component(value: f64) -> Option<FiniteReal> {
-        FiniteReal::new(value)
-    }
-
-    /// Admit component visits and candidate storage; retain only a finite vector.
-    pub fn vector_for_decode(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        values: impl IntoIterator<Item = f64>,
-    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        const OPERATION: &str = "IR attribute vector components";
-        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-        let mut components = Vec::new();
-        let mut values = values.into_iter();
-        while let Some(value) = ctx.next_charged(&mut values, OPERATION)? {
-            let Some(value) = Self::vector_component(value) else {
-                return Ok(None);
-            };
-            ctx.push_scoped_vec(&mut storage, &mut components, value, OPERATION)?;
-        }
-        storage.commit()?;
-        Ok(Some(Self::Vector(components)))
     }
 }
 
@@ -134,67 +111,6 @@ mod tests {
     use super::AttributeTarget;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-
-    #[test]
-    fn attribute_vector_decode_preserves_values_and_releases_rejected_storage() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        for values in [[1.0, f64::NAN], [f64::INFINITY, 2.0]] {
-            assert_eq!(super::AttributeValue::vector(values), None);
-            assert_eq!(
-                super::AttributeValue::vector_for_decode(&ctx, values).unwrap(),
-                None
-            );
-        }
-        ctx.finish_session().unwrap();
-        let ctx = cadmpeg_test_support::service_decode_context();
-        for values in [vec![], vec![1.0, -2.0, 0.0]] {
-            assert_eq!(
-                super::AttributeValue::vector_for_decode(&ctx, values.clone()).unwrap(),
-                super::AttributeValue::vector(values)
-            );
-        }
-    }
-
-    #[test]
-    fn attribute_vector_decode_refuses_each_resource_dimension() {
-        for dimension in [
-            ResourceDimension::WorkUnits,
-            ResourceDimension::CollectionItems,
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::RetainedBytes,
-        ] {
-            cadmpeg_test_support::refusal::resource_limit_at(
-                dimension,
-                "IR attribute vector components",
-                |cap| {
-                    let arena = DecodeArena::new();
-                    let mut policy = DecodePolicy::service();
-                    match dimension {
-                        ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-                        ResourceDimension::CollectionItems => {
-                            policy.limits.max_collection_items = cap;
-                        }
-                        ResourceDimension::MaterializedBytes => {
-                            policy.limits.max_materialized_bytes = cap;
-                        }
-                        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-                        _ => unreachable!(),
-                    }
-                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                    let result = super::AttributeValue::vector_for_decode(&ctx, [1.0, 2.0]);
-                    if let Err(CodecError::ResourceLimit(limit)) = &result {
-                        assert!(
-                            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
-                        );
-                    }
-                    result
-                },
-            );
-        }
-    }
 
     #[test]
     fn attribute_target_copy_charges_only_owned_identity() {

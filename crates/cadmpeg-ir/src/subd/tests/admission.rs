@@ -287,6 +287,7 @@ fn subdivision_vertex_edit_refusals_are_atomic_and_release_candidates() {
             "copy SubD edit vertices",
             false,
         ),
+        (ResourceDimension::WorkUnits, "edit SubD vertices", false),
         (
             ResourceDimension::WorkUnits,
             "validate SubD vertex rows",
