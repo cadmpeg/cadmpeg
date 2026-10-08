@@ -713,3 +713,79 @@ fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() 
     assert_eq!(visited, 2);
     assert_eq!(validated.get(), 2);
 }
+
+#[test]
+fn rejected_complete_branch_retains_no_solution() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty fixture fits the input limit");
+    let budget = ctx.work_budget(10_000);
+    let reject = |_: &[(usize, [usize; 2])]| Ok(false);
+    let mut search = super::super::super::IncidenceComponentSearch {
+        ctx: &ctx,
+        choices: &[vec![[0, 1]]],
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: std::cell::RefCell::new(std::collections::HashMap::new()),
+        edge_faces: &[[0, 0]],
+        face_edges: &[vec![0]],
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true],
+        edges: &[0],
+        constraints: Vec::new(),
+        assignment: vec![Some([0, 1])],
+        degrees: Vec::new(),
+        solutions: Vec::new(),
+        solution_filter: Some(&reject),
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: std::collections::HashMap::new(),
+        budget: &budget,
+        degree_support_budget: &budget,
+        coordinate_propagation_budget: &budget,
+        boundary_propagation_budget: &budget,
+        state: super::super::super::IncidenceSearchState::Open,
+        search_storage: std::cell::RefCell::new(
+            ctx.reserve_scoped(0, "catia rejected branch")
+                .expect("empty storage"),
+        ),
+    };
+    search
+        .search_edge_state(&[], None, &[])
+        .expect("rejected solution stays temporary");
+    assert!(search.solutions.is_empty());
+    assert!(matches!(
+        search.state,
+        super::super::super::IncidenceSearchState::Open
+    ));
+}
+
+#[test]
+fn unordered_boundary_queries_retain_no_cycle_outputs() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture input");
+    let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
+    let points = [[0, 1], [1, 2], [0, 2]];
+    assert!(
+        super::super::super::boundary_domains_close(&ctx, Some(&domains), &points)
+            .expect("temporary cycles")
+    );
+    assert!(super::super::super::component_incidence_faces_viable(
+        &ctx,
+        &[0],
+        &points.map(Some),
+        &points.map(|pair| vec![pair]),
+        &[vec![0, 1, 2]],
+        Some(&domains),
+        3,
+    )
+    .expect("temporary component cycles"));
+}

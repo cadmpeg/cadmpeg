@@ -4564,13 +4564,18 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             ctx.next_charged(&mut charged_steps, "catia_prune_face_support_rows")?
         {
             let mut evaluated = Vec::new();
+            let mut evaluated_storage =
+                ctx.reserve_scoped(0, "catia_prune_evaluated_assignments")?;
             'assignment: for (index, assignment) in ctx
                 .admit_iter(&*assignments, "catia_prune_evaluated_assignments")?
                 .enumerate()
             {
                 let mut support = BTreeMap::<usize, BTreeSet<[usize; 2]>>::new();
-                for boundary in ctx.admit_iter(&assignment.boundaries, OPERATION)? {
-                    let Some(boundary_support) = round_storage.with_storage(|| {
+                let mut support_storage =
+                    ctx.reserve_scoped(0, "catia_prune_assignment_support")?;
+                let mut boundaries = assignment.boundaries.iter();
+                while let Some(boundary) = ctx.next_charged(&mut boundaries, OPERATION)? {
+                    let Some(boundary_support) = support_storage.with_storage(|| {
                         boundary_endpoint_support(ctx, boundary, &candidates, &budget)
                     })?
                     else {
@@ -4586,17 +4591,17 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
                                 OPERATION,
                             )?;
                         } else {
-                            round_storage.with_storage(|| {
+                            support_storage.with_storage(|| {
                                 ctx.insert_btree_map(&mut support, edge, domain, OPERATION)
                             })?;
                         }
                     }
                 }
                 if ctx.all_by(&support, |(_, domain)| Ok(!domain.is_empty()), OPERATION)? {
-                    round_storage.with_storage(|| {
+                    evaluated_storage.with_storage(|| {
                         ctx.push_vec(
                             &mut evaluated,
-                            (index, support),
+                            (index, support, support_storage),
                             "catia_prune_evaluated_assignments",
                         )
                     })?;
@@ -4605,10 +4610,11 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             if evaluated.is_empty() {
                 return Ok(None);
             }
-            let mut kept = round_storage.with_storage(|| {
-                ctx.alloc_filled(assignments.len(), false, "catia_prune_assignment_marks")
-            })?;
-            for &(index, _) in ctx.admit_iter(&evaluated, "catia_prune_retained_assignments")? {
+            let (mut kept, kept_storage) = ctx
+                .with_scoped_storage("catia_prune_assignment_marks", || {
+                    ctx.alloc_filled(assignments.len(), false, "catia_prune_assignment_marks")
+                })?;
+            for &(index, _, _) in ctx.admit_iter(&evaluated, "catia_prune_retained_assignments")? {
                 kept[index] = true;
             }
             let mut index = 0;
@@ -4623,10 +4629,13 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             )?;
             let support_rows = round_storage.with_storage(|| {
                 ctx.collect_vec(
-                    evaluated.into_iter().map(|(_, support)| support),
+                    evaluated
+                        .into_iter()
+                        .map(|(_, support, storage)| (support, storage)),
                     "catia_prune_assignment_supports",
                 )
             })?;
+            drop((evaluated_storage, kept, kept_storage));
             face_supports.push(support_rows);
         }
         let mut charged_steps = candidates.iter_mut().enumerate();
@@ -4634,7 +4643,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             ctx.next_charged(&mut charged_steps, "catia_prune_incident_support_pairs")?
         {
             let [first, second] = edge_faces[edge];
-            let mut allowed = None::<BTreeSet<[usize; 2]>>;
+            let mut allowed = None;
             for face in [
                 Some(first.min(second)),
                 (first != second).then_some(first.max(second)),
@@ -4642,29 +4651,39 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             .into_iter()
             .flatten()
             {
-                let mut support = BTreeSet::new();
-                for assignment in
-                    ctx.admit_iter(&face_supports[face], "catia_prune_incident_support_pairs")?
-                {
-                    let Some(pairs) =
-                        ctx.get_btree_map(assignment, &edge, "catia_prune_incident_support_pairs")?
-                    else {
-                        continue;
-                    };
-                    for &pair in ctx.admit_iter(pairs, "catia_prune_incident_support_pairs")? {
-                        round_storage.with_storage(|| {
-                            ctx.insert_btree_set(
-                                &mut support,
-                                pair,
+                let (support, support_storage) = ctx.with_scoped_storage(
+                    "catia_prune_incident_support_pairs",
+                    || -> Result<BTreeSet<[usize; 2]>, CodecError> {
+                        let mut support = BTreeSet::new();
+                        for (assignment, _storage) in ctx.admit_iter(
+                            &face_supports[face],
+                            "catia_prune_incident_support_pairs",
+                        )? {
+                            let Some(pairs) = ctx.get_btree_map(
+                                assignment,
+                                &edge,
                                 "catia_prune_incident_support_pairs",
-                            )
-                        })?;
-                    }
-                }
+                            )?
+                            else {
+                                continue;
+                            };
+                            for &pair in
+                                ctx.admit_iter(pairs, "catia_prune_incident_support_pairs")?
+                            {
+                                ctx.insert_btree_set(
+                                    &mut support,
+                                    pair,
+                                    "catia_prune_incident_support_pairs",
+                                )?;
+                            }
+                        }
+                        Ok(support)
+                    },
+                )?;
                 if support.is_empty() {
                     return Ok(None);
                 }
-                if let Some(allowed) = &mut allowed {
+                if let Some((allowed, _storage)) = &mut allowed {
                     ctx.retain_btree_set(
                         allowed,
                         |pair| {
@@ -4677,10 +4696,10 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
                         "catia_prune_incident_support_pairs",
                     )?;
                 } else {
-                    allowed = Some(support);
+                    allowed = Some((support, support_storage));
                 }
             }
-            let Some(allowed) = allowed else {
+            let Some((allowed, _allowed_storage)) = allowed else {
                 return Ok(None);
             };
             ctx.retain_vec(
@@ -5008,12 +5027,20 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
     loop {
         let before = size(&faces)?;
         let mut round_storage = ctx.reserve_scoped(0, "catia_placement_face_domain_entries")?;
-        let mut face_domains = HashMap::<(usize, usize), Option<BTreeSet<[usize; 2]>>>::new();
+        let mut face_domains = HashMap::<
+            (usize, usize),
+            Option<(
+                BTreeSet<[usize; 2]>,
+                cadmpeg_core::decode::ScopedReservation<'_>,
+            )>,
+        >::new();
         for (face, assignments) in ctx.admit_iter(&faces, OPERATION)?.enumerate() {
             for &edge in ctx.admit_iter(&edges_by_face[face], OPERATION)? {
                 let mut domain = BTreeSet::new();
+                let mut domain_storage = ctx.reserve_scoped(0, OPERATION)?;
                 let mut complete = true;
-                for assignment in ctx.admit_iter(assignments, OPERATION)? {
+                let mut assignments = assignments.iter();
+                while let Some(assignment) = ctx.next_charged(&mut assignments, OPERATION)? {
                     let Some(pairs) = ctx
                         .find_by(
                             assignment,
@@ -5026,7 +5053,7 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
                         break;
                     };
                     for &pair in ctx.admit_iter(pairs, OPERATION)? {
-                        round_storage
+                        domain_storage
                             .with_storage(|| ctx.insert_btree_set(&mut domain, pair, OPERATION))?;
                     }
                 }
@@ -5034,7 +5061,7 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
                     ctx.insert_hash_map(
                         &mut face_domains,
                         (face, edge),
-                        complete.then_some(domain),
+                        complete.then_some((domain, domain_storage)),
                         "catia_placement_face_domain_entries",
                     )
                 })?;
@@ -5068,7 +5095,7 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
                             |pair| {
                                 Ok(seed.is_none_or(|seed| same_unordered_pair(*pair, seed))
                                     && match opposite {
-                                        Some(opposite) => {
+                                        Some((opposite, _storage)) => {
                                             ctx.contains_btree_set(opposite, pair, OPERATION)?
                                         }
                                         None => true,
@@ -5396,9 +5423,20 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
             Ok::<_, CodecError>((resolved_ports, resolved_candidates))
         })?;
     let (resolved_ports, resolved_candidates) = resolved_rows;
-    if edge_port_candidate_assignment(ctx, &resolved_ports, &resolved_candidates, false, true)?
-        .is_none()
-    {
+    let (viable, _viability_storage) = ctx.with_scoped_storage(
+        "catia_port_resolved_viability",
+        || -> Result<bool, CodecError> {
+            Ok(edge_port_candidate_assignment(
+                ctx,
+                &resolved_ports,
+                &resolved_candidates,
+                false,
+                true,
+            )?
+            .is_some())
+        },
+    )?;
+    if !viable {
         return Ok(None);
     }
     Ok(Some(resolved))

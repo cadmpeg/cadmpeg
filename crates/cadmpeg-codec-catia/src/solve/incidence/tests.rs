@@ -68,7 +68,7 @@ fn incidence_factor_refinement_restores_cleared_configurations() {
     crate::test_support::with_service_context(|ctx| {
         let mut refined = factors();
         let FaceFactorRefinement::Tracked(undo) = refined
-            .refine_edges(ctx, &[(0, [1, 0])])
+            .refine_edges(ctx, &[(0, [1, 0])], |pair| *pair)
             .expect("service budget")
         else {
             panic!("one configuration agrees with the pair")
@@ -80,7 +80,7 @@ fn incidence_factor_refinement_restores_cleared_configurations() {
         let mut rejected = factors();
         assert!(matches!(
             rejected
-                .refine_edges(ctx, &[(0, [5, 6])])
+                .refine_edges(ctx, &[(0, [5, 6])], |pair| *pair)
                 .expect("service budget"),
             FaceFactorRefinement::Rejected
         ));
@@ -88,7 +88,8 @@ fn incidence_factor_refinement_restores_cleared_configurations() {
     });
     crate::test_support::with_collection_limit(0, |ctx| {
         let mut refused = factors();
-        let Err(CodecError::ResourceLimit(limit)) = refused.refine_edges(ctx, &[(0, [1, 0])])
+        let Err(CodecError::ResourceLimit(limit)) =
+            refused.refine_edges(ctx, &[(0, [1, 0])], |pair| *pair)
         else {
             panic!("the undo record refuses its first entry")
         };

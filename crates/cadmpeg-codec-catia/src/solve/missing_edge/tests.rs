@@ -1006,3 +1006,21 @@ fn closed_port_search_does_not_visit_another_frame() {
     assert_eq!(search.states, 0);
     assert!(matches!(search.outcome, super::SearchOutcome::Ambiguous));
 }
+
+#[test]
+fn port_viability_retains_only_the_resolved_output() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The retained result contains one optional pair. The Boolean admission
+    // search must not retain another completed pair.
+    policy.limits.max_retained_bytes =
+        u64::try_from(std::mem::size_of::<Option<[usize; 2]>>()).expect("pair size fits u64");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty fixture fits the input limit");
+    assert_eq!(
+        super::propagate_edge_port_points(&ctx, &[[0, 1]], &[Some([0, 1])])
+            .expect("only the resolved row is retained"),
+        Some(vec![Some([0, 1])])
+    );
+}
