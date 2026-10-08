@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! B-spline/list carrier tables.
 
-use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -34,14 +33,20 @@ struct CompactArray {
     count: usize,
 }
 
-struct ArrayCandidate<'a, 'ctx, T: Clone> {
-    values: Cow<'a, [T]>,
-    _storage: Option<ScopedReservation<'ctx>>,
+enum ArrayCandidate<'a, 'ctx, T> {
+    Borrowed(&'a [T]),
+    Owned {
+        values: Vec<T>,
+        _storage: ScopedReservation<'ctx>,
+    },
 }
 
-impl<'a, 'ctx, T: Clone> ArrayCandidate<'a, 'ctx, T> {
+impl<T> ArrayCandidate<'_, '_, T> {
     fn as_slice(&self) -> &[T] {
-        self.values.as_ref()
+        match self {
+            Self::Borrowed(values) => values,
+            Self::Owned { values, .. } => values,
+        }
     }
 }
 
@@ -372,7 +377,7 @@ fn array_candidates<'a, 'ctx, T>(
     read: impl Fn(usize) -> Option<T>,
 ) -> Result<Vec<ArrayCandidate<'a, 'ctx, T>>, cadmpeg_core::CodecError>
 where
-    T: Clone + PartialEq + cadmpeg_core::decode::cost::DecodeCost,
+    T: PartialEq + cadmpeg_core::decode::cost::DecodeCost,
 {
     const OPERATION: &str = "collect Parasolid array candidates";
     let width = std::mem::size_of::<T>();
@@ -383,10 +388,7 @@ where
             ctx.push_scoped_vec(
                 storage,
                 &mut candidates,
-                ArrayCandidate {
-                    values: Cow::Borrowed(values),
-                    _storage: None,
-                },
+                ArrayCandidate::Borrowed(values),
                 OPERATION,
             )?;
         }
@@ -433,9 +435,9 @@ where
             ctx.push_scoped_vec(
                 storage,
                 &mut candidates,
-                ArrayCandidate {
-                    values: Cow::Owned(values),
-                    _storage: Some(candidate_storage),
+                ArrayCandidate::Owned {
+                    values,
+                    _storage: candidate_storage,
                 },
                 OPERATION,
             )?;
