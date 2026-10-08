@@ -78,6 +78,101 @@ fn curve_marker_offset_index_keeps_first_occurrence_at_repeated_offsets() {
 }
 
 #[test]
+fn linked_curve_endpoints_skip_the_feature_join() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut curve = SketchInputEntity::new("curve", "lane", 0, 0, SketchInputKind::LineOrCircle);
+    curve.feature_ref = Some("feature".into());
+    let mut first = point("first", 1, Some("feature"));
+    let mut second = point("second", 2, Some("feature"));
+    links(&mut first, &["curve"]);
+    links(&mut second, &["curve"]);
+    let roster = [&curve, &first, &second];
+    let by_id = roster
+        .iter()
+        .map(|marker| (marker.id(), *marker))
+        .collect::<HashMap<_, _>>();
+    let index = CurveMarkers::new(&ctx, &roster).unwrap();
+    let geometry = MarkerGeometryIndex::new(
+        &ctx,
+        &roster,
+        MarkerPrefixIndex::new(&ctx, &[]).unwrap(),
+    )
+    .unwrap();
+    let _feature_join_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "index SLDPRT curve feature markers",
+        None,
+    );
+    let endpoints =
+        marker_curve_endpoint_markers_in(&ctx, &[], &curve, &by_id, &index, &geometry).unwrap();
+    assert_eq!(
+        endpoints.iter().map(|marker| marker.id()).collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+}
+
+#[test]
+fn curve_marker_offset_index_sorts_only_the_queried_group() {
+    const SORT: &str = "sort SLDPRT curve marker offsets";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let missing_curve = point("missing-curve", 0, Some("missing"));
+    let unrelated: Vec<_> = (0..32)
+        .rev()
+        .map(|offset| point(&format!("foreign-{offset}"), offset, Some("foreign-feature")))
+        .collect();
+    let roster: Vec<_> = unrelated.iter().collect();
+    let index = CurveMarkers::new(&ctx, &roster).unwrap();
+    let _unrelated_sort_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        SORT,
+        None,
+    );
+    assert!(index.next_after(&ctx, &missing_curve).unwrap().is_none());
+    drop(_unrelated_sort_probe);
+
+    let curve = point("curve", 0, Some("feature"));
+    let first = point("first", 8, Some("feature"));
+    let second = point("second", 3, Some("feature"));
+    let selected = [&first, &second];
+    let error = crate::test_support::work_refusal_at(SORT, |ctx| {
+        let index = CurveMarkers::new(ctx, &selected)?;
+        index.next_after(ctx, &curve).map(|_| ())
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == SORT
+            && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn unlinked_curve_endpoint_route_still_queries_feature_markers() {
+    let curve = point("curve", 0, Some("feature"));
+    let roster = [&curve];
+    let by_id = HashMap::from([(curve.id(), &curve)]);
+    let error = crate::test_support::work_refusal_at(
+        "index SLDPRT curve feature markers",
+        |ctx| {
+            let index = CurveMarkers::new(ctx, &roster)?;
+            let geometry = MarkerGeometryIndex::new(
+                ctx,
+                &roster,
+            MarkerPrefixIndex::new(ctx, &[])?,
+            )?;
+            marker_curve_endpoint_markers_in(ctx, &[], &curve, &by_id, &index, &geometry)
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index SLDPRT curve feature markers"
+            && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+#[test]
 fn curve_marker_index_storage_is_scoped_and_refuses_before_growth() {
     let marker = point("point", 1, Some("feature"));
     let roster = [&marker];
@@ -162,7 +257,7 @@ fn curve_object_index_preserves_zero_identity_and_duplicate_ambiguity() {
             );
             assert!(index.by_object.get().is_some());
             assert!(index.by_feature.get().is_none());
-            assert!(index.by_offset.get().is_none());
+            assert!(index.by_offset.borrow().is_empty());
             assert!(index.linked_from.get().is_none());
             assert!(index.reverse_incidence.get().is_none());
         }

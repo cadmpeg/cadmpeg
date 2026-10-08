@@ -1864,3 +1864,37 @@ mod duplicate_link_arc;
 mod point_identity;
 mod point_projection;
 mod radial_geometry_tests;
+
+#[test]
+fn dimension_lane_slot_references_are_cached_across_relation_queries() {
+    let lane = FeatureInputLane {
+        id: "slot-lane".into(),
+        configuration: None,
+        native_payload: vec![0; 4096],
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let lanes = [lane];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let index = super::LaneMarkerIndex::new(&ctx, &lanes).unwrap();
+    assert_eq!(index.slot_center_indices(&ctx, &lanes[0], 0).unwrap(), None);
+
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "index SLDPRT slot predecessors",
+        None,
+    );
+    assert_eq!(index.slot_center_indices(&ctx, &lanes[0], 1).unwrap(), None);
+}

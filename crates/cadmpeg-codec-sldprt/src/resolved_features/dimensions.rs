@@ -1,6 +1,7 @@
 //! Dimensioned sketch geometry and radial circle records.
 
 use super::grid::GridCoordinate;
+use super::curves::{slot_curve_and_center_indices, SlotReferences};
 
 use super::endpoints::{
     compact_indexed_curve_record_end, marker_profile_curve_role, minor_arc_angles,
@@ -41,7 +42,7 @@ use cadmpeg_ir::{
     features::{FeatureDefinition, FeatureOperation},
     scalar::{Angle, Length},
 };
-use std::cell::OnceCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 const EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8: f64 = 1.0e-8;
@@ -111,6 +112,9 @@ pub(super) struct LaneMarkerIndex<'a, 'ctx> {
     /// Each lane's located markers owned by one feature, in offset order.
     located_by_feature: HashMap<(usize, Option<&'a str>), Vec<&'a SketchInputEntity>>,
     lane_markers: Vec<OnceCell<LaneMarkers<'a, 'ctx>>>,
+    /// Declared slot references keyed by lane position, created on first slot-handle query.
+    slot_references: RefCell<HashMap<usize, SlotReferences<'a, 'ctx>>>,
+    slot_reference_storage: RefCell<ScopedReservation<'ctx>>,
     /// Each lane's radial circle records in offset order, decoded on first use.
     radial_records: Vec<OnceCell<(Vec<RadialCircleRecord>, ScopedReservation<'ctx>)>>,
     _storage: ScopedReservation<'ctx>,
@@ -173,6 +177,7 @@ impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
         let lane_markers = storage.with_storage(|| {
             ctx.collect_indexed_vec(lanes.len(), OPERATION, |_| Ok(OnceCell::new()))
         })?;
+        let slot_reference_storage = RefCell::new(ctx.reserve_scoped(0, OPERATION)?);
         let radial_records = storage.with_storage(|| {
             ctx.collect_indexed_vec(lanes.len(), OPERATION, |_| Ok(OnceCell::new()))
         })?;
@@ -184,6 +189,8 @@ impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
             by_feature,
             located_by_feature,
             lane_markers,
+            slot_references: RefCell::new(HashMap::new()),
+            slot_reference_storage,
             radial_records,
             _storage: storage,
         })
@@ -213,6 +220,29 @@ impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
             },
             DIMENSIONED_CARRIER_OPERATION,
         )
+    }
+
+    /// Resolve a declared slot handle using this projection's lane cache.
+    fn slot_center_indices(
+        &self,
+        ctx: &DecodeContext<'_>,
+        lane: &'a FeatureInputLane,
+        offset: usize,
+    ) -> Result<Option<[usize; 2]>, cadmpeg_core::CodecError> {
+        const OPERATION: &str = "cache SLDPRT lane slot references";
+        let Some(position) = self.lane_position(ctx, lane)? else {
+            return Ok(None);
+        };
+        let mut cache = self.slot_references.borrow_mut();
+        self.slot_reference_storage.borrow_mut().with_storage(|| {
+            let slots = match ctx.entry_hash_map(&mut cache, position, OPERATION)? {
+                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(SlotReferences::new(self.ctx, &lane.native_payload)?)
+                }
+            };
+            Ok(slot_curve_and_center_indices(ctx, slots, offset)?.map(|(_, centers)| centers))
+        })
     }
 
     /// Every lane occurrence of the marker `id`, in lane order.
@@ -745,8 +775,13 @@ fn dimensioned_relation_carrier<'a>(
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
         )
     });
-    if let Some((marker, center)) =
-        declared_slot_handle_dimension_center(ctx, lanes, feature, operand)?
+    if let Some((marker, center)) = declared_slot_handle_dimension_center(
+        ctx,
+        lanes,
+        feature,
+        operand,
+        |lane, offset| index.slot_center_indices(ctx, lane, offset),
+    )?
     {
         let Some(center) = center
             .coordinates_m

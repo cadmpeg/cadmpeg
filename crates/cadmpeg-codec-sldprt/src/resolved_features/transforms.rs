@@ -997,6 +997,40 @@ pub(super) enum MarkerEntityFilter<'a> {
 }
 
 /// The sketch entities a marker resolves to, in identity order.
+pub(super) fn relation_marker_entities<'a, 'loci>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    marker_ids: impl IntoIterator<Item = &'a str>,
+    markers_by_id: &HashMap<&'a str, &'a SketchInputEntity>,
+    loci_by_marker: &'loci HashMap<String, Vec<SketchLocus>>,
+) -> Result<Vec<SketchEntityId>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "collect SLDPRT planar relation entities";
+    let mut entity_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut entities = BTreeMap::<&'loci str, &'loci SketchEntityId>::new();
+    for marker_id in marker_ids {
+        let mut marker_storage = ctx.reserve_scoped(0, "resolve SLDPRT marker entities")?;
+        let identities = marker_entities_inner(
+            ctx,
+            &mut marker_storage,
+            marker_id,
+            markers_by_id,
+            loci_by_marker,
+            MarkerEntityFilter::All,
+            &mut HashSet::new(),
+        )?;
+        for identity in ctx.admit_iter(identities, "resolve SLDPRT marker entities")? {
+            entity_storage.with_storage(|| {
+                ctx.insert_btree_map(&mut entities, identity.as_str(), identity, OPERATION)
+            })?;
+        }
+    }
+    let mut result = Vec::new();
+    for (_, identity) in ctx.admit_iter(entities, OPERATION)? {
+        let identity = copy_sketch_entity_identity(ctx, identity, "resolve SLDPRT marker entities")?;
+        ctx.push_vec(&mut result, identity, OPERATION)?;
+    }
+    Ok(result)
+}
+
 pub(super) fn marker_entities<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     marker_id: &'a str,

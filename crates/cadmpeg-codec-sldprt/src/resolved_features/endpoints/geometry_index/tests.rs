@@ -333,6 +333,142 @@ fn object_sources_include_unlocated_records_and_all_owners_once() {
 }
 
 #[test]
+fn owner_point_rosters_are_lazy_and_sorted_for_the_selected_owner() {
+    const INDEX: &str = "index SLDPRT owner point markers";
+    // The owner has two points and one located arc. The admitted source scan
+    // visits all three markers before it filters point kinds.
+    const SELECTED_LOCATED_MARKERS: u64 = 3;
+
+    let marker = |id: &str, owner: &str, offset, kind, coordinates: Option<[f64; 2]>| {
+        let mut marker = SketchInputEntity::new(id, "lane", 0, offset, kind);
+        marker.feature_ref = Some(owner.into());
+        marker.coordinates_m = coordinates.and_then(cadmpeg_ir::units::FiniteVector::new);
+        marker
+    };
+    let selected_curve = marker(
+        "selected-curve",
+        "selected-owner",
+        0,
+        SketchInputKind::Arc,
+        Some([0.0, 0.0]),
+    );
+    let selected_late = marker(
+        "selected-late",
+        "selected-owner",
+        20,
+        SketchInputKind::Point,
+        Some([2.0, 0.0]),
+    );
+    let selected_early = marker(
+        "selected-early",
+        "selected-owner",
+        4,
+        SketchInputKind::ConstrainedPoint,
+        Some([1.0, 0.0]),
+    );
+    let unrelated: Vec<_> = (0..32)
+        .rev()
+        .map(|offset| {
+            marker(
+                &format!("foreign-{offset}"),
+                "unqueried-owner",
+                offset,
+                SketchInputKind::Point,
+                Some([f64::from(u32::try_from(offset).unwrap()), 1.0]),
+            )
+        })
+        .collect();
+    let mut roster = vec![&selected_late, &selected_curve];
+    roster.extend(unrelated.iter());
+    roster.push(&selected_early);
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let point_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        INDEX,
+        Some(SELECTED_LOCATED_MARKERS),
+    );
+    let geometry = MarkerGeometryIndex::new(
+        &ctx,
+        &roster,
+        MarkerPrefixIndex::new(&ctx, &[]).unwrap(),
+    )
+    .unwrap();
+    assert!(geometry
+        .owners
+        .get(&Some("selected-owner"))
+        .unwrap()
+        .points
+        .get()
+        .is_none());
+    assert_eq!(
+        geometry
+            .roster(&selected_curve, MarkerRoster::All)
+            .unwrap()
+            .len(),
+        3
+    );
+    assert!(geometry
+        .owners
+        .get(&Some("unqueried-owner"))
+        .unwrap()
+        .points
+        .get()
+        .is_none());
+    let error = geometry
+        .roster(&selected_curve, MarkerRoster::Points)
+        .unwrap_err();
+    drop(point_probe);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == INDEX
+            && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.additional == SELECTED_LOCATED_MARKERS));
+    let CodecError::ResourceLimit(limit) = error else {
+        unreachable!();
+    };
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+
+    let positive_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut positive_policy = cadmpeg_core::decode::DecodePolicy::service();
+    positive_policy.limits.max_work_units = u64::MAX;
+    let (positive_ctx, _) =
+        DecodeContext::from_root_bytes(&[], &positive_arena, &positive_policy).unwrap();
+    let positive_geometry = MarkerGeometryIndex::new(
+        &positive_ctx,
+        &roster,
+        MarkerPrefixIndex::new(&positive_ctx, &[]).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        positive_geometry
+            .roster(&selected_curve, MarkerRoster::All)
+            .unwrap()
+            .len(),
+        3
+    );
+    let points = positive_geometry
+        .roster(&selected_curve, MarkerRoster::Points)
+        .unwrap();
+    assert_eq!(
+        points.iter().map(|marker| marker.id()).collect::<Vec<_>>(),
+        ["selected-early", "selected-late"]
+    );
+    let repeated = positive_geometry
+        .roster(&selected_curve, MarkerRoster::Points)
+        .unwrap();
+    assert!(std::ptr::eq(points, repeated));
+    assert!(positive_geometry
+        .owners
+        .get(&Some("unqueried-owner"))
+        .unwrap()
+        .points
+        .get()
+        .is_none());
+}
+#[test]
 fn point_position_index_keeps_owner_and_point_kind_and_reuses_storage() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let marker = |id, owner: &str, kind, coordinates| {
