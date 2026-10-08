@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact tensor-product restriction keeps the original parameter chart.
 #![allow(clippy::unwrap_used)]
-use super::trim_surface;
+use super::{homogeneous_control_points, insert_homogeneous_knot, trim_surface};
 use cadmpeg_core::decode::{
     index_from_u32, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::{admission::EvaluationAdmission, decode::nurbs_surface_point};
-use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 use cadmpeg_ir::math::Point3;
 
 const EPS_TRIM_POINT: f64 = 1.0e-12;
@@ -119,4 +119,66 @@ fn surface_crop_refuses_a_discontinuous_terminal_boundary() {
     assert!(trim_surface(&ctx, &source, [[0.0, 0.5], [0.0, 1.0]])
         .unwrap()
         .is_none());
+}
+
+#[test]
+fn homogeneous_control_points_refuse_collection_limit() {
+    let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("valid test NURBS");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = homogeneous_control_points(&ctx, &curve).unwrap_err();
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 2
+    ));
+}
+
+#[test]
+fn composite_knot_insertion_refuses_knot_collection_limit() {
+    let controls = [[1.0, 0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]];
+    let knots = [0.0, 0.0, 1.0, 1.0];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = insert_homogeneous_knot(&ctx, &controls, &knots, 1, 0.5).unwrap_err();
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 5
+    ));
+}
+
+#[test]
+fn composite_knot_insertion_refuses_control_collection_limit() {
+    let controls = [[1.0, 0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]];
+    let knots = [0.0, 0.0, 1.0, 1.0];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 7;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = insert_homogeneous_knot(&ctx, &controls, &knots, 1, 0.5).unwrap_err();
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 5
+                && limit.additional == 3
+    ));
 }

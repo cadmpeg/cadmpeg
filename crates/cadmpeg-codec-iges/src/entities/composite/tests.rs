@@ -5,7 +5,6 @@
 mod nurbs;
 
 use crate::directory::UseFlag;
-use crate::entities::nurbs_controls::{homogeneous_control_points, insert_homogeneous_knot};
 
 use std::io::Cursor;
 
@@ -1613,64 +1612,6 @@ fn rational_linear_degree_elevation_preserves_the_curve() {
         assert_eq!(curve.control_points()[1], Point3::new(1.5, 0.0, 0.0));
         assert_eq!(curve.pole_rows().weights(), Some(vec![1.0, 2.0, 3.0]));
     });
-}
-
-#[test]
-fn homogeneous_control_points_refuse_collection_limit() {
-    let curve = test_nurbs(
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        None,
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = homogeneous_control_points(&ctx, &curve).unwrap_err();
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.used == 0
-                && limit.additional == 2
-    ));
-}
-
-#[test]
-fn composite_knot_insertion_refuses_knot_collection_limit() {
-    let controls = [[1.0, 0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]];
-    let knots = [0.0, 0.0, 1.0, 1.0];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 4;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = insert_homogeneous_knot(&ctx, &controls, &knots, 1, 0.5).unwrap_err();
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.used == 0
-                && limit.additional == 5
-    ));
-}
-
-#[test]
-fn composite_knot_insertion_refuses_control_collection_limit() {
-    let controls = [[1.0, 0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]];
-    let knots = [0.0, 0.0, 1.0, 1.0];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 7;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = insert_homogeneous_knot(&ctx, &controls, &knots, 1, 0.5).unwrap_err();
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.used == 5
-                && limit.additional == 3
-    ));
 }
 
 #[test]
