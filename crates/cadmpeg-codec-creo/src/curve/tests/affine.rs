@@ -209,12 +209,6 @@ dimension_limit_test!(
     "creo dimension equation coefficients"
 );
 dimension_limit_test!(
-    dimension_inference_refuses_equation_coefficient_work,
-    DimensionLimitCase::Basic,
-    ResourceDimension::WorkUnits,
-    "creo dimension equation coefficient work"
-);
-dimension_limit_test!(
     dimension_inference_refuses_equation_rows,
     DimensionLimitCase::Basic,
     ResourceDimension::CollectionItems,

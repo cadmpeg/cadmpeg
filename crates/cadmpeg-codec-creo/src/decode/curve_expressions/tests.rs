@@ -12,7 +12,12 @@ fn curve_expression_source_section_refuses_before_retained_copy() {
     let offset = scan.curves.expressions[0].offset;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 7;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo expression source section"), |cap| {
+        let mut trial = policy;
+        trial.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &trial).expect("root");
+        crate::decode::coverage::source_section(&ctx, &scan, offset)
+    });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = crate::decode::coverage::source_section(&ctx, &scan, offset)
         .expect_err("eight source-section bytes exceed retained limit");
@@ -235,7 +240,12 @@ fn curve_expression_name_key_refuses_before_text_copy() {
         .expect("complete curve expression");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo curve-expression name key"), |cap| {
+        let mut trial = policy;
+        trial.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &trial).expect("root");
+        super::curve_expression_parameter_names(&ctx, &record.assignments)
+    });
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("input fits the root limit");
     let error = super::curve_expression_parameter_names(&ctx, &record.assignments)
@@ -340,20 +350,10 @@ fn curve_expression_unique_index_refuses_before_tree_insert() {
     ));
 }
 
-fn assignment_indices_with_retained_limit(
-    record: &crate::curve::CurveExpressionRecord,
-    retained_limit: u64,
-) -> cadmpeg_core::CodecError {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"a", &arena, &policy).expect("root input fits the limit");
-    super::curve_expression_assignment_indices(&ctx, record)
-        .map(|indices| (indices.by_name, indices.unique))
-        .expect_err("the selected assignment key exceeds retained bytes")
+fn assignment_indices_retained_refusal(record: &crate::curve::CurveExpressionRecord, operation: &'static str) -> cadmpeg_core::CodecError {
+    crate::test_support::last_refusal_at(b"a", cadmpeg_core::decode::ResourceDimension::RetainedBytes, operation, |ctx| {
+        super::curve_expression_assignment_indices(ctx, record).map(|indices| (indices.by_name, indices.unique))
+    })
 }
 
 #[test]
@@ -363,7 +363,7 @@ fn curve_expression_assignment_key_refuses_before_text_copy() {
     let record = crate::curve::expression_records(payload)
         .pop()
         .expect("complete curve expression");
-    let error = assignment_indices_with_retained_limit(&record, 0);
+    let error = assignment_indices_retained_refusal(&record, "creo curve-expression assignment key");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -378,14 +378,7 @@ fn curve_expression_unique_key_refuses_before_text_copy() {
     let record = crate::curve::expression_records(payload)
         .pop()
         .expect("complete curve expression");
-    let error = assignment_indices_with_retained_limit(
-        &record,
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            Some("creo curve-expression unique key"),
-            |cap| Err::<(), _>(assignment_indices_with_retained_limit(&record, cap)),
-        ),
-    );
+    let error = assignment_indices_retained_refusal(&record, "creo curve-expression unique key");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -668,7 +661,11 @@ fn curve_expression_dependency_keys_refuse_before_text_copy() {
         2
     );
     let mut limited = DecodePolicy::service();
-    limited.limits.max_materialized_bytes = 0;
+    limited.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, Some("creo curve-expression dependency key"), |cap| {
+        let mut trial = limited;
+        trial.limits.max_materialized_bytes = cap;
+        dependency_keys_with_limits(&["a=1", "b=a+1"], &dimensions, trial)
+    });
     let error = dependency_keys_with_limits(&["a=1", "b=a+1"], &dimensions, limited)
         .expect_err("the dependency lookup key needs another byte");
     assert!(
@@ -765,7 +762,11 @@ fn curve_expression_dimension_key_refuses_before_text_copy() {
             .expect("valid dimension ID"),
     )]);
     let mut limited = DecodePolicy::service();
-    limited.limits.max_materialized_bytes = 0;
+    limited.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, Some("creo curve-expression dependency key"), |cap| {
+        let mut trial = limited;
+        trial.limits.max_materialized_bytes = cap;
+        dependency_keys_with_limits(&["a=x+1"], &dimensions, trial)
+    });
     let error = dependency_keys_with_limits(&["a=x+1"], &dimensions, limited)
         .expect_err("the dimension dependency lookup needs one temporary byte");
     assert!(
@@ -832,18 +833,11 @@ fn curve_expression_dependency_validation_charges_index_work() {
     );
 }
 
-fn with_retained_limit<T>(
-    limit: u64,
-    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
-) -> T {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"x", &arena, &policy).expect("small input is admitted");
-    run(&ctx)
+fn retained_refusal<T>(
+    operation: &'static str,
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> Result<T, cadmpeg_core::CodecError> {
+    Err(crate::test_support::last_refusal_at(b"x", cadmpeg_core::decode::ResourceDimension::RetainedBytes, operation, run))
 }
 
 #[test]
@@ -859,7 +853,7 @@ fn curve_expression_external_dependency_text_refuses_before_copy() {
         .expect("service profile admits the property"),
         Some("outside".to_string())
     );
-    let error = with_retained_limit(6, |ctx| {
+    let error = retained_refusal("creo curve-expression external dependency text", |ctx| {
         super::joined_dependency_names(
             ctx,
             &names,
@@ -878,7 +872,7 @@ fn curve_expression_external_dependency_text_refuses_before_copy() {
 #[test]
 fn curve_expression_ambiguous_dependency_text_refuses_before_copy() {
     let names = vec!["ambiguous".to_string()];
-    let error = with_retained_limit(8, |ctx| {
+    let error = retained_refusal("creo curve-expression ambiguous dependency text", |ctx| {
         super::joined_dependency_names(
             ctx,
             &names,
@@ -907,7 +901,7 @@ fn curve_expression_intrinsic_dependency_text_refuses_before_copy() {
         .expect("service profile admits the property"),
         Some("t,T".to_string())
     );
-    let error = with_retained_limit(2, |ctx| {
+    let error = retained_refusal("creo curve-expression intrinsic dependency text", |ctx| {
         super::joined_dependency_names(
             ctx,
             &names,
@@ -931,7 +925,7 @@ fn curve_expression_cyclic_dependency_text_refuses_before_copy() {
             .expect("service profile admits the joined text"),
         "alpha,beta"
     );
-    let error = with_retained_limit(9, |ctx| super::join_cyclic_dependency_names(ctx, &names))
+    let error = retained_refusal("creo curve-expression cyclic dependency text", |ctx| super::join_cyclic_dependency_names(ctx, &names))
         .expect_err("the joined names need ten bytes");
     assert!(matches!(
         error,
@@ -987,7 +981,7 @@ fn quantity_property_result(
 
 #[test]
 fn curve_expression_source_ordinal_value_refuses_before_text() {
-    let error = with_retained_limit(0, quantity_property_result)
+    let error = retained_refusal("creo curve-expression source ordinal value", quantity_property_result)
         .expect_err("ordinal value needs one retained byte");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1054,7 +1048,7 @@ fn curve_expression_quantity_properties_keep_value_and_dimension() {
 
 #[test]
 fn curve_expression_native_kind_refuses_before_text() {
-    let error = with_retained_limit(0, |ctx| {
+    let error = retained_refusal("creo curve-expression native kind", |ctx| {
         super::native_curve_expression_definition(ctx, 7, 1)
     })
     .expect_err("native kind needs retained text");
@@ -1066,8 +1060,7 @@ fn curve_expression_native_kind_refuses_before_text() {
 
 #[test]
 fn curve_expression_native_entity_value_refuses_before_text() {
-    let prior = cadmpeg_core::decode::u64_from_index("CurveFromEquation".len());
-    let error = with_retained_limit(prior, |ctx| {
+    let error = retained_refusal("creo curve-expression native entity value", |ctx| {
         super::native_curve_expression_definition(ctx, 7, 1)
     })
     .expect_err("entity value needs one more retained byte");
@@ -1079,8 +1072,7 @@ fn curve_expression_native_entity_value_refuses_before_text() {
 
 #[test]
 fn curve_expression_native_assignment_count_refuses_before_text() {
-    let prior = cadmpeg_core::decode::u64_from_index("CurveFromEquation".len() + "7".len());
-    let error = with_retained_limit(prior, |ctx| {
+    let error = retained_refusal("creo curve-expression native assignment count", |ctx| {
         super::native_curve_expression_definition(ctx, 7, 1)
     })
     .expect_err("assignment count needs one more retained byte");
@@ -1115,7 +1107,7 @@ fn curve_expression_native_fallback_keeps_kind_and_values() {
 
 #[test]
 fn curve_expression_feature_name_refuses_before_text() {
-    let error = with_retained_limit(0, |ctx| super::curve_expression_feature_labels(ctx, 7))
+    let error = retained_refusal("creo curve-expression feature name", |ctx| super::curve_expression_feature_labels(ctx, 7))
         .expect_err("feature name needs retained text");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1125,8 +1117,7 @@ fn curve_expression_feature_name_refuses_before_text() {
 
 #[test]
 fn curve_expression_feature_source_tag_refuses_before_text() {
-    let prior = cadmpeg_core::decode::u64_from_index("Curve Equation 7".len());
-    let error = with_retained_limit(prior, |ctx| super::curve_expression_feature_labels(ctx, 7))
+    let error = retained_refusal("creo curve-expression feature source tag", |ctx| super::curve_expression_feature_labels(ctx, 7))
         .expect_err("source tag needs retained text");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1160,7 +1151,7 @@ fn curve_expression_source_text_refuses_before_join() {
             .expect("service profile admits source text"),
         "alpha\nbeta"
     );
-    let error = with_retained_limit(9, |ctx| super::curve_expression_source_text(ctx, &lines))
+    let error = retained_refusal("creo curve-expression feature source text", |ctx| super::curve_expression_source_text(ctx, &lines))
         .expect_err("the joined lines need ten bytes");
     assert!(matches!(
         error,

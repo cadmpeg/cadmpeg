@@ -3,7 +3,7 @@ use crate::curve::{
     parse_relation_expression, relation_unit, solve_unique_affine_system, AffineEquationRow,
     CurveExpressionValue, RelationEvaluationContext,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
@@ -24,7 +24,11 @@ fn with_policy<T>(
 fn flat_relation_scans_refuse_caller_work() {
     for source in ["1+1+1", "123456789", "       1", "----1"] {
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
+        policy.limits.max_work_units = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, Some("creo relation source scan"), |cap| {
+        let mut trial = policy;
+        trial.limits.max_work_units = cap;
+        with_policy(trial, |ctx| parse_relation_expression::<CurveExpressionValue>(ctx, source, &BTreeMap::new(), RelationEvaluationContext::default()))
+    });
         let error = with_policy(policy, |ctx| {
             parse_relation_expression::<CurveExpressionValue>(
                 ctx,
@@ -80,7 +84,11 @@ fn relation_local_nesting_ceiling_refuses() {
 #[test]
 fn affine_matrix_elimination_refuses_work() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    policy.limits.max_work_units = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, Some("creo matrix row normalization"), |cap| {
+        let mut trial = policy;
+        trial.limits.max_work_units = cap;
+        with_policy(trial, |ctx| solve_unique_affine_system(ctx, &mut [AffineEquationRow { coefficients: vec![1.0], rhs: 2.0 }], 1))
+    });
     let error = with_policy(policy, |ctx| {
         solve_unique_affine_system(
             ctx,
@@ -242,7 +250,11 @@ fn relation_local_function_nesting_ceiling_refuses() {
 #[test]
 fn relation_unit_source_scan_refuses_work_before_nonrecursive_parse() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    policy.limits.max_work_units = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, Some("creo relation unit source scan"), |cap| {
+        let mut trial = policy;
+        trial.limits.max_work_units = cap;
+        with_policy(trial, |ctx| relation_unit(ctx, "mm*mm/mm").map(|unit| unit.is_some()))
+    });
     let error = with_policy(policy, |ctx| {
         relation_unit(ctx, "mm*mm/mm").map(|unit| unit.is_some())
     })
@@ -258,8 +270,6 @@ fn affine_pivot_and_coefficient_elimination_refuse_work() {
         &[
             "creo matrix row normalization",
             "creo matrix pivot scan",
-            "creo matrix pivot normalization",
-            "creo matrix elimination",
         ],
         |ctx| {
             solve_unique_affine_system(
@@ -337,4 +347,19 @@ fn nonlinear_cubic_negative_seeds_preserve_progress_with_one_residual_scale() {
         assert_eq!(solution.len(), 1);
         assert!((solution[0] - 2.0).abs() <= NONLINEAR_SOLVE_SOLUTION_TOLERANCE);
     }
+}
+
+#[test]
+fn large_affine_width_keeps_coefficient_work_admitted() {
+    let expected: Vec<_> = (1..=9).map(f64::from).collect();
+    let solution = crate::test_support::assert_work_boundaries(&["creo matrix pivot normalization", "creo matrix elimination"], |ctx| {
+        let mut rows: Vec<_> = (0..9).map(|row| {
+            let coefficients: Vec<_> = (0..9).map(|column| if column == row { 2.0 } else { 1.0 }).collect();
+            AffineEquationRow { rhs: 45.0 + f64::from(row + 1), coefficients }
+        }).collect();
+        solve_unique_affine_system(ctx, &mut rows, 9)
+    });
+    let solution = solution.expect("unique nine-variable system");
+    assert_eq!(solution.len(), expected.len());
+    for (actual, expected) in solution.iter().zip(expected) { assert!((actual - expected).abs() <= crate::curve::EPS_LINEAR_SYSTEM_RESIDUAL); }
 }

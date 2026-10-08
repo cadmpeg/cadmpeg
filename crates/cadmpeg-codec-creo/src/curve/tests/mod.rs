@@ -43,5 +43,5 @@ fn evaluate_program_details(
     let mut index_storage = ctx.reserve_scoped(0, "creo solve program index scratch")?;
     let program = program_storage.with_storage(|| super::curve_expression_solve_program(ctx, lines, &mut index_storage))?;
     let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?;
-    super::evaluate_expression_program_details(ctx, lines, model_name, external_symbols, &mut solution_storage, &program)
+    super::evaluate_expression_program_details(ctx, lines, model_name, external_symbols, &mut solution_storage, &program, true)
 }
