@@ -302,7 +302,6 @@ fn procedural_support_lookup_uses_the_stored_arena_index() {
     crate::test_support::with_work_limit(1024, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         let result = standard_extrusion_support_id(
-            ctx,
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             &mut surfaces,
             &mut supports,

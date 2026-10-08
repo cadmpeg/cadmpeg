@@ -134,7 +134,6 @@ fn standard_extrusion_support_refuses_before_surface_storage() {
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         standard_extrusion_support_id(
-            ctx,
             &mut AnnotationBuilder::new(),
             &mut surfaces,
             &mut supports,
@@ -151,7 +150,6 @@ fn standard_extrusion_support_refuses_before_surface_storage() {
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         standard_extrusion_support_id(
-            ctx,
             &mut AnnotationBuilder::new(),
             &mut surfaces,
             &mut supports,

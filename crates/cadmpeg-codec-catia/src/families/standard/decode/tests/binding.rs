@@ -491,7 +491,7 @@ fn a5_owner_binding_refuses_before_carrier_row_growth() {
     .is_empty());
     let owner_packets = crate::test_support::with_service_context(|ctx| {
         crate::families::b2::records::b2_owner_packets_from_records(ctx, &bytes, &records)
-            .map(|packets| packets.collect::<Vec<_>>())
+            .map(std::iter::Iterator::collect::<Vec<_>>)
     })
     .expect("service context admits owner packet scan");
     assert!(!owner_packets.is_empty());
@@ -651,7 +651,7 @@ fn standard_native_binding_arrays_refuse_before_each_collection() {
         geometry: StandardCurveGeometry::Line,
     }];
     let native_edges = BTreeMap::from([(70, [100, 300])]);
-    let native_support_ids = HashMap::from([(70, ())]);
+    let native_support_ids = HashMap::from([(70, true)]);
     let mut operations = HashSet::new();
     for limit in 0..=10 {
         match crate::test_support::with_collection_limit(limit, |ctx| {

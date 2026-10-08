@@ -252,7 +252,7 @@ fn standard_surface_record_table(
         let mut records = BTreeMap::<usize, StandardSurfaceRecord>::new();
         let prefixes = surface_prefixes(ctx, brep)?;
         for prefix in ctx.admit_iter(&prefixes, "catia_standard_iteration")? {
-            if face_sense(brep, &prefix).is_some() {
+            if face_sense(brep, prefix).is_some() {
                 ctx.insert_btree_map(
                     &mut records,
                     prefix.pos - analytic_plane::MARKER,
@@ -545,7 +545,7 @@ pub(super) fn standard_surface_records(
     })?;
     let mut solution_start = None;
     {
-        let mut visits = (ordered_records).into_iter().enumerate();
+        let mut visits = ordered_records.iter().enumerate();
         while let Some((start, _)) = ctx.next_charged(&mut visits, "catia_standard_iteration")? {
             let mut current = Some(start);
             let mut steps = remaining_steps;
@@ -574,7 +574,7 @@ pub(super) fn standard_surface_records(
     let mut chain = Vec::new();
     ctx.reserve_vec(&mut chain, face_count, "catia_surface_record_chain")?;
     {
-        let mut visits = (0..face_count).into_iter();
+        let mut visits = 0..face_count;
         while let Some(ordinal) = ctx.next_charged(&mut visits, "catia_surface_record_chain")? {
             chain.push(ordered_records[current]);
             if ordinal + 1 < face_count {
@@ -1004,10 +1004,8 @@ fn standard_curve_support_has_predecessor(
     start: usize,
 ) -> Result<bool, CodecError> {
     const MAX_ROW_BYTES: usize = 35;
-    let first = match start.checked_sub(MAX_ROW_BYTES) {
-        Some(first) => first,
-        None => 0,
-    };
+    let window_len = start.min(MAX_ROW_BYTES);
+    let first = start - window_len;
     let Some(candidates) = brep.get(first..start) else {
         return Err(ctx.refuse_codec_limit("catia_standard_iteration", u64::MAX, u64::MAX));
     };
@@ -1400,7 +1398,7 @@ mod tests {
         for identity in [11, 12, 13] {
             source.extend(row(identity));
         }
-        let bytes = 4 * std::mem::size_of::<u32>() as u64;
+        let bytes = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>());
         crate::test_support::with_retained_limit(bytes, |ctx| {
             assert_eq!(
                 super::standard_vertex_roster(ctx, &source, 3).expect("only output retained"),
@@ -1460,7 +1458,9 @@ mod tests {
         bytes.resize(analytic + 72, 0);
         bytes.push(0xff);
         bytes.extend_from_slice(&[0x60, 1, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 1]);
-        let retained = std::mem::size_of::<super::StandardCurveSupport>() as u64;
+        let retained = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            super::StandardCurveSupport,
+        >());
         crate::test_support::with_retained_limit(retained, |ctx| {
             let rows = super::standard_curve_supports(ctx, &bytes, 2, Some(1))
                 .expect("only selected result retained");

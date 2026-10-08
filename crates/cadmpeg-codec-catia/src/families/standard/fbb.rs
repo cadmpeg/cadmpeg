@@ -351,7 +351,7 @@ pub(super) fn parse_standard_motif(
     };
     let mut edge_points = Vec::new();
     {
-        let mut visits = (&edge_rows).into_iter();
+        let mut visits = edge_rows.iter();
         while let Some(row) = ctx.next_charged(&mut visits, "catia_motif_edge_points")? {
             let port = |handle: Option<&u32>| -> Result<Option<usize>, CodecError> {
                 let Some(handle) = handle else {
@@ -372,7 +372,7 @@ pub(super) fn parse_standard_motif(
     }
     let unordered = |[start, end]: [usize; 2]| [start.min(end), start.max(end)];
     {
-        let mut visits = (&edge_points).into_iter().zip(circle_anchors);
+        let mut visits = edge_points.iter().zip(circle_anchors);
         while let Some((points, anchor)) =
             ctx.next_charged(&mut visits, "catia_standard_iteration")?
         {
@@ -520,7 +520,7 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
         let mut quotient = MeshQuotient::new_charged(ctx, domains)?;
         let mut node_by_port = HashMap::new();
         {
-            let mut visits = (edge_ports).into_iter().enumerate();
+            let mut visits = edge_ports.iter().enumerate();
             while let Some((edge, ports)) =
                 ctx.next_charged(&mut visits, "catia_standard_iteration")?
             {
@@ -568,7 +568,7 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
     let result = result_storage.with_storage(|| -> Result<_, CodecError> {
         let mut result = Vec::new();
         {
-            let mut visits = (edge_candidates).into_iter().enumerate();
+            let mut visits = edge_candidates.iter().enumerate();
             while let Some((edge, candidates)) =
                 ctx.next_charged(&mut visits, "catia_standard_iteration")?
             {
@@ -894,18 +894,13 @@ pub(super) fn parse_fbb_edge_tables_width(
                 if let Err(error) = ctx.reserve_vec(&mut handles, arity, "catia_fbb_edge_handles") {
                     return Some(Err(error));
                 }
-                let Some(handle_width_nonzero) = NonZeroUsize::new(handle_width) else {
-                    return None;
-                };
-                let handle_lane_len = match arity.checked_mul(handle_width) {
-                    Some(length) => length,
-                    None => {
-                        return Some(Err(ctx.refuse_codec_limit(
-                            "catia_fbb_edge_handle_lane",
-                            u64::MAX,
-                            u64::MAX,
-                        )))
-                    }
+                let handle_width_nonzero = NonZeroUsize::new(handle_width)?;
+                let Some(handle_lane_len) = arity.checked_mul(handle_width) else {
+                    return Some(Err(ctx.refuse_codec_limit(
+                        "catia_fbb_edge_handle_lane",
+                        u64::MAX,
+                        u64::MAX,
+                    )));
                 };
                 let Some(handle_lane_end) = position.checked_add(handle_lane_len) else {
                     return Some(Err(ctx.refuse_codec_limit(
@@ -914,9 +909,7 @@ pub(super) fn parse_fbb_edge_tables_width(
                         u64::MAX,
                     )));
                 };
-                let Some(handle_lane) = bytes.get(position..handle_lane_end) else {
-                    return None;
-                };
+                let handle_lane = bytes.get(position..handle_lane_end)?;
                 let mut handle_chunks = handle_lane.chunks(handle_width_nonzero.get());
                 loop {
                     let handle_bytes =
@@ -925,9 +918,7 @@ pub(super) fn parse_fbb_edge_tables_width(
                             Ok(None) => break,
                             Err(error) => return Some(Err(error)),
                         };
-                    let Some(handle) = read_handle(handle_bytes, 0, handle_width) else {
-                        return None;
-                    };
+                    let handle = read_handle(handle_bytes, 0, handle_width)?;
                     handles.push(handle);
                 }
                 position = handle_lane_end;
@@ -1377,7 +1368,7 @@ pub(super) fn fbb_population_layouts(
     let mut range_storage = ctx.reserve_scoped(0, "catia_fbb_population_ranges")?;
     let ranges = range_storage.with_storage(|| crate::container::fbb_run_ranges(ctx, bytes))?;
     {
-        let mut visits = (&ranges).into_iter();
+        let mut visits = ranges.iter();
         while let Some(range) = ctx.next_charged(&mut visits, "catia_standard_iteration")? {
             let mut probe_storage = ctx.reserve_scoped(0, "catia_fbb_population_probe")?;
             let Some(layout) = probe_storage.with_storage(|| -> Result<_, CodecError> {
@@ -2214,18 +2205,13 @@ fn parse_edge_tables_scoped_width(
                 {
                     return Some(Err(error));
                 }
-                let Some(handle_width_nonzero) = NonZeroUsize::new(handle_width) else {
-                    return None;
-                };
-                let handle_lane_len = match arity.checked_mul(handle_width) {
-                    Some(length) => length,
-                    None => {
-                        return Some(Err(ctx.refuse_codec_limit(
-                            "catia_standard_edge_handle_lane",
-                            u64::MAX,
-                            u64::MAX,
-                        )))
-                    }
+                let handle_width_nonzero = NonZeroUsize::new(handle_width)?;
+                let Some(handle_lane_len) = arity.checked_mul(handle_width) else {
+                    return Some(Err(ctx.refuse_codec_limit(
+                        "catia_standard_edge_handle_lane",
+                        u64::MAX,
+                        u64::MAX,
+                    )));
                 };
                 let Some(handle_lane_end) = position.checked_add(handle_lane_len) else {
                     return Some(Err(ctx.refuse_codec_limit(
@@ -2234,9 +2220,7 @@ fn parse_edge_tables_scoped_width(
                         u64::MAX,
                     )));
                 };
-                let Some(handle_lane) = bytes.get(position..handle_lane_end) else {
-                    return None;
-                };
+                let handle_lane = bytes.get(position..handle_lane_end)?;
                 let mut handle_chunks = handle_lane.chunks(handle_width_nonzero.get());
                 loop {
                     let handle_bytes = match ctx
@@ -2246,9 +2230,7 @@ fn parse_edge_tables_scoped_width(
                         Ok(None) => break,
                         Err(error) => return Some(Err(error)),
                     };
-                    let Some(handle) = read_handle(handle_bytes, 0, handle_width) else {
-                        return None;
-                    };
+                    let handle = read_handle(handle_bytes, 0, handle_width)?;
                     handles.push(handle);
                 }
                 position = handle_lane_end;
@@ -2334,11 +2316,8 @@ fn parse_vertex_points(
     if count > bytes.get(position..).map_or(0, <[u8]>::len) / VERTEX_RECORD_BYTES {
         return Ok(None);
     }
-    let vertex_lane_len = match count.checked_mul(VERTEX_RECORD_BYTES) {
-        Some(length) => length,
-        None => {
-            return Err(ctx.refuse_codec_limit("catia_fbb_vertex_record_lane", u64::MAX, u64::MAX))
-        }
+    let Some(vertex_lane_len) = count.checked_mul(VERTEX_RECORD_BYTES) else {
+        return Err(ctx.refuse_codec_limit("catia_fbb_vertex_record_lane", u64::MAX, u64::MAX));
     };
     let Some(vertex_lane_end) = position.checked_add(vertex_lane_len) else {
         return Err(ctx.refuse_codec_limit("catia_fbb_vertex_record_lane", u64::MAX, u64::MAX));
@@ -2741,15 +2720,12 @@ fn parse_trim_record_layout_with_length_encoding(
         } else {
             let mut lengths = Vec::new();
             if wide_u16be {
-                let length_lane_len = match primitive_count.checked_mul(size_of::<u16>()) {
-                    Some(length) => length,
-                    None => {
-                        return Some(Err(ctx.refuse_codec_limit(
-                            "catia_trim_wide_length_lane",
-                            u64::MAX,
-                            u64::MAX,
-                        )))
-                    }
+                let Some(length_lane_len) = primitive_count.checked_mul(size_of::<u16>()) else {
+                    return Some(Err(ctx.refuse_codec_limit(
+                        "catia_trim_wide_length_lane",
+                        u64::MAX,
+                        u64::MAX,
+                    )));
                 };
                 let Some(length_lane_end) = position.checked_add(length_lane_len) else {
                     return Some(Err(ctx.refuse_codec_limit(
@@ -2758,12 +2734,8 @@ fn parse_trim_record_layout_with_length_encoding(
                         u64::MAX,
                     )));
                 };
-                let Some(length_lane) = bytes.get(position..length_lane_end) else {
-                    return None;
-                };
-                let Some(length_width) = NonZeroUsize::new(size_of::<u16>()) else {
-                    return None;
-                };
+                let length_lane = bytes.get(position..length_lane_end)?;
+                let length_width = NonZeroUsize::new(size_of::<u16>())?;
                 if let Err(error) = ctx.reserve_vec(
                     &mut lengths,
                     primitive_count,
@@ -2779,9 +2751,7 @@ fn parse_trim_record_layout_with_length_encoding(
                             Ok(None) => break,
                             Err(error) => return Some(Err(error)),
                         };
-                    let Some(length) = View::u16_be_at(encoded_length, 0) else {
-                        return None;
-                    };
+                    let length = View::u16_be_at(encoded_length, 0)?;
                     lengths.push(usize::from(length));
                 }
                 position = length_lane_end;
@@ -2836,15 +2806,12 @@ fn parse_trim_record_layout_with_length_encoding(
             TrimLengthLane::Decoded(lengths)
         };
         let handle_offset = position;
-        let handle_bytes = match handle_count.checked_mul(width) {
-            Some(bytes) => bytes,
-            None => {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "catia_trim_handle_bytes",
-                    u64::MAX,
-                    u64::MAX,
-                )))
-            }
+        let Some(handle_bytes) = handle_count.checked_mul(width) else {
+            return Some(Err(ctx.refuse_codec_limit(
+                "catia_trim_handle_bytes",
+                u64::MAX,
+                u64::MAX,
+            )));
         };
         let byte_count = match &lane {
             TrimLengthLane::PackedTwoStrip => match 2_usize.checked_add(handle_bytes) {
@@ -2947,12 +2914,8 @@ fn parse_trim_record_with_length_encoding(
         ) {
             return Some(Err(error));
         }
-        let Some(handle_width) = NonZeroUsize::new(width) else {
-            return None;
-        };
-        let Some(handle_lane) = bytes.get(position..layout.end) else {
-            return None;
-        };
+        let handle_width = NonZeroUsize::new(width)?;
+        let handle_lane = bytes.get(position..layout.end)?;
         let mut handle_chunks = handle_lane.chunks(handle_width.get());
         loop {
             let handle_bytes =
@@ -2961,9 +2924,7 @@ fn parse_trim_record_with_length_encoding(
                     Ok(None) => break,
                     Err(error) => return Some(Err(error)),
                 };
-            let Some(handle) = read_handle(handle_bytes, 0, width) else {
-                return None;
-            };
+            let handle = read_handle(handle_bytes, 0, width)?;
             handles.push(handle);
         }
 
@@ -3166,14 +3127,14 @@ fn cover_cycle_by_rows(
     // matches at two starts leaves the cycle unresolved.
     let mut row_matches = BTreeMap::<usize, (usize, bool)>::new();
     {
-        let mut visits = (cycle).into_iter().enumerate();
+        let mut visits = cycle.iter().enumerate();
         while let Some((start, handle)) = ctx.next_charged(&mut visits, OPERATION)? {
             for (rows_here, from_first) in [(&ends.by_first, true), (&ends.by_last, false)] {
                 let Some(candidates) = ctx.get_hash_map(rows_here, handle, OPERATION)? else {
                     continue;
                 };
                 {
-                    let mut visits = (candidates).into_iter();
+                    let mut visits = candidates.iter();
                     while let Some(&edge_row) = ctx.next_charged(&mut visits, OPERATION)? {
                         let Some(pattern) = rows[edge_row].boundary_pattern() else {
                             continue;
@@ -3204,7 +3165,7 @@ fn cover_cycle_by_rows(
     }
     let mut matches = Vec::new();
     {
-        let mut visits = (&row_matches).into_iter();
+        let mut visits = row_matches.iter();
         while let Some((&edge_row, &(start, reversed))) =
             ctx.next_charged(&mut visits, OPERATION)?
         {
@@ -3226,7 +3187,7 @@ fn cover_cycle_by_rows(
     let mut coverage =
         storage.with_storage(|| ctx.alloc_filled(length, 0_u8, "catia FBB boundary coverage"))?;
     {
-        let mut visits = (&matches).into_iter();
+        let mut visits = matches.iter();
         while let Some(&(start, edge_count, edge_row, _)) =
             ctx.next_charged(&mut visits, "catia_standard_iteration")?
         {
@@ -3240,7 +3201,7 @@ fn cover_cycle_by_rows(
                 return Ok(None);
             };
             {
-                let mut visits = (boundary_steps).into_iter().enumerate();
+                let mut visits = boundary_steps.iter().enumerate();
                 while let Some((offset, _)) =
                     ctx.next_charged(&mut visits, "catia_fbb_boundary_coverage_steps")?
                 {

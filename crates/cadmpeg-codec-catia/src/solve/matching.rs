@@ -117,7 +117,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
                 let mut incoming = ctx.alloc_filled(domains.len(), None, "catia_match_incoming")?;
                 let mut augmented = 0usize;
                 {
-                    let mut visits = (0..domains.len()).into_iter();
+                    let mut visits = 0..domains.len();
                     while let Some(start) =
                         ctx.next_charged(&mut visits, "catia_match_start_scan")?
                     {
@@ -1337,7 +1337,7 @@ mod tests {
     #[test]
     fn distinct_matching_retains_only_assignments() {
         let domains = [vec![0], vec![1], vec![2]];
-        let bytes = 4 * std::mem::size_of::<usize>() as u64;
+        let bytes = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
         crate::test_support::with_retained_limit(bytes, |ctx| {
             assert_eq!(
                 super::distinct_domain_matching_with_budget(

@@ -118,7 +118,7 @@ fn classify_body_groups(
     let mut seen_edges = HashSet::new();
     let mut kinds = Vec::new();
     {
-        let mut visits = (groups).into_iter();
+        let mut visits = groups.iter();
         while let Some(group) = ctx.next_charged(&mut visits, "catia_body_group_kinds")? {
             let faces = group.as_ref();
             let mut group_storage = ctx.reserve_scoped(0, "catia_body_group_working_state")?;
@@ -126,12 +126,12 @@ fn classify_body_groups(
                 let mut union = UnionFind::charged(ctx, faces.len(), "catia_body_group_union")?;
                 let mut uses = BTreeMap::<usize, (usize, usize)>::new();
                 {
-                    let mut visits = (faces).into_iter().enumerate();
+                    let mut visits = faces.iter().enumerate();
                     while let Some((face, topology)) =
                         ctx.next_charged(&mut visits, "catia_body_group_uses")?
                     {
                         {
-                            let mut visits = (&topology.boundaries).into_iter();
+                            let mut visits = topology.boundaries.iter();
                             while let Some(boundary) =
                                 ctx.next_charged(&mut visits, "catia_body_group_uses")?
                             {
@@ -367,7 +367,7 @@ impl StandardTopologyDraft {
         let mut storage = ctx.reserve_scoped(0, "catia_body_group_slices")?;
         let mut groups = Vec::new();
         {
-            let mut visits = (face_groups).into_iter();
+            let mut visits = face_groups.iter();
             while let Some(&count) = ctx.next_charged(&mut visits, "catia_body_group_slices")? {
                 let Some((group, rest)) = remaining.split_at_checked(count) else {
                     return Ok(None);
@@ -393,7 +393,7 @@ impl StandardTopologyDraft {
         let mut storage = ctx.reserve_scoped(0, "catia_body_group_slices")?;
         let mut groups = Vec::new();
         {
-            let mut visits = (face_groups).into_iter();
+            let mut visits = face_groups.iter();
             while let Some(&count) = ctx.next_charged(&mut visits, "catia_body_group_slices")? {
                 let Some((group, rest)) = remaining.split_at_mut_checked(count) else {
                     return Ok(None);
@@ -411,7 +411,7 @@ impl StandardTopologyDraft {
             return Ok(None);
         };
         {
-            let mut visits = (&kinds).into_iter().enumerate();
+            let mut visits = kinds.iter().enumerate();
             while let Some((index, &kind)) =
                 ctx.next_charged(&mut visits, "catia_standard_body_orientation_kinds")?
             {
@@ -583,10 +583,10 @@ impl StandardTopologyDraft {
         ctx: &DecodeContext<'_>,
         edge_ports: &[[u32; 2]],
     ) -> Result<Option<Self>, CodecError> {
+        const IDENTITIES: &str = "catia_standard_native_vertex_identities";
         if edge_ports.len() != self.edge_rows.len() {
             return Ok(None);
         }
-        const IDENTITIES: &str = "catia_standard_native_vertex_identities";
         let mut storage = ctx.reserve_scoped(0, IDENTITIES)?;
         let mut identities = HashMap::new();
         let mut edge_vertices = Vec::new();
@@ -950,7 +950,7 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
     let mut face_edges =
         ctx.collect_indexed_vec(face_count, "catia standard face edges", |_| Ok(Vec::new()))?;
     {
-        let mut visits = (edge_faces).into_iter().enumerate();
+        let mut visits = edge_faces.iter().enumerate();
         while let Some((edge, &[left, right])) =
             ctx.next_charged(&mut visits, "catia_standard_face_edge_entries")?
         {
@@ -968,7 +968,7 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
     }
     let mut faces = Vec::new();
     {
-        let mut visits = (&face_edges).into_iter();
+        let mut visits = face_edges.iter();
         while let Some(incident) =
             ctx.next_charged(&mut visits, "catia_standard_incidence_faces")?
         {
@@ -1159,7 +1159,7 @@ pub(super) fn complete_duplicate_face_slots(
                     continue;
                 }
             }
-            let faces = deficit.map_or(&degrees[..], |(face, _)| &degrees[face..face + 1]);
+            let faces = deficit.map_or(&degrees[..], |(face, _)| &degrees[face..=face]);
             for (domain_index, row) in ctx
                 .admit_iter(faces, "catia_standard_duplicate_choice_faces")?
                 .enumerate()
@@ -1262,7 +1262,7 @@ pub(super) fn complete_duplicate_face_slots(
                 Ok(Vec::<(usize, u8)>::new())
             })?;
         {
-            let mut visits = (edge_faces).into_iter().enumerate();
+            let mut visits = edge_faces.iter().enumerate();
             while let Some((edge, faces)) =
                 ctx.next_charged(&mut visits, "catia_standard_duplicate_edge_faces")?
             {
@@ -1631,7 +1631,7 @@ fn duplicate_face_assignments_equivalent(
 ) -> Result<bool, CodecError> {
     let [left, right] = assignments;
     {
-        let mut visits = (groups).into_iter();
+        let mut visits = groups.iter();
         while let Some(group) =
             ctx.next_charged(&mut visits, "catia_standard_duplicate_equivalence_classes")?
         {
@@ -1729,7 +1729,7 @@ pub(crate) fn orient_face_cycles(
         .admit_iter(&flips, "catia_standard_orientation_flip_scan")?
         .enumerate()
     {
-        let boundary = &mut boundaries[index];
+        let boundary = &mut *boundaries[index];
         if flip {
             ctx.reverse(
                 &mut boundary.coedges[..],
@@ -1798,7 +1798,7 @@ pub(crate) fn solve_boundary_orientation_constraints(
         .with_storage(|| ctx.alloc_filled(boundary_count, None, "catia standard boundary flips"))?;
     let mut result = Vec::new();
     {
-        let mut visits = (&constraints).into_iter().enumerate();
+        let mut visits = constraints.iter().enumerate();
         while let Some((root, _)) =
             ctx.next_charged(&mut visits, "catia_standard_boundary_roots")?
         {
@@ -1868,7 +1868,7 @@ pub(crate) fn incidence_cycles(
     let mut remaining = HashSet::new();
     let mut cycles = Vec::new();
     {
-        let mut visits = (incident).into_iter();
+        let mut visits = incident.iter();
         while let Some(&edge) = ctx.next_charged(&mut visits, "catia_incidence_seen_edges")? {
             if !storage.with_storage(|| {
                 ctx.insert_hash_set(&mut remaining, edge, "catia_incidence_seen_edges")
@@ -2047,7 +2047,7 @@ pub(super) fn reconstruct(
     let ends = row_storage.with_storage(|| row_pattern_ends(ctx, &edge_rows))?;
     let mut faces = Vec::new();
     {
-        let mut visits = (trims).into_iter();
+        let mut visits = trims.iter();
         while let Some(trim) = ctx.next_charged(&mut visits, "catia_reconstruct_faces")? {
             let Some(cycles) = boundary_cycles(ctx, trim.packet.triangles(ctx)?)? else {
                 return Ok(None);
@@ -2160,7 +2160,7 @@ pub(crate) fn reconstruct_mesh_selection(
     let mut union = UnionFind::charged(ctx, node_count, "catia_mesh_selection_union")?;
     let mut faces = Vec::new();
     {
-        let mut visits = (selected).into_iter().zip((unmatched_reversed).into_iter());
+        let mut visits = selected.iter().zip(unmatched_reversed.iter());
         while let Some((face, directions)) =
             ctx.next_charged(&mut visits, "catia_mesh_selection_faces")?
         {
@@ -2170,7 +2170,7 @@ pub(crate) fn reconstruct_mesh_selection(
             }
             let mut boundaries = Vec::new();
             {
-                let mut visits = (&face.boundaries).into_iter().zip((directions).into_iter());
+                let mut visits = face.boundaries.iter().zip(directions.iter());
                 while let Some((uses, directions)) =
                     ctx.next_charged(&mut visits, "catia_mesh_selection_boundaries")?
                 {

@@ -406,7 +406,7 @@ fn native_edge_carrier_binding_requires_equal_object_identity() {
             geometry: StandardCurveGeometry::Line,
         },
     ];
-    let native_support_ids = HashMap::from([(70, ()), (71, ())]);
+    let native_support_ids = HashMap::from([(70, true), (71, true)]);
     assert_eq!(
         crate::test_support::with_service_context(|ctx| standard_native_support_edge_ids(
             ctx,
@@ -421,7 +421,7 @@ fn native_edge_carrier_binding_requires_equal_object_identity() {
         crate::test_support::with_service_context(|ctx| standard_native_support_edge_ids(
             ctx,
             &supports[1..],
-            &HashMap::from([(900, ())])
+            &HashMap::from([(900, true)])
         ))
         .expect("service budget"),
         vec![Some(900)]
