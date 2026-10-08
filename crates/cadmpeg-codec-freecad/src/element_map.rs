@@ -1763,7 +1763,9 @@ fn parse_mapped_name(
             let element = usize::try_from(parse_hex(ctx, fields[1], "mapped-name element index")?)
                 .map_err(|_| CodecError::Malformed("negative mapped-name element index".into()))?;
             (
-                ctx.retained_suffix(prefix, &element.to_string(), "FreeCAD mapped name base")?,
+                ctx.format_retained(
+                    format_args!("{prefix}{element}"), "FreeCAD mapped name base",
+                )?,
                 2,
                 3,
             )

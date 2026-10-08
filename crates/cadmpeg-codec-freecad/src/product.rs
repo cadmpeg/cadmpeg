@@ -570,12 +570,16 @@ pub(crate) fn transfer_neutral(
                 })
                 .transpose()?;
             let occurrence_id = if element {
-                crate::native::model_id_charged(
-                    ctx,
-                    "occurrence",
-                    &record.object,
-                    &index.to_string(),
-                )?
+                let ordinal_result = ctx.format_scoped(
+                    format_args!("{index}"), "fcstd product occurrence ordinal",
+                )?;
+                let ordinal_storage = ordinal_result.1;
+                let ordinal = ordinal_result.0;
+                let id = crate::native::model_id_charged(
+                    ctx, "occurrence", &record.object, &ordinal,
+                )?;
+                drop((ordinal, ordinal_storage));
+                id
             } else {
                 crate::native::model_id_charged(ctx, "occurrence", &record.object, "instance")?
             };

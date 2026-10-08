@@ -3658,15 +3658,16 @@ fn parse_binary_edge_representation(
                 "edge pcurve",
             )?;
             let secondary = if kind == 3 {
-                Some((
-                    checked_binary_reference(
-                        cursor.i32("binary edge secondary pcurve")?,
-                        curve2d_count,
-                        false,
-                        "edge secondary pcurve",
-                    )?,
-                    cursor.u8("binary edge continuity")?.to_string(),
-                ))
+                let secondary = checked_binary_reference(
+                    cursor.i32("binary edge secondary pcurve")?,
+                    curve2d_count,
+                    false,
+                    "edge secondary pcurve",
+                )?;
+                let continuity = cursor.u8("binary edge continuity")?;
+                Some((secondary, cursor.ctx.format_retained(
+                    format_args!("{continuity}"), "FreeCAD binary edge continuity",
+                )?))
             } else {
                 None
             };
@@ -3714,7 +3715,10 @@ fn parse_binary_edge_representation(
             })
         }
         4 => {
-            let continuity = cursor.u8("binary edge continuity")?.to_string();
+            let continuity = cursor.u8("binary edge continuity")?;
+            let continuity = cursor.ctx.format_retained(
+                format_args!("{continuity}"), "FreeCAD binary edge continuity",
+            )?;
             let first_surface = checked_binary_reference(
                 cursor.i32("binary edge regularity surface")?,
                 surface_count,
@@ -6597,13 +6601,19 @@ pub(crate) fn transfer_text_geometry(
             let Some((index, curve)) = ctx.next_charged(&mut curve_iter, "FreeCAD transferred curves")? else {
                 break;
             };
+            let ordinal_result = ctx.format_scoped(
+                format_args!("{}", index + 1), "FreeCAD transferred curve ordinal",
+            )?;
+            let ordinal_storage = ordinal_result.1;
+            let ordinal = ordinal_result.0;
             let id: CurveId = model_identity(
                 ctx,
                 "curve",
                 &payload.id,
-                &(index + 1).to_string(),
+                &ordinal,
                 "FreeCAD transferred curve identity",
             )?;
+            drop((ordinal, ordinal_storage));
             append_text_curve(ctx, curve, id, &association, &mut curves)?;
         }
         let mut surface_iter = set.surfaces.iter().enumerate();
@@ -6611,13 +6621,19 @@ pub(crate) fn transfer_text_geometry(
             let Some((index, surface)) = ctx.next_charged(&mut surface_iter, "FreeCAD transferred surfaces")? else {
                 break;
             };
+            let ordinal_result = ctx.format_scoped(
+                format_args!("{}", index + 1), "FreeCAD transferred surface ordinal",
+            )?;
+            let ordinal_storage = ordinal_result.1;
+            let ordinal = ordinal_result.0;
             let id: SurfaceId = model_identity(
                 ctx,
                 "surface",
                 &payload.id,
-                &(index + 1).to_string(),
+                &ordinal,
                 "FreeCAD transferred surface identity",
             )?;
+            drop((ordinal, ordinal_storage));
             append_text_surface(ctx, surface, id, &association, &mut curves, &mut surfaces)?;
         }
         drop(association);

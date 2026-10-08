@@ -2695,16 +2695,11 @@ fn gui_state(
         cadmpeg_core::decode::u64_from_index(node.range().start),
         "FCStd GUI state XML",
     )?;
-    let order = order.to_string();
-    let (_key_storage, key) =
-        ctx.with_scoped_storage("FCStd GUI state identity storage", || {
-            ctx.join_retained(
-                &[kind.as_str(), order.as_str()],
-                ":",
-                "FCStd GUI state identity key",
-            )
-        })
-        .map(|(key, storage)| (storage, key))?;
+    let key_result = ctx.format_scoped(
+        format_args!("{kind}:{order}"), "FCStd GUI state identity key",
+    )?;
+    let _key_storage = key_result.1;
+    let key = key_result.0;
     Ok(GuiStateRecord {
         id: crate::native::native_id_charged(ctx, "gui-state", &key)?,
         kind,
