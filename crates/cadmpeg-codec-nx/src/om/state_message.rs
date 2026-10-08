@@ -112,37 +112,57 @@ impl<'a> OperationStateMessage<'a> {
         at: usize,
         base: usize,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        (|| {
-            if bytes.get(at) != Some(&0x03) {
-                return None;
-            }
-            let declared_length = *bytes.get(at.checked_add(1)?)?;
-            let text_end = at.checked_add(usize::from(declared_length))?;
-            let text = bytes.get(at.checked_add(2)?..text_end)?;
-            let text = propagate_resource!(StateMessageText::from_wire(
-                ctx,
-                propagate_resource!(ctx.validate_utf8(text, "NX state message UTF-8 validation"))
-                    .ok()?,
-            ))
-            .ok()?;
-            let zeros_end = text_end.checked_add(5)?;
-            if bytes.get(text_end..zeros_end) != Some(&[0, 0, 0, 0, 0]) {
-                return None;
-            }
-            let value = StateTaggedValue::read_at(bytes, zeros_end)?;
-            let count_at = zeros_end.checked_add(value.raw().len())?;
-            let count_or_severity = View::u16_be_at(bytes, count_at)?;
-            Self::new(
-                base.checked_add(at)?,
-                StateMessage {
-                    text,
-                    value,
-                    count_or_severity,
-                },
-            )
-            .map(Ok)
-        })()
-        .transpose()
+        if bytes.get(at) != Some(&3) {
+            return Ok(None);
+        }
+        let Some(declared_length) = at
+            .checked_add(1)
+            .and_then(|offset| bytes.get(offset))
+            .copied()
+        else {
+            return Ok(None);
+        };
+        let Some(text_end) = at.checked_add(usize::from(declared_length)) else {
+            return Ok(None);
+        };
+        let Some(raw) = at
+            .checked_add(2)
+            .and_then(|start| bytes.get(start..text_end))
+        else {
+            return Ok(None);
+        };
+        let Ok(value) = ctx.validate_utf8(raw, "NX state message UTF-8 validation")? else {
+            return Ok(None);
+        };
+        let Ok(text) = StateMessageText::from_wire(ctx, value)? else {
+            return Ok(None);
+        };
+        let Some(zeros_end) = text_end.checked_add(5) else {
+            return Ok(None);
+        };
+        if bytes.get(text_end..zeros_end) != Some(&[0; 5]) {
+            return Ok(None);
+        }
+        let Some(value) = StateTaggedValue::read_at(bytes, zeros_end) else {
+            return Ok(None);
+        };
+        let Some(count_at) = zeros_end.checked_add(value.raw().len()) else {
+            return Ok(None);
+        };
+        let Some(count_or_severity) = View::u16_be_at(bytes, count_at) else {
+            return Ok(None);
+        };
+        let Some(offset) = base.checked_add(at) else {
+            return Ok(None);
+        };
+        Ok(Self::new(
+            offset,
+            StateMessage {
+                text,
+                value,
+                count_or_severity,
+            },
+        ))
     }
     pub(super) fn new(offset: usize, body: StateMessage<&'a str>) -> Option<Self> {
         offset.checked_add(body.byte_len())?;

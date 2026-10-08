@@ -448,20 +448,15 @@ fn printable_string_refusal(
 #[test]
 fn printable_string_value_iteration_refusal_propagates() {
     let bytes = b"\x66\x32\x03\x03A\0";
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         bytes,
-        // The marker scan reads six bytes; UTF-8 validation reads the one-byte value.
-        |policy| {
-            policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(bytes.len()) + 1
-        },
-        |ctx| {
-            let error = crate::om::string_values(ctx, bytes, 0).unwrap_err();
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                panic!("value validation must refuse");
-            };
-            assert_eq!(limit.operation, "NX printable string syntax");
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX printable string syntax",
+        |ctx| crate::om::string_values(ctx, bytes, 0),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "NX printable string syntax" && limit.additional == 1)
     );
 }
 
@@ -597,4 +592,33 @@ fn constant_decimal_utf8_refusal_propagates() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 4)
     );
+}
+
+#[test]
+fn constant_expression_stacks_are_scoped_and_refuse_at_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let text = "(1 + 2) * 3";
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx| {
+            assert_eq!(
+                crate::om::evaluate_constant_expression(ctx, text)
+                    .unwrap()
+                    .map(cadmpeg_ir::scalar::FiniteReal::get),
+                Some(9.0)
+            );
+        },
+    );
+    for operation in ["NX expression operator stack", "NX expression value stack"] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::MaterializedBytes,
+            operation,
+            |ctx| crate::om::evaluate_constant_expression(ctx, text),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
+        );
+    }
 }

@@ -18,15 +18,18 @@ impl StateTableEntry<'_> {
     pub(super) fn byte_len(&self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
         match self {
             Self::Status(body) => Ok(body.byte_len()),
-            Self::Slots(slots) => ctx
-                .admit_iter(slots.as_slice(), "NX status slot token widths")?
-                .try_fold(5_usize, |length, slot| {
+            Self::Slots(slots) => ctx.fold(
+                slots.as_slice(),
+                5_usize,
+                |length, slot| {
                     length
                         .checked_add(usize::from(slot.map_or(1, StateIndexToken::byte_len)))
                         .ok_or_else(|| {
                             ctx.refuse_codec_limit("NX status slot extent", u64::MAX, u64::MAX)
                         })
-                }),
+                },
+                "NX status slot token widths",
+            ),
         }
     }
 }
@@ -44,17 +47,18 @@ impl<'a> OperationStateStatusTable<'a> {
         entries: NonEmpty<StateTableEntry<'a>>,
     ) -> Result<Option<Self>, CodecError> {
         let mut end = offset;
-        for entry in ctx
-            .admit_iter(entries.initial(), "NX status table entries")?
-            .chain(ctx.admit_iter(
-                std::slice::from_ref(entries.last()),
-                "NX status table entries",
-            )?)
-        {
+        let mut initial = entries.initial().iter();
+        while initial.len() > 0 {
+            let Some(entry) = ctx.next_charged(&mut initial, "NX status table entries")? else {
+                break;
+            };
             let Some(next) = end.checked_add(entry.byte_len(ctx)?) else {
                 return Ok(None);
             };
             end = next;
+        }
+        if end.checked_add(entries.last().byte_len(ctx)?).is_none() {
+            return Ok(None);
         }
         Ok(Some(Self { offset, entries }))
     }
@@ -62,20 +66,27 @@ impl<'a> OperationStateStatusTable<'a> {
     pub(crate) fn into_entries<'ctx, 'policy>(
         self,
         ctx: &'ctx DecodeContext<'policy>,
-    ) -> impl Iterator<Item = Result<(usize, StateTableEntry<'a>), CodecError>>
-           + 'ctx
-           + use<'a, 'ctx, 'policy>
+    ) -> Result<
+        impl Iterator<Item = Result<(usize, StateTableEntry<'a>), CodecError>>
+            + 'ctx
+            + use<'a, 'ctx, 'policy>,
+        CodecError,
+    >
     where
         'a: 'ctx,
     {
         let mut offset = self.offset;
-        self.entries.into_iter().map(move |entry| {
-            let start = offset;
-            offset = offset.checked_add(entry.byte_len(ctx)?).ok_or_else(|| {
-                ctx.refuse_codec_limit("NX status table extent", u64::MAX, u64::MAX)
-            })?;
-            Ok((start, entry))
-        })
+        let (initial, last) = self.entries.into_parts();
+        Ok(ctx
+            .admit_iter(initial, "NX status table entry projection")?
+            .chain(std::iter::once(last))
+            .map(move |entry| {
+                let start = offset;
+                offset = offset.checked_add(entry.byte_len(ctx)?).ok_or_else(|| {
+                    ctx.refuse_codec_limit("NX status table extent", u64::MAX, u64::MAX)
+                })?;
+                Ok((start, entry))
+            }))
     }
 
     #[cfg(test)]

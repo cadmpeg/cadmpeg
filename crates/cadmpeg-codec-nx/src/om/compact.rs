@@ -161,15 +161,15 @@ impl LocatedCompactIndex {
         })
     }
     pub(super) fn read_array<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[Self; N]> {
-        (0..N)
-            .map(|_| {
-                let token = Self::read(bytes, *at)?;
-                *at += token.atom.raw().len();
-                Some(token)
-            })
-            .collect::<Option<Vec<_>>>()?
-            .try_into()
-            .ok()
+        let mut tokens = [Self {
+            atom: CompactIndexAtom(Encoding::Direct(0), 1),
+            offset: 0,
+        }; N];
+        for token in &mut tokens {
+            *token = Self::read(bytes, *at)?;
+            *at += token.atom.raw().len();
+        }
+        Some(tokens)
     }
 }
 
@@ -207,7 +207,13 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
         let count = self.0.len();
         let operation = "NX mapped counted index members";
         let mut mapped = ctx.collection_vec(count, operation)?;
-        for member in self.0 {
+        let mut members = self.0.into_iter();
+        while members.len() > 0 {
+            let Some(member) =
+                ctx.next_charged(&mut members, "NX counted member mapping traversal")?
+            else {
+                break;
+            };
             mapped.push(map(member)?);
         }
         Ok(CountedIndexMembers(mapped, self.1))
@@ -217,15 +223,22 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         mut map: impl FnMut(T) -> Result<Option<U>, cadmpeg_core::CodecError>,
     ) -> Result<Option<CountedIndexMembers<U, RESERVED>>, cadmpeg_core::CodecError> {
-        let count = self.0.len();
         let operation = "NX resolved counted index members";
-        let mut mapped = ctx.collection_vec(count, operation)?;
-        for member in self.0 {
-            let Some(value) = map(member)? else {
+        let mut storage = ctx.reserve_scoped(0, "NX counted member candidate storage")?;
+        let mut mapped = Vec::new();
+        let mut members = self.0.into_iter();
+        while members.len() > 0 {
+            let Some(member) =
+                ctx.next_charged(&mut members, "NX counted member resolution traversal")?
+            else {
+                break;
+            };
+            let Some(value) = storage.with_storage(|| map(member))? else {
                 return Ok(None);
             };
-            mapped.push(value);
+            storage.with_storage(|| ctx.push_vec(&mut mapped, value, operation))?;
         }
+        storage.commit()?;
         Ok(Some(CountedIndexMembers(mapped, self.1)))
     }
     pub(crate) fn new(members: Vec<T>) -> Result<Self, &'static str> {
