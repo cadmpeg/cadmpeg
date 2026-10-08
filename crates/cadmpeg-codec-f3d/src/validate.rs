@@ -12,6 +12,7 @@
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_layout;
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
 use crate::{design, history, ids, native, records};
+use crate::ids::{design_stream, design_segment_from_stream};
 mod dimensions;
 mod scopes;
 
@@ -24,27 +25,6 @@ use cadmpeg_ir::report::{
     check::{Check, Finding},
     Severity,
 };
-
-/// Resolve the native design stream that owns a record `id`, defaulting to the
-/// primary design stream when the id carries no stream qualifier.
-fn design_stream<'id>(decode: &DecodeContext<'_>, id: &'id str) -> Result<&'id str, CodecError> {
-    Ok(decode
-        .rsplit_once(id, ":", "resolve F3D validation design stream")?
-        .map_or(ids::DEFAULT_STREAM, |(stream, _)| stream))
-}
-
-/// Resolve the Design segment from a parsed native stream. Only the two
-/// Design stream entry names identify a segment.
-fn design_segment<'stream>(
-    decode: &DecodeContext<'_>,
-    stream: &'stream str,
-) -> Result<Option<&'stream str>, CodecError> {
-    Ok(decode
-        .rsplit_once(stream, "/", "resolve F3D validation design segment")?
-        .and_then(|(segment, entry)| {
-            matches!(entry, "MetaStream.dat" | "BulkStream.dat").then_some(segment)
-        }))
-}
 
 /// Match a direct escaped entry or an xref scope ending in the entry.
 fn design_stream_contains_entry(
@@ -1415,10 +1395,9 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     let mut design_types = timeline_indexes_storage.with_storage(|| {
         ctx.decode.try_collect_vec(
             native.design_types.iter().map(|value| {
-                let stream = ctx
-                    .decode
-                    .rsplit_once(value.id(), ":", "resolve F3D validation design stream")?
-                    .map(|(stream, _)| stream);
+                let stream = ids::native_stream_charged(
+                    ctx.decode, value.id(), "resolve F3D validation design stream",
+                )?;
                 Ok::<_, CodecError>((stream, value))
             }),
             "order F3D feature timeline types",
@@ -1437,7 +1416,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         let Some(meta_stream) = *meta_stream else {
             continue;
         };
-        let Some(segment) = design_segment(ctx.decode, meta_stream)? else {
+        let Some(segment) = design_segment_from_stream(ctx.decode, meta_stream)? else {
             continue;
         };
         if !ctx.decode.contains_key_hash_map(
@@ -2207,7 +2186,7 @@ fn validate_canvas_images(
             _ => continue,
         };
         let stream = design_stream(ctx.decode, design_type.id())?;
-        let segment = design_segment(ctx.decode, stream)?;
+        let segment = design_segment_from_stream(ctx.decode, stream)?;
         let (entity_values, located_entity_values) = design_type.entities.storage_slices();
         for suffix in ctx
             .decode
@@ -2232,7 +2211,7 @@ fn validate_canvas_images(
         "scan F3D design canvas images",
     )? {
         let native_stream = design_stream(ctx.decode, &image.id)?;
-        let design_segment = design_segment(ctx.decode, native_stream)?;
+        let design_segment = design_segment_from_stream(ctx.decode, native_stream)?;
         let scope = ctx
             .decode
             .get_hash_map(
@@ -2322,7 +2301,7 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resu
             continue;
         }
         let stream = design_stream(ctx.decode, design_type.id())?;
-        let segment = design_segment(ctx.decode, stream)?;
+        let segment = design_segment_from_stream(ctx.decode, stream)?;
         let (entity_values, located_entity_values) = design_type.entities.storage_slices();
         for suffix in ctx
             .decode
@@ -2350,7 +2329,7 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resu
         "scan F3D design decal images",
     )? {
         let native_stream = design_stream(ctx.decode, &image.id)?;
-        let design_segment = design_segment(ctx.decode, native_stream)?;
+        let design_segment = design_segment_from_stream(ctx.decode, native_stream)?;
         let scope = ctx
             .decode
             .get_hash_map(

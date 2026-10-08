@@ -116,7 +116,7 @@ fn locus_findings(group: DesignDimensionLocusGroup) -> Vec<cadmpeg_ir::report::c
         native.design_dimension_locus_groups.push(group);
         let mut ctx = crate::validate::Ctx::new(&ir, &native, decode).unwrap();
         let stream =
-            crate::validate::design_stream(decode, &native.design_dimension_locus_groups[0].id)
+            crate::ids::design_stream(decode, &native.design_dimension_locus_groups[0].id)
                 .unwrap();
         ctx.parameters().unwrap();
         ctx.parameter_groups
@@ -308,7 +308,7 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         .unwrap();
         native.design_dimension_annotation_frames.push(frame);
         let mut ctx = crate::validate::Ctx::new(&ir, &native, decode).unwrap();
-        let stream = crate::validate::design_stream(
+        let stream = crate::ids::design_stream(
             decode,
             &native.design_dimension_annotation_frames[0].id,
         )

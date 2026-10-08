@@ -50,7 +50,7 @@ fn companion_findings(
         native.design_parameter_companions.push(companion);
         let mut ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
         let stream =
-            super::super::design_stream(decode, native.design_parameter_companions[0].id())
+            crate::ids::design_stream(decode, native.design_parameter_companions[0].id())
                 .unwrap();
         ctx.owner_groups.insert((stream, 6), vec![&owner]);
         ctx.records_by_index.insert((stream, 8), &header);
