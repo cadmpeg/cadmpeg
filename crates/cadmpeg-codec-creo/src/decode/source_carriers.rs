@@ -31,7 +31,7 @@ enum SourceContext<'ctx, 'input> {
 
 struct SourceValue<'ctx, T> {
     value: (T, Option<ScopedReservation<'ctx>>),
-    _key_and_node_storage: Option<ScopedReservation<'ctx>>,
+    _storage: Option<ScopedReservation<'ctx>>,
 }
 
 struct ModelSource<T> {
@@ -43,6 +43,8 @@ pub(super) struct SourceUnitCarriers<'ctx, 'input> {
     context: SourceContext<'ctx, 'input>,
     length_scale_mm: Option<PositiveReal>,
     surfaces: BTreeMap<SurfaceId, SourceValue<'ctx, ModelSource<SurfaceGeometry>>>,
+    // A removed first entry must not release nodes that still serve later entries.
+    surface_nodes_storage: Option<ScopedReservation<'ctx>>,
     curves: BTreeMap<CurveId, SourceValue<'ctx, ModelSource<CurveGeometry>>>,
     edge_parameter_ranges: BTreeMap<EdgeId, SourceValue<'ctx, [f64; 2]>>,
     sketch_entities: BTreeMap<SketchEntityId, SourceValue<'ctx, SketchGeometry>>,
@@ -64,6 +66,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
             context: SourceContext::Decode(ctx),
             length_scale_mm: length_scale_mm.filter(|scale| scale.get() != 1.0),
             surfaces: BTreeMap::new(),
+            surface_nodes_storage: None,
             curves: BTreeMap::new(),
             edge_parameter_ranges: BTreeMap::new(),
             sketch_entities: BTreeMap::new(),
@@ -76,6 +79,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
             context: SourceContext::Fixture,
             length_scale_mm: length_scale_mm.filter(|scale| scale.get() != 1.0),
             surfaces: BTreeMap::new(),
+            surface_nodes_storage: None,
             curves: BTreeMap::new(),
             edge_parameter_ranges: BTreeMap::new(),
             sketch_entities: BTreeMap::new(),
@@ -274,7 +278,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
                 Entry::Vacant(entry) => {
                     entry.insert(SourceValue {
                         value: (source_geometry, geometry_storage),
-                        _key_and_node_storage: key_storage,
+                        _storage: key_storage,
                     });
                 }
             }
@@ -390,11 +394,24 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
                 },
             )?;
         }
+        let mut new_surface_nodes_storage = match self.context {
+            SourceContext::Decode(decode_ctx) if self.surface_nodes_storage.is_none() => {
+                Some(decode_ctx.reserve_scoped(0, "creo source surface map nodes")?)
+            }
+            SourceContext::Decode(_) => None,
+            #[cfg(test)]
+            SourceContext::Fixture => None,
+        };
         let insert =
             || copy_ctx.entry_btree_map(&mut self.surfaces, source_id, "creo source surface nodes");
-        let entry = match key_storage.as_mut() {
-            Some(storage) => storage.with_storage(insert)?,
-            None => insert()?,
+        let entry = {
+            if let Some(storage) = self.surface_nodes_storage.as_mut() {
+                storage.with_storage(insert)?
+            } else if let Some(storage) = new_surface_nodes_storage.as_mut() {
+                storage.with_storage(insert)?
+            } else {
+                insert()?
+            }
         };
         match entry {
             Entry::Occupied(mut entry) => {
@@ -416,8 +433,11 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
                         },
                         geometry_storage,
                     ),
-                    _key_and_node_storage: key_storage,
+                    _storage: key_storage,
                 });
+                if self.surface_nodes_storage.is_none() {
+                    self.surface_nodes_storage = new_surface_nodes_storage;
+                }
             }
         }
         ctx.reserve_vec(&mut ir.model.surfaces, 1, "creo model surfaces")?;
@@ -477,6 +497,14 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
                 },
             )?;
         }
+        let mut new_surface_nodes_storage = match self.context {
+            SourceContext::Decode(decode_ctx) if self.surface_nodes_storage.is_none() => {
+                Some(decode_ctx.reserve_scoped(0, "creo source surface map nodes")?)
+            }
+            SourceContext::Decode(_) => None,
+            #[cfg(test)]
+            SourceContext::Fixture => None,
+        };
         let insert = || {
             copy_ctx.entry_btree_map(
                 &mut self.surfaces,
@@ -484,9 +512,14 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
                 "creo replacement source surface nodes",
             )
         };
-        let entry = match key_storage.as_mut() {
-            Some(storage) => storage.with_storage(insert)?,
-            None => insert()?,
+        let entry = {
+            if let Some(storage) = self.surface_nodes_storage.as_mut() {
+                storage.with_storage(insert)?
+            } else if let Some(storage) = new_surface_nodes_storage.as_mut() {
+                storage.with_storage(insert)?
+            } else {
+                insert()?
+            }
         };
         match entry {
             Entry::Occupied(mut entry) => {
@@ -508,8 +541,11 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
                         },
                         geometry_storage,
                     ),
-                    _key_and_node_storage: key_storage,
+                    _storage: key_storage,
                 });
+                if self.surface_nodes_storage.is_none() {
+                    self.surface_nodes_storage = new_surface_nodes_storage;
+                }
             }
         }
         surface.geometry = geometry;
@@ -593,7 +629,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
                         },
                         geometry_storage,
                     ),
-                    _key_and_node_storage: key_storage,
+                    _storage: key_storage,
                 });
             }
         }
@@ -698,7 +734,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
                         },
                         geometry_storage,
                     ),
-                    _key_and_node_storage: key_storage,
+                    _storage: key_storage,
                 });
             }
         }
@@ -862,7 +898,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
                 Entry::Vacant(entry) => {
                     entry.insert(SourceValue {
                         value: (source_range, None),
-                        _key_and_node_storage: key_storage,
+                        _storage: key_storage,
                     });
                 }
             }
@@ -1076,7 +1112,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
                     },
                     None,
                 ),
-                _key_and_node_storage: None,
+                _storage: None,
             },
         );
     }
@@ -1116,6 +1152,10 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
             SourceContext::Fixture => drop(crate::decode::with_test_decode_ctx(|ctx| {
                 ctx.remove_btree_map(&mut self.surfaces, id, "creo source surface removal")
             })?),
+        }
+        if self.surfaces.is_empty() {
+            drop(std::mem::replace(&mut self.surfaces, BTreeMap::new()));
+            drop(self.surface_nodes_storage.take());
         }
         Ok(())
     }
