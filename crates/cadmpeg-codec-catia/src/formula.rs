@@ -2954,78 +2954,83 @@ impl ComparisonOperator {
     }
 }
 
-/// Replaces every non-overlapping occurrence of a pattern; an empty pattern
-/// inserts the replacement around every character.
+/// Replace non-overlapping matches through one admitted byte searcher.
 fn replaced_text(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    (source, from, to): (&str, &str, &str),
-    work_operation: &'static str,
-    text_operation: &'static str,
+    source: &str,
+    from: &str,
+    to: &str,
+    operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    // Formatting measures the text and then writes it. Each pass visits every
-    // source character, or runs forward linear-time searches from one match to
-    // the next that visit every source byte once and every match's pattern bytes
-    // once; matches do not overlap. The written text is charged when formatted.
-    let pass = u64_from_index(source.len())
-        .checked_mul(2)
-        .and_then(|work| work.checked_add(u64_from_index(from.len())))
-        .and_then(|work| work.checked_mul(2))
-        .ok_or_else(|| ctx.refuse_codec_limit(work_operation, u64::MAX, u64::MAX))?;
-    ctx.charge_work(pass, work_operation)?;
-    ctx.format_retained(
-        format_args!("{}", ReplacedText { source, from, to }),
-        text_operation,
-    )
-}
-
-struct ReplacedText<'a> {
-    source: &'a str,
-    from: &'a str,
-    to: &'a str,
-}
-
-impl std::fmt::Display for ReplacedText<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.from.is_empty() {
-            use std::fmt::Write;
-            formatter.write_str(self.to)?;
-            for character in self.source.chars() {
-                formatter.write_char(character)?;
-                formatter.write_str(self.to)?;
-            }
-            return Ok(());
+    let match_count = if from.is_empty() {
+        ctx.admit_iter(source, operation)?
+            .count()
+            .checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
+    } else {
+        ctx.find_bytes_iter(source.as_bytes(), from.as_bytes(), operation)?
+            .count()
+    };
+    let length = match_count
+        .checked_mul(from.len())
+        .and_then(|removed| source.len().checked_sub(removed))
+        .and_then(|kept| {
+            match_count
+                .checked_mul(to.len())
+                .and_then(|added| kept.checked_add(added))
+        })
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let mut output = ctx.retained_string(length, operation)?;
+    if from.is_empty() {
+        ctx.append_retained(&mut output, to, operation)?;
+        for character in ctx.admit_iter(source, operation)? {
+            output.push(character);
+            ctx.append_retained(&mut output, to, operation)?;
         }
-        let mut rest = self.source;
-        while let Some(index) = rest.find(self.from) {
-            formatter.write_str(&rest[..index])?;
-            formatter.write_str(self.to)?;
-            rest = &rest[index + self.from.len()..];
-        }
-        formatter.write_str(rest)
+        return Ok(output);
     }
+    let mut copied_until = 0;
+    for start in ctx.find_bytes_iter(source.as_bytes(), from.as_bytes(), operation)? {
+        ctx.append_retained(&mut output, &source[copied_until..start], operation)?;
+        ctx.append_retained(&mut output, to, operation)?;
+        copied_until = start + from.len();
+    }
+    ctx.append_retained(&mut output, &source[copied_until..], operation)?;
+    Ok(output)
 }
 
-struct CasedText<'a> {
-    source: &'a str,
+/// Convert each Unicode scalar independently, preserving the formula's case rules.
+fn cased_text(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &str,
     upper: bool,
-}
-
-impl std::fmt::Display for CasedText<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use std::fmt::Write;
-        for character in self.source.chars() {
-            if self.upper {
-                for mapped in character.to_uppercase() {
-                    formatter.write_char(mapped)?;
-                }
-            } else {
-                for mapped in character.to_lowercase() {
-                    formatter.write_char(mapped)?;
-                }
+) -> Result<String, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "catia_formula_string_case";
+    let mut length = 0usize;
+    for character in ctx.admit_iter(source, OPERATION)? {
+        let mapped_length = if upper {
+            character.to_uppercase().map(char::len_utf8).sum::<usize>()
+        } else {
+            character.to_lowercase().map(char::len_utf8).sum::<usize>()
+        };
+        // One scalar maps to at most three scalars.
+        length = length
+            .checked_add(mapped_length)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX, u64::MAX))?;
+    }
+    let mut output = ctx.retained_string(length, OPERATION)?;
+    for character in ctx.admit_iter(source, OPERATION)? {
+        if upper {
+            for mapped in character.to_uppercase() {
+                output.push(mapped);
+            }
+        } else {
+            for mapped in character.to_lowercase() {
+                output.push(mapped);
             }
         }
-        Ok(())
     }
+    Ok(output)
 }
 
 struct FormulaExpressionParser<'a, 'b, 'c, 'd> {
@@ -3403,8 +3408,9 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                     let string_value = if known {
                         replaced_text(
                             self.ctx,
-                            (left.value(), right.value(), ""),
-                            "catia_formula_subtract_work",
+                            left.value(),
+                            right.value(),
+                            "",
                             "catia_formula_string_subtract",
                         )?
                     } else {
@@ -3861,13 +3867,9 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                 ("ToReal", EvaluatedFormulaValue::String(value), []) => {
                     EvaluatedFormulaValue::Scalar(
                         if self.evaluate || (self.static_check && value.is_known()) {
-                            self.ctx.charge_work(
-                                u64_from_index(value.value().len()),
-                                "catia_formula_string_real",
-                            )?;
-                            formula_value!(finite_scalar(formula_value!(value
-                                .value()
-                                .parse::<f64>()
+                            formula_value!(finite_scalar(formula_value!(self
+                                .ctx
+                                .parse_text::<f64>(value.value(), "catia_formula_string_real",)?
                                 .ok())))
                         } else {
                             static_unknown_result(0.0, FormulaDimension::SCALAR)
@@ -3924,19 +3926,12 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         start: usize,
         forward: bool,
     ) -> Result<Option<i64>, cadmpeg_core::CodecError> {
-        let work = u64_from_index(value.len())
-            .checked_add(u64_from_index(needle.len()))
-            .ok_or_else(|| {
-                self.ctx
-                    .refuse_codec_limit("catia_formula_string_search", u64::MAX, u64::MAX)
-            })?;
-        self.ctx.charge_work(work, "catia_formula_string_search")?;
         let byte_offset = if forward {
             let Some(start_byte) = self.string_boundary(value, start)? else {
                 return Ok(Some(-1));
             };
-            value[start_byte..]
-                .find(needle)
+            self.ctx
+                .find_text(&value[start_byte..], needle, "catia_formula_string_search")?
                 .map(|offset| start_byte + offset)
         } else {
             let character_count = self
@@ -3947,7 +3942,8 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                 return Ok(Some(-1));
             };
             let end_byte = formula_value!(self.string_boundary(value, end_character)?);
-            value[..end_byte].rfind(needle)
+            self.ctx
+                .rfind_text(&value[..end_byte], needle, "catia_formula_string_search")?
         };
         let Some(offset) = byte_offset else {
             return Ok(Some(-1));
@@ -4011,8 +4007,9 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             let value = if self.evaluate || (self.static_check && known) {
                 replaced_text(
                     self.ctx,
-                    (source.value(), from.value(), to.value()),
-                    "catia_formula_replace_work",
+                    source.value(),
+                    from.value(),
+                    to.value(),
                     "catia_formula_replace_subtext",
                 )?
             } else {
@@ -4059,25 +4056,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             };
             let known = value.is_known();
             let string_value = if self.evaluate || (self.static_check && known) {
-                // A Unicode character maps to at most three characters; formatting runs twice.
-                let work = u64_from_index(value.value().len())
-                    .checked_mul(12)
-                    .ok_or_else(|| {
-                        self.ctx
-                            .refuse_codec_limit("catia_formula_case_work", u64::MAX, u64::MAX)
-                    })?;
-                self.ctx.charge_work(work, "catia_formula_case_work")?;
-                let formatted = self.ctx.format_retained(
-                    format_args!(
-                        "{}",
-                        CasedText {
-                            source: value.value(),
-                            upper: function == "ToUpper",
-                        }
-                    ),
-                    "catia_formula_string_case",
-                );
-                formatted?
+                cased_text(self.ctx, value.value(), function == "ToUpper")?
             } else {
                 String::new()
             };
@@ -4548,7 +4527,11 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         } else {
             self.at = name_end;
         }
-        let value = formula_value!(self.bindings.get(&self.source[start..name_end]));
+        let value = formula_value!(self.ctx.get_btree_map(
+            self.bindings,
+            &self.source[start..name_end],
+            "catia_formula_symbol_lookup"
+        )?);
         if self.evaluate
             && matches!(value, EvaluatedFormulaValue::Scalar(scalar) if scalar.known_value().is_none())
         {
@@ -5017,6 +5000,50 @@ mod parser_tests {
             );
         }
         assert!(evaluate_formula_expression("min(1,2)", &BTreeMap::new()).is_some());
+    }
+
+    #[test]
+    fn formula_replacement_matches_standard_results_with_linear_work() {
+        for source in ["", "aaaa", "ababababa", "ééé😀é", "aaabaaaaab", "abc"] {
+            for from in ["", "a", "aa", "aba", "aaaaab", "é", "😀", "absent"] {
+                for to in ["", "x", "😀"] {
+                    assert_eq!(
+                        crate::test_support::with_service_context(|ctx| {
+                            super::replaced_text(ctx, source, from, to, "test replacement")
+                        })
+                        .expect("replacement admission"),
+                        source.replace(from, to)
+                    );
+                }
+            }
+        }
+        let source = "a".repeat(4096);
+        let result = crate::test_support::with_work_limit(4096 * 8, |ctx| {
+            super::replaced_text(ctx, &source, "a", "b", "test replacement")
+        })
+        .expect("one byte searcher and linear output copying");
+        assert_eq!(result, "b".repeat(4096));
+    }
+
+    #[test]
+    fn formula_case_conversion_preserves_scalar_rules_and_exact_storage() {
+        for (source, upper, expected) in [
+            ("ΟΣ", false, "οσ"),
+            ("İ", false, "i\u{0307}"),
+            ("ß", true, "SS"),
+        ] {
+            let result = crate::test_support::with_retained_limit(expected.len() as u64, |ctx| {
+                super::cased_text(ctx, source, upper)
+            })
+            .expect("only final case bytes are retained");
+            assert_eq!(result, expected);
+            assert!(
+                crate::test_support::with_work_refusal("catia_formula_string_case", |ctx| {
+                    super::cased_text(ctx, source, upper)
+                })
+                .is_err()
+            );
+        }
     }
 
     #[test]
