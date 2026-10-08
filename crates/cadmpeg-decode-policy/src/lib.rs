@@ -10,6 +10,7 @@ extern crate rustc_middle;
 extern crate rustc_span;
 extern crate rustc_type_ir;
 
+mod admission;
 mod allocation;
 mod bounds;
 mod callback;
@@ -92,6 +93,24 @@ impl Callbacks for DecodeCallbacks {
             return Compilation::Continue;
         }
         owners.retain(|owner| reachable.contains(&scope::key(tcx, owner.to_def_id())));
+        // Decode never runs the standard admission's methods.
+        owners.retain(|owner| !admission::standard_implementation(tcx, *owner));
+        for (owner, message) in admission::forwarding_findings(tcx) {
+            Analysis {
+                tcx,
+                typeck: tcx.typeck(owner),
+                typing_owner: owner,
+                arguments: None,
+                fixed_parameters: HashSet::new(),
+                flow: flow::Flow::default(),
+                findings: &mut self.findings,
+            }
+            .report(
+                tcx.def_span(owner),
+                "unproven_decode_charge",
+                &format!("{message}; replacement: forward to the DecodeContext or ScopedReservation operation of the same name"),
+            );
+        }
         let instantiations = instantiation::collect(tcx, &owners);
         let mut bodies = HashMap::new();
         for owner in owners {
@@ -328,16 +347,25 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 let definition = self.typeck.type_dependent_def_id(expression.hir_id)?;
                 let mut operands = vec![receiver];
                 operands.extend(arguments);
-                Some((definition, operands))
+                Some((self.forwarded_definition(expression, definition), operands))
             }
             ExprKind::Call(callee, arguments) => match self.expr_ty(callee).kind() {
-                rustc_middle::ty::FnDef(definition, _) => {
-                    Some((*definition, arguments.iter().collect()))
-                }
+                rustc_middle::ty::FnDef(definition, _) => Some((
+                    self.forwarded_definition(expression, *definition),
+                    arguments.iter().collect(),
+                )),
                 _ => None,
             },
             _ => None,
         }
+    }
+
+    /// A call through an admission trait is checked as the core operation
+    /// it forwards to.
+    fn forwarded_definition(&self, expression: &'tcx Expr<'tcx>, definition: DefId) -> DefId {
+        self.raw_call_arguments(expression)
+            .and_then(|args| self.admission_forward(definition, args))
+            .map_or(definition, |(target, _)| target)
     }
 
     fn report(&mut self, span: Span, rule: &str, message: &str) {
@@ -428,6 +456,10 @@ impl<'tcx> Visitor<'tcx> for Analysis<'_, 'tcx> {
             return;
         }
         if self.deserialize_call(expression) {
+            rustc_hir::intravisit::walk_expr(self, expression);
+            return;
+        }
+        if self.standard_admission_use(expression) {
             rustc_hir::intravisit::walk_expr(self, expression);
             return;
         }
