@@ -99,14 +99,15 @@ pub(crate) fn admitted_canonical_json(
             "Rhino admitted_canonical_json text",
         )?))
     })?;
-    let (mut raw, _temporary) = ctx.temporary_vec(count.0, operation)?;
+    let (raw_buffer, _temporary) = ctx.temporary_vec(count.0, operation)?;
+    let mut raw = raw_buffer;
     serde_json::to_writer(&mut raw, value).or_else(|error| {
         Err(CodecError::malformed(ctx.format_retained(
             format_args!("{error}"),
             "Rhino admitted_canonical_json text",
         )?))
     })?;
-    let (canonical, _tree) = ctx.with_scoped_storage(operation, || {
+    let (canonical_buffer, _tree) = ctx.with_scoped_storage(operation, || {
         let failure = RefCell::new(None);
         let seed = CanonicalSeed {
             ctx,
@@ -132,6 +133,7 @@ pub(crate) fn admitted_canonical_json(
         })?;
         Ok::<_, CodecError>(canonical)
     })?;
+    let canonical = canonical_buffer;
     admitted_json(ctx, &canonical, operation)
 }
 

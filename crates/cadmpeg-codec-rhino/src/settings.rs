@@ -1934,9 +1934,10 @@ pub(crate) fn parse_rendering_attributes(
         payload.position(),
     )?;
     let count = count_bytes;
-    let mut children = ctx
-        .collection_vec(count, "Rhino rendering material references")
-        .map_err(crate::chunks::FramingError::from)?;
+    let mut child_storage = ctx.reserve_scoped(0, "Rhino rendering child ranges")?;
+    let mut children = child_storage.with_storage(|| {
+        ctx.collection_vec(count, "Rhino rendering material references")
+    })?;
     for _ in 0..count {
         ctx.charge_work(1, "Rhino settings cursor traversal")?;
         let material =
@@ -1965,9 +1966,11 @@ pub(crate) fn parse_rendering_attributes(
             MAX_ARRAY_ITEMS,
             material_payload.position(),
         )?;
-        let mut obsolete_mappings = ctx
-            .collection_vec(obsolete_mapping_count, "Rhino obsolete rendering mappings")
-            .map_err(crate::chunks::FramingError::from)?;
+        let mut obsolete_storage =
+            ctx.reserve_scoped(0, "Rhino obsolete rendering mapping ranges")?;
+        let mut obsolete_mappings = obsolete_storage.with_storage(|| {
+            ctx.collection_vec(obsolete_mapping_count, "Rhino obsolete rendering mappings")
+        })?;
         for _ in 0..obsolete_mapping_count {
             ctx.charge_work(1, "Rhino settings cursor traversal")?;
             let mapping = crate::chunks::chunk_at(
@@ -2060,9 +2063,11 @@ pub(crate) fn parse_rendering_attributes(
                 MAX_ARRAY_ITEMS,
                 mapping_payload.position(),
             )?;
-            let mut channels = ctx
-                .collection_vec(channel_count, "Rhino rendering mapping channels")
-                .map_err(crate::chunks::FramingError::from)?;
+            let mut channel_storage =
+                ctx.reserve_scoped(0, "Rhino rendering channel ranges")?;
+            let mut channels = channel_storage.with_storage(|| {
+                ctx.collection_vec(channel_count, "Rhino rendering mapping channels")
+            })?;
             for _ in 0..channel_count {
                 ctx.charge_work(1, "Rhino settings cursor traversal")?;
                 let channel = crate::chunks::chunk_at(
@@ -2116,6 +2121,11 @@ pub(crate) fn parse_rendering_attributes(
                     format_args!("{warning}"),
                 )?;
             }
+            drop(channels);
+            drop(channel_storage);
+            child_storage.with_storage(|| {
+                ctx.reserve_vec(&mut children, 1, "Rhino rendering mapping references")
+            })?;
             children.push(mapping.range());
             payload.skip(mapping.next_offset() - payload.position())?;
         }
@@ -2223,7 +2233,6 @@ pub(crate) fn parse_direct_linetype<'a>(
 ) -> Result<EmbeddedDescriptor, FramingError> {
     let (chunk, mut payload, version) =
         begin_direct_object(ctx, data, reader, archive, "embedded linetype")?;
-    let mut children = Vec::new();
     if (archive.value() < 60 && version != (1, 1))
         || (archive.value() >= 60 && (version.0 != 2 || version.1 < 1))
     {
@@ -2232,6 +2241,8 @@ pub(crate) fn parse_direct_linetype<'a>(
             "unsupported embedded linetype version",
         ));
     }
+    let mut child_storage = ctx.reserve_scoped(0, "Rhino embedded linetype child ranges")?;
+    let mut children = Vec::new();
     if version.0 == 1 {
         payload.i32()?;
         utf16_deferred(ctx, &mut payload)?;
@@ -2240,12 +2251,10 @@ pub(crate) fn parse_direct_linetype<'a>(
             uuid(&mut payload)?;
         }
     } else {
-        ctx.reserve_vec(
-            &mut children,
-            1,
-            "Rhino embedded linetype checksum children",
-        )
-        .map_err(crate::chunks::FramingError::from)?;
+        // The version-two grammar has exactly one checksum child.
+        children = child_storage.with_storage(|| {
+            ctx.collection_vec(1, "Rhino embedded linetype checksum children")
+        })?;
         children.push(skip_model_attributes(
             ctx,
             data,
@@ -2334,9 +2343,11 @@ pub(crate) fn parse_direct_section_style<'a>(
             "unsupported embedded section-style version",
         ));
     }
-    let mut children = ctx
-        .collection_vec(1, "Rhino embedded section-style checksum children")
-        .map_err(crate::chunks::FramingError::from)?;
+    let mut child_storage =
+        ctx.reserve_scoped(0, "Rhino embedded section-style child ranges")?;
+    let mut children = child_storage.with_storage(|| {
+        ctx.collection_vec(1, "Rhino embedded section-style checksum children")
+    })?;
     children.push(skip_model_attributes(
         ctx,
         data,
@@ -2408,12 +2419,13 @@ pub(crate) fn parse_direct_section_style<'a>(
         item = payload.u8()?;
     }
     if item == 11 {
-        ctx.reserve_vec(
-            &mut children,
-            1,
-            "Rhino embedded section-style checksum children",
-        )
-        .map_err(crate::chunks::FramingError::from)?;
+        child_storage.with_storage(|| {
+            ctx.reserve_vec(
+                &mut children,
+                1,
+                "Rhino embedded section-style checksum children",
+            )
+        })?;
         children.push(
             parse_direct_linetype(ctx, data, &mut payload, archive, warnings)?
                 .source
@@ -2812,10 +2824,10 @@ pub(crate) fn parse_metadata(
     warnings: &mut Diagnostics,
 ) -> Result<DocumentMetadata, CodecError> {
     let mut metadata = DocumentMetadata::default();
+    let mut id_workspace = ctx.reserve_scoped(0, "Rhino layer UUID workspace")?;
     let mut ids = HashSet::<Uuid>::new();
     let mut seen_property_singletons = [false; PROPERTY_SINGLETONS.len()];
     let mut seen_setting_singletons = [false; SETTING_SINGLETONS.len()];
-    let mut id_workspace = ctx.reserve_scoped(0, "Rhino layer UUID workspace")?;
     let mut opaque_records = Vec::new();
     for table in ctx.admit_iter(tables, "Rhino parse metadata traversal")? {
         let table_type = table.typecode & !0x0000_8000;
@@ -2949,12 +2961,13 @@ pub(crate) fn parse_metadata(
             }
         }
     }
-    let (layer_index_counts, _layer_index_workspace) = index_occurrences(
+    let (layer_index_counts_buffer, _layer_index_workspace) = index_occurrences(
         ctx,
         &metadata.layers,
         |layer| layer.index,
         "Rhino layer index counts",
     )?;
+    let layer_index_counts = layer_index_counts_buffer;
     for &(index, count) in
         ctx.admit_iter(&layer_index_counts, "Rhino layer index count traversal")?
     {
@@ -3040,8 +3053,9 @@ pub(crate) fn index_occurrences<'ctx, T>(
     ),
     CodecError,
 > {
-    let (mut occurrences, workspace) =
+    let (occurrences_buffer, workspace) =
         ctx.temporary_vec::<(i32, usize)>(records.len(), operation)?;
+    let mut occurrences = occurrences_buffer;
     for record in ctx.admit_iter(records, operation)? {
         occurrences.push((index_of(record), 1));
     }
@@ -3069,8 +3083,8 @@ fn report_layer_parent_references(
     layers: &[LayerRecord],
     warnings: &mut Diagnostics,
 ) -> Result<(), CodecError> {
-    let mut id_counts = HashMap::<Uuid, usize>::new();
     let mut workspace = ctx.reserve_scoped(0, "Rhino layer parent workspace")?;
+    let mut id_counts = HashMap::<Uuid, usize>::new();
     for layer in ctx.admit_iter(layers, "Rhino report layer parent references traversal")? {
         if let Some(id) = layer.id.filter(|id| !id.is_nil()) {
             let count = workspace

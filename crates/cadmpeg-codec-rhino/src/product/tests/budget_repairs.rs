@@ -135,3 +135,58 @@ fn product_staging_borrows_source_names_and_paths_without_copying_them() {
         );
     }
 }
+
+
+fn assert_product_first_visit_refusal(scan: &crate::container::Scan<'_>, operation: &'static str) {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
+    let mut ir = CadIr::empty();
+    let error = install(&ctx, scan, &mut ir).expect_err("only the first visit is refused");
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("product traversal resource refusal");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(refusal.operation, operation);
+    assert_eq!(refusal.used, 0);
+    assert_eq!(refusal.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert!(ir.native.namespace("rhino").is_none());
+    assert!(matches!(ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == refusal));
+}
+
+#[test]
+fn product_object_traversal_refuses_only_first_visit() {
+    let archive = crate::chunks::ArchiveVersion::V5;
+    let record = support::object_record_with_payload(
+        archive, 0x1000, support::INSTANCE_REFERENCE_CLASS,
+        &support::instance_reference_payload([0x51; 16], cadmpeg_ir::transform::Transform::identity().rows()),
+    );
+    let scan = support::scan_with_objects(&vec![record; 1024]);
+    assert_eq!(scan.objects.len(), 1024);
+    assert_product_first_visit_refusal(&scan, "Rhino install traversal");
+}
+
+#[test]
+fn product_definition_traversal_refuses_only_first_visit() {
+    let archive = crate::chunks::ArchiveVersion::V5;
+    // Each definition must remain unique after source ambiguity resolution.
+    let records: Vec<_> = (0_u16..1024).map(|index| {
+        let mut id = [0x51; 16];
+        id[..2].copy_from_slice(&index.to_be_bytes());
+        support::definition_record(
+            archive, &support::v5_definition_payload(archive, 6, id, &[], false),
+        )
+    }).collect();
+    let scan = crate::container::scan_owned(support::document_with_definitions(
+        "50", archive, &records, &[],
+    )).expect("definition document is framed");
+    assert!(scan.objects.is_empty());
+    assert_eq!(scan.definitions.definitions().len(), 1024);
+    assert_product_first_visit_refusal(&scan, "Rhino install borrowed traversal");
+}

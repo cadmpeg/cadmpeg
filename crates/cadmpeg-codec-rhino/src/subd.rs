@@ -340,8 +340,7 @@ pub(crate) fn decode_mesh_proxy(
     {
         return Ok(None);
     }
-    candidate_storage.commit()?;
-    Ok(decoded)
+    Ok(candidate_storage.commit_value(decoded)?)
 }
 
 fn embedded_subd_end(
@@ -1088,9 +1087,12 @@ fn validate_level(
         }
     }
 
-    let (vertex_edges, _vertex_edges_storage) = incidence_from_edges(ctx, level)?;
-    let (vertex_faces, _vertex_faces_storage) = incidence_from_faces(ctx, level)?;
-    let (edge_faces, _edge_faces_storage) = edge_face_incidence(ctx, level)?;
+    let (vertex_edges_buffer, _vertex_edges_storage) = incidence_from_edges(ctx, level)?;
+    let vertex_edges = vertex_edges_buffer;
+    let (vertex_faces_buffer, _vertex_faces_storage) = incidence_from_faces(ctx, level)?;
+    let vertex_faces = vertex_faces_buffer;
+    let (edge_faces_buffer, _edge_faces_storage) = edge_face_incidence(ctx, level)?;
+    let edge_faces = edge_faces_buffer;
     for vertex in ctx
         .admit_iter(&level.vertices[..], "Rhino validate level traversal")
         .map_err(cadmpeg_core::CodecError::from)?
@@ -1304,8 +1306,8 @@ fn compare_incidence(
     derived: Option<&BTreeSet<u32>>,
     label: &str,
 ) -> Result<(), SubdError> {
-    let mut serialized_ids = BTreeSet::new();
     let mut storage = ctx.reserve_scoped(0, "Rhino SubD serialized incidence")?;
+    let mut serialized_ids = BTreeSet::new();
     for pointer in ctx
         .admit_iter(serialized, "Rhino compare incidence traversal")
         .map_err(cadmpeg_core::CodecError::from)?

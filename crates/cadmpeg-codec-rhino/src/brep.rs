@@ -2232,8 +2232,7 @@ fn read_legacy_mesh_sides(
         };
         slots.push(mesh);
     }
-    slot_storage.commit()?;
-    Ok((slots, start..reader.position()))
+    Ok(slot_storage.commit_value((slots, start..reader.position()))?)
 }
 
 fn empty_mesh_slots(
@@ -2709,10 +2708,7 @@ fn read_mesh_sides(
         Ok((result, chunk.range()))
     })();
     match parsed {
-        Ok(result) => {
-            slot_storage.commit()?;
-            Ok(result)
-        }
+        Ok(result) => Ok(slot_storage.commit_value(result)?),
         Err(error @ GeometryError::Codec(_)) => Err(error),
         Err(error) => {
             let degraded =
@@ -3178,8 +3174,7 @@ fn validate_regions(
             "region topology needs one infinite region",
         ));
     }
-    side_storage.commit()?;
-    Ok(sides)
+    Ok(side_storage.commit_value(sides)?)
 }
 
 fn raw_array_start(
