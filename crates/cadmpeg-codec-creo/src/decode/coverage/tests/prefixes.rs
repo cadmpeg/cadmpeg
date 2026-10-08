@@ -162,8 +162,7 @@ fn native_constraint_kind_prefix_refuses_work() {
             design_constraint_transfer_coverage(
                 ctx,
                 std::slice::from_ref(&constraint),
-                ":relation:",
-                "creo:relation:",
+                [(":relation:", "creo:relation:")],
             )
         },
     );
