@@ -91,8 +91,9 @@ pub(crate) fn tokens<'a>(
     data: &'a [u8],
 ) -> impl Iterator<Item = Result<Token, cadmpeg_core::CodecError>> + 'a {
     let mut offset = 0;
+    let mut finished = false;
     std::iter::from_fn(move || {
-        if offset == data.len() {
+        if finished {
             return None;
         }
         match token_at(ctx, data, offset) {
@@ -101,11 +102,11 @@ pub(crate) fn tokens<'a>(
                 Some(Ok(token))
             }
             Ok(None) => {
-                offset = data.len();
+                finished = true;
                 None
             }
             Err(error) => {
-                offset = data.len();
+                finished = true;
                 Some(Err(error))
             }
         }
@@ -118,10 +119,16 @@ pub(crate) fn token_at(
     data: &[u8],
     offset: usize,
 ) -> Result<Option<Token>, cadmpeg_core::CodecError> {
-    let Some(tail) = data.get(offset..) else {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(cadmpeg_core::CodecError::ResourceLimit(refusal));
+    }
+    let Some(&head) = data.get(offset) else {
         return Ok(None);
     };
-    let Some(&head) = ctx.next_charged(&mut tail.iter(), "creo PSB token traversal")? else {
+    let Some(head) = ctx.next_charged(
+        &mut std::iter::once(head),
+        "creo PSB token traversal",
+    )? else {
         return Ok(None);
     };
     let (length, kind) = match head {
@@ -385,6 +392,18 @@ mod tests {
         .into_iter()
     }
 
+    fn with_work_limit<T>(
+        max_work_units: u64,
+        run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+    ) -> T {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = max_work_units;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        run(&ctx)
+    }
+
     #[test]
     fn compact_int_one_byte() {
         assert_eq!(compact_int(&[0x00], 0), (0, 1));
@@ -418,6 +437,98 @@ mod tests {
             })
         );
         assert!(token_at(&[0], 1).is_none());
+    }
+
+    #[test]
+    fn absent_token_heads_do_not_consume_work() {
+        let input = [token::ARRAY_CLOSE];
+        for (data, offset) in [(&[][..], 0), (&input[..], input.len()), (&input[..], 2)] {
+            with_work_limit(0, |ctx| {
+                assert!(matches!(super::token_at(ctx, data, offset), Ok(None)));
+                assert_eq!(ctx.resource_refusal(), None);
+            });
+        }
+    }
+
+    #[test]
+    fn refused_token_at_preserves_original_refusal_for_absent_heads() {
+        use cadmpeg_core::CodecError;
+
+        let input = [token::ARRAY_CLOSE];
+        for (data, offset) in [(&[][..], 0), (&input[..], input.len()), (&input[..], 2)] {
+            with_work_limit(0, |ctx| {
+                let CodecError::ResourceLimit(original) = ctx
+                    .charge_work(1, "caller refusal")
+                    .expect_err("work limit is zero")
+                else {
+                    panic!("work refusal expected");
+                };
+                assert_eq!(ctx.resource_refusal(), Some(original));
+                assert!(matches!(
+                    super::token_at(ctx, data, offset),
+                    Err(CodecError::ResourceLimit(actual)) if actual == original
+                ));
+                assert_eq!(ctx.resource_refusal(), Some(original));
+            });
+        }
+    }
+
+    #[test]
+    fn empty_token_walker_has_zero_work() {
+        with_work_limit(0, |ctx| {
+            assert!(super::tokens(ctx, &[]).next().is_none());
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+    }
+
+    #[test]
+    fn token_walker_reports_empty_refusal_once_then_fuses() {
+        use cadmpeg_core::CodecError;
+
+        with_work_limit(0, |ctx| {
+            let CodecError::ResourceLimit(original) = ctx
+                .charge_work(1, "caller refusal")
+                .expect_err("work limit is zero")
+            else {
+                panic!("work refusal expected");
+            };
+            let mut tokens = super::tokens(ctx, &[]);
+            assert!(matches!(
+                tokens.next(),
+                Some(Err(CodecError::ResourceLimit(actual))) if actual == original
+            ));
+            assert!(tokens.next().is_none());
+            assert!(tokens.next().is_none());
+        });
+    }
+
+    #[test]
+    fn token_walker_reports_terminal_refusal_once_then_fuses() {
+        use cadmpeg_core::CodecError;
+
+        with_work_limit(1, |ctx| {
+            let mut tokens = super::tokens(ctx, &[token::ARRAY_CLOSE]);
+            assert!(matches!(
+                tokens.next(),
+                Some(Ok(token)) if token == Token {
+                    offset: 0,
+                    length: 1,
+                    kind: TokenKind::ArrayClose,
+                }
+            ));
+            let CodecError::ResourceLimit(original) = ctx
+                .charge_work(1, "caller refusal")
+                .expect_err("only the token head fits")
+            else {
+                panic!("work refusal expected");
+            };
+            assert!(matches!(
+                tokens.next(),
+                Some(Err(CodecError::ResourceLimit(actual))) if actual == original
+            ));
+            assert!(tokens.next().is_none());
+            assert!(tokens.next().is_none());
+        });
     }
 
     #[test]
