@@ -258,11 +258,15 @@ pub(super) fn project_composite_curve(
     let mut closed = None;
     let mut segments = Vec::new();
     let mut characters = segment_text.char_indices();
-    while let Some(start) = ctx.find_map(
-        &mut characters,
-        |(offset, character)| Ok((character != ';' && !character.is_whitespace()).then_some(offset)),
-        OPERATION,
-    )? {
+    while let Some(start) =
+        ctx.find_map(
+            &mut characters,
+            |(offset, character)| {
+                Ok((character != ';' && !character.is_whitespace()).then_some(offset))
+            },
+            OPERATION,
+        )?
+    {
         if closed.is_none() {
             closed = Some(require!(
                 property_value(ctx, feature, "Closed")?.map_or(Some(false), parse_bool)
@@ -391,6 +395,8 @@ pub(super) fn project_wrap(
 
 #[cfg(test)]
 mod tests {
+    mod projection_budget;
+
     use super::{project_helix, project_native_axis_helix};
     use cadmpeg_core::text::NonBlankString;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
