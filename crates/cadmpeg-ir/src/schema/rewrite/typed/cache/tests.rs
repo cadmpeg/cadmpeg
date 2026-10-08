@@ -17,7 +17,6 @@ fn replacement_lookup_preserves_each_comparison_refusal_and_empty_fuse() {
     let index = super::ReplacementIndex::build(
         &fixture,
         &replacements,
-        |(source, target)| (source, target),
         &mut storage,
         "fixture replacement index",
     )
@@ -53,14 +52,9 @@ fn replacement_lookup_preserves_each_comparison_refusal_and_empty_fuse() {
         .reserve_scoped_limit(0, "empty replacement index")
         .unwrap();
     let empty = std::collections::BTreeMap::<String, String>::new();
-    let empty_index = super::ReplacementIndex::build(
-        &ctx,
-        &empty,
-        |(source, target)| (source, target),
-        &mut empty_storage,
-        "empty replacement index",
-    )
-    .unwrap();
+    let empty_index =
+        super::ReplacementIndex::build(&ctx, &empty, &mut empty_storage, "empty replacement index")
+            .unwrap();
     assert_eq!(
         empty_index
             .get(&ctx, "absent", "empty replacement lookup")
@@ -77,7 +71,7 @@ fn replacement_lookup_preserves_each_comparison_refusal_and_empty_fuse() {
         original
     );
     assert!(
-        matches!(super::ReplacementIndex::build(&ctx, &empty, |(source, target)| (source, target), &mut empty_storage, "empty replacement index"), Err(CodecError::ResourceLimit(limit)) if limit == original)
+        matches!(super::ReplacementIndex::build(&ctx, &empty, &mut empty_storage, "empty replacement index"), Err(CodecError::ResourceLimit(limit)) if limit == original)
     );
     drop(empty_index);
     drop(empty_storage);
@@ -111,7 +105,6 @@ fn replacement_index_admits_storage_and_preserves_byte_order() {
         let CodecError::ResourceLimit(original) = super::ReplacementIndex::build(
             &ctx,
             &replacements,
-            |(source, target)| (source, target),
             &mut storage,
             "replacement storage",
         )
@@ -131,14 +124,9 @@ fn replacement_index_admits_storage_and_preserves_byte_order() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut storage = ctx.reserve_scoped_limit(0, "replacement storage").unwrap();
-    let index = super::ReplacementIndex::build(
-        &ctx,
-        &replacements,
-        |(source, target)| (source, target),
-        &mut storage,
-        "replacement storage",
-    )
-    .unwrap();
+    let index =
+        super::ReplacementIndex::build(&ctx, &replacements, &mut storage, "replacement storage")
+            .unwrap();
     assert_eq!(
         index.values,
         [("alpha", "first"), ("beta", "second"), ("é", "third")]
@@ -181,7 +169,7 @@ fn replacement_index_checks_exposed_key_order_and_duplicates() {
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut storage = ctx.reserve_scoped_limit(0, "replacement order").unwrap();
         assert!(
-            matches!(super::ReplacementIndex::build(&ctx, &replacements, |(source, target)| (source, target), &mut storage, "replacement order"), Err(CodecError::Malformed(message)) if message == "text replacements must have unique keys in byte order")
+            matches!(super::ReplacementIndex::build(&ctx, &replacements, &mut storage, "replacement order"), Err(CodecError::Malformed(message)) if message == "text replacements must have unique keys in byte order")
         );
         drop(storage);
         ctx.finish_session().unwrap();

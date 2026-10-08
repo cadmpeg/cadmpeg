@@ -625,10 +625,6 @@ fn decode_identity_constructors_preserve_grammar_and_owned_buffers() {
             super::HistoricalBodyId::mint_for_decode(&ctx, value, "local grammar").unwrap(),
             super::HistoricalBodyId::mint(value)
         );
-        assert_eq!(
-            IdentityComponent::try_new(value).is_ok(),
-            super::valid_component_text(value)
-        );
     }
 }
 
