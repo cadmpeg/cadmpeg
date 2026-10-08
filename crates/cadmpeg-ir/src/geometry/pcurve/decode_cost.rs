@@ -4,6 +4,7 @@
 use super::{
     PcurveGeometry, PolarNurbsPole, PolarNurbsPoles, PolarPcurveNurbs, WeightedPolarNurbsPole,
 };
+use crate::geometry::decode_cost::{checked_sum, inline_bytes};
 use crate::scalar::FiniteReal;
 use crate::units::FinitePoint2;
 use cadmpeg_core::decode::{cost::DecodeCost, DecodeContext};
@@ -16,31 +17,15 @@ impl DecodeCost for PcurveGeometry {
         operation: &'static str,
     ) -> Result<u64, CodecError> {
         let bytes = match self {
-            Self::Line(value) => cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value)),
-            Self::PolarHarmonic(value) => {
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value))
-            }
-            Self::SphericalGreatCircle(value) => {
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value))
-            }
-            Self::Circle(value) => {
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value))
-            }
-            Self::Ellipse(value) => {
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value))
-            }
-            Self::Harmonic(value) => {
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value))
-            }
-            Self::Parabola(value) => {
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value))
-            }
-            Self::Hyperbola(value) => {
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value))
-            }
-            Self::Hyperbolic(value) => {
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value))
-            }
+            Self::Line(value) => inline_bytes(value),
+            Self::PolarHarmonic(value) => inline_bytes(value),
+            Self::SphericalGreatCircle(value) => inline_bytes(value),
+            Self::Circle(value) => inline_bytes(value),
+            Self::Ellipse(value) => inline_bytes(value),
+            Self::Harmonic(value) => inline_bytes(value),
+            Self::Parabola(value) => inline_bytes(value),
+            Self::Hyperbola(value) => inline_bytes(value),
+            Self::Hyperbolic(value) => inline_bytes(value),
             Self::Nurbs { nurbs } => nurbs.decode_cost(ctx, operation)?,
             Self::PolarNurbs { nurbs } => nurbs.decode_cost(ctx, operation)?,
             Self::Transformed(value) => {
@@ -66,7 +51,7 @@ impl DecodeCost for PcurveGeometry {
                 (&value.basis, value.distance, value.depth).decode_cost(ctx, operation)?
             }
         };
-        crate::geometry::decode_cost::checked_sum(ctx, 1, bytes, operation)
+        checked_sum(ctx, 1, bytes, operation)
     }
 }
 
