@@ -806,3 +806,39 @@ fn native_validation_propagates_design_census_collection_refusal() {
         |ctx| super::validate_native(ctx, result.ir()),
     );
 }
+
+#[test]
+fn gui_entry_lookup_propagates_the_original_work_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::codec::CodecBackend;
+
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings=""/></Document>"#;
+    for entries in [
+        vec![("Document.xml", document.as_slice())],
+        vec![
+            ("Document.xml", document.as_slice()),
+            ("GuiDocument.xml", gui.as_slice()),
+        ],
+    ] {
+        let bytes = archive_entries(&entries);
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "FCStd GUI entry lookup",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_work_units = cap;
+                let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)?;
+                let result = FcstdCodec.decode_impl(&ctx, root).map(|_| ());
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(ctx.resource_refusal(), Some(*limit));
+                }
+                result
+            },
+        );
+        let decoded = decode(bytes);
+        assert_eq!(decoded.ir().model.bodies.len(), 0);
+    }
+}

@@ -1426,7 +1426,9 @@ impl CodecBackend for FcstdCodec {
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "design_census", &design_census)?;
             element_map::bind_topology(ctx, &mut element_maps, &topology_occurrences)?;
-            let mut gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
+            let mut gui_graph = if let Some(gui_view) =
+                ctx.get_btree_map(&scan.data, "GuiDocument.xml", "FCStd GUI entry lookup")?
+            {
                 gui::transfer(
                     ctx,
                     &mut ir,
