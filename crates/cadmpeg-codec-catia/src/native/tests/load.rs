@@ -193,7 +193,7 @@ fn native_graph_projection_refuses_caller_limits() {
             ctx,
             &mut ctx.reserve_scoped(0, "test graph")?,
             &parsed,
-            Vec::new(),
+            &[],
             None,
             None,
         )
@@ -205,7 +205,7 @@ fn native_graph_projection_refuses_caller_limits() {
             ctx,
             &mut ctx.reserve_scoped(0, "test graph")?,
             &parsed,
-            Vec::new(),
+            &[],
             None,
             None,
         )
@@ -217,7 +217,7 @@ fn native_graph_projection_refuses_caller_limits() {
             ctx,
             &mut ctx.reserve_scoped(0, "test graph")?,
             &parsed,
-            Vec::new(),
+            &[],
             None,
             None,
         )
@@ -240,7 +240,7 @@ fn native_graph_record_link_updates_preserve_work_refusal() {
             ctx,
             &mut ctx.reserve_scoped(0, "test graph")?,
             &parsed,
-            Vec::new(),
+            &[],
             None,
             None,
         )
@@ -255,7 +255,7 @@ fn native_graph_record_link_updates_preserve_work_refusal() {
             ctx,
             &mut ctx.reserve_scoped(0, "test graph")?,
             &parsed,
-            Vec::new(),
+            &[],
             None,
             None,
         );
@@ -999,7 +999,7 @@ fn terminal_null_entity_id_scan_propagates_caller_work_refusal() {
         |ctx| {
             let result = super::super::terminal_null_entity_id(ctx, records);
             if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
             }
             result.map(|_| ())
         },
@@ -1645,7 +1645,7 @@ fn native_input_ordinal_scan_propagates_caller_work_refusal() {
         crate::test_support::with_work_refusal("catia_native_input_ordinal_visits", |ctx| {
             let result = crate::native::dependency_matches_input(ctx, &dependency, &input);
             if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
             }
             result
         });
@@ -1658,4 +1658,33 @@ fn native_input_ordinal_scan_propagates_caller_work_refusal() {
         crate::native::dependency_matches_input(ctx, &dependency, &input)
     })
     .expect("service work admits the ordinal"));
+}
+
+#[test]
+fn native_input_ordinal_scan_has_a_distinct_digit_boundary() {
+    let dependency = crate::native::CatiaRelationParameterDependency {
+        source_offset: 0,
+        symbol: "#1_ /23".to_owned(),
+        candidates: Vec::new(),
+    };
+    let input = crate::native::CatiaRelationTypeInput {
+        parameter: "#1_".to_owned(),
+        input_type: "Real".to_owned(),
+    };
+    // Three prefix bytes, four suffix bytes, two digit visits, and the end probe.
+    crate::test_support::with_work_limit(9, |ctx| {
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            crate::native::dependency_matches_input(ctx, &dependency, &input)
+        else {
+            panic!("ordinal end probe must refuse");
+        };
+        assert_eq!(limit.operation, "catia_native_input_ordinal_visits");
+        assert_eq!((limit.used, limit.additional), (9, 1));
+    });
+    crate::test_support::with_work_limit(10, |ctx| {
+        assert!(
+            crate::native::dependency_matches_input(ctx, &dependency, &input)
+                .expect("exact ordinal budget")
+        );
+    });
 }
