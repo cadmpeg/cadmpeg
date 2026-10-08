@@ -79,12 +79,14 @@ struct ShellDefinition {
     faces: Vec<(u32, Sense)>,
 }
 
-struct BodyDefinition<'a> {
+struct BodyDefinition<'a, 'ctx> {
     entry: &'a DirectoryEntry,
     kind: BodyKind,
     shells: Vec<(u32, Sense)>,
     closed: bool,
     transform: Option<cadmpeg_ir::transform::Transform>,
+    // Shell-use backing drops before its reservation.
+    _shell_storage: ScopedReservation<'ctx>,
 }
 
 struct SurfaceSupport<'a> {
@@ -443,8 +445,6 @@ pub(super) fn project<'ctx>(
     let mut definition_storage = ctx.reserve_scoped(0, "iges B-rep definitions")?;
     let mut composite_storage = ctx.reserve_scoped(0, "iges B-rep composite index")?;
     let mut composite_index = None;
-    // Successful record reservations live as long as the definition tables.
-    let mut definition_reservations = Vec::new();
     let mut vertex_lists = BTreeMap::<u32, Vec<Point3>>::new();
     let mut edge_lists = BTreeMap::<u32, Vec<EdgeDefinition>>::new();
     let mut loops = BTreeMap::<u32, Vec<LoopUse>>::new();
@@ -980,7 +980,8 @@ pub(super) fn project<'ctx>(
         .filter(|entry| entry.entity_type == 514 && entry.form == 2)
     {
         if ctx.contains_key_btree_map(&shell_definitions, &entry.sequence, "iges B-rep shell lookup")? {
-            let mut shells = definition_storage
+            let mut shell_storage = ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
+            let mut shells = shell_storage
                 .with_storage(|| ctx.collection_vec(1, "iges B-rep sheet shell uses"))?;
             shells.push((entry.sequence, Sense::Forward));
             definition_storage.with_storage(|| {
@@ -992,6 +993,7 @@ pub(super) fn project<'ctx>(
                 shells,
                 closed: false,
                 transform: None,
+                _shell_storage: shell_storage,
             });
         }
     }
@@ -1124,15 +1126,8 @@ pub(super) fn project<'ctx>(
             shells: shell_uses,
             closed: true,
             transform,
+            _shell_storage: record_storage,
         });
-        definition_storage.with_storage(|| {
-            ctx.reserve_vec(
-                &mut definition_reservations,
-                1,
-                "iges B-rep definition reservations",
-            )
-        })?;
-        definition_reservations.push(record_storage);
     }
     for entry in ctx
         .admit_iter(directory, "iges B-rep directory traversal")?
@@ -1141,7 +1136,8 @@ pub(super) fn project<'ctx>(
         if ctx.contains_key_btree_map(&shell_definitions, &entry.sequence, "iges B-rep shell lookup")?
             && !ctx.contains_btree_set(&referenced_closed_shells, &entry.sequence, "iges B-rep referenced shell lookup")?
         {
-            let mut shells = definition_storage
+            let mut shell_storage = ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
+            let mut shells = shell_storage
                 .with_storage(|| ctx.collection_vec(1, "iges B-rep sheet shell uses"))?;
             shells.push((entry.sequence, Sense::Forward));
             definition_storage.with_storage(|| {
@@ -1153,6 +1149,7 @@ pub(super) fn project<'ctx>(
                 shells,
                 closed: true,
                 transform: None,
+                _shell_storage: shell_storage,
             });
         }
     }
