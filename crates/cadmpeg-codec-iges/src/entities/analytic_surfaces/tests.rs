@@ -444,12 +444,7 @@ fn analytic_location_index_refuses_work_and_scoped_storage() {
                 )
                 .unwrap()
                 .records;
-                (
-                    ir,
-                    directory,
-                    parameters,
-                    global.length_context().unwrap(),
-                )
+                (ir, directory, parameters, global.length_context().unwrap())
             })
         });
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {

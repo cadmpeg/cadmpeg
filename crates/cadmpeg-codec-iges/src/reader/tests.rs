@@ -680,46 +680,43 @@ fn decode_publishes_global_minimum_resolution_to_neutral_tolerance() {
 
 #[test]
 fn decode_enforces_each_iges_session_resource_dimension() {
-    fn assert_refusal(
-        edit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
-        expected: ResourceDimension,
-        operation: &'static str,
-    ) {
+    fn assert_refusal(expected: ResourceDimension, operation: &'static str) {
         let bytes = point_file();
-        let mut options = DecodeOptions::default();
-        edit(&mut options.policy.limits);
-        let error =
-            cadmpeg_test_support::decode::full(&IgesCodec, &bytes, &options.policy).unwrap_err();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(expected, operation, |cap| {
+            let mut options = DecodeOptions::default();
+            match expected {
+                ResourceDimension::MaterializedBytes => {
+                    options.policy.limits.max_materialized_bytes = cap
+                }
+                ResourceDimension::RetainedBytes => options.policy.limits.max_retained_bytes = cap,
+                ResourceDimension::Entities => options.policy.limits.max_entities = cap,
+                ResourceDimension::CollectionItems => {
+                    options.policy.limits.max_collection_items = cap
+                }
+                other => panic!("unexpected test dimension: {other:?}"),
+            }
+            cadmpeg_test_support::decode::full(&IgesCodec, &bytes, &options.policy).map_err(
+                |failure| match failure {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    other => panic!("{other:#?}"),
+                },
+            )
+        });
         assert!(
             matches!(
                 error,
-                cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
+                CodecError::ResourceLimit(limit)
                     if limit.dimension == expected && limit.operation == operation
             ),
             "{error:#?}"
         );
     }
 
-    assert_refusal(
-        |limits| limits.max_materialized_bytes = 1,
-        ResourceDimension::MaterializedBytes,
-        "iges_cards",
-    );
-    assert_refusal(
-        |limits| limits.max_retained_bytes = 1,
-        ResourceDimension::RetainedBytes,
-        "iges_global_stream",
-    );
-    assert_refusal(
-        |limits| limits.max_entities = 0,
-        ResourceDimension::Entities,
-        "iges_directory_entries",
-    );
-    assert_refusal(
-        |limits| limits.max_entities = 1,
-        ResourceDimension::Entities,
-        "iges_geometry_primitives",
-    );
+    assert_refusal(ResourceDimension::MaterializedBytes, "iges_cards");
+    assert_refusal(ResourceDimension::MaterializedBytes, "iges_global_stream");
+    assert_refusal(ResourceDimension::RetainedBytes, "iges_source_image");
+    assert_refusal(ResourceDimension::Entities, "iges_directory_entries");
+    assert_refusal(ResourceDimension::Entities, "iges_geometry_primitives");
     let mut options = DecodeOptions {
         container_only: true,
         ..DecodeOptions::default()
@@ -734,11 +731,7 @@ fn decode_enforces_each_iges_session_resource_dimension() {
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "iges_native_entities"
     ));
-    assert_refusal(
-        |limits| limits.max_collection_items = 0,
-        ResourceDimension::CollectionItems,
-        "iges_cards",
-    );
+    assert_refusal(ResourceDimension::CollectionItems, "iges_cards");
     let bytes = point_file();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
@@ -877,9 +870,7 @@ fn projected_directory_refuses_entry_limit() {
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
-    let (directory, _) =
-        crate::directory::parse(&scan, global.global_table(), &parse_ctx)
-            .unwrap();
+    let (directory, _) = crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
     let quarantined = std::collections::BTreeSet::from([99]);
 
     let arena = DecodeArena::new();
