@@ -1289,7 +1289,10 @@ enum WrapperTargetResolution<'ctx> {
     Ambiguous((BTreeSet<String>, ScopedReservation<'ctx>)),
 }
 
-type CachedWrapper<'ctx> = (Option<WrapperTargetResolution<'ctx>>, ScopedReservation<'ctx>);
+type CachedWrapper<'ctx> = (
+    Option<WrapperTargetResolution<'ctx>>,
+    ScopedReservation<'ctx>,
+);
 
 struct WrapperCache<'ctx> {
     values: std::cell::RefCell<BTreeMap<u64, CachedWrapper<'ctx>>>,
@@ -1298,31 +1301,53 @@ struct WrapperCache<'ctx> {
 
 impl<'ctx> WrapperCache<'ctx> {
     fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
-        Ok(Self { values: std::cell::RefCell::new(BTreeMap::new()), storage: std::cell::RefCell::new(ctx.reserve_scoped(0, "STEP drawing wrapper cache scratch")?) })
+        Ok(Self {
+            values: std::cell::RefCell::new(BTreeMap::new()),
+            storage: std::cell::RefCell::new(
+                ctx.reserve_scoped(0, "STEP drawing wrapper cache scratch")?,
+            ),
+        })
     }
 
     fn resolve(
-        &self, id: u64, target_identities: &BTreeMap<u64, BTreeSet<String>>,
-        exchange: &Exchange, ctx: &'ctx DecodeContext<'_>,
+        &self,
+        id: u64,
+        target_identities: &BTreeMap<u64, BTreeSet<String>>,
+        exchange: &Exchange,
+        ctx: &'ctx DecodeContext<'_>,
     ) -> Result<Option<WrapperTargetResolution<'ctx>>, CodecError> {
-        if !ctx.contains_key_btree_map(&self.values.borrow(), &id, "STEP drawing wrapper cache lookup")? {
+        if !ctx.contains_key_btree_map(
+            &self.values.borrow(),
+            &id,
+            "STEP drawing wrapper cache lookup",
+        )? {
             let result = ctx.with_scoped_storage("STEP cached wrapper query scratch", || {
                 wrapper_target_resolution(id, target_identities, exchange, ctx)
             })?;
             self.storage.borrow_mut().with_storage(|| {
-                ctx.insert_btree_map(&mut self.values.borrow_mut(), id, result, "step_drawing_wrapper_cache")
+                ctx.insert_btree_map(
+                    &mut self.values.borrow_mut(),
+                    id,
+                    result,
+                    "step_drawing_wrapper_cache",
+                )
             })?;
         }
         let values = self.values.borrow();
-        let (result, _) = ctx.get_btree_map(&values, &id, "STEP drawing wrapper cache lookup")?
+        let (result, _) = ctx
+            .get_btree_map(&values, &id, "STEP drawing wrapper cache lookup")?
             .ok_or_else(|| CodecError::malformed("STEP drawing wrapper was not indexed"))?;
         match result {
             None => Ok(None),
-            Some(WrapperTargetResolution::Singleton(identity)) => Ok(Some(WrapperTargetResolution::Singleton(
-                ctx.copy_retained_text(identity, "step_drawing_wrapper_identity_text")?,
-            ))),
+            Some(WrapperTargetResolution::Singleton(identity)) => {
+                Ok(Some(WrapperTargetResolution::Singleton(
+                    ctx.copy_retained_text(identity, "step_drawing_wrapper_identity_text")?,
+                )))
+            }
             Some(WrapperTargetResolution::Ambiguous((identities, _))) => {
-                let copy = ctx.with_scoped_storage("STEP drawing ambiguity scratch", || clone_drawing_identities(identities, ctx))?;
+                let copy = ctx.with_scoped_storage("STEP drawing ambiguity scratch", || {
+                    clone_drawing_identities(identities, ctx)
+                })?;
                 Ok(Some(WrapperTargetResolution::Ambiguous(copy)))
             }
         }
@@ -1630,27 +1655,31 @@ fn collect_value_text<'a>(
                 Cow::Borrowed("("),
                 "STEP drawing text fragments",
             )?;
-            if !ctx.all_by(values.iter().enumerate(), |(index, value)| {
-                if index != 0 {
-                    ctx.push_scoped_vec(
-                        storage,
-                        parts,
-                        Cow::Borrowed(","),
-                        "STEP drawing text fragments",
-                    )?;
-                }
-                if !collect_value_text(
-                    value,
-                    exchange,
-                    (losses, slot_storage),
-                    (record_id, field),
-                    (parts, storage),
-                    ctx,
-                )? {
-                    return Ok(false);
-                }
-                Ok(true)
-            }, "STEP value text traversal")? {
+            if !ctx.all_by(
+                values.iter().enumerate(),
+                |(index, value)| {
+                    if index != 0 {
+                        ctx.push_scoped_vec(
+                            storage,
+                            parts,
+                            Cow::Borrowed(","),
+                            "STEP drawing text fragments",
+                        )?;
+                    }
+                    if !collect_value_text(
+                        value,
+                        exchange,
+                        (losses, slot_storage),
+                        (record_id, field),
+                        (parts, storage),
+                        ctx,
+                    )? {
+                        return Ok(false);
+                    }
+                    Ok(true)
+                },
+                "STEP value text traversal",
+            )? {
                 return Ok(false);
             }
             Cow::Borrowed(")")

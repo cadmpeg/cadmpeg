@@ -602,11 +602,20 @@ fn typed_omitted_descent_refuses_work_limit() {
 fn typed_validation_reference_descent_refuses_work_limit() {
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     let value = crate::parse::Value::Typed("WRAP".into(), Box::new(crate::parse::Value::Omitted));
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP typed validation reference descent", |limit| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = limit;
-        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-            super::collect_validation_references(&value, &std::collections::BTreeSet::new(), &mut std::collections::BTreeSet::new(), ctx)
-        })
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP typed validation reference descent",
+        |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+                super::collect_validation_references(
+                    &value,
+                    &std::collections::BTreeSet::new(),
+                    &mut std::collections::BTreeSet::new(),
+                    ctx,
+                )
+            })
+        },
+    );
 }

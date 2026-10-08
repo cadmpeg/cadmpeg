@@ -182,13 +182,23 @@ fn invalid_drawing_text_does_not_admit_an_unvisited_suffix() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 10_000;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
+        let reports =
+            std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
         let mut losses = Vec::new();
         let text = super::super::value_text(
-            &exchange, &Value::List(values), (&mut losses, &reports), 1, "fixture", ctx,
-        ).expect("invalid prefix fits without visiting suffix");
+            &exchange,
+            &Value::List(values),
+            (&mut losses, &reports),
+            1,
+            "fixture",
+            ctx,
+        )
+        .expect("invalid prefix fits without visiting suffix");
         assert!(text.is_none());
         assert_eq!(losses.len(), 1);
-        assert_eq!(losses[0].code, crate::loss::StepLossCode::MetadataStringInvalid.kind());
+        assert_eq!(
+            losses[0].code,
+            crate::loss::StepLossCode::MetadataStringInvalid.kind()
+        );
     });
 }

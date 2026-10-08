@@ -512,7 +512,8 @@ fn deep_drawing_wrapper_graph_resolves_without_call_stack_recursion() {
         &identities,
         &std::collections::HashSet::new(),
         &exchange,
-        &std::collections::BTreeMap::new(), None,
+        &std::collections::BTreeMap::new(),
+        None,
         &ctx,
     )
     .expect("target resolution fits service policy");
@@ -533,7 +534,7 @@ fn typed_omitted_descent_refuses_work_limit() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = limit;
             crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-                super::visit_drawing_references(&value, ctx, &mut |_| Ok(())).map(|_| ())
+                super::visit_drawing_references(&value, ctx, &mut |_| Ok(()))
             })
         },
     );
@@ -547,15 +548,25 @@ fn wrapper_resolution_reuses_queries_across_target_uses() {
         writeln!(source, "#{id}=ANNOTATION_PLANE('','',#{});", id + 1).expect("write wrapper");
     }
     source.push_str("#65=ITEM();ENDSEC;END-ISO-10303-21;");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("wrapper exchange");
-    let identities = std::collections::BTreeMap::from([(65, std::collections::BTreeSet::from([String::from("target")]))]);
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("wrapper exchange");
+    let identities = std::collections::BTreeMap::from([(
+        65,
+        std::collections::BTreeSet::from([String::from("target")]),
+    )]);
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 512;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let cache = super::WrapperCache::new(ctx).expect("cache");
         for _ in 0..128 {
-            let resolved = cache.resolve(1, &identities, &exchange, ctx).expect("shared wrapper query").expect("singleton");
-            let super::WrapperTargetResolution::Singleton(identity) = resolved else { panic!("singleton expected") };
+            let resolved = cache
+                .resolve(1, &identities, &exchange, ctx)
+                .expect("shared wrapper query")
+                .expect("singleton");
+            let super::WrapperTargetResolution::Singleton(identity) = resolved else {
+                panic!("singleton expected")
+            };
             assert_eq!(identity, "target");
         }
     });

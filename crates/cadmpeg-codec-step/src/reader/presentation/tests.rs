@@ -81,7 +81,6 @@ ENDSEC;END-ISO-10303-21;",
                     ),
                 ),
                 invalid_surface_sides: &mut BTreeSet::new(),
-
             },
             0,
             ctx,

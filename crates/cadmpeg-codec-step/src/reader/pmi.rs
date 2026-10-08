@@ -923,7 +923,14 @@ pub(super) fn decode<'ctx>(
         };
         let mut text_records = BTreeSet::new();
         let mut text_record_storage = ctx.reserve_scoped(0, "STEP annotation claim candidates")?;
-        let text = discovery.text(id, exchange, geometry, (&mut text_records, &mut text_record_storage), (&mut losses, &slot_storage), ctx)?;
+        let text = discovery.text(
+            id,
+            exchange,
+            geometry,
+            (&mut text_records, &mut text_record_storage),
+            (&mut losses, &slot_storage),
+            ctx,
+        )?;
         // Placement identity is the carrier key; the transform value cannot
         // make two source carriers one semantic carrier.
         let mut placement_storage = ctx.reserve_scoped(0, "STEP annotation placement scratch")?;
@@ -936,13 +943,22 @@ pub(super) fn decode<'ctx>(
             )? {
                 for reference in references(parameter, ctx) {
                     let reference = reference?;
-                    discovery.placements(reference, exchange, geometry, &mut placement_visited, (&mut placement_candidates, &mut placement_storage), ctx)?;
+                    discovery.placements(
+                        reference,
+                        exchange,
+                        geometry,
+                        &mut placement_visited,
+                        (&mut placement_candidates, &mut placement_storage),
+                        ctx,
+                    )?;
                 }
             }
         }
         let placement = match placement_candidates.len() {
             0 => None,
-            1 => placement_candidates.first_key_value().map(|(_, value)| *value),
+            1 => placement_candidates
+                .first_key_value()
+                .map(|(_, value)| *value),
             count => {
                 ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut losses, StepLossCode::PresentationAnnotationPlacementAmbiguous.note(
                     format!(
@@ -1142,9 +1158,13 @@ fn mark_characteristic_representations(
             )? {
                 for representation_id in references(parameter, ctx) {
                     let representation_id = representation_id?;
-                    if !visited_storage.with_storage(|| ctx.insert_btree_set(
-                        &mut visited, representation_id, "step_characteristic_claim_visited",
-                    ))? {
+                    if !visited_storage.with_storage(|| {
+                        ctx.insert_btree_set(
+                            &mut visited,
+                            representation_id,
+                            "step_characteristic_claim_visited",
+                        )
+                    })? {
                         continue;
                     }
                     let Some(representation) = ctx.get_btree_map(
@@ -1945,8 +1965,15 @@ fn modifier_text(
         }
         Value::Typed(_, value) => {
             ctx.charge_work(1, "STEP typed datum modifier descent")?;
-            modifier_text(value, exchange, (typed, claim_storage), measurements, storage, ctx)
-        },
+            modifier_text(
+                value,
+                exchange,
+                (typed, claim_storage),
+                measurements,
+                storage,
+                ctx,
+            )
+        }
         Value::Reference(id) => {
             let Some(record) = ctx.get_btree_map(exchange.records(), id, "STEP pmi record get")?
             else {
@@ -3076,7 +3103,11 @@ fn measure_inner(
                 walk.taint += 1;
                 return Ok(None);
             }
-            if let Some(result) = ctx.get_btree_map(&walk.complete, &(*id, depth), "STEP measure completion lookup")? {
+            if let Some(result) = ctx.get_btree_map(
+                &walk.complete,
+                &(*id, depth),
+                "STEP measure completion lookup",
+            )? {
                 return Ok(*result);
             }
             let loss_start = measurements.losses.0.len();
@@ -3220,10 +3251,17 @@ fn measure_inner(
                 }
             })?;
             ctx.remove_btree_set(&mut walk.active, id, "STEP pmi active remove")?;
-            if measurements.losses.0.len() != loss_start { walk.taint += 1; }
+            if measurements.losses.0.len() != loss_start {
+                walk.taint += 1;
+            }
             if walk.taint == taint_start {
                 walk.storage.with_storage(|| {
-                    ctx.insert_btree_map(&mut walk.complete, (*id, depth), result, "step_measure_complete")
+                    ctx.insert_btree_map(
+                        &mut walk.complete,
+                        (*id, depth),
+                        result,
+                        "step_measure_complete",
+                    )
                 })?;
             }
             result

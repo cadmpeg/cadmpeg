@@ -1171,8 +1171,12 @@ fn apply_body_placements(
         }
         let bodies = scratch_storage.with_storage(|| {
             super::topology::representation_bodies(
-                representation, exchange, topology, &mut representation_cache,
-                &mut BTreeSet::new(), ctx,
+                representation,
+                exchange,
+                topology,
+                &mut representation_cache,
+                &mut BTreeSet::new(),
+                ctx,
             )
         })?;
         if bodies.is_empty() {
@@ -1756,9 +1760,8 @@ fn occurrence_placements(
                     "STEP context placement source lookup",
                 )?
                 .ok_or_else(|| CodecError::malformed("STEP context placement was not indexed"))?;
-            let mut source_ids = scratch_storage.with_storage(|| {
-                ctx.copy_slice(original, "step_competing_context_source_copy")
-            })?;
+            let mut source_ids = scratch_storage
+                .with_storage(|| ctx.copy_slice(original, "step_competing_context_source_copy"))?;
             scratch_storage.with_storage(|| {
                 ctx.reserve_vec(
                     &mut source_ids,
@@ -1778,9 +1781,8 @@ fn occurrence_placements(
             )?;
             ctx.dedup_vec(&mut source_ids, "STEP placement source deduplication")?;
             ctx.remove_btree_map(&mut result, &usage_id, "STEP product result remove")?;
-            let copied = scratch_storage.with_storage(|| {
-                ctx.copy_slice(&source_ids, "step_competing_source_copy")
-            })?;
+            let copied = scratch_storage
+                .with_storage(|| ctx.copy_slice(&source_ids, "step_competing_source_copy"))?;
             scratch_storage.with_storage(|| {
                 ctx.insert_btree_map(
                     ambiguous,
@@ -1878,23 +1880,55 @@ fn occurrence_placements(
         else {
             continue;
         };
-        if !ctx.contains_key_btree_map(&fallback_mappings, &usage.parent_definition, "STEP fallback parent lookup")? {
+        if !ctx.contains_key_btree_map(
+            &fallback_mappings,
+            &usage.parent_definition,
+            "STEP fallback parent lookup",
+        )? {
             let mappings = scratch_storage.with_storage(|| {
-                fallback_parent_mappings(parent_representations, exchange, geometry, &definitions_by_representation, ctx)
+                fallback_parent_mappings(
+                    parent_representations,
+                    exchange,
+                    geometry,
+                    &definitions_by_representation,
+                    ctx,
+                )
             })?;
             scratch_storage.with_storage(|| {
-                ctx.insert_btree_map(&mut fallback_mappings, usage.parent_definition, mappings, "step_fallback_parent_mappings")
+                ctx.insert_btree_map(
+                    &mut fallback_mappings,
+                    usage.parent_definition,
+                    mappings,
+                    "step_fallback_parent_mappings",
+                )
             })?;
         }
-        let mappings = ctx.get_btree_map(&fallback_mappings, &usage.parent_definition, "STEP fallback parent lookup")?
+        let mappings = ctx
+            .get_btree_map(
+                &fallback_mappings,
+                &usage.parent_definition,
+                "STEP fallback parent lookup",
+            )?
             .ok_or_else(|| CodecError::malformed("STEP fallback parent was not indexed"))?;
         // Singular mappings produce warnings for every unresolved usage,
         // including unrelated children. Replay their source order here.
         for item_id in ctx.admit_iter(&mappings.singular, "STEP fallback singular sources")? {
-            let message = ctx.format_retained(format_args!("MAPPED_ITEM #{item_id} has a singular placement"), "step_fallback_singular_text")?;
-            ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), losses, StepLossCode::DecodeWarning.note(message), "step_product_losses")?;
+            let message = ctx.format_retained(
+                format_args!("MAPPED_ITEM #{item_id} has a singular placement"),
+                "step_fallback_singular_text",
+            )?;
+            ctx.push_scoped_vec(
+                &mut slot_storage.borrow_mut(),
+                losses,
+                StepLossCode::DecodeWarning.note(message),
+                "step_product_losses",
+            )?;
         }
-        let placements = ctx.get_btree_map(&mappings.by_child, &usage.child_definition, "STEP fallback child lookup")?;
+        let placements = ctx.get_btree_map(
+            &mappings.by_child,
+            &usage.child_definition,
+            "STEP fallback child lookup",
+        )?;
         let sibling_usage_count = *ctx
             .get_btree_map(
                 &sibling_usage_counts,
@@ -1907,8 +1941,12 @@ fn occurrence_placements(
                 ctx.insert_btree_map(
                     &mut result,
                     usage_id,
-                    *placements.and_then(|values| values.first_key_value()).map(|(_, value)| value)
-                        .ok_or_else(|| CodecError::malformed("STEP fallback placement was not indexed"))?,
+                    *placements
+                        .and_then(|values| values.first_key_value())
+                        .map(|(_, value)| value)
+                        .ok_or_else(|| {
+                            CodecError::malformed("STEP fallback placement was not indexed")
+                        })?,
                     "step_occurrence_placement_results",
                 )
             })?;
@@ -1936,29 +1974,73 @@ fn fallback_parent_mappings(
     definitions_by_representation: &BTreeMap<u64, BTreeSet<u64>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<FallbackMappings, CodecError> {
-    let mut mappings = FallbackMappings { by_child: BTreeMap::new(), singular: Vec::new() };
-    for &parent_representation in ctx.admit_iter(parent_representations, "STEP product parent_representations traversal")? {
-        let Some(record) = ctx.get_btree_map(exchange.records(), &parent_representation, "STEP product record get")? else { continue; };
-        let Some(items) = super::representation::items(ctx, record)? else { continue; };
+    let mut mappings = FallbackMappings {
+        by_child: BTreeMap::new(),
+        singular: Vec::new(),
+    };
+    for &parent_representation in ctx.admit_iter(
+        parent_representations,
+        "STEP product parent_representations traversal",
+    )? {
+        let Some(record) = ctx.get_btree_map(
+            exchange.records(),
+            &parent_representation,
+            "STEP product record get",
+        )?
+        else {
+            continue;
+        };
+        let Some(items) = super::representation::items(ctx, record)? else {
+            continue;
+        };
         for item_id in items {
-            let Some(item) = ctx.get_btree_map(exchange.records(), &item_id, "STEP product record get")? else { continue; };
-            if item.partial(ctx, "MAPPED_ITEM")?.is_none() { continue; }
-            let (representation, transform) = match mapped_item_placement(ctx, item, exchange, geometry)? {
-                Ok(Some(placement)) => placement,
-                Ok(None) => continue,
-                Err(TransformError::Singular) => {
-                    ctx.push_vec(&mut mappings.singular, item_id, "step_fallback_singular_sources")?;
-                    continue;
-                }
-                Err(error) => return Err(placement_error(error)),
+            let Some(item) =
+                ctx.get_btree_map(exchange.records(), &item_id, "STEP product record get")?
+            else {
+                continue;
             };
-            let Some(definitions) = ctx.get_btree_map(definitions_by_representation, &representation, "STEP product definitions_by_representation get")? else { continue; };
-            if definitions.len() != 1 { continue; }
-            let Some(&child) = definitions.first() else { continue; };
-            let placements = ctx.entry_btree_map(&mut mappings.by_child, child, "step_fallback_child_groups")?.or_default();
+            if item.partial(ctx, "MAPPED_ITEM")?.is_none() {
+                continue;
+            }
+            let (representation, transform) =
+                match mapped_item_placement(ctx, item, exchange, geometry)? {
+                    Ok(Some(placement)) => placement,
+                    Ok(None) => continue,
+                    Err(TransformError::Singular) => {
+                        ctx.push_vec(
+                            &mut mappings.singular,
+                            item_id,
+                            "step_fallback_singular_sources",
+                        )?;
+                        continue;
+                    }
+                    Err(error) => return Err(placement_error(error)),
+                };
+            let Some(definitions) = ctx.get_btree_map(
+                definitions_by_representation,
+                &representation,
+                "STEP product definitions_by_representation get",
+            )?
+            else {
+                continue;
+            };
+            if definitions.len() != 1 {
+                continue;
+            }
+            let Some(&child) = definitions.first() else {
+                continue;
+            };
+            let placements = ctx
+                .entry_btree_map(&mut mappings.by_child, child, "step_fallback_child_groups")?
+                .or_default();
             let key = transform_key(transform);
             if !ctx.contains_key_btree_map(placements, &key, "STEP fallback transform lookup")? {
-                ctx.insert_btree_map(placements, key, transform, "step_fallback_occurrence_placements")?;
+                ctx.insert_btree_map(
+                    placements,
+                    key,
+                    transform,
+                    "step_fallback_occurrence_placements",
+                )?;
             }
         }
     }

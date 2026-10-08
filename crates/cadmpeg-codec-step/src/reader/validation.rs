@@ -476,7 +476,7 @@ fn area_or_volume_measure(
         Value::Typed(_, value) => {
             ctx.charge_work(1, "STEP typed validation measure descent")?;
             area_or_volume_measure(ctx, value)
-        },
+        }
         Value::List(values) => ctx.find_map(
             values.as_slice(),
             |value| area_or_volume_measure(ctx, value),

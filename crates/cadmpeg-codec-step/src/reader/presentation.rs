@@ -491,8 +491,12 @@ pub(super) fn decode<'ctx>(
             continue;
         }
         let (color_query, resolved) = style_colors.resolve(
-            &style_references, exchange, domain, &color_storage,
-            (&mut losses, &slot_storage), ctx,
+            &style_references,
+            exchange,
+            domain,
+            &color_storage,
+            (&mut losses, &slot_storage),
+            ctx,
         )?;
         let color = match &resolved.color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
@@ -839,11 +843,19 @@ fn collect_invisible_body_ids(
     if ctx.contains_btree_set(&walk.active, &id, "STEP presentation active contains")? {
         return Ok(false);
     }
-    if let Some(supported) = ctx.get_btree_map(&walk.complete, &id, "STEP invisible completion lookup")? {
+    if let Some(supported) =
+        ctx.get_btree_map(&walk.complete, &id, "STEP invisible completion lookup")?
+    {
         return Ok(*supported);
     }
     let supported = collect_invisible_body_ids_uncached(
-        id, exchange, topology, body_indices, walk, body_ids, ctx,
+        id,
+        exchange,
+        topology,
+        body_indices,
+        walk,
+        body_ids,
+        ctx,
     )?;
     walk.storage.with_storage(|| {
         ctx.insert_btree_map(&mut walk.complete, id, supported, "step_invisible_complete")
@@ -861,9 +873,13 @@ fn collect_invisible_body_ids_uncached(
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let _nested = ctx.enter_nested("step_presentation_invisible_body_walk")?;
-    let (_inserted, _active_storage) = ctx
-        .with_scoped_storage("STEP active key scratch", || {
-            ctx.insert_btree_set(&mut walk.active, id, "step_presentation_invisible_body_active")
+    let (_inserted, _active_storage) =
+        ctx.with_scoped_storage("STEP active key scratch", || {
+            ctx.insert_btree_set(
+                &mut walk.active,
+                id,
+                "step_presentation_invisible_body_active",
+            )
         })?;
     if let Some(ids) = ctx.get_btree_map(
         &topology.body_by_root,
@@ -1866,81 +1882,142 @@ struct StyleColors<'ctx> {
 impl StyleColors<'_> {
     fn resolve<'ctx>(
         &mut self,
-        references: &[u64], exchange: &Exchange, domain: StyleDomain,
+        references: &[u64],
+        exchange: &Exchange,
+        domain: StyleDomain,
         storage: &std::cell::RefCell<ScopedReservation<'ctx>>,
-        (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<ScopedReservation<'ctx>>),
+        (losses, slot_storage): (
+            &mut Vec<LossNote>,
+            &std::cell::RefCell<ScopedReservation<'ctx>>,
+        ),
         ctx: &DecodeContext<'_>,
     ) -> Result<(usize, &CachedStyleColors), CodecError> {
         let mut prefix = 0;
         for &reference in ctx.admit_iter(references, "STEP style color query references")? {
             let next = self.prefixes.len() + 1;
-            prefix = match self.storage.with_storage(|| ctx.entry_btree_map(
-                &mut self.prefixes, (prefix, reference), "step_style_color_query_prefixes",
-            ))? {
+            prefix = match self.storage.with_storage(|| {
+                ctx.entry_btree_map(
+                    &mut self.prefixes,
+                    (prefix, reference),
+                    "step_style_color_query_prefixes",
+                )
+            })? {
                 std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
                 std::collections::btree_map::Entry::Vacant(entry) => *entry.insert(next),
             };
         }
-        let cached_before = ctx.contains_key_btree_map(&self.values, &(prefix, domain), "STEP style color query lookup")?;
+        let cached_before = ctx.contains_key_btree_map(
+            &self.values,
+            &(prefix, domain),
+            "STEP style color query lookup",
+        )?;
         if !cached_before {
-        // Each ordered query starts with the same local traversal state.
-        // Caching the complete query preserves local cache history, cycles,
-        // depth cutoffs, domain fallback, and per-style warning order.
-        let loss_start = losses.len();
-        let mut active = BTreeSet::new();
-        let mut cache = BTreeMap::new();
-        let mut invalid_surface_sides = BTreeSet::new();
-        let mut resolve = |domain| combine_color_resolutions(
-            ctx.admit_iter(references, "STEP color reference traversal")?.copied().map(|reference| {
-                find_color(reference, exchange, domain, ColorSearchState {
-                    storage, active: &mut active, cache: &mut cache,
-                    losses: (&mut *losses, slot_storage),
-                    invalid_surface_sides: &mut invalid_surface_sides,
-                }, 0, ctx)
-            }),
-        );
-        let color = resolve(domain)?;
-        let color = if color.is_none() && matches!(domain, StyleDomain::Curve | StyleDomain::Point) {
-            resolve(StyleDomain::Surface)?
-        } else { color };
-        self.storage.with_storage(|| {
-            let mut claims = Vec::new();
-            for (&(id, _), _) in ctx.admit_iter(&cache, "STEP color claim cache traversal")? {
-                if !ctx.contains_btree_set(&invalid_surface_sides, &id, "STEP presentation invalid_surface_sides contains")? {
-                    ctx.push_vec(&mut claims, id, "step_style_color_claims")?;
-                }
-            }
-            let cached = CachedStyleColors {
-                claims, claims_applied: false,
-                color: clone_color_resolution(&color, ctx, "step_style_color_cached_value")?,
-                losses: ctx.try_collect_vec(losses[loss_start..].iter().map(|loss| {
-                    loss.try_clone_for_decode(ctx, "step_style_color_cached_loss")
-                }), "step_style_color_cached_losses")?,
+            // Each ordered query starts with the same local traversal state.
+            // Caching the complete query preserves local cache history, cycles,
+            // depth cutoffs, domain fallback, and per-style warning order.
+            let loss_start = losses.len();
+            let mut active = BTreeSet::new();
+            let mut cache = BTreeMap::new();
+            let mut invalid_surface_sides = BTreeSet::new();
+            let mut resolve = |domain| {
+                combine_color_resolutions(
+                    ctx.admit_iter(references, "STEP color reference traversal")?
+                        .copied()
+                        .map(|reference| {
+                            find_color(
+                                reference,
+                                exchange,
+                                domain,
+                                ColorSearchState {
+                                    storage,
+                                    active: &mut active,
+                                    cache: &mut cache,
+                                    losses: (&mut *losses, slot_storage),
+                                    invalid_surface_sides: &mut invalid_surface_sides,
+                                },
+                                0,
+                                ctx,
+                            )
+                        }),
+                )
             };
-            ctx.insert_btree_map(&mut self.values, (prefix, domain), cached, "step_style_color_query_entries")
-        })?;
+            let color = resolve(domain)?;
+            let color =
+                if color.is_none() && matches!(domain, StyleDomain::Curve | StyleDomain::Point) {
+                    resolve(StyleDomain::Surface)?
+                } else {
+                    color
+                };
+            self.storage.with_storage(|| {
+                let mut claims = Vec::new();
+                for (&(id, _), _) in ctx.admit_iter(&cache, "STEP color claim cache traversal")? {
+                    if !ctx.contains_btree_set(
+                        &invalid_surface_sides,
+                        &id,
+                        "STEP presentation invalid_surface_sides contains",
+                    )? {
+                        ctx.push_vec(&mut claims, id, "step_style_color_claims")?;
+                    }
+                }
+                let cached = CachedStyleColors {
+                    claims,
+                    claims_applied: false,
+                    color: clone_color_resolution(&color, ctx, "step_style_color_cached_value")?,
+                    losses: ctx.try_collect_vec(
+                        losses[loss_start..].iter().map(|loss| {
+                            loss.try_clone_for_decode(ctx, "step_style_color_cached_loss")
+                        }),
+                        "step_style_color_cached_losses",
+                    )?,
+                };
+                ctx.insert_btree_map(
+                    &mut self.values,
+                    (prefix, domain),
+                    cached,
+                    "step_style_color_query_entries",
+                )
+            })?;
         }
-        let cached = ctx.get_btree_map(&self.values, &(prefix, domain), "STEP style color query result")?
+        let cached = ctx
+            .get_btree_map(
+                &self.values,
+                &(prefix, domain),
+                "STEP style color query result",
+            )?
             .ok_or_else(|| CodecError::malformed("STEP style color query is missing"))?;
         if cached_before {
             for loss in ctx.admit_iter(&cached.losses, "STEP cached color loss traversal")? {
                 let loss = loss.try_clone_for_decode(ctx, "step_style_color_loss_copy")?;
-                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), losses, loss, "step_presentation_losses")?;
+                ctx.push_scoped_vec(
+                    &mut slot_storage.borrow_mut(),
+                    losses,
+                    loss,
+                    "step_presentation_losses",
+                )?;
             }
         }
         Ok((prefix, cached))
     }
 
     fn claim(
-        &mut self, prefix: usize, domain: StyleDomain,
+        &mut self,
+        prefix: usize,
+        domain: StyleDomain,
         (claims, storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        let cached = ctx.get_mut_btree_map(&mut self.values, &(prefix, domain), "STEP style color claims lookup")?
+        let cached = ctx
+            .get_mut_btree_map(
+                &mut self.values,
+                &(prefix, domain),
+                "STEP style color claims lookup",
+            )?
             .ok_or_else(|| CodecError::malformed("STEP style color query is missing"))?;
         if !cached.claims_applied {
             for &id in ctx.admit_iter(&cached.claims, "STEP style color claim traversal")? {
-                storage.with_storage(|| ctx.insert_btree_set(claims, id, "step_presentation_typed_claims"))?;
+                storage.with_storage(|| {
+                    ctx.insert_btree_set(claims, id, "step_presentation_typed_claims")
+                })?;
             }
             cached.claims_applied = true;
         }
@@ -2387,7 +2464,13 @@ fn style_domain(
     ctx: &DecodeContext<'_>,
 ) -> Result<StyleDomain, CodecError> {
     let (domain, _storage) = ctx.with_scoped_storage("STEP style domain cache scratch", || {
-        style_domain_at(id, exchange, &mut BTreeSet::new(), &mut BTreeMap::new(), ctx)
+        style_domain_at(
+            id,
+            exchange,
+            &mut BTreeSet::new(),
+            &mut BTreeMap::new(),
+            ctx,
+        )
     })?;
     Ok(domain)
 }
