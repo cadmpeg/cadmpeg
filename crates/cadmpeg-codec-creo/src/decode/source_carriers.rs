@@ -34,11 +34,16 @@ struct SourceValue<'ctx, T> {
     _key_and_node_storage: Option<ScopedReservation<'ctx>>,
 }
 
+struct ModelSource<T> {
+    geometry: T,
+    position: Option<usize>,
+}
+
 pub(super) struct SourceUnitCarriers<'ctx, 'input> {
     context: SourceContext<'ctx, 'input>,
     length_scale_mm: Option<PositiveReal>,
-    surfaces: BTreeMap<SurfaceId, SourceValue<'ctx, SurfaceGeometry>>,
-    curves: BTreeMap<CurveId, SourceValue<'ctx, CurveGeometry>>,
+    surfaces: BTreeMap<SurfaceId, SourceValue<'ctx, ModelSource<SurfaceGeometry>>>,
+    curves: BTreeMap<CurveId, SourceValue<'ctx, ModelSource<CurveGeometry>>>,
     edge_parameter_ranges: BTreeMap<EdgeId, SourceValue<'ctx, [f64; 2]>>,
     sketch_entities: BTreeMap<SketchEntityId, SourceValue<'ctx, SketchGeometry>>,
 }
@@ -344,11 +349,12 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
         };
         match entry {
             Entry::Occupied(mut entry) => {
-                entry.get_mut().value = (source_geometry, geometry_storage);
+                let position = Some(ir.model.surfaces.len());
+                entry.get_mut().value = (ModelSource { geometry: source_geometry, position }, geometry_storage);
             }
             Entry::Vacant(entry) => {
                 entry.insert(SourceValue {
-                    value: (source_geometry, geometry_storage),
+                    value: (ModelSource { geometry: source_geometry, position: Some(ir.model.surfaces.len()) }, geometry_storage),
                     _key_and_node_storage: key_storage,
                 });
             }
@@ -405,11 +411,12 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
         };
         match entry {
             Entry::Occupied(mut entry) => {
-                entry.get_mut().value = (source_geometry, geometry_storage);
+                let position = entry.get().value.0.position;
+                entry.get_mut().value = (ModelSource { geometry: source_geometry, position }, geometry_storage);
             }
             Entry::Vacant(entry) => {
                 entry.insert(SourceValue {
-                    value: (source_geometry, geometry_storage),
+                    value: (ModelSource { geometry: source_geometry, position: None }, geometry_storage),
                     _key_and_node_storage: key_storage,
                 });
             }
@@ -465,11 +472,12 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
         };
         match entry {
             Entry::Occupied(mut entry) => {
-                entry.get_mut().value = (source_geometry, geometry_storage);
+                let position = Some(ir.model.curves.len());
+                entry.get_mut().value = (ModelSource { geometry: source_geometry, position }, geometry_storage);
             }
             Entry::Vacant(entry) => {
                 entry.insert(SourceValue {
-                    value: (source_geometry, geometry_storage),
+                    value: (ModelSource { geometry: source_geometry, position: Some(ir.model.curves.len()) }, geometry_storage),
                     _key_and_node_storage: key_storage,
                 });
             }
@@ -485,7 +493,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
             #[cfg(test)]
             SourceContext::Fixture => crate::decode::with_test_decode_ctx(|ctx| ctx.get_btree_map(&self.curves, &curve.id, "creo source curve geometry lookup"))?,
         };
-        Ok(geometry.map(|source| &source.value.0).unwrap_or(&curve.geometry))
+        Ok(geometry.map(|source| &source.value.0.geometry).unwrap_or(&curve.geometry))
     }
 
     pub(super) fn replace_curve_geometry(
@@ -534,11 +542,12 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
         };
         match entry {
             Entry::Occupied(mut entry) => {
-                entry.get_mut().value = (source_geometry, geometry_storage);
+                let position = entry.get().value.0.position;
+                entry.get_mut().value = (ModelSource { geometry: source_geometry, position }, geometry_storage);
             }
             Entry::Vacant(entry) => {
                 entry.insert(SourceValue {
-                    value: (source_geometry, geometry_storage),
+                    value: (ModelSource { geometry: source_geometry, position: None }, geometry_storage),
                     _key_and_node_storage: key_storage,
                 });
             }
@@ -604,6 +613,26 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
         Ok(())
     }
 
+    fn source_curve_by_id<'a>(
+        &'a self,
+        ctx: &DecodeContext<'_>,
+        ir: &'a CadIr,
+        id: &CurveId,
+        search_operation: &'static str,
+        comparison_operation: &'static str,
+    ) -> Result<Option<&'a CurveGeometry>, CodecError> {
+        let source = ctx.get_btree_map(&self.curves, id, "creo source curve geometry lookup")?;
+        if let Some(source) = source {
+            if let Some(curve) = source.value.0.position.and_then(|position| ir.model.curves.get(position)) {
+                if ctx.equal(&curve.id, id, comparison_operation)? {
+                    return Ok(Some(&source.value.0.geometry));
+                }
+            }
+        }
+        let curve = ctx.find_by(&ir.model.curves, |curve| ctx.equal(&curve.id, id, comparison_operation), search_operation)?;
+        Ok(curve.map(|curve| source.map(|source| &source.value.0.geometry).unwrap_or(&curve.geometry)))
+    }
+
     pub(super) fn admit_edge(
         &mut self,
         ctx: &DecodeContext<'_>,
@@ -615,11 +644,9 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
         if let (Some(scale), EdgeCarrier::Bounded(curve_id, interval)) =
             (self.length_scale_mm, &mut edge.carrier)
         {
-            let curve = ctx.find_by(&ir.model.curves,
-                |curve| ctx.equal(&curve.id, curve_id, "creo source edge curve ID comparison"),
-                "creo source edge curve search")?;
-            let parameter_scale = curve
-                .map(|curve| self.curve_geometry(curve)).transpose()?.and_then(CurveGeometry::solved)
+            let parameter_scale = self.source_curve_by_id(
+                ctx, ir, curve_id, "creo source edge curve search", "creo source edge curve ID comparison",
+            )?.and_then(CurveGeometry::solved)
                 .map(|geometry| {
                     crate::decode::build::units::curve_parameter_scale(ctx, geometry, scale)
                 })
@@ -684,11 +711,9 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
         mut coedge: Coedge,
     ) -> Result<(), CodecError> {
         if let (Some(scale), Some(use_curve)) = (self.length_scale_mm, &mut coedge.use_curve) {
-            let curve = ctx.find_by(&ir.model.curves,
-                |curve| ctx.equal(&curve.id, &use_curve.curve, "creo source coedge curve ID comparison"),
-                "creo source coedge curve search")?;
-            let parameter_scale = curve
-                .map(|curve| self.curve_geometry(curve)).transpose()?.and_then(CurveGeometry::solved)
+            let parameter_scale = self.source_curve_by_id(
+                ctx, ir, &use_curve.curve, "creo source coedge curve search", "creo source coedge curve ID comparison",
+            )?.and_then(CurveGeometry::solved)
                 .map(|geometry| {
                     crate::decode::build::units::curve_parameter_scale(ctx, geometry, scale)
                 })
@@ -715,12 +740,23 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
         pcurve: Pcurve,
         surface_id: &SurfaceId,
     ) -> Result<(), CodecError> {
-        let surface = ctx.find_by(&ir.model.surfaces,
-            |surface| ctx.equal(&surface.id, surface_id, "creo source pcurve surface ID comparison"),
-            "creo source pcurve surface search")?
-            .ok_or_else(|| malformed_refusal(ctx, "Creo pcurve has no owning surface"))?;
+        let source = ctx.get_btree_map(&self.surfaces, surface_id, "creo source surface geometry lookup")?;
+        let cached_surface_present = source
+            .and_then(|source| source.value.0.position)
+            .and_then(|position| ir.model.surfaces.get(position))
+            .map(|surface| ctx.equal(&surface.id, surface_id, "creo source pcurve surface ID comparison"))
+            .transpose()?.unwrap_or(false);
+        let geometry = if cached_surface_present {
+            source.map(|source| &source.value.0.geometry)
+        } else {
+            ctx.find_by(&ir.model.surfaces,
+                |surface| ctx.equal(&surface.id, surface_id, "creo source pcurve surface ID comparison"),
+                "creo source pcurve surface search")?
+                .map(|surface| source.map(|source| &source.value.0.geometry).unwrap_or(&surface.geometry))
+        };
+        let source_geometry = geometry.ok_or_else(|| malformed_refusal(ctx, "Creo pcurve has no owning surface"))?;
         let scales = match self.length_scale_mm {
-            Some(scale) => self.surface_geometry(surface)?.solved().map(|geometry| {
+            Some(scale) => source_geometry.solved().map(|geometry| {
                 crate::decode::build::units::surface_parameter_scales(ctx, geometry, scale.get())
             }).transpose()?,
             None => None,
@@ -806,7 +842,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
     #[cfg(test)]
     pub(super) fn record_surface(&mut self, surface: &Surface) {
         self.surfaces
-            .insert(surface.id.clone(), SourceValue { value: (surface.geometry.clone(), None), _key_and_node_storage: None });
+            .insert(surface.id.clone(), SourceValue { value: (ModelSource { geometry: surface.geometry.clone(), position: None }, None), _key_and_node_storage: None });
     }
 
     pub(super) fn surface_geometry<'a>(&'a self, surface: &'a Surface) -> Result<&'a SurfaceGeometry, CodecError> {
@@ -815,7 +851,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
             #[cfg(test)]
             SourceContext::Fixture => crate::decode::with_test_decode_ctx(|ctx| ctx.get_btree_map(&self.surfaces, &surface.id, "creo source surface geometry lookup"))?,
         };
-        Ok(geometry.map(|source| &source.value.0).unwrap_or(&surface.geometry))
+        Ok(geometry.map(|source| &source.value.0.geometry).unwrap_or(&surface.geometry))
     }
 
     pub(super) fn remove_surface(&mut self, id: &SurfaceId) -> Result<(), CodecError> {
