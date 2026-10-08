@@ -5,14 +5,16 @@ use crate::solve::mesh_quotient::selection_search::mesh_assignment_can_merge;
 use crate::solve::mesh_quotient::{
     admit_orientation_option, deduplicate_mesh_quotient_assignments, initial_mesh_quotient,
     orientation_fingerprint, orientation_options_equivalent, possible_face_choices,
-    possible_face_choices_with_limit, possible_face_equations, MeshQuotient, MeshSelectionSearch,
-    SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS,
+    possible_face_choices_with_limit, possible_face_equations, MeshImplicitEdgeCandidateSource,
+    MeshImplicitEdgeCandidates, MeshQuotient, MeshSelectionSearch, SearchOutcome,
+    MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
 };
 use crate::solve::tests::repeated_domain;
 use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::CodecError;
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
@@ -585,13 +587,14 @@ fn coordinate_root_domains_keep_unknown_edge_pairs_implicit() {
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
-    assert_eq!(
-        domains
-            .implicit_edge_candidates(0, Some(0))
-            .expect("implicit candidates")
-            .collect::<Vec<_>>(),
-        vec![[0, 1]]
-    );
+    let mut implicit = domains
+        .implicit_edge_candidates(0, Some(0))
+        .expect("implicit candidates");
+    let mut pairs = Vec::new();
+    while let Some(pair) = implicit.next_with_context(&ctx).expect("candidate budget") {
+        pairs.push(pair);
+    }
+    assert_eq!(pairs, vec![[0, 1]]);
     assert!(domains
         .refine_edge_candidate_arc(&ctx, 0, [0, 1], None)
         .expect("service resource budget")
@@ -618,12 +621,21 @@ fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product(
         .prepare_coordinate_root_domains(&ctx, 4, &candidates, None)
         .expect("service resource budget")
         .expect("implicit coordinate domains");
-    let implicit = domains
+    let mut implicit = domains
         .implicit_edge_candidates(0, Some(1))
         .expect("required implicit candidates");
 
     assert_eq!(implicit.width_upper_bound(&ctx).expect("bounded width"), 3);
-    assert_eq!(implicit.collect::<Vec<_>>(), vec![[0, 1], [1, 2], [1, 3]]);
+    assert_eq!(
+        crate::test_support::with_collection_limit(0, |ctx| implicit.width_upper_bound(ctx))
+            .expect("width needs no collection"),
+        3
+    );
+    let mut pairs = Vec::new();
+    while let Some(pair) = implicit.next_with_context(&ctx).expect("candidate budget") {
+        pairs.push(pair);
+    }
+    assert_eq!(pairs, vec![[0, 1], [1, 2], [1, 3]]);
 
     let mut visited = Vec::new();
     assert!(domains
@@ -1826,3 +1838,30 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
 }
 
 mod selection_search;
+
+#[test]
+fn implicit_candidate_scan_charges_rejected_pairs_and_duplicate_queries() {
+    for operation in [
+        "catia_implicit_candidate_scan",
+        "catia_implicit_candidate_duplicate",
+    ] {
+        let result = crate::test_support::with_work_refusal(operation, |ctx| {
+            let mut values = MeshImplicitEdgeCandidates {
+                source: MeshImplicitEdgeCandidateSource::Cartesian {
+                    domains: Arc::new(vec![vec![0, 1], vec![0, 1]]),
+                    left_root: 0,
+                    right_root: 1,
+                    left_index: 0,
+                    right_index: 0,
+                    same_root: false,
+                },
+            };
+            assert_eq!(values.next_with_context(ctx)?, Some([0, 1]));
+            assert_eq!(values.next_with_context(ctx)?, None);
+            Ok(())
+        });
+        assert!(
+            matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == operation)
+        );
+    }
+}

@@ -905,11 +905,50 @@ enum MeshImplicitEdgeCandidateSource {
     },
     Required {
         domains: Arc<Vec<Vec<usize>>>,
-        roots: [Option<usize>; 2],
+        roots: [usize; 2],
+        plan: Cell<Option<([Option<usize>; 2], bool)>>,
         indexes: [usize; 2],
         required: usize,
-        skip_required: bool,
     },
+}
+
+/// Resolves which domains supply partners for the required point. The domains
+/// are immutable, so a completed plan remains valid across candidate clones.
+fn required_candidate_plan(
+    ctx: &DecodeContext<'_>,
+    domains: &[Vec<usize>],
+    [left, right]: [usize; 2],
+    required: usize,
+    plan: &Cell<Option<([Option<usize>; 2], bool)>>,
+) -> Result<([Option<usize>; 2], bool), CodecError> {
+    if let Some(resolved) = plan.get() {
+        return Ok(resolved);
+    }
+    let required_in_left = domain_contains(
+        ctx,
+        &domains[left],
+        required,
+        "catia_implicit_required_domain",
+    )?;
+    let required_in_right = if left == right {
+        required_in_left
+    } else {
+        domain_contains(
+            ctx,
+            &domains[right],
+            required,
+            "catia_implicit_required_domain",
+        )?
+    };
+    let resolved = match (required_in_left, required_in_right) {
+        (true, false) => ([Some(right), None], false),
+        (false, true) => ([Some(left), None], false),
+        (false, false) => ([None, None], false),
+        (true, true) if left == right => ([Some(left), None], false),
+        (true, true) => ([Some(left), Some(right)], true),
+    };
+    plan.set(Some(resolved));
+    Ok(resolved)
 }
 
 impl MeshImplicitEdgeCandidates {
@@ -929,80 +968,111 @@ impl MeshImplicitEdgeCandidates {
             MeshImplicitEdgeCandidateSource::Required {
                 domains,
                 roots,
-                skip_required,
+                plan,
+                required,
                 ..
-            } => match *roots {
-                [Some(left), Some(right)] => {
-                    // The two ascending domains are merged without repeats and
-                    // the required point, which both contain, is skipped.
-                    let shared = domain_intersection(
-                        ctx,
-                        &domains[left],
-                        &domains[right],
-                        "catia_implicit_edge_width",
-                    )?;
-                    Ok(domains[left].len() + domains[right].len()
-                        - shared.len()
-                        - usize::from(*skip_required))
+            } => {
+                let (roots, skip_required) =
+                    required_candidate_plan(ctx, domains, *roots, *required, plan)?;
+                match roots {
+                    [Some(left), Some(right)] => {
+                        let (short, long) = if domains[left].len() <= domains[right].len() {
+                            (&domains[left], &domains[right])
+                        } else {
+                            (&domains[right], &domains[left])
+                        };
+                        let shared = ctx.fold(
+                            short,
+                            0usize,
+                            |shared, &point| {
+                                Ok(shared
+                                    + usize::from(domain_contains(
+                                        ctx,
+                                        long,
+                                        point,
+                                        "catia_implicit_edge_width",
+                                    )?))
+                            },
+                            "catia_implicit_edge_width",
+                        )?;
+                        domains[left]
+                            .len()
+                            .checked_add(domains[right].len())
+                            .and_then(|width| {
+                                width.checked_sub(shared + usize::from(skip_required))
+                            })
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(
+                                    "catia_implicit_edge_width",
+                                    u64::MAX,
+                                    u64::MAX,
+                                )
+                            })
+                    }
+                    [Some(root), None] | [None, Some(root)] => Ok(domains[root].len()),
+                    [None, None] => Ok(0),
                 }
-                [Some(root), None] | [None, Some(root)] => Ok(domains[root].len()),
-                [None, None] => Ok(0),
-            },
+            }
         }
     }
-}
 
-impl Iterator for MeshImplicitEdgeCandidates {
-    type Item = [usize; 2];
-
-    fn next(&mut self) -> Option<Self::Item> {
+    /// Examines raw pairs one at a time. Rejected pairs and duplicate checks
+    /// consume work before the next pair is examined.
+    pub(super) fn next_with_context(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<[usize; 2]>, CodecError> {
         match &mut self.source {
             MeshImplicitEdgeCandidateSource::Required {
                 domains,
                 roots,
+                plan,
                 indexes,
                 required,
-                skip_required,
-            } => loop {
-                let left = roots[0]
-                    .and_then(|root| domains[root].get(indexes[0]))
-                    .copied();
-                let right = roots[1]
-                    .and_then(|root| domains[root].get(indexes[1]))
-                    .copied();
-                let point = match (left, right) {
-                    (Some(left), Some(right)) if left < right => {
-                        indexes[0] += 1;
-                        left
+            } => {
+                let (roots, skip_required) =
+                    required_candidate_plan(ctx, domains, *roots, *required, plan)?;
+                let points = std::iter::from_fn(|| {
+                    let left = roots[0]
+                        .and_then(|root| domains[root].get(indexes[0]))
+                        .copied();
+                    let right = roots[1]
+                        .and_then(|root| domains[root].get(indexes[1]))
+                        .copied();
+                    match (left, right) {
+                        (Some(left), Some(right)) if left < right => {
+                            indexes[0] += 1;
+                            Some(left)
+                        }
+                        (Some(left), Some(right)) if right < left => {
+                            indexes[1] += 1;
+                            Some(right)
+                        }
+                        (Some(left), Some(_)) => {
+                            indexes[0] += 1;
+                            indexes[1] += 1;
+                            Some(left)
+                        }
+                        (Some(left), None) => {
+                            indexes[0] += 1;
+                            Some(left)
+                        }
+                        (None, Some(right)) => {
+                            indexes[1] += 1;
+                            Some(right)
+                        }
+                        (None, None) => None,
                     }
-                    (Some(left), Some(right)) if right < left => {
-                        indexes[1] += 1;
-                        right
-                    }
-                    (Some(left), Some(_)) => {
-                        indexes[0] += 1;
-                        indexes[1] += 1;
-                        left
-                    }
-                    (Some(left), None) => {
-                        indexes[0] += 1;
-                        left
-                    }
-                    (None, Some(right)) => {
-                        indexes[1] += 1;
-                        right
-                    }
-                    (None, None) => return None,
-                };
-                if *skip_required && point == *required {
-                    continue;
-                }
-                return Some(if *required <= point {
-                    [*required, point]
-                } else {
-                    [point, *required]
                 });
-            },
+                ctx.find_map(
+                    points,
+                    |point| {
+                        Ok((!skip_required || point != *required)
+                            .then(|| [(*required).min(point), (*required).max(point)]))
+                    },
+                    "catia_implicit_candidate_scan",
+                )
+            }
             MeshImplicitEdgeCandidateSource::Cartesian {
                 domains,
                 left_root,
@@ -1013,30 +1083,45 @@ impl Iterator for MeshImplicitEdgeCandidates {
             } => {
                 let left = &domains[*left_root];
                 let right = &domains[*right_root];
-                while *left_index < left.len() {
-                    let left_point = left[*left_index];
+                let pairs = std::iter::from_fn(|| {
+                    let &left_point = left.get(*left_index)?;
                     let &right_point = right.get(*right_index)?;
                     *right_index += 1;
                     if *right_index == right.len() {
                         *left_index += 1;
                         *right_index = 0;
                     }
-                    if !*same_root && left_point == right_point {
-                        continue;
-                    }
-                    if left_point > right_point
-                        && left.binary_search(&right_point).is_ok()
-                        && right.binary_search(&left_point).is_ok()
-                    {
-                        continue;
-                    }
-                    return Some(if left_point <= right_point {
-                        [left_point, right_point]
-                    } else {
-                        [right_point, left_point]
-                    });
-                }
-                None
+                    Some([left_point, right_point])
+                });
+                ctx.find_map(
+                    pairs,
+                    |[left_point, right_point]| {
+                        if !*same_root && left_point == right_point {
+                            return Ok(None);
+                        }
+                        if left_point > right_point
+                            && domain_contains(
+                                ctx,
+                                left,
+                                right_point,
+                                "catia_implicit_candidate_duplicate",
+                            )?
+                            && domain_contains(
+                                ctx,
+                                right,
+                                left_point,
+                                "catia_implicit_candidate_duplicate",
+                            )?
+                        {
+                            return Ok(None);
+                        }
+                        Ok(Some([
+                            left_point.min(right_point),
+                            left_point.max(right_point),
+                        ]))
+                    },
+                    "catia_implicit_candidate_scan",
+                )
             }
         }
     }
@@ -1142,22 +1227,13 @@ impl MeshCoordinateRootDomains {
         self.edge_candidates.get(edge)?.is_empty().then_some(())?;
         let &[left, right] = self.edges.get(edge)?;
         if let Some(required) = required_point {
-            let required_in_left = self.domains[left].binary_search(&required).is_ok();
-            let required_in_right = self.domains[right].binary_search(&required).is_ok();
-            let (roots, skip_required) = match (required_in_left, required_in_right) {
-                (true, false) => ([Some(right), None], false),
-                (false, true) => ([Some(left), None], false),
-                (false, false) => ([None, None], false),
-                (true, true) if left == right => ([Some(left), None], false),
-                (true, true) => ([Some(left), Some(right)], true),
-            };
             return Some(MeshImplicitEdgeCandidates {
                 source: MeshImplicitEdgeCandidateSource::Required {
                     domains: Arc::clone(&self.domains),
-                    roots,
+                    roots: [left, right],
+                    plan: Cell::new(None),
                     indexes: [0, 0],
                     required,
-                    skip_required,
                 },
             });
         }
@@ -6611,16 +6687,13 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
     /// of `budget`; at most `MAX_LOCAL_ENDPOINT_STATES` pairs are examined.
     fn endpoint_adjacency(
         ctx: &DecodeContext<'_>,
-        candidates: impl IntoIterator<Item = [usize; 2]>,
+        mut next_pair: impl FnMut() -> Result<Option<[usize; 2]>, CodecError>,
         allowed: impl Fn([usize; 2]) -> bool,
         budget: Option<&WorkBudget<'_>>,
     ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
         let mut adjacency = Vec::new();
         let mut count = 0usize;
-        let mut candidates = candidates.into_iter();
-        while let Some(pair @ [left, right]) =
-            ctx.next_charged(&mut candidates, "catia_endpoint_viability_adjacency")?
-        {
+        while let Some(pair @ [left, right]) = next_pair()? {
             if budget.is_some_and(|budget| !budget.charge()) {
                 return Ok(None);
             }
@@ -6674,17 +6747,29 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
                 return Ok(None);
             };
             let adjacency = match candidate {
-                MeshEndpointCandidates::Explicit(values) => endpoint_adjacency(
+                MeshEndpointCandidates::Explicit(values) => {
+                    let mut values = values.iter().copied();
+                    endpoint_adjacency(
+                        ctx,
+                        || ctx.next_charged(&mut values, "catia_endpoint_viability_adjacency"),
+                        |pair| allowed(use_.edge, pair),
+                        budget,
+                    )
+                }
+                MeshEndpointCandidates::Implicit(mut values) => endpoint_adjacency(
                     ctx,
-                    values.iter().copied(),
+                    || values.next_with_context(ctx),
                     |pair| allowed(use_.edge, pair),
                     budget,
                 ),
-                MeshEndpointCandidates::Implicit(values) => {
-                    endpoint_adjacency(ctx, values, |pair| allowed(use_.edge, pair), budget)
-                }
                 MeshEndpointCandidates::Selected(value) => {
-                    endpoint_adjacency(ctx, [value], |pair| allowed(use_.edge, pair), budget)
+                    let mut value = Some(value);
+                    endpoint_adjacency(
+                        ctx,
+                        || Ok(value.take()),
+                        |pair| allowed(use_.edge, pair),
+                        budget,
+                    )
                 }
             }?;
             let Some(adjacency) = adjacency else {
@@ -6888,12 +6973,12 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                 MeshEndpointCandidates::Explicit(values) => {
                     ctx.copy_slice(values, "catia_endpoint_layer_values")?
                 }
-                MeshEndpointCandidates::Implicit(values) => {
+                MeshEndpointCandidates::Implicit(mut values) => {
                     let mut collected = Vec::new();
-                    let mut values = values.take(MAX_LOCAL_ENDPOINT_STATES + 1);
-                    while let Some(value) =
-                        ctx.next_charged(&mut values, "catia_endpoint_layer_values")?
-                    {
+                    while collected.len() <= MAX_LOCAL_ENDPOINT_STATES {
+                        let Some(value) = values.next_with_context(ctx)? else {
+                            break;
+                        };
                         ctx.push_vec(&mut collected, value, "catia_endpoint_layer_values")?;
                     }
                     collected

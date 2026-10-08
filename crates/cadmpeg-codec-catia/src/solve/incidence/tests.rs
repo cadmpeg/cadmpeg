@@ -857,7 +857,15 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .and_then(|options| options
+                .map(|mut options| {
+                    let mut pairs = Vec::new();
+                    while let Some(pair) = options.next_with_context(&ctx)? {
+                        pairs.push(pair);
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(pairs)
+                })
+                .transpose())
             .expect("service resource budget"),
         Some(vec![(0, [0, 2])])
     );
@@ -907,7 +915,15 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .and_then(|options| options
+                .map(|mut options| {
+                    let mut pairs = Vec::new();
+                    while let Some(pair) = options.next_with_context(&ctx)? {
+                        pairs.push(pair);
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(pairs)
+                })
+                .transpose())
             .expect("service resource budget"),
         Some(vec![(0, [0, 2])])
     );
@@ -1100,7 +1116,15 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .and_then(|options| options
+                .map(|mut options| {
+                    let mut pairs = Vec::new();
+                    while let Some(pair) = options.next_with_context(&ctx)? {
+                        pairs.push(pair);
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(pairs)
+                })
+                .transpose())
             .expect("service resource budget"),
         Some(vec![(1, [3, 4]), (1, [3, 5]), (1, [4, 5])])
     );
@@ -1161,7 +1185,15 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .and_then(|options| options
+                .map(|mut options| {
+                    let mut pairs = Vec::new();
+                    while let Some(pair) = options.next_with_context(&ctx)? {
+                        pairs.push(pair);
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(pairs)
+                })
+                .transpose())
             .expect("service resource budget"),
         Some(vec![(0, [0, 1]), (0, [0, 2])])
     );
@@ -1175,7 +1207,15 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     assert_eq!(
         independent
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .and_then(|options| options
+                .map(|mut options| {
+                    let mut pairs = Vec::new();
+                    while let Some(pair) = options.next_with_context(&ctx)? {
+                        pairs.push(pair);
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(pairs)
+                })
+                .transpose())
             .expect("service resource budget"),
         Some(Vec::new())
     );
