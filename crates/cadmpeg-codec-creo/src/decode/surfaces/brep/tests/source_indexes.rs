@@ -39,11 +39,12 @@ fn brep_edge_index_limit_error(operation: &'static str) -> CodecError {
         solved_vertices,
         ir,
     } = brep_edge_index_input();
-    crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        operation, |ctx| {
-
-    BrepEdgeIndexes::from_rows(ctx, &rows, &native_vertices, &solved_vertices, &ir)
-        })
+    crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| BrepEdgeIndexes::from_rows(ctx, &rows, &native_vertices, &solved_vertices, &ir),
+    )
 }
 
 #[test]
@@ -116,11 +117,12 @@ fn face_candidate_scan() -> crate::container::ContainerScan<'static> {
 fn face_candidate_index_limit_error(operation: &'static str) -> CodecError {
     let scan = face_candidate_scan();
     let ir = CadIr::empty();
-    crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        operation, |ctx| {
-
-    BrepFaceCandidateIndexes::from_scan(ctx, &scan, &ir)
-        })
+    crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| BrepFaceCandidateIndexes::from_scan(ctx, &scan, &ir),
+    )
 }
 
 #[test]
@@ -166,8 +168,12 @@ fn brep_model_surface_count_nodes_refuse_collection_limit() {
 #[test]
 fn brep_boundary_curve_id_nodes_refuse_collection_limit() {
     let scan = face_candidate_scan();
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems,
-        "creo B-rep boundary curve ID nodes", |ctx| BrepFaceCandidateIndexes::from_scan(ctx, &scan, &CadIr::empty()));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        "creo B-rep boundary curve ID nodes",
+        |ctx| BrepFaceCandidateIndexes::from_scan(ctx, &scan, &CadIr::empty()),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep boundary curve ID nodes"));
@@ -226,8 +232,12 @@ fn source_index_limit_error(kind: &str) -> CodecError {
         "incidence" => "creo B-rep incidence index nodes",
         _ => panic!("unsupported source-index fixture"),
     };
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation,
-        |ctx| BrepSourceIndexes::from_scan(ctx, &carriers, &scan))
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| BrepSourceIndexes::from_scan(ctx, &carriers, &scan),
+    )
 }
 
 #[test]
@@ -290,16 +300,25 @@ fn brep_source_indexes_keep_last_duplicate_half_edge_and_incidence() {
 }
 
 fn pcurve_candidate_limit_error(operation: &'static str, second_on_same_key: bool) -> CodecError {
-    crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        operation, |ctx| {
-
-    let mut candidates = NativePcurveCandidates::new();
-    if second_on_same_key {
-        push_native_pcurve_candidate(ctx, &mut candidates, 10, 5, [[0.0, 0.0], [1.0, 0.0]], 4)
-            ?;
-    }
-    push_native_pcurve_candidate(ctx, &mut candidates, 10, 5, [[1.0, 0.0], [2.0, 0.0]], 8)
-        })
+    crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            let mut candidates = NativePcurveCandidates::new();
+            if second_on_same_key {
+                push_native_pcurve_candidate(
+                    ctx,
+                    &mut candidates,
+                    10,
+                    5,
+                    [[0.0, 0.0], [1.0, 0.0]],
+                    4,
+                )?;
+            }
+            push_native_pcurve_candidate(ctx, &mut candidates, 10, 5, [[1.0, 0.0], [2.0, 0.0]], 8)
+        },
+    )
 }
 
 #[test]
@@ -360,12 +379,18 @@ fn typed_curve_id_fixture() -> CadIr {
 #[test]
 fn brep_typed_curve_id_nodes_refuse_collection_limit() {
     let ir = typed_curve_id_fixture();
-    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "creo B-rep typed curve ID nodes", |ctx| model_typed_nonlinear_curve_ids(
-        ctx,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    ));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo B-rep typed curve ID nodes",
+        |ctx| {
+            model_typed_nonlinear_curve_ids(
+                ctx,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep typed curve ID nodes"));
@@ -374,12 +399,18 @@ fn brep_typed_curve_id_nodes_refuse_collection_limit() {
 #[test]
 fn brep_typed_curve_ids_charge_distinct_nodes_and_preserve_order() {
     let ir = typed_curve_id_fixture();
-    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "creo B-rep typed curve ID nodes", |ctx| model_typed_nonlinear_curve_ids(
-        ctx,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    ));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo B-rep typed curve ID nodes",
+        |ctx| {
+            model_typed_nonlinear_curve_ids(
+                ctx,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep typed curve ID nodes"

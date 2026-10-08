@@ -227,18 +227,18 @@ pub(in super::super) fn carrier_intersection_curve(
                     ));
                 }
                 let Ok(ellipse) = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                        Point3::from(center),
-                        Vector3::from(normal),
-                        Vector3::from(reference),
-                        radius,
-                        radius * cone.ratio(),
-                    ) else {
-                        return None;
-                    };
-                    return Some((
-                        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)),
-                        "plane_cone_parallel_ellipse",
-                    ));
+                    Point3::from(center),
+                    Vector3::from(normal),
+                    Vector3::from(reference),
+                    radius,
+                    radius * cone.ratio(),
+                ) else {
+                    return None;
+                };
+                return Some((
+                    CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)),
+                    "plane_cone_parallel_ellipse",
+                ));
             }
             plane_cone_conic(plane, cone)
         }
@@ -389,8 +389,7 @@ pub(in super::super) fn carrier_intersection_curve(
                 )),
                 "coaxial_cylinder_sphere_circle",
             ))
-        })(
-        ),
+        })(),
         (CarrierEquation::Cylinder(cylinder), CarrierEquation::Torus(torus))
         | (CarrierEquation::Torus(torus), CarrierEquation::Cylinder(cylinder)) => (|| {
             let cylinder_axis = normalize(cylinder.axis)?;
@@ -634,29 +633,17 @@ mod tests {
     fn audit_regression_small_disjoint_carriers_have_no_tangent() {
         let radius = 1e-10;
         assert!(
-            carrier_intersection_curve(cylinder(0., radius),
-                cylinder(5. * radius, radius)
-            )
-            .is_none()
+            carrier_intersection_curve(cylinder(0., radius), cylinder(5. * radius, radius))
+                .is_none()
         );
         assert!(
-            carrier_intersection_curve(cylinder(0., radius),
-                cylinder(2. * radius, radius)
-            )
-            .is_some()
+            carrier_intersection_curve(cylinder(0., radius), cylinder(2. * radius, radius))
+                .is_some()
         );
         assert!(
-            carrier_intersection_curve(cylinder(0., 2. * radius),
-                sphere(0., radius)
-            )
-            .is_none()
+            carrier_intersection_curve(cylinder(0., 2. * radius), sphere(0., radius)).is_none()
         );
-        assert!(
-            carrier_intersection_curve(cylinder(0., radius),
-                sphere(0., radius)
-            )
-            .is_some()
-        );
+        assert!(carrier_intersection_curve(cylinder(0., radius), sphere(0., radius)).is_some());
     }
     #[test]
     fn audit_regression_spherical_sections_keep_their_relative_radius() {
@@ -666,13 +653,14 @@ mod tests {
                 normal: [0., 0., 1.],
             });
             let (section, _) = carrier_intersection_curve(plane, sphere(0., radius))
-            .expect("nondegenerate plane section");
+                .expect("nondegenerate plane section");
             let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) = section else {
                 panic!("circle section")
             };
             assert_eq!(circle.radius().get(), radius);
-            let (section, _) = carrier_intersection_curve(sphere(0., radius), sphere(radius, radius))
-            .expect("nondegenerate sphere section");
+            let (section, _) =
+                carrier_intersection_curve(sphere(0., radius), sphere(radius, radius))
+                    .expect("nondegenerate sphere section");
             let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) = section else {
                 panic!("circle section")
             };

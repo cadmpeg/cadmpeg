@@ -64,38 +64,43 @@ fn native_triangle_collection_error(operation: &'static str, ordered: bool) -> C
             )
         })
         .collect::<super::super::NativePcurveCandidates>();
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
-
-    let typed = BTreeSet::new();
-    let result = if ordered {
-        ordered_native_parameter_face_loops(
-            ctx,
-            &[&lp],
-            (5, &surface),
-            &incidence,
-            &solved_vertices,
-            &native_pcurves,
-            NativeCurveEvidence {
-                typed_nonlinear_curve_ids: &typed,
-                model_curves: &[],
-                source_carriers: &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            },
-        )
-        .map(|_| ())
-    } else {
-        native_parameter_loop_polygon(
-            ctx,
-            &lp,
-            (5, &surface),
-            &incidence,
-            &solved_vertices,
-            &native_pcurves,
-            &typed,
-        )
-        .map(|_| ())
-    };
-    result
-    })
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            let typed = BTreeSet::new();
+            let result = if ordered {
+                ordered_native_parameter_face_loops(
+                    ctx,
+                    &[&lp],
+                    (5, &surface),
+                    &incidence,
+                    &solved_vertices,
+                    &native_pcurves,
+                    NativeCurveEvidence {
+                        typed_nonlinear_curve_ids: &typed,
+                        model_curves: &[],
+                        source_carriers:
+                            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                    },
+                )
+                .map(|_| ())
+            } else {
+                native_parameter_loop_polygon(
+                    ctx,
+                    &lp,
+                    (5, &surface),
+                    &incidence,
+                    &solved_vertices,
+                    &native_pcurves,
+                    &typed,
+                )
+                .map(|_| ())
+            };
+            result
+        },
+    )
 }
 
 fn assert_native_collection_refusal(error: &CodecError, operation: &'static str) {
@@ -107,28 +112,32 @@ fn assert_native_collection_refusal(error: &CodecError, operation: &'static str)
 #[test]
 fn native_parameter_loop_polygon_refuses_pcurve_segments() {
     assert_native_collection_refusal(
-        &native_triangle_collection_error("creo native loop pcurve segments", false), "creo native loop pcurve segments",
+        &native_triangle_collection_error("creo native loop pcurve segments", false),
+        "creo native loop pcurve segments",
     );
 }
 
 #[test]
 fn native_parameter_loop_polygon_refuses_polygon_points() {
     assert_native_collection_refusal(
-        &native_triangle_collection_error("creo native loop polygon points", false), "creo native loop polygon points",
+        &native_triangle_collection_error("creo native loop polygon points", false),
+        "creo native loop polygon points",
     );
 }
 
 #[test]
 fn ordered_native_parameter_face_loops_refuses_polygon_collection() {
     assert_native_collection_refusal(
-        &native_triangle_collection_error("creo native face loop polygons", true), "creo native face loop polygons",
+        &native_triangle_collection_error("creo native face loop polygons", true),
+        "creo native face loop polygons",
     );
 }
 
 #[test]
 fn ordered_native_parameter_face_loops_refuses_loop_references() {
     assert_native_collection_refusal(
-        &native_triangle_collection_error("creo native face loop references", true), "creo native face loop references",
+        &native_triangle_collection_error("creo native face loop references", true),
+        "creo native face loop references",
     );
 }
 
@@ -175,37 +184,44 @@ fn circle_order_collection_error(operation: &'static str) -> CodecError {
         make_circle(21, 1.0),
     ];
     let polygons = vec![vec![[2.0, 0.0], [-2.0, 0.0]], vec![[1.0, 0.0], [-1.0, 0.0]]];
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
-
-    super::super::ordered_two_edge_circle_loops(
-        ctx,
-        &[&outer, &inner],
-        &polygons,
-        &surface,
-        &curves,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            super::super::ordered_two_edge_circle_loops(
+                ctx,
+                &[&outer, &inner],
+                &polygons,
+                &surface,
+                &curves,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
     )
-    })
 }
 
 #[test]
 fn ordered_two_edge_circle_loops_refuses_geometry_collection() {
     assert_native_collection_refusal(
-        &circle_order_collection_error("creo native circle loop geometry"), "creo native circle loop geometry",
+        &circle_order_collection_error("creo native circle loop geometry"),
+        "creo native circle loop geometry",
     );
 }
 
 #[test]
 fn ordered_two_edge_circle_loops_refuses_order_collection() {
     assert_native_collection_refusal(
-        &circle_order_collection_error("creo native circle loop order"), "creo native circle loop order",
+        &circle_order_collection_error("creo native circle loop order"),
+        "creo native circle loop order",
     );
 }
 
 #[test]
 fn ordered_two_edge_circle_loops_refuses_ordered_output() {
     assert_native_collection_refusal(
-        &circle_order_collection_error("creo native ordered circle loops"), "creo native ordered circle loops",
+        &circle_order_collection_error("creo native ordered circle loops"),
+        "creo native ordered circle loops",
     );
 }
 

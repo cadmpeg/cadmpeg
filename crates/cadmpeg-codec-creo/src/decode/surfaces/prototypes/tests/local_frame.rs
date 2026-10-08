@@ -52,7 +52,8 @@ fn selects_the_unique_orthogonal_equal_scale_support_candidate() {
     ]);
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| prototype_local_frame(ctx, &record)).expect("frame selection admission"),
+        crate::decode::with_test_decode_ctx(|ctx| prototype_local_frame(ctx, &record))
+            .expect("frame selection admission"),
         Some(([-180.0, -3.0, 40.0], [0.0, -0.0, 1.0], [0.8, 0.6, 0.0]))
     );
 }
@@ -61,7 +62,11 @@ fn selects_the_unique_orthogonal_equal_scale_support_candidate() {
 fn rejects_ambiguous_support_candidates() {
     let record = record([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0]);
 
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| prototype_local_frame(ctx, &record)).expect("frame selection admission"), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| prototype_local_frame(ctx, &record))
+            .expect("frame selection admission"),
+        None
+    );
 }
 
 #[test]

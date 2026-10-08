@@ -3867,62 +3867,76 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                             )?;
                         }
                     }
-                    let pcurve_use = pcurve_geometry
-                        .map(|(geometry, parameter_range, offset, tag)| -> Result<_, cadmpeg_core::CodecError> {
-                            let parameter_range = match parameter_range {
-                                Some(range) => {
-                                    let Some(range) = cadmpeg_ir::units::FiniteVector::new(range) else {
-                                        return Ok(None);
-                                    };
-                                    Some(range)
-                                }
-                                None => None,
-                            };
-                            let metadata = cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
-                                None,
-                                parameter_range,
-                                None,
-                            );
-                            let pcurve = crate::identity::compose_checked::<PcurveId>(
-                                ctx,
-                                &crate::identity::VISIBGEOM_PCURVE,
-                                format_args!("{}:{face_id}", half_edge.curve_id),
-                                "creo B-rep pcurve identities",
-                            )?;
-                            let identity_present = pcurves_index.lookup(ctx, &ir.model.pcurves, |record| record.id.as_str(), pcurve.as_str())?.is_some();
-                            if !identity_present {
-                                annotate(ctx,
-                                    annotations,
-                                    &pcurve,
-                                    "VisibGeom",
-                                    cadmpeg_core::decode::u64_from_index(offset),
-                                    tag,
-                                    Exactness::Derived,
-                                )?;
-                                ctx.charge_entities(1, "admit Creo model pcurves")?;
-                                source_carriers.admit_pcurve(
-                                    ctx,
-                                    ir,
-                                    Pcurve {
-                                        id: crate::identity::copy_checked_id(
-                                            ctx,
-                                            pcurve.as_str(),
-                                            "creo B-rep pcurve entity ID copies",
-                                        )?,
-                                        geometry,
-                                        metadata,
-                                    },
-                                    &native_surface_id(ctx, scan, *face_id)?,
-                                )?;
+                    let pcurve_use = 'pcurve: {
+                        let Some((geometry, parameter_range, offset, tag)) = pcurve_geometry else {
+                            break 'pcurve None;
+                        };
+
+                        let parameter_range = match parameter_range {
+                            Some(range) => {
+                                let Some(range) = cadmpeg_ir::units::FiniteVector::new(range)
+                                else {
+                                    break 'pcurve None;
+                                };
+                                Some(range)
                             }
-                            Ok(Some(PcurveUse {
-                                pcurve,
-                                isoparametric: None,
-                                parameter_range: None,
-                            }))
+                            None => None,
+                        };
+                        let metadata = cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                            None,
+                            parameter_range,
+                            None,
+                        );
+                        let pcurve = crate::identity::compose_checked::<PcurveId>(
+                            ctx,
+                            &crate::identity::VISIBGEOM_PCURVE,
+                            format_args!("{}:{face_id}", half_edge.curve_id),
+                            "creo B-rep pcurve identities",
+                        )?;
+                        let identity_present = pcurves_index
+                            .lookup(
+                                ctx,
+                                &ir.model.pcurves,
+                                |record| record.id.as_str(),
+                                pcurve.as_str(),
+                            )?
+                            .is_some();
+                        if !identity_present {
+                            annotate(
+                                ctx,
+                                annotations,
+                                &pcurve,
+                                "VisibGeom",
+                                cadmpeg_core::decode::u64_from_index(offset),
+                                tag,
+                                Exactness::Derived,
+                            )?;
+                            ctx.charge_entities(1, "admit Creo model pcurves")?;
+                            let mut surface_storage =
+                                ctx.reserve_scoped(0, "creo B-rep pcurve surface query")?;
+                            let surface = surface_storage
+                                .with_storage(|| native_surface_id(ctx, scan, *face_id))?;
+                            source_carriers.admit_pcurve(
+                                ctx,
+                                ir,
+                                Pcurve {
+                                    id: crate::identity::copy_checked_id(
+                                        ctx,
+                                        pcurve.as_str(),
+                                        "creo B-rep pcurve entity ID copies",
+                                    )?,
+                                    geometry,
+                                    metadata,
+                                },
+                                &surface,
+                            )?;
+                        }
+                        Some(PcurveUse {
+                            pcurve,
+                            isoparametric: None,
+                            parameter_range: None,
                         })
-                        .transpose()?
-                        .flatten();
+                    };
                     let pcurves = one_coedge_pcurve_use(ctx, pcurve_use)?;
                     ctx.charge_entities(1, "admit Creo model coedges")?;
                     source_carriers.admit_coedge(

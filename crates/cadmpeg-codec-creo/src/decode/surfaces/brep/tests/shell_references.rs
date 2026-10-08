@@ -38,7 +38,16 @@ fn assert_refusal(error: &CodecError, dimension: ResourceDimension, operation: &
 #[test]
 fn brep_face_shell_nodes_refuse_collection_limit() {
     assert_refusal(
-        &references_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo B-rep face-shell nodes"), |cap| references_result(cap, u64::MAX)), u64::MAX).err().expect("node refused"),
+        &references_result(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo B-rep face-shell nodes"),
+                |cap| references_result(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .err()
+        .expect("node refused"),
         ResourceDimension::CollectionItems,
         "creo B-rep face-shell nodes",
     );
@@ -47,7 +56,16 @@ fn brep_face_shell_nodes_refuse_collection_limit() {
 #[test]
 fn brep_shell_face_references_refuse_collection_limit() {
     assert_refusal(
-        &references_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo B-rep shell face references"), |cap| references_result(cap, u64::MAX)), u64::MAX).err().expect("face refused"),
+        &references_result(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo B-rep shell face references"),
+                |cap| references_result(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .err()
+        .expect("face refused"),
         ResourceDimension::CollectionItems,
         "creo B-rep shell face references",
     );
@@ -74,7 +92,16 @@ fn brep_shell_face_identities_refuse_retained_limit() {
 #[test]
 fn brep_shell_edge_references_refuse_collection_limit() {
     assert_refusal(
-        &references_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo B-rep shell edge references"), |cap| references_result(cap, u64::MAX)), u64::MAX).err().expect("edge refused"),
+        &references_result(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo B-rep shell edge references"),
+                |cap| references_result(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .err()
+        .expect("edge refused"),
         ResourceDimension::CollectionItems,
         "creo B-rep shell edge references",
     );
@@ -100,7 +127,8 @@ fn brep_shell_edge_identities_refuse_retained_limit() {
 
 #[test]
 fn brep_shell_references_preserve_service_order() {
-    let references = references_result(u64::MAX, u64::MAX).expect("service shell references admitted");
+    let references =
+        references_result(u64::MAX, u64::MAX).expect("service shell references admitted");
     assert_eq!(
         references.face_ids,
         vec![FaceId::compose(&crate::identity::VISIBGEOM_FACE, 5)]

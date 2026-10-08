@@ -135,7 +135,12 @@ fn fc05_cap_curve_identity_refuses_retained_limit() {
 #[test]
 fn fc05_cap_curve_source_object_refuses_retained_limit() {
     let run = |limit| transfer_with_retained_limit(limit, false);
-    let error = run(crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo FC05 cap circle source object ID"), run)).expect_err("named resource boundary");
+    let error = run(crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes,
+        Some("creo FC05 cap circle source object ID"),
+        run,
+    ))
+    .expect_err("named resource boundary");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo FC05 cap circle source object ID"));
@@ -160,7 +165,12 @@ fn fc05_axis_cylinder_identity_refuses_retained_limit() {
 #[test]
 fn fc05_axis_cylinder_source_object_refuses_retained_limit() {
     let run = |limit| transfer_with_retained_limit(limit, true);
-    let error = run(crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo FC05 axis cylinder source object ID"), run)).expect_err("named resource boundary");
+    let error = run(crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes,
+        Some("creo FC05 axis cylinder source object ID"),
+        run,
+    ))
+    .expect_err("named resource boundary");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo FC05 axis cylinder source object ID"));

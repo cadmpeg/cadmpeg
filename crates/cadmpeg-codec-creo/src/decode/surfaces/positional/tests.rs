@@ -98,7 +98,15 @@ fn line_extrusion_replay_set_refuses_before_node_insertion() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     };
-    assert_eq!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run)).expect("service admits replay set"), 0);
+    assert_eq!(
+        run(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            None,
+            run
+        ))
+        .expect("service admits replay set"),
+        0
+    );
     assert!(matches!(
         run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo line-extrusion replay surface ids"), run)),
         Err(CodecError::ResourceLimit(limit))
@@ -125,7 +133,15 @@ fn tabulated_replay_counts_refuse_before_node_insertion() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     };
-    assert_eq!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run)).expect("service admits replay count"), 0);
+    assert_eq!(
+        run(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            None,
+            run
+        ))
+        .expect("service admits replay count"),
+        0
+    );
     assert!(matches!(
         run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo tabulated-cylinder replay counts"), run)),
         Err(CodecError::ResourceLimit(limit))
@@ -179,8 +195,21 @@ fn positional_round_result(limit: u64) -> Result<usize, CodecError> {
 
 #[test]
 fn positional_torus_round_feature_node_refuses_before_insertion() {
-    assert_eq!(positional_round_result(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, |cap| positional_round_result(cap))).expect("service admits round"), 0);
-    let error = positional_round_result(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo positional torus round feature ids"), |cap| positional_round_result(cap))).expect_err("round feature needs a set node");
+    assert_eq!(
+        positional_round_result(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            None,
+            |cap| positional_round_result(cap)
+        ))
+        .expect("service admits round"),
+        0
+    );
+    let error = positional_round_result(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo positional torus round feature ids"),
+        |cap| positional_round_result(cap),
+    ))
+    .expect_err("round feature needs a set node");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -191,7 +220,12 @@ fn positional_torus_round_feature_node_refuses_before_insertion() {
 
 #[test]
 fn positional_torus_constant_round_node_refuses_before_insertion() {
-    let error = positional_round_result(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo positional torus constant round ids"), |cap| positional_round_result(cap))).expect_err("constant round follows feature node");
+    let error = positional_round_result(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo positional torus constant round ids"),
+        |cap| positional_round_result(cap),
+    ))
+    .expect_err("constant round follows feature node");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -232,8 +266,21 @@ fn paired_sphere_association_copy_refuses_before_vec_growth() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     };
-    assert_eq!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run)).expect("service limit admits the association"), 0);
-    let error = run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo paired sphere associations"), run)).expect_err("the copied association needs a collection item");
+    assert_eq!(
+        run(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            None,
+            run
+        ))
+        .expect("service limit admits the association"),
+        0
+    );
+    let error = run(crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo paired sphere associations"),
+        run,
+    ))
+    .expect_err("the copied association needs a collection item");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)

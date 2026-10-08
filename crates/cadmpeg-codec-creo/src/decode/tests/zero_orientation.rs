@@ -1853,8 +1853,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
         major_radius: 3.0,
         minor_radius: 2.0,
     });
-    assert!(coaxial_cone_torus_circle_candidates(cone, shifted_torus)
-    .is_empty());
+    assert!(coaxial_cone_torus_circle_candidates(cone, shifted_torus).is_empty());
 }
 
 #[test]
