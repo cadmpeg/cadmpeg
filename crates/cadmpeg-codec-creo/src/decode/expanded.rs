@@ -44,7 +44,7 @@ pub(super) fn attach_expanded_sections(
             exactness: Exactness::Derived,
         },
     )?;
-    let tables = double_xar_records(ctx, scan)?;
+    let (tables, _tables_storage) = double_xar_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -59,86 +59,92 @@ pub(super) fn attach_expanded_sections(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let primitive_arrays = primitive_scalar_array_records(ctx, scan)?;
+    let (primitive_arrays, _primitive_arrays_storage) = primitive_scalar_array_records(ctx, scan)?;
     store_arena(ctx, ir, CreoArena::PrimitiveScalarArrays, &primitive_arrays)?;
     Ok(())
 }
 
-fn double_xar_records<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn double_xar_records<'a, 'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
-) -> Result<Vec<CreoDoubleXarTableRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for table in ctx.admit_iter(&scan.primitives.double_xar_tables, "creo expanded record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:{}:double_xar#{}:{}",
-                table.section_name, table.section_source_offset, table.expanded_offset
-            ),
-            "creo native double-xar IDs",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native double-xar records")?;
-        records.push(CreoDoubleXarTableRecord { id, table });
-    }
-    Ok(records)
-}
-
-fn primitive_scalar_array_records<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scan: &'a ContainerScan<'_>,
-) -> Result<Vec<CreoPrimitiveScalarArrayRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for array in ctx.admit_iter(&scan.primitives.scalar_arrays, "creo expanded record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:solid_primdata:scalar_array#{}:{}",
-                array.field.as_str(),
-                array.offset
-            ),
-            "creo native scalar-array IDs",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native scalar-array records")?;
-        records.push(CreoPrimitiveScalarArrayRecord {
-            id,
-            field: array.field.as_str(),
-            expanded_offset: array.offset,
-            count: array.values.len(),
-            values: &array.values,
-        });
-    }
-    Ok(records)
-}
-
-pub(super) fn feature_surface_replay_associations(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scan: &ContainerScan,
-) -> Result<Vec<CreoFeatureSurfaceReplayAssociation>, CodecError> {
-    let mut associations = Vec::new();
-    visit_feature_surface_replays(
-        ctx,
-        scan,
-        |owner_feature_id, table_offset, replay_ordinal, visible, replay| {
+) -> Result<(Vec<CreoDoubleXarTableRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo expanded projection storage", || {
+        let mut records = Vec::new();
+        for table in ctx.admit_iter(&scan.primitives.double_xar_tables, "creo expanded record traversal")? {
             let id = ctx.format_retained(
                 format_args!(
-                    "creo:allfeatur:surface_replay#{}:{}:{}:{}",
-                    owner_feature_id, table_offset, replay_ordinal, visible.id
+                    "creo:{}:double_xar#{}:{}",
+                    table.section_name, table.section_source_offset, table.expanded_offset
                 ),
-                "creo native surface replay IDs",
+                "creo native double-xar IDs",
             )?;
-            ctx.reserve_vec(&mut associations, 1, "creo native surface replay records")?;
-            associations.push(CreoFeatureSurfaceReplayAssociation {
+            ctx.reserve_vec(&mut records, 1, "creo native double-xar records")?;
+            records.push(CreoDoubleXarTableRecord { id, table });
+        }
+        Ok(records)
+    })
+}
+
+fn primitive_scalar_array_records<'a, 'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &'a ContainerScan<'_>,
+) -> Result<(Vec<CreoPrimitiveScalarArrayRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo expanded projection storage", || {
+        let mut records = Vec::new();
+        for array in ctx.admit_iter(&scan.primitives.scalar_arrays, "creo expanded record traversal")? {
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:solid_primdata:scalar_array#{}:{}",
+                    array.field.as_str(),
+                    array.offset
+                ),
+                "creo native scalar-array IDs",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native scalar-array records")?;
+            records.push(CreoPrimitiveScalarArrayRecord {
                 id,
-                owner_feature_id,
-                visible_surface_id: visible.id,
-                replay_surface_id: replay.id,
-                replay_ordinal,
-                surface_family: surface_family(visible.kind),
-                table_offset,
+                field: array.field.as_str(),
+                expanded_offset: array.offset,
+                count: array.values.len(),
+                values: &array.values,
             });
-            Ok(())
-        },
-    )?;
-    Ok(associations)
+        }
+        Ok(records)
+    })
+}
+
+pub(super) fn feature_surface_replay_associations<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<(Vec<CreoFeatureSurfaceReplayAssociation>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo expanded projection storage", || {
+        let mut associations = Vec::new();
+        visit_feature_surface_replays(
+            ctx,
+            scan,
+            |owner_feature_id, table_offset, replay_ordinal, visible, replay| {
+                let id = ctx.format_retained(
+                    format_args!(
+                        "creo:allfeatur:surface_replay#{}:{}:{}:{}",
+                        owner_feature_id, table_offset, replay_ordinal, visible.id
+                    ),
+                    "creo native surface replay IDs",
+                )?;
+                ctx.reserve_vec(&mut associations, 1, "creo native surface replay records")?;
+                associations.push(CreoFeatureSurfaceReplayAssociation {
+                    id,
+                    owner_feature_id,
+                    visible_surface_id: visible.id,
+                    replay_surface_id: replay.id,
+                    replay_ordinal,
+                    surface_family: surface_family(visible.kind),
+                    table_offset,
+                });
+                Ok(())
+            },
+        )?;
+        Ok(associations)
+    })
 }
 
 pub(super) fn feature_surface_replay_association_count(
@@ -247,59 +253,63 @@ pub(super) fn half_edge_ref(id: crate::topology::HalfEdgeId) -> CreoHalfEdgeRef 
     }
 }
 
-pub(super) fn fc05_circle_records<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn fc05_circle_records<'a, 'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
-) -> Result<Vec<CreoFc05CircleRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.curves.fc05_circles, "creo expanded record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:curve:fc05_circle#{}", record.curve_id),
-            "creo native FC05 circle IDs",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native FC05 circle records")?;
-        records.push(CreoFc05CircleRecord {
-            id,
-            curve_id: record.curve_id,
-            center_row_frame: record.center_row_frame,
-            radius_mm: record.radius_mm,
-            sample_direction_row_frame: record.sample_direction_row_frame.get(),
-            angle_parameter: record.angle_parameter,
-            cap_ordinate_row_frame: record.cap_ordinate_row_frame,
-            point_count: record.point_count,
-            max_residual: record.max_residual,
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoFc05CircleRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo expanded projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.curves.fc05_circles, "creo expanded record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:curve:fc05_circle#{}", record.curve_id),
+                "creo native FC05 circle IDs",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native FC05 circle records")?;
+            records.push(CreoFc05CircleRecord {
+                id,
+                curve_id: record.curve_id,
+                center_row_frame: record.center_row_frame,
+                radius_mm: record.radius_mm,
+                sample_direction_row_frame: record.sample_direction_row_frame.get(),
+                angle_parameter: record.angle_parameter,
+                cap_ordinate_row_frame: record.cap_ordinate_row_frame,
+                point_count: record.point_count,
+                max_residual: record.max_residual,
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn fc05_cylinder_cap_pair_records<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn fc05_cylinder_cap_pair_records<'a, 'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
-) -> Result<Vec<CreoFc05CylinderCapPairRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.curves.fc05_cylinder_cap_pairs, "creo expanded record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:surface:fc05_cylinder_cap_pair#{}", record.surface_id),
-            "creo native FC05 cap pair IDs",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native FC05 cap pair records")?;
-        records.push(CreoFc05CylinderCapPairRecord {
-            id,
-            surface_id: record.surface_id,
-            cap_edges: &record.cap_edges,
-            center_row_frame: record.center_row_frame,
-            radius_mm: record.radius_mm,
-            reference_direction_row_frame: record.reference_direction_row_frame,
-            parameter_sign: record.parameter_sense.as_i8(),
-            cap_ordinates_row_frame: &record.cap_ordinates_row_frame,
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoFc05CylinderCapPairRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo expanded projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.curves.fc05_cylinder_cap_pairs, "creo expanded record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:surface:fc05_cylinder_cap_pair#{}", record.surface_id),
+                "creo native FC05 cap pair IDs",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native FC05 cap pair records")?;
+            records.push(CreoFc05CylinderCapPairRecord {
+                id,
+                surface_id: record.surface_id,
+                cap_edges: &record.cap_edges,
+                center_row_frame: record.center_row_frame,
+                radius_mm: record.radius_mm,
+                reference_direction_row_frame: record.reference_direction_row_frame,
+                parameter_sign: record.parameter_sense.as_i8(),
+                cap_ordinates_row_frame: &record.cap_ordinates_row_frame,
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
 #[cfg(test)]
@@ -373,7 +383,7 @@ mod tests {
     }
 
     fn with_limits(
-        retained: u64,
+        materialized: u64,
         items: u64,
         project: impl FnOnce(
             &DecodeContext<'_>,
@@ -383,7 +393,7 @@ mod tests {
         let scan = primitive_scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = retained;
+        policy.limits.max_materialized_bytes = materialized;
         policy.limits.max_collection_items = items;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
@@ -426,7 +436,7 @@ mod tests {
     }
 
     fn with_replay_limits(
-        retained: u64,
+        materialized: u64,
         items: u64,
         work: u64,
         project: impl FnOnce(
@@ -437,7 +447,7 @@ mod tests {
         let scan = replay_scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = retained;
+        policy.limits.max_materialized_bytes = materialized;
         policy.limits.max_collection_items = items;
         policy.limits.max_work_units = work;
         let (ctx, _) =
@@ -455,25 +465,21 @@ mod tests {
     }
 
     #[test]
-    fn native_surface_replay_id_refuses_retained_limit() {
-        let limit =
-            cadmpeg_core::decode::u64_from_index("creo:allfeatur:surface_replay#4:0:0:7".len()) - 1;
-        let error = with_replay_limits(limit, 1, u64::MAX, |ctx, scan| {
-            let records = feature_surface_replay_associations(ctx, scan)?;
-            Ok(serde_json::json!(records.len()))
-        })
-        .expect_err("one association ID needs full retained length");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native surface replay IDs")
+    fn native_surface_replay_id_refuses_materialized_limit() {
+        let scan = replay_scan();
+        let error = crate::test_support::last_refusal_at(
+            &[], ResourceDimension::MaterializedBytes, "creo native surface replay IDs",
+            |ctx| feature_surface_replay_associations(ctx, &scan).map(|_| ()),
         );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::MaterializedBytes
+                && resource.operation == "creo native surface replay IDs"));
     }
 
     #[test]
     fn native_surface_replay_row_refuses_collection_limit() {
         let error = with_replay_limits(u64::MAX, 0, u64::MAX, |ctx, scan| {
-            let records = feature_surface_replay_associations(ctx, scan)?;
+            let (records, _records_storage) = feature_surface_replay_associations(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
         })
         .expect_err("one association needs an output row");
@@ -483,7 +489,7 @@ mod tests {
                 && resource.operation == "creo native surface replay records")
         );
         let record = with_replay_limits(u64::MAX, 1, u64::MAX, |ctx, scan| {
-            let records = feature_surface_replay_associations(ctx, scan)?;
+            let (records, _records_storage) = feature_surface_replay_associations(ctx, scan)?;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
         })
         .expect("one association record");
@@ -502,24 +508,21 @@ mod tests {
     }
 
     #[test]
-    fn native_double_xar_id_refuses_retained_limit() {
-        let limit = cadmpeg_core::decode::u64_from_index("creo:Body:double_xar#0:0".len()) - 1;
-        let error = with_limits(limit, 1, |ctx, scan| {
-            let records = double_xar_records(ctx, scan)?;
-            Ok(serde_json::json!(records.len()))
-        })
-        .expect_err("table ID needs its full retained length");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native double-xar IDs")
+    fn native_double_xar_id_refuses_materialized_limit() {
+        let scan = primitive_scan();
+        let error = crate::test_support::last_refusal_at(
+            &[], ResourceDimension::MaterializedBytes, "creo native double-xar IDs",
+            |ctx| double_xar_records(ctx, &scan).map(|_| ()),
         );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::MaterializedBytes
+                && resource.operation == "creo native double-xar IDs"));
     }
 
     #[test]
     fn native_double_xar_row_refuses_collection_limit() {
         let error = with_limits(u64::MAX, 0, |ctx, scan| {
-            let records = double_xar_records(ctx, scan)?;
+            let (records, _records_storage) = double_xar_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
         })
         .expect_err("one table needs an output row");
@@ -529,7 +532,7 @@ mod tests {
                 && resource.operation == "creo native double-xar records")
         );
         let value = with_limits(u64::MAX, 1, |ctx, scan| {
-            let records = double_xar_records(ctx, scan)?;
+            let (records, _records_storage) = double_xar_records(ctx, scan)?;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
         })
         .expect("one table record");
@@ -538,26 +541,21 @@ mod tests {
     }
 
     #[test]
-    fn native_scalar_array_id_refuses_retained_limit() {
-        let limit =
-            cadmpeg_core::decode::u64_from_index("creo:solid_primdata:scalar_array#pts:0".len())
-                - 1;
-        let error = with_limits(limit, 1, |ctx, scan| {
-            let records = primitive_scalar_array_records(ctx, scan)?;
-            Ok(serde_json::json!(records.len()))
-        })
-        .expect_err("scalar-array ID needs its full retained length");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native scalar-array IDs")
+    fn native_scalar_array_id_refuses_materialized_limit() {
+        let scan = primitive_scan();
+        let error = crate::test_support::last_refusal_at(
+            &[], ResourceDimension::MaterializedBytes, "creo native scalar-array IDs",
+            |ctx| primitive_scalar_array_records(ctx, &scan).map(|_| ()),
         );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::MaterializedBytes
+                && resource.operation == "creo native scalar-array IDs"));
     }
 
     #[test]
     fn native_scalar_array_row_refuses_collection_limit() {
         let error = with_limits(u64::MAX, 0, |ctx, scan| {
-            let records = primitive_scalar_array_records(ctx, scan)?;
+            let (records, _records_storage) = primitive_scalar_array_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
         })
         .expect_err("one scalar array needs an output row");
@@ -567,7 +565,7 @@ mod tests {
                 && resource.operation == "creo native scalar-array records")
         );
         let value = with_limits(u64::MAX, 1, |ctx, scan| {
-            let records = primitive_scalar_array_records(ctx, scan)?;
+            let (records, _records_storage) = primitive_scalar_array_records(ctx, scan)?;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
         })
         .expect("one scalar-array record");
@@ -577,24 +575,21 @@ mod tests {
     }
 
     #[test]
-    fn native_fc05_circle_id_refuses_retained_limit() {
-        let limit = cadmpeg_core::decode::u64_from_index("creo:curve:fc05_circle#20".len()) - 1;
-        let error = with_limits(limit, 1, |ctx, scan| {
-            let records = fc05_circle_records(ctx, scan)?;
-            Ok(serde_json::json!(records.len()))
-        })
-        .expect_err("FC05 circle ID needs full retained length");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native FC05 circle IDs")
+    fn native_fc05_circle_id_refuses_materialized_limit() {
+        let scan = primitive_scan();
+        let error = crate::test_support::last_refusal_at(
+            &[], ResourceDimension::MaterializedBytes, "creo native FC05 circle IDs",
+            |ctx| fc05_circle_records(ctx, &scan).map(|_| ()),
         );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::MaterializedBytes
+                && resource.operation == "creo native FC05 circle IDs"));
     }
 
     #[test]
     fn native_fc05_circle_row_refuses_collection_limit() {
         let error = with_limits(u64::MAX, 0, |ctx, scan| {
-            let records = fc05_circle_records(ctx, scan)?;
+            let (records, _records_storage) = fc05_circle_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
         })
         .expect_err("one FC05 circle needs one output row");
@@ -604,7 +599,7 @@ mod tests {
                 && resource.operation == "creo native FC05 circle records")
         );
         let value = with_limits(u64::MAX, 1, |ctx, scan| {
-            let records = fc05_circle_records(ctx, scan)?;
+            let (records, _records_storage) = fc05_circle_records(ctx, scan)?;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
         })
         .expect("one FC05 circle record");
@@ -614,26 +609,21 @@ mod tests {
     }
 
     #[test]
-    fn native_fc05_cap_pair_id_refuses_retained_limit() {
-        let limit =
-            cadmpeg_core::decode::u64_from_index("creo:surface:fc05_cylinder_cap_pair#10".len())
-                - 1;
-        let error = with_limits(limit, 1, |ctx, scan| {
-            let records = fc05_cylinder_cap_pair_records(ctx, scan)?;
-            Ok(serde_json::json!(records.len()))
-        })
-        .expect_err("FC05 cap-pair ID needs full retained length");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native FC05 cap pair IDs")
+    fn native_fc05_cap_pair_id_refuses_materialized_limit() {
+        let scan = primitive_scan();
+        let error = crate::test_support::last_refusal_at(
+            &[], ResourceDimension::MaterializedBytes, "creo native FC05 cap pair IDs",
+            |ctx| fc05_cylinder_cap_pair_records(ctx, &scan).map(|_| ()),
         );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::MaterializedBytes
+                && resource.operation == "creo native FC05 cap pair IDs"));
     }
 
     #[test]
     fn native_fc05_cap_pair_row_refuses_collection_limit() {
         let error = with_limits(u64::MAX, 0, |ctx, scan| {
-            let records = fc05_cylinder_cap_pair_records(ctx, scan)?;
+            let (records, _records_storage) = fc05_cylinder_cap_pair_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
         })
         .expect_err("one FC05 cap pair needs one output row");
@@ -643,7 +633,7 @@ mod tests {
                 && resource.operation == "creo native FC05 cap pair records")
         );
         let value = with_limits(u64::MAX, 1, |ctx, scan| {
-            let records = fc05_cylinder_cap_pair_records(ctx, scan)?;
+            let (records, _records_storage) = fc05_cylinder_cap_pair_records(ctx, scan)?;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
         })
         .expect("one FC05 cap-pair record");
@@ -659,4 +649,32 @@ mod tests {
             serde_json::json!([-5.0, 7.0])
         );
     }
+    #[test]
+    fn expanded_projection_storage_releases_all_buffers_at_drop() {
+        let scan = primitive_scan();
+        let replay = replay_scan();
+        let run = |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let double_xar = double_xar_records(&ctx, &scan)?;
+            let arrays = primitive_scalar_array_records(&ctx, &scan)?;
+            let circles = fc05_circle_records(&ctx, &scan)?;
+            let cap_pairs = fc05_cylinder_cap_pair_records(&ctx, &scan)?;
+            let associations = feature_surface_replay_associations(&ctx, &replay)?;
+            assert_eq!(double_xar.0.len(), 1);
+            assert_eq!(arrays.0.len(), 1);
+            assert_eq!(circles.0.len(), 1);
+            assert_eq!(cap_pairs.0.len(), 1);
+            assert_eq!(associations.0.len(), 1);
+            drop((double_xar, arrays, circles, cap_pairs, associations));
+            let _all_storage = ctx.reserve_scoped(cap, "test expanded storage release")?;
+            Ok::<_, cadmpeg_core::CodecError>(())
+        };
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, None, run);
+        run(cap).expect("all projection storage releases at drop");
+    }
+
 }
