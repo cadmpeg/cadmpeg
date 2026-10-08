@@ -2123,25 +2123,17 @@ fn tagged_value(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     atom(bytes, at)
 }
 
-fn is_final_terminator_run(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    at: usize,
-) -> Result<bool, CodecError> {
-    if bytes.get(at) != Some(&0xfe) {
-        return Ok(false);
-    }
-    ctx.all_by(
-        &bytes[at..],
-        |byte| Ok(*byte == 0xfe),
-        "catia_object_final_terminator_scan",
-    )
-}
-
 fn decode_payload(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<ObjectPayload>, CodecError> {
+    let final_terminator_start = ctx
+        .rposition_by(
+            bytes,
+            |byte| Ok(*byte != 0xfe),
+            "catia_object_final_terminator_scan",
+        )?
+        .map_or(0, |offset| offset + 1);
     let mut storage = ctx.reserve_scoped(0, "catia_object_payload_output")?;
     let parsed = storage.with_storage(|| {
         (|| -> Option<Result<ObjectPayload, CodecError>> {
@@ -2156,8 +2148,7 @@ fn decode_payload(
             let mut fields = Vec::new();
             let mut at = 0;
             while at < bytes.len() {
-                let final_terminators =
-                    bytes[at] == 0xfe && admitted!(is_final_terminator_run(ctx, bytes, at));
+                let final_terminators = at >= final_terminator_start;
                 if !final_terminators {
                     admitted!(ctx.charge_work(1, "catia_object_graph_iteration"));
                 }
@@ -2271,7 +2262,7 @@ fn decode_payload(
                         at += 1;
                     }
                     0x3b => {
-                        if admitted!(is_final_terminator_run(ctx, bytes, at + 1)) {
+                        if at + 1 >= final_terminator_start && at + 1 < bytes.len() {
                             admitted!(ctx.push_vec(
                                 &mut fields,
                                 PayloadField::Atom {
@@ -2304,7 +2295,7 @@ fn decode_payload(
                         .is_some()
                         {
                             if at >= bytes.len()
-                                || admitted!(is_final_terminator_run(ctx, bytes, at))
+                                || (at >= final_terminator_start && at < bytes.len())
                             {
                                 break;
                             }
@@ -2320,7 +2311,8 @@ fn decode_payload(
                                 at + usize::from(tagged_reference || (tagged_atom && !fixed_atom));
                             if (tagged_reference || tagged_atom)
                                 && (value_at >= bytes.len()
-                                    || admitted!(is_final_terminator_run(ctx, bytes, value_at)))
+                                    || (value_at >= final_terminator_start
+                                        && value_at < bytes.len()))
                             {
                                 at = value_at;
                                 break;
@@ -2357,7 +2349,7 @@ fn decode_payload(
                     }
                     0x81 | 0x3a | 0x39 | 0x7a => {
                         let tag = bytes[at];
-                        if admitted!(is_final_terminator_run(ctx, bytes, at + 1)) {
+                        if at + 1 >= final_terminator_start && at + 1 < bytes.len() {
                             admitted!(ctx.push_vec(
                                 &mut fields,
                                 PayloadField::Atom {
@@ -2507,6 +2499,55 @@ fn blob_end(bytes: &[u8], at: usize) -> Option<usize> {
 fn blob_declared_end(bytes: &[u8], at: usize) -> Option<usize> {
     let declared_len = usize::try_from(View::u32_le_at(bytes, at + 1)?).ok()?;
     at.checked_add(5)?.checked_add(declared_len)
+}
+
+/// Classify payload fields in one admitted walk, preserving subtype precedence.
+pub(crate) fn classify_charged(
+    ctx: &DecodeContext<'_>,
+    fields: &[PayloadField],
+) -> Result<PayloadSubtype, CodecError> {
+    let mut triplets = 0usize;
+    let mut atoms = 0usize;
+    let mut lists = 0usize;
+    let mut aggregator = false;
+    let mut blob = false;
+    let mut empty = true;
+    for (index, field) in ctx
+        .admit_iter(fields, "catia_object_payload_classification")?
+        .enumerate()
+    {
+        match field {
+            PayloadField::BulkTable { .. } => return Ok(PayloadSubtype::BulkTable),
+            PayloadField::Atom { .. } => atoms += 1,
+            PayloadField::List { declared_count, .. } => {
+                lists += 1;
+                aggregator |= *declared_count >= 3;
+            }
+            PayloadField::Blob { .. } => blob = true,
+            _ => {}
+        }
+        empty &= matches!(field, PayloadField::Terminator);
+        if index >= 2
+            && matches!(fields[index - 2], PayloadField::Scalar { .. })
+            && matches!(fields[index - 1], PayloadField::Atom { .. })
+            && matches!(field, PayloadField::Atom { .. })
+        {
+            triplets += 1;
+        }
+    }
+    Ok(if triplets >= 2 {
+        PayloadSubtype::TripletChain
+    } else if aggregator {
+        PayloadSubtype::ListAggregator
+    } else if blob {
+        PayloadSubtype::Blob
+    } else if atoms >= 2 && triplets == 0 && lists == 0 {
+        PayloadSubtype::AtomVector
+    } else if empty {
+        PayloadSubtype::Empty
+    } else {
+        PayloadSubtype::Mixed
+    })
 }
 
 /// Structural classification of decoded payload fields.

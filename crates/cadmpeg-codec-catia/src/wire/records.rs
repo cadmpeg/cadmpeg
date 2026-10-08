@@ -109,9 +109,9 @@ pub(crate) fn family_pcurves_from_records(
     family: ConsolidatedFamily,
 ) -> Result<Vec<ConsolidatedPcurve>, CodecError> {
     let mut pcurves = Vec::new();
-    let mut frames =
+    let frames =
         family_frames_from_records(ctx, records, family, 0x20, "catia_consolidated_pcurve_scan")?;
-    while let Some(frame) = ctx.next_charged(&mut frames, "catia_pcurve_frame_visits")? {
+    for frame in frames {
         if let Some(pcurve) =
             parse_consolidated_pcurve(ctx, data, frame.pos, frame.payload, frame.end)?
         {
