@@ -52,19 +52,29 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
 
 #[test]
 fn brep_face_rejection_diagnostics_refuse_collection_limit() {
-    let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo B-rep face rejection diagnostics"), |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        BrepTransferDiagnostics::default().reject_face(&ctx, FaceAdmissionRejection::MissingLoops, 17)
-    });
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo B-rep face rejection diagnostics"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            BrepTransferDiagnostics::default().reject_face(
+                &ctx,
+                FaceAdmissionRejection::MissingLoops,
+                17,
+            )
+        },
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut diagnostics = BrepTransferDiagnostics::default();
-    let error = diagnostics.reject_face(&ctx, FaceAdmissionRejection::MissingLoops, 17).expect_err("rejection diagnostic refused");
+    let error = diagnostics
+        .reject_face(&ctx, FaceAdmissionRejection::MissingLoops, 17)
+        .expect_err("rejection diagnostic refused");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep face rejection diagnostics"));
@@ -84,17 +94,20 @@ fn rejection_detail_limit_error(operation: &'static str) -> CodecError {
         end_vertex_id: None,
     };
     let incidence = BTreeMap::from([(half_edge, &binding)]);
-    crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        operation, |ctx| {
-
-    FaceAdmissionDetail::unresolved_boundary(
-        ctx,
-        17,
-        &[&loop_record],
-        &BTreeMap::new(),
-        &incidence,
+    crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            FaceAdmissionDetail::unresolved_boundary(
+                ctx,
+                17,
+                &[&loop_record],
+                &BTreeMap::new(),
+                &incidence,
+            )
+        },
     )
-        })
 }
 
 #[test]
@@ -133,13 +146,17 @@ fn rejection_record_limit_error(
         )
     })
     .expect("service rejection admitted");
-    crate::test_support::last_refusal_at(&[], dimension, operation,
-        |ctx| diagnostics.face_admission_rejection_records(ctx))
+    crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+        diagnostics.face_admission_rejection_records(ctx)
+    })
 }
 
 #[test]
 fn brep_rejection_record_id_refuses_retained_limit() {
-    let error = rejection_record_limit_error(ResourceDimension::RetainedBytes, "creo B-rep rejection record IDs");
+    let error = rejection_record_limit_error(
+        ResourceDimension::RetainedBytes,
+        "creo B-rep rejection record IDs",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo B-rep rejection record IDs"));
@@ -147,7 +164,10 @@ fn brep_rejection_record_id_refuses_retained_limit() {
 
 #[test]
 fn brep_rejection_half_edges_refuse_collection_limit() {
-    let error = rejection_record_limit_error(ResourceDimension::CollectionItems, "creo B-rep rejection half edges");
+    let error = rejection_record_limit_error(
+        ResourceDimension::CollectionItems,
+        "creo B-rep rejection half edges",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep rejection half edges"));
@@ -155,7 +175,10 @@ fn brep_rejection_half_edges_refuse_collection_limit() {
 
 #[test]
 fn brep_rejection_vertex_ids_refuse_collection_limit() {
-    let error = rejection_record_limit_error(ResourceDimension::CollectionItems, "creo B-rep rejection vertex IDs");
+    let error = rejection_record_limit_error(
+        ResourceDimension::CollectionItems,
+        "creo B-rep rejection vertex IDs",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep rejection vertex IDs"));
@@ -163,7 +186,10 @@ fn brep_rejection_vertex_ids_refuse_collection_limit() {
 
 #[test]
 fn brep_rejection_record_rows_refuse_collection_limit() {
-    let error = rejection_record_limit_error(ResourceDimension::CollectionItems, "creo B-rep rejection records");
+    let error = rejection_record_limit_error(
+        ResourceDimension::CollectionItems,
+        "creo B-rep rejection records",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep rejection records"));

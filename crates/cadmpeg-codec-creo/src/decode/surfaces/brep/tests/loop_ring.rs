@@ -45,7 +45,15 @@ fn assert_refusal(error: &CodecError, dimension: ResourceDimension, operation: &
 #[test]
 fn brep_ring_coedge_ids_refuse_collection_limit() {
     assert_refusal(
-        &ring_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo B-rep ring coedge IDs"), |cap| ring_result(cap, u64::MAX)), u64::MAX).expect_err("ring Vec refused"),
+        &ring_result(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo B-rep ring coedge IDs"),
+                |cap| ring_result(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .expect_err("ring Vec refused"),
         ResourceDimension::CollectionItems,
         "creo B-rep ring coedge IDs",
     );
@@ -71,7 +79,15 @@ fn brep_ring_coedge_identities_refuse_retained_limit() {
 #[test]
 fn brep_ring_validation_nodes_refuse_collection_limit() {
     assert_refusal(
-        &ring_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("loop ring members"), |cap| ring_result(cap, u64::MAX)), u64::MAX).expect_err("validation node refused"),
+        &ring_result(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("loop ring members"),
+                |cap| ring_result(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .expect_err("validation node refused"),
         ResourceDimension::CollectionItems,
         "loop ring members",
     );
@@ -79,7 +95,13 @@ fn brep_ring_validation_nodes_refuse_collection_limit() {
 
 #[test]
 fn brep_native_loop_ring_preserves_service_order() {
-    let ring = ring_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, |cap| ring_result(cap, u64::MAX)), u64::MAX).expect("service native ring admitted");
+    let ring = ring_result(
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, |cap| {
+            ring_result(cap, u64::MAX)
+        }),
+        u64::MAX,
+    )
+    .expect("service native ring admitted");
     assert_eq!(
         ring.coedges()
             .iter()

@@ -243,7 +243,12 @@ fn positional_cylinder_identity_refuses_retained_limit() {
 #[test]
 fn positional_cylinder_source_id_refuses_retained_limit() {
     let run = |limit| Err::<(), _>(inline_type24_retained_refusal(limit));
-    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo positional cylinder source IDs"), run)).expect_err("named resource boundary");
+    let error = run(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo positional cylinder source IDs"),
+        run,
+    ))
+    .expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo positional cylinder source IDs")

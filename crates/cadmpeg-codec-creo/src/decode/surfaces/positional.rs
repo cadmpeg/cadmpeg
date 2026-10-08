@@ -42,26 +42,44 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
     }
     let mut frames = super::prototypes::PrototypeFrames::new(ctx)?;
     let mut transferred = 0;
-    let mut association_storage = ctx.reserve_scoped(0, "creo paired sphere association workspace")?;
+    let mut association_storage =
+        ctx.reserve_scoped(0, "creo paired sphere association workspace")?;
     let mut associations = Vec::new();
-    let prototypes = association_storage.with_storage(|| unique_surface_prototype_associations(ctx, scan))?;
+    let prototypes =
+        association_storage.with_storage(|| unique_surface_prototype_associations(ctx, scan))?;
     for (prototype, associated_row, section) in ctx
         .admit_iter(&prototypes, "creo paired sphere prototype traversal")?
         .copied()
     {
         let prototype = prototype.record();
-        let Some(frame) = surface_prototype_frame_bounds(ctx, scan, section, prototype.offset, &mut frames)?
+        let Some(frame) =
+            surface_prototype_frame_bounds(ctx, scan, section, prototype.offset, &mut frames)?
         else {
             continue;
         };
-        ctx.reserve_scoped_vec(&mut association_storage, &mut associations, 1, "creo paired sphere associations")?;
+        ctx.reserve_scoped_vec(
+            &mut association_storage,
+            &mut associations,
+            1,
+            "creo paired sphere associations",
+        )?;
         associations.push((prototype, associated_row, section, frame));
     }
     let mut counts = std::collections::HashMap::new();
     association_storage.with_storage(|| {
-        for (prototype, row, _, frame) in ctx.admit_iter(&associations, "creo paired sphere association count")? {
-            if matches!(prototype.family, crate::surface::SurfacePrototypeFamily::Torus(_)) {
-                *ctx.entry_hash_map(&mut counts, (row.feature_id, *frame), "creo paired sphere count nodes")?.or_insert(0usize) += 1;
+        for (prototype, row, _, frame) in
+            ctx.admit_iter(&associations, "creo paired sphere association count")?
+        {
+            if matches!(
+                prototype.family,
+                crate::surface::SurfacePrototypeFamily::Torus(_)
+            ) {
+                *ctx.entry_hash_map(
+                    &mut counts,
+                    (row.feature_id, *frame),
+                    "creo paired sphere count nodes",
+                )?
+                .or_insert(0usize) += 1;
             }
         }
         Ok::<_, cadmpeg_core::CodecError>(())
@@ -82,18 +100,30 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         else {
             continue;
         };
-        let associated_prototype_count = counts.get(&(associated_row.feature_id, (*frame_start, *frame_end))).copied().unwrap_or(0);
+        let associated_prototype_count = counts
+            .get(&(associated_row.feature_id, (*frame_start, *frame_end)))
+            .copied()
+            .unwrap_or(0);
         if associated_prototype_count != 1 {
             continue;
         }
         let mut rows = scan.surfaces.rows.iter();
         let mut selected = [None; 3];
         for selected in &mut selected {
-            *selected = ctx.find_by(&mut rows, |row| Ok(row.offset >= *frame_start && row.offset < *frame_end
-                && row.feature_id == associated_row.feature_id && row.kind == crate::surface::SurfaceKind::TorusOrSphere),
-                "creo paired sphere row search")?;
+            *selected = ctx.find_by(
+                &mut rows,
+                |row| {
+                    Ok(row.offset >= *frame_start
+                        && row.offset < *frame_end
+                        && row.feature_id == associated_row.feature_id
+                        && row.kind == crate::surface::SurfaceKind::TorusOrSphere)
+                },
+                "creo paired sphere row search",
+            )?;
         }
-        let [Some(first_row), Some(second_row), None] = selected else { continue; };
+        let [Some(first_row), Some(second_row), None] = selected else {
+            continue;
+        };
         let envelopes = [first_row, second_row].map(|row| {
             Ok(unique_surface_parameter_record(ctx, scan, row)?
                 .and_then(crate::surface::SurfaceParameterRecord::type26_five_coordinate_envelope))
@@ -115,7 +145,14 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                 row.id,
                 "creo decoded model identity",
             )?;
-            let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
+            let identity_present = surfaces_index
+                .lookup(
+                    ctx,
+                    &ir.model.surfaces,
+                    |record| record.id.as_str(),
+                    id.as_str(),
+                )?
+                .is_some();
             if identity_present {
                 continue;
             }
@@ -128,7 +165,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                 continue;
             };
             id_storage.commit()?;
-        annotate(
+            annotate(
                 ctx,
                 annotations,
                 &id,
@@ -167,8 +204,6 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
     Ok(transferred)
 }
 
-
-
 pub(in super::super) fn transfer_positional_tori(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -186,11 +221,13 @@ pub(in super::super) fn transfer_positional_tori(
         if row.kind == crate::surface::SurfaceKind::TorusOrSphere
             && feature_schema_class(ctx, scan, row.feature_id)? == Some(SchemaClass::Round)
         {
-            workspace.with_storage(|| ctx.insert_btree_set(
-                &mut round_feature_ids,
-                row.feature_id,
-                "creo positional torus round feature ids",
-            ))?;
+            workspace.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut round_feature_ids,
+                    row.feature_id,
+                    "creo positional torus round feature ids",
+                )
+            })?;
         }
     }
     let mut constant_round_feature_ids = BTreeSet::new();
@@ -202,11 +239,13 @@ pub(in super::super) fn transfer_positional_tori(
         .copied()
     {
         if round_constant_radius(ctx, scan, ir, source_carriers, feature_id)?.is_some() {
-            workspace.with_storage(|| ctx.insert_btree_set(
-                &mut constant_round_feature_ids,
-                feature_id,
-                "creo positional torus constant round ids",
-            ))?;
+            workspace.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut constant_round_feature_ids,
+                    feature_id,
+                    "creo positional torus constant round ids",
+                )
+            })?;
         }
     }
     let mut transferred = 0;
@@ -234,7 +273,11 @@ pub(in super::super) fn transfer_positional_tori(
             || record.has_inline_non_plane_local_system_suffix(ctx)?;
         if row.kind == crate::surface::SurfaceKind::TorusOrSphere
             && feature_schema_class(ctx, scan, row.feature_id)? == Some(SchemaClass::Round)
-            && !ctx.contains_btree_set(&constant_round_feature_ids, &row.feature_id, "creo constant round feature ids lookup")?
+            && !ctx.contains_btree_set(
+                &constant_round_feature_ids,
+                &row.feature_id,
+                "creo constant round feature ids lookup",
+            )?
             && !inline_non_plane
         {
             continue;
@@ -248,7 +291,14 @@ pub(in super::super) fn transfer_positional_tori(
             row.id,
             "creo decoded model identity",
         )?;
-        let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
+        let identity_present = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                id.as_str(),
+            )?
+            .is_some();
         if identity_present {
             continue;
         }
@@ -330,18 +380,24 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         &scan.curves.tabulated_cylinder_replays,
         "creo transfer tabulated cylinder spline extrusions tabulated cylinder replays traversal",
     )? {
-        workspace.with_storage(|| ctx.insert_btree_set(
-            &mut replay_bound_surfaces,
-            replay.surface_id,
-            "creo line-extrusion replay surface ids",
-        ))?;
+        workspace.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut replay_bound_surfaces,
+                replay.surface_id,
+                "creo line-extrusion replay surface ids",
+            )
+        })?;
     }
     let mut transferred = 0;
     for record in ctx.admit_iter(
         &*scan.surfaces.parameters,
         "creo transfer positional line extrusion planes parameters traversal",
     )? {
-        if ctx.contains_btree_set(&replay_bound_surfaces, &record.surface_id, "creo replay bound surfaces lookup")? {
+        if ctx.contains_btree_set(
+            &replay_bound_surfaces,
+            &record.surface_id,
+            "creo replay bound surfaces lookup",
+        )? {
             continue;
         }
         if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
@@ -370,7 +426,14 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             record.surface_id,
             "creo decoded model identity",
         )?;
-        let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), surface_id.as_str())?.is_some();
+        let identity_present = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                surface_id.as_str(),
+            )?
+            .is_some();
         if identity_present {
             continue;
         }
@@ -380,12 +443,13 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             record.surface_id,
             "creo positional directrix identity",
         )?;
-        let (procedural_id, procedural_id_storage) = crate::identity::compose_scoped::<ProceduralSurfaceId>(
-            ctx,
-            &crate::identity::VISIBGEOM_SURFACE_EXTRUSION,
-            record.surface_id,
-            "creo positional extrusion identity",
-        )?;
+        let (procedural_id, procedural_id_storage) =
+            crate::identity::compose_scoped::<ProceduralSurfaceId>(
+                ctx,
+                &crate::identity::VISIBGEOM_SURFACE_EXTRUSION,
+                record.surface_id,
+                "creo positional extrusion identity",
+            )?;
         let Ok(line_curve) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::from(frame.directrix[0]),
             Vector3::from(u_axis),
@@ -527,19 +591,42 @@ fn note_tabulated_cylinder_refusals(
 }
 
 fn unique_tabulated_cylinder_prototype<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>, scan: &'a ContainerScan<'_>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &'a ContainerScan<'_>,
     replay: &crate::surface::TabulatedCylinderCurveReplay,
 ) -> Result<Option<&'a crate::surface::SurfacePrototypeRecord>, cadmpeg_core::CodecError> {
-    let Some(section) = crate::decode::uniqueness::exactly_one_by(ctx, &scan.framing.sections,
+    let Some(section) = crate::decode::uniqueness::exactly_one_by(
+        ctx,
+        &scan.framing.sections,
         |section| Ok(section_contains_offset(section, replay.surface_row_offset)),
-        "creo tabulated replay section search")? else { return Ok(None); };
-    crate::decode::uniqueness::exactly_one_by(ctx, &scan.surfaces.prototype_records, |record| {
-        if !section_contains_offset(section, record.offset)
-            || record.family != crate::surface::SurfacePrototypeFamily::Extrusion(crate::surface::ExtrusionLabel::TabulatedCylinder) { return Ok(false); }
-        let Some(field) = super::prototypes::prototype_field(ctx, record, "c_pnts")? else { return Ok(false); };
-        let crate::surface::SurfaceNamedValue::ContiguousEntityReferences(ids) = &field.value else { return Ok(false); };
-        Ok(<&[u32; 4]>::try_from(ids.as_slice()).ok() == Some(&replay.control_point_ids))
-    }, "creo tabulated replay prototype search")
+        "creo tabulated replay section search",
+    )?
+    else {
+        return Ok(None);
+    };
+    crate::decode::uniqueness::exactly_one_by(
+        ctx,
+        &scan.surfaces.prototype_records,
+        |record| {
+            if !section_contains_offset(section, record.offset)
+                || record.family
+                    != crate::surface::SurfacePrototypeFamily::Extrusion(
+                        crate::surface::ExtrusionLabel::TabulatedCylinder,
+                    )
+            {
+                return Ok(false);
+            }
+            let Some(field) = super::prototypes::prototype_field(ctx, record, "c_pnts")? else {
+                return Ok(false);
+            };
+            let crate::surface::SurfaceNamedValue::ContiguousEntityReferences(ids) = &field.value
+            else {
+                return Ok(false);
+            };
+            Ok(<&[u32; 4]>::try_from(ids.as_slice()).ok() == Some(&replay.control_point_ids))
+        },
+        "creo tabulated replay prototype search",
+    )
 }
 
 /// Transfer one exact extrusion carrier per tabulated-cylinder spline replay.
@@ -563,12 +650,12 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         "creo transfer positional line extrusion planes tabulated cylinder replays traversal",
     )? {
         workspace.with_storage(|| {
-        *ctx.entry_btree_map(
-            &mut replay_counts,
-            replay.surface_id,
-            "creo tabulated-cylinder replay counts",
-        )?
-        .or_default() += 1;
+            *ctx.entry_btree_map(
+                &mut replay_counts,
+                replay.surface_id,
+                "creo tabulated-cylinder replay counts",
+            )?
+            .or_default() += 1;
             Ok::<_, cadmpeg_core::CodecError>(())
         })?;
     }
@@ -577,7 +664,12 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         &scan.curves.tabulated_cylinder_replays,
         "creo transfer tabulated cylinder spline extrusions tabulated cylinder replays traversal",
     )? {
-        if ctx.get_btree_map(&replay_counts, &replay.surface_id, "creo replay counts lookup")? != Some(&1) {
+        if ctx.get_btree_map(
+            &replay_counts,
+            &replay.surface_id,
+            "creo replay counts lookup",
+        )? != Some(&1)
+        {
             continue;
         }
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, replay.surface_id)
@@ -603,13 +695,9 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         };
         let mut geometry_storage = ctx.reserve_scoped(0, "creo tabulated extrusion geometry")?;
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let directrix = geometry_storage.with_storage(|| placed_tabulated_cylinder_directrix(
-            ctx,
-            replay,
-            parameters,
-            chart_origin,
-            &mut refusal,
-        ))?;
+        let directrix = geometry_storage.with_storage(|| {
+            placed_tabulated_cylinder_directrix(ctx, replay, parameters, chart_origin, &mut refusal)
+        })?;
         let refused = refusal.take_records_checked()?;
         let Some((directrix, sweep)) = directrix.filter(|_| refused.is_empty()) else {
             note_tabulated_cylinder_refusals(
@@ -623,16 +711,18 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             continue;
         };
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let surface = geometry_storage.with_storage(|| extruded_nurbs_surface(
-            ctx,
-            &directrix,
-            sweep,
-            &format_args!(
-                "VisibGeom surface row {} tabulated-cylinder replay at offset {}",
-                replay.surface_id, replay.offset
-            ),
-            &mut refusal,
-        ))?;
+        let surface = geometry_storage.with_storage(|| {
+            extruded_nurbs_surface(
+                ctx,
+                &directrix,
+                sweep,
+                &format_args!(
+                    "VisibGeom surface row {} tabulated-cylinder replay at offset {}",
+                    replay.surface_id, replay.offset
+                ),
+                &mut refusal,
+            )
+        })?;
         let refused = refusal.take_records_checked()?;
         let Some(surface) = surface.filter(|_| refused.is_empty()) else {
             note_tabulated_cylinder_refusals(
@@ -657,16 +747,24 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             replay.surface_id,
             "creo decoded model identity",
         )?;
-        let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), surface_id.as_str())?.is_some();
+        let identity_present = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                surface_id.as_str(),
+            )?
+            .is_some();
         if identity_present {
             continue;
         }
-        let (procedural_id, procedural_id_storage) = crate::identity::compose_scoped::<ProceduralSurfaceId>(
-            ctx,
-            &crate::identity::VISIBGEOM_TABULATED_EXTRUSION,
-            replay.surface_id,
-            "creo tabulated extrusion identity",
-        )?;
+        let (procedural_id, procedural_id_storage) =
+            crate::identity::compose_scoped::<ProceduralSurfaceId>(
+                ctx,
+                &crate::identity::VISIBGEOM_TABULATED_EXTRUSION,
+                replay.surface_id,
+                "creo tabulated extrusion identity",
+            )?;
         geometry_storage.commit()?;
         curve_id_storage.commit()?;
         procedural_id_storage.commit()?;

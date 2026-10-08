@@ -81,8 +81,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
                     let radius = circle_curve.radius().get();
                     (center.z - 4.0 / 3.0).abs() < EPS_FILLET_CIRCLE && (radius - 10.0 / 3.0).abs() < EPS_FILLET_CIRCLE
                 })));
-    assert!(coaxial_cones_section_candidates(first, first)
-    .is_empty());
+    assert!(coaxial_cones_section_candidates(first, first).is_empty());
     let shifted = CarrierEquation::Cone(
         ConeEquation::new(
             [1.0, 0.0, 0.0],
@@ -94,8 +93,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
         )
         .expect("valid test cone"),
     );
-    assert!(coaxial_cones_section_candidates(first, shifted)
-    .is_empty());
+    assert!(coaxial_cones_section_candidates(first, shifted).is_empty());
 
     let CarrierEquation::Cone(mut elliptical_first_equation) = first else {
         unreachable!();
@@ -159,8 +157,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     )
     .expect("valid test cone");
     let incompatible_frame = CarrierEquation::Cone(elliptical_second_equation);
-    assert!(coaxial_cones_section_candidates(elliptical_first, incompatible_frame)
-    .is_empty());
+    assert!(coaxial_cones_section_candidates(elliptical_first, incompatible_frame).is_empty());
 
     elliptical_second_equation = ConeEquation::new(
         elliptical_second_equation.origin(),

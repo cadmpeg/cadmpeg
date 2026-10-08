@@ -205,7 +205,12 @@ fn hole_cylinder_identity_refuses_retained_limit() {
 #[test]
 fn hole_cylinder_source_id_refuses_retained_limit() {
     let run = |limit| Err::<(), _>(hole_retained_refusal(limit));
-    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo hole cylinder source IDs"), run)).expect_err("named resource boundary");
+    let error = run(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo hole cylinder source IDs"),
+        run,
+    ))
+    .expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo hole cylinder source IDs"),
@@ -230,7 +235,12 @@ fn circular_sweep_cylinder_identity_refuses_retained_limit() {
 #[test]
 fn circular_sweep_cylinder_source_id_refuses_retained_limit() {
     let run = |limit| Err::<(), _>(circular_sweep_retained_refusal(limit));
-    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo circular sweep cylinder source IDs"), run)).expect_err("named resource boundary");
+    let error = run(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo circular sweep cylinder source IDs"),
+        run,
+    ))
+    .expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo circular sweep cylinder source IDs"),
@@ -404,7 +414,12 @@ fn cross_section_local_system_identity_refuses_retained_limit() {
 #[test]
 fn cross_section_local_system_source_id_refuses_retained_limit() {
     let run = |limit| Err::<(), _>(cross_section_retained_refusal(true, limit));
-    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo cross-section local-system plane source IDs"), run)).expect_err("named resource boundary");
+    let error = run(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo cross-section local-system plane source IDs"),
+        run,
+    ))
+    .expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo cross-section local-system plane source IDs")
@@ -423,7 +438,12 @@ fn cross_section_outline_identity_refuses_retained_limit() {
 #[test]
 fn cross_section_outline_source_id_refuses_retained_limit() {
     let run = |limit| Err::<(), _>(cross_section_retained_refusal(false, limit));
-    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo cross-section outline plane source IDs"), run)).expect_err("named resource boundary");
+    let error = run(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo cross-section outline plane source IDs"),
+        run,
+    ))
+    .expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo cross-section outline plane source IDs")
@@ -530,7 +550,12 @@ fn positional_cone_identity_refuses_retained_limit() {
 #[test]
 fn positional_cone_source_id_refuses_retained_limit() {
     let run = |limit| Err::<(), _>(positional_cone_retained_refusal(limit));
-    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo positional cone source IDs"), run)).expect_err("named resource boundary");
+    let error = run(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo positional cone source IDs"),
+        run,
+    ))
+    .expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo positional cone source IDs")
@@ -568,19 +593,24 @@ fn positional_cone_identity_preserves_service_geometry() {
 fn hole_cylinder_transfer_refuses_simple_rows_traversal() {
     let scan = hole_scan();
     let run = |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            super::super::transfer_hole_cylinders(
-                &ctx,
-                &scan,
-                &mut cadmpeg_ir::document::CadIr::empty(),
-                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-            )
-        };
-    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, Some("creo simple hole cylinder rows traversal"), run)).expect_err("named resource boundary");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        super::super::transfer_hole_cylinders(
+            &ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    };
+    let error = run(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        Some("creo simple hole cylinder rows traversal"),
+        run,
+    ))
+    .expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
@@ -592,24 +622,29 @@ fn hole_cylinder_transfer_refuses_simple_rows_traversal() {
 fn hole_cylinder_transfer_refuses_counterbore_patch_rows_traversal() {
     let scan = super::counterbore_dimension_gate_scan(60.0);
     let run = |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let mut ir = cadmpeg_ir::document::CadIr::empty();
-            ir.model.surfaces.extend([
-                super::model_cylinder(1, 60.0),
-                super::model_cylinder(2, 60.0),
-            ]);
-            super::super::transfer_hole_cylinders(
-                &ctx,
-                &scan,
-                &mut ir,
-                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-            )
-        };
-    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, Some("creo counterbore patch cylinder rows traversal"), run)).expect_err("named resource boundary");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        ir.model.surfaces.extend([
+            super::model_cylinder(1, 60.0),
+            super::model_cylinder(2, 60.0),
+        ]);
+        super::super::transfer_hole_cylinders(
+            &ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    };
+    let error = run(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        Some("creo counterbore patch cylinder rows traversal"),
+        run,
+    ))
+    .expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits

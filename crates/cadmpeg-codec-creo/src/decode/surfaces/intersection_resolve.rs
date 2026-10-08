@@ -49,8 +49,6 @@ pub(super) fn multi_component_intersection_candidates(
         .chain(axis_containing_plane_torus_circle_candidates(first, second))
 }
 
-
-
 pub(in super::super) fn intersect_plane_with_carrier_components(
     ctx: &DecodeContext<'_>,
     plane: PlaneEquation,
@@ -58,13 +56,16 @@ pub(in super::super) fn intersect_plane_with_carrier_components(
     second: CarrierEquation,
 ) -> Result<Vec<[f64; 3]>, CodecError> {
     let mut intersections = Vec::new();
-    for (geometry, _) in carrier_intersection_curve(first, second).into_iter()
-        .chain(multi_component_intersection_candidates(first, second)) {
+    for (geometry, _) in carrier_intersection_curve(first, second)
+        .into_iter()
+        .chain(multi_component_intersection_candidates(first, second))
+    {
         let Some((center, axis, radius)) = circle_parameters(&geometry) else {
             continue;
         };
         let mut point_storage = ctx.reserve_scoped(0, "creo carrier component point workspace")?;
-        let points = point_storage.with_storage(|| intersect_plane_with_circle(ctx, plane, center, axis, radius))?;
+        let points = point_storage
+            .with_storage(|| intersect_plane_with_circle(ctx, plane, center, axis, radius))?;
         for point in &points {
             ctx.reserve_vec(
                 &mut intersections,
@@ -150,23 +151,54 @@ pub(in super::super) fn resolve_curve_candidates(
 }
 
 pub(in super::super) fn fc14_held_coordinate(
-    ctx: &DecodeContext<'_>, record: Option<&crate::curve::FcCurveCoordinates>,
+    ctx: &DecodeContext<'_>,
+    record: Option<&crate::curve::FcCurveCoordinates>,
 ) -> Result<Option<f64>, CodecError> {
-    let Some(record) = record else { return Ok(None); };
+    let Some(record) = record else {
+        return Ok(None);
+    };
     let mut tokens = record.tokens.iter();
-    let Some(first) = ctx.find_by(&mut tokens, |token| Ok(token.raw.first() == Some(&0x2d)),
-        "creo FC14 coordinate tokens")? else { return Ok(None); };
+    let Some(first) = ctx.find_by(
+        &mut tokens,
+        |token| Ok(token.raw.first() == Some(&0x2d)),
+        "creo FC14 coordinate tokens",
+    )?
+    else {
+        return Ok(None);
+    };
     for _ in 0..3 {
-        let Some(token) = ctx.find_by(&mut tokens, |token| Ok(token.raw.first() == Some(&0x2d)),
-            "creo FC14 coordinate tokens")? else { return Ok(None); };
-        if !ctx.equal(&token.raw, &first.raw, "creo FC14 coordinate token bytes comparison")?
-            || token.value_mm != first.value_mm { return Ok(None); }
+        let Some(token) = ctx.find_by(
+            &mut tokens,
+            |token| Ok(token.raw.first() == Some(&0x2d)),
+            "creo FC14 coordinate tokens",
+        )?
+        else {
+            return Ok(None);
+        };
+        if !ctx.equal(
+            &token.raw,
+            &first.raw,
+            "creo FC14 coordinate token bytes comparison",
+        )? || token.value_mm != first.value_mm
+        {
+            return Ok(None);
+        }
     }
-    if !first.value_mm.is_finite() { return Ok(None); }
+    if !first.value_mm.is_finite() {
+        return Ok(None);
+    }
     while let Some(token) = ctx.next_charged(&mut tokens, "creo FC14 coordinate tokens")? {
-        if token.raw.first() != Some(&0x2d) { continue; }
-        if !ctx.equal(&token.raw, &first.raw, "creo FC14 coordinate token bytes comparison")?
-            || token.value_mm != first.value_mm { return Ok(None); }
+        if token.raw.first() != Some(&0x2d) {
+            continue;
+        }
+        if !ctx.equal(
+            &token.raw,
+            &first.raw,
+            "creo FC14 coordinate token bytes comparison",
+        )? || token.value_mm != first.value_mm
+        {
+            return Ok(None);
+        }
     }
     Ok(Some(first.value_mm))
 }
@@ -215,24 +247,49 @@ mod tests {
     #[test]
     fn fc14_coordinate_tokens_charge_visited_search_and_comparison_steps() {
         let held = crate::curve::FcCurveCoordinateToken {
-            value_mm: 1.0, raw: vec![0x2d, 0, 0, 0, 0, 0, 0, 0], offset: 0,
+            value_mm: 1.0,
+            raw: vec![0x2d, 0, 0, 0, 0, 0, 0, 0],
+            offset: 0,
         };
-        let ignored = crate::curve::FcCurveCoordinateToken { raw: vec![0], ..held.clone() };
+        let ignored = crate::curve::FcCurveCoordinateToken {
+            raw: vec![0],
+            ..held.clone()
+        };
         let mut record = crate::curve::FcCurveCoordinates {
-            curve_id: 77, subtype: 0x14, body: Vec::new(), values_mm: Vec::new(),
-            tokens: vec![ignored.clone(), held.clone(), ignored.clone(), held.clone(), held.clone(), held.clone(), ignored.clone()],
-            opaque_spans: Vec::new(), offset: 0,
+            curve_id: 77,
+            subtype: 0x14,
+            body: Vec::new(),
+            values_mm: Vec::new(),
+            tokens: vec![
+                ignored.clone(),
+                held.clone(),
+                ignored.clone(),
+                held.clone(),
+                held.clone(),
+                held.clone(),
+                ignored.clone(),
+            ],
+            opaque_spans: Vec::new(),
+            offset: 0,
         };
         for expected in [Some(1.0), None] {
             crate::test_support::assert_work_boundaries(
-                &["creo FC14 coordinate tokens", "creo FC14 coordinate token bytes comparison"],
+                &[
+                    "creo FC14 coordinate tokens",
+                    "creo FC14 coordinate token bytes comparison",
+                ],
                 |ctx| {
                     assert_eq!(super::fc14_held_coordinate(ctx, Some(&record))?, expected);
                     Ok(())
                 },
             );
-            record.tokens.push(crate::curve::FcCurveCoordinateToken { value_mm: -1.0, ..held.clone() });
-            record.tokens.extend(std::iter::repeat_n(ignored.clone(), 64));
+            record.tokens.push(crate::curve::FcCurveCoordinateToken {
+                value_mm: -1.0,
+                ..held.clone()
+            });
+            record
+                .tokens
+                .extend(std::iter::repeat_n(ignored.clone(), 64));
         }
     }
 
@@ -254,8 +311,6 @@ mod tests {
         (CarrierEquation::Cone(cone), CarrierEquation::Sphere(sphere))
     }
 
-
-
     #[test]
     fn plane_carrier_component_intersections_refuse_before_vec_growth() {
         let (cone, sphere) = cone_sphere_circle_carriers();
@@ -271,8 +326,11 @@ mod tests {
                 .expect("empty root fits the collection policy");
             super::intersect_plane_with_carrier_components(&ctx, plane, cone, sphere)
         };
-        let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems,
-            Some("creo plane-carrier component intersections"), run);
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo plane-carrier component intersections"),
+            run,
+        );
         assert!(
             matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
             if refusal.dimension == ResourceDimension::CollectionItems

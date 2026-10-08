@@ -205,12 +205,10 @@ fn numerical_followup_carrier_candidates_follow_geometry_scale() {
         };
         assert!((circle.radius().get() / r - 0.5).abs() < 64. * f64::EPSILON);
         assert_eq!(
-            super::apex_plane_cone_generator_candidates(plane(0.), cone(r))
-            .len(),
+            super::apex_plane_cone_generator_candidates(plane(0.), cone(r)).len(),
             2
         );
-        assert!(super::apex_plane_cone_generator_candidates(plane(r), cone(r))
-        .is_empty());
+        assert!(super::apex_plane_cone_generator_candidates(plane(r), cone(r)).is_empty());
         assert_eq!(
             super::axis_containing_plane_torus_circle_candidates(plane(0.), torus(0.)).len(),
             2
@@ -220,10 +218,8 @@ fn numerical_followup_carrier_candidates_follow_geometry_scale() {
             ref_direction: reference,
             radius: 2. * r,
         });
-        assert!(super::coaxial_sphere_torus_circle_candidates(sphere, torus(0.))
-        .is_empty());
-        assert!(super::coaxial_tori_circle_candidates(torus(0.), torus(5. * r))
-        .is_empty());
+        assert!(super::coaxial_sphere_torus_circle_candidates(sphere, torus(0.)).is_empty());
+        assert!(super::coaxial_tori_circle_candidates(torus(0.), torus(5. * r)).is_empty());
     }
 }
 
@@ -248,16 +244,13 @@ fn numerical_followup_zero_radius_cone_retains_rotated_apex_plane() {
         })
     };
     assert_eq!(
-        super::apex_plane_cone_generator_candidates(plane(0.), cone)
-        .len(),
+        super::apex_plane_cone_generator_candidates(plane(0.), cone).len(),
         2
     );
-    assert!(super::apex_plane_cone_generator_candidates(plane(0.001), cone)
-    .is_empty());
+    assert!(super::apex_plane_cone_generator_candidates(plane(0.001), cone).is_empty());
     let far_plane = CarrierEquation::Plane(PlaneEquation {
         origin: [-1.7e308, -1.7e308, 1.7e308],
         normal: [1., 1., 1.],
     });
-    assert!(super::apex_plane_cone_generator_candidates(far_plane, cone)
-    .is_empty());
+    assert!(super::apex_plane_cone_generator_candidates(far_plane, cone).is_empty());
 }

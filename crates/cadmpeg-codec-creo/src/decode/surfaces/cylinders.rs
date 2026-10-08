@@ -77,7 +77,11 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
     let mut pairs = Vec::new();
     for table in ctx.admit_iter(tables, "creo rowless round feature tables")? {
         let feature_id = table.feature_id;
-        if !ctx.contains_btree_set(&round_feature_ids, &feature_id, "creo round feature ids lookup")? {
+        if !ctx.contains_btree_set(
+            &round_feature_ids,
+            &feature_id,
+            "creo round feature ids lookup",
+        )? {
             continue;
         }
         let [first, second, rowless, cylinder] = table.entries.as_slice() else {
@@ -117,7 +121,14 @@ pub(in super::super) fn transfer_active_datum_cylinders(
     )? {
         let mut id_storage = ctx.reserve_scoped(0, "creo native surface identity")?;
         let id = id_storage.with_storage(|| super::native_surface_id(ctx, scan, datum.id))?;
-        let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
+        let surface_exists = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                id.as_str(),
+            )?
+            .is_some();
         if surface_exists {
             continue;
         }
@@ -235,7 +246,9 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         if local_planes.is_none() {
             local_planes = Some(local_storage.with_storage(|| placed_planes(ctx, scan))?);
         }
-        let Some(local_planes) = local_planes.as_ref() else { continue; };
+        let Some(local_planes) = local_planes.as_ref() else {
+            continue;
+        };
         let mut planes = Vec::new();
         let mut visits = affected.iter();
         while let Some(id) = ctx.next_charged(&mut visits, "creo constrained slot affected IDs")? {
@@ -243,7 +256,12 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             else {
                 break;
             };
-            ctx.reserve_scoped_vec(&mut plane_storage, &mut planes, 1, "creo constrained slot plane rows")?;
+            ctx.reserve_scoped_vec(
+                &mut plane_storage,
+                &mut planes,
+                1,
+                "creo constrained slot plane rows",
+            )?;
             planes.push(plane);
         }
         if planes.len() != affected.len() {
@@ -257,14 +275,26 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         let mut selected_row = None;
         let mut ambiguous_row = false;
         let mut visits = scan.surfaces.rows.iter();
-        while let Some(row) = ctx.next_charged(&mut visits, "creo constrained slot cylinder rows")? {
+        while let Some(row) =
+            ctx.next_charged(&mut visits, "creo constrained slot cylinder rows")?
+        {
             if row.feature_id != *feature_id || row.kind != crate::surface::SurfaceKind::Cylinder {
                 continue;
             }
-            let (key, _key_storage) = crate::identity::compose_scoped::<SurfaceId>(ctx,
-                &crate::identity::VISIBGEOM_SURFACE, row.id, "creo constrained slot query identity")?;
-            let already_present = surfaces_index.lookup(ctx, &ir.model.surfaces,
-                |surface| surface.id.as_str(), key.as_str())?.is_some();
+            let (key, _key_storage) = crate::identity::compose_scoped::<SurfaceId>(
+                ctx,
+                &crate::identity::VISIBGEOM_SURFACE,
+                row.id,
+                "creo constrained slot query identity",
+            )?;
+            let already_present = surfaces_index
+                .lookup(
+                    ctx,
+                    &ir.model.surfaces,
+                    |surface| surface.id.as_str(),
+                    key.as_str(),
+                )?
+                .is_some();
             if already_present {
                 continue;
             }
@@ -336,8 +366,6 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
     Ok(transferred)
 }
 
-
-
 pub(in super::super) fn transfer_rowless_round_cylinders(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -352,37 +380,49 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         .admit_iter(&scan.features.rows, "creo rowless round feature rows")?
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
     {
-        candidate_storage.with_storage(|| ctx.insert_btree_set(
-            &mut round_feature_ids,
-            row.feature_id,
-            "creo rowless round feature ID nodes",
-        ))?;
+        candidate_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut round_feature_ids,
+                row.feature_id,
+                "creo rowless round feature ID nodes",
+            )
+        })?;
     }
     let mut transferred = 0;
-    let pairs = candidate_storage.with_storage(|| rowless_round_cylinder_pairs(
-        ctx,
-        &round_feature_ids,
-        &scan.features.entity_tables,
-        &scan.surfaces.rows,
-    ))?;
+    let pairs = candidate_storage.with_storage(|| {
+        rowless_round_cylinder_pairs(
+            ctx,
+            &round_feature_ids,
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
+        )
+    })?;
     for (rowless_id, sibling_id, offset) in
         ctx.admit_iter(&pairs, "creo rowless round cylinder candidates")?
     {
         let (sibling, _sibling_storage) = crate::identity::compose_scoped::<SurfaceId>(
-            ctx, &crate::identity::VISIBGEOM_SURFACE, *sibling_id,
+            ctx,
+            &crate::identity::VISIBGEOM_SURFACE,
+            *sibling_id,
             "creo rowless sibling query identity",
         )?;
-        let selected_surface = surfaces_index.lookup(ctx, &ir.model.surfaces,
-            |record| record.id.as_str(), sibling.as_str())?.flatten()
+        let selected_surface = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                sibling.as_str(),
+            )?
+            .flatten()
             .map(|index| &ir.model.surfaces[index]);
-        let Some(cylinder_surface) = selected_surface.and_then(
-            |surface| match source_carriers.surface_geometry(surface) {
+        let Some(cylinder_surface) =
+            selected_surface.and_then(|surface| match source_carriers.surface_geometry(surface) {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => {
                     Some(*cylinder)
                 }
                 _ => None,
-            },
-        ) else {
+            })
+        else {
             continue;
         };
         let (id, id_storage) = crate::identity::compose_scoped::<SurfaceId>(
@@ -391,7 +431,14 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
             *rowless_id,
             "creo rowless round cylinder identity",
         )?;
-        let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
+        let surface_exists = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                id.as_str(),
+            )?
+            .is_some();
         if surface_exists {
             continue;
         }
@@ -465,11 +512,13 @@ pub(in super::super) fn transfer_hole_cylinders(
     }
     let mut transferred = 0;
     for feature_id in ctx.admit_iter(&hole_feature_ids, "creo hole cylinder feature IDs")? {
-        let simple = simple_hole_geometry(ctx, scan, *feature_id)?;
+        let mut hole_storage = ctx.reserve_scoped(0, "creo hole candidate workspace")?;
+        let simple = hole_storage.with_storage(|| simple_hole_geometry(ctx, scan, *feature_id))?;
         let counterbore = if simple.is_some() {
             None
         } else {
-            counterbore_patch_geometries(ctx, scan, ir, *feature_id)?
+            hole_storage
+                .with_storage(|| counterbore_patch_geometries(ctx, scan, ir, *feature_id))?
         };
         let mut transfer_hole_cylinder =
             |row: &crate::surface::SurfaceRow,
@@ -482,12 +531,19 @@ pub(in super::super) fn transfer_hole_cylinders(
                     cylinder_id,
                     "creo hole cylinder identity",
                 )?;
-                let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
+                let surface_exists = surfaces_index
+                    .lookup(
+                        ctx,
+                        &ir.model.surfaces,
+                        |record| record.id.as_str(),
+                        id.as_str(),
+                    )?
+                    .is_some();
                 if surface_exists {
                     return Ok(());
                 }
                 id_storage.commit()?;
-        annotate(
+                annotate(
                     ctx,
                     annotations,
                     &id,
@@ -561,11 +617,11 @@ pub(in super::super) fn transfer_split_outline_cylinders(
     let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let local_planes = workspace.with_storage(|| placed_planes(ctx, scan))?;
     let mut cylinders_by_plane = BTreeMap::<(u32, u32), BTreeSet<u32>>::new();
-    let unique_topologies = workspace.with_storage(|| crate::identity::uniquely_identified_rows_checked(
-        ctx,
-        &scan.curves.topology_rows,
-        |row| row.id,
-    ))?;
+    let unique_topologies = workspace.with_storage(|| {
+        crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
+            row.id
+        })
+    })?;
     for edge in ctx.admit_iter(&unique_topologies, "creo split outline unique topologies")? {
         if edge.type_byte != 0 {
             continue;
@@ -574,7 +630,10 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             continue;
         };
         let (left, right) = (left.get(), right.get());
-        let pair = match (scan.surfaces.rows.unique(left), scan.surfaces.rows.unique(right)) {
+        let pair = match (
+            scan.surfaces.rows.unique(left),
+            scan.surfaces.rows.unique(right),
+        ) {
             (Some(plane), Some(cylinder))
                 if plane.kind == crate::surface::SurfaceKind::Plane
                     && cylinder.kind == crate::surface::SurfaceKind::Cylinder =>
@@ -591,14 +650,14 @@ pub(in super::super) fn transfer_split_outline_cylinders(
         };
         if let Some((plane_and_feature, cylinder)) = pair {
             workspace.with_storage(|| {
-            let cylinder_ids = ctx
-                .entry_btree_map(
-                    &mut cylinders_by_plane,
-                    plane_and_feature,
-                    "creo split cylinder plane nodes",
-                )?
-                .or_default();
-            ctx.insert_btree_set(cylinder_ids, cylinder, "creo split cylinder ID nodes")?;
+                let cylinder_ids = ctx
+                    .entry_btree_map(
+                        &mut cylinders_by_plane,
+                        plane_and_feature,
+                        "creo split cylinder plane nodes",
+                    )?
+                    .or_default();
+                ctx.insert_btree_set(cylinder_ids, cylinder, "creo split cylinder ID nodes")?;
                 Ok::<_, cadmpeg_core::CodecError>(())
             })?;
         }
@@ -608,9 +667,13 @@ pub(in super::super) fn transfer_split_outline_cylinders(
     for ((plane_id, _), cylinder_ids) in
         ctx.admit_iter(&cylinders_by_plane, "creo split cylinder plane groups")?
     {
-        if cylinder_ids.len() != 2 { continue; }
+        if cylinder_ids.len() != 2 {
+            continue;
+        }
         let mut cylinder_ids = cylinder_ids.iter().copied();
-        let (Some(first_id), Some(second_id)) = (cylinder_ids.next(), cylinder_ids.next()) else { continue; };
+        let (Some(first_id), Some(second_id)) = (cylinder_ids.next(), cylinder_ids.next()) else {
+            continue;
+        };
         let Some(first) =
             crate::surface::unique_surface_parameter(&scan.surfaces.parameters, first_id)
         else {
@@ -655,7 +718,14 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 cylinder_id,
                 "creo split cylinder identities",
             )?;
-            let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
+            let surface_exists = surfaces_index
+                .lookup(
+                    ctx,
+                    &ir.model.surfaces,
+                    |record| record.id.as_str(),
+                    id.as_str(),
+                )?
+                .is_some();
             if surface_exists {
                 continue;
             }
@@ -663,7 +733,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 continue;
             };
             id_storage.commit()?;
-        annotate(
+            annotate(
                 ctx,
                 annotations,
                 &id,
@@ -740,7 +810,9 @@ fn round_edge_cylinder_frame(
     };
     let mut candidate: Option<crate::surface::PositionalCylinderFrame> = None;
     let mut first_planes = support_planes.iter().copied().enumerate();
-    while let Some((first_index, first_support)) = ctx.next_charged(&mut first_planes, "creo round-edge first support planes")? {
+    while let Some((first_index, first_support)) =
+        ctx.next_charged(&mut first_planes, "creo round-edge first support planes")?
+    {
         let Some(first_normal) = normalize(first_support.normal) else {
             continue;
         };
@@ -749,7 +821,9 @@ fn round_edge_cylinder_frame(
             normal: first_normal,
         };
         let mut second_planes = support_planes[first_index + 1..].iter().copied();
-        while let Some(second_support) = ctx.next_charged(&mut second_planes, "creo round-edge second support planes")? {
+        while let Some(second_support) =
+            ctx.next_charged(&mut second_planes, "creo round-edge second support planes")?
+        {
             let Some(second_normal) = normalize(second_support.normal) else {
                 continue;
             };
@@ -891,12 +965,17 @@ fn unique_support_tangent_cylinder_frame(
     let mut origins_storage = ctx.reserve_scoped(0, "creo support tangent origin workspace")?;
     let mut witness_storage = ctx.reserve_scoped(0, "creo support tangent witness workspace")?;
     let mut origins = Vec::new();
-    ctx.reserve_scoped_vec(&mut origins_storage, &mut origins, 1, "creo support tangent initial origins")?;
+    ctx.reserve_scoped_vec(
+        &mut origins_storage,
+        &mut origins,
+        1,
+        "creo support tangent initial origins",
+    )?;
     origins.push(stored.frame().origin());
     let mut witnessed_axis = [false; 3];
     let mut witnessed_planes = Vec::new();
     let mut visits = support_planes.iter();
-        while let Some(plane) = ctx.next_charged(&mut visits, "creo support tangent support planes")? {
+    while let Some(plane) = ctx.next_charged(&mut visits, "creo support tangent support planes")? {
         let Some(normal) = normalize(plane.normal) else {
             return Ok(None);
         };
@@ -966,7 +1045,12 @@ fn unique_support_tangent_cylinder_frame(
                     },
                     "creo support tangent next origin search",
                 )? {
-                    ctx.reserve_scoped_vec(&mut next_storage, &mut next, 1, "creo support tangent next origins")?;
+                    ctx.reserve_scoped_vec(
+                        &mut next_storage,
+                        &mut next,
+                        1,
+                        "creo support tangent next origins",
+                    )?;
                     next.push(candidate);
                 }
             }
@@ -979,7 +1063,9 @@ fn unique_support_tangent_cylinder_frame(
     }
     let mut frame = None;
     let mut visits = origins.iter();
-        while let Some(origin) = ctx.next_charged(&mut visits, "creo support tangent resolved origins")? {
+    while let Some(origin) =
+        ctx.next_charged(&mut visits, "creo support tangent resolved origins")?
+    {
         let tangent_to_all = ctx.all_by(
             &witnessed_planes,
             |plane| {
@@ -1042,7 +1128,10 @@ fn perpendicular_round_edge_cylinder_frame(
     let mut has_endpoint_incidence = false;
     let mut has_equal_radius_projections = false;
     let mut first_planes = support_planes.iter().copied().enumerate();
-    while let Some((first_index, first_support)) = ctx.next_charged(&mut first_planes, "creo perpendicular round-edge first support planes")? {
+    while let Some((first_index, first_support)) = ctx.next_charged(
+        &mut first_planes,
+        "creo perpendicular round-edge first support planes",
+    )? {
         let Some(first_normal) = normalize(first_support.normal) else {
             continue;
         };
@@ -1051,7 +1140,10 @@ fn perpendicular_round_edge_cylinder_frame(
             normal: first_normal,
         };
         let mut second_planes = support_planes[first_index + 1..].iter().copied();
-        while let Some(second_support) = ctx.next_charged(&mut second_planes, "creo perpendicular round-edge second support planes")? {
+        while let Some(second_support) = ctx.next_charged(
+            &mut second_planes,
+            "creo perpendicular round-edge second support planes",
+        )? {
             let Some(second_normal) = normalize(second_support.normal) else {
                 continue;
             };
@@ -1124,67 +1216,80 @@ pub(in super::super) fn transfer_positional_cylinders(
     )? {
         if row.kind == crate::surface::SurfaceKind::Cylinder {
             workspace.with_storage(|| {
-                *ctx.entry_hash_map(&mut generated_cylinder_counts, row.feature_id, "creo generated cylinder counts")?.or_insert(0) += 1;
+                *ctx.entry_hash_map(
+                    &mut generated_cylinder_counts,
+                    row.feature_id,
+                    "creo generated cylinder counts",
+                )?
+                .or_insert(0) += 1;
                 Ok::<_, cadmpeg_core::CodecError>(())
             })?;
         }
         if row.kind == crate::surface::SurfaceKind::Cylinder
             && feature_schema_class(ctx, scan, row.feature_id)? == Some(SchemaClass::Round)
         {
-            workspace.with_storage(|| ctx.insert_btree_set(
-                &mut round_feature_ids,
-                row.feature_id,
-                "creo positional round feature ID nodes",
-            ))?;
+            workspace.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut round_feature_ids,
+                    row.feature_id,
+                    "creo positional round feature ID nodes",
+                )
+            })?;
         }
     }
     let mut constant_round_radii = BTreeMap::new();
     for feature_id in ctx.admit_iter(&round_feature_ids, "creo positional round feature IDs")? {
         if let Some(radius) = round_constant_radius(ctx, scan, ir, source_carriers, *feature_id)? {
-            workspace.with_storage(|| ctx.insert_btree_map(
-                &mut constant_round_radii,
-                *feature_id,
-                radius,
-                "creo constant round radius nodes",
-            ))?;
+            workspace.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut constant_round_radii,
+                    *feature_id,
+                    radius,
+                    "creo constant round radius nodes",
+                )
+            })?;
         }
     }
     let local_planes = workspace.with_storage(|| placed_planes(ctx, scan))?;
     let mut adjacent_plane_ids = BTreeMap::<u32, BTreeSet<u32>>::new();
-    let unique_topologies = workspace.with_storage(|| crate::identity::uniquely_identified_rows_checked(
-        ctx,
-        &scan.curves.topology_rows,
-        |row| row.id,
-    ))?;
+    let unique_topologies = workspace.with_storage(|| {
+        crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
+            row.id
+        })
+    })?;
     for edge in ctx.admit_iter(&unique_topologies, "creo positional unique topologies")? {
         let [Some(left), Some(right)] = edge.faces else {
             continue;
         };
         let (left, right) = (left.get(), right.get());
         for (surface_id, other_id) in [(left, right), (right, left)] {
-            if scan.surfaces.rows
+            if scan
+                .surfaces
+                .rows
                 .unique(surface_id)
                 .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
-                && scan.surfaces.rows
+                && scan
+                    .surfaces
+                    .rows
                     .unique(other_id)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
             {
                 workspace.with_storage(|| {
-                let plane_ids = match ctx.entry_btree_map(
-                    &mut adjacent_plane_ids,
-                    surface_id,
-                    "creo positional adjacent cylinder nodes",
-                )? {
-                    std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                    std::collections::btree_map::Entry::Vacant(entry) => {
-                        entry.insert(BTreeSet::new())
-                    }
-                };
-                ctx.insert_btree_set(
-                    plane_ids,
-                    other_id,
-                    "creo positional adjacent plane ID nodes",
-                )?;
+                    let plane_ids = match ctx.entry_btree_map(
+                        &mut adjacent_plane_ids,
+                        surface_id,
+                        "creo positional adjacent cylinder nodes",
+                    )? {
+                        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            entry.insert(BTreeSet::new())
+                        }
+                    };
+                    ctx.insert_btree_set(
+                        plane_ids,
+                        other_id,
+                        "creo positional adjacent plane ID nodes",
+                    )?;
                     Ok::<_, cadmpeg_core::CodecError>(())
                 })?;
             }
@@ -1199,16 +1304,20 @@ pub(in super::super) fn transfer_positional_cylinders(
             if let Some(plane) =
                 reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *plane_id)?
             {
-                workspace.with_storage(|| ctx.reserve_vec(&mut planes, 1, "creo positional support planes"))?;
+                workspace.with_storage(|| {
+                    ctx.reserve_vec(&mut planes, 1, "creo positional support planes")
+                })?;
                 planes.push(plane);
             }
         }
-        workspace.with_storage(|| ctx.insert_btree_map(
-            &mut round_edge_support_planes,
-            *surface_id,
-            planes,
-            "creo positional support plane nodes",
-        ))?;
+        workspace.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut round_edge_support_planes,
+                *surface_id,
+                planes,
+                "creo positional support plane nodes",
+            )
+        })?;
     }
     let mut summary = PositionalCylinderTransferSummary::default();
     for record in ctx.admit_iter(
@@ -1259,7 +1368,11 @@ pub(in super::super) fn transfer_positional_cylinders(
         } else {
             None
         };
-        let support_planes = ctx.get_btree_map(&round_edge_support_planes, &row.id, "creo round edge support planes lookup")?;
+        let support_planes = ctx.get_btree_map(
+            &round_edge_support_planes,
+            &row.id,
+            "creo round edge support planes lookup",
+        )?;
         let support_tangent_frame = if selector_corner_interval {
             None
         } else {
@@ -1293,7 +1406,14 @@ pub(in super::super) fn transfer_positional_cylinders(
         };
         let round_edge_frame = match support_planes.zip(round_edge_envelope) {
             Some((support_planes, envelope)) => {
-                let replay = match ctx.get_btree_map(&constant_round_radii, &row.feature_id, "creo constant round radii lookup")?.copied() {
+                let replay = match ctx
+                    .get_btree_map(
+                        &constant_round_radii,
+                        &row.feature_id,
+                        "creo constant round radii lookup",
+                    )?
+                    .copied()
+                {
                     Some(radius) => {
                         round_edge_cylinder_frame(ctx, envelope, radius, support_planes)?
                     }
@@ -1357,7 +1477,11 @@ pub(in super::super) fn transfer_positional_cylinders(
             && !selector_corner_interval
             && (matches!(feature_class, Some(SchemaClass::Cut))
                 || matches!(feature_class, Some(SchemaClass::Round))
-                    && !ctx.contains_key_btree_map(&constant_round_radii, &row.feature_id, "creo constant round radii lookup")?
+                    && !ctx.contains_key_btree_map(
+                        &constant_round_radii,
+                        &row.feature_id,
+                        "creo constant round radii lookup",
+                    )?
                     && round_support_frame.is_none()
                     && round_edge_frame.is_none()
                     && support_tangent_frame.is_none()
@@ -1455,16 +1579,31 @@ pub(in super::super) fn transfer_positional_cylinders(
             record.surface_id,
             "creo positional cylinder identity",
         )?;
-        let existing = surfaces_index.lookup(ctx, &ir.model.surfaces,
-            |record| record.id.as_str(), id.as_str())?;
+        let existing = surfaces_index.lookup(
+            ctx,
+            &ir.model.surfaces,
+            |record| record.id.as_str(),
+            id.as_str(),
+        )?;
         if let Some(position) = existing {
-            if let Some(surface) = position.filter(|_| row_local_frame_selected)
-                .and_then(|index| ir.model.surfaces.get_mut(index)) {
-                source_carriers.replace_surface_geometry(ctx, surface,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))?;
-                annotate(ctx, annotations, &id, "VisibGeom",
+            if let Some(surface) = position
+                .filter(|_| row_local_frame_selected)
+                .and_then(|index| ir.model.surfaces.get_mut(index))
+            {
+                source_carriers.replace_surface_geometry(
+                    ctx,
+                    surface,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
+                )?;
+                annotate(
+                    ctx,
+                    annotations,
+                    &id,
+                    "VisibGeom",
                     cadmpeg_core::decode::u64_from_index(row.offset),
-                    "positional_cylinder_frame_reconciled", Exactness::Derived)?;
+                    "positional_cylinder_frame_reconciled",
+                    Exactness::Derived,
+                )?;
             }
             continue;
         }
@@ -1738,7 +1877,14 @@ pub(in super::super) fn transfer_positional_cones(
             record.surface_id,
             "creo positional cone identity",
         )?;
-        let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
+        let surface_exists = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                id.as_str(),
+            )?
+            .is_some();
         if surface_exists {
             continue;
         }
@@ -1816,7 +1962,9 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
     let mut transferred = 0;
     for feature_id in ctx.admit_iter(&sweep_feature_ids, "creo circular sweep feature IDs")? {
         let mut sweep_storage = ctx.reserve_scoped(0, "creo circular sweep workspace")?;
-        let Some(sweep) = sweep_storage.with_storage(|| circular_sweep_geometry(ctx, scan, *feature_id))? else {
+        let Some(sweep) =
+            sweep_storage.with_storage(|| circular_sweep_geometry(ctx, scan, *feature_id))?
+        else {
             continue;
         };
         for row in ctx.admit_iter(
@@ -1830,12 +1978,19 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                 cylinder_id,
                 "creo circular sweep cylinder identity",
             )?;
-            let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
+            let surface_exists = surfaces_index
+                .lookup(
+                    ctx,
+                    &ir.model.surfaces,
+                    |record| record.id.as_str(),
+                    id.as_str(),
+                )?
+                .is_some();
             if surface_exists {
                 continue;
             }
             id_storage.commit()?;
-        annotate(
+            annotate(
                 ctx,
                 annotations,
                 &id,
@@ -1912,7 +2067,14 @@ pub(in super::super) fn transfer_cross_section_planes(
             frame.surface_id,
             "creo cross-section local-system plane identity",
         )?;
-        let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
+        let surface_exists = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                id.as_str(),
+            )?
+            .is_some();
         if surface_exists {
             continue;
         }
@@ -1973,7 +2135,14 @@ pub(in super::super) fn transfer_cross_section_planes(
             plane.surface_id,
             "creo cross-section outline plane identity",
         )?;
-        let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
+        let surface_exists = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                id.as_str(),
+            )?
+            .is_some();
         if surface_exists {
             continue;
         }

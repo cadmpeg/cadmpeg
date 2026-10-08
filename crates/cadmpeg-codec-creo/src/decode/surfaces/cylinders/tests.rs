@@ -19,14 +19,20 @@ fn circular_sweep_feature_id_nodes_refuse_collection_limit() {
         body_offset: 0,
         offset: 0,
     });
-    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "creo circular sweep feature ID nodes", |ctx| super::transfer_circular_sweep_cylinders(
-        ctx,
-        &scan,
-        &mut cadmpeg_ir::document::CadIr::empty(),
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    ));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo circular sweep feature ID nodes",
+        |ctx| {
+            super::transfer_circular_sweep_cylinders(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -46,14 +52,20 @@ fn hole_cylinder_feature_id_nodes_refuse_collection_limit() {
         offset: 0,
     };
     scan.features.rows.extend([row.clone(), row]);
-    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "creo hole cylinder feature ID nodes", |ctx| super::transfer_hole_cylinders(
-        ctx,
-        &scan,
-        &mut cadmpeg_ir::document::CadIr::empty(),
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    ));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo hole cylinder feature ID nodes",
+        |ctx| {
+            super::transfer_hole_cylinders(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -64,30 +76,26 @@ fn hole_cylinder_feature_id_nodes_refuse_collection_limit() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = cap;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        super::transfer_hole_cylinders(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty(), &mut cadmpeg_ir::annotations::AnnotationBuilder::new(), &mut crate::decode::source_carriers::SourceUnitCarriers::default())
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("root");
+        super::transfer_hole_cylinders(
+            &ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
     };
-    assert_eq!(run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, run))
+    assert_eq!(
+        run(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            None,
+            run
+        ))
         .expect("duplicate ID reuses its node"),
         0
     );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::test_support::empty_container_scan();
@@ -280,7 +288,9 @@ fn split_outline_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
-fn split_outline_refusal_at_collection_limit(limit: u64) -> Result<usize, cadmpeg_core::CodecError> {
+fn split_outline_refusal_at_collection_limit(
+    limit: u64,
+) -> Result<usize, cadmpeg_core::CodecError> {
     let scan = split_outline_scan();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -296,7 +306,9 @@ fn split_outline_refusal_at_collection_limit(limit: u64) -> Result<usize, cadmpe
     )
 }
 
-fn positional_map_refusal_at_collection_limit(limit: u64) -> Result<super::PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
+fn positional_map_refusal_at_collection_limit(
+    limit: u64,
+) -> Result<super::PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
     let scan = split_outline_scan();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -312,7 +324,9 @@ fn positional_map_refusal_at_collection_limit(limit: u64) -> Result<super::Posit
     )
 }
 
-fn reference_bound_refusal_at_collection_limit(limit: u64) -> Result<super::PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
+fn reference_bound_refusal_at_collection_limit(
+    limit: u64,
+) -> Result<super::PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
     let mut scan = split_outline_scan();
     scan.features
         .entity_tables
@@ -357,11 +371,13 @@ fn reference_bound_refusal_at_collection_limit(limit: u64) -> Result<super::Posi
 
 #[test]
 fn reference_bound_entity_id_nodes_refuse_collection_limit() {
-    let error = reference_bound_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo reference cylinder entity ID nodes"),
-        reference_bound_refusal_at_collection_limit,
-    )).expect_err("named allocation refused");
+    let error =
+        reference_bound_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo reference cylinder entity ID nodes"),
+            reference_bound_refusal_at_collection_limit,
+        ))
+        .expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -371,11 +387,13 @@ fn reference_bound_entity_id_nodes_refuse_collection_limit() {
 
 #[test]
 fn reference_bound_circles_refuse_collection_limit() {
-    let error = reference_bound_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo reference cylinder circles"),
-        reference_bound_refusal_at_collection_limit,
-    )).expect_err("named allocation refused");
+    let error =
+        reference_bound_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo reference cylinder circles"),
+            reference_bound_refusal_at_collection_limit,
+        ))
+        .expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -385,11 +403,13 @@ fn reference_bound_circles_refuse_collection_limit() {
 
 #[test]
 fn positional_topology_unique_row_count_refuses_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo unique-row count nodes"),
-        positional_map_refusal_at_collection_limit,
-    )).expect_err("named allocation refused");
+    let error =
+        positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo unique-row count nodes"),
+            positional_map_refusal_at_collection_limit,
+        ))
+        .expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -399,11 +419,13 @@ fn positional_topology_unique_row_count_refuses_collection_limit() {
 
 #[test]
 fn positional_topology_unique_row_projection_refuses_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo unique-row projection"),
-        positional_map_refusal_at_collection_limit,
-    )).expect_err("named allocation refused");
+    let error =
+        positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo unique-row projection"),
+            positional_map_refusal_at_collection_limit,
+        ))
+        .expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -413,11 +435,13 @@ fn positional_topology_unique_row_projection_refuses_collection_limit() {
 
 #[test]
 fn positional_adjacent_cylinder_nodes_refuse_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo positional adjacent cylinder nodes"),
-        positional_map_refusal_at_collection_limit,
-    )).expect_err("named allocation refused");
+    let error =
+        positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo positional adjacent cylinder nodes"),
+            positional_map_refusal_at_collection_limit,
+        ))
+        .expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -427,11 +451,13 @@ fn positional_adjacent_cylinder_nodes_refuse_collection_limit() {
 
 #[test]
 fn positional_adjacent_plane_id_nodes_refuse_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo positional adjacent plane ID nodes"),
-        positional_map_refusal_at_collection_limit,
-    )).expect_err("named allocation refused");
+    let error =
+        positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo positional adjacent plane ID nodes"),
+            positional_map_refusal_at_collection_limit,
+        ))
+        .expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -441,11 +467,13 @@ fn positional_adjacent_plane_id_nodes_refuse_collection_limit() {
 
 #[test]
 fn positional_support_plane_vector_refuses_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo positional support planes"),
-        positional_map_refusal_at_collection_limit,
-    )).expect_err("named allocation refused");
+    let error =
+        positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo positional support planes"),
+            positional_map_refusal_at_collection_limit,
+        ))
+        .expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -455,11 +483,13 @@ fn positional_support_plane_vector_refuses_collection_limit() {
 
 #[test]
 fn positional_support_plane_nodes_refuse_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo positional support plane nodes"),
-        positional_map_refusal_at_collection_limit,
-    )).expect_err("named allocation refused");
+    let error =
+        positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo positional support plane nodes"),
+            positional_map_refusal_at_collection_limit,
+        ))
+        .expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -497,14 +527,20 @@ fn constant_round_radius_nodes_refuse_collection_limit() {
             edge_ids: None,
             offset: 0,
         });
-    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "creo constant round radius nodes", |ctx| super::transfer_positional_cylinders(
-        ctx,
-        &scan,
-        &mut cadmpeg_ir::document::CadIr::empty(),
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    ));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo constant round radius nodes",
+        |ctx| {
+            super::transfer_positional_cylinders(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -529,11 +565,13 @@ fn constant_round_radius_nodes_refuse_collection_limit() {
 
 #[test]
 fn split_outline_topology_row_count_nodes_refuse_collection_limit() {
-    let error = split_outline_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo unique-row count nodes"),
-        split_outline_refusal_at_collection_limit,
-    )).expect_err("named allocation refused");
+    let error =
+        split_outline_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo unique-row count nodes"),
+            split_outline_refusal_at_collection_limit,
+        ))
+        .expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -543,11 +581,13 @@ fn split_outline_topology_row_count_nodes_refuse_collection_limit() {
 
 #[test]
 fn split_outline_topology_row_projection_refuses_collection_limit() {
-    let error = split_outline_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo unique-row projection"),
-        split_outline_refusal_at_collection_limit,
-    )).expect_err("named allocation refused");
+    let error =
+        split_outline_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo unique-row projection"),
+            split_outline_refusal_at_collection_limit,
+        ))
+        .expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -557,11 +597,13 @@ fn split_outline_topology_row_projection_refuses_collection_limit() {
 
 #[test]
 fn split_outline_plane_nodes_refuse_collection_limit() {
-    let error = split_outline_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo split cylinder plane nodes"),
-        split_outline_refusal_at_collection_limit,
-    )).expect_err("named allocation refused");
+    let error =
+        split_outline_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo split cylinder plane nodes"),
+            split_outline_refusal_at_collection_limit,
+        ))
+        .expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -571,11 +613,13 @@ fn split_outline_plane_nodes_refuse_collection_limit() {
 
 #[test]
 fn split_outline_cylinder_id_nodes_refuse_collection_limit() {
-    let error = split_outline_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo split cylinder ID nodes"),
-        split_outline_refusal_at_collection_limit,
-    )).expect_err("named allocation refused");
+    let error =
+        split_outline_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo split cylinder ID nodes"),
+            split_outline_refusal_at_collection_limit,
+        ))
+        .expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -631,21 +675,25 @@ fn split_outline_identity_refuses_retained_limit() {
 fn split_outline_source_object_id_refuses_retained_limit() {
     let scan = split_outline_scan();
     let run = |limit| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .expect("root");
-            super::transfer_split_outline_cylinders(
-                &ctx,
-                &scan,
-                &mut cadmpeg_ir::document::CadIr::empty(),
-                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-            )
-        };
-    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo split cylinder source object IDs"), run)).expect_err("named resource boundary");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("root");
+        super::transfer_split_outline_cylinders(
+            &ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    };
+    let error = run(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo split cylinder source object IDs"),
+        run,
+    ))
+    .expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
@@ -686,14 +734,20 @@ fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_abse
 #[test]
 fn constrained_slot_fillet_propagates_midplane_collection_limit() {
     let scan = slot_fillet_scan();
-    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "creo slot fillet midplanes", |ctx| super::transfer_constrained_slot_fillet_cylinders(
-        ctx,
-        &scan,
-        &mut cadmpeg_ir::document::CadIr::empty(),
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    ));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo slot fillet midplanes",
+        |ctx| {
+            super::transfer_constrained_slot_fillet_cylinders(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo slot fillet midplanes"),
@@ -704,14 +758,20 @@ fn constrained_slot_fillet_propagates_midplane_collection_limit() {
 #[test]
 fn constrained_slot_fillet_plane_rows_refuse_collection_limit() {
     let scan = slot_fillet_scan();
-    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "creo constrained slot plane rows", |ctx| super::transfer_constrained_slot_fillet_cylinders(
-        ctx,
-        &scan,
-        &mut cadmpeg_ir::document::CadIr::empty(),
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    ));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo constrained slot plane rows",
+        |ctx| {
+            super::transfer_constrained_slot_fillet_cylinders(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo constrained slot plane rows")
@@ -739,19 +799,24 @@ fn active_datum_cylinder_source_id_refuses_retained_limit() {
             offset_in_payload: 0,
         });
     let run = |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            super::transfer_active_datum_cylinders(
-                &ctx,
-                &scan,
-                &mut cadmpeg_ir::document::CadIr::empty(),
-                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-            )
-        };
-    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo active datum cylinder source IDs"), run)).expect_err("named resource boundary");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        super::transfer_active_datum_cylinders(
+            &ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    };
+    let error = run(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo active datum cylinder source IDs"),
+        run,
+    ))
+    .expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo active datum cylinder source IDs")
@@ -763,19 +828,24 @@ fn constrained_slot_cylinder_source_id_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let scan = slot_fillet_scan();
     let run = |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            super::transfer_constrained_slot_fillet_cylinders(
-                &ctx,
-                &scan,
-                &mut cadmpeg_ir::document::CadIr::empty(),
-                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-            )
-        };
-    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo constrained slot cylinder source IDs"), run)).expect_err("named resource boundary");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        super::transfer_constrained_slot_fillet_cylinders(
+            &ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    };
+    let error = run(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo constrained slot cylinder source IDs"),
+        run,
+    ))
+    .expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo constrained slot cylinder source IDs")
@@ -862,28 +932,6 @@ fn split_outline_rejects_duplicate_surface_rows() {
     );
     assert!(ir.model.surfaces.is_empty());
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerScan<'static> {
     let mut scan = crate::test_support::empty_container_scan();
@@ -992,10 +1040,6 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
     scan
 }
 
-
-
-
-
 #[test]
 fn constrained_slot_fillet_uses_transferred_plane_carriers_when_native_planes_are_absent() {
     let mut scan = slot_fillet_scan();
@@ -1052,22 +1096,6 @@ fn constrained_slot_fillet_rejects_conflicting_model_plane_carriers() {
         .iter()
         .all(|surface| { surface.id.as_str() != "creo:visibgeom:surface#7" }));
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 #[test]
 fn split_outline_rejects_conflicting_model_plane_carrier() {

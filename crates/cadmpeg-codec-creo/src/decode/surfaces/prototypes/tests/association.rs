@@ -79,8 +79,21 @@ fn prototype_after_a_different_family_uses_the_following_family_row() {
 #[test]
 fn prototype_row_selection_refuses_before_preceding_scan() {
     let rows = [row(100, 10, crate::surface::SurfaceKind::Plane)];
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits,
-        "creo prototype row selection", |ctx| first_instance_surface_row(ctx, &PrototypeRows::new(ctx, &rows)?, 100, 300, 150, crate::surface::SurfaceKind::Plane));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo prototype row selection",
+        |ctx| {
+            first_instance_surface_row(
+                ctx,
+                &PrototypeRows::new(ctx, &rows)?,
+                100,
+                300,
+                150,
+                crate::surface::SurfaceKind::Plane,
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo prototype row selection"));
@@ -118,10 +131,20 @@ fn association_result(limit: u64) -> Result<usize, CodecError> {
 #[test]
 fn prototype_association_vec_refuses_before_growth() {
     assert_eq!(
-        association_result(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, |cap| association_result(cap))).expect("service limit admits association"),
+        association_result(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            None,
+            |cap| association_result(cap)
+        ))
+        .expect("service limit admits association"),
         1
     );
-    let error = association_result(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo surface prototype associations"), |cap| association_result(cap))).expect_err("one association needs a vector item");
+    let error = association_result(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo surface prototype associations"),
+        |cap| association_result(cap),
+    ))
+    .expect_err("one association needs a vector item");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -132,7 +155,12 @@ fn prototype_association_vec_refuses_before_growth() {
 
 #[test]
 fn prototype_association_row_count_refuses_before_node_insertion() {
-    let error = association_result(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo surface prototype row counts"), |cap| association_result(cap))).expect_err("row count follows association vector");
+    let error = association_result(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo surface prototype row counts"),
+        |cap| association_result(cap),
+    ))
+    .expect_err("row count follows association vector");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -160,12 +188,54 @@ fn prototype_association_retention_refuses_work_and_preserves_result() {
 
 #[test]
 fn prototype_row_index_preserves_unsorted_rows_and_equal_offset_ties() {
-    let rows = [row(200, 1, crate::surface::SurfaceKind::Plane), row(100, 2, crate::surface::SurfaceKind::Plane), row(100, 3, crate::surface::SurfaceKind::Plane), row(200, 4, crate::surface::SurfaceKind::Plane)];
-    crate::test_support::assert_work_boundaries(&["creo prototype row index", "creo prototype row selection", "creo prototype following row selection"], |ctx| {
-        let index = PrototypeRows::new(ctx, &rows)?;
-        assert_eq!(first_instance_surface_row(ctx, &index, 100, 300, 150, crate::surface::SurfaceKind::Plane)?, Some(&rows[2]));
-        assert_eq!(first_instance_surface_row(ctx, &index, 100, 300, 50, crate::surface::SurfaceKind::Plane)?, Some(&rows[1]));
-        assert_eq!(first_instance_surface_row(ctx, &index, 150, 300, 175, crate::surface::SurfaceKind::Plane)?, Some(&rows[0]));
-        Ok(())
-    });
+    let rows = [
+        row(200, 1, crate::surface::SurfaceKind::Plane),
+        row(100, 2, crate::surface::SurfaceKind::Plane),
+        row(100, 3, crate::surface::SurfaceKind::Plane),
+        row(200, 4, crate::surface::SurfaceKind::Plane),
+    ];
+    crate::test_support::assert_work_boundaries(
+        &[
+            "creo prototype row index",
+            "creo prototype row selection",
+            "creo prototype following row selection",
+        ],
+        |ctx| {
+            let index = PrototypeRows::new(ctx, &rows)?;
+            assert_eq!(
+                first_instance_surface_row(
+                    ctx,
+                    &index,
+                    100,
+                    300,
+                    150,
+                    crate::surface::SurfaceKind::Plane
+                )?,
+                Some(&rows[2])
+            );
+            assert_eq!(
+                first_instance_surface_row(
+                    ctx,
+                    &index,
+                    100,
+                    300,
+                    50,
+                    crate::surface::SurfaceKind::Plane
+                )?,
+                Some(&rows[1])
+            );
+            assert_eq!(
+                first_instance_surface_row(
+                    ctx,
+                    &index,
+                    150,
+                    300,
+                    175,
+                    crate::surface::SurfaceKind::Plane
+                )?,
+                Some(&rows[0])
+            );
+            Ok(())
+        },
+    );
 }

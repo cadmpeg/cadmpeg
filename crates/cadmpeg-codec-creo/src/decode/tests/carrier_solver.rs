@@ -155,11 +155,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                     origin.x == 2.0 && direction.z == 1.0
                 })
     );
-    assert!(
-        carrier_intersection_curve(secant, cylinder
-        )
-        .is_none()
-    );
+    assert!(carrier_intersection_curve(secant, cylinder).is_none());
     let generators = parallel_plane_cylinder_generator_candidates(secant, cylinder);
     assert_eq!(generators.len(), 2);
     assert!(matches!(select_unique_curve_candidate(
@@ -216,12 +212,11 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                     origin.x == 5.0
                 })
     );
-    assert!(
-        carrier_intersection_curve(parallel_cylinder([0.0, 0.0, 0.0], 3.0),
-            parallel_cylinder([4.0, 0.0, 0.0], 3.0),
-        )
-        .is_none()
-    );
+    assert!(carrier_intersection_curve(
+        parallel_cylinder([0.0, 0.0, 0.0], 3.0),
+        parallel_cylinder([4.0, 0.0, 0.0], 3.0),
+    )
+    .is_none());
     let secant_cylinders = [
         parallel_cylinder([0.0, 0.0, 0.0], 3.0),
         parallel_cylinder([4.0, 0.0, 1.0], 3.0),
@@ -376,12 +371,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         .expect("test carrier solve"),
         Some([2.0, 0.0, 0.0])
     );
-    assert!(
-        carrier_intersection_curve(parallel_cylinder([0.0, 0.0, 0.0], 1.0),
-            sphere,
-        )
-        .is_none()
-    );
+    assert!(carrier_intersection_curve(parallel_cylinder([0.0, 0.0, 0.0], 1.0), sphere,).is_none());
     let coaxial_secant = parallel_cylinder([0.0, 0.0, 0.0], 1.0);
     let sphere_offset = 3.0_f64.sqrt();
     assert_eq!(
@@ -518,7 +508,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     );
     let (elliptical_tangent_geometry, elliptical_tangent_tag) =
         carrier_intersection_curve(cone_tangent_plane, elliptical_cone)
-        .expect("elliptical cone tangent generator");
+            .expect("elliptical cone tangent generator");
     assert_eq!(elliptical_tangent_tag, "plane_cone_tangent_line");
     for parameter in [-1.0, 0.0, 1.0] {
         let point = cadmpeg_ir::eval::decode::curve_point(
@@ -575,8 +565,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         (cone_parabola_plane, "plane_cone_parabola"),
         (cone_hyperbola_plane, "plane_cone_hyperbola"),
     ] {
-        let (geometry, tag) = carrier_intersection_curve(plane, elliptical_cone)
-        .expect("elliptical cone conic");
+        let (geometry, tag) =
+            carrier_intersection_curve(plane, elliptical_cone).expect("elliptical cone conic");
         assert_eq!(tag, expected_tag);
         for parameter in [-1.0, 0.0, 1.0] {
             let point = cadmpeg_ir::eval::decode::curve_point(
@@ -594,12 +584,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         origin: [0.0, 0.0, -2.0],
         normal: [1.0, 0.0, 0.0],
     });
-    assert!(
-        carrier_intersection_curve(cone_degenerate_plane,
-            cone
-        )
-        .is_none()
-    );
+    assert!(carrier_intersection_curve(cone_degenerate_plane, cone).is_none());
     let cone_generators = apex_plane_cone_generator_candidates(cone_degenerate_plane, cone);
     assert_eq!(cone_generators.len(), 2);
     assert!(matches!(select_unique_curve_candidate(
@@ -610,7 +595,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                 let origin = line_curve.origin().get();
                 (origin.z + 2.0).abs() < EPS_CARRIER_INTERSECTION
             }));
-    let elliptical_generators = apex_plane_cone_generator_candidates(cone_degenerate_plane, elliptical_cone);
+    let elliptical_generators =
+        apex_plane_cone_generator_candidates(cone_degenerate_plane, elliptical_cone);
     assert_eq!(elliptical_generators.len(), 2);
     let (elliptical_generator, tag) =
         select_unique_curve_candidate(elliptical_generators, [[0.0, 1.0, 0.0], [0.0, 2.0, 2.0]])
@@ -676,10 +662,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!((cone_sphere_vertex[0] - 1.0).abs() < 1.0e-12);
     assert!(cone_sphere_vertex[1].abs() < 1.0e-12);
     assert!((cone_sphere_vertex[2] + 1.0).abs() < 1.0e-12);
-    assert!(
-        carrier_intersection_curve(sphere, cone)
-            .is_none()
-    );
+    assert!(carrier_intersection_curve(sphere, cone).is_none());
     let cone_secant_sphere = CarrierEquation::Sphere(SphereEquation {
         center: [0.0, 0.0, 0.0],
         ref_direction: [1.0, 0.0, 0.0],
@@ -704,12 +687,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                 }));
 
     let coaxial_cone_cylinder = parallel_cylinder([0.0, 0.0, 0.0], 3.0);
-    assert!(
-        carrier_intersection_curve(cone,
-            coaxial_cone_cylinder
-        )
-        .is_none()
-    );
+    assert!(carrier_intersection_curve(cone, coaxial_cone_cylinder).is_none());
     let cone_cylinder_candidates =
         coaxial_cone_cylinder_circle_candidates(cone, coaxial_cone_cylinder);
     assert_eq!(cone_cylinder_candidates.len(), 2);
@@ -813,10 +791,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                     center == Point3::new(0.0, 0.0, 2.0) && radius == 5.0
                 })
     );
-    assert!(
-        carrier_intersection_curve(equator, torus)
-            .is_none()
-    );
+    assert!(carrier_intersection_curve(equator, torus).is_none());
     let plane_torus_candidates = axis_normal_plane_torus_circle_candidates(equator, torus);
     assert_eq!(plane_torus_candidates.len(), 2);
     assert!(matches!(select_unique_curve_candidate(
@@ -885,12 +860,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         .expect("test carrier solve"),
         Some([7.0, 0.0, 0.0])
     );
-    assert!(
-        carrier_intersection_curve(parallel_cylinder([0.0, 0.0, 0.0], 6.0),
-            torus
-        )
-        .is_none()
-    );
+    assert!(carrier_intersection_curve(parallel_cylinder([0.0, 0.0, 0.0], 6.0), torus).is_none());
     let torus_tangent_sphere = CarrierEquation::Sphere(SphereEquation {
         center: [0.0, 0.0, 0.0],
         ref_direction: [1.0, 0.0, 0.0],
@@ -904,7 +874,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                     center == Point3::new(0.0, 0.0, 0.0) && (radius - 3.0).abs() < EPS_CARRIER_INTERSECTION
                 })
     );
-    let sphere_torus_tangent_candidates = coaxial_sphere_torus_circle_candidates(torus_tangent_sphere, torus);
+    let sphere_torus_tangent_candidates =
+        coaxial_sphere_torus_circle_candidates(torus_tangent_sphere, torus);
     assert!(
         matches!(sphere_torus_tangent_candidates.as_slice(), [(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_sphere_torus_tangent_circle")]
                 if {
@@ -918,7 +889,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         ref_direction: [1.0, 0.0, 0.0],
         radius: 5.0,
     });
-    let sphere_torus_candidates = coaxial_sphere_torus_circle_candidates(torus_secant_sphere, torus);
+    let sphere_torus_candidates =
+        coaxial_sphere_torus_circle_candidates(torus_secant_sphere, torus);
     assert_eq!(sphere_torus_candidates.len(), 2);
     let sphere_torus_height = 3.84_f64.sqrt();
     assert!(matches!(select_unique_curve_candidate(
@@ -991,10 +963,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
             [7.0, 0.0, 0.0]
         ]
     );
-    assert!(
-        carrier_intersection_curve(sphere, torus)
-            .is_none()
-    );
+    assert!(carrier_intersection_curve(sphere, torus).is_none());
     let second_torus = CarrierEquation::Torus(TorusEquation {
         center: [0.0, 0.0, 0.0],
         axis: [0.0, 0.0, 1.0],

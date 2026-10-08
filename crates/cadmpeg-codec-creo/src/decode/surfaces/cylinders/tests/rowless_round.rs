@@ -142,7 +142,12 @@ fn rowless_round_cylinder_identity_refuses_retained_limit() {
 #[test]
 fn rowless_round_cylinder_source_id_refuses_retained_limit() {
     let run = |limit| Err::<(), _>(rowless_round_retained_refusal(limit));
-    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo rowless round cylinder source IDs"), run)).expect_err("named resource boundary");
+    let error = run(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo rowless round cylinder source IDs"),
+        run,
+    ))
+    .expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo rowless round cylinder source IDs")

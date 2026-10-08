@@ -116,11 +116,12 @@ fn support_tangent_limit_error(operation: &'static str) -> cadmpeg_core::CodecEr
         origin: [0.0, -5.5, 0.0],
         normal: [0.0, 1.0, 0.0],
     };
-    crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        operation, |ctx| {
-
-    unique_support_tangent_cylinder_frame(ctx, stored, &[tangent])
-        })
+    crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| unique_support_tangent_cylinder_frame(ctx, stored, &[tangent]),
+    )
 }
 
 #[test]
@@ -282,8 +283,9 @@ fn round_envelope_rejects_an_extra_reference_circle() {
     let second = circle(368, [0.0, 0.0, -1.0], [5.5, 10.0, -4.0], [3.5, 8.0, -4.0]);
     let duplicate_first = circle(369, [0.0, 0.0, 1.0], [3.5, 8.0, -6.0], [5.5, 10.0, -6.0]);
 
-    assert!(
-        super::super::reference_cap_bound_round_frame(envelope, &[&first, &second, &duplicate_first])
-        .is_none()
-    );
+    assert!(super::super::reference_cap_bound_round_frame(
+        envelope,
+        &[&first, &second, &duplicate_first]
+    )
+    .is_none());
 }

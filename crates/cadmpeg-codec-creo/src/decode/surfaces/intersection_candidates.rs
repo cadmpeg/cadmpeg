@@ -439,7 +439,9 @@ pub(in super::super) fn coaxial_cones_section_candidates(
         if radius <= EPS_RADIUS_NONZERO * scale {
             continue;
         }
-        let duplicate = parameters.iter().any(|known| (parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale);
+        let duplicate = parameters
+            .iter()
+            .any(|known| (parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale);
         if !duplicate {
             parameters.push(parameter);
         }
@@ -596,7 +598,8 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
     } else {
         "plane_cone_secant_generator"
     };
-    directions.iter()
+    directions
+        .iter()
         .copied()
         .filter_map(|direction| {
             Some((
@@ -747,7 +750,9 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
             if radius <= EPS_RADIUS_NONZERO * scale {
                 continue;
             }
-            let duplicate = parameters.iter().any(|known| (parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale);
+            let duplicate = parameters
+                .iter()
+                .any(|known| (parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale);
             if !duplicate {
                 parameters.push(parameter);
             }
@@ -1017,7 +1022,8 @@ pub(in super::super) fn coaxial_sphere_torus_circle_candidates(
         2 => "coaxial_sphere_torus_secant_circle",
         _ => return FixedCandidates::default(),
     };
-    intersections.iter()
+    intersections
+        .iter()
         .copied()
         .filter_map(|[radius, center_axial]| {
             let radius = radius.abs();
@@ -1083,7 +1089,8 @@ pub(in super::super) fn coaxial_tori_circle_candidates(
         2 => "coaxial_tori_secant_circle",
         _ => return FixedCandidates::default(),
     };
-    intersections.iter()
+    intersections
+        .iter()
         .copied()
         .filter_map(|[radius, center_axial]| {
             let radius = radius.abs();

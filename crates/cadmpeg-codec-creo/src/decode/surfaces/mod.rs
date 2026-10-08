@@ -6,9 +6,9 @@ pub(super) mod cylinders;
 pub(super) mod intersection_candidates;
 pub(super) mod intersection_resolve;
 pub(super) mod intersections;
-pub(super) mod nurbs_boundaries;
 mod model_ids;
 mod native_ids;
+pub(super) mod nurbs_boundaries;
 pub(super) mod positional;
 pub(super) mod prototypes;
 pub(super) mod transfer_curves;
@@ -63,10 +63,15 @@ fn native_surface_namespace(
     surface_id: u32,
 ) -> Result<(cadmpeg_ir::ids::IdentityNamespace, &'static str), cadmpeg_core::CodecError> {
     let visible_present = scan.surfaces.rows.contains_id(surface_id);
-    let nonvisible_present = !visible_present && scan.surfaces.nonvisible_rows.contains_id(surface_id);
-    let active_datum_present = !visible_present && !nonvisible_present && ctx.any_by(
-        &scan.planes.datum_cylinders, |cylinder| Ok(cylinder.id == surface_id),
-        "creo datum surface namespace search")?;
+    let nonvisible_present =
+        !visible_present && scan.surfaces.nonvisible_rows.contains_id(surface_id);
+    let active_datum_present = !visible_present
+        && !nonvisible_present
+        && ctx.any_by(
+            &scan.planes.datum_cylinders,
+            |cylinder| Ok(cylinder.id == surface_id),
+            "creo datum surface namespace search",
+        )?;
     Ok(if visible_present {
         (
             crate::identity::VISIBGEOM_SURFACE,
@@ -185,8 +190,17 @@ mod tests {
 
     #[test]
     fn part_product_refuses_before_model_vector_growth() {
-        let error = limited_product(&named_scan(),crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo model product definitions"), |cap| limited_product(&named_scan(),cap, u64::MAX, false)), u64::MAX, false)
-            .expect_err("product exceeds the configured resource limit");
+        let error = limited_product(
+            &named_scan(),
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                Some("creo model product definitions"),
+                |cap| limited_product(&named_scan(), cap, u64::MAX, false),
+            ),
+            u64::MAX,
+            false,
+        )
+        .expect_err("product exceeds the configured resource limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
@@ -205,7 +219,12 @@ mod tests {
             "creo occurrence name",
         ] {
             let run = |cap| limited_product(&named_scan(), u64::MAX, cap, false);
-    let error = run(crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some(operation), run)).expect_err("named resource boundary");
+            let error = run(crate::test_support::allocation_limit_at(
+                ResourceDimension::RetainedBytes,
+                Some(operation),
+                run,
+            ))
+            .expect_err("named resource boundary");
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                 if resource.dimension == ResourceDimension::RetainedBytes
@@ -217,8 +236,17 @@ mod tests {
 
     #[test]
     fn part_product_identities_refuse_before_allocation() {
-        let error = limited_product(&named_scan(), u64::MAX,crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo occurrence identity"), |cap| limited_product(&named_scan(), u64::MAX,cap, false)), false)
-            .expect_err("product exceeds the configured resource limit");
+        let error = limited_product(
+            &named_scan(),
+            u64::MAX,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some("creo occurrence identity"),
+                |cap| limited_product(&named_scan(), u64::MAX, cap, false),
+            ),
+            false,
+        )
+        .expect_err("product exceeds the configured resource limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -227,19 +255,26 @@ mod tests {
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo product identity"), |cap| {
+        policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            Some("creo product identity"),
+            |cap| {
                 let arena = cadmpeg_core::decode::DecodeArena::new();
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 policy.limits.max_materialized_bytes = cap;
-                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("root");
                 transfer_part_product(
-            &ctx,
-            &named_scan(),
-            &mut cadmpeg_ir::document::CadIr::empty(),
-            &mut cadmpeg_ir::AnnotationBuilder::new(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        ).map(|_| ())
-            });
+                    &ctx,
+                    &named_scan(),
+                    &mut cadmpeg_ir::document::CadIr::empty(),
+                    &mut cadmpeg_ir::AnnotationBuilder::new(),
+                    &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                )
+                .map(|_| ())
+            },
+        );
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         let error = transfer_part_product(
@@ -259,8 +294,17 @@ mod tests {
 
     #[test]
     fn part_product_refuses_before_body_reference_rows_and_ids() {
-        let error = limited_product(&named_scan(),crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo product body references"), |cap| limited_product(&named_scan(),cap, u64::MAX, true)), u64::MAX, true)
-            .expect_err("product exceeds the configured resource limit");
+        let error = limited_product(
+            &named_scan(),
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                Some("creo product body references"),
+                |cap| limited_product(&named_scan(), cap, u64::MAX, true),
+            ),
+            u64::MAX,
+            true,
+        )
+        .expect_err("product exceeds the configured resource limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
@@ -269,7 +313,12 @@ mod tests {
         );
         // Admit annotation and body-reference slots before refusing the copied body identity.
         let run = |cap| limited_product(&named_scan(), u64::MAX, cap, true);
-    let error = run(crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo product body IDs"), run)).expect_err("named resource boundary");
+        let error = run(crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo product body IDs"),
+            run,
+        ))
+        .expect_err("named resource boundary");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -347,7 +396,12 @@ mod tests {
         );
         // Identity retention follows annotation nodes and product-vector capacity.
         let run = |cap| limited_product(&named_scan(), u64::MAX, cap, false);
-    let error = run(crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo product identity"), run)).expect_err("named resource boundary");
+        let error = run(crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo product identity"),
+            run,
+        ))
+        .expect_err("named resource boundary");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "creo product identity"
@@ -405,13 +459,19 @@ mod tests {
         let scan = named_scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo native surface identity"), |cap| {
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo native surface identity"),
+            |cap| {
                 let arena = cadmpeg_core::decode::DecodeArena::new();
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("root");
                 native_surface_id(&ctx, &scan, 17).map(|_| ())
-            });
+            },
+        );
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         let error = native_surface_id(&ctx, &scan, 17).expect_err("surface ID refused");
@@ -421,8 +481,6 @@ mod tests {
                 && resource.operation == "creo native surface identity")
         );
     }
-
-
 }
 
 pub(super) fn transfer_part_product(
@@ -585,15 +643,31 @@ pub(super) fn fc05_cap_pair_model_frame(
     scan: &ContainerScan,
     pair: &crate::curve::Fc05CylinderCapPair,
 ) -> Result<Option<Fc05CapPairFrame>, cadmpeg_core::CodecError> {
-    if pair.cap_edges.len() < 2 { return Ok(None); }
-    let outlines = native_ids::UniqueRows::new(ctx, &scan.planes.outlines,
-        |plane| Some(plane.surface_id), "creo cap pair outline index")?;
+    if pair.cap_edges.len() < 2 {
+        return Ok(None);
+    }
+    let outlines = native_ids::UniqueRows::new(
+        ctx,
+        &scan.planes.outlines,
+        |plane| Some(plane.surface_id),
+        "creo cap pair outline index",
+    )?;
     let mut placed_caps = pair.cap_edges.iter();
-    let Some(first) = ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")? else { return Ok(None); };
-    let Some(first_cap) = outlines.unique(first.cap_plane_id) else { return Ok(None); };
+    let Some(first) = ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")?
+    else {
+        return Ok(None);
+    };
+    let Some(first_cap) = outlines.unique(first.cap_plane_id) else {
+        return Ok(None);
+    };
     let first_ordinate = first.cap_ordinate_row_frame;
-    let Some(last) = ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")? else { return Ok(None); };
-    let Some(mut last_cap) = outlines.unique(last.cap_plane_id) else { return Ok(None); };
+    let Some(last) = ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")?
+    else {
+        return Ok(None);
+    };
+    let Some(mut last_cap) = outlines.unique(last.cap_plane_id) else {
+        return Ok(None);
+    };
     let mut last_ordinate = last.cap_ordinate_row_frame;
     let Some(axis_index) = Axis::ALL
         .into_iter()
@@ -607,13 +681,21 @@ pub(super) fn fc05_cap_pair_model_frame(
     let offsets = |plane: &crate::surface::OutlinePlane, ordinate: f64| {
         let origin = first_cap.origin[axis_index.index()];
         let current = plane.origin[axis_index.index()];
-        [(current - ordinate - (origin - first_ordinate)).abs(),
-            (current + ordinate - (origin + first_ordinate)).abs()]
+        [
+            (current - ordinate - (origin - first_ordinate)).abs(),
+            (current + ordinate - (origin + first_ordinate)).abs(),
+        ]
     };
     let mut disagreement = offsets(last_cap, last_ordinate);
-    while let Some(edge) = ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")? {
-        let Some(plane) = outlines.unique(edge.cap_plane_id) else { return Ok(None); };
-        if plane.normal != first_cap.normal { return Ok(None); }
+    while let Some(edge) =
+        ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")?
+    {
+        let Some(plane) = outlines.unique(edge.cap_plane_id) else {
+            return Ok(None);
+        };
+        if plane.normal != first_cap.normal {
+            return Ok(None);
+        }
         last_cap = plane;
         last_ordinate = edge.cap_ordinate_row_frame;
         let current = offsets(plane, last_ordinate);
@@ -635,7 +717,10 @@ pub(super) fn fc05_cap_pair_model_frame(
         Sign::Positive
     };
     let axis_origin = first_cap.origin[axis_index.index()] - axis_sign.scale() * first_ordinate;
-    let disagreement = match axis_sign { Sign::Positive => disagreement[0], Sign::Negative => disagreement[1] };
+    let disagreement = match axis_sign {
+        Sign::Positive => disagreement[0],
+        Sign::Negative => disagreement[1],
+    };
     if disagreement > EPS_FC05_CAP_FRAME {
         // A cap pair whose row-frame and model-space spans do not agree does
         // not establish a unit parameter-axis transform. Retain the circles
@@ -666,16 +751,28 @@ pub(super) fn transfer_fc05_cap_circles(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut curves_index = model_ids::ModelIdentityIndex::new(ctx)?;
     let mut surfaces_index = model_ids::ModelIdentityIndex::new(ctx)?;
-    if scan.curves.fc05_circles.is_empty() { return Ok(()); }
-    let topologies = native_ids::UniqueRows::new(ctx, &scan.curves.topology_rows,
-        |row| Some(row.id), "creo cap circle topology index")?;
-    let outlines = native_ids::UniqueRows::new(ctx, &scan.planes.outlines,
-        |plane| Some(plane.surface_id), "creo cap circle outline index")?;
+    if scan.curves.fc05_circles.is_empty() {
+        return Ok(());
+    }
+    let topologies = native_ids::UniqueRows::new(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| Some(row.id),
+        "creo cap circle topology index",
+    )?;
+    let outlines = native_ids::UniqueRows::new(
+        ctx,
+        &scan.planes.outlines,
+        |plane| Some(plane.surface_id),
+        "creo cap circle outline index",
+    )?;
     for circle in ctx.admit_iter(
         &scan.curves.fc05_circles,
         "creo transfer fc05 cap circles fc05 circles traversal",
     )? {
-        let Some(topology) = topologies.unique(circle.curve_id) else { continue; };
+        let Some(topology) = topologies.unique(circle.curve_id) else {
+            continue;
+        };
         let cap_plane = crate::decode::uniqueness::exactly_one(
             topology.bounded_face_ids().filter_map(|face| {
                 crate::surface::unique_surface_row(&scan.surfaces.rows, face)
@@ -748,7 +845,14 @@ pub(super) fn transfer_fc05_cap_circles(
             circle.curve_id,
             "creo FC05 cap circle identity",
         )?;
-        let identity_present = curves_index.lookup(ctx, &ir.model.curves, |record| record.id.as_str(), id.as_str())?.is_some();
+        let identity_present = curves_index
+            .lookup(
+                ctx,
+                &ir.model.curves,
+                |record| record.id.as_str(),
+                id.as_str(),
+            )?
+            .is_some();
         if !identity_present {
             let Ok(circle_curve) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::from(center),
@@ -759,7 +863,7 @@ pub(super) fn transfer_fc05_cap_circles(
                 continue;
             };
             id_storage.commit()?;
-        annotate(
+            annotate(
                 ctx,
                 annotations,
                 &id,
@@ -805,7 +909,14 @@ pub(super) fn transfer_fc05_cap_circles(
             cylinder_id,
             "creo FC05 axis cylinder identity",
         )?;
-        let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), surface_id.as_str())?.is_some();
+        let identity_present = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                surface_id.as_str(),
+            )?
+            .is_some();
         if identity_present {
             continue;
         }
