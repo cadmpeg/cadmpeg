@@ -603,6 +603,30 @@ pub(crate) fn parse_with_context(
     parse_inner(input, ctx).or_else(|error| Err(error.into_codec_error(ctx)?))
 }
 
+/// A source graph whose storage remains temporary through its use.
+#[derive(Debug)]
+pub(crate) struct ScopedExchange<'ctx> {
+    pub(crate) exchange: Exchange,
+    pub(crate) diagnostics: Vec<ParseDiagnostic>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+pub(crate) fn parse_scoped<'ctx>(
+    input: &[u8],
+    ctx: &'ctx DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<ScopedExchange<'ctx>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, operation)?;
+    let parsed = storage.with_storage(|| parse_inner(input, ctx));
+    // Errors leave the graph scope in independently retained text.
+    let (exchange, diagnostics) = parsed.or_else(|error| Err(error.into_codec_error(ctx)?))?;
+    Ok(ScopedExchange {
+        exchange,
+        diagnostics,
+        _storage: storage,
+    })
+}
+
 pub(crate) fn parse_inner(
     input: &[u8],
     budget: &DecodeContext<'_>,
@@ -625,7 +649,7 @@ impl ParseError {
     fn into_codec_error(self, ctx: &DecodeContext<'_>) -> Result<CodecError, CodecError> {
         Ok(match self {
             Self::Resource(error) => error,
-            Self::Lex(error) => error.into_codec_error(),
+            Self::Lex(error) => error.into_codec_error(ctx),
             error @ Self::Syntax { .. } => CodecError::Malformed(
                 ctx.format_retained(format_args!("{error}"), "STEP parse error")?,
             ),

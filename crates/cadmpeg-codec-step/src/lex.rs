@@ -161,10 +161,13 @@ impl From<CodecError> for LexError {
 }
 
 impl LexError {
-    pub(crate) fn into_codec_error(self) -> CodecError {
+    pub(crate) fn into_codec_error(self, ctx: &DecodeContext<'_>) -> CodecError {
         match self.resource {
             Some(error) => error,
-            None => CodecError::malformed(format_args!("{} at byte {}", self.message, self.offset)),
+            None => ctx.format_retained(
+                format_args!("{} at byte {}", self.message, self.offset),
+                "STEP lexical error",
+            ).map_or_else(std::convert::identity, CodecError::Malformed),
         }
     }
 
