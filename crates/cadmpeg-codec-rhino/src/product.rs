@@ -22,10 +22,10 @@ struct DefinitionRecord<'a> {
     source_offset: u64,
     source_uuid: String,
     archive_index: Option<i32>,
-    name: String,
-    description: String,
-    url: String,
-    url_tag: String,
+    name: &'a str,
+    description: &'a str,
+    url: &'a str,
+    url_tag: &'a str,
     kind: DefinitionKind,
     member_object_ids: Vec<String>,
     #[serde(flatten)]
@@ -38,7 +38,7 @@ struct DefinitionRecord<'a> {
 }
 
 #[derive(Debug, Serialize)]
-struct OccurrenceRecord {
+struct OccurrenceRecord<'a> {
     id: String,
     source_offset: u64,
     source_uuid: String,
@@ -46,7 +46,7 @@ struct OccurrenceRecord {
     #[serde(flatten)]
     transform: OccurrenceTransform,
     parent_definition_uuids: Vec<String>,
-    name: String,
+    name: &'a str,
     visible: bool,
     links: Vec<String>,
 }
@@ -79,11 +79,11 @@ impl OccurrenceTransform {
 }
 
 #[derive(Debug, Serialize)]
-struct ExternalReferenceRecord {
+struct ExternalReferenceRecord<'a> {
     id: String,
     definition_uuid: String,
-    full_path: String,
-    relative_path: String,
+    full_path: &'a str,
+    relative_path: &'a str,
     relative_path_preferred: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     byte_count: Option<u64>,
@@ -122,11 +122,11 @@ fn external_id(
     )
 }
 
-fn external_record(
+fn external_record<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition_uuid: Uuid,
-    link: &LinkSource,
-) -> Result<Option<ExternalReferenceRecord>, CodecError> {
+    link: &'a LinkSource,
+) -> Result<Option<ExternalReferenceRecord<'a>>, CodecError> {
     if matches!(link, LinkSource::None) {
         return Ok(None);
     }
@@ -142,9 +142,8 @@ fn external_record(
                     format_args!("{definition_uuid}"),
                     "Rhino external definition UUID",
                 )?,
-                full_path: ctx.copy_retained_text(&value.full_path, "Rhino external full path")?,
-                relative_path: ctx
-                    .copy_retained_text(&value.relative_path, "Rhino external relative path")?,
+                full_path: &value.full_path,
+                relative_path: &value.relative_path,
                 relative_path_preferred: false,
                 byte_count: Some(value.content_hash.byte_count),
                 hash_time: Some(value.content_hash.hash_time),
@@ -185,8 +184,8 @@ fn external_record(
             format_args!("{definition_uuid}"),
             "Rhino external definition UUID",
         )?,
-        full_path: ctx.copy_retained_text(full_path, "Rhino external full path")?,
-        relative_path: ctx.copy_retained_text(relative_path, "Rhino external relative path")?,
+        full_path,
+        relative_path,
         relative_path_preferred,
         byte_count: None,
         hash_time: None,
@@ -231,8 +230,10 @@ pub(crate) fn install(
         }
     }
 
+    let mut staging = ctx.reserve_scoped(0, "Rhino product staging records")?;
     let mut definitions = Vec::new();
     let mut external = Vec::new();
+    staging.with_storage(|| -> Result<(), CodecError> {
     for definition in ctx.admit_iter(
         scan.definitions.definitions(),
         "Rhino install borrowed traversal",
@@ -295,14 +296,10 @@ pub(crate) fn install(
                 "Rhino definition source UUID",
             )?,
             archive_index: definition.index,
-            name: ctx.copy_retained_text(&definition.name, "Rhino product definition name")?,
-            description: ctx.copy_retained_text(
-                &definition.description,
-                "Rhino product definition description",
-            )?,
-            url: ctx.copy_retained_text(&definition.url, "Rhino product definition URL")?,
-            url_tag: ctx
-                .copy_retained_text(&definition.url_tag, "Rhino product definition URL tag")?,
+            name: &definition.name,
+            description: &definition.description,
+            url: &definition.url,
+            url_tag: &definition.url_tag,
             kind: definition.kind,
             member_object_ids,
             units: &definition.units,
@@ -312,6 +309,9 @@ pub(crate) fn install(
             links,
         });
     }
+
+    Ok(())
+    })?;
 
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     // Each member's parent definitions, ordered and unique by UUID; the
@@ -393,6 +393,7 @@ pub(crate) fn install(
                 continue;
             }
         };
+        staging.with_storage(|| -> Result<(), CodecError> {
         let transform = OccurrenceTransform::from_source(reference.transform(), binding);
         let object_record = ctx.format_retained(
             format_args!("rhino:object:record#{source_order:06}"),
@@ -467,10 +468,12 @@ pub(crate) fn install(
             )?,
             transform,
             parent_definition_uuids: parents,
-            name: ctx.copy_retained_text(&identity.name, "Rhino occurrence name")?,
+            name: &identity.name,
             visible: identity.effective_visible,
             links,
         });
+        Ok(())
+        })?;
     }
 
     let namespace = ir.native.namespace_mut("rhino");
@@ -482,6 +485,7 @@ pub(crate) fn install(
 
 #[cfg(test)]
 mod tests {
+    mod budget_repairs;
     use super::install;
     use crate::test_support::test_dump::{
         object_record_with_payload, scan_with_objects, INSTANCE_REFERENCE_CLASS,
