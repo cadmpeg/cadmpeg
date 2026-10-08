@@ -1676,7 +1676,7 @@ pub(crate) fn bind_scalar_operands(
                 Some(offsets) => offsets,
                 slot @ None => {
                     let mut offsets = lane_storage.with_storage(|| {
-                        ctx.collect_vec(0..lane.scalars.len(), "sort SLDPRT scalar offsets")
+                        ctx.collect_vec(0..lane.scalars.len(), "collect SLDPRT scalar offsets")
                     })?;
                     ctx.stable_sort_by_key(
                         &mut offsets,
