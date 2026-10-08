@@ -153,6 +153,46 @@ fn gauge_signature_lookup_refuses_repeated_long_equal_keys() {
     );
 }
 
+#[test]
+fn singleton_coordinate_classes_keep_one_identity_without_products() {
+    const EDGE_COUNT: usize = 512;
+    let rows = (1..=EDGE_COUNT)
+        .map(|point| {
+            EdgeRow::new(
+                1,
+                vec![0, u32::try_from(point).expect("fixture point fits")],
+                EdgeBoundaryLayout::CompleteBoundaryRun,
+            )
+            .expect("nonempty handles")
+        })
+        .collect::<Vec<_>>();
+    let geometry = (1..=EDGE_COUNT)
+        .map(|radius| MeshEdgeGeometry::Circle {
+            center: [0; 3],
+            radius: u64::try_from(radius).expect("fixture radius fits"),
+        })
+        .collect::<Vec<_>>();
+    let candidates = (1..=EDGE_COUNT)
+        .map(|point| vec![[0, point]])
+        .collect::<Vec<_>>();
+    let gauge = crate::test_support::with_collection_limit(200_000, |ctx| {
+        super::build_mesh_coordinate_gauge(
+            ctx,
+            EDGE_COUNT + 1,
+            &rows,
+            &[[0, 1]; EDGE_COUNT],
+            &geometry,
+            &candidates,
+            &[false; EDGE_COUNT],
+        )
+    })
+    .expect("unique incident carriers need one identity permutation");
+    assert_eq!(
+        gauge.components,
+        vec![vec![(0..=EDGE_COUNT).collect::<Vec<_>>()]]
+    );
+}
+
 fn observed_work_refusals<T>(
     run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, CodecError>,
 ) -> std::collections::HashSet<&'static str> {
@@ -392,4 +432,25 @@ fn candidate_equivalence_refuses_each_variable_length_comparison() {
         super::mesh_candidates_equivalent_with_context(ctx, &candidate, &candidate, None)
     })
     .expect("service comparison work"));
+}
+
+#[test]
+fn signature_colors_preserve_first_occurrence_order() {
+    let colors = crate::test_support::with_service_context(|ctx| {
+        super::intern_gauge_signatures(ctx, [5, 3, 5, 8, 3], |_| 0)
+    })
+    .expect("signature admission");
+    assert_eq!(colors, [0, 1, 0, 2, 1]);
+}
+
+#[test]
+fn signature_interning_batches_large_key_comparisons() {
+    let signatures = (0..1024).rev().map(|value| (value, vec![value; 32]));
+    let colors = crate::test_support::with_work_limit(256_000_000, |ctx| {
+        super::intern_gauge_signatures(ctx, signatures, |key| {
+            key.1.len() * std::mem::size_of::<usize>()
+        })
+    })
+    .expect("batch sorting fits a logarithmic comparison allowance");
+    assert_eq!(colors, (0..1024).collect::<Vec<_>>());
 }

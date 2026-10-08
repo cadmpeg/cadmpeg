@@ -4698,56 +4698,10 @@ pub(super) fn propagate_common_ordered_face_quotients<'storage>(
                 if face_budget.exhausted() {
                     return Some(Err(refuse_face()));
                 }
-                let mut alternatives = Vec::new();
-                for assignment in assignments {
-                    let Some(work) = (match quotient.signature_work(ctx) {
-                        Ok(work) => work,
-                        Err(error) => return Some(Err(error)),
-                    }) else {
-                        return Some(Err(refuse_face()));
-                    };
-                    if !face_budget.charge_by(work) {
-                        return Some(Err(refuse_face()));
-                    }
-                    let options = match quotient.assignment_options_limited(
-                        ctx,
-                        assignment,
-                        edge_candidates,
-                        &HashSet::new(),
-                        MAX_FACE_OPTIONS + 1,
-                        Some(&face_budget),
-                    ) {
-                        Ok(options) => options,
-                        Err(error) => return Some(Err(error)),
-                    };
-                    if face_budget.exhausted() {
-                        return Some(Err(refuse_face()));
-                    }
-                    if options.len() > MAX_FACE_OPTIONS {
-                        return Some(Err(refuse_face()));
-                    }
-                    for (_, quotient) in options {
-                        if let Err(error) = ctx.push_vec(
-                            &mut alternatives,
-                            quotient,
-                            "catia_ordered_face_alternatives",
-                        ) {
-                            return Some(Err(error));
-                        }
-                    }
-                    if alternatives.len() > MAX_FACE_OPTIONS {
-                        return Some(Err(refuse_face()));
-                    }
-                }
-                if alternatives.is_empty() {
-                    continue;
-                }
-                match propagate_common_full_quotients(ctx, alternatives, edge_candidates, quotient)
-                {
-                    Ok(Some(())) => {}
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                }
+                // This preparation pass propagates local equations only. The
+                // complete incidence and endpoint searches below retain every
+                // face domain and validate their correlated assignments. Signing
+                // whole-mesh alternatives here repeats that search per face.
             }
             if match quotient.monotone_measure(ctx) {
                 Ok(measure) => measure?,
@@ -13985,13 +13939,20 @@ fn mesh_work_guard_preserves_the_existing_session_refusal() {
 fn ordered_face_local_ceiling_refuses_constraint_propagation() {
     crate::test_support::with_service_context(|ctx| {
         let mut quotient =
-            MeshQuotient::new((0..80).map(|_| Arc::new(HashSet::from([0]))).collect());
-        let domains = [MeshFaceBoundaryDomain::Ordered(vec![
-            MeshFaceBoundaryAssignment {
-                boundaries: Vec::new(),
-            },
-        ])];
-        let candidates = vec![vec![[0, 0]]; 40];
+            MeshQuotient::new((0..130).map(|_| Arc::new(HashSet::from([0]))).collect());
+        let domains = [MeshFaceBoundaryDomain::Ordered(
+            (0..65)
+                .map(|edge| MeshFaceBoundaryAssignment {
+                    boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                        edge,
+                        start: 0,
+                        end: 0,
+                        reversed: Some(false),
+                    }]],
+                })
+                .collect(),
+        )];
+        let candidates = vec![Vec::new(); 65];
         let budget = ctx.work_budget(1_000_000);
         let CodecError::ResourceLimit(limit) = propagate_common_ordered_face_quotients(
             ctx,
@@ -14006,6 +13967,55 @@ fn ordered_face_local_ceiling_refuses_constraint_propagation() {
         assert_eq!(limit.operation, "catia_ordered_face_constraint_work");
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
+}
+
+#[cfg(test)]
+mod preparation_tests {
+    use super::{propagate_common_ordered_face_quotients, MeshQuotient};
+    use crate::solve::missing_edge::{
+        MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
+    };
+    use std::collections::HashSet;
+    use std::sync::Arc;
+
+    #[test]
+    fn directed_face_does_not_clone_independent_mesh_content() {
+        crate::test_support::with_collection_limit(16_384, |ctx| {
+            let shared = Arc::new(HashSet::from([0, 1]));
+            let mut quotient = MeshQuotient::new(vec![shared; 1_000]);
+            let domains = [MeshFaceBoundaryDomain::Ordered(vec![
+                MeshFaceBoundaryAssignment {
+                    boundaries: vec![(0..4)
+                        .map(|edge| MeshBoundaryEdgeCandidate {
+                            edge,
+                            start: edge,
+                            end: (edge + 1) % 4,
+                            reversed: Some(false),
+                        })
+                        .collect()],
+                },
+            ])];
+            let candidates = vec![Vec::new(); 500];
+            let budget = ctx.work_budget(1_000_000);
+            propagate_common_ordered_face_quotients(
+                ctx,
+                &domains,
+                &candidates,
+                &mut quotient,
+                &budget,
+            )
+            .expect("directed face work fits")
+            .expect("complete corner equations");
+            for [left, right] in [[1, 2], [3, 4], [5, 6], [7, 0]] {
+                assert_eq!(
+                    quotient.root(ctx, left).expect("corner root"),
+                    quotient.root(ctx, right).expect("corner root")
+                );
+            }
+            assert_eq!(quotient.root_count(ctx).expect("root count"), 996);
+            assert_eq!(quotient.root(ctx, 8).expect("independent root"), 8);
+        });
+    }
 }
 
 #[cfg(test)]

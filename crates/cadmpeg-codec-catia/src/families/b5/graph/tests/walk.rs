@@ -1783,3 +1783,39 @@ fn a8_class21_strict_knot_refusal_stays_in_the_outer_result() {
 }
 
 mod topology_walk;
+
+#[test]
+fn populations_share_the_logical_stream_run_index() {
+    let triangle = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let mut bytes = vec![0; 1_048_576];
+    for _ in 0..16 {
+        bytes.extend_from_slice(&triangle);
+        bytes.extend_from_slice(&[0; 16]);
+    }
+    let populations = crate::test_support::with_work_limit(4_000_000, |ctx| {
+        object_stream_populations(ctx, &bytes)
+    })
+    .expect("one stream scan and bounded per-run scans fit the allowance");
+    assert_eq!(populations.len(), 16);
+    assert!(populations.iter().all(|population| *population == triangle));
+}
+
+#[test]
+fn indexed_duplicate_records_reuse_source_payloads() {
+    let mut bytes = Vec::new();
+    let payload = vec![0x00; 128];
+    for _ in 0..16 {
+        crate::test_support::test_b5::append_b5_record(&mut bytes, 0x5f, 7, &payload);
+    }
+    let frames = object_stream_frames(&bytes).collect::<Vec<_>>();
+    let records = crate::test_support::with_collection_limit(200, |ctx| {
+        crate::families::b5::graph::indexed_topology_records_and_dependency_candidates(
+            ctx, &bytes, &frames, None,
+        )
+    })
+    .expect("one payload and frame-index entries fit")
+    .expect("complete indexed records")
+    .0;
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].payload, payload);
+}

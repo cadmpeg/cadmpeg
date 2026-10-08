@@ -874,17 +874,22 @@ fn topology_runs(
     bytes: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<(Range<usize>, B5Graph)>, CodecError> {
-    let root_runs = topology_root_run_ranges(ctx, bytes)?;
+    let runs = object_stream_run_ranges(ctx, bytes)?;
+    let root_runs = topology_root_run_ranges_from_runs(ctx, bytes, &runs)?;
     let candidates = if root_runs.is_empty() {
-        object_stream_run_ranges(ctx, bytes)?
+        &runs
     } else {
-        root_runs
+        &root_runs
     };
     let mut graphs = Vec::new();
     for range in candidates {
-        let population = owned_object_stream_population(ctx, bytes, range.clone())?;
+        let population = owned_object_stream_population(ctx, bytes, range.clone(), &runs)?;
         if let Some(graph) = parse_flat(ctx, &population, refusal)? {
-            ctx.push_vec(&mut graphs, (range, graph), "catia B5 topology runs")?;
+            ctx.push_vec(
+                &mut graphs,
+                (range.clone(), graph),
+                "catia B5 topology runs",
+            )?;
         }
     }
     Ok(graphs)
@@ -5930,7 +5935,7 @@ fn framed_records_and_dependency_candidates(
     }
 
     let mut records = Vec::<(usize, B5Record)>::new();
-    let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
+    let mut seen = HashMap::<u32, ObjectFrame>::new();
     let mut candidates = DependencyCandidates::new();
     for frame in frames {
         if is_reference_dependency_class(frame.family, frame.class)
@@ -5957,24 +5962,23 @@ fn framed_records_and_dependency_candidates(
         {
             continue;
         }
+        if let Some(previous) = seen.get(&frame.object_id) {
+            if previous.class == frame.class {
+                let left = frame_payload(bytes, previous);
+                let right = frame_payload(bytes, frame);
+                let work = left
+                    .map_or(0, <[u8]>::len)
+                    .min(right.map_or(0, <[u8]>::len));
+                ctx.charge_work(u64_from_index(work), "catia_b5_duplicate_payload_compare")?;
+                if left == right {
+                    continue;
+                }
+            }
+        }
         let Some(record) = record_from_frame(ctx, bytes, frame)? else {
             continue;
         };
-        if seen
-            .get(&frame.object_id)
-            .is_some_and(|(seen_class, seen_payload)| {
-                *seen_class == record.class && *seen_payload == record.payload
-            })
-        {
-            continue;
-        }
-        let seen_payload = ctx.copy_slice(&record.payload, "catia_b5_seen_record_payload")?;
-        ctx.insert_hash_map(
-            &mut seen,
-            frame.object_id,
-            (record.class, seen_payload),
-            "catia_b5_seen_records",
-        )?;
+        ctx.insert_hash_map(&mut seen, frame.object_id, *frame, "catia_b5_seen_records")?;
         ctx.push_vec(&mut records, (frame.end, record), "catia_b5_framed_records")?;
     }
     ctx.sort_unstable_by(
@@ -6004,7 +6008,7 @@ fn indexed_topology_records_and_dependency_candidates(
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<Option<(Vec<B5Record>, DependencyCandidates)>, CodecError> {
     let mut records = Vec::<(usize, B5Record)>::new();
-    let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
+    let mut seen = HashMap::<u32, ObjectFrame>::new();
     let mut candidates = DependencyCandidates::new();
     for frame in frames {
         if is_reference_dependency_class(frame.family, frame.class)
@@ -6034,22 +6038,26 @@ fn indexed_topology_records_and_dependency_candidates(
         if budget.is_some_and(|budget| !budget.charge()) {
             return Ok(None);
         }
+        if let Some(previous) = seen.get(&frame.object_id) {
+            if previous.class == frame.class {
+                let left = frame_payload(bytes, previous);
+                let right = frame_payload(bytes, frame);
+                let work = left
+                    .map_or(0, <[u8]>::len)
+                    .min(right.map_or(0, <[u8]>::len));
+                ctx.charge_work(u64_from_index(work), "catia_b5_duplicate_payload_compare")?;
+                if left == right {
+                    continue;
+                }
+            }
+        }
         let Some(record) = record_from_frame(ctx, bytes, frame)? else {
             return Ok(None);
         };
-        if seen
-            .get(&frame.object_id)
-            .is_some_and(|(seen_class, seen_payload)| {
-                *seen_class == record.class && *seen_payload == record.payload
-            })
-        {
-            continue;
-        }
-        let seen_payload = ctx.copy_slice(&record.payload, "catia_b5_indexed_seen_payload")?;
         ctx.insert_hash_map(
             &mut seen,
             frame.object_id,
-            (record.class, seen_payload),
+            *frame,
             "catia_b5_indexed_seen_records",
         )?;
         ctx.push_vec(
@@ -6304,18 +6312,28 @@ fn object_stream_run_ranges(
 }
 
 /// Return runs that declare at least one face or loop topology root.
+#[cfg(test)]
 fn topology_root_run_ranges(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<Range<usize>>, CodecError> {
+    let runs = object_stream_run_ranges(ctx, bytes)?;
+    topology_root_run_ranges_from_runs(ctx, bytes, &runs)
+}
+
+fn topology_root_run_ranges_from_runs(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    runs: &[Range<usize>],
+) -> Result<Vec<Range<usize>>, CodecError> {
     let mut roots = Vec::new();
-    for range in object_stream_run_ranges(ctx, bytes)? {
+    for range in runs {
         let scan_work = u64_from_index(range.len()).checked_mul(4).ok_or_else(|| {
             ctx.refuse_codec_limit("catia_b5_object_frame_scan", u64::MAX - 1, u64::MAX)
         })?;
         ctx.charge_work(scan_work, "catia_b5_object_frame_scan")?;
         if object_stream_frames(&bytes[range.clone()]).any(is_topology_root_frame) {
-            ctx.push_vec(&mut roots, range, "catia_b5_topology_run_ranges")?;
+            ctx.push_vec(&mut roots, range.clone(), "catia_b5_topology_run_ranges")?;
         }
     }
     Ok(roots)
@@ -6332,7 +6350,7 @@ pub(in crate::families) fn object_stream_populations(
     stream: &[u8],
 ) -> Result<Vec<Vec<u8>>, CodecError> {
     let runs = object_stream_run_ranges(ctx, stream)?;
-    let topology_runs = topology_root_run_ranges(ctx, stream)?;
+    let topology_runs = topology_root_run_ranges_from_runs(ctx, stream, &runs)?;
     let mut owned_populations = HashMap::new();
     let mut claimed_isolated_ids = HashSet::new();
     for range in &topology_runs {
@@ -6348,7 +6366,7 @@ pub(in crate::families) fn object_stream_populations(
                 "catia_b5_population_root_ids",
             )?;
         }
-        let population = owned_object_stream_population(ctx, stream, range.clone())?;
+        let population = owned_object_stream_population(ctx, stream, range.clone(), &runs)?;
         let scan_work = u64_from_index(population.len())
             .checked_mul(4)
             .ok_or_else(|| {
@@ -6474,11 +6492,12 @@ struct IndexedObjectRun {
 /// only object run in the reconstructed logical streams.
 pub(in crate::families) fn select_object_stream_population(
     ctx: &DecodeContext<'_>,
-    streams: &[Vec<u8>],
+    streams: &[impl AsRef<[u8]>],
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<ObjectStreamSelection, CodecError> {
     let mut stream_ranges = Vec::new();
     for stream in streams {
+        let stream = stream.as_ref();
         ctx.push_vec(
             &mut stream_ranges,
             object_stream_run_ranges(ctx, stream)?,
@@ -6495,6 +6514,7 @@ pub(in crate::families) fn select_object_stream_population(
     )?;
     let mut runs = Vec::new();
     for (stream_index, (stream, ranges)) in streams.iter().zip(stream_ranges).enumerate() {
+        let stream = stream.as_ref();
         let frames = collect_object_stream_frames(ctx, stream)?;
         if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
             return Ok(exhausted());
@@ -6541,8 +6561,12 @@ pub(in crate::families) fn select_object_stream_population(
         let mut census_records = Vec::new();
         for run in &runs {
             let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
-            let records =
-                records_from_frames_budgeted(ctx, &streams[run.stream_index], frames, budget)?;
+            let records = records_from_frames_budgeted(
+                ctx,
+                streams[run.stream_index].as_ref(),
+                frames,
+                budget,
+            )?;
             if budget.is_some_and(WorkBudget::exhausted) {
                 return Ok(exhausted());
             }
@@ -6559,7 +6583,7 @@ pub(in crate::families) fn select_object_stream_population(
         });
     };
     let selected = &runs[selected_index];
-    let selected_stream = &streams[selected.stream_index];
+    let selected_stream = streams[selected.stream_index].as_ref();
     let selected_frames = &stream_frames[selected.stream_index][selected.frame_range.clone()];
     let Some(selected_records) =
         records_from_indexed_frames_budgeted(ctx, selected_stream, selected_frames, budget)?
@@ -6587,7 +6611,7 @@ pub(in crate::families) fn select_object_stream_population(
         }
         let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
         let records =
-            records_from_frames_budgeted(ctx, &streams[run.stream_index], frames, budget)?;
+            records_from_frames_budgeted(ctx, streams[run.stream_index].as_ref(), frames, budget)?;
         if budget.is_some_and(WorkBudget::exhausted) {
             return Ok(exhausted());
         }
@@ -6628,7 +6652,7 @@ pub(in crate::families) fn select_object_stream_population(
             if index == selected_index || run.stream_index != selected.stream_index {
                 continue;
             }
-            let stream = &streams[run.stream_index];
+            let stream = streams[run.stream_index].as_ref();
             let Some((end, family, class, object_id)) = object_frame(stream, run.range.start)
             else {
                 continue;
@@ -6650,7 +6674,7 @@ pub(in crate::families) fn select_object_stream_population(
                 .and_modify(|stored| {
                     if stored.is_some_and(|stored| {
                         let stored = &runs[stored];
-                        streams[stored.stream_index][stored.range.clone()]
+                        streams[stored.stream_index].as_ref()[stored.range.clone()]
                             != stream[run.range.clone()]
                     }) {
                         *stored = None;
@@ -6680,7 +6704,7 @@ pub(in crate::families) fn select_object_stream_population(
         )?;
         for index in isolated {
             let run = &runs[index];
-            let stream = &streams[run.stream_index];
+            let stream = streams[run.stream_index].as_ref();
             let run_frames = &stream_frames[run.stream_index][run.frame_range.clone()];
             let destination = source.len();
             ctx.extend_retained_bytes(
@@ -6714,6 +6738,7 @@ fn owned_object_stream_population(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
     topology_run: Range<usize>,
+    runs: &[Range<usize>],
 ) -> Result<Vec<u8>, CodecError> {
     let run = &stream[topology_run.clone()];
     let run_frames = collect_object_stream_frames(ctx, run)?;
@@ -6728,8 +6753,9 @@ fn owned_object_stream_population(
         )?;
     }
     let mut isolated = HashMap::<u32, Option<(usize, u8, u8, Vec<u8>)>>::new();
-    for range in object_stream_run_ranges(ctx, stream)? {
-        if range == topology_run {
+    for range in runs {
+        ctx.charge_work(1, "catia_b5_population_run_lookup")?;
+        if *range == topology_run {
             continue;
         }
         let Some((end, frame_family, frame_class, object_id)) = object_frame(stream, range.start)

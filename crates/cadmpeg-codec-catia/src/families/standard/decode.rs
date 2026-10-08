@@ -30,7 +30,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
+    nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface},
     pcurve::{Pcurve, PcurveGeometry},
     Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
     ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
@@ -1946,7 +1946,7 @@ fn standard_population_selections(
     let Some(brep) = scan.brep.as_ref() else {
         return Ok(None);
     };
-    let standard_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
+    let standard_spine = scan.main_data_stream().unwrap_or(brep);
     let layouts = fbb::fbb_population_layouts(ctx, standard_spine)?;
     let populations = crate::families::standard::records::standard_surface_populations(ctx, brep)?;
     let Some(pairs) =
@@ -2375,7 +2375,7 @@ fn try_decode_standard_population(
     let mut admission = FamilyEntityAdmission::new(ctx);
     let work_budget = ctx.work_budget(u64_from_index(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS));
     let brep = scan.brep.as_ref()?;
-    let default_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
+    let default_spine = scan.main_data_stream().unwrap_or(brep);
     let standard_spine = selection.map_or(default_spine, |selection| selection.spine.as_slice());
     let edge_table_form = selection.map_or_else(
         || match scan.variant {
@@ -4023,7 +4023,7 @@ fn merge_standard_limit_curves_from_records(
 
 pub(super) fn standard_object_evidence_from_streams(
     ctx: &DecodeContext<'_>,
-    streams: impl IntoIterator<Item = Vec<u8>>,
+    streams: impl IntoIterator<Item = impl AsRef<[u8]>>,
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -4034,21 +4034,22 @@ pub(super) fn standard_object_evidence_from_streams(
     let mut limit_curves = Vec::<NurbsCurve>::new();
     let mut populations = Vec::new();
     for stream in streams {
+        let stream = stream.as_ref();
         let records = crate::wire::records::consolidated_records_in_sources(
             ctx,
-            &stream,
+            stream,
             std::iter::once(std::iter::once(crate::wire::records::SourceExtent::whole(
-                &stream,
+                stream,
             ))),
         )?;
         merge_standard_limit_curves_from_records(
             ctx,
             &mut limit_curves,
-            &stream,
+            stream,
             &records,
             refusal,
         )?;
-        for population in crate::families::b5::graph::object_stream_populations(ctx, &stream)? {
+        for population in crate::families::b5::graph::object_stream_populations(ctx, stream)? {
             ctx.push_vec(
                 &mut populations,
                 population,
@@ -5161,14 +5162,18 @@ fn standard_limit_curve_bindings(
             else {
                 continue;
             };
-            let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                curves[curve].try_clone_for_decode(ctx, "catia_limit_curve_geometry_copy")?,
-            ));
+            let Some(parameter) = FiniteReal::new(0.5 * (start_parameter + end_parameter))
+                .and_then(|parameter| {
+                    cadmpeg_ir::eval::map_nurbs_curve_parameter(&curves[curve], parameter)
+                })
+            else {
+                continue;
+            };
             let midpoint = match cadmpeg_ir::eval::decode::outer_refusal(
-                cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::decode::nurbs_curve_point_at(
                     ctx,
-                    &geometry,
-                    0.5 * (start_parameter + end_parameter),
+                    &curves[curve],
+                    parameter.get(),
                 ),
             )? {
                 Ok(point) => point,
@@ -8754,6 +8759,9 @@ fn point_on_standard_face(
     if bounds.is_some_and(|bounds| !point_inside_standard_face_bounds(point, bounds)) {
         return Ok(false);
     }
+    if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = surface {
+        return Ok(!point_outside_nurbs_control_bounds(ctx, point, nurbs)?);
+    }
     Ok(point_on_surface_if_supported(ctx, point, surface)? != Some(false))
 }
 
@@ -8924,21 +8932,27 @@ fn nurbs_surface_control_bounds(
     surface: &NurbsSurface,
 ) -> Result<Option<[[f64; 2]; 3]>, cadmpeg_core::decode::ResourceLimit> {
     ctx.charge_work_limit(0, "catia surface control bounds")?;
-    if let Some(weights) = surface.pole_weights() {
-        for weight in weights {
+    if let NurbsPoleGrid::Rational { rows } = surface.pole_grid() {
+        for pole in rows.iter().flatten() {
             ctx.charge_work_limit(1, "catia surface bound weight")?;
-            if weight.get() <= 0.0 {
+            if pole.weight.get() <= 0.0 {
                 return Ok(None);
             }
         }
     }
     let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
-    for point in surface.poles() {
-        ctx.charge_work_limit(1, "catia surface bound pole")?;
-        for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
-            ctx.charge_work_limit(2, "catia surface bound comparison")?;
-            bounds[axis][0] = bounds[axis][0].min(coordinate);
-            bounds[axis][1] = bounds[axis][1].max(coordinate);
+    for u in 0..surface.u_count() {
+        for v in 0..surface.v_count() {
+            ctx.charge_work_limit(1, "catia surface bound pole")?;
+            let Some(point) = surface.pole(u, v) else {
+                return Ok(None);
+            };
+            let point = point.get();
+            for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
+                ctx.charge_work_limit(2, "catia surface bound comparison")?;
+                bounds[axis][0] = bounds[axis][0].min(coordinate);
+                bounds[axis][1] = bounds[axis][1].max(coordinate);
+            }
         }
     }
     Ok(Some(bounds))
@@ -9330,28 +9344,35 @@ fn standard_endpoint_options_for_selected_faces(
     Ok(filtered_options)
 }
 
-fn point_on_nurbs_surface(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn point_outside_nurbs_control_bounds(
+    ctx: &DecodeContext<'_>,
     point: Point3,
     surface: &NurbsSurface,
-) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     ctx.charge_work_limit(0, "catia surface membership boundary")?;
-    // A positive-weight NURBS control net bounds the surface, so its AABB is a
-    // sound negative test.  The bounded parameter search supplies positive
-    // witnesses only.  A failed search inside that AABB is unknown, not proof
-    // that the point is off the surface.
-    if let Some(bounds) = nurbs_surface_control_bounds(ctx, surface)? {
-        let outside =
+    Ok(
+        nurbs_surface_control_bounds(ctx, surface)?.is_some_and(|bounds| {
             [point.x, point.y, point.z]
                 .into_iter()
                 .enumerate()
                 .any(|(axis, coordinate)| {
                     coordinate < bounds[axis][0] - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
                         || coordinate > bounds[axis][1] + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
-                });
-        if outside {
-            return Ok(Some(false));
-        }
+                })
+        }),
+    )
+}
+
+fn point_on_nurbs_surface(
+    ctx: &DecodeContext<'_>,
+    point: Point3,
+    surface: &NurbsSurface,
+) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
+    // Positive weights bound the surface by its control net. A failed witness
+    // inside that bound is unknown, so conservative topology admission needs
+    // only the negative bound test; strict membership still searches below.
+    if point_outside_nurbs_control_bounds(ctx, point, surface)? {
+        return Ok(Some(false));
     }
     let Some(distance) = surface_membership::nurbs_surface_witness_distance(ctx, surface, point)?
     else {
@@ -9778,8 +9799,8 @@ fn standard_endpoint_pair_supports_topology(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let endpoint_is_supported = |point| -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
         Ok(match surface {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => {
-                point_on_surface_if_supported(ctx, point, surface)? != Some(false)
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+                !point_outside_nurbs_control_bounds(ctx, point, nurbs)?
             }
             _ => point_on_surface(ctx, point, surface)?,
         })
