@@ -28,13 +28,13 @@ impl CompactMatrix {
 
     /// Constructs the matrix from masks and row-major explicit values.
     pub(crate) fn try_new(
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
         value_mask: u16,
         zero_mask: u16,
         mut explicit: impl FnMut(usize) -> Result<FiniteReal, CodecError>,
     ) -> Result<Self, CodecError> {
         let mut matrix = [[FiniteReal::ZERO; 4]; 4];
-        for index in ctx.admit_iter(&(0_usize..16), "admit Inventor compact matrix cells")? {
+        for index in 0_usize..16 {
             let value = &mut matrix[index / 4][index % 4];
             let bit = 1u16 << index;
             *value = match (value_mask & bit != 0, zero_mask & bit != 0) {
@@ -101,6 +101,23 @@ impl From<CompactMatrix> for CompactMatrixWire {
 #[cfg(test)]
 mod tests {
     use super::{CompactMatrix, CompactMatrixWire};
+
+    #[test]
+    fn compact_matrix_fixed_cells_need_no_work_admission() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let matrix = CompactMatrix::try_from_rows(&ctx, 0, 0, [[2.5; 4]; 4])
+            .expect("sixteen fixed cells need no variable work");
+        assert_eq!(matrix.rows(), [[2.5; 4]; 4]);
+        let matrix = CompactMatrix::try_new(&ctx, u16::MAX, 0, |_| {
+            panic!("implicit cells do not read explicit values")
+        })
+        .expect("implicit cells need no variable work");
+        assert_eq!(matrix.rows(), [[1.0; 4]; 4]);
+    }
 
     #[test]
     fn masks_select_explicit_positive_zero_and_negative_cells() {

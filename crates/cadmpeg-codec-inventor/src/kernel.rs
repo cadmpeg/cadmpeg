@@ -146,34 +146,44 @@ pub(crate) fn decode_kernel_carrier(
         }
     };
     let width = header.width;
-    let records = match solved_limit {
-        Some(limit) => sab::frame(ctx, bytes, start, limit, width, None),
-        None => sab::frame_history(ctx, bytes, start, bytes.len(), width, None),
-    }
-    .map_err(|failure| {
-        failure.into_codec_error(ctx, |error| {
-            CodecError::malformed(format_args!(
-                "Inventor {} SAB framing failed: {error}",
-                carrier.family.label()
-            ))
+    let (records, records_storage) =
+        ctx.with_scoped_storage("frame Inventor kernel carrier records", || {
+            match solved_limit {
+                Some(limit) => sab::frame(ctx, bytes, start, limit, width, None),
+                None => sab::frame_history(ctx, bytes, start, bytes.len(), width, None),
+            }
+            .map_err(|failure| {
+                failure.into_codec_error(ctx, |error| {
+                    CodecError::malformed(format_args!(
+                        "Inventor {} SAB framing failed: {error}",
+                        carrier.family.label()
+                    ))
+                })
+            })
+        })?;
+    let stream = (!records.is_empty())
+        .then(|| {
+            ctx.format_scoped(
+                format_args!(
+                    "RSeStorage/B{}:record:{}",
+                    carrier.segment_token, carrier.record_ordinal
+                ),
+                "format Inventor kernel carrier stream name",
+            )
         })
-    })?;
-    let stream = ctx.format_retained(
-        format_args!(
-            "RSeStorage/B{}:record:{}",
-            carrier.segment_token, carrier.record_ordinal
-        ),
-        "retain Inventor kernel carrier stream name",
-    )?;
+        .transpose()?;
     let brep = decode_with_header(
         ctx,
         &records,
         bytes,
         Some(&header.metadata),
-        &stream,
+        stream.as_ref().map_or("", |(name, _)| name.as_str()),
         cadmpeg_asm::asm_format!("inventor"),
         DecodePurpose::Model,
     )?;
+    drop(stream);
+    drop(records);
+    drop(records_storage);
     Ok(DecodedKernelCarrier {
         header: copy_kernel_header(ctx, header, "copy Inventor decoded kernel header")?,
         brep,
@@ -326,10 +336,7 @@ fn parse_carrier<'a>(
         ));
     };
     let header = match parse_kernel_header(ctx, family, carrier.window())? {
-        Ok(header) => {
-            ctx.charge_collection_items(1, "box Inventor parsed kernel header")?;
-            Ok(Box::new(header))
-        }
+        Ok(header) => Ok(Box::new(header)),
         Err(detail) => Err(detail),
     };
     let mut offset = carrier_end;
@@ -534,19 +541,33 @@ mod tests {
     }
 
     #[test]
-    fn parsed_kernel_header_refuses_collection_limit_before_box() {
+    fn parsed_kernel_header_box_needs_no_collection_slot() {
         let bytes = carrier_fixture(&empty_asm_fixture(), 23);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let (limited, view) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            parse_carrier(&limited, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "box Inventor parsed kernel header"
-        ));
+        let carrier = parse_carrier(
+            &limited,
+            view,
+            &cadmpeg_ir::identity_key!("token"),
+            7,
+            100,
+            23,
+        )
+        .expect("a fixed header box has no collection slots");
+        assert_eq!(
+            carrier
+                .header
+                .expect("parsed header")
+                .metadata
+                .save_format_version,
+            Some(700)
+        );
+        // The parsed header is one fixed record; zero collection entries were stored.
+        assert!(matches!(limited.charge_collection_items(1, "probe"),
+            Err(CodecError::ResourceLimit(limit)) if limit.used == 0));
     }
 
     #[test]
@@ -832,7 +853,7 @@ mod tests {
     }
 
     #[test]
-    fn decoded_kernel_stream_name_refuses_retained_limit_before_format() {
+    fn empty_kernel_stream_leaves_retained_budget_for_owned_header() {
         let bytes = carrier_fixture(&empty_asm_fixture(), 23);
         let arena = DecodeArena::new();
         let (service, view) =
@@ -847,22 +868,104 @@ mod tests {
             23,
         )
         .expect("carrier parses");
-        let needed = kernel_retained_refusal(
-            &bytes,
-            &carrier,
-            "retain Inventor kernel carrier stream name",
-        );
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = needed - 1;
+        // Family (8) + version (8) + date (10) need 26 bytes; the 25-byte limit
+        // refuses the date after the first 8 + 8 = 16 bytes are copied.
+        policy.limits.max_retained_bytes = 8 + 8 + 10 - 1;
         let (limited, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            decode_kernel_carrier(&limited, &carrier, carrier.header.as_ref().expect("header")),
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        assert!(matches!(decode_test_carrier(&limited, &carrier),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor kernel carrier stream name"
-        ));
+                    && limit.operation == "copy Inventor decoded kernel header"
+                    && limit.used == 8 + 8 && limit.additional == 10));
         assert!(decode_test_carrier(&service, &carrier).is_ok());
+    }
+
+    #[test]
+    fn empty_kernel_skips_stream_name_formatting() {
+        let bytes = carrier_fixture(&empty_asm_fixture(), 23);
+        let arena = DecodeArena::new();
+        let (service, view) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("service context");
+        let carrier = parse_carrier(
+            &service,
+            view,
+            &cadmpeg_ir::identity_key!("token"),
+            7,
+            100,
+            23,
+        )
+        .expect("carrier parses");
+        let mut policy = DecodePolicy::service();
+        // Empty framing and absent annotations need zero temporary stream bytes.
+        policy.limits.max_materialized_bytes = 0;
+        let (limited, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        let decoded =
+            decode_test_carrier(&limited, &carrier).expect("empty framing needs no stream name");
+        assert!(decoded.brep.annotation_records.is_empty());
+        assert!(matches!(limited.reserve_scoped(u64::MAX, "probe"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == 0));
+        assert!(decode_test_carrier(&service, &carrier).is_ok());
+    }
+
+    #[test]
+    fn decoded_kernel_retains_only_owned_header_text() {
+        let bytes = carrier_fixture(&empty_asm_fixture(), 23);
+        let arena = DecodeArena::new();
+        let (service, view) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("service context");
+        let carrier = parse_carrier(
+            &service,
+            view,
+            &cadmpeg_ir::identity_key!("token"),
+            7,
+            100,
+            23,
+        )
+        .expect("carrier parses");
+        let mut policy = DecodePolicy::service();
+        // The owned header keeps Inventor (8), ASM test (8) and the date (10): 26 bytes.
+        policy.limits.max_retained_bytes = 8 + 8 + 10;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        let decoded =
+            decode_test_carrier(&ctx, &carrier).expect("only output header text is retained");
+        assert_eq!(
+            decoded.header.metadata.product_family.as_deref(),
+            Some("Inventor")
+        );
+        assert_eq!(
+            decoded.header.metadata.product_version.as_deref(),
+            Some("ASM test")
+        );
+        assert_eq!(
+            decoded.header.metadata.save_date.as_deref(),
+            Some("2000-01-01")
+        );
+        assert!(matches!(ctx.charge_retained(1, "probe"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 26));
+    }
+
+    #[test]
+    fn decoded_kernel_releases_frame_and_stream_storage() {
+        let bytes = carrier_fixture(&acis_sphere_kernel_stream(21_800), 17);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        let carrier = parse_carrier(&ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
+            .expect("carrier parses");
+        let decoded = decode_test_carrier(&ctx, &carrier).expect("sphere decodes");
+        assert_eq!(decoded.brep.bodies.len(), 1);
+        assert!(
+            matches!(ctx.reserve_scoped(u64::MAX, "released temporary kernel data"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == 0)
+        );
     }
 
     #[test]
