@@ -332,12 +332,15 @@ fn prune_incidence_choice_rounds(
     let mut supports = ctx.collect_indexed_vec(face_count, "catia_incidence_supports", |_| {
         Ok(BTreeMap::<usize, u32>::new())
     })?;
-    for (edge, points) in ctx
-        .admit_iter(&edge_supports, "catia incidence point support counts")?
-        .enumerate()
+    let mut charged_steps = edge_supports.iter().enumerate();
+    while let Some((edge, points)) =
+        ctx.next_charged(&mut charged_steps, "catia incidence point support counts")?
     {
         for face in unique_incidence_faces(edge_faces[edge]) {
-            for &point in ctx.admit_iter(points, "catia incidence point support counts")? {
+            let mut charged_steps = points.iter();
+            while let Some(&point) =
+                ctx.next_charged(&mut charged_steps, "catia incidence point support counts")?
+            {
                 let count = ctx
                     .entry_btree_map(
                         &mut supports[face],
@@ -354,7 +357,8 @@ fn prune_incidence_choice_rounds(
     }
     loop {
         let mut changed = false;
-        for edge in ctx.admit_iter(&(0..choices.len()), "catia_incidence_iteration")? {
+        let mut charged_steps = 0..choices.len();
+        while let Some(edge) = ctx.next_charged(&mut charged_steps, "catia_incidence_iteration")? {
             if fixed[edge] {
                 continue;
             }
@@ -419,9 +423,13 @@ fn prune_incidence_choice_rounds(
             changed = true;
         }
         if explicit_support_complete {
-            for face in ctx.admit_iter(&(0..face_count), "catia_incidence_iteration")? {
-                for (&point, &degree) in
-                    ctx.admit_iter(&degrees[face], "catia incidence degree-one points")?
+            let mut charged_steps = 0..face_count;
+            while let Some(face) =
+                ctx.next_charged(&mut charged_steps, "catia_incidence_iteration")?
+            {
+                let mut charged_steps = degrees[face].iter();
+                while let Some((&point, &degree)) =
+                    ctx.next_charged(&mut charged_steps, "catia incidence degree-one points")?
                 {
                     if degree != 1 {
                         continue;
@@ -897,8 +905,10 @@ fn order_incidence_components_by_constraints(
             "catia incidence component edge indices",
         )
     })?;
-    for (component, edges) in ctx.admit_iter(&*components, OPERATION)?.enumerate() {
-        for &edge in ctx.admit_iter(edges, OPERATION)? {
+    let mut charged_steps = components.iter().enumerate();
+    while let Some((component, edges)) = ctx.next_charged(&mut charged_steps, OPERATION)? {
+        let mut charged_steps = edges.iter();
+        while let Some(&edge) = ctx.next_charged(&mut charged_steps, OPERATION)? {
             if component_of_edge[edge].replace(component).is_some() {
                 return Ok(None);
             }
@@ -1310,9 +1320,9 @@ fn index_configurations(
         matching: HashMap::new(),
         word_count,
     };
-    for (configuration, candidate) in ctx
-        .admit_iter(domain, "catia_face_config_index")?
-        .enumerate()
+    let mut charged_steps = domain.iter().enumerate();
+    while let Some((configuration, candidate)) =
+        ctx.next_charged(&mut charged_steps, "catia_face_config_index")?
     {
         // One local unit visits one configuration's edge/pair entry.
         for &(edge, pair) in candidate {
@@ -1437,7 +1447,10 @@ impl FaceFactorGraph {
         let mut right_indexes = scratch.with_storage(|| {
             ctx.collection_vec(domains.len(), "catia face factor right indexes")
         })?;
-        for domain in ctx.admit_iter(domains, "catia face factor right indexes")? {
+        let mut charged_steps = domains.iter();
+        while let Some(domain) =
+            ctx.next_charged(&mut charged_steps, "catia face factor right indexes")?
+        {
             let Some(index) = scratch.with_storage(|| index_configurations(ctx, domain, budget))?
             else {
                 return Ok(None);
@@ -1449,14 +1462,20 @@ impl FaceFactorGraph {
             ctx.collect_indexed_vec(domains.len(), "catia_face_factor_incoming", |_| {
                 Ok(Vec::new())
             })?;
-        for (left, adjacent) in ctx
-            .admit_iter(&neighbors, "catia face factor arcs")?
-            .enumerate()
+        let mut charged_steps = neighbors.iter().enumerate();
+        while let Some((left, adjacent)) =
+            ctx.next_charged(&mut charged_steps, "catia face factor arcs")?
         {
-            for &right in ctx.admit_iter(adjacent, "catia face factor arcs")? {
+            let mut charged_steps = adjacent.iter();
+            while let Some(&right) =
+                ctx.next_charged(&mut charged_steps, "catia face factor arcs")?
+            {
                 let mut supports =
                     ctx.collection_vec(domains[left].len(), "catia face factor support rows")?;
-                for candidate in ctx.admit_iter(&domains[left], "catia face factor support rows")? {
+                let mut charged_steps = domains[left].iter();
+                while let Some(candidate) =
+                    ctx.next_charged(&mut charged_steps, "catia face factor support rows")?
+                {
                     let mut compatible = full_configuration_mask(ctx, domains[right].len())?;
                     if restrict_to_compatible(
                         ctx,
@@ -1584,11 +1603,15 @@ impl PreparedFaceFactors {
         let active = &mut self.active;
         let mut undo = MaskUndo::new(ctx, "catia_face_factor_checkpoint_rows")?;
         let mut rejected = false;
-        'assigned: for &(edge, pair) in ctx.admit_iter(assigned, OPERATION)? {
+        let mut charged_steps = assigned.iter();
+        'assigned: while let Some(&(edge, pair)) =
+            ctx.next_charged(&mut charged_steps, OPERATION)?
+        {
             let Some(factors) = self.factors_by_edge.get(edge) else {
                 continue;
             };
-            for &factor in ctx.admit_iter(factors, OPERATION)? {
+            let mut charged_steps = factors.iter();
+            while let Some(&factor) = ctx.next_charged(&mut charged_steps, OPERATION)? {
                 let face = self.factor_faces[factor];
                 let Some(configurations) = self.domains.get(face).and_then(Option::as_ref) else {
                     rejected = true;
@@ -1741,8 +1764,9 @@ fn prune_face_configuration_support(
                     ctx.alloc_filled(index.word_count, 0u64, "catia_face_config_viable")?;
                 let mut keep =
                     ctx.collection_vec(domains[left].len(), "catia face configuration keep marks")?;
-                for candidate in
-                    ctx.admit_iter(&domains[left], "catia face configuration keep marks")?
+                let mut charged_steps = domains[left].iter();
+                while let Some(candidate) =
+                    ctx.next_charged(&mut charged_steps, "catia face configuration keep marks")?
                 {
                     fill_configuration_mask(ctx, &mut viable, domains[right].len())?;
                     let Some(supported) =
@@ -1826,12 +1850,14 @@ fn prune_face_configuration_singleton_support(
             Ord::cmp,
             "catia face configuration singleton order sort",
         )?;
-        for &domain in ctx.admit_iter(&order, OPERATION)? {
+        let mut charged_steps = order.iter();
+        while let Some(&domain) = ctx.next_charged(&mut charged_steps, OPERATION)? {
             let mut domain_changed = false;
             if active_configuration_count(ctx, &active[domain])? <= 1 {
                 continue;
             }
-            for configuration in ctx.admit_iter(&(0..domains[domain].len()), OPERATION)? {
+            let mut charged_steps = 0..domains[domain].len();
+            while let Some(configuration) = ctx.next_charged(&mut charged_steps, OPERATION)? {
                 if !configuration_mask_contains(&active[domain], configuration) {
                     continue;
                 }
@@ -1938,7 +1964,8 @@ fn prune_ordered_face_endpoint_support(
     loop {
         ctx.charge_work(1, "catia_incidence_iteration")?;
         let mut changed = false;
-        for (domain, edges) in ctx.admit_iter(domains, OPERATION)?.zip(&face_edges) {
+        let mut charged_steps = domains.iter().zip(&face_edges);
+        while let Some((domain, edges)) = ctx.next_charged(&mut charged_steps, OPERATION)? {
             let (MeshFaceBoundaryDomain::Ordered(assignments), Some(edges)) = (domain, edges)
             else {
                 continue;
@@ -1967,8 +1994,9 @@ fn prune_ordered_face_endpoint_support(
                 "catia ordered face support edges",
                 || -> Result<Option<HashMap<usize, HashSet<[usize; 2]>>>, CodecError> {
                     let mut supported = HashMap::<usize, HashSet<[usize; 2]>>::new();
-                    for configuration in
-                        ctx.admit_iter(&configurations, "catia ordered face support edges")?
+                    let mut charged_steps = configurations.iter();
+                    while let Some(configuration) =
+                        ctx.next_charged(&mut charged_steps, "catia ordered face support edges")?
                     {
                         for &(edge, pair) in configuration {
                             if !budget.charge() {
@@ -1990,7 +2018,8 @@ fn prune_ordered_face_endpoint_support(
             let Some(supported) = supported else {
                 return Ok(true);
             };
-            for &edge in ctx.admit_iter(edges, OPERATION)? {
+            let mut charged_steps = edges.iter();
+            while let Some(&edge) = ctx.next_charged(&mut charged_steps, OPERATION)? {
                 let Some(edge_supported) =
                     ctx.get_hash_map(&supported, &edge, "catia ordered face support edges")?
                 else {
@@ -2053,14 +2082,16 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
     loop {
         ctx.charge_work(1, "catia_incidence_iteration")?;
         let mut changed = false;
-        for domain in ctx.admit_iter(domains, OPERATION)? {
+        let mut charged_steps = domains.iter();
+        while let Some(domain) = ctx.next_charged(&mut charged_steps, OPERATION)? {
             let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
                 continue;
             };
             let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
             // The supports of the assignments that keep some endpoint pair.
             let mut supports = Vec::new();
-            for assignment in ctx.admit_iter(assignments, OPERATION)? {
+            let mut charged_steps = assignments.iter();
+            while let Some(assignment) = ctx.next_charged(&mut charged_steps, OPERATION)? {
                 let Some(support) = scratch.with_storage(|| {
                     mesh_assignment_endpoint_cycle_support_by(
                         ctx,
@@ -2107,7 +2138,8 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                 ctx.dedup_vec(&mut edges, OPERATION)?;
                 Ok::<_, CodecError>(edges)
             })?;
-            for &edge in ctx.admit_iter(&edges, OPERATION)? {
+            let mut charged_steps = edges.iter();
+            while let Some(&edge) = ctx.next_charged(&mut charged_steps, OPERATION)? {
                 if !ctx.any_by(
                     &supports,
                     |(_, support)| {
@@ -2456,7 +2488,10 @@ fn compact_boundary_domain_viable_in(
         let mut point_nodes = HashMap::new();
         let mut degrees = Vec::<u8>::new();
         let mut components = UnionFind::charged(ctx, 0, "catia_compact_boundary_union")?;
-        for &(_, pair) in ctx.admit_iter(&known_pairs, "catia_compact_boundary_points")? {
+        let mut charged_steps = known_pairs.iter();
+        while let Some(&(_, pair)) =
+            ctx.next_charged(&mut charged_steps, "catia_compact_boundary_points")?
+        {
             let mut nodes = [0; 2];
             for (slot, point) in pair.into_iter().enumerate() {
                 nodes[slot] = if let Some(&node) =
@@ -2701,12 +2736,21 @@ fn advance_compact_boundary_domains<'storage, 'a>(
         }
         Ok(candidates)
     })?;
-    for alternatives in ctx.admit_iter(&ordered, "catia compact boundary domain rows")? {
+    let mut charged_steps = ordered.iter();
+    while let Some(alternatives) =
+        ctx.next_charged(&mut charged_steps, "catia compact boundary domain rows")?
+    {
         let mut next = Vec::new();
         let mut signature_storage = ctx.reserve_scoped(0, "catia_compact_boundary_signatures")?;
         let mut signatures = HashSet::new();
-        for (state, oriented_edges) in ctx.admit_iter(states, "catia_compact_boundary_states")? {
-            for face in ctx.admit_iter(alternatives, "catia_compact_boundary_states")? {
+        let mut charged_steps = states.into_iter();
+        while let Some((state, oriented_edges)) =
+            ctx.next_charged(&mut charged_steps, "catia_compact_boundary_states")?
+        {
+            let mut charged_steps = alternatives.iter();
+            while let Some(face) =
+                ctx.next_charged(&mut charged_steps, "catia_compact_boundary_states")?
+            {
                 let Some(remaining) = MAX_QUOTIENT_STATES.checked_sub(next.len()) else {
                     return Ok(CompactBoundaryAdvanceOutcome::Exhausted);
                 };
@@ -2718,8 +2762,9 @@ fn advance_compact_boundary_domains<'storage, 'a>(
                     remaining,
                     Some(budget),
                 )?;
-                for (_, mut candidate) in
-                    ctx.admit_iter(options, "catia_compact_boundary_states")?
+                let mut charged_steps = options.into_iter();
+                while let Some((_, mut candidate)) =
+                    ctx.next_charged(&mut charged_steps, "catia_compact_boundary_states")?
                 {
                     let mut next_oriented = copy_oriented_edges(
                         ctx,
@@ -2945,6 +2990,17 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                 }))
             },
         )?;
+        let storage = if refined
+            .as_ref()
+            .is_some_and(|refined| Arc::ptr_eq(refined, domains))
+        {
+            // The shared input owns its data; failed refinement scratch is gone.
+            drop(storage);
+            self.ctx
+                .reserve_scoped(0, "catia_incidence_refined_domains")?
+        } else {
+            storage
+        };
         Ok(refined.map(|refined| (refined, storage)))
     }
 
@@ -4765,7 +4821,8 @@ fn match_deferred_cycles(
     // Each frame is a mesh, the next incidence it tries and the incidence it
     // is about to take.
     let mut frames = Vec::<(usize, usize, usize)>::new();
-    for mesh in ctx.admit_iter(&(0..compatible.len()), OPERATION)? {
+    let mut charged_steps = 0..compatible.len();
+    while let Some(mesh) = ctx.next_charged(&mut charged_steps, OPERATION)? {
         let generation = mesh + 1;
         frames.clear();
         ctx.push_vec(&mut frames, (mesh, 0, 0), OPERATION)?;
@@ -4824,9 +4881,9 @@ pub(super) fn deferred_boundary_assignment(
     for _ in ctx.admit_iter(&(0..domain.cycles.len()), "catia_deferred_boundaries")? {
         boundaries.push(None);
     }
-    for (incidence, mesh) in ctx
-        .admit_iter(&matched_mesh, "catia_deferred_boundaries")?
-        .enumerate()
+    let mut charged_steps = matched_mesh.iter().enumerate();
+    while let Some((incidence, mesh)) =
+        ctx.next_charged(&mut charged_steps, "catia_deferred_boundaries")?
     {
         let Some(mesh) = *mesh else {
             return Ok(None);
@@ -4838,7 +4895,10 @@ pub(super) fn deferred_boundary_assignment(
     }
     let mut collected =
         ctx.collection_vec(boundaries.len(), "catia deferred collected boundaries")?;
-    for boundary in ctx.admit_iter(boundaries, "catia deferred collected boundaries")? {
+    let mut charged_steps = boundaries.into_iter();
+    while let Some(boundary) =
+        ctx.next_charged(&mut charged_steps, "catia deferred collected boundaries")?
+    {
         let Some(boundary) = boundary else {
             return Ok(None);
         };
@@ -4972,7 +5032,8 @@ fn component_incidence_faces_viable(
                     "catia component incidence degree points",
                     || -> Result<Option<BTreeMap<usize, u8>>, CodecError> {
                         let mut degrees = BTreeMap::<usize, u8>::new();
-                        for &edge in ctx.admit_iter(&face_edges[face], OPERATION)? {
+                        let mut charged_steps = face_edges[face].iter();
+                        while let Some(&edge) = ctx.next_charged(&mut charged_steps, OPERATION)? {
                             let Some(pair) = assignment[edge] else {
                                 continue;
                             };
@@ -5112,7 +5173,8 @@ fn orientability_in(
     }
     let mut edge_uses = BTreeMap::<usize, Vec<(usize, bool)>>::new();
     let mut boundary_count = 0usize;
-    for incident in ctx.admit_iter(face_edges, OPERATION)? {
+    let mut charged_steps = face_edges.iter();
+    while let Some(incident) = ctx.next_charged(&mut charged_steps, OPERATION)? {
         let mut face_storage = ctx.reserve_scoped(0, OPERATION)?;
         let selected = face_storage.with_storage(|| {
             let mut selected = Vec::new();
@@ -5174,7 +5236,8 @@ fn orientability_in(
                 .get_hash_map(&edges_at_point, &point, "catia orientability point indexes")?
                 .map_or(&[][..], Vec::as_slice))
         };
-        for &first in ctx.admit_iter(&selected, OPERATION)? {
+        let mut charged_steps = selected.iter();
+        while let Some(&first) = ctx.next_charged(&mut charged_steps, OPERATION)? {
             if !ctx.contains_hash_set(&unseen, &first, "catia orientability unseen edges")? {
                 continue;
             }
@@ -5218,7 +5281,10 @@ fn orientability_in(
                 ctx.dedup_vec(&mut points, "catia orientability component points")
             })?;
             let mut endpoints = Vec::new();
-            for &point in ctx.admit_iter(&points, "catia orientability endpoints")? {
+            let mut charged_steps = points.iter();
+            while let Some(&point) =
+                ctx.next_charged(&mut charged_steps, "catia orientability endpoints")?
+            {
                 match degree_of(point)? {
                     1 => component_storage.with_storage(|| {
                         ctx.push_vec(&mut endpoints, point, "catia orientability endpoints")
@@ -6289,9 +6355,9 @@ where
                 Ok(BTreeMap::<usize, u8>::new())
             })
         })?;
-        for (edge, pairs) in ctx
-            .admit_iter(choices, "catia_incidence_fixed_degree_points")?
-            .enumerate()
+        let mut charged_steps = choices.iter().enumerate();
+        while let Some((edge, pairs)) =
+            ctx.next_charged(&mut charged_steps, "catia_incidence_fixed_degree_points")?
         {
             let [pair] = pairs.as_slice() else {
                 continue;
@@ -6392,7 +6458,10 @@ where
             let (ControlFlow::Continue(()) | ControlFlow::Break(())) = visitor(&pairs)?;
             return Ok(Some(()));
         }
-        for component in ctx.admit_iter(&components, "catia incidence component preflight")? {
+        let mut charged_steps = components.iter();
+        while let Some(component) =
+            ctx.next_charged(&mut charged_steps, "catia incidence component preflight")?
+        {
             // Preflight is a rejection shortcut only. Give each independent
             // component its own bounded slice so a large component cannot
             // consume the composition budget needed by all later components.
@@ -6628,9 +6697,11 @@ pub(crate) fn reconstruct_incidence_candidates(
                                 propagated.len(),
                                 "catia_incidence_port_completed_pairs",
                             )?;
-                            for pair in
-                                ctx.admit_iter(&propagated, "catia_incidence_port_completed_pairs")?
-                            {
+                            let mut charged_steps = propagated.iter();
+                            while let Some(pair) = ctx.next_charged(
+                                &mut charged_steps,
+                                "catia_incidence_port_completed_pairs",
+                            )? {
                                 let Some(pair) = *pair else {
                                     return Ok(None);
                                 };

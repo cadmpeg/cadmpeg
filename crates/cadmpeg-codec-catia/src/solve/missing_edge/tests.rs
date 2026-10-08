@@ -976,3 +976,33 @@ fn ambiguous_mesh_port_trials_keep_no_retained_solution() {
     .expect("ambiguous port candidates stay temporary");
     assert_eq!(pairs, None);
 }
+
+#[test]
+fn closed_port_search_does_not_visit_another_frame() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty fixture fits the input limit");
+    let mut search = super::PortCandidateSearch {
+        ctx: &ctx,
+        ports: &[[0, 1]],
+        candidates: &[vec![[0, 1], [0, 2]]],
+        port_points: std::collections::HashMap::new(),
+        point_ports: std::collections::HashMap::new(),
+        edge_pairs: vec![None],
+        outcome: super::SearchOutcome::Ambiguous,
+        states: 0,
+        mode: super::PortCandidateSearchMode::UniqueMesh,
+        map_storage: ctx
+            .reserve_scoped(0, "catia_port_search_points")
+            .expect("empty storage"),
+        outcome_storage: ctx
+            .reserve_scoped(0, "catia_port_search_solution")
+            .expect("empty storage"),
+    };
+    search.search().expect("closed search needs no work");
+    assert_eq!(search.states, 0);
+    assert!(matches!(search.outcome, super::SearchOutcome::Ambiguous));
+}

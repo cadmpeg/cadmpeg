@@ -630,20 +630,28 @@ pub(super) fn build_mesh_coordinate_gauge<'storage>(
                 ctx.alloc_filled(point_count, false, "catia_coordinate_gauge_active")
             })?;
         let mut components_by_point = UnionFind::charged(ctx, point_count, "catia_gauge_parent")?;
-        for (_, edges) in ctx.admit_iter(&groups, "catia_gauge_group_scan")? {
+        let mut charged_steps = groups.iter();
+        while let Some((_, edges)) =
+            ctx.next_charged(&mut charged_steps, "catia_gauge_group_scan")?
+        {
             let mut first = None;
-            for &edge in ctx.admit_iter(edges, "catia_gauge_group_edge_scan")? {
-                for &point in ctx
-                    .admit_iter(&normalized_options[edge], "catia_gauge_group_point_scan")?
-                    .flatten()
+            let mut charged_steps = edges.iter();
+            while let Some(&edge) =
+                ctx.next_charged(&mut charged_steps, "catia_gauge_group_edge_scan")?
+            {
+                let mut charged_steps = normalized_options[edge].iter();
+                while let Some(pair) =
+                    ctx.next_charged(&mut charged_steps, "catia_gauge_group_point_scan")?
                 {
-                    let Some(active_point) = active.get_mut(point) else {
-                        return identity();
-                    };
-                    *active_point = true;
-                    match first {
-                        None => first = Some(point),
-                        Some(first) => components_by_point.union(ctx, first, point)?,
+                    for &point in pair {
+                        let Some(active_point) = active.get_mut(point) else {
+                            return identity();
+                        };
+                        *active_point = true;
+                        match first {
+                            None => first = Some(point),
+                            Some(first) => components_by_point.union(ctx, first, point)?,
+                        }
                     }
                 }
             }
@@ -1062,7 +1070,8 @@ fn gauge_row_classes(
     let (groups, _group_storage) = ctx.with_scoped_storage("catia_gauge_row_groups", || {
         let mut source_groups = BTreeMap::<MeshEdgeGaugeKey, Vec<usize>>::new();
         let mut target_groups = BTreeMap::<MeshEdgeGaugeKey, Vec<usize>>::new();
-        for edge in ctx.admit_iter(0..gauge.edge_rows.len(), "catia_gauge_class_edges")? {
+        let mut charged_steps = 0..gauge.edge_rows.len();
+        while let Some(edge) = ctx.next_charged(&mut charged_steps, "catia_gauge_class_edges")? {
             if gauge.edge_identity_evidence[edge] {
                 continue;
             }
@@ -1109,7 +1118,10 @@ fn gauge_row_classes(
     };
     let mut output_storage = ctx.reserve_scoped(0, "catia_gauge_row_classes")?;
     let mut classes = Vec::new();
-    for (key, sources) in ctx.admit_iter(source_groups, "catia_gauge_row_class_scan")? {
+    let mut charged_steps = source_groups.into_iter();
+    while let Some((key, sources)) =
+        ctx.next_charged(&mut charged_steps, "catia_gauge_row_class_scan")?
+    {
         let targets = if permutation.is_some() {
             let Some(targets) =
                 ctx.remove_btree_map(&mut target_groups, &key, "catia_gauge_target_group_lookup")?
@@ -1222,12 +1234,15 @@ fn canonicalize_partial_endpoint_pair_gauge(
         return Ok(None);
     };
     if let Some(coordinate_gauge) = gauge.coordinate_gauge {
-        for permutations in ctx.admit_iter(
-            &coordinate_gauge.components,
-            "catia_gauge_partial_components",
-        )? {
+        let mut charged_steps = coordinate_gauge.components.iter();
+        while let Some(permutations) =
+            ctx.next_charged(&mut charged_steps, "catia_gauge_partial_components")?
+        {
             let mut best = None;
-            for permutation in ctx.admit_iter(permutations, "catia_gauge_partial_permutations")? {
+            let mut charged_steps = permutations.iter();
+            while let Some(permutation) =
+                ctx.next_charged(&mut charged_steps, "catia_gauge_partial_permutations")?
+            {
                 let (candidate, storage) =
                     ctx.with_scoped_storage("catia_gauge_partial_candidate", || {
                         canonicalize_partial_endpoint_pair_gauge_with_permutation(
@@ -1422,9 +1437,9 @@ fn canonicalize_mesh_edge_row_gauges(
             let target_options = match permutation {
                 Some(permutation) => {
                     let mut targets = Vec::new();
-                    for (edge, options) in ctx
-                        .admit_iter(&source_options, "catia_mesh_gauge_target_scan")?
-                        .enumerate()
+                    let mut charged_steps = source_options.iter().enumerate();
+                    while let Some((edge, options)) =
+                        ctx.next_charged(&mut charged_steps, "catia_mesh_gauge_target_scan")?
                     {
                         let mapped = if gauge.edge_identity_evidence[edge] {
                             Vec::new()
@@ -1496,7 +1511,10 @@ fn canonicalize_mesh_edge_row_gauges(
                     ctx.alloc_filled(edge_count, false, "catia_mesh_edge_gauge_normalize_rows")
                 })?;
             let mut normalizes = false;
-            for (key, group) in ctx.admit_iter(source_groups, "catia_mesh_edge_gauge_class_scan")? {
+            let mut charged_steps = source_groups.into_iter();
+            while let Some((key, group)) =
+                ctx.next_charged(&mut charged_steps, "catia_mesh_edge_gauge_class_scan")?
+            {
                 let slots = if target_options.is_some() {
                     let Some(slots) = ctx.remove_btree_map(
                         &mut target_groups,
@@ -1566,7 +1584,10 @@ fn canonicalize_mesh_edge_row_gauges(
         ctx.copy_temporary_slice(&row_permutation, "catia_mesh_gauge_row_permutation_copy")?;
     let mut new_rows = std::mem::take(&mut topology.edge_rows);
     let mut swaps = 0..edge_count;
-    for old_edge in ctx.admit_iter(0..edge_count, "catia_mesh_gauge_row_cycles")? {
+    let mut charged_steps = 0..edge_count;
+    while let Some(old_edge) =
+        ctx.next_charged(&mut charged_steps, "catia_mesh_gauge_row_cycles")?
+    {
         while permuting[old_edge] != old_edge {
             if ctx
                 .next_charged(&mut swaps, "catia_mesh_gauge_row_swaps")?
@@ -1746,7 +1767,10 @@ fn permute_mesh_coordinate_labels(
         .with_scoped_storage("catia_mesh_coordinate_gauge_seen", || {
             ctx.alloc_filled(permutation.len(), false, "catia_mesh_coordinate_gauge_seen")
         })?;
-    for &target in ctx.admit_iter(permutation, "catia_mesh_coordinate_gauge_targets")? {
+    let mut charged_steps = permutation.iter();
+    while let Some(&target) =
+        ctx.next_charged(&mut charged_steps, "catia_mesh_coordinate_gauge_targets")?
+    {
         let Some(seen_target) = seen.get_mut(target) else {
             return Ok(None);
         };
@@ -1863,12 +1887,15 @@ fn canonicalize_mesh_coordinate_gauges<'storage>(
             .with_storage(|| canonicalize_mesh_edge_row_gauges(ctx, topology, gauge, None))?;
         return Ok(topology.map(|topology| (topology, topology_storage)));
     };
-    for permutations in ctx.admit_iter(
-        &coordinate_gauge.components,
-        "catia_gauge_coordinate_components",
-    )? {
+    let mut charged_steps = coordinate_gauge.components.iter();
+    while let Some(permutations) =
+        ctx.next_charged(&mut charged_steps, "catia_gauge_coordinate_components")?
+    {
         let mut best = None;
-        for permutation in ctx.admit_iter(permutations, "catia_gauge_coordinate_permutations")? {
+        let mut charged_steps = permutations.iter();
+        while let Some(permutation) =
+            ctx.next_charged(&mut charged_steps, "catia_gauge_coordinate_permutations")?
+        {
             let (candidate, storage) =
                 ctx.with_scoped_storage("catia_gauge_topology_candidate", || {
                     let Some(mut candidate) = permute_mesh_coordinate_labels(
@@ -1928,7 +1955,8 @@ fn canonicalize_mesh_candidate(
     let (mut seen, _seen_storage) = ctx.with_scoped_storage("catia_mesh_vertex_seen", || {
         ctx.alloc_filled(point_assignment.len(), false, "catia_mesh_vertex_seen")
     })?;
-    for &point in ctx.admit_iter(point_assignment, "catia_mesh_vertex_scan")? {
+    let mut charged_steps = point_assignment.iter();
+    while let Some(&point) = ctx.next_charged(&mut charged_steps, "catia_mesh_vertex_scan")? {
         let Some(entry) = seen.get_mut(point) else {
             return Ok(None);
         };
@@ -2543,15 +2571,18 @@ pub(super) fn canonicalize_endpoint_relation_state(
         state_storage.commit()?;
         return Ok(Some(state));
     };
-    for permutations in ctx.admit_iter(
-        &coordinate_gauge.components,
-        "catia_relation_gauge_components",
-    )? {
+    let mut charged_steps = coordinate_gauge.components.iter();
+    while let Some(permutations) =
+        ctx.next_charged(&mut charged_steps, "catia_relation_gauge_components")?
+    {
         if permutations.len() <= 1 {
             continue;
         }
         let mut best = None;
-        for permutation in ctx.admit_iter(permutations, "catia_relation_gauge_permutations")? {
+        let mut charged_steps = permutations.iter();
+        while let Some(permutation) =
+            ctx.next_charged(&mut charged_steps, "catia_relation_gauge_permutations")?
+        {
             let (candidate, storage) = ctx
                 .with_scoped_storage("catia_relation_candidate", || {
                     map_endpoint_relation_state(ctx, &state, gauge, permutation)
@@ -2590,9 +2621,9 @@ fn map_endpoint_relation_state(
         return Ok(None);
     };
     let mut assigned = ctx.alloc_filled(state.0.len(), None, "catia_relation_mapped_assigned")?;
-    for (edge, pair) in ctx
-        .admit_iter(&state.0, "catia_relation_assigned_scan")?
-        .enumerate()
+    let mut charged_steps = state.0.iter().enumerate();
+    while let Some((edge, pair)) =
+        ctx.next_charged(&mut charged_steps, "catia_relation_assigned_scan")?
     {
         let Some(&target) = row_mapping.get(edge) else {
             return Ok(None);
@@ -2612,9 +2643,13 @@ fn map_endpoint_relation_state(
         *slot = mapped;
     }
     let mut domains = Vec::new();
-    for row in ctx.admit_iter(&state.1, "catia_relation_domain_scan")? {
+    let mut charged_steps = state.1.iter();
+    while let Some(row) = ctx.next_charged(&mut charged_steps, "catia_relation_domain_scan")? {
         let mut choices = Vec::new();
-        for selection in ctx.admit_iter(row, "catia_relation_choice_scan")? {
+        let mut charged_steps = row.iter();
+        while let Some(selection) =
+            ctx.next_charged(&mut charged_steps, "catia_relation_choice_scan")?
+        {
             let mapped = match selection {
                 MeshEndpointRelationSelection::Deferred => MeshEndpointRelationSelection::Deferred,
                 MeshEndpointRelationSelection::Enumerated {
@@ -2700,14 +2735,20 @@ fn relation_row_gauge_mapping(
         let mut signature_slots =
             ctx.alloc_filled(edge_count, None::<usize>, "catia_relation_signature_slots")?;
         let mut signatures = Vec::<(Vec<Option<[usize; 2]>>, usize)>::new();
-        for (sources, targets) in ctx.admit_iter(&classes, "catia_relation_class_scan")? {
+        let mut charged_steps = classes.iter();
+        while let Some((sources, targets)) =
+            ctx.next_charged(&mut charged_steps, "catia_relation_class_scan")?
+        {
             let targets = targets.as_deref().unwrap_or(sources);
             if let ([source], [target]) = (sources.as_slice(), targets) {
                 // A one-row class has no row-order gauge.
                 row_mapping[*source] = *target;
                 continue;
             }
-            for &edge in ctx.admit_iter(sources, "catia_relation_signature_rows")? {
+            let mut charged_steps = sources.iter();
+            while let Some(&edge) =
+                ctx.next_charged(&mut charged_steps, "catia_relation_signature_rows")?
+            {
                 let assigned = match state.0[edge] {
                     Some(pair) => {
                         let Some(pair) = mapped_endpoint_pair(pair, Some(permutation)) else {
@@ -2728,15 +2769,22 @@ fn relation_row_gauge_mapping(
             }
         }
         if !signatures.is_empty() {
-            for choices in ctx.admit_iter(&state.1, "catia_relation_signature_domains")? {
-                for selection in ctx.admit_iter(choices, "catia_relation_signature_choices")? {
+            let mut charged_steps = state.1.iter();
+            while let Some(choices) =
+                ctx.next_charged(&mut charged_steps, "catia_relation_signature_domains")?
+            {
+                let mut charged_steps = choices.iter();
+                while let Some(selection) =
+                    ctx.next_charged(&mut charged_steps, "catia_relation_signature_choices")?
+                {
                     for (signature, _) in
                         ctx.admit_iter(&mut signatures, "catia_relation_signature_columns")?
                     {
                         ctx.push_vec(signature, None, "catia_relation_row_signature")?;
                     }
-                    for &(edge, pair) in
-                        ctx.admit_iter(selection.edge_pairs(), "catia_relation_signature_pairs")?
+                    let mut charged_steps = selection.edge_pairs().iter();
+                    while let Some(&(edge, pair)) =
+                        ctx.next_charged(&mut charged_steps, "catia_relation_signature_pairs")?
                     {
                         let Some(&Some(slot)) = signature_slots.get(edge) else {
                             continue;
