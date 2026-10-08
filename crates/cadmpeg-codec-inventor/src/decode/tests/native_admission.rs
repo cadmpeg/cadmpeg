@@ -29,7 +29,8 @@ use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::ufrx::UfrxRecord;
 use crate::native::{
-    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecordWire,
+    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
+    AssemblyPlacementRecordWire,
     StructuralIssueRecord,
 };
 use crate::property_set::{Property, PropertySection, PropertyValue};
@@ -349,30 +350,26 @@ fn assembly_occurrence_native_record_refuses_before_id_creation() {
 #[test]
 fn assembly_placement_native_record_refuses_id_and_digest_before_creation() {
     let suffix = [1_u8];
-    let inventory = AssemblyInventory {
-        occurrences: Vec::new(),
-        placements: vec![AssemblyPlacement {
-            segment_token: "segment".into(),
-            record_ordinal: 1,
-            header_id: 0,
-            owner_reference: 0,
-            attribute_reference: 0,
-            state: 0,
-            transform_prefix: false,
-            transform: CompactMatrix::try_new(
-                0,
-                0,
-                |_| Ok(cadmpeg_ir::scalar::FiniteReal::ZERO),
-            )
-            .expect("finite matrix"),
-            branch: 0,
-            graphics_state: 0,
-            occurrence_id: 0,
-            graphics_index: 0,
-            object_reference: 0,
-            suffix: View::over_retained(&suffix),
-        }],
-        issues: Vec::new(),
+    let placement = || AssemblyPlacement {
+        segment_token: "segment".into(),
+        record_ordinal: 1,
+        header_id: 0,
+        owner_reference: 0,
+        attribute_reference: 0,
+        state: 0,
+        transform_prefix: false,
+        transform: CompactMatrix::try_new(
+            0,
+            0,
+            |_| Ok(cadmpeg_ir::scalar::FiniteReal::ZERO),
+        )
+        .expect("finite matrix"),
+        branch: 0,
+        graphics_state: 0,
+        occurrence_id: 0,
+        graphics_index: 0,
+        object_reference: 0,
+        suffix: View::over_retained(&suffix),
     };
     let arena = DecodeArena::new();
     let id_len = "inventor:assembly:placement#segment-1".len();
@@ -381,34 +378,50 @@ fn assembly_placement_native_record_refuses_id_and_digest_before_creation() {
     policy.limits.max_retained_bytes = u64::try_from(id_len - 1).expect("id length fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0]),
-        Err(CodecError::ResourceLimit(limit))
+        AssemblyPlacementRecord::from_placement(&ctx, placement()),
+        Err(failure)
+            if matches!(failure.error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor assembly placement id"
+                && limit.operation == "retain Inventor assembly placement id")
     ));
+    // Preserve the former cap: without the redundant token copy, digest text
+    // now fits under this same limit.
     policy.limits.max_retained_bytes =
         u64::try_from(id_len + token_len + 63).expect("digest budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let record = AssemblyPlacementRecord::from_placement(&ctx, placement())
+        .expect("former digest refusal cap now admits the moved-token conversion");
+    assert_eq!(record.id, "inventor:assembly:placement#segment-1");
+
+    policy.limits.max_retained_bytes = u64::try_from(id_len + 63).expect("digest limit fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0]),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor assembly placement suffix digest"
+        AssemblyPlacementRecord::from_placement(&ctx, placement()),
+        Err(failure)
+            if matches!(failure.error, CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor assembly placement suffix digest"
+                    && limit.used == cadmpeg_core::decode::u64_from_index(id_len)
+                    && limit.additional == 64)
     ));
+
+    policy.limits.max_retained_bytes = u64::try_from(id_len + 64).expect("exact digest fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("exact context");
+    AssemblyPlacementRecord::from_placement(&ctx, placement())
+        .expect("exact source digest storage fits");
+
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("zero-materialized service context");
-    AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0])
-        .expect("admitted placement");
+    AssemblyPlacementRecord::from_placement(&ctx, placement()).expect("admitted placement");
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
     policy.limits.max_materialized_bytes = 0;
     let (limited, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    let wire = AssemblyPlacementRecordWire::from_placement(&limited, &inventory.placements[0])
-        .expect("placement wire");
-    let refusal = match admit_assembly_placement(&limited, wire, &mut Vec::new()) {
+    let conversion = AssemblyPlacementRecord::from_placement(&limited, placement());
+    let refusal = match admit_assembly_placement(&limited, conversion, &mut Vec::new()) {
         Err(CodecError::ResourceLimit(limit)) => limit,
         other => panic!("entity admission should refuse: {other:?}"),
     };
@@ -421,9 +434,8 @@ fn assembly_placement_native_record_refuses_id_and_digest_before_creation() {
         limited.finish_session(),
         Err(CodecError::ResourceLimit(limit)) if limit == refusal
     ));
-    let wire = AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0])
-        .expect("service placement wire");
-    assert!(admit_assembly_placement(&ctx, wire, &mut Vec::new())
+    let conversion = AssemblyPlacementRecord::from_placement(&ctx, placement());
+    assert!(admit_assembly_placement(&ctx, conversion, &mut Vec::new())
         .expect("service placement admission")
         .is_some());
     ctx.finish_session()
@@ -555,7 +567,7 @@ fn initial_source_attribute_refuses_before_key_and_value_creation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let mut attributes = std::collections::BTreeMap::new();
     assert!(matches!(
-        insert_source_attribute(&ctx, &mut attributes, "kind", format_args!("{}", 42)),
+        insert_source_attribute(&ctx, &mut attributes, b"kind", format_args!("{}", 42)),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect Inventor source attribute"
@@ -565,16 +577,36 @@ fn initial_source_attribute_refuses_before_key_and_value_creation() {
     policy.limits.max_retained_bytes = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        insert_source_attribute(&ctx, &mut attributes, "kind", format_args!("{}", 42)),
+        insert_source_attribute(&ctx, &mut attributes, b"kind", format_args!("{}", 42)),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor source attribute key"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    insert_source_attribute(&ctx, &mut attributes, "kind", format_args!("{}", 42))
+    insert_source_attribute(&ctx, &mut attributes, b"kind", format_args!("{}", 42))
         .expect("admitted attribute");
     assert_eq!(attributes["kind"], "42");
+}
+
+#[test]
+fn source_attribute_key_uses_fixed_storage_without_work_charge() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "retain Inventor source attribute key",
+        None,
+    );
+    let mut attributes = std::collections::BTreeMap::new();
+    insert_source_attribute(&ctx, &mut attributes, b"kind", format_args!("{}", 42))
+        .expect("fixed key and variable value are admitted");
+    drop(probe);
+    assert_eq!(attributes["kind"], "42");
+    ctx.finish_session()
+        .expect("fixed source attribute key adds no work charge");
 }
 
 #[test]
@@ -1807,7 +1839,7 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
         .expect("service context");
     let bad: AssemblyPlacementRecordWire =
         serde_json::from_value(wire.clone()).expect("wire fixture");
-    assert!(admit_assembly_placement(&ctx, bad, &mut issues)
+    assert!(admit_assembly_placement(&ctx, bad.into_record(), &mut issues)
         .expect("service admission")
         .is_none());
     assert_eq!(issues.len(), 1);
@@ -1816,8 +1848,8 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
     assert!(issues[0].detail.contains("suffix_sha256"));
     let mut wire = wire;
     wire["suffix_sha256"] = serde_json::json!("0".repeat(64));
-    let good = serde_json::from_value(wire).expect("wire fixture");
-    assert!(admit_assembly_placement(&ctx, good, &mut issues)
+    let good: AssemblyPlacementRecordWire = serde_json::from_value(wire).expect("wire fixture");
+    assert!(admit_assembly_placement(&ctx, good.into_record(), &mut issues)
         .expect("service admission")
         .is_some());
     assert_eq!(issues.len(), 1);
@@ -1847,7 +1879,7 @@ fn placement_conversion_issue_moves_raw_wire_token_with_legacy_cap() {
         u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let mut issues = Vec::new();
-    assert!(admit_assembly_placement(&ctx, wire, &mut issues)
+    assert!(admit_assembly_placement(&ctx, wire.into_record(), &mut issues)
         .expect("legacy cap admits transferred token")
         .is_none());
     assert_eq!(issues.len(), 1);
@@ -1861,9 +1893,10 @@ fn placement_conversion_issue_moves_raw_wire_token_with_legacy_cap() {
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed).expect("full issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
-    let wire = serde_json::from_value(fixture).expect("placement wire");
+    let wire: AssemblyPlacementRecordWire =
+        serde_json::from_value(fixture).expect("placement wire");
     let mut issues = Vec::new();
-    assert!(admit_assembly_placement(&ctx, wire, &mut issues)
+    assert!(admit_assembly_placement(&ctx, wire.into_record(), &mut issues)
         .expect("full admission")
         .is_none());
     assert_eq!(issues.len(), 1);
@@ -1900,7 +1933,7 @@ fn uppercase_placement_digest_moves_raw_wire_token_with_legacy_cap() {
         u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let mut issues = Vec::new();
-    assert!(admit_assembly_placement(&ctx, wire, &mut issues)
+    assert!(admit_assembly_placement(&ctx, wire.into_record(), &mut issues)
         .expect("legacy cap admits transferred token")
         .is_none());
     assert_eq!(issues.len(), 1);
@@ -1914,9 +1947,10 @@ fn uppercase_placement_digest_moves_raw_wire_token_with_legacy_cap() {
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed).expect("full issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
-    let wire = serde_json::from_value(fixture).expect("placement wire");
+    let wire: AssemblyPlacementRecordWire =
+        serde_json::from_value(fixture).expect("placement wire");
     let mut issues = Vec::new();
-    assert!(admit_assembly_placement(&ctx, wire, &mut issues)
+    assert!(admit_assembly_placement(&ctx, wire.into_record(), &mut issues)
         .expect("full admission")
         .is_none());
     assert_eq!(issues.len(), 1);
@@ -1931,7 +1965,7 @@ fn uppercase_placement_digest_moves_raw_wire_token_with_legacy_cap() {
 #[test]
 fn placement_conversion_issue_transfers_admitted_token_without_materialization() {
     let suffix: [u8; 0] = [];
-    let placement = AssemblyPlacement {
+    let placement = || AssemblyPlacement {
         segment_token: "segment".into(),
         record_ordinal: 1,
         header_id: 0,
@@ -1952,30 +1986,92 @@ fn placement_conversion_issue_transfers_admitted_token_without_materialization()
     };
     let issue_detail = "suffix_len must not be zero";
     let id_len = "inventor:assembly:placement#segment-1".len();
-    let source_token_len = placement.segment_token.len();
-    // from_placement admits the ID, token, and fixed-width digest text.
+    let source_token_len = "segment".len();
+    // Preserve the former source-conversion cost formula and cap. The owned
+    // input token is now admitted once by inventory and moved into the issue.
     let wire_retained = id_len + source_token_len + 64;
+    let issue_vector_storage = 4 * std::mem::size_of::<crate::record_issue::RecordIssue>();
     // Empty-vector amortized growth reserves four RecordIssue slots; detail is copied next.
-    let issue_storage =
-        4 * std::mem::size_of::<crate::record_issue::RecordIssue>() + issue_detail.len();
+    let issue_storage = issue_vector_storage + issue_detail.len();
     let retained_needed = wire_retained + issue_storage;
+    let source_issue_storage = source_token_len + issue_storage;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    let wire = AssemblyPlacementRecordWire::from_placement(&ctx, &placement)
-        .expect("source wire fits before issue storage");
+    let mut input = placement();
+    input.segment_token = ctx
+        .copy_retained_text(
+            &input.segment_token,
+            "retain Inventor assembly placement token",
+        )
+        .expect("inventory token fits before conversion");
+    let conversion = AssemblyPlacementRecord::from_placement(&ctx, input);
     let mut issues = Vec::new();
-    let first_refusal = match admit_assembly_placement(&ctx, wire, &mut issues) {
+    assert!(admit_assembly_placement(&ctx, conversion, &mut issues)
+        .expect("former one-under cap admits issue after output copies are skipped")
+        .is_none());
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].family, RecordIssueFamily::Assembly);
+    assert_eq!(issues[0].segment_token.as_str(), "segment");
+    assert_eq!(issues[0].record_ordinal, 1);
+    assert_eq!(issues[0].detail, issue_detail);
+    ctx.finish_session()
+        .expect("former one-under cap now covers the moved-token issue");
+
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained_needed).expect("exact issue budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("exact context");
+    let mut input = placement();
+    input.segment_token = ctx
+        .copy_retained_text(
+            &input.segment_token,
+            "retain Inventor assembly placement token",
+        )
+        .expect("inventory token fits before conversion");
+    let conversion = AssemblyPlacementRecord::from_placement(&ctx, input);
+    let mut issues = Vec::new();
+    assert!(admit_assembly_placement(&ctx, conversion, &mut issues)
+        .expect("former exact cap admits issue storage with no materialization")
+        .is_none());
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].family, RecordIssueFamily::Assembly);
+    assert_eq!(issues[0].segment_token.as_str(), "segment");
+    assert_eq!(issues[0].record_ordinal, 1);
+    assert_eq!(issues[0].detail, issue_detail);
+    ctx.finish_session()
+        .expect("former exact cap still admits the transferred token and issue");
+
+    policy.limits.max_retained_bytes =
+        u64::try_from(source_issue_storage - 1).expect("one-under source issue budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("one-under context");
+    let mut input = placement();
+    input.segment_token = ctx
+        .copy_retained_text(
+            &input.segment_token,
+            "retain Inventor assembly placement token",
+        )
+        .expect("source token fits before the issue boundary");
+    let conversion = AssemblyPlacementRecord::from_placement(&ctx, input);
+    let mut issues = Vec::new();
+    let first_refusal = match admit_assembly_placement(&ctx, conversion, &mut issues) {
         Err(CodecError::ResourceLimit(limit)) => limit,
-        other => panic!("issue detail should be the one-under refusal: {other:?}"),
+        other => panic!("one-under issue detail must refuse: {other:?}"),
     };
     assert_eq!(first_refusal.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(
         first_refusal.operation,
         "retain Inventor placement issue detail"
+    );
+    assert_eq!(
+        first_refusal.used,
+        cadmpeg_core::decode::u64_from_index(source_token_len + issue_vector_storage)
+    );
+    assert_eq!(
+        first_refusal.additional,
+        cadmpeg_core::decode::u64_from_index(issue_detail.len())
     );
     assert!(issues.is_empty());
     assert!(matches!(
@@ -1984,13 +2080,20 @@ fn placement_conversion_issue_transfers_admitted_token_without_materialization()
     ));
 
     policy.limits.max_retained_bytes =
-        u64::try_from(retained_needed).expect("exact issue budget fits");
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("exact context");
-    let wire = AssemblyPlacementRecordWire::from_placement(&ctx, &placement)
-        .expect("source wire fits before issue storage");
+        u64::try_from(source_issue_storage).expect("exact source issue budget fits");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("source exact context");
+    let mut input = placement();
+    input.segment_token = ctx
+        .copy_retained_text(
+            &input.segment_token,
+            "retain Inventor assembly placement token",
+        )
+        .expect("source token fits before exact issue storage");
+    let conversion = AssemblyPlacementRecord::from_placement(&ctx, input);
     let mut issues = Vec::new();
-    assert!(admit_assembly_placement(&ctx, wire, &mut issues)
-        .expect("exact issue storage admitted with no materialization")
+    assert!(admit_assembly_placement(&ctx, conversion, &mut issues)
+        .expect("exact source issue storage admitted with no materialization")
         .is_none());
     assert_eq!(issues.len(), 1);
     assert_eq!(issues[0].family, RecordIssueFamily::Assembly);
@@ -1998,7 +2101,7 @@ fn placement_conversion_issue_transfers_admitted_token_without_materialization()
     assert_eq!(issues[0].record_ordinal, 1);
     assert_eq!(issues[0].detail, issue_detail);
     ctx.finish_session()
-        .expect("transferred token and exact issue storage are admitted");
+        .expect("exact source storage admits its token and issue");
 }
 
 fn assert_ufrx_issue(ir: &cadmpeg_ir::document::CadIr, scope: &str, field: &str) {
