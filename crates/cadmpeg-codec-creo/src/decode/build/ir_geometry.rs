@@ -231,6 +231,7 @@ pub(super) fn transfer_and_record_scanned_geometry<'ctx>(
         nurbs_boundary_curves.extrusion_plane_section_generator_count;
     let shared_extrusion_generator_curve_count =
         nurbs_boundary_curves.shared_extrusion_generator_count;
+    let mut curve_id_storage = ctx.reserve_scoped(0, "creo derived curve ID merge storage")?;
     let mut derived_intersection_curves = transfer_carrier_intersection_curves(
         ctx,
         scan,
@@ -240,7 +241,6 @@ pub(super) fn transfer_and_record_scanned_geometry<'ctx>(
         source_carriers,
         &mut curve_evidence_storage,
     )?;
-    let mut curve_id_storage = ctx.reserve_scoped(0, "creo derived curve ID merge storage")?;
     curve_id_storage.with_storage(|| {
         append_borrowed_curve_ids(
             ctx,
@@ -291,6 +291,10 @@ pub(super) fn transfer_and_record_scanned_geometry<'ctx>(
         transfer_losses,
         source_carriers,
     )?;
+    drop(derived_intersection_curves);
+    drop(nurbs_boundary_curves);
+    drop(curve_id_storage);
+    drop(curve_evidence_storage);
     diagnostics.record_coverage(ctx, coverage)?;
     let mut brep_diagnostics = diagnostics;
     let feature_revolution_brep_count = transfer_resolved_revolution_breps(
