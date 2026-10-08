@@ -336,8 +336,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
     Ok(transferred)
 }
 
-#[cfg(test)]
-mod tests;
+
 
 pub(in super::super) fn transfer_rowless_round_cylinders(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -2027,3 +2026,6 @@ pub(in super::super) fn transfer_cross_section_planes(
     }
     Ok(transferred)
 }
+
+#[cfg(test)]
+mod tests;

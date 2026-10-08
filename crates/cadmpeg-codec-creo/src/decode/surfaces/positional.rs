@@ -167,8 +167,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
     Ok(transferred)
 }
 
-#[cfg(test)]
-mod tests;
+
 
 pub(in super::super) fn transfer_positional_tori(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -768,3 +767,6 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
     }
     Ok(transferred)
 }
+
+#[cfg(test)]
+mod tests;
