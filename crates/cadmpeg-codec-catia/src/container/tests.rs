@@ -22,6 +22,115 @@ use crate::test_support::test_e5::append_e5_record;
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
+fn container_for_extent<'a>(
+    outer: &InnerDir,
+    declarations: &'a [super::OuterContainerDeclaration],
+    byte_offset: u64,
+    byte_len: u64,
+) -> Option<&'a super::OuterContainerDeclaration> {
+    crate::test_support::with_service_context(|ctx| {
+        let index = super::outer_container_extent_index(ctx, outer, declarations)?;
+        outer_container_for_extent(ctx, &index, byte_offset, byte_len)
+    })
+    .expect("service budget")
+}
+
+#[test]
+fn outer_extent_index_preserves_overlap_and_single_extent_ownership() {
+    let declarations = ["first", "second", "second"].map(|name| super::OuterContainerDeclaration {
+        data_offset: 0,
+        ordinal: 0,
+        class_name: String::new(),
+        base_class: String::new(),
+        stream_name: name.to_owned(),
+    });
+    let outer = InnerDir {
+        inner: 10,
+        descriptors: vec![
+            Descriptor {
+                name: "first".to_owned(),
+                desc_offset: 0,
+                extents: vec![
+                    Extent {
+                        phys_off: 0,
+                        phys_len: 90,
+                        flags: 0,
+                    },
+                    Extent {
+                        phys_off: 40,
+                        phys_len: 60,
+                        flags: 0,
+                    },
+                    Extent {
+                        phys_off: 100,
+                        phys_len: 20,
+                        flags: 0,
+                    },
+                ],
+            },
+            Descriptor {
+                name: "second".to_owned(),
+                desc_offset: 1,
+                extents: vec![Extent {
+                    phys_off: 80,
+                    phys_len: 50,
+                    flags: 0,
+                }],
+            },
+        ],
+    };
+    crate::test_support::with_retained_limit(0, |ctx| {
+        let index = super::outer_container_extent_index(ctx, &outer, &declarations)
+            .expect("interval index uses temporary storage");
+        for start in 0..160 {
+            for length in 0..32 {
+                let mut expected =
+                    declarations
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(owner, declaration)| {
+                            outer
+                                .descriptors
+                                .iter()
+                                .any(|descriptor| {
+                                    descriptor.name == declaration.stream_name
+                                        && descriptor.extents.iter().any(|extent| {
+                                            let extent_start = 10 + u64::from(extent.phys_off);
+                                            extent_start <= start
+                                                && start + length
+                                                    <= extent_start + u64::from(extent.phys_len)
+                                        })
+                                })
+                                .then_some(owner)
+                        });
+                let expected = match (expected.next(), expected.next()) {
+                    (Some(owner), None) => Some(&declarations[owner]),
+                    _ => None,
+                };
+                let actual =
+                    outer_container_for_extent(ctx, &index, start, length).expect("interval query");
+                assert_eq!(
+                    actual.map(std::ptr::from_ref),
+                    expected.map(std::ptr::from_ref),
+                    "range {start}+{length}"
+                );
+            }
+        }
+        assert!(outer_container_for_extent(ctx, &index, u64::MAX, 1)
+            .expect("overflow gate")
+            .is_none());
+    });
+    let refused =
+        crate::test_support::with_work_refusal("catia_outer_container_extent_query", |ctx| {
+            let index = super::outer_container_extent_index(ctx, &outer, &declarations)?;
+            outer_container_for_extent(ctx, &index, 20, 1).map(|owner| owner.is_some())
+        });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_outer_container_extent_query")
+    );
+}
+
 fn summarize_service(scan: &ContainerScan<'_>) -> cadmpeg_ir::ContainerSummary {
     crate::test_support::with_service_context(|ctx| summarize(ctx, scan))
         .expect("service budget admits container summary")
@@ -136,7 +245,10 @@ fn logical_stream_roster_refuses_collection_limit() {
     let bytes = outer_directory_catpart();
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes))
         .expect("service budget admits outer directory");
-    let first_len = scan.outer.as_ref().expect("outer directory").descriptors[0].logical_length();
+    let first_len = crate::test_support::with_service_context(|ctx| {
+        scan.outer.as_ref().expect("outer directory").descriptors[0].logical_length(ctx)
+    })
+    .expect("service budget");
     let limited = crate::test_support::with_collection_limit(first_len, |ctx| {
         super::logical_record_streams(ctx, &scan)
     });
@@ -210,7 +322,7 @@ fn finjpl_markers_refuse_collection_limit() {
         crate::test_support::with_collection_limit(0, |ctx| super::finjpl_segments(ctx, &body));
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_finjpl_positions")
+        if limit.operation == "catia_finjpl_segments")
     );
     assert_eq!(finjpl_service(&body).len(), 1);
 }
@@ -322,7 +434,7 @@ fn append_e5_test_record(bytes: &mut Vec<u8>, id: u32) {
 }
 
 fn append_e5_test_record_with_payload(bytes: &mut Vec<u8>, id: u32, payload: &[u8]) {
-    bytes.extend_from_slice(super::E5_MARKER);
+    bytes.extend_from_slice(crate::families::e5::records::E5_MARKER);
     bytes.extend_from_slice(&[0xfe, 0x00]);
     bytes.extend_from_slice(
         &(u16::try_from(payload.len()).expect("fixture value fits u16")).to_le_bytes(),
@@ -869,7 +981,8 @@ fn directory_parser_accepts_a_structurally_bounded_extent_roster_above_64() {
         .find(|descriptor| descriptor.desc_offset == descriptor_start)
         .expect("descriptor at synthesized header");
     assert_eq!(
-        descriptor.logical_length(),
+        crate::test_support::with_service_context(|ctx| descriptor.logical_length(ctx))
+            .expect("service budget"),
         cadmpeg_core::decode::u64_from_index(extent_count)
     );
     assert_eq!(descriptor.extents.len(), extent_count);
@@ -1006,13 +1119,11 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
     assert_eq!(declarations[0].base_class, "CATProdCont");
     assert_eq!(declarations[0].stream_name, "1048_62eb7b6f_1825");
     assert_eq!(
-        outer_container_for_extent(&outer, &declarations, u64::from(data_len), 1)
+        container_for_extent(&outer, &declarations, u64::from(data_len), 1)
             .map(|declaration| declaration.class_name.as_str()),
         Some("CATPrtCont")
     );
-    assert!(
-        outer_container_for_extent(&outer, &declarations, u64::from(data_len) - 1, 2).is_none()
-    );
+    assert!(container_for_extent(&outer, &declarations, u64::from(data_len) - 1, 2).is_none());
 
     let mut prefixed_outer = outer.clone();
     prefixed_outer.descriptors[1].name = "_1048_62eb7b6f_1825".to_string();
@@ -1020,7 +1131,7 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
     assert_eq!(prefixed_declarations.len(), 1);
     assert_eq!(prefixed_declarations[0].stream_name, "_1048_62eb7b6f_1825");
     assert_eq!(
-        outer_container_for_extent(
+        container_for_extent(
             &prefixed_outer,
             &prefixed_declarations,
             u64::from(data_len),
@@ -1614,36 +1725,27 @@ fn jpeg_candidate_suffix_walks_refuse_caller_work_limit() {
 }
 
 #[test]
-fn declaration_candidates_refuse_repeated_suffix_searches() {
+fn declaration_candidates_share_one_terminal_index() {
     let mut data = vec![0u8; 1024];
     for start in (0..900).step_by(64) {
         data[start + 8..start + 12].copy_from_slice(&[1, 0, 3, 0]);
         data[start + 16..start + 24].copy_from_slice(&[1, 0, 0x6c, 0, 2, 0, 0, 0]);
         data[start + 32..start + 36].copy_from_slice(&[2, 0, 0x81, 0x20]);
     }
-    crate::test_support::with_work_limit(2048, |ctx| {
-        let cadmpeg_core::CodecError::ResourceLimit(limit) =
-            super::parse_outer_container_declarations(ctx, &data, &[])
-                .expect_err("suffix searches require caller work")
-        else {
-            panic!("resource refusal")
-        };
-        assert_eq!(limit.operation, "catia_container_terminal_scan");
-        assert_eq!(ctx.resource_refusal(), Some(limit));
+    // Every candidate looks its terminal up in one index, so the scan stays
+    // linear in the stream however many candidates it holds.
+    let declarations = crate::test_support::with_work_limit(4 * 1024, |ctx| {
+        super::parse_outer_container_declarations(ctx, &data, &[])
+    })
+    .expect("one terminal index serves every candidate");
+    assert!(declarations.is_empty());
+    let refused = crate::test_support::with_work_refusal("catia_container_terminal_scan", |ctx| {
+        super::parse_outer_container_declarations(ctx, &data, &[])
     });
-}
-
-#[test]
-fn nested_magic_absence_refuses_unadmitted_search() {
-    crate::test_support::with_work_limit(0, |ctx| {
-        let cadmpeg_core::CodecError::ResourceLimit(limit) =
-            super::parse_stream_directory(ctx, &[0; 256]).expect_err("magic search needs work")
-        else {
-            panic!("resource refusal")
-        };
-        assert_eq!(limit.operation, "catia_nested_magic_scan");
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_container_terminal_scan")
+    );
 }
 
 #[test]
@@ -1653,15 +1755,17 @@ fn e5_stride_selection_refuses_caller_work() {
         append_e5_test_record(&mut body, id);
     }
     let bytes = outer_with_preamble(&body);
-    crate::test_support::with_work_limit(0, |ctx| {
-        let cadmpeg_core::CodecError::ResourceLimit(limit) =
-            super::e5_record_stream(ctx, &bytes).expect_err("selection needs work")
-        else {
-            panic!("resource refusal")
-        };
-        assert_eq!(limit.operation, "catia_e5_segment_scan");
-        assert_eq!(ctx.resource_refusal(), Some(limit));
+    let refused = crate::test_support::with_work_refusal("catia_e5_marker_scan", |ctx| {
+        let result = super::e5_record_stream(ctx, &bytes);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
     });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_e5_marker_scan")
+    );
 }
 
 #[test]

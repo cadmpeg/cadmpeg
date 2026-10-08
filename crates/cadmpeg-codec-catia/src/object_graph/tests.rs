@@ -1817,3 +1817,66 @@ fn payload_field_wire_rejects_a_table_count_disagreeing_with_the_rows() {
         .to_string();
     assert!(error.contains("table_count"), "{error}");
 }
+
+#[test]
+fn repeated_reference_suffix_searches_refuse_before_visits() {
+    use super::{ObjectPayload, PayloadField};
+    let payload = ObjectPayload {
+        size: 8,
+        fields: vec![
+            PayloadField::Atom {
+                value: 48,
+                offset: 0,
+            },
+            PayloadField::Atom {
+                value: 2,
+                offset: 1,
+            },
+            PayloadField::Reference {
+                value: 7,
+                offset: 2,
+            },
+            PayloadField::Reference {
+                value: 9,
+                offset: 3,
+            },
+            PayloadField::Atom {
+                value: 2,
+                offset: 4,
+            },
+            PayloadField::Reference {
+                value: 7,
+                offset: 5,
+            },
+            PayloadField::Atom {
+                value: 129,
+                offset: 6,
+            },
+            PayloadField::Terminator,
+        ],
+    };
+    for operation in [
+        "catia_repeated_reference_candidates",
+        "catia_repeated_reference_fields",
+        "catia_repeated_reference_copy",
+        "catia_reference_schema_preamble",
+    ] {
+        let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+            super::repeated_reference_suffix_charged(ctx, &payload)
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation)
+        );
+    }
+    let suffix = crate::test_support::with_service_context(|ctx| {
+        super::repeated_reference_suffix_charged(ctx, &payload)
+    })
+    .expect("admission")
+    .expect("exact suffix");
+    assert_eq!(suffix.repeated_references, [7]);
+    assert_eq!(suffix.terminal_reference, 9);
+    assert!(crate::test_support::with_materialized_limit(0, |ctx| {
+        super::has_repeated_reference_suffix(ctx, &payload)
+    })
+    .expect("borrowed search"));
+}

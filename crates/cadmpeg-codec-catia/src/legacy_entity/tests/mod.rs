@@ -38,32 +38,53 @@ fn parse_runs_with_directory_offset(
     .expect("legacy directory fixture fits service limits")
 }
 
-#[test]
-fn legacy_run_identities_refuse_collection_limit_before_growth() {
+/// Collection refusals of a one-identity run, in the order the limits reach them.
+fn one_identity_run_collection_refusals() -> Vec<&'static str> {
     let mut bytes = Vec::new();
     identity(&mut bytes, 1);
     bytes.extend_from_slice(CATALOG_OPEN);
-    let refused =
-        crate::test_support::with_collection_limit(0, |ctx| parse_runs_charged(ctx, &bytes));
+    let mut operations = Vec::new();
+    for limit in 0..64 {
+        match crate::test_support::with_collection_limit(limit, |ctx| {
+            parse_runs_charged(ctx, &bytes)
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) => {
+                operations.push(refusal.operation);
+            }
+            Ok(runs) => {
+                assert_eq!(runs.len(), 1);
+                return operations;
+            }
+            Err(error) => panic!("unexpected legacy refusal: {error}"),
+        }
+    }
+    panic!("one-identity run needs fewer than 64 collection items");
+}
+
+#[test]
+fn legacy_run_identities_refuse_collection_limit_before_growth() {
+    let operations = one_identity_run_collection_refusals();
+    let catalogs = operations
+        .iter()
+        .position(|op| *op == "catia_legacy_catalog_offsets");
+    let identities = operations
+        .iter()
+        .position(|op| *op == "catia_legacy_candidate_identities");
     assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_legacy_candidate_identities")
+        catalogs.is_some() && catalogs < identities,
+        "{operations:?}"
     );
-    assert_eq!(parse_runs(&bytes).len(), 1);
 }
 
 #[test]
 fn legacy_run_list_refuses_after_identity_admission() {
-    let mut bytes = Vec::new();
-    identity(&mut bytes, 1);
-    bytes.extend_from_slice(CATALOG_OPEN);
-    let refused =
-        crate::test_support::with_collection_limit(1, |ctx| parse_runs_charged(ctx, &bytes));
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_legacy_runs")
-    );
-    assert_eq!(parse_runs(&bytes).len(), 1);
+    let operations = one_identity_run_collection_refusals();
+    let identities = operations
+        .iter()
+        .position(|op| *op == "catia_legacy_candidate_identities");
+    let runs = operations.iter().position(|op| *op == "catia_legacy_runs");
+    assert!(identities.is_some() && identities < runs, "{operations:?}");
+    assert_eq!(operations.last(), Some(&"catia_legacy_runs"));
 }
 
 #[test]

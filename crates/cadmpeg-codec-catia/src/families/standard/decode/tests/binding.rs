@@ -260,12 +260,12 @@ fn standard_e5_carrier_identity_maps_refuse_before_growth() {
     append_e5_record(&mut stream, 0xf1, 8, &wrapper);
     append_e5_record(&mut stream, 0x00, 7, &[0x82, 0x88, 0x89, 1, 0]);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| standard_freeform_e5_carrier_ids(
-            ctx, &stream
-        ))
-        .expect("service resource budget")
-        .get(&7),
-        Some(&42)
+        crate::test_support::with_service_context(|ctx| {
+            standard_freeform_e5_carrier_ids(ctx, &stream)
+                .map(|(carriers, _storage)| carriers.get(&7).copied())
+        })
+        .expect("service resource budget"),
+        Some(42)
     );
     for (cap, operation) in [
         (0, "catia_e5_face_surfaces"),
@@ -274,7 +274,9 @@ fn standard_e5_carrier_identity_maps_refuse_before_growth() {
         (3, "catia_e5_face_carriers"),
     ] {
         assert!(matches!(
-            crate::test_support::with_collection_limit(cap, |ctx| standard_freeform_e5_carrier_ids(ctx, &stream)),
+            crate::test_support::with_collection_limit(cap, |ctx| {
+                standard_freeform_e5_carrier_ids(ctx, &stream).map(drop)
+            }),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
         ));
     }
@@ -1137,10 +1139,20 @@ fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
     })
     .expect("service budget");
     assert_eq!(exact.get(&7), Some(&0));
-    assert!(matches!(
-        crate::test_support::with_collection_limit(0, |ctx| unique_native_identity_points(ctx, &vertices, 2, &BTreeMap::new(), &points)),
-        Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == "catia_native_identity_points"
-    ));
+    for operation in [
+        "catia_native_identity_point_order",
+        "catia_native_identity_points",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                crate::test_support::with_collection_limit(cap, |ctx| {
+                    unique_native_identity_points(ctx, &vertices, 2, &BTreeMap::new(), &points)
+                })
+            },
+        );
+    }
 }
 
 #[test]
@@ -1343,10 +1355,12 @@ fn standard_freeform_face_uses_exact_e5_surface_wrapper_identity() {
     }];
 
     let associated = crate::test_support::with_service_context(|ctx| {
+        let (carriers, _storage) = standard_freeform_e5_carrier_ids(ctx, &stream)?;
         associate_standard_freeform_e5_surfaces(
             ctx,
             &records,
             &stream,
+            &carriers,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -1398,8 +1412,10 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
     .expect("synthetic E5 stream fits the service profile");
     let jets = crate::families::e5::records::e5_rolling_ball_jets(&ctx, &stream)
         .expect("two E5 stations fit the collection limit");
+    let (carriers, _carrier_storage) =
+        standard_freeform_e5_carrier_ids(&ctx, &stream).expect("service resource budget");
     let associated =
-        associate_standard_freeform_e5_rolling_ball_jets(&ctx, &records, &stream, &jets)
+        associate_standard_freeform_e5_rolling_ball_jets(&ctx, &records, &carriers, &jets)
             .expect("service resource budget");
     assert!(matches!(
         associated.get(&7),
@@ -1419,7 +1435,7 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
     assert!(associate_standard_freeform_e5_rolling_ball_jets(
         &ctx,
         &opposite_records,
-        &stream,
+        &carriers,
         &jets
     )
     .expect("service resource budget")
@@ -1442,10 +1458,12 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
         reverse_jets[0].sense,
         crate::families::e5::graph::Sign::Positive
     );
+    let (reverse_carriers, _reverse_carrier_storage) =
+        standard_freeform_e5_carrier_ids(&ctx, &reverse_stream).expect("service resource budget");
     assert!(associate_standard_freeform_e5_rolling_ball_jets(
         &ctx,
         &opposite_records,
-        &reverse_stream,
+        &reverse_carriers,
         &reverse_jets
     )
     .expect("service resource budget")

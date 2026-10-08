@@ -17,7 +17,7 @@ use cadmpeg_ir::AnnotationBuilder;
 use std::collections::HashMap;
 
 #[test]
-fn standard_attached_circle_axes_refuse_before_vector_growth() {
+fn standard_attached_circle_plans_refuse_before_growth() {
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
@@ -53,26 +53,34 @@ fn standard_attached_circle_axes_refuse_before_vector_growth() {
     })
     .expect("service circle budget");
     assert_eq!(ir.model.curves.len(), 1);
-    let mut limited_ir = ir;
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        crate::families::standard::decode::edge_geometry::attach_standard_circles(
-            ctx,
-            &mut limited_ir,
-            &mut AnnotationBuilder::new(),
-            &bindings,
-            &[support],
-            &mut admission,
-        )
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_standard_attached_circle_axes")
-    );
+    ir.model.curves.clear();
+    for operation in [
+        "catia_standard_bound_face_geometries",
+        "catia_standard_attached_circle_plans",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let mut limited_ir = ir.clone();
+                crate::test_support::with_collection_limit(cap, |ctx| {
+                    let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+                    crate::families::standard::decode::edge_geometry::attach_standard_circles(
+                        ctx,
+                        &mut limited_ir,
+                        &mut AnnotationBuilder::new(),
+                        &bindings,
+                        std::slice::from_ref(&support),
+                        &mut admission,
+                    )
+                })
+            },
+        );
+    }
 }
 
 #[test]
-fn standard_edge_circle_axes_refuse_before_vector_growth() {
+fn standard_edge_circle_axes_use_fixed_slots_before_curve_growth() {
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
@@ -128,6 +136,8 @@ fn standard_edge_circle_axes_refuse_before_vector_growth() {
     })
     .expect("service edge circle budget");
     assert!(curve.is_some());
+    // The face and native carrier axes occupy fixed slots, so the first
+    // collection the circle edge grows is the model curve arena.
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
@@ -149,7 +159,7 @@ fn standard_edge_circle_axes_refuse_before_vector_growth() {
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_standard_edge_circle_axes")
+        if limit.operation != "catia_standard_edge_circle_axes")
     );
 }
 

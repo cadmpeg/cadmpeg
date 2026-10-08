@@ -91,8 +91,11 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -240,8 +243,11 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -395,8 +401,11 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })

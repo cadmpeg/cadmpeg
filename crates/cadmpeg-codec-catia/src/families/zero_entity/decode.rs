@@ -176,14 +176,12 @@ fn append_oriented_wire_curve(
             annotations,
             &construction_id,
             "curve",
-            "catia_annotation_field",
         )?;
         crate::resource::derived_annotation(
             admission.context(),
             annotations,
             &construction_id,
             "definition",
-            "catia_annotation_field",
         )?;
         let mut definition = definition;
         let cached = match cache_fit_tolerance.map(cadmpeg_ir::geometry::LegacyCache::new) {
@@ -239,13 +237,7 @@ fn append_oriented_wire_curve(
         "oriented_support_model_curve",
         Exactness::Derived,
     )?;
-    crate::resource::derived_annotation(
-        admission.context(),
-        annotations,
-        &curve_id,
-        "geometry",
-        "catia_annotation_field",
-    )?;
+    crate::resource::derived_annotation(admission.context(), annotations, &curve_id, "geometry")?;
     admission.reserve_entity(&mut ir.model.curves, "catia_zero_wire_curves")?;
     positions.add_curve(admission.context(), &curve_id, ir.model.curves.len())?;
     ir.model.curves.push(Curve {
@@ -459,14 +451,12 @@ fn transfer_closed_wire_loops(
                     annotations,
                     &point_id,
                     "position",
-                    "catia_annotation_field",
                 )?;
                 crate::resource::derived_annotation(
                     admission.context(),
                     annotations,
                     &vertex_id,
                     "point",
-                    "catia_annotation_field",
                 )?;
                 admission.reserve_entity(&mut ir.model.points, "catia_zero_wire_points")?;
                 ir.model.points.push(Point::new(
@@ -887,21 +877,18 @@ fn transfer_closed_wire_loops(
                     annotations,
                     &edge_id,
                     "curve",
-                    "catia_annotation_field",
                 )?;
                 crate::resource::derived_annotation(
                     admission.context(),
                     annotations,
                     &edge_id,
                     "start",
-                    "catia_annotation_field",
                 )?;
                 crate::resource::derived_annotation(
                     admission.context(),
                     annotations,
                     &edge_id,
                     "end",
-                    "catia_annotation_field",
                 )?;
                 admission.reserve_entity(&mut ir.model.edges, "catia_zero_wire_edges")?;
                 ir.model.edges.push(Edge {
@@ -925,7 +912,6 @@ fn transfer_closed_wire_loops(
                         annotations,
                         &edge_id,
                         "param_range",
-                        "catia_annotation_field",
                     )?;
                 }
                 edge_ids.push(edge_id);
@@ -1200,7 +1186,7 @@ pub(in crate::families) fn try_decode_zero_entity(
             }
         };
     }
-    let preamble = container::outer_preamble_range(&scan.data)?;
+    let preamble = admitted!(container::outer_preamble_range(ctx, &scan.data))?;
     let surfaces = match crate::families::zero_entity::records::zero_entity_surfaces_in_range(
         ctx, &scan.data, preamble.clone(), refusal,
     ) {
@@ -1292,7 +1278,7 @@ pub(in crate::families) fn try_decode_zero_entity(
                     u64_from_index(support.pos),
                     "support_model_curve",
                     Exactness::Derived));
-                admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &curve_id, "geometry", "catia_annotation_field"));
+                admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &curve_id, "geometry"));
                 if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_zero_support_curves") {
                     return Some(Err(error));
                 }
@@ -1390,9 +1376,9 @@ pub(in crate::families) fn try_decode_zero_entity(
                 u64_from_index(support.pos),
                 role,
                 Exactness::Derived));
-            admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &curve_id, "geometry", "catia_annotation_field"));
-            admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &construction_id, "curve", "catia_annotation_field"));
-            admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &construction_id, "definition", "catia_annotation_field"));
+            admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &curve_id, "geometry"));
+            admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &construction_id, "curve"));
+            admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &construction_id, "definition"));
             if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_zero_parametric_curves") {
                 return Some(Err(error));
             }

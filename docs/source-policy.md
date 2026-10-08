@@ -449,7 +449,10 @@ Decode code uses `HashMap` and `HashSet` only for keyed lookup, insertion
 and removal. Iteration order is unspecified, so decoded output must not
 depend on it, and a scan walks the allocated table, which has no exact public
 bound once removals leave deleted slots. Traversal (`iter`, `keys`, `values`,
-`values_mut`, `into_keys`, `into_values`, `IntoIterator`, `for` loops), the
+`values_mut`, `into_keys`, `into_values`, `IntoIterator`, `for` loops,
+including a loop that charges each step, and a table passed to any
+`IntoIterator` parameter such as `extend`, `from_iter`, `zip`, `flatten` or a
+core collector), the
 set relations (`difference`, `intersection`, `union`, `is_subset`,
 `is_disjoint`), the set operators `|`, `&`, `-` and `^`, whole-table `==`,
 `clone`, `retain`, `drain` and `extract_if` are reported; a collection that decode traverses or compares is a `BTreeMap`,
@@ -477,7 +480,12 @@ charges the storage for twice the new length as work, which bounds the old
 table it walks, and holds it as a scoped reservation while the table grows,
 which bounds the new table before it is allocated. Right after growing, the
 table has no deleted slots, so growth then charges the storage of its new
-`capacity()` less that of the old one as retained bytes. An in-place rehash
+`capacity()` less that of the old one as retained bytes. Std exposes neither
+the bucket count nor the deleted slots, so after removals that charge cannot
+tell an in-place rehash from a doubling and charges as if the table doubled.
+Under churn the retained total therefore exceeds the table's storage, by at
+most 8/7 of an entry and its control byte per removal: no more than keeping
+the removed entry would have retained. An in-place rehash
 allocates nothing; the charged removals and insertions since the last rehash
 pay for its walk, so a raw removal is reported with `remove_hash_map`,
 `remove_entry_hash_map` or `remove_hash_set`. Growth then
@@ -848,8 +856,12 @@ A sort's charge does not depend on the input's order, so a decode that sorts
 values gathered in an unspecified order still charges deterministically.
 `is_sorted_by` compares neighbours, each comparison charged one step and both
 operands' key costs, and stops at the first pair out of order; code whose input
-order is deterministic uses it to skip a sort. A stable sort of more than twenty
-values sorts an index array, whose sort admits the comparisons and index moves
-once, and then moves each value along its permutation cycle, admitting two
-value moves per value. Truncating, clearing, filling or
+order is deterministic uses it to skip a sort. A stable sort of twenty or fewer
+values inserts by adjacent swaps and compares every earlier neighbour without
+stopping where the value comes to rest, so its steps depend only on the length.
+A stable sort of more than twenty values sorts an index array, whose sort
+admits the comparisons and index moves once, and then moves each value along
+its permutation cycle, admitting two value moves per value. It charges one unit
+per swap and one per value not swapped, so the total and the refusal point
+depend only on the length. Truncating, clearing, filling or
 compacting a vector charges nothing for the values it releases.

@@ -124,7 +124,7 @@ pub fn object_graph(data: &[u8]) {
     else {
         return;
     };
-    let _probe = crate::object_graph::parse(&ctx, data);
+    let _probe = crate::object_graph::parse_all(&ctx, data);
     let _probe = crate::object_graph::surface_aliases(&ctx, data);
 }
 

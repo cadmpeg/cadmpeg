@@ -1095,7 +1095,12 @@ pub(crate) fn b2_owner_identity_targets_from_records(
         .admit_iter(records, "catia_b2_owner_identity_records")?
         .enumerate()
     {
-        if index > 0 && !crate::wire::records::records_are_contiguous(&records[index - 1..=index]) {
+        if index > 0
+            && !crate::wire::records::records_are_contiguous(&[
+                &records[index - 1],
+                &records[index],
+            ])
+        {
             allocation.clear();
         }
         if record.family() == crate::wire::records::ConsolidatedFamily::B
@@ -1287,7 +1292,7 @@ pub(crate) fn b2_owner_charts_from_records(
                 side_11,
                 owner_record,
             ];
-            if !crate::wire::records::records_are_contiguous(window)
+            if !crate::wire::records::records_are_contiguous(&window_records)
                 || window_records.iter().any(|record| record.range().is_none())
                 || window_records[1..]
                     .iter()
