@@ -97,3 +97,34 @@ fn instance_row_journal_does_not_copy_existing_link_text() {
     drop(transaction);
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn instance_row_journal_field_transfer_preserves_retained_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let link = "rhino:test:curve#added";
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes, "Rhino instance link field text", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+            let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
+            transaction.instance_journal = Some(InstanceJournal::new(&ctx)?);
+            transaction.append_link(0, link)?;
+            let journal = transaction.instance_journal.take().unwrap();
+            let result = journal.field_text_storage.commit();
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*refusal));
+            }
+            result
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("field text transfer must preserve its retained refusal");
+    };
+    assert_eq!(refusal.operation, "Rhino instance link field text");
+    assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+    // Only the actual new field text transfers; journal keys remain scratch.
+    assert_eq!(refusal.additional, u64::try_from(link.len()).unwrap());
+}
