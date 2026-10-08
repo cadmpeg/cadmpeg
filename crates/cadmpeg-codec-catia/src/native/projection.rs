@@ -2338,3 +2338,236 @@ mod consolidated_edge_run_limit_tests {
         assert!(scoped_refusals.contains("catia_native_edge_run_pcurve_index"));
     }
 }
+
+#[cfg(test)]
+mod consolidated_analytic_limit_tests {
+    use super::{
+        consolidated_circles, consolidated_cones, consolidated_line_profiles,
+        consolidated_parameter_points, consolidated_plane_carriers, consolidated_reference_lists,
+        consolidated_revolutions, consolidated_spheres, consolidated_tori,
+    };
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn native_analytic_carriers_refuse_output_and_id_limits() {
+        macro_rules! check {
+            ($fixture:ident, $decode:ident, $output:literal, $id:literal) => {{
+            let bytes = crate::test_support::test_b2::$fixture();
+            let records = crate::wire::records::consolidated_records(&bytes);
+            let limited = crate::test_support::with_collection_limit(0, |ctx| $decode(ctx, &bytes, &records));
+            assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+                if error.operation == $output));
+            let limited = crate::test_support::with_retained_limit(0, |ctx| $decode(ctx, &bytes, &records));
+            assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+                if error.operation == $id));
+            }};
+        }
+        check!(
+            b2_circle_stream,
+            consolidated_circles,
+            "catia_native_circles",
+            "catia_native_circle_id"
+        );
+        check!(
+            b2_cone_stream,
+            consolidated_cones,
+            "catia_native_cones",
+            "catia_native_cone_id"
+        );
+        check!(
+            b2_sphere_stream,
+            consolidated_spheres,
+            "catia_native_spheres",
+            "catia_native_sphere_id"
+        );
+        check!(
+            b2_torus_stream,
+            consolidated_tori,
+            "catia_native_tori",
+            "catia_native_torus_id"
+        );
+    }
+
+    #[test]
+    fn native_consolidated_circle_record_scan_propagates_work_refusal() {
+        let bytes = crate::test_support::test_b2::b2_circle_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let service = crate::test_support::with_service_context(|ctx| {
+            consolidated_circles(ctx, &bytes, &records)
+        })
+        .expect("service context admits the consolidated circle");
+        assert_eq!(service.len(), 1);
+
+        let operation = "catia_b2_family_record_scan";
+        let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+            let result = consolidated_circles(ctx, &bytes, &records).map(|circles| circles.len());
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        });
+        assert!(matches!(
+            refused,
+            Err(CodecError::ResourceLimit(limit)) if limit.operation == operation
+        ));
+    }
+
+    #[test]
+    fn native_revolution_refuses_profile_map_output_and_id_limits() {
+        let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_collection_limit(2, |ctx| {
+            consolidated_revolutions(ctx, &bytes, &records, &[])
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_revolution_profile_index"));
+        let limited = crate::test_support::with_collection_limit(3, |ctx| {
+            consolidated_revolutions(ctx, &bytes, &records, &[])
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_revolutions"));
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            consolidated_revolutions(ctx, &bytes, &records, &[])
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_revolution_id"));
+    }
+
+    #[test]
+    fn native_parameter_points_and_line_profiles_refuse_output_and_id_limits() {
+        let bytes = crate::test_support::test_b2::b2_parameter_point_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            consolidated_parameter_points(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_parameter_points"));
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            consolidated_parameter_points(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_parameter_point_id"));
+        let bytes = crate::test_support::test_b2::b2_line_profile_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            consolidated_line_profiles(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_line_profiles"));
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            consolidated_line_profiles(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_line_profile_id"));
+    }
+
+    #[test]
+    fn native_reference_lists_refuse_output_and_id_limits() {
+        let bytes = crate::test_support::test_b2::b2_reference_list_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "catia_native_reference_lists",
+            |cap| {
+                crate::test_support::with_collection_limit(cap, |ctx| {
+                    consolidated_reference_lists(ctx, &bytes, &records)
+                })
+            },
+        );
+        assert!(
+            matches!(limited, CodecError::ResourceLimit(error) if error.operation == "catia_native_reference_lists")
+        );
+        let limited = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_native_reference_list_id",
+            |ctx| consolidated_reference_lists(ctx, &bytes, &records),
+        );
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_reference_list_id"));
+    }
+
+    #[test]
+    fn native_plane_carriers_refuse_output_and_id_limits() {
+        let bytes = crate::test_support::test_b2::b2_plane_carrier_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_collection_limit(3, |ctx| {
+            consolidated_plane_carriers(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_plane_carriers"));
+        let limited = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_native_plane_carrier_id",
+            |ctx| consolidated_plane_carriers(ctx, &bytes, &records),
+        );
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_plane_carrier_id"));
+    }
+}
+
+#[cfg(test)]
+mod design_limit_tests {
+    #![allow(clippy::doc_markdown, clippy::unwrap_used)]
+
+    use crate::test_support::test_object_graph::{
+        catalog_stream, object_graph_record, sequential_entity_backed_object_graph,
+    };
+
+    #[test]
+    fn parallel_reference_table_refuses_nested_collection_limit() {
+        let list_a = [0x3b, 0x82, 0x81, 0x83, 0x81, 0x84, 0x85, 0xfe];
+        let list_b = [0x3b, 0x82, 0x81, 0x84, 0x81, 0x83, 0x86, 0xfe];
+        let mut bytes = sequential_entity_backed_object_graph(&[
+            object_graph_record(&[0x04, 0x01, 0x81, 0x83], &list_a),
+            object_graph_record(&[0x04, 0x01, 0x81, 0x84], &list_b),
+            object_graph_record(&[0x04, 0x01, 0x83, 0x83], &[0xfe]),
+            object_graph_record(&[0x04, 0x01, 0x83, 0x84], &[0xfe]),
+        ]);
+        bytes.extend(catalog_stream(&[
+            "CATCatalogManager",
+            "catalogManager",
+            "catalogLinks",
+            "",
+            "Profile",
+            "Limit",
+            "Profile",
+            "Limit",
+        ]));
+        let native = crate::native::CatiaNative::decode(&bytes);
+        let graph = &native.object_graphs[0];
+        let owner = native.design_objects[0].owner_entity_id;
+        let fields = graph
+            .records
+            .iter()
+            .filter(|record| record.owner_entity_id() == Some(owner))
+            .collect::<Vec<_>>();
+        let record_index = crate::test_support::with_service_context(|ctx| {
+            super::super::GraphRecordIndex::new(
+                ctx,
+                &mut ctx.reserve_scoped(0, "test record index")?,
+                &graph.records,
+            )
+        })
+        .expect("service profile admits record index");
+        let refused = crate::test_support::with_collection_limit(2, |ctx| {
+            super::design_parallel_reference_table(ctx, &fields, graph, &record_index)
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_design_row_cells")
+        );
+        let retained =
+            crate::test_support::with_retained_refusal(&[], "catia_design_column_field", |ctx| {
+                super::design_parallel_reference_table(ctx, &fields, graph, &record_index)
+            });
+        assert!(
+            matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_design_column_field")
+        );
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            super::design_parallel_reference_table(ctx, &fields, graph, &record_index)
+        })
+        .expect("service profile admits parallel reference table");
+        assert_eq!(admitted, native.design_objects[0].parallel_reference_table);
+    }
+}
