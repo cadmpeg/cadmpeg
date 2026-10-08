@@ -907,7 +907,7 @@ fn curve_expression_dimension_parameter_id_refuses_before_copy() {
 }
 
 #[test]
-fn curve_expression_dependency_validation_charges_comparisons() {
+fn curve_expression_dependency_validation_charges_index_work() {
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 
     let dimensions = std::collections::BTreeMap::new();
@@ -920,19 +920,18 @@ fn curve_expression_dependency_validation_charges_comparisons() {
         .expect("service profile admits two dependencies"),
         3
     );
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\xe0\x0aexpression\0\xf8\x03a=1\0b=2\0c=a+b\0";
+    let record = crate::curve::expression_records(payload).pop().expect("complete curve expression");
+    let error = crate::test_support::last_refusal_at(
+        &[],
         ResourceDimension::WorkUnits,
-        "validate Creo curve-expression dependency uniqueness",
-        |limit| {
-            let mut limited = DecodePolicy::service();
-            limited.limits.max_work_units = limit;
-            transfer_with_limits(&["a=1", "b=2", "c=a+b"], &dimensions, limited)
-        },
+        "validate distinct decoded members",
+        |ctx| transfer_record_in_context(ctx, record.clone(), &dimensions),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "validate Creo curve-expression dependency uniqueness")
+            && limit.operation == "validate distinct decoded members")
     );
 }
 
