@@ -37,7 +37,8 @@ pub(crate) fn finite_f64_lane_charged(
     if !bytes.len().is_multiple_of(8) {
         return Ok(None);
     }
-    let mut values = ctx.collection_vec(bytes.len() / 8, operation)?;
+    let mut storage = ctx.reserve_scoped(0, operation)?;
+    let mut values = storage.with_storage(|| ctx.collection_vec(bytes.len() / 8, operation))?;
     let mut view = View::over_retained(bytes);
     while !view.is_empty() {
         ctx.charge_work(1, operation)?;
@@ -46,6 +47,7 @@ pub(crate) fn finite_f64_lane_charged(
         };
         values.push(value);
     }
+    storage.commit()?;
     Ok(Some(values))
 }
 
@@ -207,6 +209,23 @@ mod tests {
             .expect("lane admission")
             .is_none());
         }
+    }
+
+    #[test]
+    fn rejected_finite_lanes_release_storage_without_retaining_bytes() {
+        let rejected = [1.0_f64.to_le_bytes(), f64::NAN.to_le_bytes()].concat();
+        let accepted = 2.0_f64.to_le_bytes();
+        let values = crate::test_support::with_retained_limit(8, |ctx| {
+            for _ in 0..64 {
+                assert!(
+                    super::finite_f64_lane_charged(ctx, &rejected, "catia_lane_test")?.is_none()
+                );
+            }
+            super::finite_f64_lane_charged(ctx, &accepted, "catia_lane_test")
+        })
+        .expect("only the accepted scalar retains eight bytes")
+        .expect("finite lane");
+        assert_eq!(values[0].get(), 2.0);
     }
 
     #[test]
