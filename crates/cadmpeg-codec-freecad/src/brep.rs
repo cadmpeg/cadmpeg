@@ -5,7 +5,7 @@ pub(crate) mod triangulation;
 
 use triangulation::TextTriangulation;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -306,7 +306,11 @@ impl ShapeSet {
         const OPERATION: &str = "FreeCAD shape-set reference check";
         let mut storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut max_nodes = Vec::new();
-        for polygon in ctx.admit_iter(&self.polygons_on_triangulations, OPERATION)? {
+        let mut polygons = self.polygons_on_triangulations.iter();
+        while polygons.len() != 0 {
+            let Some(polygon) = ctx.next_charged(&mut polygons, OPERATION)? else {
+                break;
+            };
             let max = ctx.max(&polygon.nodes, OPERATION)?.copied().unwrap_or(0);
             ctx.push_scoped_vec(&mut storage, &mut max_nodes, max, OPERATION)?;
         }
@@ -2422,20 +2426,17 @@ pub(crate) fn parse_payloads(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<Vec<ShapePayloadRecord>, CodecError> {
-    let mut index_storage = ctx.reserve_scoped(0, "FreeCAD shape entry index")?;
-    let mut entries_by_name = BTreeMap::new();
-    for entry in ctx.admit_iter(entries, "FreeCAD shape entry index")? {
-        index_storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut entries_by_name,
-                entry.name(),
-                entry,
-                "FreeCAD shape entry index",
-            )
-        })?;
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
     }
+    let mut index_storage = None;
+    let mut entries_by_name: Option<BTreeMap<&str, &EntryRecord>> = None;
     let mut payloads = Vec::new();
-    for property in ctx.admit_iter(properties, "FreeCAD shape payload properties")? {
+    let mut property_iter = properties.iter();
+    while property_iter.len() != 0 {
+        let Some(property) = ctx.next_charged(&mut property_iter, "FreeCAD shape payload properties")? else {
+            break;
+        };
         // The literal bounds the comparison.
         if property.type_name != "Part::PropertyPartShape" {
             continue;
@@ -2443,8 +2444,19 @@ pub(crate) fn parse_payloads(
         let Some(name) = direct_shape_entry(ctx, property)? else {
             continue;
         };
+        let entries_by_name = match &mut entries_by_name {
+            Some(index) => index,
+            slot @ None => {
+                let (index, storage) = ctx.collect_scoped_btree_map(
+                    entries.iter().map(|entry| (entry.name(), entry)),
+                    "FreeCAD shape entry index",
+                )?;
+                index_storage = Some(storage);
+                slot.insert(index)
+            }
+        };
         let Some(entry) =
-            ctx.get_btree_map(&entries_by_name, name.as_str(), "FreeCAD shape entry index")?
+            ctx.get_btree_map(entries_by_name, name.as_str(), "FreeCAD shape entry index")?
         else {
             return Err(CodecError::Malformed(ctx.format_retained(
                 format_args!("missing exact-shape entry {name}"),
@@ -2479,6 +2491,8 @@ pub(crate) fn parse_payloads(
             "FreeCAD shape payload records",
         )?;
     }
+    drop(entries_by_name);
+    drop(index_storage);
     Ok(payloads)
 }
 
@@ -2538,8 +2552,15 @@ pub(crate) fn carrier_census(
     ctx: &DecodeContext<'_>,
     payloads: &[ShapePayloadRecord],
 ) -> Result<Vec<crate::native::CarrierCensusRecord>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut census = Vec::new();
-    for payload in ctx.admit_iter(payloads, "FreeCAD carrier census records")? {
+    let mut payload_iter = payloads.iter();
+    while payload_iter.len() != 0 {
+        let Some(payload) = ctx.next_charged(&mut payload_iter, "FreeCAD carrier census records")? else {
+            break;
+        };
         let Some(facts) = payload.payload.shape_set() else {
             continue;
         };
@@ -2575,16 +2596,32 @@ pub(crate) fn carrier_census(
             polygons_on_triangulations: cadmpeg_core::decode::u64_from_index(indexed),
             triangulations: cadmpeg_core::decode::u64_from_index(triangulations),
         };
-        for curve in ctx.admit_iter(curve2ds, "FreeCAD carrier curve census")? {
+        let mut records = curve2ds.iter();
+        while records.len() != 0 {
+            let Some(curve) = ctx.next_charged(&mut records, "FreeCAD carrier curve census")? else {
+                break;
+            };
             census_curve(ctx, CensusCurve::Parameter(curve), &mut record.curves_2d)?;
         }
-        for curve in ctx.admit_iter(curves, "FreeCAD carrier curve census")? {
+        let mut records = curves.iter();
+        while records.len() != 0 {
+            let Some(curve) = ctx.next_charged(&mut records, "FreeCAD carrier curve census")? else {
+                break;
+            };
             census_curve(ctx, CensusCurve::Model(curve), &mut record.curves_3d)?;
         }
-        for surface in ctx.admit_iter(surfaces, "FreeCAD carrier surface census")? {
+        let mut records = surfaces.iter();
+        while records.len() != 0 {
+            let Some(surface) = ctx.next_charged(&mut records, "FreeCAD carrier surface census")? else {
+                break;
+            };
             census_surface(ctx, surface, &mut record.surfaces, &mut record.curves_3d)?;
         }
-        for shape in ctx.admit_iter(&tshapes[..], "FreeCAD carrier topology census")? {
+        let mut records = tshapes.iter();
+        while records.len() != 0 {
+            let Some(shape) = ctx.next_charged(&mut records, "FreeCAD carrier topology census")? else {
+                break;
+            };
             increment(
                 ctx,
                 &mut record.topology,
@@ -2824,7 +2861,11 @@ fn text_tokens<'t, 'c>(
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut tokens = Vec::new();
     let mut start = None;
-    for (index, byte) in ctx.admit_iter(text.as_bytes(), OPERATION)?.enumerate() {
+    let mut bytes = text.as_bytes().iter().enumerate();
+    while bytes.len() != 0 {
+        let Some((index, byte)) = ctx.next_charged(&mut bytes, OPERATION)? else {
+            break;
+        };
         if byte.is_ascii_whitespace() {
             if let Some(first) = start.take() {
                 ctx.push_scoped_vec(&mut storage, &mut tokens, &text[first..index], OPERATION)?;
@@ -2851,10 +2892,11 @@ fn parse_text(
     // comparison is against a literal.
     let mut header_counts = [0_usize; 3];
     let mut markers = [None; 8];
-    for (index, &token) in ctx
-        .admit_iter(&tokens, "FreeCAD text B-rep markers")?
-        .enumerate()
-    {
+    let mut token_iter = tokens.iter().enumerate();
+    while token_iter.len() != 0 {
+        let Some((index, &token)) = ctx.next_charged(&mut token_iter, "FreeCAD text B-rep markers")? else {
+            break;
+        };
         if let Some(section) = TextSection::ALL
             .iter()
             .position(|section| section.marker() == token)
@@ -3277,7 +3319,7 @@ fn parse_binary_prefix(
         if shape == -1 && location == -1 && orientation == -1 {
             Vec::new()
         } else {
-            vec![TextShapeUse {
+            let root = TextShapeUse {
                 shape: checked_binary_reference(shape, tshape_count, false, "root shape")?,
                 location: checked_binary_reference(
                     location,
@@ -3287,7 +3329,10 @@ fn parse_binary_prefix(
                 )?
                 .into(),
                 orientation: binary_orientation(orientation)?,
-            }]
+            };
+            let mut roots = ctx.collection_vec(1, "FreeCAD binary root records")?;
+            roots.push(root);
+            roots
         }
     };
     let facts = ShapeSet {
@@ -6444,43 +6489,66 @@ pub(crate) fn transfer_text_geometry(
     properties: &[PropertyRecord],
 ) -> Result<(CurveTransfer, SurfaceTransfer), CodecError> {
     const OPERATION: &str = "FreeCAD geometry source objects";
-    let (owners, _owner_storage) = ctx.unique_index(
-        properties
-            .iter()
-            .map(|property| (property.id.as_str(), property.owner.as_str())),
-        OPERATION,
-    )?;
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut owner_storage = None;
+    let mut owners: Option<HashMap<&str, Option<&str>>> = None;
     let mut curves = CurveTransfer::default();
     let mut surfaces = SurfaceTransfer::default();
-    for payload in ctx.admit_iter(payloads, "FreeCAD geometry payloads")? {
+    let mut payload_iter = payloads.iter();
+    while payload_iter.len() != 0 {
+        let Some(payload) = ctx.next_charged(&mut payload_iter, "FreeCAD geometry payloads")? else {
+            break;
+        };
         let Some(set) = payload.payload.shape_set() else {
             continue;
+        };
+        if set.curves.is_empty() && set.surfaces.is_empty() {
+            continue;
+        }
+        let owners = match &mut owners {
+            Some(index) => index,
+            slot @ None => {
+                let (index, storage) = ctx.unique_index(
+                    properties
+                        .iter()
+                        .map(|property| (property.id.as_str(), property.owner.as_str())),
+                    OPERATION,
+                )?;
+                owner_storage = Some(storage);
+                slot.insert(index)
+            }
         };
         // A property identity names one owner; without one, the property
         // itself is the source object.
         let object_id = ctx
-            .get_hash_map(&owners, payload.property.as_str(), OPERATION)?
+            .get_hash_map(owners, payload.property.as_str(), OPERATION)?
             .copied()
             .flatten()
             .unwrap_or(payload.property.as_str());
-        let association = SourceObjectAssociation {
-            format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_core::text::NonBlankString::for_decode(
-                ctx,
-                ctx.copy_retained_text(object_id, "FreeCAD geometry source object")?,
-                "validate nonblank text",
-            )?
-            .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
-            instance_path: Vec::new(),
-        };
-        for (index, curve) in ctx
-            .admit_iter(&set.curves, "FreeCAD transferred curves")?
-            .enumerate()
-        {
+        let mut association_storage = ctx.reserve_scoped(0, "FreeCAD geometry source scratch")?;
+        let association = association_storage.with_storage(|| {
+            Ok::<_, CodecError>(SourceObjectAssociation {
+                format: cadmpeg_ir::CodecFormat::Fcstd,
+                object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                    ctx,
+                    ctx.copy_retained_text(object_id, "FreeCAD geometry source object")?,
+                    "validate nonblank text",
+                )?
+                .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            })
+        })?;
+        let mut curve_iter = set.curves.iter().enumerate();
+        while curve_iter.len() != 0 {
+            let Some((index, curve)) = ctx.next_charged(&mut curve_iter, "FreeCAD transferred curves")? else {
+                break;
+            };
             let id: CurveId = model_identity(
                 ctx,
                 "curve",
@@ -6490,10 +6558,11 @@ pub(crate) fn transfer_text_geometry(
             )?;
             append_text_curve(ctx, curve, id, &association, &mut curves)?;
         }
-        for (index, surface) in ctx
-            .admit_iter(&set.surfaces, "FreeCAD transferred surfaces")?
-            .enumerate()
-        {
+        let mut surface_iter = set.surfaces.iter().enumerate();
+        while surface_iter.len() != 0 {
+            let Some((index, surface)) = ctx.next_charged(&mut surface_iter, "FreeCAD transferred surfaces")? else {
+                break;
+            };
             let id: SurfaceId = model_identity(
                 ctx,
                 "surface",
@@ -6503,7 +6572,11 @@ pub(crate) fn transfer_text_geometry(
             )?;
             append_text_surface(ctx, surface, id, &association, &mut curves, &mut surfaces)?;
         }
+        drop(association);
+        drop(association_storage);
     }
+    drop(owners);
+    drop(owner_storage);
     Ok((curves, surfaces))
 }
 

@@ -3,6 +3,7 @@
 
 #![allow(clippy::doc_markdown)]
 
+mod admission_paths;
 mod decode_budget;
 mod primitive_index;
 mod resource_admission;
@@ -38,7 +39,9 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     let mut plan = super::AppearancePlan::new(&ctx).expect("plan storage");
-    let index = super::PrimitiveIndex::new(&ctx, &ir, style).expect("primitive index");
+    let prefixes = [String::new()];
+    let index = super::PrimitiveIndex::new(&ctx, &ir, style, &prefixes)
+        .expect("primitive index");
     super::transfer_primitive_appearance(
         &ctx,
         &index,
@@ -49,7 +52,7 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
             object_id: "fcstd:object#Model",
             packed_color: 0xff00_00ff,
             style,
-            payload_prefixes: &[String::new()],
+            payload_prefixes: &prefixes,
             provenance: cadmpeg_ir::SourceProvenance::in_stream(
                 "fcstd",
                 cadmpeg_ir::stream_name!("GuiDocument.xml"),
@@ -149,7 +152,8 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
         super::PrimitiveStyle::Line(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
         super::PrimitiveStyle::Point(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
     ] {
-        let index = super::PrimitiveIndex::new(&ctx, &ir, style).expect("primitive index");
+        let index = super::PrimitiveIndex::new(&ctx, &ir, style, &prefixes)
+            .expect("primitive index");
         super::transfer_primitive_appearance(
             &ctx,
             &index,

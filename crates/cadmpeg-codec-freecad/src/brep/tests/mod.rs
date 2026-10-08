@@ -3,6 +3,7 @@
 
 mod allocation_tests;
 mod nesting;
+mod source_transfer;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;

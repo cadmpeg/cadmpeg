@@ -436,11 +436,13 @@ fn primitive_appearance_refusal(
         end: vertex,
         tolerance: None,
     });
+    let prefixes = [String::from("shape:")];
     crate::test_support::refusal_at(dimension, &[], operation, |ctx| {
         let index = super::super::PrimitiveIndex::new(
             ctx,
             &ir,
             super::super::PrimitiveStyle::Line(super::super::PrimitiveSize::Absent),
+            &prefixes,
         )?;
         super::super::transfer_primitive_appearance(
             ctx,
@@ -452,7 +454,7 @@ fn primitive_appearance_refusal(
                 object_id: "shape",
                 packed_color: 0x1122_3344,
                 style: super::super::PrimitiveStyle::Line(super::super::PrimitiveSize::Absent),
-                payload_prefixes: &[String::from("shape:")],
+                payload_prefixes: &prefixes,
                 provenance: cadmpeg_ir::SourceProvenance::in_stream(
                     "fcstd",
                     cadmpeg_ir::stream_name!("GuiDocument.xml"),
@@ -1557,7 +1559,7 @@ fn gui_presentation_property_map_refuses_at_caller_limit() {
         &[],
         "FCStd GUI presentation property map",
         |ctx| {
-            super::super::gui_named_entries(ctx, || Ok("record".into()), [("key", "value")])
+            super::super::gui_named_entries(ctx, || Ok("record".into()), [("key", "value")].into_iter())
                 .map(|_| ())
         },
     );
@@ -1577,7 +1579,7 @@ fn gui_refused_property_list_refuses_at_caller_limit() {
             super::super::gui_named_entries(
                 ctx,
                 || Ok("record".into()),
-                [("key", "first"), ("key", "second")],
+                [("key", "first"), ("key", "second")].into_iter(),
             )
             .map(|_| ())
         },

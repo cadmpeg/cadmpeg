@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Application-domain census and inert-payload classification.
 
+use cadmpeg_core::decode::ScopedReservation;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 use crate::native::{EntryRecord, LinkTarget, ObjectRecord, PropertyFamily, PropertyRecord};
 
@@ -112,33 +114,68 @@ struct ApplicationPayloadWire<'a> {
     data: &'a [u8],
 }
 
+struct OwnerProperties<'records, 'context> {
+    properties: Vec<&'records PropertyRecord>,
+    storage: ScopedReservation<'context>,
+}
+
 fn wire_records<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     objects: &'a [ObjectRecord],
     properties: &'a [PropertyRecord],
     entries: &'a [EntryRecord],
 ) -> Result<Vec<ApplicationRecordWire<'a>>, CodecError> {
-    let (mut by_owner, _owner_storage) = ctx.collect_scoped_btree_groups(
-        properties
-            .iter()
-            .map(|property| (property.owner.as_str(), property)),
-        "FreeCAD application owner properties",
-    )?;
-    let (entry_index, _entry_storage) = ctx.collect_scoped_btree_map(
-        entries.iter().map(|entry| (entry.name(), entry)),
-        "FreeCAD application entry lookup",
-    )?;
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    if objects.is_empty() {
+        return Ok(Vec::new());
+    }
+    const OWNER_PROPERTIES: &str = "FreeCAD application owner properties";
+    let mut owner_storage = ctx.reserve_scoped(0, OWNER_PROPERTIES)?;
+    let mut by_owner: BTreeMap<&str, Option<OwnerProperties<'_, '_>>> = BTreeMap::new();
+    let mut source_properties = properties.iter();
+    while source_properties.len() != 0 {
+        let Some(property) = ctx.next_charged(&mut source_properties, OWNER_PROPERTIES)? else {
+            break;
+        };
+        let slot = owner_storage.with_storage(|| {
+            ctx.entry_btree_map(&mut by_owner, property.owner.as_str(), OWNER_PROPERTIES)
+                .map(std::collections::btree_map::Entry::or_default)
+        })?;
+        let group = match slot {
+            Some(group) => group,
+            slot @ None => slot.insert(OwnerProperties {
+                properties: Vec::new(),
+                storage: ctx.reserve_scoped(0, OWNER_PROPERTIES)?,
+            }),
+        };
+        group.storage.with_storage(|| ctx.push_vec(&mut group.properties, property, OWNER_PROPERTIES))?;
+    }
+    let mut entry_storage = None;
+    let mut entry_index: Option<BTreeMap<&str, &EntryRecord>> = None;
     let mut records = ctx.collection_vec(objects.len(), "FreeCAD application records")?;
-    for object in ctx.admit_iter(objects, "FreeCAD application objects")? {
-        let mut owned = ctx
-            .remove_btree_map(
+    let mut object_iter = objects.iter();
+    while object_iter.len() != 0 {
+        let Some(object) = ctx.next_charged(&mut object_iter, "FreeCAD application objects")? else {
+            break;
+        };
+        let owned = ctx
+            .get_mut_btree_map(
                 &mut by_owner,
                 object.id().as_str(),
                 "FreeCAD application owner lookup",
             )?
-            .unwrap_or_default();
+            .and_then(Option::take);
+        let mut owned = match owned {
+            Some(group) => group,
+            None => OwnerProperties {
+                properties: Vec::new(),
+                storage: ctx.reserve_scoped(0, OWNER_PROPERTIES)?,
+            },
+        };
         ctx.stable_sort_by_key(
-            &mut owned,
+            &mut owned.properties,
             |value| (value.xml.start(), value.xml.end()),
             Ord::cmp,
             "FreeCAD application owner properties sort",
@@ -148,26 +185,42 @@ fn wire_records<'a>(
             .as_ref()
             .map_or(&[][..], |data| data.text().as_bytes());
         let mut property_ids =
-            ctx.collection_vec(owned.len(), "FreeCAD application property IDs")?;
+            ctx.collection_vec(owned.properties.len(), "FreeCAD application property IDs")?;
         let mut side_entries = Vec::new();
         let mut property_records =
-            ctx.collection_vec(owned.len(), "FreeCAD application property records")?;
+            ctx.collection_vec(owned.properties.len(), "FreeCAD application property records")?;
         let mut inert_payload = false;
-        for property in ctx.admit_iter(owned, "FreeCAD application properties")? {
+        let mut property_iter = owned.properties.into_iter();
+        while property_iter.len() != 0 {
+            let Some(property) = ctx.next_charged(&mut property_iter, "FreeCAD application properties")? else {
+                break;
+            };
             property_ids.push(property.id.as_str());
             let data = property.xml.text().as_bytes();
             let mut payloads = Vec::new();
-            for name in ctx.admit_iter(
-                property.side_entries(),
-                "FreeCAD application side-entry names",
-            )? {
+            let mut entry_iter = property.side_entries().iter();
+            while entry_iter.len() != 0 {
+                let Some(name) = ctx.next_charged(&mut entry_iter, "FreeCAD application side-entry names")? else {
+                    break;
+                };
+                let entry_index = match &mut entry_index {
+                    Some(index) => index,
+                    slot @ None => {
+                        let (index, storage) = ctx.collect_scoped_btree_map(
+                            entries.iter().map(|entry| (entry.name(), entry)),
+                            "FreeCAD application entry lookup",
+                        )?;
+                        entry_storage = Some(storage);
+                        slot.insert(index)
+                    }
+                };
                 ctx.push_vec(
                     &mut side_entries,
                     name.as_str(),
                     "FreeCAD application side entries",
                 )?;
                 if let Some(entry) = ctx.get_btree_map(
-                    &entry_index,
+                    entry_index,
                     name.as_str(),
                     "FreeCAD application payload lookup",
                 )? {
@@ -213,6 +266,8 @@ fn wire_records<'a>(
                 inert,
             });
         }
+        drop(property_iter);
+        drop(owned.storage);
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(data.len()),
             "FreeCAD application object digest",
@@ -223,8 +278,12 @@ fn wire_records<'a>(
             object: object.id(),
             type_name: &object.type_name,
             domain: ctx
-                .split_once(&object.type_name, "::", "FreeCAD application domain")?
-                .map_or("Unqualified", |(domain, _)| domain),
+                .position_by(
+                    object.type_name.as_bytes().windows(b"::".len()),
+                    |window| Ok(window == b"::"),
+                    "FreeCAD application domain",
+                )?
+                .map_or("Unqualified", |separator| &object.type_name[..separator]),
             properties: property_ids,
             dependencies: &object.dependencies,
             side_entries,
@@ -244,6 +303,10 @@ fn wire_records<'a>(
             property_records,
         });
     }
+    drop(entry_index);
+    drop(entry_storage);
+    drop(by_owner);
+    drop(owner_storage);
     Ok(records)
 }
 
@@ -251,12 +314,15 @@ fn is_inert(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     Ok(property.family == PropertyFamily::PythonObject
-        || ctx.contains_text(
-            &property.type_name,
-            "PropertyPythonObject",
+        || ctx.position_by(
+            property.type_name.as_bytes().windows(b"PropertyPythonObject".len()),
+            |window| Ok(window == b"PropertyPythonObject"),
             "FreeCAD application inert payload",
-        )?)
+        )?.is_some())
 }
 
 #[cfg(test)]

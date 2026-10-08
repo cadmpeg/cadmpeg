@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used)]
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
+mod admission_paths;
+
 use super::FcstdCodec;
 use crate::test_support::test_archive::{
     archive, archive_entries, assert_valid_document, rewrite_schema_version, streaming_archive,

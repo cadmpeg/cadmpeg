@@ -38,7 +38,7 @@ mod writer;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
@@ -86,6 +86,9 @@ const FINDINGS: &str = "FreeCAD native validation findings";
 
 fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
     const IDENTITIES: &str = "FreeCAD validation identities";
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok(Vec::new());
     };
@@ -243,12 +246,8 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             IDENTITIES,
         )
     })?;
-    let gui_provider_ids = reader_storage.with_storage(|| {
-        ctx.collect_hash_set(
-            gui_providers.iter().map(|provider| provider.id.as_str()),
-            IDENTITIES,
-        )
-    })?;
+    let mut gui_provider_id_storage = None;
+    let mut gui_provider_ids: Option<HashSet<&str>> = None;
     if object_ids.len() != objects.len()
         || property_ids.len() != properties.len()
         || extension_ids.len() != extensions.len()
@@ -280,7 +279,10 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     };
     let missing_in_groups = |groups: &BTreeMap<String, Vec<Option<native::LinkTarget>>>| {
         let mut groups = groups.values();
-        while let Some(links) = ctx.next_charged(&mut groups, "FreeCAD validation link search")? {
+        while groups.len() != 0 {
+            let Some(links) = ctx.next_charged(&mut groups, "FreeCAD validation link search")? else {
+                break;
+            };
             if missing_in(links)? {
                 return Ok::<bool, CodecError>(true);
             }
@@ -294,8 +296,16 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             "FreeCAD validation entry search",
         )
     };
-    for object in ctx.admit_iter(&objects, "FreeCAD validation objects")? {
-        for dependency in ctx.admit_iter(&object.dependencies, "FreeCAD validation objects")? {
+    let mut object_sources = objects.iter();
+    while object_sources.len() != 0 {
+        let Some(object) = ctx.next_charged(&mut object_sources, "FreeCAD validation objects")? else {
+            break;
+        };
+        let mut dependency_sources = object.dependencies.iter();
+        while dependency_sources.len() != 0 {
+            let Some(dependency) = ctx.next_charged(&mut dependency_sources, "FreeCAD validation objects")? else {
+                break;
+            };
             if !has(&object_ids, dependency)? {
                 push_finding(
                     ctx,
@@ -328,7 +338,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             None,
         )?;
     }
-    for attachment in ctx.admit_iter(&attachments, "FreeCAD validation attachments")? {
+    let mut attachment_sources = attachments.iter();
+    while attachment_sources.len() != 0 {
+        let Some(attachment) = ctx.next_charged(&mut attachment_sources, "FreeCAD validation attachments")? else {
+            break;
+        };
         if !has(&object_ids, &attachment.object)? || missing_in(&attachment.supports)? {
             push_finding(
                 ctx,
@@ -384,7 +398,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             None,
         )?;
     }
-    for document in ctx.admit_iter(&gui_documents, "FreeCAD validation GUI documents")? {
+    let mut document_sources = gui_documents.iter();
+    while document_sources.len() != 0 {
+        let Some(document) = ctx.next_charged(&mut document_sources, "FreeCAD validation GUI documents")? else {
+            break;
+        };
         if ctx.any_by(
             &document.states,
             |state| missing_entry(&state.side_entries),
@@ -399,7 +417,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             )?;
         }
     }
-    for provider in ctx.admit_iter(&gui_providers, "FreeCAD validation GUI providers")? {
+    let mut provider_sources = gui_providers.iter();
+    while provider_sources.len() != 0 {
+        let Some(provider) = ctx.next_charged(&mut provider_sources, "FreeCAD validation GUI providers")? else {
+            break;
+        };
         let missing = match &provider.object {
             Some(object) => !has(&object_ids, object.as_str())?,
             None => false,
@@ -414,8 +436,25 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             )?;
         }
     }
-    for property in ctx.admit_iter(&gui_properties, "FreeCAD validation GUI properties")? {
-        if !has(&gui_provider_ids, &property.owner)? || missing_entry(&property.side_entries)? {
+    let mut property_sources = gui_properties.iter();
+    while property_sources.len() != 0 {
+        let Some(property) = ctx.next_charged(&mut property_sources, "FreeCAD validation GUI properties")? else {
+            break;
+        };
+        let gui_provider_ids = match &mut gui_provider_ids {
+            Some(ids) => ids,
+            slot @ None => {
+                let (ids, storage) = ctx.with_scoped_storage(IDENTITIES, || {
+                    ctx.collect_hash_set(
+                        gui_providers.iter().map(|provider| provider.id.as_str()),
+                        IDENTITIES,
+                    )
+                })?;
+                gui_provider_id_storage = Some(storage);
+                slot.insert(ids)
+            }
+        };
+        if !has(gui_provider_ids, &property.owner)? || missing_entry(&property.side_entries)? {
             push_finding(
                 ctx,
                 findings,
@@ -425,11 +464,17 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             )?;
         }
     }
+    drop(gui_provider_ids);
+    drop(gui_provider_id_storage);
     let (cyclic_products, _cycle_storage) = ctx
         .with_scoped_storage("fcstd product cycle lookup", || {
             product::product_cycle_nodes(ctx, &product_nodes)
         })?;
-    for node in ctx.admit_iter(&product_nodes, "FreeCAD validation product nodes")? {
+    let mut node_sources = product_nodes.iter();
+    while node_sources.len() != 0 {
+        let Some(node) = ctx.next_charged(&mut node_sources, "FreeCAD validation product nodes")? else {
+            break;
+        };
         let missing_prototype = match node.prototype() {
             Some(prototype) => !has(&object_ids, prototype)? && node.external_document().is_none(),
             None => false,
@@ -483,7 +528,13 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             )?;
         }
     }
-    for joint in ctx.admit_iter(&joints, "FreeCAD validation joints")? {
+    drop(cyclic_products);
+    drop(_cycle_storage);
+    let mut joint_sources = joints.iter();
+    while joint_sources.len() != 0 {
+        let Some(joint) = ctx.next_charged(&mut joint_sources, "FreeCAD validation joints")? else {
+            break;
+        };
         if !has(&object_ids, joint.object())?
             || ctx.any_by(
                 joint.references(),
@@ -503,7 +554,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             )?;
         }
     }
-    for drawing in ctx.admit_iter(&drawings, "FreeCAD validation drawings")? {
+    let mut drawing_sources = drawings.iter();
+    while drawing_sources.len() != 0 {
+        let Some(drawing) = ctx.next_charged(&mut drawing_sources, "FreeCAD validation drawings")? else {
+            break;
+        };
         if !has(&object_ids, &drawing.object)?
             || missing_in(&drawing.sources)?
             || missing_entry(&drawing.side_entries)?
@@ -518,20 +573,34 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             )?;
         }
     }
-    let (object_by_id, _object_index_storage) =
-        ctx.with_scoped_storage("FreeCAD validation object index", || {
-            ctx.collect_hash_map(
-                objects.iter().map(|object| (object.id().as_str(), object)),
-                "FreeCAD validation object index",
-            )
-        })?;
+    let mut object_index_storage = None;
+    let mut object_by_id: Option<HashMap<&str, &native::ObjectRecord>> = None;
     let mut annotation_objects_storage =
         ctx.reserve_scoped(0, "FreeCAD validation annotation objects")?;
     let mut annotation_objects = HashSet::new();
     let mut annotations_unique = true;
-    for annotation in ctx.admit_iter(&annotations, "FreeCAD validation annotations")? {
+    let mut annotation_sources = annotations.iter();
+    while annotation_sources.len() != 0 {
+        let Some(annotation) = ctx.next_charged(&mut annotation_sources, "FreeCAD validation annotations")? else {
+            break;
+        };
+        let object_by_id = match &mut object_by_id {
+            Some(index) => index,
+            slot @ None => {
+                let (index, storage) = ctx.with_scoped_storage(
+                    "FreeCAD validation object index", || {
+                        ctx.collect_hash_map(
+                            objects.iter().map(|object| (object.id().as_str(), object)),
+                            "FreeCAD validation object index",
+                        )
+                    },
+                )?;
+                object_index_storage = Some(storage);
+                slot.insert(index)
+            }
+        };
         let kind_matches = match ctx.get_hash_map(
-            &object_by_id,
+            object_by_id,
             annotation.object.as_str(),
             "FreeCAD validation object index",
         )? {
@@ -561,11 +630,17 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             )
         })?;
     }
+    drop(object_by_id);
+    drop(object_index_storage);
     // Every annotation object is annotated exactly once: the annotated
     // objects are distinct, and the annotation-typed objects are exactly them.
     let mut annotation_typed = 0_usize;
     let mut annotated_typed = 0_usize;
-    for object in ctx.admit_iter(&objects, "FreeCAD validation objects")? {
+    let mut object_sources = objects.iter();
+    while object_sources.len() != 0 {
+        let Some(object) = ctx.next_charged(&mut object_sources, "FreeCAD validation objects")? else {
+            break;
+        };
         if annotation::is_annotation_type(&object.type_name) {
             annotation_typed += 1;
             annotated_typed += usize::from(has(&annotation_objects, object.id())?);
@@ -589,7 +664,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let mut extension_storage = ctx.reserve_scoped(0, "FreeCAD validation extensions")?;
     let mut extension_names = HashSet::new();
     let mut extension_types = HashSet::new();
-    for extension in ctx.admit_iter(&extensions, "FreeCAD validation extensions")? {
+    let mut extension_sources = extensions.iter();
+    while extension_sources.len() != 0 {
+        let Some(extension) = ctx.next_charged(&mut extension_sources, "FreeCAD validation extensions")? else {
+            break;
+        };
         if !has(&object_ids, &extension.owner)? {
             push_finding(
                 ctx,
@@ -638,7 +717,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     }
     drop((extension_names, extension_types, extension_storage));
     let document_owner = native::native_id("document", "0");
-    for property in ctx.admit_iter(&properties, "FreeCAD validation properties")? {
+    let mut property_sources = properties.iter();
+    while property_sources.len() != 0 {
+        let Some(property) = ctx.next_charged(&mut property_sources, "FreeCAD validation properties")? else {
+            break;
+        };
         if property.owner != document_owner && !has(&object_ids, &property.owner)?
             && !has(&extension_ids, &property.owner)?
         {
@@ -650,7 +733,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                 Some(&property.id),
             )?;
         }
-        for link in ctx.admit_iter(property.links(), "FreeCAD validation properties")? {
+        let mut link_sources = property.links().iter();
+        while link_sources.len() != 0 {
+            let Some(link) = ctx.next_charged(&mut link_sources, "FreeCAD validation properties")? else {
+                break;
+            };
             let Some(target) = link.as_ref().and_then(native::LinkTarget::object) else {
                 continue;
             };
@@ -666,7 +753,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             }
         }
     }
-    for table in ctx.admit_iter(string_tables, "FreeCAD validation string tables")? {
+    let mut table_sources = string_tables.iter();
+    while table_sources.len() != 0 {
+        let Some(table) = ctx.next_charged(&mut table_sources, "FreeCAD validation string tables")? else {
+            break;
+        };
         let missing_owner = match &table.owner_property {
             Some(owner) => !has(&property_ids, owner)?,
             None => false,
@@ -807,7 +898,11 @@ fn validate_element_maps(
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     // Each table's string identities, built once.
     let mut known_ids = Vec::new();
-    for table in ctx.admit_iter(string_tables, OPERATION)? {
+    let mut table_sources = string_tables.iter();
+    while table_sources.len() != 0 {
+        let Some(table) = ctx.next_charged(&mut table_sources, OPERATION)? else {
+            break;
+        };
         let ids = storage.with_storage(|| {
             ctx.collect_hash_set(
                 table.entries().iter().map(|entry| entry.string_id),
@@ -831,7 +926,11 @@ fn validate_element_maps(
             OPERATION,
         )
     })?;
-    for map in ctx.admit_iter(element_maps, OPERATION)? {
+    let mut map_sources = element_maps.iter();
+    while map_sources.len() != 0 {
+        let Some(map) = ctx.next_charged(&mut map_sources, OPERATION)? else {
+            break;
+        };
         let missing_source = match &map.source_entry {
             Some(entry) => !ctx.contains_hash_set(entry_names, entry.as_str(), OPERATION)?,
             None => false,
@@ -854,9 +953,21 @@ fn validate_element_maps(
             )?;
         }
         let known = map.hasher_index.and_then(|index| known_ids.get(index));
-        for group in ctx.admit_iter(&map.maps.root().groups, OPERATION)? {
-            for names in ctx.admit_iter(&group.names, OPERATION)? {
-                for name in ctx.admit_iter(names, OPERATION)? {
+        let mut group_sources = map.maps.root().groups.iter();
+        while group_sources.len() != 0 {
+            let Some(group) = ctx.next_charged(&mut group_sources, OPERATION)? else {
+                break;
+            };
+            let mut names_sources = group.names.iter();
+            while names_sources.len() != 0 {
+                let Some(names) = ctx.next_charged(&mut names_sources, OPERATION)? else {
+                    break;
+                };
+                let mut name_sources = names.iter();
+                while name_sources.len() != 0 {
+                    let Some(name) = ctx.next_charged(&mut name_sources, OPERATION)? else {
+                        break;
+                    };
                     if let Some(known) = known {
                         if ctx.any_by(
                             &name.string_ids,
@@ -912,7 +1023,11 @@ fn validate_side_entry_references<'r>(
     let mut seen = HashSet::new();
     let mut add_record = |names: &'r [String], owner: &'r str| -> Result<(), CodecError> {
         storage.with_storage(|| ctx.insert_hash_set(&mut owners, owner, OPERATION))?;
-        for name in ctx.admit_iter(names, OPERATION)? {
+        let mut name_sources = names.iter();
+        while name_sources.len() != 0 {
+            let Some(name) = ctx.next_charged(&mut name_sources, OPERATION)? else {
+                break;
+            };
             if storage.with_storage(|| {
                 ctx.insert_hash_set(&mut seen, (name.as_str(), owner), OPERATION)
             })? {
@@ -926,19 +1041,43 @@ fn validate_side_entry_references<'r>(
         }
         Ok(())
     };
-    for property in ctx.admit_iter(properties, OPERATION)? {
+    let mut property_sources = properties.iter();
+    while property_sources.len() != 0 {
+        let Some(property) = ctx.next_charged(&mut property_sources, OPERATION)? else {
+            break;
+        };
         add_record(property.side_entries(), &property.id)?;
     }
-    for property in ctx.admit_iter(gui_properties, OPERATION)? {
+    let mut property_sources = gui_properties.iter();
+    while property_sources.len() != 0 {
+        let Some(property) = ctx.next_charged(&mut property_sources, OPERATION)? else {
+            break;
+        };
         add_record(&property.side_entries, &property.id)?;
     }
-    for document in ctx.admit_iter(gui_documents, OPERATION)? {
-        for state in ctx.admit_iter(&document.states, OPERATION)? {
+    let mut document_sources = gui_documents.iter();
+    while document_sources.len() != 0 {
+        let Some(document) = ctx.next_charged(&mut document_sources, OPERATION)? else {
+            break;
+        };
+        let mut state_sources = document.states.iter();
+        while state_sources.len() != 0 {
+            let Some(state) = ctx.next_charged(&mut state_sources, OPERATION)? else {
+                break;
+            };
             add_record(&state.side_entries, &state.id)?;
         }
     }
-    for entry in ctx.admit_iter(entries, OPERATION)? {
-        for owner in ctx.admit_iter(entry.referenced_by(), OPERATION)? {
+    let mut entry_sources = entries.iter();
+    while entry_sources.len() != 0 {
+        let Some(entry) = ctx.next_charged(&mut entry_sources, OPERATION)? else {
+            break;
+        };
+        let mut owner_sources = entry.referenced_by().iter();
+        while owner_sources.len() != 0 {
+            let Some(owner) = ctx.next_charged(&mut owner_sources, OPERATION)? else {
+                break;
+            };
             if !ctx.contains_hash_set(&owners, owner.as_str(), OPERATION)? {
                 push_finding(
                     ctx,
@@ -955,7 +1094,7 @@ fn validate_side_entry_references<'r>(
         let stored = entry.referenced_by();
         let mut pairs = stored.iter().zip(expected);
         let mut matches = stored.len() == expected.len();
-        while matches {
+        while matches && pairs.len() != 0 {
             let Some((stored, expected)) = ctx.next_charged(&mut pairs, OPERATION)? else {
                 break;
             };
@@ -985,6 +1124,12 @@ struct LedgerOwners<'r> {
     element_maps: &'r [native::element_map::ElementMapRecord],
 }
 
+/// A span group keeps its buffer admission live until the group is consumed.
+struct LedgerSpanGroup<'r, 'ctx> {
+    spans: Vec<&'r native::LogicalSpan>,
+    storage: ScopedReservation<'ctx>,
+}
+
 /// Every logical span names a present entry and owner, every nonempty entry
 /// has spans, and each entry's spans tile it.
 fn validate_logical_ledger(
@@ -995,10 +1140,35 @@ fn validate_logical_ledger(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "FreeCAD validation logical ledger";
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let entries = records.entries;
+    if logical.is_empty() {
+        let mut entry_sources = entries.iter();
+        while entry_sources.len() != 0 {
+            let Some(entry) = ctx.next_charged(&mut entry_sources, OPERATION)? else {
+                break;
+            };
+            if entry.byte_len() > 0 {
+                push_finding(
+                    ctx,
+                    findings,
+                    Check::PayloadIntegrity,
+                    format_args!("logical ledger omits nonempty entry {}", entry.name()),
+                    Some(entry.id()),
+                )?;
+            }
+        }
+        return Ok(());
+    }
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut entry_lengths = HashMap::new();
-    for entry in ctx.admit_iter(entries, OPERATION)? {
+    let mut entry_sources = entries.iter();
+    while entry_sources.len() != 0 {
+        let Some(entry) = ctx.next_charged(&mut entry_sources, OPERATION)? else {
+            break;
+        };
         storage.with_storage(|| {
             ctx.insert_hash_map(
                 &mut entry_lengths,
@@ -1023,34 +1193,71 @@ fn validate_logical_ledger(
             .with_storage(|| ctx.insert_hash_set(&mut owner_ids, owner, OPERATION))
             .map(drop)
     };
-    for record in ctx.admit_iter(records.gui_properties, OPERATION)? {
+    let mut record_sources = records.gui_properties.iter();
+    while record_sources.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut record_sources, OPERATION)? else {
+            break;
+        };
         add_owner(record.id.as_str())?;
     }
-    for document in ctx.admit_iter(records.gui_documents, OPERATION)? {
-        for state in ctx.admit_iter(&document.states, OPERATION)? {
+    let mut document_sources = records.gui_documents.iter();
+    while document_sources.len() != 0 {
+        let Some(document) = ctx.next_charged(&mut document_sources, OPERATION)? else {
+            break;
+        };
+        let mut state_sources = document.states.iter();
+        while state_sources.len() != 0 {
+            let Some(state) = ctx.next_charged(&mut state_sources, OPERATION)? else {
+                break;
+            };
             add_owner(state.id.as_str())?;
         }
     }
-    for record in ctx.admit_iter(records.shape_payloads, OPERATION)? {
+    let mut record_sources = records.shape_payloads.iter();
+    while record_sources.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut record_sources, OPERATION)? else {
+            break;
+        };
         add_owner(record.id.as_str())?;
     }
-    for id in ctx.admit_iter(&string_table_ids, OPERATION)? {
+    let mut id_sources = string_table_ids.iter();
+    while id_sources.len() != 0 {
+        let Some(id) = ctx.next_charged(&mut id_sources, OPERATION)? else {
+            break;
+        };
         add_owner(id.as_str())?;
     }
-    for record in ctx.admit_iter(records.element_maps, OPERATION)? {
+    let mut record_sources = records.element_maps.iter();
+    while record_sources.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut record_sources, OPERATION)? else {
+            break;
+        };
         add_owner(record.id.as_str())?;
     }
-    for entry in ctx.admit_iter(entries, OPERATION)? {
+    let mut entry_sources = entries.iter();
+    while entry_sources.len() != 0 {
+        let Some(entry) = ctx.next_charged(&mut entry_sources, OPERATION)? else {
+            break;
+        };
         add_owner(entry.id())?;
     }
-    let mut by_entry = BTreeMap::<&str, Vec<&native::LogicalSpan>>::new();
-    for span in ctx.admit_iter(logical, OPERATION)? {
-        storage.with_storage(|| {
-            let spans = ctx
-                .entry_btree_map(&mut by_entry, span.entry.as_str(), OPERATION)?
-                .or_default();
-            ctx.push_vec(spans, span, OPERATION)
-        })?;
+    let mut group_index_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut by_entry = BTreeMap::<&str, Option<LedgerSpanGroup<'_, '_>>>::new();
+    let mut span_sources = logical.iter();
+    while span_sources.len() != 0 {
+        let Some(span) = ctx.next_charged(&mut span_sources, OPERATION)? else {
+            break;
+        };
+        let group = group_index_storage.with_storage(|| {
+            ctx.entry_btree_map(&mut by_entry, span.entry.as_str(), OPERATION)
+        })?.or_default();
+        if group.is_none() {
+            let storage = ctx.reserve_scoped(0, OPERATION)?;
+            *group = Some(LedgerSpanGroup { spans: Vec::new(), storage });
+        }
+        if let Some(group) = group {
+            group.storage.with_storage(|| ctx.push_vec(&mut group.spans, span, OPERATION))?;
+        }
         let owner_valid = match &span.classification {
             native::LogicalClassification::Structural => true,
             native::LogicalClassification::Typed { owner }
@@ -1071,7 +1278,11 @@ fn validate_logical_ledger(
             )?;
         }
     }
-    for entry in ctx.admit_iter(entries, OPERATION)? {
+    let mut entry_sources = entries.iter();
+    while entry_sources.len() != 0 {
+        let Some(entry) = ctx.next_charged(&mut entry_sources, OPERATION)? else {
+            break;
+        };
         if entry.byte_len() > 0
             && !ctx.contains_key_btree_map(&by_entry, entry.name(), OPERATION)?
         {
@@ -1084,14 +1295,21 @@ fn validate_logical_ledger(
             )?;
         }
     }
-    for (name, mut spans) in ctx.admit_iter(by_entry, OPERATION)? {
+    let mut name_sources = by_entry.iter_mut();
+    while name_sources.len() != 0 {
+        let Some((name, group)) = ctx.next_charged(&mut name_sources, OPERATION)? else {
+            break;
+        };
+        let Some(LedgerSpanGroup { storage, mut spans }) = group.take() else {
+            continue;
+        };
         ctx.stable_sort_by_key(
             &mut spans,
             |value| value.span.start(),
             Ord::cmp,
             "fcstd logical spans sort",
         )?;
-        let exact = match ctx.get_hash_map(&entry_lengths, name, OPERATION)? {
+        let exact = match ctx.get_hash_map(&entry_lengths, *name, OPERATION)? {
             Some(&end) => {
                 container::chain_is_exact(ctx, spans.iter().map(|span| &span.span), end, OPERATION)?
             }
@@ -1106,7 +1324,11 @@ fn validate_logical_ledger(
                 None,
             )?;
         }
+        drop(spans);
+        drop(storage);
     }
+    drop(by_entry);
+    drop(group_index_storage);
     Ok(())
 }
 
@@ -1123,22 +1345,19 @@ fn first_difference<T: PartialEq + cadmpeg_core::decode::cost::DecodeCost>(
     derived: &[T],
     operation: &'static str,
 ) -> Result<Option<SliceDifference>, CodecError> {
-    let mut derived_values = derived.iter();
-    let index = ctx.position_by(
-        stored.iter().take(derived.len()),
-        |stored| {
-            let derived = derived_values
-                .next()
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-            Ok(!ctx.equal(stored, derived, operation)?)
-        },
-        operation,
-    )?;
-    Ok(match index {
-        Some(index) => Some(SliceDifference::Pair(index)),
-        None if stored.len() != derived.len() => Some(SliceDifference::Length),
-        None => None,
-    })
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut pairs = stored.iter().zip(derived).enumerate();
+    while pairs.len() != 0 {
+        let Some((index, (stored, derived))) = ctx.next_charged(&mut pairs, operation)? else {
+            break;
+        };
+        if !ctx.equal(stored, derived, operation)? {
+            return Ok(Some(SliceDifference::Pair(index)));
+        }
+    }
+    Ok((stored.len() != derived.len()).then_some(SliceDifference::Length))
 }
 
 fn push_finding(
@@ -1275,10 +1494,16 @@ impl CodecBackend for FcstdCodec {
                 dialect::FcstdDialect::from_schema_version(&scan.schema_version),
                 ctx,
             )?;
-            for property in ctx.admit_iter(&graph.properties, "FCStd side entry check")? {
-                for side_entry in
-                    ctx.admit_iter(property.side_entries(), "FCStd side entry check")?
-                {
+            let mut property_sources = graph.properties.iter();
+            while property_sources.len() != 0 {
+                let Some(property) = ctx.next_charged(&mut property_sources, "FCStd side entry check")? else {
+                    break;
+                };
+                let mut side_entry_sources = property.side_entries().iter();
+                while side_entry_sources.len() != 0 {
+                    let Some(side_entry) = ctx.next_charged(&mut side_entry_sources, "FCStd side entry check")? else {
+                        break;
+                    };
                     if !ctx.contains_key_btree_map(
                         &scan.data,
                         side_entry.as_str(),
@@ -1345,9 +1570,11 @@ impl CodecBackend for FcstdCodec {
             geometry_transferred =
                 !curve_transfer.curves.is_empty() || !surface_transfer.surfaces.is_empty();
             ir.model.curves = curve_transfer.curves;
-            for (owner, procedural) in
-                ctx.admit_iter(curve_transfer.procedural, "FCStd procedural curves")?
-            {
+            let mut owner_sources = curve_transfer.procedural.into_iter();
+            while owner_sources.len() != 0 {
+                let Some((owner, procedural)) = ctx.next_charged(&mut owner_sources, "FCStd procedural curves")? else {
+                    break;
+                };
                 ir.model
                     .add_procedural_curve(ctx, &owner, procedural)?
                     .map_err(|error| {
@@ -1358,10 +1585,13 @@ impl CodecBackend for FcstdCodec {
                         )
                     })?;
             }
+            drop(owner_sources);
             ir.model.surfaces = surface_transfer.surfaces;
-            for (owner, procedural) in
-                ctx.admit_iter(surface_transfer.procedural, "FCStd procedural surfaces")?
-            {
+            let mut owner_sources = surface_transfer.procedural.into_iter();
+            while owner_sources.len() != 0 {
+                let Some((owner, procedural)) = ctx.next_charged(&mut owner_sources, "FCStd procedural surfaces")? else {
+                    break;
+                };
                 ir.model
                     .add_procedural_surface(ctx, &owner, procedural)?
                     .map_err(|error| {
@@ -1372,6 +1602,7 @@ impl CodecBackend for FcstdCodec {
                         )
                     })?;
             }
+            drop(owner_sources);
             geometry_transferred |= application_geometry::transfer(
                 ctx,
                 &mut ir,
@@ -1564,20 +1795,38 @@ fn bind_gui_entry_references<'g>(
     gui_graph: &'g gui::Graph,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "FCStd GUI entry references";
-    let (entry_index, _entry_index_storage) = ctx.unique_index(
-        entry_records.iter()
-            .enumerate()
-            .map(|(index, entry)| (entry.name(), index)),
-        OPERATION,
-    )?;
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    if entry_records.is_empty() {
+        return Ok(());
+    }
+    let mut entry_index_storage = None;
+    let mut entry_index: Option<HashMap<&str, Option<usize>>> = None;
     let mut bound_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut addition_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut bound = HashSet::new();
     let mut additions = Vec::new();
     let mut bind = |names: &'g [String], owner: &'g str| -> Result<(), CodecError> {
-        for name in ctx.admit_iter(names, OPERATION)? {
+        let mut name_sources = names.iter();
+        while name_sources.len() != 0 {
+            let Some(name) = ctx.next_charged(&mut name_sources, OPERATION)? else {
+                break;
+            };
+            let entry_index = match &mut entry_index {
+                Some(index) => index,
+                slot @ None => {
+                    let (index, storage) = ctx.unique_index(
+                        entry_records.iter().enumerate()
+                            .map(|(index, entry)| (entry.name(), index)),
+                        OPERATION,
+                    )?;
+                    entry_index_storage = Some(storage);
+                    slot.insert(index)
+                }
+            };
             // Archive entry names are unique, so every named record is indexed.
-            let Some(&Some(index)) = ctx.get_hash_map(&entry_index, name.as_str(), OPERATION)?
+            let Some(&Some(index)) = ctx.get_hash_map(entry_index, name.as_str(), OPERATION)?
             else {
                 continue;
             };
@@ -1594,21 +1843,39 @@ fn bind_gui_entry_references<'g>(
         }
         Ok(())
     };
-    for property in ctx.admit_iter(&gui_graph.properties, OPERATION)? {
+    let mut property_sources = gui_graph.properties.iter();
+    while property_sources.len() != 0 {
+        let Some(property) = ctx.next_charged(&mut property_sources, OPERATION)? else {
+            break;
+        };
         bind(&property.side_entries, &property.id)?;
     }
-    for document in ctx.admit_iter(&gui_graph.documents, OPERATION)? {
-        for state in ctx.admit_iter(&document.states, OPERATION)? {
+    let mut document_sources = gui_graph.documents.iter();
+    while document_sources.len() != 0 {
+        let Some(document) = ctx.next_charged(&mut document_sources, OPERATION)? else {
+            break;
+        };
+        let mut state_sources = document.states.iter();
+        while state_sources.len() != 0 {
+            let Some(state) = ctx.next_charged(&mut state_sources, OPERATION)? else {
+                break;
+            };
             bind(&state.side_entries, &state.id)?;
         }
     }
     drop(entry_index);
-    drop(_entry_index_storage);
+    drop(entry_index_storage);
     drop(bound);
     drop(bound_storage);
-    for (index, owner) in ctx.admit_iter(additions, OPERATION)? {
+    let mut index_sources = additions.into_iter();
+    while index_sources.len() != 0 {
+        let Some((index, owner)) = ctx.next_charged(&mut index_sources, OPERATION)? else {
+            break;
+        };
         entry_records[index].push_reference(ctx, owner)?;
     }
+    drop(index_sources);
+    drop(addition_storage);
     Ok(())
 }
 
@@ -1618,8 +1885,15 @@ fn semantic_losses(
     cycle_affected_design_objects: &BTreeSet<String>,
     gui_losses: Vec<LossNote>,
 ) -> Result<Vec<LossNote>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut losses = gui_losses;
-    for feature in ctx.admit_iter(&ir.model.features, "FCStd feature semantic loss")? {
+    let mut feature_sources = ir.model.features.iter();
+    while feature_sources.len() != 0 {
+        let Some(feature) = ctx.next_charged(&mut feature_sources, "FCStd feature semantic loss")? else {
+            break;
+        };
         let definition = match feature.evaluation.definition() {
             cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. }
             | cadmpeg_ir::features::FeatureDefinition::Operation(operation) => operation,
@@ -1655,10 +1929,11 @@ fn semantic_losses(
             "FCStd feature semantic loss",
         )?;
     }
-    for entity in ctx.admit_iter(
-        &ir.model.sketch_entities,
-        "FCStd sketch geometry semantic loss",
-    )? {
+    let mut entity_sources = ir.model.sketch_entities.iter();
+    while entity_sources.len() != 0 {
+        let Some(entity) = ctx.next_charged(&mut entity_sources, "FCStd sketch geometry semantic loss")? else {
+            break;
+        };
         let cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } =
             entity.geometry.definition()
         else {
@@ -1677,10 +1952,11 @@ fn semantic_losses(
             "FCStd sketch geometry semantic loss",
         )?;
     }
-    for constraint in ctx.admit_iter(
-        &ir.model.sketch_constraints,
-        "FCStd sketch constraint semantic loss",
-    )? {
+    let mut constraint_sources = ir.model.sketch_constraints.iter();
+    while constraint_sources.len() != 0 {
+        let Some(constraint) = ctx.next_charged(&mut constraint_sources, "FCStd sketch constraint semantic loss")? else {
+            break;
+        };
         let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { native_kind, .. } =
             constraint.definition.kind()
         else {
