@@ -1346,8 +1346,8 @@ fn cyclic_font_chains_are_classified_once_per_font() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let bytes = owned_test_file(&[]);
     let scan = crate::card::scan_with_context(&bytes, &ctx).unwrap();
-    let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
-    let global = global.length_context(&ctx).unwrap().unwrap();
+    let (global, _, global_storage) = crate::global::parse(&scan, &ctx).unwrap();
+    let global = global.length_context().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     let outcome = super::project(
         &mut ir,
@@ -1365,6 +1365,7 @@ fn cyclic_font_chains_are_classified_once_per_font() {
         .losses
         .iter()
         .all(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
+    drop(global_storage);
     ctx.finish_session().unwrap();
 }
 
@@ -1453,8 +1454,8 @@ fn invalid_definition_levels_stop_before_the_remaining_count() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let bytes = owned_test_file(&[]);
     let scan = crate::card::scan_with_context(&bytes, &ctx).unwrap();
-    let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
-    let global = global.length_context(&ctx).unwrap().unwrap();
+    let (global, _, global_storage) = crate::global::parse(&scan, &ctx).unwrap();
+    let global = global.length_context().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     let outcome = super::project(
         &mut ir,
@@ -1475,6 +1476,7 @@ fn invalid_definition_levels_stop_before_the_remaining_count() {
         outcome.losses[0].code,
         IgesLossCode::DisplayDataNotProjected.kind()
     );
+    drop(global_storage);
     ctx.finish_session().unwrap();
 }
 
@@ -1511,9 +1513,9 @@ fn repeated_body_name_properties_do_not_rescan_shared_text() {
     ]);
     let (directory, global, assembly) = crate::test_support::with_service_context(&bytes, |ctx| {
         let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
-        let (global, _) = crate::global::parse(&scan, ctx).unwrap();
+        let (global, _, _global_storage) = crate::global::parse(&scan, ctx).unwrap();
         let (directory, quarantined) =
-            crate::directory::parse(&scan, global.global_table(ctx).unwrap(), ctx).unwrap();
+            crate::directory::parse(&scan, global.global_table(), ctx).unwrap();
         assert!(quarantined.is_empty());
         let assembly =
             crate::parameter::assemble_with_context(&scan, &directory, &[], &global, ctx).unwrap();
@@ -1538,7 +1540,7 @@ fn repeated_body_name_properties_do_not_rescan_shared_text() {
     // The text records and raw pointer pass fit; a text scan per pointer does not.
     policy.limits.max_work_units = 1_000_000;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let global = global.length_context(&ctx).unwrap().unwrap();
+    let global = global.length_context().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     let id = cadmpeg_ir::ids::BodyId::mint("iges:model:body#D1").unwrap();
     let mut sequences = super::super::geometry::SourceSequences::default();

@@ -1107,8 +1107,8 @@ fn invalid_segmented_view_stops_before_the_remaining_count() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let bytes = owned_test_file(&[]);
     let scan = crate::card::scan_with_context(&bytes, &ctx).unwrap();
-    let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
-    let global = global.length_context(&ctx).unwrap().unwrap();
+    let (global, _, global_storage) = crate::global::parse(&scan, &ctx).unwrap();
+    let global = global.length_context().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     let outcome = super::project(
         &mut ir,
@@ -1128,6 +1128,7 @@ fn invalid_segmented_view_stops_before_the_remaining_count() {
         outcome.losses[0].code,
         IgesLossCode::EntityNotProjected.kind()
     );
+    drop(global_storage);
     ctx.finish_session().unwrap();
 }
 
@@ -1170,9 +1171,9 @@ fn shared_drawing_property_names_do_not_repeat_text_comparisons() {
     let bytes = owned_test_file(&entities);
     let (directory, global, assembly) = crate::test_support::with_service_context(&bytes, |ctx| {
         let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
-        let (global, _) = crate::global::parse(&scan, ctx).unwrap();
+        let (global, _, _global_storage) = crate::global::parse(&scan, ctx).unwrap();
         let (directory, quarantined) =
-            crate::directory::parse(&scan, global.global_table(ctx).unwrap(), ctx).unwrap();
+            crate::directory::parse(&scan, global.global_table(), ctx).unwrap();
         assert!(quarantined.is_empty());
         let assembly =
             crate::parameter::assemble_with_context(&scan, &directory, &[], &global, ctx).unwrap();
@@ -1198,7 +1199,7 @@ fn shared_drawing_property_names_do_not_repeat_text_comparisons() {
     // This permits those admissions and one text-index pass, but not 2,000 long comparisons.
     policy.limits.max_work_units = 2_000_000;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let global = global.length_context(&ctx).unwrap().unwrap();
+    let global = global.length_context().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     let outcome = super::project(
         &mut ir,
@@ -1245,9 +1246,9 @@ fn assert_drawing_property_conflict_without_text_work(form: i64, first: &str, se
     ]);
     let (directory, assembly) = crate::test_support::with_service_context(&bytes, |ctx| {
         let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
-        let (global, _) = crate::global::parse(&scan, ctx).unwrap();
+        let (global, _, _global_storage) = crate::global::parse(&scan, ctx).unwrap();
         let (directory, quarantined) =
-            crate::directory::parse(&scan, global.global_table(ctx).unwrap(), ctx).unwrap();
+            crate::directory::parse(&scan, global.global_table(), ctx).unwrap();
         assert!(quarantined.is_empty());
         let assembly =
             crate::parameter::assemble_with_context(&scan, &directory, &[], &global, ctx).unwrap();

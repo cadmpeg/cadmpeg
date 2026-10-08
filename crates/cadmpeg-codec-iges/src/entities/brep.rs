@@ -354,6 +354,7 @@ fn resolve_pcurve_uses<'a>(
         ctx.next_charged(&mut use_sequences, "iges B-rep pcurve resolution traversal")?
     {
         let Some((geometry, range)) = pcurve_geometry(
+            source,
             index,
             *sequence,
             &super::trimming::PcurveSupport {

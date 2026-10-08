@@ -25,7 +25,7 @@ use cadmpeg_ir::geometry::{
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId, VertexId};
-use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::index::{DecodeModelIndex, ModelIndex};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
@@ -527,14 +527,14 @@ fn source_parameter_point_to_neutral(
 }
 
 pub(super) fn pcurve_geometry(
-    index: &ModelIndex<'_>,
+    ir: &CadIr,
+    index: Option<&DecodeModelIndex<'_, '_>>,
     sequence: u32,
     support: &PcurveSupport<'_>,
     tolerance: Option<f64>,
     ctx: &DecodeContext<'_>,
     composite_index: Option<&CompositeIndex>,
 ) -> Result<Option<(PcurveGeometry, [f64; 2])>, super::composite::CompositeCurveError> {
-    let ir = index.ir();
     let mut identity_storage = ctx.reserve_scoped(0, "iges pcurve source identity")?;
     let curve_id = identity_storage
         .with_storage(|| crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx))?;
@@ -543,7 +543,13 @@ pub(super) fn pcurve_geometry(
     else {
         return Ok(None);
     };
-    let source_map = procedural_source_parameter_map(index, support, ctx)?;
+    let source_map = match index {
+        Some(index) => procedural_source_parameter_map(index, support, ctx)?,
+        None => match support.geometry {
+            SurfaceGeometry::Solved(_) => ProceduralSourceParameterMap::NotApplicable,
+            SurfaceGeometry::Procedural { .. } => ProceduralSourceParameterMap::Unavailable,
+        },
+    };
     let source_parameter_map = match source_map {
         ProceduralSourceParameterMap::Mapped(parameter_map) => Some(parameter_map),
         ProceduralSourceParameterMap::NotApplicable | ProceduralSourceParameterMap::Unavailable => {
@@ -2838,7 +2844,8 @@ pub(super) fn project(
                         CodecError::Malformed("IGES trimming composite index is absent".into())
                     })?;
                     match pcurve_geometry(
-                        &carrier_index,
+                        ir,
+                        Some(&carrier_index),
                         *sequence,
                         &PcurveSupport {
                             surface_id: &surface_id,
