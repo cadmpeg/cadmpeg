@@ -284,3 +284,33 @@ fn matching_identifier_replay_preserves_per_visit_refusal() {
         assert_eq!(ids, [1, 2]);
     });
 }
+
+#[test]
+fn indexed_iterators_terminate_after_refusal() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=A();#2=A();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("valid indexed graph");
+    for mode in 0..3 {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "STEP indexed entity identifier traversal", |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                crate::test_support::with_policy_context(&[], &policy, |_, ctx| {
+                    let mut ids: Box<dyn Iterator<Item = Result<u64, cadmpeg_core::CodecError>> + '_> = match mode {
+                        0 => Box::new(exchange.entities(ctx, "A")?.map(|row| row.map(|(id, _)| id))),
+                        1 => Box::new(exchange.matching_entity_ids(ctx, |name| name == "A")?),
+                        _ => Box::new(exchange.entities_any(ctx, &["A"])? .map(|row| row.map(|(id, _)| id))),
+                    };
+                    while let Some(row) = ids.next() {
+                        if let Err(error) = row {
+                            assert!(ids.next().is_none(), "the refused iterator ends");
+                            assert!(ids.next().is_none(), "the ended iterator stays ended");
+                            return Err(error);
+                        }
+                    }
+                    Ok(())
+                })
+            });
+    }
+}
