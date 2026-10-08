@@ -18,6 +18,8 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::units::FiniteVector;
 
+mod diagnostic_storage;
+
 #[test]
 fn pattern_coverage_refuses_before_composite_stage_traversal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
