@@ -118,40 +118,50 @@ fn counterbore_source_limit_scan() -> crate::container::ContainerScan<'static> {
 }
 
 fn counterbore_source_limit_error(operation: &'static str) -> cadmpeg_core::CodecError {
-        let run = |limit| {
-    let scan = counterbore_source_limit_scan();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let ctx = limit_ctx(&arena, &policy);
-    super::counterbore_cylinder_sources(&ctx, &scan, 40)
-        };
-        let limit = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some(operation), &run);
-        run(limit).expect_err("named collection boundary")
-    }
+    let run = |limit| {
+        let scan = counterbore_source_limit_scan();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let ctx = limit_ctx(&arena, &policy);
+        super::counterbore_cylinder_sources(&ctx, &scan, 40)
+    };
+    let limit = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some(operation),
+        &run,
+    );
+    run(limit).expect_err("named collection boundary")
+}
 
 #[test]
 fn counterbore_source_nodes_refuse_collection_limit() {
-    assert!(matches!(counterbore_source_limit_error("creo counterbore source nodes"),
+    assert!(
+        matches!(counterbore_source_limit_error("creo counterbore source nodes"),
         cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo counterbore source nodes"));
+            && resource.operation == "creo counterbore source nodes")
+    );
 }
 
 #[test]
 fn counterbore_source_cylinder_ids_refuse_collection_limit() {
-    assert!(matches!(counterbore_source_limit_error("creo counterbore source cylinder IDs"),
+    assert!(
+        matches!(counterbore_source_limit_error("creo counterbore source cylinder IDs"),
         cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo counterbore source cylinder IDs"));
+            && resource.operation == "creo counterbore source cylinder IDs")
+    );
 }
 
 #[test]
 fn counterbore_source_groups_refuse_collection_limit() {
-    assert!(matches!(counterbore_source_limit_error("creo counterbore source groups"),
+    assert!(
+        matches!(counterbore_source_limit_error("creo counterbore source groups"),
         cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo counterbore source groups"));
+            && resource.operation == "creo counterbore source groups")
+    );
     assert_eq!(
         service_counterbore_source_ids(&counterbore_source_limit_scan()),
         Some(vec![vec![10, 11]])
@@ -171,13 +181,19 @@ fn counterbore_model_surface_nodes_refuse_collection_limit() {
     ir.model.surfaces.push(model_plane([0.0; 3]));
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo counterbore model surface nodes"), |limit| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        super::unique_model_surface_geometries(&ctx, &ir)
-    });
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo counterbore model surface nodes"),
+        |limit| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("root");
+            super::unique_model_surface_geometries(&ctx, &ir)
+        },
+    );
     let ctx = limit_ctx(&arena, &policy);
     let error =
         super::unique_model_surface_geometries(&ctx, &ir).expect_err("map node exceeds limit");
@@ -188,48 +204,55 @@ fn counterbore_model_surface_nodes_refuse_collection_limit() {
     );
 }
 
-
 fn counterbore_dimension_limit_error(operation: &'static str) -> cadmpeg_core::CodecError {
-        let run = |limit| {
-    let scan = counterbore_source_limit_scan();
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: SurfaceId::mint("creo:visibgeom:surface#10").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                0.5,
-            )
-            .expect("cylinder geometry"),
-        )),
-        source_object: None,
-    });
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let ctx = limit_ctx(&arena, &policy);
-    super::counterbore_dimensions(&ctx, &scan, &ir, 40)
-        };
-        let limit = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some(operation), &run);
-        run(limit).expect_err("named collection boundary")
-    }
+    let run = |limit| {
+        let scan = counterbore_source_limit_scan();
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: SurfaceId::mint("creo:visibgeom:surface#10").expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    0.5,
+                )
+                .expect("cylinder geometry"),
+            )),
+            source_object: None,
+        });
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let ctx = limit_ctx(&arena, &policy);
+        super::counterbore_dimensions(&ctx, &scan, &ir, 40)
+    };
+    let limit = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some(operation),
+        &run,
+    );
+    run(limit).expect_err("named collection boundary")
+}
 
 #[test]
 fn counterbore_generated_cylinder_nodes_refuse_collection_limit() {
-    assert!(matches!(counterbore_dimension_limit_error("creo counterbore generated cylinder nodes"),
+    assert!(
+        matches!(counterbore_dimension_limit_error("creo counterbore generated cylinder nodes"),
         cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo counterbore generated cylinder nodes"));
+            && resource.operation == "creo counterbore generated cylinder nodes")
+    );
 }
 
 #[test]
 fn counterbore_generated_radii_refuse_collection_limit() {
-    assert!(matches!(counterbore_dimension_limit_error("creo counterbore generated radii"),
+    assert!(
+        matches!(counterbore_dimension_limit_error("creo counterbore generated radii"),
         cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo counterbore generated radii"));
+            && resource.operation == "creo counterbore generated radii")
+    );
 }
 
 fn boundary_scan() -> crate::container::ContainerScan<'static> {
@@ -450,7 +473,12 @@ fn radius_anchored_counterbore_accepts_signed_depth() {
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::counterbore_dimension_values(ctx, std::iter::once(&table).map(Some), &[0.3125])).expect("service resources"),
+        crate::decode::with_test_decode_ctx(|ctx| super::counterbore_dimension_values(
+            ctx,
+            std::iter::once(&table).map(Some),
+            &[0.3125]
+        ))
+        .expect("service resources"),
         Some((0.196, 0.625, 0.15))
     );
 }
@@ -483,7 +511,11 @@ fn overflowing_corner_spans_do_not_match_counterbore_dimensions() {
         .expect("finite counterbore corner coordinates");
 
     assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        super::counterbore_envelope_dimension_values(ctx, std::iter::once(&table).map(Some), &[Some(spans), None])
+        super::counterbore_envelope_dimension_values(
+            ctx,
+            std::iter::once(&table).map(Some),
+            &[Some(spans), None],
+        )
     })
     .expect("admitted counterbore envelope values")
     .is_none());
@@ -555,13 +587,19 @@ fn counterbore_source_patches_refuse_collection_limit() {
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo counterbore source patches"), |limit| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        super::counterbore_source_patch_geometries(&ctx, &sources, &existing, 0.196, 0.625)
-    });
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo counterbore source patches"),
+        |limit| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("root");
+            super::counterbore_source_patch_geometries(&ctx, &sources, &existing, 0.196, 0.625)
+        },
+    );
     let ctx = limit_ctx(&arena, &policy);
     let error = super::counterbore_source_patch_geometries(&ctx, &sources, &existing, 0.196, 0.625)
         .expect_err("first source patch exceeds limit");
@@ -584,15 +622,21 @@ fn counterbore_corner_patches_refuse_collection_limit() {
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo counterbore corner patches"), |limit| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        super::counterbore_source_corner_patch_geometries(
-        &ctx, &sources, &corners, 40.0, 120.0, 8.0,
-    )
-    });
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo counterbore corner patches"),
+        |limit| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("root");
+            super::counterbore_source_corner_patch_geometries(
+                &ctx, &sources, &corners, 40.0, 120.0, 8.0,
+            )
+        },
+    );
     let ctx = limit_ctx(&arena, &policy);
     let error = super::counterbore_source_corner_patch_geometries(
         &ctx, &sources, &corners, 40.0, 120.0, 8.0,
@@ -649,21 +693,26 @@ fn counterbore_source_corner_envelopes_refuse_collection_limit() {
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo counterbore source corner envelopes"), |limit| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        super::counterbore_source_corner_envelopes(&ctx, &scan, &sources)
-        .map(|result| {
-            result.map(|sources| {
-                sources
-                    .into_iter()
-                    .map(|source| [source.first, source.second])
-                    .collect::<Vec<_>>()
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo counterbore source corner envelopes"),
+        |limit| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("root");
+            super::counterbore_source_corner_envelopes(&ctx, &scan, &sources).map(|result| {
+                result.map(|sources| {
+                    sources
+                        .into_iter()
+                        .map(|source| [source.first, source.second])
+                        .collect::<Vec<_>>()
+                })
             })
-        })
-    });
+        },
+    );
     let ctx = limit_ctx(&arena, &policy);
     let error = super::counterbore_source_corner_envelopes(&ctx, &scan, &sources)
         .map(|result| {
@@ -780,7 +829,6 @@ fn counterbore_patch_rows_preserve_source_order() {
         service.iter().map(|(row, _)| row.id).collect::<Vec<_>>(),
         [1, 2, 3, 4]
     );
-
 }
 
 #[test]
@@ -867,9 +915,14 @@ fn counterbore_surface_index_borrows_geometry() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(model_plane([0.0, 0.0, 0.0]));
     let indexed = crate::test_support::assert_work_boundaries(
-        &["creo counterbore model surface scan", "creo counterbore surface identity prefix", "creo scalar text parsing"],
+        &[
+            "creo counterbore model surface scan",
+            "creo counterbore surface identity prefix",
+            "creo scalar text parsing",
+        ],
         |ctx| super::unique_model_surface_geometries(ctx, &ir),
-    ).expect("unique surface");
+    )
+    .expect("unique surface");
     let geometry = indexed.values().next().expect("one surface");
     assert!(std::ptr::eq(*geometry, &ir.model.surfaces[0].geometry));
 }

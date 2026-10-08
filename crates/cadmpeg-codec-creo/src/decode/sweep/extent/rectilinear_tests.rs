@@ -191,22 +191,44 @@ fn rectilinear_family_limit_refuses() {
         matches!(rectilinear_extent_at_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo rectilinear families"), rectilinear_extent_at_limit)), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo rectilinear families")
     );
-    assert!(rectilinear_extent_at_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, rectilinear_extent_at_limit))
+    assert!(
+        rectilinear_extent_at_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            None,
+            rectilinear_extent_at_limit
+        ))
         .expect("admitted extent")
-        .is_some());
+        .is_some()
+    );
 }
 
 #[test]
 fn rectilinear_section_offsets_select_all_extent_forms() {
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| rectilinear_extent_from_section_plane(ctx, &rectilinear_family(&[(0.0, false), (8.0, true)]), [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], false, STATION_TOLERANCE)).expect("service resources"),
+        crate::decode::with_test_decode_ctx(|ctx| rectilinear_extent_from_section_plane(
+            ctx,
+            &rectilinear_family(&[(0.0, false), (8.0, true)]),
+            [0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            false,
+            STATION_TOLERANCE
+        ))
+        .expect("service resources"),
         Some((
             ExtrudeExtent::OneSided { side: blind(8.0) },
             [0.0, 1.0, 0.0],
         ))
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| rectilinear_extent_from_section_plane(ctx, &rectilinear_family(&[(-6.0, false), (8.0, true)]), [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], false, STATION_TOLERANCE)).expect("service resources"),
+        crate::decode::with_test_decode_ctx(|ctx| rectilinear_extent_from_section_plane(
+            ctx,
+            &rectilinear_family(&[(-6.0, false), (8.0, true)]),
+            [0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            false,
+            STATION_TOLERANCE
+        ))
+        .expect("service resources"),
         Some((
             ExtrudeExtent::TwoSided {
                 first: blind(8.0),
@@ -216,14 +238,30 @@ fn rectilinear_section_offsets_select_all_extent_forms() {
         ))
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| rectilinear_extent_from_section_plane(ctx, &rectilinear_family(&[(-7.0, false), (7.0, true)]), [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], false, STATION_TOLERANCE)).expect("service resources"),
+        crate::decode::with_test_decode_ctx(|ctx| rectilinear_extent_from_section_plane(
+            ctx,
+            &rectilinear_family(&[(-7.0, false), (7.0, true)]),
+            [0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            false,
+            STATION_TOLERANCE
+        ))
+        .expect("service resources"),
         Some((
             ExtrudeExtent::Symmetric { side: blind(14.0) },
             [0.0, 1.0, 0.0],
         ))
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| rectilinear_extent_from_section_plane(ctx, &rectilinear_family(&[(-6.0, false), (3.0, false), (8.0, true)]), [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], false, STATION_TOLERANCE)).expect("service resources"),
+        crate::decode::with_test_decode_ctx(|ctx| rectilinear_extent_from_section_plane(
+            ctx,
+            &rectilinear_family(&[(-6.0, false), (3.0, false), (8.0, true)]),
+            [0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            false,
+            STATION_TOLERANCE
+        ))
+        .expect("service resources"),
         Some((
             ExtrudeExtent::TwoSided {
                 first: blind(8.0),

@@ -28,9 +28,22 @@ fn extrusion_pcurve_identity_copy_refuses_below_retained_limit() {
         LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).expect("line"),
     );
     let source = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::RetainedBytes, "creo extrusion pcurve identity copy", |ctx| {
-        add_extrusion_pcurve(ctx, &mut CadIr::empty(), &mut AnnotationBuilder::new(), PcurveAdmission::Pending(&source, &surface), id.clone(), 0, geometry.clone())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo extrusion pcurve identity copy",
+        |ctx| {
+            add_extrusion_pcurve(
+                ctx,
+                &mut CadIr::empty(),
+                &mut AnnotationBuilder::new(),
+                PcurveAdmission::Pending(&source, &surface),
+                id.clone(),
+                0,
+                geometry.clone(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo extrusion pcurve identity copy"));

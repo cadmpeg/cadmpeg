@@ -464,7 +464,8 @@ pub(in super::super) fn schema_feature_definition(
         } else {
             None
         };
-        let placement = feature_outline_planes(ctx, scan, feature_id)?.and_then(|(planes, _plane_storage)| hole_placement(planes));
+        let placement = feature_outline_planes(ctx, scan, feature_id)?
+            .and_then(|(planes, _plane_storage)| hole_placement(planes));
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             ctx,
             feature_id,

@@ -178,20 +178,29 @@ fn sketch_profiles_cover_generated_extrusion_sides(
     let mut node_storage = ctx.reserve_scoped(0, "creo extrusion profile roster storage")?;
     let mut profile_entity_set = BTreeSet::<&str>::new();
     let mut profile_count = 0;
-    for profile in ctx.admit_iter(sketch.profiles.as_slice(), "creo extrusion profile roster rows")? {
-    for entity_use in ctx.admit_iter(profile, "creo extrusion profile roster uses")? {
-        profile_count += 1;
-        let id = entity_use.entity.as_str();
-        node_storage.with_storage(|| ctx.insert_btree_set(
-            &mut profile_entity_set,
-            id,
-            "creo extrusion profile entity ID nodes",
-        ))?;
-    }
+    for profile in ctx.admit_iter(
+        sketch.profiles.as_slice(),
+        "creo extrusion profile roster rows",
+    )? {
+        for entity_use in ctx.admit_iter(profile, "creo extrusion profile roster uses")? {
+            profile_count += 1;
+            let id = entity_use.entity.as_str();
+            node_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut profile_entity_set,
+                    id,
+                    "creo extrusion profile entity ID nodes",
+                )
+            })?;
+        }
     }
     let mut expected_entity_set = BTreeSet::<&str>::new();
     let mut expected_count = 0;
-    for table in ctx.admit_iter(&scan.features.entity_tables, "creo extrusion profile source tables")?
+    for table in ctx
+        .admit_iter(
+            &scan.features.entity_tables,
+            "creo extrusion profile source tables",
+        )?
         .filter(|table| table.feature_id == feature_id)
     {
         for entry in ctx.admit_iter(&table.entries, "creo extrusion profile source entries")? {
@@ -205,7 +214,12 @@ fn sketch_profiles_cover_generated_extrusion_sides(
                 ),
                 "creo extrusion expected sketch entity ID",
             )?;
-            let Some(matched) = ctx.get_btree_set(&profile_entity_set, entity.as_str(), "creo extrusion profile entity membership")? else {
+            let Some(matched) = ctx.get_btree_set(
+                &profile_entity_set,
+                entity.as_str(),
+                "creo extrusion profile entity membership",
+            )?
+            else {
                 continue;
             };
             if !generated_profile_entry_is_admissible(
@@ -219,11 +233,13 @@ fn sketch_profiles_cover_generated_extrusion_sides(
                 continue;
             }
             expected_count += 1;
-            node_storage.with_storage(|| ctx.insert_btree_set(
-                &mut expected_entity_set,
-                *matched,
-                "creo extrusion expected entity ID nodes",
-            ))?;
+            node_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut expected_entity_set,
+                    *matched,
+                    "creo extrusion expected entity ID nodes",
+                )
+            })?;
         }
     }
     // Expected IDs are a subset of profile IDs. Equal cardinalities prove agreement.
@@ -241,9 +257,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
-    let mut body_id_index = None;
-    let mut body_id_storage = ctx.reserve_scoped(0, "creo model body identity index scratch")?;
-    for transform in ctx.admit_iter(&scan.features.section_transforms, "creo sweep transform scan")? {
+    for transform in ctx.admit_iter(
+        &scan.features.section_transforms,
+        "creo sweep transform scan",
+    )? {
         if unique_feature_section_transform(
             ctx,
             &scan.features.section_transforms,
@@ -289,26 +306,51 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             };
         }
         let length = span.upper() - span.lower();
-        let Some(sketch) = exactly_one_by(ctx, &ir.model.sketches, |sketch| ctx.equal(sketch.id.as_str(), sketch_id.as_str(), "creo extrusion sketch identity"), "creo extrusion sketch scan")? else { continue; };
+        let Some(sketch) = exactly_one_by(
+            ctx,
+            &ir.model.sketches,
+            |sketch| {
+                ctx.equal(
+                    sketch.id.as_str(),
+                    sketch_id.as_str(),
+                    "creo extrusion sketch identity",
+                )
+            },
+            "creo extrusion sketch scan",
+        )?
+        else {
+            continue;
+        };
         if !sketch_profiles_cover_generated_extrusion_sides(
             ctx, scan, definition, feature_id, sketch,
         )? {
             continue;
         }
-        let (profiles, mut profile_storage) = ctx.with_scoped_storage("creo extrusion profile scratch", || resolved_sketch_profiles(ctx, ir, source_carriers, &sketch_id, 1))?;
-        let Some(profiles) = profiles
+        let (profiles, mut profile_storage) = ctx
+            .with_scoped_storage("creo extrusion profile scratch", || {
+                resolved_sketch_profiles(ctx, ir, source_carriers, &sketch_id, 1)
+            })?;
+        let Some(profiles) = profiles else {
+            continue;
+        };
+        let Some(profiles) =
+            profile_storage.with_storage(|| ordered_extrusion_profiles(ctx, profiles))?
         else {
             continue;
         };
-        let Some(profiles) = profile_storage.with_storage(|| ordered_extrusion_profiles(ctx, profiles))? else {
-            continue;
-        };
         let body_id = extrusion_id!(BodyId, "body");
-        if body_id_index.is_none() {
-            body_id_index = Some(body_id_storage.with_storage(|| ctx.collect_string_set(ir.model.bodies.iter().map(|body| body.id.as_str()), "creo model body identity index"))?);
-        }
-        let Some(indexed_body_ids) = &mut body_id_index else { continue; };
-        if ctx.contains_hash_set(indexed_body_ids, body_id.as_str(), "creo model identity comparison")? {
+        // The unique first material feature reaches this lookup at most once.
+        if ctx.any_by(
+            &ir.model.bodies,
+            |body| {
+                ctx.equal(
+                    body.id.as_str(),
+                    body_id.as_str(),
+                    "creo model identity comparison",
+                )
+            },
+            "creo model identity scan",
+        )? {
             continue;
         }
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
@@ -316,31 +358,41 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let mut unprojectable = false;
         let mut entity_index = 0;
         let mut profile_rows = profiles.iter();
-        'probe: while let Some(profile) = ctx.next_charged(&mut profile_rows, "creo extrusion probe profile rows")? {
+        'probe: while let Some(profile) =
+            ctx.next_charged(&mut profile_rows, "creo extrusion probe profile rows")?
+        {
             let mut entities = profile.entities().iter();
-            while let Some(entity) = ctx.next_charged(&mut entities, "creo extrusion probe profile entities")? {
-            let (sketch_geometry, _geometry_storage) = ctx.with_scoped_storage("creo extrusion side probe sketch", || entity.geometry().to_sketch(ctx))?;
-            let Some(sketch_geometry) = sketch_geometry else {
-                unprojectable = true;
-                break 'probe;
-            };
-            let surface = probe_storage.with_storage(|| extrusion_brep_side_surface(
-                ctx,
-                transform,
-                &sketch_geometry,
-                entity.reversed(),
-                [entity.start(), entity.end()],
-                span,
-                &mut crate::lane_refusal::LaneRefusalContext::new(
-                    &format_args!("extrusion feature {feature_id} profile entity {entity_index}"),
-                    &mut refusal,
-                ),
-            ))?;
-            if surface.is_none()
+            while let Some(entity) =
+                ctx.next_charged(&mut entities, "creo extrusion probe profile entities")?
             {
-                unprojectable = true;
-                break 'probe;
-            }
+                let (sketch_geometry, _geometry_storage) = ctx
+                    .with_scoped_storage("creo extrusion side probe sketch", || {
+                        entity.geometry().to_sketch(ctx)
+                    })?;
+                let Some(sketch_geometry) = sketch_geometry else {
+                    unprojectable = true;
+                    break 'probe;
+                };
+                let surface = probe_storage.with_storage(|| {
+                    extrusion_brep_side_surface(
+                        ctx,
+                        transform,
+                        &sketch_geometry,
+                        entity.reversed(),
+                        [entity.start(), entity.end()],
+                        span,
+                        &mut crate::lane_refusal::LaneRefusalContext::new(
+                            &format_args!(
+                                "extrusion feature {feature_id} profile entity {entity_index}"
+                            ),
+                            &mut refusal,
+                        ),
+                    )
+                })?;
+                if surface.is_none() {
+                    unprojectable = true;
+                    break 'probe;
+                }
                 entity_index += 1;
             }
         }
@@ -374,8 +426,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             ctx.reserve_vec(&mut shell_faces, 1, "creo extrusion shell face IDs")?;
             shell_faces.push(copy_id!(face));
         }
-        for (profile_index, profile) in ctx.admit_iter(&profiles, "creo extrusion profile rows")?.enumerate() {
-            for index in ctx.admit_iter(0..profile.entities().len(), "creo extrusion shell face source scan")? {
+        for (profile_index, profile) in ctx
+            .admit_iter(&profiles, "creo extrusion profile rows")?
+            .enumerate()
+        {
+            for index in ctx.admit_iter(
+                0..profile.entities().len(),
+                "creo extrusion shell face source scan",
+            )? {
                 ctx.reserve_vec(&mut shell_faces, 1, "creo extrusion shell face IDs")?;
                 shell_faces.push(extrusion_id!(
                     FaceId,
@@ -438,17 +496,35 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
 
         let mut bottom_loops = Vec::new();
         let mut top_loops = Vec::new();
-        for (profile_index, validated) in ctx.admit_iter(&profiles, "creo extrusion profile rows")?.enumerate() {
+        for (profile_index, validated) in ctx
+            .admit_iter(&profiles, "creo extrusion profile rows")?
+            .enumerate()
+        {
             let profile = validated.entities();
             let count = profile.len();
-            let (mut bottom_vertices, mut bottom_vertices_storage) = ctx.temporary_vec(0, "creo extrusion profile vertex IDs")?;
-            let (mut top_vertices, mut top_vertices_storage) = ctx.temporary_vec(0, "creo extrusion profile vertex IDs")?;
-            for (index, entity) in ctx.admit_iter(profile, "creo extrusion profile entity traversal")?.enumerate() {
+            let (mut bottom_vertices, mut bottom_vertices_storage) =
+                ctx.temporary_vec(0, "creo extrusion profile vertex IDs")?;
+            let (mut top_vertices, mut top_vertices_storage) =
+                ctx.temporary_vec(0, "creo extrusion profile vertex IDs")?;
+            for (index, entity) in ctx
+                .admit_iter(profile, "creo extrusion profile entity traversal")?
+                .enumerate()
+            {
                 let start = entity.start();
 
                 for (side, offset, arena, storage) in [
-                    ("bottom", span.lower(), &mut bottom_vertices, &mut bottom_vertices_storage),
-                    ("top", span.upper(), &mut top_vertices, &mut top_vertices_storage),
+                    (
+                        "bottom",
+                        span.lower(),
+                        &mut bottom_vertices,
+                        &mut bottom_vertices_storage,
+                    ),
+                    (
+                        "top",
+                        span.upper(),
+                        &mut top_vertices,
+                        &mut top_vertices_storage,
+                    ),
                 ] {
                     let position = section_point_in_model(transform, start);
                     let side_key = match side {
@@ -458,7 +534,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     };
                     let point_id =
                         extrusion_id!(PointId, "point:{}:{}:{}", profile_index, index, &side_key);
-                    let vertex_id = storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(extrusion_id!(VertexId, "vertex:{}:{}:{}", profile_index, index, &side_key)))?;
+                    let vertex_id = storage.with_storage(|| {
+                        Ok::<_, cadmpeg_core::CodecError>(extrusion_id!(
+                            VertexId,
+                            "vertex:{}:{}:{}",
+                            profile_index,
+                            index,
+                            &side_key
+                        ))
+                    })?;
                     let finite_position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                         position[0] + offset * transform.normal()[0],
                         position[1] + offset * transform.normal()[1],
@@ -487,12 +571,21 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 }
             }
 
-            let (mut bottom_edges, mut bottom_edges_storage) = ctx.temporary_vec(0, "creo extrusion profile edge IDs")?;
-            let (mut top_edges, mut top_edges_storage) = ctx.temporary_vec(0, "creo extrusion profile edge IDs")?;
-            let (mut vertical_edges, mut vertical_edges_storage) = ctx.temporary_vec(0, "creo extrusion vertical edge IDs")?;
-            for (index, entity) in ctx.admit_iter(profile, "creo extrusion profile entity traversal")?.enumerate() {
+            let (mut bottom_edges, mut bottom_edges_storage) =
+                ctx.temporary_vec(0, "creo extrusion profile edge IDs")?;
+            let (mut top_edges, mut top_edges_storage) =
+                ctx.temporary_vec(0, "creo extrusion profile edge IDs")?;
+            let (mut vertical_edges, mut vertical_edges_storage) =
+                ctx.temporary_vec(0, "creo extrusion vertical edge IDs")?;
+            for (index, entity) in ctx
+                .admit_iter(profile, "creo extrusion profile entity traversal")?
+                .enumerate()
+            {
                 let geometry = entity.geometry();
-                let (sketch_geometry, _sketch_storage) = ctx.with_scoped_storage("creo extrusion profile sketch scratch", || geometry.to_sketch(ctx))?;
+                let (sketch_geometry, _sketch_storage) = ctx
+                    .with_scoped_storage("creo extrusion profile sketch scratch", || {
+                        geometry.to_sketch(ctx)
+                    })?;
                 let Some(sketch_geometry) = sketch_geometry else {
                     continue;
                 };
@@ -502,8 +595,20 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
 
                 let next = (index + 1) % count;
                 for (side, offset, vertices, arena, storage) in [
-                    ("bottom", span.lower(), &bottom_vertices, &mut bottom_edges, &mut bottom_edges_storage),
-                    ("top", span.upper(), &top_vertices, &mut top_edges, &mut top_edges_storage),
+                    (
+                        "bottom",
+                        span.lower(),
+                        &bottom_vertices,
+                        &mut bottom_edges,
+                        &mut bottom_edges_storage,
+                    ),
+                    (
+                        "top",
+                        span.upper(),
+                        &top_vertices,
+                        &mut top_edges,
+                        &mut top_edges_storage,
+                    ),
                 ] {
                     let side_key = match side {
                         "bottom" => cadmpeg_ir::identity_key!("bottom"),
@@ -512,7 +617,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     };
                     let curve_id =
                         extrusion_id!(CurveId, "curve:{}:{}:{}", profile_index, index, &side_key);
-                    let edge_id = storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(extrusion_id!(EdgeId, "edge:{}:{}:{}", profile_index, index, &side_key)))?;
+                    let edge_id = storage.with_storage(|| {
+                        Ok::<_, cadmpeg_core::CodecError>(extrusion_id!(
+                            EdgeId,
+                            "edge:{}:{}:{}",
+                            profile_index,
+                            index,
+                            &side_key
+                        ))
+                    })?;
                     let mut nurbs_parameter_range = None;
                     let curve = match geometry {
                         ProfileGeometry::Line { .. } => {
@@ -558,12 +671,19 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             ))
                         }
                         ProfileGeometry::Nurbs { .. } => {
-                            let (nurbs, _nurbs_storage) = ctx.with_scoped_storage("creo extrusion edge source curve", || oriented_sketch_nurbs_curve(ctx, &sketch_geometry, reversed))?;
+                            let (nurbs, _nurbs_storage) = ctx
+                                .with_scoped_storage("creo extrusion edge source curve", || {
+                                    oriented_sketch_nurbs_curve(ctx, &sketch_geometry, reversed)
+                                })?;
                             let Some(nurbs) = nurbs else {
                                 continue;
                             };
-                            nurbs_parameter_range = nurbs_intrinsic_parameter_range(&nurbs).map(cadmpeg_ir::scalar::FiniteReal::raw_array);
-                            let (placed, _placed_storage) = ctx.with_scoped_storage("creo extrusion edge placed curve", || placed_section_nurbs(ctx, transform, &nurbs))?;
+                            nurbs_parameter_range = nurbs_intrinsic_parameter_range(&nurbs)
+                                .map(cadmpeg_ir::scalar::FiniteReal::raw_array);
+                            let (placed, _placed_storage) = ctx
+                                .with_scoped_storage("creo extrusion edge placed curve", || {
+                                    placed_section_nurbs(ctx, transform, &nurbs)
+                                })?;
                             let Some(placed) = placed else {
                                 continue;
                             };
@@ -633,7 +753,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     arena.push(edge_id);
                 }
                 let curve_id = extrusion_id!(CurveId, "curve:{}:{}:vertical", profile_index, index);
-                let edge_id = vertical_edges_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(extrusion_id!(EdgeId, "edge:{}:{}:vertical", profile_index, index)))?;
+                let edge_id = vertical_edges_storage.with_storage(|| {
+                    Ok::<_, cadmpeg_core::CodecError>(extrusion_id!(
+                        EdgeId,
+                        "edge:{}:{}:vertical",
+                        profile_index,
+                        index
+                    ))
+                })?;
                 let origin = section_point_in_model(transform, start);
                 ctx.charge_entities(1, "admit Creo model curves")?;
                 source_carriers.admit_curve(
@@ -671,7 +798,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         tolerance: None,
                     },
                 )?;
-                ctx.reserve_scoped_vec(&mut vertical_edges_storage, &mut vertical_edges, 1, "creo extrusion vertical edge IDs")?;
+                ctx.reserve_scoped_vec(
+                    &mut vertical_edges_storage,
+                    &mut vertical_edges,
+                    1,
+                    "creo extrusion vertical edge IDs",
+                )?;
                 vertical_edges.push(edge_id);
             }
 
@@ -681,24 +813,30 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             bottom_loops.push(copy_id!(bottom_loop));
             ctx.reserve_vec(&mut top_loops, 1, "creo extrusion top loop IDs")?;
             top_loops.push(copy_id!(top_loop));
-            let (bottom_coedges, _bottom_coedge_storage) = ctx.with_scoped_storage("creo extrusion cap coedge scratch", || cap_coedge_ids_admitted(
-                ctx,
-                feature_id,
-                profile_index,
-                count,
-                "bottom-cap",
-                true,
-                "creo extrusion bottom cap coedge IDs",
-            ))?;
-            let (top_coedges, _top_coedge_storage) = ctx.with_scoped_storage("creo extrusion cap coedge scratch", || cap_coedge_ids_admitted(
-                ctx,
-                feature_id,
-                profile_index,
-                count,
-                "top-cap",
-                false,
-                "creo extrusion top cap coedge IDs",
-            ))?;
+            let (bottom_coedges, _bottom_coedge_storage) =
+                ctx.with_scoped_storage("creo extrusion cap coedge scratch", || {
+                    cap_coedge_ids_admitted(
+                        ctx,
+                        feature_id,
+                        profile_index,
+                        count,
+                        "bottom-cap",
+                        true,
+                        "creo extrusion bottom cap coedge IDs",
+                    )
+                })?;
+            let (top_coedges, _top_coedge_storage) =
+                ctx.with_scoped_storage("creo extrusion cap coedge scratch", || {
+                    cap_coedge_ids_admitted(
+                        ctx,
+                        feature_id,
+                        profile_index,
+                        count,
+                        "top-cap",
+                        false,
+                        "creo extrusion top cap coedge IDs",
+                    )
+                })?;
             ctx.charge_entities(1, "admit Creo model loops")?;
             ctx.reserve_vec(&mut ir.model.loops, 1, "creo extrusion model loops")?;
             ir.model.loops.push(IrLoop {
@@ -744,7 +882,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let id = copy_id!(bottom_coedges[ring_index]);
                 let entity = &profile[edge_index];
                 let geometry = entity.geometry();
-                let (sketch_geometry, _sketch_storage) = ctx.with_scoped_storage("creo extrusion profile sketch scratch", || geometry.to_sketch(ctx))?;
+                let (sketch_geometry, _sketch_storage) = ctx
+                    .with_scoped_storage("creo extrusion profile sketch scratch", || {
+                        geometry.to_sketch(ctx)
+                    })?;
                 let Some(sketch_geometry) = sketch_geometry else {
                     continue;
                 };
@@ -809,21 +950,25 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         ),
                         sense: Sense::Reversed,
                         pcurves: {
-    let mut uses = ctx.collection_vec(1, "creo extrusion bottom coedge pcurve uses")?;
-    uses.push(PcurveUse {
+                            let mut uses =
+                                ctx.collection_vec(1, "creo extrusion bottom coedge pcurve uses")?;
+                            uses.push(PcurveUse {
                                 pcurve: bottom_pcurve,
                                 isoparametric: None,
                                 parameter_range: None,
                             });
-    uses
-},
+                            uses
+                        },
                         use_curve: None,
                     },
                 )?;
                 let id = copy_id!(top_coedges[ring_index]);
                 let entity = &profile[ring_index];
                 let geometry = entity.geometry();
-                let (sketch_geometry, _sketch_storage) = ctx.with_scoped_storage("creo extrusion profile sketch scratch", || geometry.to_sketch(ctx))?;
+                let (sketch_geometry, _sketch_storage) = ctx
+                    .with_scoped_storage("creo extrusion profile sketch scratch", || {
+                        geometry.to_sketch(ctx)
+                    })?;
                 let Some(sketch_geometry) = sketch_geometry else {
                     continue;
                 };
@@ -883,14 +1028,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         ),
                         sense: Sense::Forward,
                         pcurves: {
-    let mut uses = ctx.collection_vec(1, "creo extrusion top coedge pcurve uses")?;
-    uses.push(PcurveUse {
+                            let mut uses =
+                                ctx.collection_vec(1, "creo extrusion top coedge pcurve uses")?;
+                            uses.push(PcurveUse {
                                 pcurve: top_pcurve,
                                 isoparametric: None,
                                 parameter_range: None,
                             });
-    uses
-},
+                            uses
+                        },
                         use_curve: None,
                     },
                 )?;
@@ -898,9 +1044,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
 
             let forward_sides = validated.area() > 0.0;
             let mut entities = profile.iter().enumerate();
-            while let Some((index, entity)) = ctx.next_charged(&mut entities, "creo extrusion profile entity traversal")? {
+            while let Some((index, entity)) =
+                ctx.next_charged(&mut entities, "creo extrusion profile entity traversal")?
+            {
                 let geometry = entity.geometry();
-                let (sketch_geometry, _sketch_storage) = ctx.with_scoped_storage("creo extrusion profile sketch scratch", || geometry.to_sketch(ctx))?;
+                let (sketch_geometry, _sketch_storage) = ctx
+                    .with_scoped_storage("creo extrusion profile sketch scratch", || {
+                        geometry.to_sketch(ctx)
+                    })?;
                 let Some(sketch_geometry) = sketch_geometry else {
                     continue;
                 };
@@ -1049,14 +1200,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             radial_next,
                             sense: edge_uses[use_index].1,
                             pcurves: {
-    let mut uses = ctx.collection_vec(1, "creo extrusion side coedge pcurve uses")?;
-    uses.push(PcurveUse {
+                                let mut uses = ctx
+                                    .collection_vec(1, "creo extrusion side coedge pcurve uses")?;
+                                uses.push(PcurveUse {
                                     pcurve,
                                     isoparametric: None,
                                     parameter_range: None,
                                 });
-    uses
-},
+                                uses
+                            },
                             use_curve: None,
                         },
                     )?;
@@ -1074,9 +1226,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         } else {
                             Sense::Reversed
                         },
-                        loops: cadmpeg_ir::topology::FaceLoops::unspecified(
-                            { let mut ids = ctx.collection_vec(1, "creo extrusion side face loop IDs")?; ids.push(loop_id); ids },
-                        ),
+                        loops: cadmpeg_ir::topology::FaceLoops::unspecified({
+                            let mut ids =
+                                ctx.collection_vec(1, "creo extrusion side face loop IDs")?;
+                            ids.push(loop_id);
+                            ids
+                        }),
                         name: None,
                         color: None,
                         tolerance: None,
@@ -1130,17 +1285,24 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         ir.model.regions.push(Region {
             id: copy_id!(region_id),
             body: copy_id!(body_id),
-            shells: { let mut ids = ctx.collection_vec(1, "creo extrusion region shell IDs")?; ids.push(shell_id); ids },
+            shells: {
+                let mut ids = ctx.collection_vec(1, "creo extrusion region shell IDs")?;
+                ids.push(shell_id);
+                ids
+            },
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
-        body_id_storage.with_storage(|| ctx.insert_string_set(indexed_body_ids, body_id.as_str(), "creo model body identity index"))?;
         source_carriers.admit_body(
             ctx,
             ir,
             Body {
                 id: body_id,
                 kind: BodyKind::Solid,
-                regions: { let mut ids = ctx.collection_vec(1, "creo extrusion body region IDs")?; ids.push(region_id); ids },
+                regions: {
+                    let mut ids = ctx.collection_vec(1, "creo extrusion body region IDs")?;
+                    ids.push(region_id);
+                    ids
+                },
                 transform: None,
                 name: None,
                 color: None,

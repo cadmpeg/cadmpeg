@@ -492,11 +492,19 @@ fn extrusion_profile_intersections_include_analytic_tangency() {
 
 #[test]
 fn equal_opposite_cap_planes_define_symmetric_extent() {
-    let extent = crate::decode::with_test_decode_ctx(|ctx| extrusion_extent_and_direction(ctx, [0.0, 0.0, 0.0], [0.0, -1.0, 0.0], [
-            ([0.0, 4.0, 0.0], [0.0, 1.0, 0.0]),
-            ([0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
-            ([3.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-        ])).expect("service resources");
+    let extent = crate::decode::with_test_decode_ctx(|ctx| {
+        extrusion_extent_and_direction(
+            ctx,
+            [0.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [
+                ([0.0, 4.0, 0.0], [0.0, 1.0, 0.0]),
+                ([0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
+                ([3.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            ],
+        )
+    })
+    .expect("service resources");
 
     assert_eq!(
         extent,
