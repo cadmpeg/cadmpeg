@@ -1232,7 +1232,7 @@ fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
     }
     for operation in [
         "catia_b5_targeted_surface_visited",
-        "catia_b5_targeted_visited_copy",
+        "catia_b5_targeted_surface_nodes",
         "catia_b5_targeted_offset_surfaces",
     ] {
         assert!(

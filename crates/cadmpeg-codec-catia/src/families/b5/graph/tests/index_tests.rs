@@ -167,3 +167,64 @@ fn alias_terminal_index_observes_late_carrier_construction() {
     })
     .expect("current carrier lookup with unchanged terminals");
 }
+
+#[test]
+fn targeted_surface_cache_shares_alias_suffixes_and_cycle_results() {
+    let count = 4_096_u32;
+    let alias = |id, target| {
+        let mut payload = vec![0x81];
+        payload.extend(crate::test_support::test_b5::b5_object_ref(target));
+        B5RecordBuf {
+            offset: 0,
+            family: 0xb5,
+            class: 0x2e,
+            object_id: id,
+            payload,
+        }
+    };
+    let mut owned: Vec<_> = (1..=count).map(|id| alias(id, id + 1)).collect();
+    owned.extend([
+        alias(count + 10, count + 11),
+        alias(count + 11, count + 10),
+        alias(count + 12, count + 10),
+    ]);
+    let records: HashMap<_, _> = owned
+        .iter()
+        .map(|owned| (owned.object_id, Some(owned.record())))
+        .collect();
+    let plane = B5Surface::Plane {
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+    };
+    let resolved = HashMap::from([(count + 1, Some(plane.clone()))]);
+    crate::test_support::with_work_limit(u64::from(count) * 1_000, |ctx| {
+        let headers = BTreeMap::new();
+        let rolling = HashMap::new();
+        let mut resolver =
+            TargetedSurfaceResolver::new(ctx, &records, &headers, &resolved, &rolling)?;
+        for id in 1..=count {
+            assert_eq!(resolver.copy_output(id)?, Some(plane.clone()));
+        }
+        for id in count + 10..=count + 12 {
+            assert_eq!(resolver.copy_output(id)?, None);
+        }
+        Ok::<_, CodecError>(())
+    })
+    .expect("one suffix walk and keyed cached queries fit the linear work bound");
+    crate::test_support::with_retained_limit(0, |ctx| {
+        for _ in 0..4 {
+            let headers = BTreeMap::new();
+            let rolling = HashMap::new();
+            let mut resolver =
+                TargetedSurfaceResolver::new(ctx, &records, &headers, &resolved, &rolling)
+                    .expect("cache reservation");
+            assert_eq!(
+                resolver.copy_output(1).expect("cache is scratch"),
+                Some(plane.clone())
+            );
+        }
+    });
+}
