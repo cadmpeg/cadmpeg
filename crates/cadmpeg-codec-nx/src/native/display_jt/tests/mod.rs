@@ -330,6 +330,7 @@ const EPS_JT_TRANSFORMED_VERTEX: f64 = 1.0e-6;
 
 mod framing;
 mod candidate_storage;
+mod property_scratch;
 mod late_parser_prefix;
 mod parser_prefix;
 mod wires;
