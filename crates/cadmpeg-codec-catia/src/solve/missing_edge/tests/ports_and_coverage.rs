@@ -574,7 +574,7 @@ fn placement_endpoint_pairs_refuse_collection_limit() {
 fn placement_corner_and_face_domain_copies_refuse_before_growth() {
     let operations = placement_missing_edge_limit_operations();
     for operation in [
-        "catia_corner_candidate_points",
+        "catia_corner_point_constraint_round",
         "catia_corner_point_copy",
         "catia_corner_point_entries",
         "catia_corner_run_constraints",
