@@ -368,7 +368,10 @@ fn selection_reference_constructors_admit_text_before_validation() {
             };
             let need = complete.used;
             if let Some(short_need) = short_need {
-                assert_eq!(need, short_need, "validation stops at the first nonblank character");
+                assert_eq!(
+                    need, short_need,
+                    "validation stops at the first nonblank character"
+                );
             } else {
                 short_need = Some(need);
             }

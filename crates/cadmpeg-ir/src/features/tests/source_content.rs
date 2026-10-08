@@ -131,6 +131,7 @@ fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
 
 #[test]
 fn decoded_source_content_admits_identity_comparison_before_append() {
+    use crate::features::FeatureCollectionError;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let reference = FeatureSourceContent::Parameter(
@@ -158,14 +159,6 @@ fn decoded_source_content_admits_identity_comparison_before_append() {
             result
         },
     );
-}
-
-
-#[test]
-fn decoded_source_content_comparison_work_scales_with_identity_bytes() {
-    use crate::features::FeatureCollectionError;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
     let mut short_need = None;
     for identity in ["test:test:parameter#x", "test:test:parameter#long-identity"] {
         let reference = FeatureSourceContent::Parameter(ParameterId::mint(identity).unwrap());
@@ -181,7 +174,10 @@ fn decoded_source_content_comparison_work_scales_with_identity_bytes() {
                 let before = content.clone();
                 match content.push(reference.clone(), &ctx, "source content comparison") {
                     Err(FeatureCollectionError::Invalid(message)) => {
-                        assert_eq!(message, "source_content repeats a parameter or child-feature reference");
+                        assert_eq!(
+                            message,
+                            "source_content repeats a parameter or child-feature reference"
+                        );
                     }
                     Err(error) => {
                         let error = CodecError::from(error);

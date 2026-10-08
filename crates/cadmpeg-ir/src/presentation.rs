@@ -140,8 +140,6 @@ impl PresentationDocument {
         self.states = states;
         Ok(())
     }
-
-
 }
 
 impl From<PresentationDocument> for PresentationDocumentWire {
