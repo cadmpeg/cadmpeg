@@ -37,7 +37,13 @@ fn terminal_plane_orients_oppositely_parameterized_extrusion_carriers() {
     ];
     let terminal_plane = [([0.0, 7.5, 0.0], [0.0, 1.0, 0.0])];
     assert_eq!(
-        blind_extrusion_from_carriers(&carriers, &terminal_plane, None),
+        crate::decode::with_test_decode_ctx(|ctx| blind_extrusion_from_carriers(
+            ctx,
+            &carriers,
+            &terminal_plane,
+            None
+        ))
+        .expect("service resources"),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -63,10 +69,31 @@ fn terminal_plane_orients_oppositely_parameterized_extrusion_carriers() {
         },
     ];
     assert_eq!(
-        blind_extrusion_from_carriers(&reversed, &terminal_plane, None),
-        blind_extrusion_from_carriers(&carriers, &terminal_plane, None)
+        crate::decode::with_test_decode_ctx(|ctx| blind_extrusion_from_carriers(
+            ctx,
+            &reversed,
+            &terminal_plane,
+            None
+        ))
+        .expect("service resources"),
+        crate::decode::with_test_decode_ctx(|ctx| blind_extrusion_from_carriers(
+            ctx,
+            &carriers,
+            &terminal_plane,
+            None
+        ))
+        .expect("service resources")
     );
-    assert!(blind_extrusion_from_carriers(&carriers, &[], None).is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| blind_extrusion_from_carriers(
+            ctx,
+            &carriers,
+            &[],
+            None
+        ))
+        .expect("service resources")
+        .is_none()
+    );
 }
 
 #[test]

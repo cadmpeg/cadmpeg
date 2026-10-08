@@ -281,8 +281,7 @@ fn closed_off_axis_revolution_reaches_brep_admission() {
 }
 
 fn revolution_refuses_at_collection_boundary(operation: &'static str) {
-    let mut last_refusal = None;
-    for limit in 0..4096 {
+    let run = |limit| {
         let (scan, mut ir) = closed_off_axis_revolution();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -290,31 +289,23 @@ fn revolution_refuses_at_collection_boundary(operation: &'static str) {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let mut losses = Vec::new();
-        let result = transfer_resolved_revolution_breps(
+        transfer_resolved_revolution_breps(
             &ctx,
             &scan,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &mut losses,
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-        );
-        match result {
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-                if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation =>
-            {
-                return
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
-                last_refusal = Some((limit, resource.dimension, resource.operation));
-            }
-            Err(error) => {
-                panic!("unexpected revolution error at collection limit {limit}: {error:?}")
-            }
-            Ok(_) => panic!("revolution succeeded before the named {operation} refusal"),
-        }
-    }
-    panic!("the named {operation} boundary was not reached; last refusal: {last_refusal:?}");
+        )
+    };
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some(operation),
+        run,
+    );
+    assert!(
+        matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.dimension == ResourceDimension::CollectionItems && resource.operation == operation)
+    );
 }
 
 macro_rules! revolution_collection_limit_test {
@@ -447,7 +438,25 @@ fn revolution_loss_text_and_slot_refuse_named_limits() {
     let records = vec!["first".to_owned(), "second".to_owned()];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo revolution rejection text"),
+        |limit| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("root");
+            push_revolution_loss(
+                &ctx,
+                &mut Vec::new(),
+                40,
+                "states no face sense; its B-rep was skipped",
+                &records,
+            )
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = push_revolution_loss(
         &ctx,
@@ -465,7 +474,25 @@ fn revolution_loss_text_and_slot_refuse_named_limits() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo revolution losses"),
+        |limit| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("root");
+            push_revolution_loss(
+                &ctx,
+                &mut Vec::new(),
+                40,
+                "states no face sense; its B-rep was skipped",
+                &records,
+            )
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = push_revolution_loss(
         &ctx,

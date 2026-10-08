@@ -33,7 +33,7 @@ use std::collections::BTreeMap;
 fn circular_sweep_projects_profile_direction_and_extent() {
     let rows = [12, 13].map(|id| super::surface_row(id, 6, crate::surface::SurfaceKind::Cylinder));
     let sweep = CircularSweepGeometry {
-        cylinder_rows: rows.iter().collect(),
+        cylinder_rows: crate::decode::holes::placement::HoleCylinderRows::Two([&rows[0], &rows[1]]),
         section_definition_id: None,
         direction: [0.0, 0.0, -1.0],
         extent: ExtrudeExtent::OneSided {
@@ -514,12 +514,12 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
     ])
     .is_none());
     assert!(matches!(
-        circular_sweep_cylinder_from_cap_outlines([
+        crate::decode::with_test_decode_ctx(|ctx| circular_sweep_cylinder_from_cap_outlines(ctx, [
             (828, [0.0, 4.0, 0.0], [0.0, 1.0, 0.0]),
             (831, [0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
         ], [
             CapOutline { surface_id: 828, origin: [0.0, 4.0, 0.0], normal: [0.0, 1.0, 0.0], corners: [[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]] },
-        ]),
+        ])).expect("service resources"),
         Some(cylinder)
             if *cylinder.origin() == Point3::new(-12.5, 4.0, 0.0)
                 && *cylinder.frame().axis().as_raw() == Vector3::new(0.0, -1.0, 0.0)

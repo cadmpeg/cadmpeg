@@ -28,17 +28,13 @@ fn extrusion_pcurve_identity_copy_refuses_below_retained_limit() {
         LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).expect("line"),
     );
     let source = crate::decode::source_carriers::SourceUnitCarriers::default();
-    // Admit preceding annotation backing nodes before refusing the identity copy.
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
+    let error = crate::test_support::last_refusal_at(
+        &[],
         ResourceDimension::RetainedBytes,
         "creo extrusion pcurve identity copy",
-        |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        |ctx| {
             add_extrusion_pcurve(
-                &ctx,
+                ctx,
                 &mut CadIr::empty(),
                 &mut AnnotationBuilder::new(),
                 PcurveAdmission::Pending(&source, &surface),

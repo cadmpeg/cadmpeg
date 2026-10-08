@@ -311,15 +311,15 @@ pub(super) fn linear_extrusion_extent_and_direction(
         let mut extent =
             generated_arc_cylinder_extent(ctx, scan, ir, source_carriers, definition, transform)?;
         if extent.is_none() {
-            if let Some(planes) =
+            if let Some((planes, _plane_storage)) =
                 feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)?
             {
                 extent = extrusion_extent_and_direction(
+                    ctx,
                     transform.origin(),
                     transform.normal(),
-                    ctx.admit_iter(&planes, "creo extrusion plane equations")?
-                        .map(|plane| (plane.origin, plane.normal)),
-                );
+                    planes.iter().map(|plane| (plane.origin, plane.normal)),
+                )?;
             }
         }
         if let Some(extent) = extent {
@@ -473,7 +473,8 @@ pub(in super::super) fn schema_feature_definition(
         } else {
             None
         };
-        let placement = feature_outline_planes(ctx, scan, feature_id)?.and_then(hole_placement);
+        let placement = feature_outline_planes(ctx, scan, feature_id)?
+            .and_then(|(planes, _plane_storage)| hole_placement(planes));
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             ctx,
             feature_id,
