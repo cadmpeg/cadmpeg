@@ -481,12 +481,29 @@ fn assign_feature_parameter_ordinals(
 
         let mut parameter_ordinals = HashMap::new();
         for (_, parameters) in ctx.admit_iter(&mut parameters_by_feature, "catia_feature_visits")? {
-            ctx.sort_unstable_by(
-                parameters,
-                |value| value,
-                Ord::cmp,
-                "catia_feature_parameter_order_sort",
-            )?;
+            match parameters.len() {
+                0 | 1 => {}
+                2 => {
+                    if ctx
+                        .compare(
+                            &parameters[0],
+                            &parameters[1],
+                            "catia_feature_parameter_order_sort",
+                        )?
+                        .is_gt()
+                    {
+                        parameters.swap(0, 1);
+                    }
+                }
+                _ => {
+                    ctx.sort_unstable_by(
+                        parameters,
+                        |value| value,
+                        Ord::cmp,
+                        "catia_feature_parameter_order_sort",
+                    )?;
+                }
+            }
             for (ordinal, parameter) in ctx
                 .admit_iter(parameters.as_slice(), "catia_feature_ordinal_visits")?
                 .enumerate()
@@ -546,12 +563,29 @@ fn assign_document_parameter_ordinals(
                     "catia_document_parameter_sort_rows",
                 )?;
             }
-            ctx.sort_unstable_by(
-                &mut parameters,
-                |value| value,
-                Ord::cmp,
-                "catia_document_parameter_order_sort",
-            )?;
+            match parameters.len() {
+                0 | 1 => {}
+                2 => {
+                    if ctx
+                        .compare(
+                            &parameters[0],
+                            &parameters[1],
+                            "catia_document_parameter_order_sort",
+                        )?
+                        .is_gt()
+                    {
+                        parameters.swap(0, 1);
+                    }
+                }
+                _ => {
+                    ctx.sort_unstable_by(
+                        &mut parameters,
+                        |value| value,
+                        Ord::cmp,
+                        "catia_document_parameter_order_sort",
+                    )?;
+                }
+            }
 
             let mut parameter_ordinals = HashMap::new();
             for (ordinal, (_, parameter)) in ctx
