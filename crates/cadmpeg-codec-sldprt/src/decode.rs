@@ -2777,33 +2777,35 @@ fn try_decode_brep<'ctx>(
     // Without a resolved active site, this is only a deterministic merge
     // accumulator. All site identities are qualified below.
     let selected_site = resolved_active_site.unwrap_or(0);
-    let selected_is_empty_model = if decoded_sites[selected_site].2.stats.source_entity_records == 0
-    {
-        let selected_streams = ctx
-            .get_btree_map(
-                &sites,
-                decoded_sites[selected_site].0,
-                "look up SLDPRT site streams",
-            )?
-            .ok_or_else(|| CodecError::malformed("decoded SLDPRT site has no streams"))?;
-        ctx.any_by(
-            selected_streams,
-            |index| Ok(streams[*index].header.words.partition()),
-            "scan SLDPRT selected site body streams",
-        )? && ctx.any_by(
-            selected_streams,
-            |index| Ok(streams[*index].header.words.deltas()),
-            "scan SLDPRT selected site body streams",
-        )?
-    } else {
-        false
-    };
     let selected_has_geometry = !decoded_sites[selected_site].2.faces.is_empty()
         || !decoded_sites[selected_site].2.surfaces.is_empty()
         || !decoded_sites[selected_site].2.points.is_empty();
     if resolved_active_site.is_some() {
-        if !selected_is_empty_model && !selected_has_geometry {
-            return Ok(None);
+        if !selected_has_geometry {
+            let selected_is_empty_model = if decoded_sites[selected_site].2.stats.source_entity_records == 0
+            {
+                let selected_streams = ctx
+                    .get_btree_map(
+                        &sites,
+                        decoded_sites[selected_site].0,
+                        "look up SLDPRT site streams",
+                    )?
+                    .ok_or_else(|| CodecError::malformed("decoded SLDPRT site has no streams"))?;
+                ctx.any_by(
+                    selected_streams,
+                    |index| Ok(streams[*index].header.words.partition()),
+                    "scan SLDPRT selected site body streams",
+                )? && ctx.any_by(
+                    selected_streams,
+                    |index| Ok(streams[*index].header.words.deltas()),
+                    "scan SLDPRT selected site body streams",
+                )?
+            } else {
+                false
+            };
+            if !selected_is_empty_model {
+                return Ok(None);
+            }
         }
     } else {
         let any_site_has_geometry = ctx.any_by(
@@ -2817,7 +2819,7 @@ fn try_decode_brep<'ctx>(
             },
             "scan SLDPRT try_decode_brep values",
         )?;
-        let any_empty_model = ctx.any_by(
+        let any_empty_model = !any_site_has_geometry && ctx.any_by(
             &decoded_sites,
             |(site, _, decoded)| {
                 if decoded.stats.source_entity_records != 0 {

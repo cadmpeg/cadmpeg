@@ -270,7 +270,9 @@ fn swift_reachability_explores_shared_descendants_once() {
 
 #[test]
 fn swift_direct_reachability_defers_subfeature_validation() {
-    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    use cadmpeg_core::decode::{
+        refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
     let mut feature = entity("GdtCompoundHole");
     feature
         .features
@@ -296,12 +298,15 @@ fn swift_direct_reachability_defers_subfeature_validation() {
     });
     let index = BTreeMap::from([("root", &feature)]);
     {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let _probe = RefusalProbe::arm(
             ResourceDimension::WorkUnits,
             "validate SWIFT direct subfeatures",
             None,
         );
-        let ctx = cadmpeg_test_support::service_decode_context();
         assert!(crate::swift::feature_reaches(
             &ctx,
             "root",
