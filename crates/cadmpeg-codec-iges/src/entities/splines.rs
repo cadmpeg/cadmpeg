@@ -632,14 +632,12 @@ pub(super) fn project(
             Some(_) => None,
         };
         let mut knots = ctx.collection_vec(segment_count * 3 + 5, "iges spline curve knots")?;
-        knots.extend([breakpoints[0]; 4]);
+        knots.extend([breakpoints[0].get(); 4]);
         for breakpoint in &breakpoints[1..segment_count] {
-            knots.extend([*breakpoint; 3]);
+            knots.extend([breakpoint.get(); 3]);
         }
-        knots.extend([breakpoints[segment_count]; 4]);
-        let mut raw_knots = ctx.collection_vec(knots.len(), "iges spline curve admitted knots")?;
-        raw_knots.extend(knots.into_iter().map(FiniteReal::get));
-        let construction = match KnotVector::new(ctx, raw_knots)? {
+        knots.extend([breakpoints[segment_count].get(); 4]);
+        let construction = match KnotVector::new(ctx, knots)? {
             Err(error) => Err(error),
             Ok(knots) => {
                 NurbsCurve::from_checked_lanes(ctx, 3, knots, control_points, None, false)?
@@ -948,18 +946,20 @@ pub(super) fn project(
                     valid = false;
                     break 'patches;
                 };
-                let Some(values) = ctx.collect_options(
-                    (block_start..block_start + 48)
-                        .map(|index| record.number(index).and_then(FiniteReal::new)),
-                    "iges spline surface patch coefficients",
-                )?
-                else {
-                    valid = false;
-                    break 'patches;
-                };
+                let mut values = [0.0; 48];
+                for (offset, value) in values.iter_mut().enumerate() {
+                    ctx.charge_work(1, "iges spline surface patch coefficients")?;
+                    let Some(coefficient) = record
+                        .number(block_start + offset)
+                        .and_then(FiniteReal::new)
+                    else {
+                        valid = false;
+                        break 'patches;
+                    };
+                    *value = coefficient.get();
+                }
                 let u_width = u_breakpoints[u_patch + 1].get() - u_breakpoints[u_patch].get();
                 let v_width = v_breakpoints[v_patch + 1].get() - v_breakpoints[v_patch].get();
-                let values: [f64; 48] = std::array::from_fn(|index| values[index].get());
                 let coordinates = [
                     patch_bezier(&values[0..16], u_width, v_width),
                     patch_bezier(&values[16..32], u_width, v_width),
@@ -1001,29 +1001,18 @@ pub(super) fn project(
             )?;
             continue;
         }
-        let Some(control_points) =
-            ctx.collect_options(grid, "iges spline surface completed controls")?
-        else {
-            super::push_geometry_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!("{}", "spline-surface patch grid is incomplete"),
-            )?;
-            continue;
-        };
         let mut u_knots = ctx.collection_vec(u_segments * 3 + 5, "iges spline surface u knots")?;
-        u_knots.extend([u_breakpoints[0]; 4]);
+        u_knots.extend([u_breakpoints[0].get(); 4]);
         for breakpoint in &u_breakpoints[1..u_segments] {
-            u_knots.extend([*breakpoint; 3]);
+            u_knots.extend([breakpoint.get(); 3]);
         }
-        u_knots.extend([u_breakpoints[u_segments]; 4]);
+        u_knots.extend([u_breakpoints[u_segments].get(); 4]);
         let mut v_knots = ctx.collection_vec(v_segments * 3 + 5, "iges spline surface v knots")?;
-        v_knots.extend([v_breakpoints[0]; 4]);
+        v_knots.extend([v_breakpoints[0].get(); 4]);
         for breakpoint in &v_breakpoints[1..v_segments] {
-            v_knots.extend([*breakpoint; 3]);
+            v_knots.extend([breakpoint.get(); 3]);
         }
-        v_knots.extend([v_breakpoints[v_segments]; 4]);
+        v_knots.extend([v_breakpoints[v_segments].get(); 4]);
         let (Ok(_u_count), Ok(_v_count)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
             super::push_geometry_loss(
                 ctx,
@@ -1034,21 +1023,30 @@ pub(super) fn project(
             continue;
         };
         let mut rows = ctx.collection_vec(u_count, "iges spline surface pole rows")?;
-        for points in control_points.chunks(v_count) {
+        'rows: for points in grid.chunks(v_count) {
             let mut row =
                 ctx.collection_vec(points.len(), "iges spline surface pole row controls")?;
-            row.extend_from_slice(points);
+            for point in points {
+                let Some(point) = point else {
+                    valid = false;
+                    break 'rows;
+                };
+                row.push(*point);
+            }
             rows.push(row);
         }
-        let mut raw_u_knots =
-            ctx.collection_vec(u_knots.len(), "iges spline surface admitted u knots")?;
-        raw_u_knots.extend(u_knots.into_iter().map(FiniteReal::get));
-        let mut raw_v_knots =
-            ctx.collection_vec(v_knots.len(), "iges spline surface admitted v knots")?;
-        raw_v_knots.extend(v_knots.into_iter().map(FiniteReal::get));
-        let construction = match KnotVector::new(ctx, raw_u_knots)? {
+        if !valid {
+            super::push_geometry_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "spline-surface patch grid is incomplete"),
+            )?;
+            continue;
+        }
+        let construction = match KnotVector::new(ctx, u_knots)? {
             Err(error) => Err(error),
-            Ok(u_knots) => match KnotVector::new(ctx, raw_v_knots)? {
+            Ok(u_knots) => match KnotVector::new(ctx, v_knots)? {
                 Err(error) => Err(error),
                 Ok(v_knots) => NurbsSurface::from_checked_lanes(
                     ctx,

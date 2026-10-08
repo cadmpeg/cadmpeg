@@ -1380,41 +1380,75 @@ fn insert_homogeneous_pcurve_knot(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<()>, CodecError> {
     let count = controls.len();
-    let Some(span) = knots
-        .windows(2)
-        .position(|pair| pair[0] <= knot && knot < pair[1])
-    else {
+    // The caller has admitted finite, ordered knots. Each partition search
+    // needs at most the bit length of the knot count plus one comparison.
+    let search_work = 2 * u64::from(usize::BITS - knots.len().leading_zeros()) + 2;
+    ctx.charge_work(search_work, "iges pcurve insertion knot searches")?;
+    let upper = knots.partition_point(|candidate| *candidate <= knot);
+    if upper == 0 || upper == knots.len() {
         return Ok(None);
-    };
-    let multiplicity = knots.iter().filter(|candidate| **candidate == knot).count();
+    }
+    let span = upper - 1;
+    let multiplicity = upper - knots.partition_point(|candidate| *candidate < knot);
     if multiplicity >= degree {
         return Ok(Some(()));
     }
-    let Some((left_end, tail_start, inserted_count)) = span
-        .checked_sub(degree)
-        .zip(span.checked_sub(multiplicity))
-        .zip(count.checked_add(1))
-        .map(|((left_end, tail_start), count)| (left_end, tail_start, count))
+    let Some((left_end, tail_start)) = span.checked_sub(degree).zip(span.checked_sub(multiplicity))
     else {
         return Ok(None);
     };
-    let mut inserted = ctx.collection_vec(inserted_count, "iges pcurve inserted controls")?;
-    inserted.extend(std::iter::repeat_with(|| [0.0; 4]).take(inserted_count));
-    inserted[..=left_end].copy_from_slice(&controls[..=left_end]);
-    inserted[tail_start + 1..].copy_from_slice(&controls[tail_start..]);
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(tail_start - left_end)
+            .checked_mul(32)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "iges pcurve insertion interpolation",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?,
+        "iges pcurve insertion interpolation",
+    )?;
     for index in left_end + 1..=tail_start {
         let denominator = knots[index + degree] - knots[index];
         if !denominator.is_finite() || denominator <= 0.0 {
             return Ok(None);
         }
+    }
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(count - tail_start)
+            .checked_mul(32)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "iges pcurve insertion control shift",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?,
+        "iges pcurve insertion control shift",
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(knots.len() - upper)
+            .checked_mul(8)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("iges pcurve insertion knot shift", u64::MAX - 1, u64::MAX)
+            })?,
+        "iges pcurve insertion knot shift",
+    )?;
+    ctx.reserve_vec(controls, 1, "iges pcurve inserted controls")?;
+    ctx.reserve_vec(knots, 1, "iges pcurve inserted knots")?;
+    controls.push([0.0; 4]);
+    controls.copy_within(tail_start..count, tail_start + 1);
+    // Descending interpolation keeps both source controls unchanged until
+    // their final use. The shifted tail keeps the last source control too.
+    for index in (left_end + 1..=tail_start).rev() {
+        let denominator = knots[index + degree] - knots[index];
         let alpha = (knot - knots[index]) / denominator;
-        inserted[index] = std::array::from_fn(|axis| {
+        controls[index] = std::array::from_fn(|axis| {
             alpha * controls[index][axis] + (1.0 - alpha) * controls[index - 1][axis]
         });
     }
-    ctx.reserve_vec(knots, 1, "iges pcurve inserted knots")?;
     knots.insert(span + 1, knot);
-    *controls = inserted;
     Ok(Some(()))
 }
 
@@ -1469,13 +1503,15 @@ fn homogeneous_pcurve_spans(
         "iges pcurve internal knots sort",
     )?;
     internal.dedup();
+    let span_count = internal.len() + 1;
     for knot in internal {
-        while copied_knots
-            .iter()
-            .filter(|candidate| **candidate == knot)
-            .count()
-            < degree
-        {
+        ctx.charge_work(
+            2 * u64::from(usize::BITS - knots.len().leading_zeros()) + 2,
+            "iges pcurve internal knot multiplicity searches",
+        )?;
+        let multiplicity = knots.partition_point(|candidate| *candidate <= knot)
+            - knots.partition_point(|candidate| *candidate < knot);
+        for _ in multiplicity..degree {
             if insert_homogeneous_pcurve_knot(degree, &mut copied_knots, &mut controls, knot, ctx)?
                 .is_none()
             {
@@ -1483,7 +1519,7 @@ fn homogeneous_pcurve_spans(
             }
         }
     }
-    let mut spans = ctx.collection_vec(controls.len(), "iges pcurve span descriptors")?;
+    let mut spans = ctx.collection_vec(span_count, "iges pcurve span descriptors")?;
     for span in degree..controls.len() {
         let Some((start, end)) = copied_knots
             .get(span)
