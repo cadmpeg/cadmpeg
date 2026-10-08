@@ -1197,7 +1197,6 @@ struct FaceFactorArc {
 struct FaceFactorGraph {
     arcs: Vec<FaceFactorArc>,
     incoming: Vec<Vec<usize>>,
-    domain_lengths: Vec<usize>,
 }
 
 struct PreparedFaceFactors {
@@ -1483,25 +1482,7 @@ impl FaceFactorGraph {
                 ctx.push_vec(&mut incoming[right], arc, "catia face factor incoming arcs")?;
             }
         }
-        let mut domain_lengths =
-            ctx.collection_vec(domains.len(), "catia face factor domain lengths")?;
-        for domain in ctx.admit_iter(domains, "catia face factor domain lengths")? {
-            domain_lengths.push(domain.len());
-        }
-        Ok(Some(Self {
-            arcs,
-            incoming,
-            domain_lengths,
-        }))
-    }
-
-    fn full_state(&self, ctx: &DecodeContext<'_>) -> Result<Vec<Vec<u64>>, CodecError> {
-        let mut rows =
-            ctx.collection_vec(self.domain_lengths.len(), "catia face factor active rows")?;
-        for &length in ctx.admit_iter(&self.domain_lengths, "catia face factor active rows")? {
-            rows.push(full_configuration_mask(ctx, length)?);
-        }
-        Ok(rows)
+        Ok(Some(Self { arcs, incoming }))
     }
 
     /// Arc-consistency propagation from the queued arcs (every arc when
@@ -1814,7 +1795,11 @@ fn prune_face_configuration_singleton_support(
     else {
         return Ok(true);
     };
-    let mut active = scratch.with_storage(|| graph.full_state(ctx))?;
+    let mut active = scratch.with_storage(|| {
+        ctx.try_collect_retained_with(domains.iter(), "catia face factor active rows", |domain| {
+            full_configuration_mask(ctx, domain.len())
+        })
+    })?;
     match graph.propagate(ctx, &mut active, None, budget, None)? {
         Some(true) => {}
         Some(false) => return Ok(false),
@@ -2882,10 +2867,9 @@ fn restore_incidence_degrees(
 }
 
 impl<'storage> IncidenceComponentSearch<'storage, '_> {
-    /// The candidate pairs of an edge; with a required point, only the pairs
-    /// through that point. An indexed edge lists every pair under each of its
-    /// points, so a point without an index entry has no pair; an edge without
-    /// an index is scanned.
+    /// The candidate pairs of an edge. A point index narrows the source to
+    /// pairs through the required point. Without an index, the caller tests
+    /// the required point after each charged candidate visit.
     fn candidate_pairs(
         &self,
         edge: usize,
@@ -3076,30 +3060,36 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
     ) -> Result<bool, CodecError> {
         const OPERATION: &str = "catia incidence degree frontiers";
-        for &face in self.ctx.admit_iter(faces, OPERATION)? {
-            let start = self.ctx.partition_point(
-                &self.constraints,
-                |&(constraint_face, _)| Ok(constraint_face < face),
-                OPERATION,
-            )?;
-            let end = start
-                + self.ctx.partition_point(
-                    &self.constraints[start..],
-                    |&(constraint_face, _)| Ok(constraint_face == face),
+        self.ctx.all_by(
+            faces,
+            |&face| {
+                let start = self.ctx.partition_point(
+                    &self.constraints,
+                    |&(constraint_face, _)| Ok(constraint_face < face),
                     OPERATION,
                 )?;
-            for &(_, point) in self
-                .ctx
-                .admit_iter(&self.constraints[start..end], OPERATION)?
-            {
-                if self.degree_after_selection(selected, face, point)? == 1
-                    && !self.degree_support_exists(face, point, selected, coordinate_domains)?
-                {
-                    return Ok(false);
-                }
-            }
-        }
-        Ok(true)
+                let end = start
+                    + self.ctx.partition_point(
+                        &self.constraints[start..],
+                        |&(constraint_face, _)| Ok(constraint_face == face),
+                        OPERATION,
+                    )?;
+                self.ctx.all_by(
+                    &self.constraints[start..end],
+                    |&(_, point)| {
+                        Ok(self.degree_after_selection(selected, face, point)? != 1
+                            || self.degree_support_exists(
+                                face,
+                                point,
+                                selected,
+                                coordinate_domains,
+                            )?)
+                    },
+                    OPERATION,
+                )
+            },
+            OPERATION,
+        )
     }
 
     /// Whether an open edge can still raise a degree-one point to two. The
