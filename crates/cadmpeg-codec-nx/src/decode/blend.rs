@@ -441,9 +441,68 @@ mod tests {
         crate::test_support::with_decode_context(|ctx| {
             let limit = super::charge_de_casteljau_work(ctx, usize::MAX, OPERATION)
                 .expect_err("work beyond usize is refused");
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.dimension, ResourceDimension::Codec(OPERATION));
             assert_eq!(limit.operation, OPERATION);
         });
+    }
+
+    #[test]
+    fn de_casteljau_empty_and_single_control_charge_no_work() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                for count in [0, 1] {
+                    super::charge_de_casteljau_work(ctx, count, "test zero de Casteljau work")
+                        .expect("no combinations need work");
+                }
+                assert_eq!(ctx.resource_refusal(), None);
+            },
+        );
+    }
+
+    #[test]
+    fn de_casteljau_overflow_refuses_even_an_unlimited_work_allowance() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = u64::MAX,
+            |ctx| {
+                let limit = super::charge_de_casteljau_work(ctx, usize::MAX, "test pair overflow")
+                    .expect_err("an overflowing bound cannot be admitted");
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            },
+        );
+    }
+
+    #[test]
+    fn polynomial_root_sorts_refuse_work_before_returning_roots() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        for (dimension, operation) in [
+            (ResourceDimension::WorkUnits, "nx polynomial critical roots sort"),
+            (ResourceDimension::WorkUnits, "nx polynomial roots sort"),
+        ] {
+            crate::test_support::resource_refusal_at(
+                &[],
+                dimension,
+                operation,
+                |ctx| super::real_polynomial_roots(ctx, &[-1.0, 3.5, -3.0, -0.5, 1.0]).map(|_| ()),
+            );
+        }
+    }
+
+    #[test]
+    fn polynomial_root_sorts_need_no_scratch_for_a_quartic() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_materialized_bytes = 0,
+            |ctx| {
+                let roots = super::real_polynomial_roots(ctx, &[-1.0, 3.5, -3.0, -0.5, 1.0])
+                    .expect("fixed-degree sorts need no scratch")
+                    .expect("finite quartic roots");
+                assert_eq!(roots.len(), 3);
+            },
+        );
     }
 
     #[test]
@@ -3950,22 +4009,25 @@ fn scalar_bernstein_sign_variations(
 
 /// Charge the de Casteljau work of `count` controls: one level of
 /// `count - 1` combinations, then one fewer at each further level, for
-/// `count * (count - 1) / 2` in all. Work beyond `usize` is charged as
-/// `u64::MAX`, which no finite work limit admits.
+/// `count * (count - 1) / 2` in all. An overflowing pair count refuses
+/// through the context before any work is charged.
 fn charge_de_casteljau_work(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     count: usize,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
-    let pairs = if count.is_multiple_of(2) {
-        (count / 2).checked_mul(count.saturating_sub(1))
+    let pairs = if count == 0 {
+        Some(0)
+    } else if count.is_multiple_of(2) {
+        count.checked_sub(1).and_then(|previous| (count / 2).checked_mul(previous))
     } else {
         count.checked_mul(count / 2)
     };
-    ctx.charge_work_limit(
-        pairs.map_or(u64::MAX, cadmpeg_core::decode::u64_from_index),
-        operation,
-    )
+    let Some(pairs) = pairs else {
+        drop(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
+        return ctx.resource_refusal().map_or(Ok(()), Err);
+    };
+    ctx.charge_work_limit(cadmpeg_core::decode::u64_from_index(pairs), operation)
 }
 
 fn subdivide_scalar_bezier_span<'ctx>(
@@ -5375,7 +5437,11 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
         minor_radius * y,
     ];
     let constant_distance = coefficients.iter().all(|coefficient| *coefficient == 0.0);
-    let Some(roots) = real_polynomial_roots(&coefficients) else {
+    let roots = match real_polynomial_roots(geometry_budget.charges, &coefficients) {
+        Ok(roots) => roots,
+        Err(_) => return geometry_budget.resource_refusal().map_or(Ok(None), Err),
+    };
+    let Some(roots) = roots else {
         return Ok(None);
     };
     let parameters = roots
@@ -5407,35 +5473,45 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
 
 /// The real roots of the quartic `coefficients`, lowest power first. A
 /// quartic states a fixed amount of work: its roots, the roots of its
-/// derivatives and their bisection steps are bounded by its degree, so the
-/// solver takes no context.
-pub(super) fn real_polynomial_roots(coefficients: &[f64; 5]) -> Option<Vec<f64>> {
+/// derivatives and their bisection steps are bounded by its degree. The
+/// context admits the root sorts.
+pub(super) fn real_polynomial_roots(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    coefficients: &[f64; 5],
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     if coefficients
         .iter()
         .any(|coefficient| !coefficient.is_finite())
     {
-        return None;
+        return Ok(None);
     }
-    let mut roots = polynomial_roots_in_unit_interval(coefficients)?;
+    let Some(mut roots) = polynomial_roots_in_unit_interval(ctx, coefficients)? else {
+        return Ok(None);
+    };
     let mut reversed = *coefficients;
     reversed.reverse();
-    let reversed_roots = polynomial_roots_in_unit_interval(&reversed)?;
+    let Some(reversed_roots) = polynomial_roots_in_unit_interval(ctx, &reversed)? else {
+        return Ok(None);
+    };
     roots.extend(
         reversed_roots
             .into_iter()
             .filter(|root| *root != 0.0)
             .map(f64::recip),
     );
-    roots.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(&mut roots, |value| value, f64::total_cmp, "nx polynomial roots sort")?;
     roots.dedup_by(|first, second| {
         (*first - *second).abs() <= 256.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
-    Some(roots)
+    Ok(Some(roots))
 }
 
 /// The roots in `[-1, 1]` of a polynomial of at most degree four, lowest
 /// power first.
-fn polynomial_roots_in_unit_interval(coefficients: &[f64]) -> Option<Vec<f64>> {
+fn polynomial_roots_in_unit_interval(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    coefficients: &[f64],
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let mut coefficients = coefficients.to_vec();
     while coefficients
         .last()
@@ -5444,41 +5520,47 @@ fn polynomial_roots_in_unit_interval(coefficients: &[f64]) -> Option<Vec<f64>> {
         coefficients.pop();
     }
     if coefficients.is_empty() {
-        return Some(Vec::new());
+        return Ok(Some(Vec::new()));
     }
-    let degree = coefficients.len().checked_sub(1)?;
+    let Some(degree) = coefficients.len().checked_sub(1) else {
+        return Ok(None);
+    };
     if degree == 0 {
-        return Some(Vec::new());
+        return Ok(Some(Vec::new()));
     }
     let scale = coefficients
         .iter()
         .fold(0.0_f64, |scale, coefficient| scale.max(coefficient.abs()));
     if !scale.is_finite() || scale == 0.0 {
-        return Some(Vec::new());
+        return Ok(Some(Vec::new()));
     }
     for coefficient in &mut coefficients {
         *coefficient /= scale;
     }
     if degree == 1 {
         let root = -coefficients[0] / coefficients[1];
-        return root.is_finite().then(|| {
+        return Ok(root.is_finite().then(|| {
             if (-1.0..=1.0).contains(&root) {
                 vec![root]
             } else {
                 Vec::new()
             }
-        });
+        }));
     }
-    let derivative = coefficients
+    let Some(derivative) = coefficients
         .iter()
         .enumerate()
         .skip(1)
         .map(|(degree, coefficient)| {
             Some(*coefficient * cadmpeg_core::convert::f64_from_index(degree)?)
         })
-        .collect::<Option<Vec<_>>>()?;
-    let mut critical = polynomial_roots_in_unit_interval(&derivative)?;
-    critical.sort_by(f64::total_cmp);
+        .collect::<Option<Vec<_>>>() else {
+        return Ok(None);
+    };
+    let Some(mut critical) = polynomial_roots_in_unit_interval(ctx, &derivative)? else {
+        return Ok(None);
+    };
+    ctx.stable_sort_by(&mut critical, |value| value, f64::total_cmp, "nx polynomial critical roots sort")?;
     critical.dedup_by(|first, second| {
         (*first - *second).abs() <= 64.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
@@ -5535,11 +5617,11 @@ fn polynomial_roots_in_unit_interval(coefficients: &[f64]) -> Option<Vec<f64>> {
         }
         roots.push(lower + (upper - lower) * 0.5);
     }
-    roots.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(&mut roots, |value| value, f64::total_cmp, "nx polynomial roots sort")?;
     roots.dedup_by(|first, second| {
         (*first - *second).abs() <= 256.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
-    Some(roots)
+    Ok(Some(roots))
 }
 
 fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
