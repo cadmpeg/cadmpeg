@@ -1246,32 +1246,49 @@ fn order_surface_candidates(
 }
 
 struct OperationSurfaceClasses<'identities, 'ctx> {
+    ctx: &'ctx DecodeContext<'ctx>,
     identities: &'identities [crate::records::FeatureInputGeneratedSurfaceIdentity],
-    surfaces: ClassObjects<'ctx>,
+    surfaces: std::cell::OnceCell<ClassObjects<'ctx>>,
     faces: ClassObjects<'ctx>,
-    split_classes: bool,
+    split_classes: std::cell::OnceCell<bool>,
 }
 
 impl<'identities, 'ctx> OperationSurfaceClasses<'identities, 'ctx> {
     fn new(
-        ctx: &'ctx DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'ctx>,
         lane: &FeatureInputLane,
         identities: &'identities [crate::records::FeatureInputGeneratedSurfaceIdentity],
     ) -> Result<Self, CodecError> {
+        Ok(Self {
+            ctx,
+            surfaces: std::cell::OnceCell::new(),
+            faces: ClassObjects::new(ctx, lane, "moCompFace_c")?,
+            split_classes: std::cell::OnceCell::new(),
+            identities,
+        })
+    }
+
+    fn surfaces(&self, lane: &FeatureInputLane) -> Result<&ClassObjects<'ctx>, CodecError> {
+        if let Some(surfaces) = self.surfaces.get() {
+            return Ok(surfaces);
+        }
+        let surfaces = ClassObjects::new(self.ctx, lane, "moCompSurfaceBody_c")?;
+        Ok(self.surfaces.get_or_init(|| surfaces))
+    }
+
+    fn has_split_classes(&self, lane: &FeatureInputLane) -> Result<bool, CodecError> {
+        if let Some(present) = self.split_classes.get() {
+            return Ok(*present);
+        }
         const OPERATION: &str = "index SLDPRT operation surface classes";
-        let mut split_classes = true;
+        let mut present = true;
         for required in ["moPLineProjIdRep_c", "moPLineSurfIdRep_c"] {
-            if !ctx.any_by(&lane.classes, |class| Ok(class.name == required), OPERATION)? {
-                split_classes = false;
+            if !self.ctx.any_by(&lane.classes, |class| Ok(class.name == required), OPERATION)? {
+                present = false;
                 break;
             }
         }
-        Ok(Self {
-            surfaces: ClassObjects::new(ctx, lane, "moCompSurfaceBody_c")?,
-            faces: ClassObjects::new(ctx, lane, "moCompFace_c")?,
-            split_classes,
-            identities,
-        })
+        Ok(*self.split_classes.get_or_init(|| present))
     }
 }
 
@@ -1327,7 +1344,7 @@ fn operation_surface_selection_candidates(
     if operation == FeatureClass::SplitFace {
         const OPERATION: &str = "project SLDPRT split surface identity paths";
 
-        if !classes.split_classes {
+        if !classes.has_split_classes(lane)? {
             return Ok(Vec::new());
         }
         let Some(object_source) = object_source else {
@@ -1370,7 +1387,7 @@ fn operation_surface_selection_candidates(
         return Ok(Vec::new());
     }
 
-    let mut candidates = match classes.surfaces.in_interval(ctx, start, end)? {
+    let mut candidates = match classes.surfaces(lane)?.in_interval(ctx, start, end)? {
         [offset] => compact_surface_selection_candidates_for_class(
             ctx,
             &lane.native_payload,

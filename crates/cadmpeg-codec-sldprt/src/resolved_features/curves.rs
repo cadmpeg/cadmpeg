@@ -578,13 +578,27 @@ pub(super) fn tangent_bounded_curve(
 }
 
 /// Declared slot records and their fixed-stride continuations, resolved in offset order.
-pub(super) struct SlotReferences<'ctx> {
-    records: HashMap<usize, SlotReferenceLayout>,
-    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+pub(super) struct SlotReferences<'payload, 'ctx> {
+    payload: &'payload [u8],
+    records: std::cell::OnceCell<HashMap<usize, SlotReferenceLayout>>,
+    storage: std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'ctx>>,
 }
 
-impl<'ctx> SlotReferences<'ctx> {
-    pub(super) fn new(ctx: &'ctx DecodeContext<'_>, payload: &[u8]) -> Result<Self, CodecError> {
+impl<'payload, 'ctx> SlotReferences<'payload, 'ctx> {
+    pub(super) fn new(ctx: &'ctx DecodeContext<'_>, payload: &'payload [u8]) -> Result<Self, CodecError> {
+        Ok(Self {
+            payload,
+            records: std::cell::OnceCell::new(),
+            storage: std::cell::RefCell::new(ctx.reserve_scoped(0, "index SLDPRT slot predecessors")?),
+        })
+    }
+
+    fn records(&self, ctx: &DecodeContext<'_>) -> Result<&HashMap<usize, SlotReferenceLayout>, CodecError> {
+        if let Some(records) = self.records.get() {
+            return Ok(records);
+        }
+        let records = self.storage.borrow_mut().with_storage(|| {
+        let payload = self.payload;
         const OPERATION: &str = "index SLDPRT slot predecessors";
         const SLOT_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x08\x00sgSlot_c\0\0\0\0\x01\0\0\0";
         let declared_at = |offset: usize| {
@@ -593,7 +607,6 @@ impl<'ctx> SlotReferences<'ctx> {
                 .and_then(|start| payload.get(start..offset))
                 == Some(SLOT_DECLARATION)
         };
-        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut records: HashMap<usize, SlotReferenceLayout> = HashMap::new();
         for (offset, _) in ctx.admit_iter(payload, OPERATION)?.enumerate() {
             if !sketch_marker_prefix_at(payload, offset) {
@@ -617,15 +630,12 @@ impl<'ctx> SlotReferences<'ctx> {
                 }
             }
             if declared {
-                storage.with_storage(|| {
-                    ctx.insert_hash_map(&mut records, offset, layout, OPERATION)
-                })?;
+                ctx.insert_hash_map(&mut records, offset, layout, OPERATION)?;
             }
         }
-        Ok(Self {
-            records,
-            _storage: storage,
-        })
+        Ok::<_, CodecError>(records)
+        })?;
+        Ok(self.records.get_or_init(|| records))
     }
 }
 
@@ -633,11 +643,11 @@ type SlotCurveAndCenterIndices = ([usize; 4], [usize; 2]);
 
 pub(super) fn slot_curve_and_center_indices(
     ctx: &DecodeContext<'_>,
-    slots: &SlotReferences<'_>,
+    slots: &SlotReferences<'_, '_>,
     offset: usize,
 ) -> Result<Option<SlotCurveAndCenterIndices>, CodecError> {
     Ok(ctx
-        .get_hash_map(&slots.records, &offset, "resolve SLDPRT indexed slot")?
+        .get_hash_map(slots.records(ctx)?, &offset, "resolve SLDPRT indexed slot")?
         .map(|layout| {
             (
                 [
@@ -709,7 +719,7 @@ fn slot_curve_reference_cells(payload: &[u8], offset: usize) -> Option<SlotRefer
 
 pub(super) fn resolve_slot_marker_arcs(
     ctx: &DecodeContext<'_>,
-    slots: &SlotReferences<'_>,
+    slots: &SlotReferences<'_, '_>,
     markers: &[&SketchInputEntity],
     entities: &mut [SketchEntity],
     tolerance: f64,
