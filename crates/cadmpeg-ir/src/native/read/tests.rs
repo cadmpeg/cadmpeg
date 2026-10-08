@@ -210,3 +210,35 @@ fn reader_shape_errors_stay_data_errors() {
         Err(NativeConvertError::Arena { .. })
     ));
 }
+
+#[derive(Debug, Deserialize)]
+struct Links {
+    links: Vec<String>,
+}
+
+#[test]
+fn typed_null_diagnostic_matches_serde() {
+    let record = serde_json::json!({
+        "id": "test:native:record#null-links",
+        "links": null,
+    });
+    let expected = serde_json::from_value::<Links>(record.clone())
+        .expect_err("null cannot deserialize as a sequence")
+        .to_string();
+    let namespace = stored(&record);
+    let error = read_with::<Links>(&namespace, u64::MAX).expect_err("null links are invalid");
+    let NativeConvertError::Arena { source, .. } = error else {
+        panic!("typed read error names its arena");
+    };
+    let NativeConvertError::ReadRecord { source, .. } = *source else {
+        panic!("typed read error names its record");
+    };
+    assert_eq!(source.to_string(), expected);
+    assert_eq!(
+        source.to_string(),
+        "invalid type: null, expected a sequence"
+    );
+    let empty: Links =
+        serde_json::from_value(serde_json::json!({"links": []})).expect("empty links deserialize");
+    assert!(empty.links.is_empty());
+}

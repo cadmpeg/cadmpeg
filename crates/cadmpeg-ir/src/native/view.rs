@@ -243,7 +243,7 @@ mod tests {
                 "native view fixture",
                 |cap| {
                     let arena = DecodeArena::new();
-                    let mut policy = policy.clone();
+                    let mut policy = policy;
                     policy.limits.max_work_units = cap;
                     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
                     let mut visited = Vec::new();

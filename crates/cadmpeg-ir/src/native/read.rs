@@ -130,7 +130,8 @@ fn refused() -> Error {
 /// text.
 fn unexpected(value: &Value) -> Unexpected<'_> {
     match value {
-        Value::Null => Unexpected::Unit,
+        // serde_json names a stored null this way.
+        Value::Null => Unexpected::Other("null"),
         Value::Bool(value) => Unexpected::Bool(*value),
         Value::Number(number) => {
             if let Some(value) = number.as_u64() {

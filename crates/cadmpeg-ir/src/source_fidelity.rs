@@ -571,9 +571,13 @@ impl SourceFidelity {
             if let Some(prior) =
                 ctx.get_btree_map(namespace.arenas(), "unknowns", "find native unknown arena")?
             {
-                ctx.admit_iter(prior, "copy native unknown records")?;
-                let mut wires = namespace
-                    .arena_iter_as_for_decode::<crate::unknown::NativeUnknownWire>(ctx, "unknowns");
+                let mut wires =
+                    ctx.admit_iter(prior, "copy native unknown records")?
+                        .map(|record| {
+                            crate::native::read_record::<crate::unknown::NativeUnknownWire>(
+                                ctx, "unknowns", record,
+                            )
+                        });
                 loop {
                     let mut storage = ctx.reserve_scoped(0, "read native unknown product")?;
                     let Some(product) = storage.with_storage(|| {

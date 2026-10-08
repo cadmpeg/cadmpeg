@@ -535,7 +535,7 @@ struct DigestUnknown<'a> {
 }
 
 /// Adds an arena name to a semantic typed-record refusal.
-fn read_record<T: DeserializeOwned>(
+pub(crate) fn read_record<T: DeserializeOwned>(
     ctx: &DecodeContext<'_>,
     arena: &str,
     record: &NativeRecord,

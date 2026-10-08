@@ -90,7 +90,11 @@ impl super::NurbsAdmission for DecodeContext<'_> {
         operation: &'static str,
         mut predicate: impl FnMut(&T) -> bool,
     ) -> Result<bool, Self::Error> {
-        DecodeContext::all_by_limit(self, values, |value| Ok(predicate(value)), operation)
+        // An empty slice takes no step, so report an earlier refusal first.
+        self.charge_work_limit(0, operation)
+            .and_then(|()| {
+                DecodeContext::all_by_limit(self, values, |value| Ok(predicate(value)), operation)
+            })
             .map_err(|limit| ConstructionError::Resource(limit.into()))
     }
 
