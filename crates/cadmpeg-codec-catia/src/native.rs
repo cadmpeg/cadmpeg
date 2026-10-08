@@ -10529,6 +10529,9 @@ fn filter_nested_alias_rows(
     value_blocks: &[value_block::ValueBlock],
     catalogs: &[CatiaCatalog],
 ) -> Result<(), CodecError> {
+    if rows.is_empty() {
+        return Ok(());
+    }
     let (graphs, _graph_storage) =
         ctx.with_scoped_storage("catia_native_alias_graph_extents", || {
             NativeExtentIndex::new(ctx, object_graphs, |graph| {
@@ -10581,38 +10584,50 @@ fn filter_nested_inventory(
     blocks: &mut Vec<value_block::ValueBlock>,
     catalogs: &mut Vec<catalog::Catalog>,
 ) -> Result<(), CodecError> {
+    let owners_absent = graphs.is_empty() && blocks.is_empty();
+    let comparisons_absent = catalogs.is_empty() && (graphs.is_empty() || blocks.is_empty());
+    if owners_absent || comparisons_absent {
+        return Ok(());
+    }
     let (graph_index, _graph_storage) = ctx
         .with_scoped_storage("catia_native_inventory_graph_extents", || {
             NativeExtentIndex::new(ctx, graphs, |graph| (graph.pos, graph.total_len))
         })?;
-    ctx.retain_vec(
-        blocks,
-        |block| {
-            Ok(!graph_index.contains(
-                ctx,
-                block.pos,
-                block.total_len(),
-                "catia_native_inventory_block_graph_overlap_scan",
-            )?)
-        },
-        "catia_native_inventory_blocks_retain",
-    )?;
+    if !graph_index.0.is_empty() {
+        ctx.retain_vec(
+            blocks,
+            |block| {
+                Ok(!graph_index.contains(
+                    ctx,
+                    block.pos,
+                    block.total_len(),
+                    "catia_native_inventory_block_graph_overlap_scan",
+                )?)
+            },
+            "catia_native_inventory_blocks_retain",
+        )?;
+    }
     let (block_index, _block_storage) = ctx
         .with_scoped_storage("catia_native_inventory_block_extents", || {
             NativeExtentIndex::new(ctx, blocks, |block| (block.pos, block.total_len()))
         })?;
-    ctx.retain_vec(
-        graphs,
-        |graph| {
-            Ok(!block_index.contains(
-                ctx,
-                graph.pos,
-                graph.total_len,
-                "catia_native_inventory_graph_block_overlap_scan",
-            )?)
-        },
-        "catia_native_inventory_graphs_retain",
-    )?;
+    if !block_index.0.is_empty() {
+        ctx.retain_vec(
+            graphs,
+            |graph| {
+                Ok(!block_index.contains(
+                    ctx,
+                    graph.pos,
+                    graph.total_len,
+                    "catia_native_inventory_graph_block_overlap_scan",
+                )?)
+            },
+            "catia_native_inventory_graphs_retain",
+        )?;
+    }
+    if graph_index.0.is_empty() && block_index.0.is_empty() {
+        return Ok(());
+    }
     // A graph removed by a surviving block is wholly inside that block.
     // The original graph index is valid for the combined catalog predicate.
     ctx.retain_vec(
