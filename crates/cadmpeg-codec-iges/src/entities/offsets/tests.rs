@@ -5,7 +5,7 @@ use std::io::Cursor;
 
 use super::SourceParameterMap;
 
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
@@ -135,6 +135,58 @@ fn offset_nurbs_pole_admission_refuses_before_copy() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
     }
+}
+
+#[test]
+fn offset_control_admission_stops_at_the_first_nonfinite_control() {
+    const LARGE_TAIL: usize = 4096;
+    let controls = std::iter::once(Point3::new(f64::INFINITY, 0.0, 0.0))
+        .chain(std::iter::repeat(Point3::new(1.0, 2.0, 3.0)).take(LARGE_TAIL))
+        .collect();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(super::admit_offset_controls(
+        &ctx,
+        controls,
+        "iges linear-offset admitted controls",
+    )
+    .unwrap()
+    .is_none());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn function_offset_control_traversal_charges_one_pole_at_a_time() {
+    let bytes = function_offset_line_file();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges function-offset control traversal",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map(|_| ())
+                .map_err(|error| match error {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected work refusal: {other:?}"),
+                })
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected function control traversal work refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "iges function-offset control traversal");
+    assert_eq!(limit.additional, 1);
 }
 
 #[test]
