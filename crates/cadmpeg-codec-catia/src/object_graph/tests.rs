@@ -1925,3 +1925,5 @@ fn final_terminator_suffix_is_scanned_once_for_nonfinal_fe_atoms() {
         Some(super::PayloadField::Terminator)
     ));
 }
+
+mod extent_index;
