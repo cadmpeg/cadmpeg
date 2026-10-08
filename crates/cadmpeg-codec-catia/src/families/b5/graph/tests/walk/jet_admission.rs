@@ -18,9 +18,9 @@ fn a8_class21_rejected_tail_does_not_retain_output_lanes() {
 fn a8_class21_jet_projections_refuse_before_traversal() {
     let payload = a8_class21_test_payload();
     for operation in [
-        "catia_b5_point_jet_projection",
-        "catia_b5_first_jet_projection",
-        "catia_b5_second_jet_projection",
+        "catia_b5_pcurve_point_jet_pair_scan",
+        "catia_b5_pcurve_first_jet_pair_scan",
+        "catia_b5_pcurve_second_jet_pair_scan",
     ] {
         let refusal = crate::test_support::with_work_refusal(operation, |ctx| {
             parse_a8_class21_pcurve(ctx, 7, &payload)

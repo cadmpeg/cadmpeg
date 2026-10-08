@@ -611,6 +611,7 @@ pub(crate) fn records_are_contiguous<const N: usize>(records: &[&ConsolidatedRec
 }
 
 /// Check an input-sized record run, stopping at the first logical gap.
+#[cfg(test)]
 pub(crate) fn record_run_is_contiguous(
     ctx: &DecodeContext<'_>,
     records: &[ConsolidatedRecord],

@@ -228,7 +228,7 @@ fn formula_numeric_parse_and_binding_lookup_refuse_before_execution() {
     )]);
     for (source, operation) in [
         ("1234", "catia_formula_numeric_parse"),
-        ("#1_", "catia_formula_binding_lookup"),
+        ("#1_", "catia_formula_symbol_lookup"),
     ] {
         let refusal = crate::test_support::with_work_refusal(operation, |ctx| {
             super::super::evaluate_formula_expression_charged(ctx, source, &bindings)
