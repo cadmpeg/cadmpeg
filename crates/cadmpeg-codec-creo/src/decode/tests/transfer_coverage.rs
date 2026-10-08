@@ -770,8 +770,7 @@ fn incidence_family_lattice_narrows_endpoint_evidence() {
     .collect();
     normalize_section_incidence_curve_family_evidence(&mut conflicting);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| conflicting.len(ctx))
-            .expect("admitted incidence family count"),
+        conflicting.len(),
         2
     );
 }

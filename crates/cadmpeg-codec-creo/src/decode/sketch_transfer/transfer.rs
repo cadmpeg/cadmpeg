@@ -27,12 +27,13 @@ use super::super::sketch_ids::{
 };
 use super::super::uniqueness::unique_feature_section_transform;
 use super::entities::{transfer_section_entities, SectionEntityTransfer};
+use super::solver_links::RelationIncidences;
 use crate::container::ContainerScan;
 use crate::coverage::SketchSegmentFamily;
 use crate::decode::sketch_transfer::constraints::{
     native_section_segment_verhor_definition, reconcile_constraint_entity_references,
     reconcile_constraint_parameter_reference, reconcile_section_dimension_constraint,
-    section_dimension_constraints, section_equation_axis_distance_constraints,
+    section_dimension_constraints_with_links, section_equation_axis_distance_constraints,
     section_equation_equal_distance_constraints,
     section_equation_function_five_scalar_equality_constraints,
     section_equation_function_forty_two_midpoint_coordinate_constraints,
@@ -70,6 +71,16 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
+
+const SPECIAL_SEGMENT_FAMILIES: [SketchSegmentFamily; 7] = [
+    SketchSegmentFamily::Circle,
+    SketchSegmentFamily::Point,
+    SketchSegmentFamily::CenteredLine,
+    SketchSegmentFamily::ReferenceLine,
+    SketchSegmentFamily::BoundedCurve,
+    SketchSegmentFamily::Conic,
+    SketchSegmentFamily::Opaque,
+];
 
 fn expected_segment_rows(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -113,12 +124,15 @@ pub(in super::super) fn transfer_sketches(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<SketchSegmentTransferCoverage, cadmpeg_core::CodecError> {
     let mut coverage = SketchSegmentTransferCoverage::default();
-    let planned_parameter_ids = planned_feature_dimension_parameter_ids(ctx, scan)?;
+    let mut parameter_storage = ctx.reserve_scoped(0, "creo available parameter storage")?;
+    let planned_parameter_ids =
+        parameter_storage.with_storage(|| planned_feature_dimension_parameter_ids(ctx, scan))?;
     let existing_parameter_ids = ctx
         .admit_iter(&ir.model.parameters, "creo existing parameter rows")?
         .map(|parameter| &parameter.id);
-    let available_parameter_ids =
-        available_parameter_ids(ctx, existing_parameter_ids, planned_parameter_ids)?;
+    let available_parameter_ids = parameter_storage.with_storage(|| {
+        available_parameter_ids(ctx, existing_parameter_ids, planned_parameter_ids)
+    })?;
     for definition in ctx.admit_iter(
         &scan.features.definitions,
         "creo sketch feature definitions",
@@ -151,10 +165,14 @@ pub(in super::super) fn transfer_sketches(
         let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
-        let segments = section_segment_rows(ctx, definition)?;
-        let unique_segment_ids = unique_section_segment_external_ids(ctx, definition)?;
-        let ambiguous_segment_ids = ambiguous_section_segment_external_ids(ctx, definition)?;
-        let unique_saved_ids = unique_saved_section_internal_ids(ctx, definition)?;
+        let mut section_storage = ctx.reserve_scoped(0, "creo section transfer scratch storage")?;
+        let segments = section_storage.with_storage(|| section_segment_rows(ctx, definition))?;
+        let unique_segment_ids = section_storage
+            .with_storage(|| unique_section_segment_external_ids(ctx, definition))?;
+        let ambiguous_segment_ids = section_storage
+            .with_storage(|| ambiguous_section_segment_external_ids(ctx, definition))?;
+        let unique_saved_ids =
+            section_storage.with_storage(|| unique_saved_section_internal_ids(ctx, definition))?;
         let complete_segment_table = definition
             .segments
             .as_ref()
@@ -163,182 +181,135 @@ pub(in super::super) fn transfer_sketches(
             let decoded_rows = table.rows.len();
             let expected_rows = expected_segment_rows(ctx, definition.identity.id(), table)?;
             coverage.record_table_rows(decoded_rows, expected_rows)?;
-            for segment in ctx
-                .admit_iter(table.rows.as_slice(), "creo coverage ordinary segment rows")?
-                .filter_map(|row| match row {
-                    SegmentRow::Ordinary(segment) => Some(segment),
-                    _ => None,
-                })
-            {
-                let family = match segment.kind {
-                    crate::feature::definitions::FeatureSegmentKind::Line(_) => {
-                        SketchSegmentFamily::Line
-                    }
-                    crate::feature::definitions::FeatureSegmentKind::Arc(_) => {
-                        SketchSegmentFamily::Arc
-                    }
-                    crate::feature::definitions::FeatureSegmentKind::Point(_) => {
-                        SketchSegmentFamily::Point
-                    }
+            for family in SPECIAL_SEGMENT_FAMILIES {
+                coverage.record_family_rows(family, 0);
+            }
+            for row in ctx.admit_iter(table.rows.as_slice(), "creo coverage segment rows")? {
+                let family = match row {
+                    SegmentRow::Ordinary(segment) => match segment.kind {
+                        crate::feature::definitions::FeatureSegmentKind::Line(_) => {
+                            SketchSegmentFamily::Line
+                        }
+                        crate::feature::definitions::FeatureSegmentKind::Arc(_) => {
+                            SketchSegmentFamily::Arc
+                        }
+                        crate::feature::definitions::FeatureSegmentKind::Point(_) => {
+                            SketchSegmentFamily::Point
+                        }
+                    },
+                    SegmentRow::Circle(_) => SketchSegmentFamily::Circle,
+                    SegmentRow::Point(_) => SketchSegmentFamily::Point,
+                    SegmentRow::CenteredLine(_) => SketchSegmentFamily::CenteredLine,
+                    SegmentRow::ReferenceLine(_) => SketchSegmentFamily::ReferenceLine,
+                    SegmentRow::BoundedCurve(_) => SketchSegmentFamily::BoundedCurve,
+                    SegmentRow::Conic(_) => SketchSegmentFamily::Conic,
+                    SegmentRow::Opaque(_) => SketchSegmentFamily::Opaque,
                 };
                 coverage.record_family_rows(family, 1);
             }
-            for (family, count) in [
-                (
-                    SketchSegmentFamily::Circle,
-                    ctx.admit_iter(table.rows.as_slice(), "creo coverage circle segment rows")?
-                        .filter_map(|row| match row {
-                            SegmentRow::Circle(segment) => Some(segment),
-                            _ => None,
-                        })
-                        .count(),
-                ),
-                (
-                    SketchSegmentFamily::Point,
-                    ctx.admit_iter(table.rows.as_slice(), "creo coverage point segment rows")?
-                        .filter_map(|row| match row {
-                            SegmentRow::Point(segment) => Some(segment),
-                            _ => None,
-                        })
-                        .count(),
-                ),
-                (
-                    SketchSegmentFamily::CenteredLine,
-                    ctx.admit_iter(
-                        table.rows.as_slice(),
-                        "creo coverage centered-line segment rows",
-                    )?
-                    .filter_map(|row| match row {
-                        SegmentRow::CenteredLine(segment) => Some(segment),
-                        _ => None,
-                    })
-                    .count(),
-                ),
-                (
-                    SketchSegmentFamily::ReferenceLine,
-                    ctx.admit_iter(
-                        table.rows.as_slice(),
-                        "creo coverage reference-line segment rows",
-                    )?
-                    .filter_map(|row| match row {
-                        SegmentRow::ReferenceLine(segment) => Some(segment),
-                        _ => None,
-                    })
-                    .count(),
-                ),
-                (
-                    SketchSegmentFamily::BoundedCurve,
-                    ctx.admit_iter(
-                        table.rows.as_slice(),
-                        "creo coverage bounded-curve segment rows",
-                    )?
-                    .filter_map(|row| match row {
-                        SegmentRow::BoundedCurve(segment) => Some(segment),
-                        _ => None,
-                    })
-                    .count(),
-                ),
-                (
-                    SketchSegmentFamily::Conic,
-                    ctx.admit_iter(table.rows.as_slice(), "creo coverage conic segment rows")?
-                        .filter_map(|row| match row {
-                            SegmentRow::Conic(segment) => Some(segment),
-                            _ => None,
-                        })
-                        .count(),
-                ),
-                (
-                    SketchSegmentFamily::Opaque,
-                    ctx.admit_iter(table.rows.as_slice(), "creo coverage opaque segment rows")?
-                        .filter_map(|row| match row {
-                            SegmentRow::Opaque(segment) => Some(segment),
-                            _ => None,
-                        })
-                        .count(),
-                ),
-            ] {
-                coverage.record_family_rows(family, count);
-            }
         }
-        let variable_points = resolved_section_coordinates(ctx, definition)?;
+        let variable_points =
+            section_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
         let mut points = BTreeMap::new();
         for (point, [u, v]) in ctx.admit_iter(&variable_points, "creo resolved sketch points")? {
             if let (Some(u), Some(v)) = (u, v) {
-                ctx.insert_btree_map(
-                    &mut points,
-                    *point,
-                    [*u, *v],
-                    "creo resolved sketch point nodes",
-                )?;
+                section_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut points,
+                        *point,
+                        [*u, *v],
+                        "creo resolved sketch point nodes",
+                    )
+                })?;
             }
         }
-        let radii = resolved_section_radii(ctx, definition)?;
-        let missing_line_geometry = saved_section_missing_line_geometry(ctx, definition)?;
+        let radii = section_storage.with_storage(|| resolved_section_radii(ctx, definition))?;
+        let missing_line_geometry = section_storage
+            .with_storage(|| saved_section_missing_line_geometry(ctx, definition))?;
         let mut solved = BTreeSet::new();
         for id in ctx
             .admit_iter(
-                trim_segment_ids(ctx, definition)?,
+                section_storage.with_storage(|| trim_segment_ids(ctx, definition))?,
                 "creo solved section trim rows",
             )?
             .flatten()
         {
-            ctx.insert_btree_set(&mut solved, id, "creo solved section segment ID nodes")?;
+            section_storage.with_storage(|| {
+                ctx.insert_btree_set(&mut solved, id, "creo solved section segment ID nodes")
+            })?;
         }
-        let trim_vertex_coordinates =
-            resolved_trim_vertex_coordinates(ctx, definition, &points, &radii)?;
+        let trim_vertex_coordinates = section_storage
+            .with_storage(|| resolved_trim_vertex_coordinates(ctx, definition, &points, &radii))?;
         let mut resolved_segment_geometries = BTreeMap::new();
         for segment in ctx.admit_iter(&segments, "creo resolved segment rows")? {
-            ctx.insert_btree_map(
-                &mut resolved_segment_geometries,
-                segment.offset,
+            let geometry = section_storage.with_storage(|| {
                 resolved_section_segment_geometry_with_missing_line(
                     ctx,
                     definition,
                     &points,
                     segment,
                     missing_line_geometry.as_ref(),
-                )?,
-                "creo resolved section geometry nodes",
-            )?;
+                )
+            })?;
+            section_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut resolved_segment_geometries,
+                    segment.offset,
+                    geometry,
+                    "creo resolved section geometry nodes",
+                )
+            })?;
         }
         let mut segment_geometries = BTreeMap::new();
         for segment in ctx.admit_iter(&segments, "creo transferred segment rows")? {
-            let geometry = if unique_segment_ids.contains(&segment.external_id)
-                && solved.contains(&segment.external_id)
-            {
-                trimmed_section_segment_geometry_with_missing_line(
-                    ctx,
-                    definition,
-                    &points,
-                    &radii,
-                    &trim_vertex_coordinates,
-                    segment,
-                    missing_line_geometry.as_ref(),
-                )?
+            let geometry = if ctx.contains_btree_set(
+                &unique_segment_ids,
+                &segment.external_id,
+                "creo transferred segment identity membership",
+            )? && ctx.contains_btree_set(
+                &solved,
+                &segment.external_id,
+                "creo transferred segment identity membership",
+            )? {
+                section_storage.with_storage(|| {
+                    trimmed_section_segment_geometry_with_missing_line(
+                        ctx,
+                        definition,
+                        &points,
+                        &radii,
+                        &trim_vertex_coordinates,
+                        segment,
+                        missing_line_geometry.as_ref(),
+                    )
+                })?
             } else {
-                resolved_segment_geometries
-                    .get(&segment.offset)
-                    .and_then(Option::as_ref)
-                    .map(|geometry| {
+                ctx.get_btree_map(
+                    &resolved_segment_geometries,
+                    &segment.offset,
+                    "creo transferred segment geometry lookup",
+                )?
+                .and_then(Option::as_ref)
+                .map(|geometry| {
+                    section_storage.with_storage(|| {
                         geometry.try_clone_for_decode(ctx, "creo resolved section geometry copy")
                     })
-                    .transpose()?
+                })
+                .transpose()?
             };
             let geometry = match geometry {
                 Some(geometry) => Some(geometry),
-                None => section_axis_reference_line_geometry(
-                    ctx,
-                    definition,
-                    &variable_points,
-                    segment,
-                )?,
+                None => section_storage.with_storage(|| {
+                    section_axis_reference_line_geometry(ctx, definition, &variable_points, segment)
+                })?,
             };
-            ctx.insert_btree_map(
-                &mut segment_geometries,
-                segment.offset,
-                geometry,
-                "creo section geometry nodes",
-            )?;
+            section_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut segment_geometries,
+                    segment.offset,
+                    geometry,
+                    "creo section geometry nodes",
+                )
+            })?;
         }
         let mut circle_geometries = BTreeMap::new();
         let mut point_geometries = BTreeMap::new();
@@ -350,31 +321,38 @@ pub(in super::super) fn transfer_sketches(
             {
                 let (geometry, offset, geometries, operation) = match row {
                     SegmentRow::Circle(segment) => (
-                        section_circle_geometry(ctx, &points, &radii, segment)?,
+                        section_storage.with_storage(|| {
+                            section_circle_geometry(ctx, &points, &radii, segment)
+                        })?,
                         segment.offset,
                         &mut circle_geometries,
                         "creo section circle geometry nodes",
                     ),
                     SegmentRow::Point(segment) => (
-                        section_point_row_geometry(ctx, &points, segment)?,
+                        section_storage
+                            .with_storage(|| section_point_row_geometry(ctx, &points, segment))?,
                         segment.offset,
                         &mut point_geometries,
                         "creo section point geometry nodes",
                     ),
                     SegmentRow::CenteredLine(segment) => (
-                        section_centered_line_geometry(ctx, &points, segment)?,
+                        section_storage.with_storage(|| {
+                            section_centered_line_geometry(ctx, &points, segment)
+                        })?,
                         segment.offset,
                         &mut centered_line_geometries,
                         "creo section centered-line geometry nodes",
                     ),
                     SegmentRow::ReferenceLine(segment) => (
-                        resolved_section_reference_line_geometry(
-                            ctx,
-                            definition,
-                            &variable_points,
-                            &points,
-                            segment,
-                        )?,
+                        section_storage.with_storage(|| {
+                            resolved_section_reference_line_geometry(
+                                ctx,
+                                definition,
+                                &variable_points,
+                                &points,
+                                segment,
+                            )
+                        })?,
                         segment.offset,
                         &mut reference_line_geometries,
                         "creo section reference-line geometry nodes",
@@ -382,23 +360,34 @@ pub(in super::super) fn transfer_sketches(
                     _ => continue,
                 };
                 if let Some(geometry) = geometry {
-                    ctx.insert_btree_map(geometries, offset, geometry, operation)?;
+                    section_storage.with_storage(|| {
+                        ctx.insert_btree_map(geometries, offset, geometry, operation)
+                    })?;
                 }
             }
         }
         let mut emitted = BTreeSet::new();
         for segment in ctx.admit_iter(&segments, "creo emitted ordinary segment rows")? {
-            if unique_segment_ids.contains(&segment.external_id)
-                && (section_degenerate_axis_line(ctx, definition, segment)?
-                    || segment_geometries
-                        .get(&segment.offset)
-                        .is_some_and(Option::is_some))
+            if ctx.contains_btree_set(
+                &unique_segment_ids,
+                &segment.external_id,
+                "creo transferred segment identity membership",
+            )? && (section_degenerate_axis_line(ctx, definition, segment)?
+                || ctx
+                    .get_btree_map(
+                        &segment_geometries,
+                        &segment.offset,
+                        "creo transferred segment geometry lookup",
+                    )?
+                    .is_some_and(Option::is_some))
             {
-                ctx.insert_btree_set(
-                    &mut emitted,
-                    segment.external_id,
-                    "creo emitted section segment ID nodes",
-                )?;
+                section_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut emitted,
+                        segment.external_id,
+                        "creo emitted section segment ID nodes",
+                    )
+                })?;
             }
         }
         if let Some(table) = definition.segments.as_ref() {
@@ -409,33 +398,49 @@ pub(in super::super) fn transfer_sketches(
                     _ => None,
                 })
             {
-                if unique_segment_ids.contains(&segment.external_id)
-                    && circle_geometries.contains_key(&segment.offset)
-                {
-                    ctx.insert_btree_set(
-                        &mut emitted,
-                        segment.external_id,
-                        "creo emitted section segment ID nodes",
-                    )?;
+                if ctx.contains_btree_set(
+                    &unique_segment_ids,
+                    &segment.external_id,
+                    "creo transferred segment identity membership",
+                )? && ctx.contains_key_btree_map(
+                    &circle_geometries,
+                    &segment.offset,
+                    "creo transferred circle geometry membership",
+                )? {
+                    section_storage.with_storage(|| {
+                        ctx.insert_btree_set(
+                            &mut emitted,
+                            segment.external_id,
+                            "creo emitted section segment ID nodes",
+                        )
+                    })?;
                 }
             }
         }
         let mut resolved_segment_offsets = BTreeSet::new();
         for segment in ctx.admit_iter(&segments, "creo resolved ordinary segment rows")? {
-            if segment_geometries
-                .get(&segment.offset)
+            if ctx
+                .get_btree_map(
+                    &segment_geometries,
+                    &segment.offset,
+                    "creo transferred segment geometry lookup",
+                )?
                 .is_some_and(Option::is_some)
             {
-                ctx.insert_btree_set(
-                    &mut resolved_segment_offsets,
-                    segment.offset,
-                    "creo resolved section offset nodes",
-                )?;
+                section_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut resolved_segment_offsets,
+                        segment.offset,
+                        "creo resolved section offset nodes",
+                    )
+                })?;
             }
         }
+
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let materialized_saved_section_external_ids =
-            materialized_saved_section_external_ids(ctx, definition, &mut refusal)?;
+        let materialized_saved_section_external_ids = section_storage.with_storage(|| {
+            materialized_saved_section_external_ids(ctx, definition, &mut refusal)
+        })?;
         let refused_records = refusal.take_records_checked()?;
         for record in ctx.admit_iter(&refused_records, "creo refused saved spline records")? {
             let message = ctx.format_retained(
@@ -450,10 +455,17 @@ pub(in super::super) fn transfer_sketches(
             losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(message));
         }
         coverage.record_resolved_geometry(resolved_segment_offsets.len());
-        for segment in ctx
-            .admit_iter(&segments, "creo resolved sketch segments")?
-            .filter(|segment| resolved_segment_offsets.contains(&segment.offset))
-        {
+        for family in SPECIAL_SEGMENT_FAMILIES {
+            coverage.record_family_resolution(family, 0);
+        }
+        for segment in ctx.admit_iter(&segments, "creo resolved sketch segments")? {
+            if !ctx.contains_btree_set(
+                &resolved_segment_offsets,
+                &segment.offset,
+                "creo resolved segment offset membership",
+            )? {
+                continue;
+            }
             let family = match segment.kind {
                 crate::feature::definitions::FeatureSegmentKind::Line(_) => {
                     SketchSegmentFamily::Line
@@ -465,181 +477,111 @@ pub(in super::super) fn transfer_sketches(
             };
             coverage.record_family_resolution(family, 1);
         }
-        let resolved_circles = if let Some(table) = definition.segments.as_ref() {
-            ctx.admit_iter(table.rows.as_slice(), "creo resolved circle segment rows")?
-                .filter_map(|row| match row {
-                    SegmentRow::Circle(segment) => Some(segment),
-                    _ => None,
-                })
-                .filter(|segment| {
-                    circle_geometries.contains_key(&segment.offset)
-                        || (unique_segment_ids.contains(&segment.external_id)
-                            && materialized_saved_section_external_ids
-                                .contains(&segment.external_id))
-                })
-                .count()
-        } else {
-            0
-        };
-        coverage.record_resolved_geometry(resolved_circles);
-        coverage.record_family_resolution(SketchSegmentFamily::Circle, resolved_circles);
-        let resolved_points = if let Some(table) = definition.segments.as_ref() {
-            ctx.admit_iter(table.rows.as_slice(), "creo resolved point segment rows")?
-                .filter_map(|row| match row {
-                    SegmentRow::Point(segment) => Some(segment),
-                    _ => None,
-                })
-                .filter(|segment| {
-                    point_geometries.contains_key(&segment.offset)
-                        || (unique_segment_ids.contains(&segment.external_id)
-                            && materialized_saved_section_external_ids
-                                .contains(&segment.external_id))
-                })
-                .count()
-        } else {
-            0
-        };
-        coverage.record_resolved_geometry(resolved_points);
-        coverage.record_family_resolution(SketchSegmentFamily::Point, resolved_points);
-        let resolved_centered_lines = if let Some(table) = definition.segments.as_ref() {
-            ctx.admit_iter(
-                table.rows.as_slice(),
-                "creo resolved centered-line segment rows",
-            )?
-            .filter_map(|row| match row {
-                SegmentRow::CenteredLine(segment) => Some(segment),
-                _ => None,
-            })
-            .filter(|segment| {
-                centered_line_geometries.contains_key(&segment.offset)
-                    || (unique_segment_ids.contains(&segment.external_id)
-                        && materialized_saved_section_external_ids.contains(&segment.external_id))
-            })
-            .count()
-        } else {
-            0
-        };
-        coverage.record_resolved_geometry(resolved_centered_lines);
-        coverage
-            .record_family_resolution(SketchSegmentFamily::CenteredLine, resolved_centered_lines);
-        let resolved_reference_lines = if let Some(table) = definition.segments.as_ref() {
-            ctx.admit_iter(
-                table.rows.as_slice(),
-                "creo resolved reference-line segment rows",
-            )?
-            .filter_map(|row| match row {
-                SegmentRow::ReferenceLine(segment) => Some(segment),
-                _ => None,
-            })
-            .filter(|segment| reference_line_geometries.contains_key(&segment.offset))
-            .count()
-        } else {
-            0
-        };
-        coverage.record_resolved_geometry(resolved_reference_lines);
-        coverage
-            .record_family_resolution(SketchSegmentFamily::ReferenceLine, resolved_reference_lines);
-        let resolved_bounded_curves = if let Some(table) = definition.segments.as_ref() {
-            ctx.admit_iter(
-                table.rows.as_slice(),
-                "creo resolved bounded-curve segment rows",
-            )?
-            .filter_map(|row| match row {
-                SegmentRow::BoundedCurve(segment) => Some(segment),
-                _ => None,
-            })
-            .filter(|segment| {
-                unique_segment_ids.contains(&segment.external_id)
-                    && materialized_saved_section_external_ids.contains(&segment.external_id)
-            })
-            .count()
-        } else {
-            0
-        };
-        coverage.record_resolved_geometry(resolved_bounded_curves);
-        coverage
-            .record_family_resolution(SketchSegmentFamily::BoundedCurve, resolved_bounded_curves);
-        let resolved_conics = if let Some(table) = definition.segments.as_ref() {
-            ctx.admit_iter(table.rows.as_slice(), "creo resolved conic segment rows")?
-                .filter_map(|row| match row {
-                    SegmentRow::Conic(segment) => Some(segment),
-                    _ => None,
-                })
-                .filter(|segment| {
-                    unique_segment_ids.contains(&segment.external_id)
-                        && materialized_saved_section_external_ids.contains(&segment.external_id)
-                })
-                .count()
-        } else {
-            0
-        };
-        coverage.record_resolved_geometry(resolved_conics);
-        coverage.record_family_resolution(SketchSegmentFamily::Conic, resolved_conics);
-        let resolved_opaque = if let Some(table) = definition.segments.as_ref() {
-            ctx.admit_iter(table.rows.as_slice(), "creo resolved opaque segment rows")?
-                .filter_map(|row| match row {
-                    SegmentRow::Opaque(segment) => Some(segment),
-                    _ => None,
-                })
-                .filter(|segment| {
-                    unique_segment_ids.contains(&segment.external_id)
-                        && materialized_saved_section_external_ids.contains(&segment.external_id)
-                })
-                .count()
-        } else {
-            0
-        };
-        coverage.record_resolved_geometry(resolved_opaque);
-        coverage.record_family_resolution(SketchSegmentFamily::Opaque, resolved_opaque);
-        let mut profiles = resolved_profile_chains(ctx, definition, &sketch_id, &emitted)?;
-        let mut generated_profile_geometries = Vec::new();
-        for segment in ctx.admit_iter(&segments, "creo generated profile segments")? {
-            if !unique_segment_ids.contains(&segment.external_id)
-                || !emitted.contains(&segment.external_id)
+        if let Some(table) = definition.segments.as_ref() {
+            for row in
+                ctx.admit_iter(table.rows.as_slice(), "creo resolved special segment rows")?
             {
-                continue;
-            }
-            let Some(geometry) = segment_geometries
-                .get(&segment.offset)
-                .and_then(Option::as_ref)
-            else {
-                continue;
-            };
-            let Some(expected_kinds) = section_generated_profile_surface_kinds(geometry) else {
-                continue;
-            };
-            if section_entity_is_generated_profile(
-                ctx,
-                complete_segment_table,
-                definition.identity.owner_feature_id(),
-                segment.external_id,
-                expected_kinds,
-                &scan.features.entity_tables,
-                &scan.surfaces.rows,
-            )? {
-                ctx.reserve_vec(
-                    &mut generated_profile_geometries,
-                    1,
-                    "creo generated profile geometry rows",
-                )?;
-                generated_profile_geometries.push((
-                    segment.external_id,
-                    geometry.try_clone_for_decode(ctx, "creo generated profile geometry copy")?,
-                ));
+                let (family, external_id, offset, geometries, saved_fallback) = match row {
+                    SegmentRow::Circle(segment) => (
+                        SketchSegmentFamily::Circle,
+                        segment.external_id,
+                        segment.offset,
+                        Some(&circle_geometries),
+                        true,
+                    ),
+                    SegmentRow::Point(segment) => (
+                        SketchSegmentFamily::Point,
+                        segment.external_id,
+                        segment.offset,
+                        Some(&point_geometries),
+                        true,
+                    ),
+                    SegmentRow::CenteredLine(segment) => (
+                        SketchSegmentFamily::CenteredLine,
+                        segment.external_id,
+                        segment.offset,
+                        Some(&centered_line_geometries),
+                        true,
+                    ),
+                    SegmentRow::ReferenceLine(segment) => (
+                        SketchSegmentFamily::ReferenceLine,
+                        segment.external_id,
+                        segment.offset,
+                        Some(&reference_line_geometries),
+                        false,
+                    ),
+                    SegmentRow::BoundedCurve(segment) => (
+                        SketchSegmentFamily::BoundedCurve,
+                        segment.external_id,
+                        segment.offset,
+                        None,
+                        true,
+                    ),
+                    SegmentRow::Conic(segment) => (
+                        SketchSegmentFamily::Conic,
+                        segment.external_id,
+                        segment.offset,
+                        None,
+                        true,
+                    ),
+                    SegmentRow::Opaque(segment) => (
+                        SketchSegmentFamily::Opaque,
+                        segment.external_id,
+                        segment.offset,
+                        None,
+                        true,
+                    ),
+                    SegmentRow::Ordinary(_) => continue,
+                };
+                let has_geometry = match geometries {
+                    Some(geometries) => ctx.contains_key_btree_map(
+                        geometries,
+                        &offset,
+                        "creo resolved segment geometry membership",
+                    )?,
+                    None => false,
+                };
+                if has_geometry
+                    || saved_fallback
+                        && ctx.contains_btree_set(
+                            &unique_segment_ids,
+                            &external_id,
+                            "creo resolved segment identity membership",
+                        )?
+                        && ctx.contains_btree_set(
+                            &materialized_saved_section_external_ids,
+                            &external_id,
+                            "creo resolved saved identity membership",
+                        )?
+                {
+                    coverage.record_resolved_geometry(1);
+                    coverage.record_family_resolution(family, 1);
+                }
             }
         }
-        if let Some(table) = definition.segments.as_ref() {
-            for segment in ctx
-                .admit_iter(table.rows.as_slice(), "creo generated profile circle rows")?
-                .filter_map(|row| match row {
-                    SegmentRow::Circle(segment) => Some(segment),
-                    _ => None,
-                })
-            {
-                if !unique_segment_ids.contains(&segment.external_id) {
+        let mut profiles = resolved_profile_chains(ctx, definition, &sketch_id, &emitted)?;
+        let generated_profile_geometries = section_storage.with_storage(|| {
+            let mut generated_profile_geometries = Vec::new();
+            for segment in ctx.admit_iter(&segments, "creo generated profile segments")? {
+                if !ctx.contains_btree_set(
+                    &unique_segment_ids,
+                    &segment.external_id,
+                    "creo transferred segment identity membership",
+                )? || !ctx.contains_btree_set(
+                    &emitted,
+                    &segment.external_id,
+                    "creo transferred segment identity membership",
+                )? {
                     continue;
                 }
-                let Some(geometry) = circle_geometries.get(&segment.offset) else {
+                let Some(geometry) = ctx
+                    .get_btree_map(
+                        &segment_geometries,
+                        &segment.offset,
+                        "creo transferred segment geometry lookup",
+                    )?
+                    .and_then(Option::as_ref)
+                else {
                     continue;
                 };
                 let Some(expected_kinds) = section_generated_profile_surface_kinds(geometry) else {
@@ -666,7 +608,59 @@ pub(in super::super) fn transfer_sketches(
                     ));
                 }
             }
-        }
+            if let Some(table) = definition.segments.as_ref() {
+                for segment in ctx
+                    .admit_iter(table.rows.as_slice(), "creo generated profile circle rows")?
+                    .filter_map(|row| match row {
+                        SegmentRow::Circle(segment) => Some(segment),
+                        _ => None,
+                    })
+                {
+                    if !ctx.contains_btree_set(
+                        &unique_segment_ids,
+                        &segment.external_id,
+                        "creo transferred segment identity membership",
+                    )? {
+                        continue;
+                    }
+                    let Some(geometry) = ctx.get_btree_map(
+                        &circle_geometries,
+                        &segment.offset,
+                        "creo transferred segment geometry lookup",
+                    )?
+                    else {
+                        continue;
+                    };
+                    let Some(expected_kinds) = section_generated_profile_surface_kinds(geometry)
+                    else {
+                        continue;
+                    };
+                    if section_entity_is_generated_profile(
+                        ctx,
+                        complete_segment_table,
+                        definition.identity.owner_feature_id(),
+                        segment.external_id,
+                        expected_kinds,
+                        &scan.features.entity_tables,
+                        &scan.surfaces.rows,
+                    )? {
+                        ctx.reserve_vec(
+                            &mut generated_profile_geometries,
+                            1,
+                            "creo generated profile geometry rows",
+                        )?;
+                        generated_profile_geometries.push((
+                            segment.external_id,
+                            geometry.try_clone_for_decode(
+                                ctx,
+                                "creo generated profile geometry copy",
+                            )?,
+                        ));
+                    }
+                }
+            }
+            Ok::<_, cadmpeg_core::CodecError>(generated_profile_geometries)
+        })?;
         let mut profile_storage = ctx.reserve_scoped(0, "Creo sketch profile membership")?;
         let mut profile_entities = BTreeSet::new();
         for profile in ctx.admit_iter(&profiles, "creo sketch profiles")? {
@@ -688,18 +682,21 @@ pub(in super::super) fn transfer_sketches(
                 }
             }
         }
-        for profile in saved_profile_chains(ctx, &sketch_id, &generated_profile_geometries)? {
-            let mut profile_is_new = true;
-            for entity_use in ctx.admit_iter(&profile, "creo saved profile entities")? {
-                if ctx.contains_btree_set(
-                    &profile_entities,
-                    &entity_use.entity,
-                    "creo sketch profile entity membership",
-                )? {
-                    profile_is_new = false;
-                    break;
-                }
-            }
+        for profile in ctx.admit_iter(
+            saved_profile_chains(ctx, &sketch_id, &generated_profile_geometries)?,
+            "creo saved profile rows",
+        )? {
+            let profile_is_new = ctx.all_by(
+                &profile,
+                |entity_use| {
+                    Ok(!ctx.contains_btree_set(
+                        &profile_entities,
+                        &entity_use.entity,
+                        "creo sketch profile entity membership",
+                    )?)
+                },
+                "creo saved profile entities",
+            )?;
             if profile_is_new {
                 for entity_use in ctx.admit_iter(&profile, "creo saved profile entities")? {
                     if !ctx.contains_btree_set(
@@ -752,7 +749,11 @@ pub(in super::super) fn transfer_sketches(
         )?;
         let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        let solver_only_entities = solver_only_section_entities(ctx, definition)?;
+        let mut emitted_storage = ctx.reserve_scoped(0, "Creo emitted sketch lookup")?;
+        let (mut emitted_entity_ids, mut emitted_entity_geometry) =
+            emitted_storage.with_storage(|| emitted_entity_views(ctx, &entities))?;
+        let solver_only_entities =
+            section_storage.with_storage(|| solver_only_section_entities(ctx, definition))?;
         for (external_id, offset) in
             ctx.admit_iter(&solver_only_entities, "creo solver-only section entities")?
         {
@@ -761,17 +762,11 @@ pub(in super::super) fn transfer_sketches(
             let Some(id) = sketch_entity_id_admitted(ctx, &sketch_id, external_id)? else {
                 continue;
             };
-            let mut already_present = false;
-            for entity in ctx.admit_iter(&entities, "creo transferred sketch entities")? {
-                if ctx.equal(
-                    entity.id(),
-                    &id,
-                    "creo transferred sketch entity ID comparison",
-                )? {
-                    already_present = true;
-                    break;
-                }
-            }
+            let already_present = ctx.contains_btree_set(
+                &emitted_entity_ids,
+                &id,
+                "creo solver-only emitted identity membership",
+            )?;
             if already_present {
                 continue;
             }
@@ -796,36 +791,53 @@ pub(in super::super) fn transfer_sketches(
                 Some(SectionEntityIncidenceFamily::Circular) => "circle",
                 None => "solver_only_section_entity",
             };
-            entities.push(
-                SketchEntity::new(
-                    id,
-                    sketch_id
-                        .try_clone_for_decode(ctx, "creo solver-only entity sketch identity")?,
-                    SketchGeometry::native(
-                        cadmpeg_core::text::NonBlankString::for_decode(
-                            ctx,
-                            ctx.copy_retained_text(native_kind, "creo solver-only native kind")?,
-                            "validate nonblank text",
-                        )?
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed("native_kind must not be empty")
-                        })?,
-                    ),
-                )
-                .with_construction(true)
-                .with_native_ref(Some(sketch_native_ref_admitted(ctx, &sketch_id)?)),
-            );
+            let entity = SketchEntity::new(
+                id,
+                sketch_id.try_clone_for_decode(ctx, "creo solver-only entity sketch identity")?,
+                SketchGeometry::native(
+                    cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        ctx.copy_retained_text(native_kind, "creo solver-only native kind")?,
+                        "validate nonblank text",
+                    )?
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("native_kind must not be empty")
+                    })?,
+                ),
+            )
+            .with_construction(true)
+            .with_native_ref(Some(sketch_native_ref_admitted(ctx, &sketch_id)?));
+            emitted_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut emitted_entity_ids,
+                    entity
+                        .id()
+                        .try_clone_for_decode(ctx, "creo emitted entity ID copy")?,
+                    "creo emitted entity ID nodes",
+                )?;
+                ctx.insert_btree_map(
+                    &mut emitted_entity_geometry,
+                    entity
+                        .id()
+                        .try_clone_for_decode(ctx, "creo emitted entity geometry ID copy")?,
+                    entity
+                        .geometry
+                        .try_clone_for_decode(ctx, "creo emitted entity geometry copy")?,
+                    "creo emitted entity geometry nodes",
+                )?;
+                Ok::<(), cadmpeg_core::CodecError>(())
+            })?;
+            entities.push(entity);
         }
-        let mut emitted_storage = ctx.reserve_scoped(0, "Creo emitted sketch lookup")?;
-        let (emitted_entity_ids, emitted_entity_geometry) =
-            emitted_storage.with_storage(|| emitted_entity_views(ctx, &entities))?;
         let mut constraints = Vec::new();
         for segment in ctx.admit_iter(&segments, "creo segment orientation rows")? {
             if segment.vertical_horizontal.is_none() {
                 continue;
             }
-            let suffix =
-                section_segment_identity_suffix_admitted(ctx, &unique_segment_ids, segment)?;
+            let mut suffix_storage = ctx.reserve_scoped(0, "creo orientation suffix storage")?;
+            let suffix = suffix_storage.with_storage(|| {
+                section_segment_identity_suffix_admitted(ctx, &unique_segment_ids, segment)
+            })?;
             let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
                 continue;
             };
@@ -854,17 +866,25 @@ pub(in super::super) fn transfer_sketches(
                     _ => None,
                 })
             {
-                let suffix = if unique_segment_ids.contains(&segment.external_id) {
-                    ctx.format_retained(
-                        format_args!("{}", segment.external_id),
-                        "creo verhor entity suffix",
-                    )?
-                } else {
-                    ctx.format_retained(
-                        format_args!("centered_line:offset:{}", segment.offset),
-                        "creo verhor entity suffix",
-                    )?
-                };
+                let mut suffix_storage =
+                    ctx.reserve_scoped(0, "creo orientation suffix storage")?;
+                let suffix = suffix_storage.with_storage(|| {
+                    if ctx.contains_btree_set(
+                        &unique_segment_ids,
+                        &segment.external_id,
+                        "creo transferred segment identity membership",
+                    )? {
+                        ctx.format_retained(
+                            format_args!("{}", segment.external_id),
+                            "creo verhor entity suffix",
+                        )
+                    } else {
+                        ctx.format_retained(
+                            format_args!("centered_line:offset:{}", segment.offset),
+                            "creo verhor entity suffix",
+                        )
+                    }
+                })?;
                 let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
                     continue;
                 };
@@ -900,17 +920,25 @@ pub(in super::super) fn transfer_sketches(
                 let Some(verhor) = segment.vertical_horizontal else {
                     continue;
                 };
-                let suffix = if unique_segment_ids.contains(&segment.external_id) {
-                    ctx.format_retained(
-                        format_args!("{}", segment.external_id),
-                        "creo verhor entity suffix",
-                    )?
-                } else {
-                    ctx.format_retained(
-                        format_args!("bounded_curve:offset:{}", segment.offset),
-                        "creo verhor entity suffix",
-                    )?
-                };
+                let mut suffix_storage =
+                    ctx.reserve_scoped(0, "creo orientation suffix storage")?;
+                let suffix = suffix_storage.with_storage(|| {
+                    if ctx.contains_btree_set(
+                        &unique_segment_ids,
+                        &segment.external_id,
+                        "creo transferred segment identity membership",
+                    )? {
+                        ctx.format_retained(
+                            format_args!("{}", segment.external_id),
+                            "creo verhor entity suffix",
+                        )
+                    } else {
+                        ctx.format_retained(
+                            format_args!("bounded_curve:offset:{}", segment.offset),
+                            "creo verhor entity suffix",
+                        )
+                    }
+                })?;
                 let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
                     continue;
                 };
@@ -946,17 +974,25 @@ pub(in super::super) fn transfer_sketches(
                 let Some(verhor) = segment.vertical_horizontal else {
                     continue;
                 };
-                let suffix = if unique_segment_ids.contains(&segment.external_id) {
-                    ctx.format_retained(
-                        format_args!("{}", segment.external_id),
-                        "creo verhor entity suffix",
-                    )?
-                } else {
-                    ctx.format_retained(
-                        format_args!("reference_line:offset:{}", segment.offset),
-                        "creo verhor entity suffix",
-                    )?
-                };
+                let mut suffix_storage =
+                    ctx.reserve_scoped(0, "creo orientation suffix storage")?;
+                let suffix = suffix_storage.with_storage(|| {
+                    if ctx.contains_btree_set(
+                        &unique_segment_ids,
+                        &segment.external_id,
+                        "creo transferred segment identity membership",
+                    )? {
+                        ctx.format_retained(
+                            format_args!("{}", segment.external_id),
+                            "creo verhor entity suffix",
+                        )
+                    } else {
+                        ctx.format_retained(
+                            format_args!("reference_line:offset:{}", segment.offset),
+                            "creo verhor entity suffix",
+                        )
+                    }
+                })?;
                 let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
                     continue;
                 };
@@ -989,11 +1025,15 @@ pub(in super::super) fn transfer_sketches(
                 let Some(verhor) = segment.vertical_horizontal else {
                     continue;
                 };
-                let suffix = opaque_section_segment_identity_suffix_admitted(
-                    ctx,
-                    &unique_segment_ids,
-                    segment,
-                )?;
+                let mut suffix_storage =
+                    ctx.reserve_scoped(0, "creo orientation suffix storage")?;
+                let suffix = suffix_storage.with_storage(|| {
+                    opaque_section_segment_identity_suffix_admitted(
+                        ctx,
+                        &unique_segment_ids,
+                        segment,
+                    )
+                })?;
                 let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
                     continue;
                 };
@@ -1015,9 +1055,11 @@ pub(in super::super) fn transfer_sketches(
                 )?;
             }
         }
-        for (mut constraint, offset, relation_index) in
-            section_dimension_constraints(ctx, definition, &sketch_id)?
-        {
+        let relation_solver = RelationIncidences::new(ctx, definition)?;
+        for (mut constraint, offset, relation_index) in ctx.admit_iter(
+            section_dimension_constraints_with_links(ctx, &sketch_id, &relation_solver)?,
+            "creo transferred dimension rows",
+        )? {
             let Some(relation) = definition
                 .relations
                 .as_ref()
@@ -1029,11 +1071,11 @@ pub(in super::super) fn transfer_sketches(
                 reconcile_section_dimension_constraint(
                     ctx,
                     kind,
-                    definition,
                     &sketch_id,
                     relation,
                     &emitted_entity_ids,
                     &available_parameter_ids,
+                    &relation_solver,
                 )
             }) {
                 Ok(result) => result?,
@@ -1053,12 +1095,15 @@ pub(in super::super) fn transfer_sketches(
             )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
-        for (constraint, offset) in section_segment_radius_constraints_for_emitted(
-            ctx,
-            definition,
-            &sketch_id,
-            &emitted_entity_ids,
-            &available_parameter_ids,
+        for (constraint, offset) in ctx.admit_iter(
+            section_segment_radius_constraints_for_emitted(
+                ctx,
+                definition,
+                &sketch_id,
+                &emitted_entity_ids,
+                &available_parameter_ids,
+            )?,
+            "creo transferred radius constraint rows",
         )? {
             annotate(
                 ctx,
@@ -1071,7 +1116,7 @@ pub(in super::super) fn transfer_sketches(
             )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
-        let equation_constraints = ctx.collect_vec(
+        let equation_rows =
             section_equation_axis_distance_constraints(ctx, definition, &sketch_id)?
                 .into_iter()
                 .chain(section_equation_unsigned_distance_constraints(
@@ -1112,18 +1157,22 @@ pub(in super::super) fn transfer_sketches(
                 )?)
                 .chain(section_equation_equal_distance_constraints(
                     ctx, definition, &sketch_id,
-                )?),
-            "creo sketch equation constraints",
-        )?;
-        let equation_offsets = collect_numeric_set(
-            ctx,
-            ctx.admit_iter(&equation_constraints, "creo equation offset source")?
-                .map(|(_, offset)| *offset),
-            "creo equation offset nodes",
-        )?;
+                )?);
+        let equation_constraints = section_storage
+            .with_storage(|| ctx.collect_vec(equation_rows, "creo sketch equation constraints"))?;
+        let equation_offsets = section_storage.with_storage(|| {
+            collect_numeric_set(
+                ctx,
+                ctx.admit_iter(&equation_constraints, "creo equation offset source")?
+                    .map(|(_, offset)| *offset),
+                "creo equation offset nodes",
+            )
+        })?;
         let mut rejected_equation_offsets = BTreeSet::new();
         let mut reconciled_equation_constraints = Vec::new();
-        for (mut constraint, offset) in equation_constraints {
+        for (mut constraint, offset) in
+            ctx.admit_iter(equation_constraints, "creo equation reconciliation rows")?
+        {
             let entity_reconciled = match constraint
                 .definition
                 .edit(|kind| reconcile_constraint_entity_references(ctx, kind, &emitted_entity_ids))
@@ -1139,22 +1188,33 @@ pub(in super::super) fn transfer_sketches(
                 Err(_) => false,
             };
             if !entity_reconciled || !parameter_reconciled {
-                ctx.insert_btree_set(
-                    &mut rejected_equation_offsets,
-                    offset,
-                    "creo rejected equation offset nodes",
-                )?;
+                section_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut rejected_equation_offsets,
+                        offset,
+                        "creo rejected equation offset nodes",
+                    )
+                })?;
                 continue;
             }
-            ctx.reserve_vec(
-                &mut reconciled_equation_constraints,
-                1,
-                "creo reconciled equation rows",
-            )?;
+            section_storage.with_storage(|| {
+                ctx.reserve_vec(
+                    &mut reconciled_equation_constraints,
+                    1,
+                    "creo reconciled equation rows",
+                )
+            })?;
             reconciled_equation_constraints.push((constraint, offset));
         }
-        for (constraint, offset) in reconciled_equation_constraints {
-            if rejected_equation_offsets.contains(&offset) {
+        for (constraint, offset) in ctx.admit_iter(
+            reconciled_equation_constraints,
+            "creo reconciled equation traversal",
+        )? {
+            if ctx.contains_btree_set(
+                &rejected_equation_offsets,
+                &offset,
+                "creo rejected equation offset membership",
+            )? {
                 continue;
             }
             annotate(
@@ -1170,19 +1230,31 @@ pub(in super::super) fn transfer_sketches(
             )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
-        let typed_equation_offsets = collect_numeric_set(
-            ctx,
-            ctx.admit_iter(&equation_offsets, "creo typed equation offset source")?
-                .copied()
-                .filter(|offset| !rejected_equation_offsets.contains(offset)),
-            "creo typed equation offset nodes",
-        )?;
+        let mut typed_equation_offsets = BTreeSet::new();
+        for offset in ctx.admit_iter(&equation_offsets, "creo typed equation offset source")? {
+            if !ctx.contains_btree_set(
+                &rejected_equation_offsets,
+                offset,
+                "creo rejected equation offset membership",
+            )? {
+                section_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut typed_equation_offsets,
+                        *offset,
+                        "creo typed equation offset nodes",
+                    )
+                })?;
+            }
+        }
         drop(equation_offsets);
-        for (constraint, offset) in section_equation_native_constraints(
-            ctx,
-            definition,
-            &sketch_id,
-            &typed_equation_offsets,
+        for (constraint, offset) in ctx.admit_iter(
+            section_equation_native_constraints(
+                ctx,
+                definition,
+                &sketch_id,
+                &typed_equation_offsets,
+            )?,
+            "creo transferred native equation rows",
         )? {
             annotate(
                 ctx,
@@ -1197,11 +1269,14 @@ pub(in super::super) fn transfer_sketches(
             )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
-        for (mut constraint, offset) in section_skamp_constraints_for_geometry(
-            ctx,
-            definition,
-            &sketch_id,
-            Some(&emitted_entity_geometry),
+        for (mut constraint, offset) in ctx.admit_iter(
+            section_skamp_constraints_for_geometry(
+                ctx,
+                definition,
+                &sketch_id,
+                Some(&emitted_entity_geometry),
+            )?,
+            "creo transferred SKAMP constraint rows",
         )? {
             let entity_reconciled = match constraint
                 .definition
@@ -1410,7 +1485,7 @@ fn available_parameter_ids<'a>(
             )?;
         }
     }
-    for id in planned {
+    for id in ctx.admit_iter(planned, "creo planned parameter identity rows")? {
         ctx.insert_btree_set(&mut ids, id, "creo available planned parameter ID nodes")?;
     }
     Ok(ids)

@@ -167,13 +167,19 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             state_offset: 10,
         };
         assert_eq!(
-            current_feature_operation(std::slice::from_ref(&operation), 6)
+            current_feature_operation(ctx, std::slice::from_ref(&operation), 6)
+                .expect("recipe lookup admission")
                 .and_then(crate::feature::operations::FeatureOperation::root_schema_class),
             Some(crate::feature::schema::SchemaClass::Protrusion)
         );
-        assert!(current_feature_operation(&[operation.clone(), operation.clone()], 6).is_none());
+        assert!(
+            current_feature_operation(ctx, &[operation.clone(), operation.clone()], 6)
+                .expect("recipe lookup admission")
+                .is_none()
+        );
         assert_eq!(
-            current_feature_recipe(std::slice::from_ref(&operation), 6),
+            current_feature_recipe(ctx, std::slice::from_ref(&operation), 6)
+                .expect("recipe lookup admission"),
             Some(crate::feature::operations::FeatureRecipe::ProtrudeExtrude)
         );
         let mut conflicting_recipe = operation.clone();
@@ -181,7 +187,8 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             crate::feature::operations::FeatureRecipe::ProtrudeRevolve,
         );
         assert_eq!(
-            current_feature_recipe(&[operation.clone(), conflicting_recipe], 6),
+            current_feature_recipe(ctx, &[operation.clone(), conflicting_recipe], 6)
+                .expect("recipe lookup admission"),
             None
         );
         let mut parented_operation = operation.clone();
@@ -190,7 +197,8 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             parent: 5,
         });
         assert_eq!(
-            current_feature_recipe_parent(std::slice::from_ref(&parented_operation), 6),
+            current_feature_recipe_parent(ctx, std::slice::from_ref(&parented_operation), 6)
+                .expect("recipe lookup admission"),
             Some(5)
         );
         let mut conflicting_parent = parented_operation.clone();
@@ -199,7 +207,8 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             parent: 4,
         });
         assert_eq!(
-            current_feature_recipe_parent(&[parented_operation, conflicting_parent], 6),
+            current_feature_recipe_parent(ctx, &[parented_operation, conflicting_parent], 6)
+                .expect("recipe lookup admission"),
             None
         );
         let row = |schema_class, offset| crate::feature::rows::FeatureRow {
@@ -220,8 +229,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
                 let classes = checked_classes(rows);
                 crate::decode::with_test_decode_ctx(|ctx| {
                     resolved_feature_schema_class_from_classes(
-                        operations,
-                        6,
+                        current_feature_operation(ctx, operations, 6)?,
                         |visit_class| {
                             for class in ctx.admit_iter(&classes, "test feature schema classes")? {
                                 if matches!(visit_class(*class)?, std::ops::ControlFlow::Break(()))

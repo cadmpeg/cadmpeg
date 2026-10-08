@@ -1746,15 +1746,30 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
     assert_ne!(states[0].recipe.resolved(), states[1].recipe.resolved());
     assert_ne!(states[0].parent_feature_id(), states[1].parent_feature_id());
     assert_eq!(
-        current_feature_recipe(std::slice::from_ref(&current), 6),
+        crate::decode::with_test_decode_ctx(|ctx| current_feature_recipe(
+            ctx,
+            std::slice::from_ref(&current),
+            6
+        ))
+        .expect("recipe lookup admission"),
         Some(crate::feature::operations::FeatureRecipe::ProtrudeRevolve)
     );
     assert_eq!(
-        current_feature_recipe_parent(std::slice::from_ref(&current), 6),
+        crate::decode::with_test_decode_ctx(|ctx| current_feature_recipe_parent(
+            ctx,
+            std::slice::from_ref(&current),
+            6
+        ))
+        .expect("recipe lookup admission"),
         Some(5)
     );
     assert_eq!(
-        current_additive_feature_recipe(std::slice::from_ref(&current), 6),
+        crate::decode::with_test_decode_ctx(|ctx| current_additive_feature_recipe(
+            ctx,
+            std::slice::from_ref(&current),
+            6
+        ))
+        .expect("recipe lookup admission"),
         Some(crate::feature::operations::FeatureRecipeKind::Revolve)
     );
     let mut cut = current;
@@ -1762,7 +1777,12 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
         crate::feature::operations::FeatureRecipe::CutRevolve,
     );
     assert_eq!(
-        current_additive_feature_recipe(std::slice::from_ref(&cut), 6),
+        crate::decode::with_test_decode_ctx(|ctx| current_additive_feature_recipe(
+            ctx,
+            std::slice::from_ref(&cut),
+            6
+        ))
+        .expect("recipe lookup admission"),
         None
     );
 }

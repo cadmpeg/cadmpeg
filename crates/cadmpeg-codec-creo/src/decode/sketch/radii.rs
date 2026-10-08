@@ -31,7 +31,7 @@ use super::geometry::{
 use super::skamp::{
     section_line_entity_fixed_coordinate_with_unique_rows, unique_decoded_section_segment,
 };
-use crate::decode::sketch_transfer::constraints::section_solver_relation_is_disabled;
+use crate::decode::sketch_transfer::solver_links::RelationIncidences;
 use crate::decode::sketch_transfer::identity::saved_section_entity_fallback_allowed;
 use crate::decode::sketch_transfer::loci::{
     section_degenerate_axis_line, section_saved_entity, unique_circle_segment, visit_section_skamps,
@@ -194,8 +194,10 @@ pub(in crate::decode) fn resolved_section_radii(
         .as_ref()
         .filter(|table| feature_relation_table_complete(table))
     {
-        for relation in ctx.admit_iter(&relations.rows, "creo radius relation rows")? {
-            if section_solver_relation_is_disabled(ctx, definition, relation.relation_id)? {
+        let relation_solver_rows = ctx.admit_iter(&relations.rows, "creo radius relation rows")?;
+        let relation_solver = RelationIncidences::new(ctx, definition)?;
+        for relation in relation_solver_rows {
+            if relation_solver.is_disabled(relation.relation_id) {
                 continue;
             }
             if matches!(relation.relation_type, 5 | 6) && relation.sign == 1 {

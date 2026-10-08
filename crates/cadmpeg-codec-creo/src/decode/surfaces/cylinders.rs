@@ -1943,7 +1943,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
             && !feature_section_sweep_semantics_conflict(ctx, scan, row.feature_id)?
             && section_sweep_allows_linear_extrusion(
                 Some(SchemaClass::Protrusion),
-                feature_recipe(scan, row.feature_id),
+                feature_recipe(ctx, scan, row.feature_id)?,
             )
         {
             local_storage.with_storage(|| {

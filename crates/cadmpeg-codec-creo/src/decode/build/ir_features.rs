@@ -399,7 +399,7 @@ pub(super) fn emit_model_features(
             ctx.charge_entities(1, "admit Creo model features")?;
         }
         let current_operation =
-            current_feature_operation(&scan.features.operations, operation.feature_id);
+            current_feature_operation(ctx, &scan.features.operations, operation.feature_id)?;
         let outputs = feature_output_bodies(ctx, scan, ir, operation.feature_id)?;
         let (source_property_nodes, source_properties) =
             feature_source_properties(ctx, scan, operation.feature_id)?;
@@ -424,7 +424,8 @@ pub(super) fn emit_model_features(
         let schema_class = feature_schema_class(ctx, scan, operation.feature_id)?;
         let definition = schema_class.map_or_else(
             || {
-                current_feature_recipe(&scan.features.operations, operation.feature_id)
+                current_operation
+                    .and_then(|operation| operation.recipe.resolved())
                     .map(|_| {
                         schema_feature_definition(
                             ctx,
@@ -541,12 +542,12 @@ pub(super) fn emit_model_features(
                 ctx.copy_retained_lossy_utf8(stripped, "creo stored Feature name")
             })
             .transpose()?;
-        let source_tag = current_feature_recipe(&scan.features.operations, operation.feature_id)
+        let source_tag = current_feature_recipe(ctx, &scan.features.operations, operation.feature_id)?
             .map(|recipe| ctx.copy_retained_text(recipe.name(), "creo Feature source tag"))
             .transpose()?;
         let native_ref = owning_feature_definition_ref(ctx, scan, operation.feature_id)?;
         let parent_index =
-            current_feature_recipe_parent(&scan.features.operations, operation.feature_id)
+            current_feature_recipe_parent(ctx, &scan.features.operations, operation.feature_id)?
                 .and_then(|parent_id| model_features.get(&parent_id))
                 .copied();
         if let Some(&existing_index) = model_features.get(&operation.feature_id) {

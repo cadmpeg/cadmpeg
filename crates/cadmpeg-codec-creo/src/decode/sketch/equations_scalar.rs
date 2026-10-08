@@ -19,9 +19,7 @@ use super::equations_coordinate::{
     section_equation_radius_dimensions, section_equation_unsigned_coordinate_distances,
     SectionCoordinateEquation, SectionCoordinateVariable,
 };
-use crate::decode::sketch_transfer::constraints::{
-    section_solver_equation_is_disabled, section_solver_relation_is_disabled,
-};
+use crate::decode::sketch_transfer::solver_links::{EquationIncidences, RelationIncidences};
 
 const EPS_RADIAL_VALUE: f64 = 1.0e-9;
 const EPS_RADIAL_ANGLE: f64 = 1.0e-9;
@@ -259,7 +257,9 @@ pub(in crate::decode) fn section_equation_coordinate_equality_rows(
         scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut function_ten_points = None;
     let mut rows = Vec::new();
-    for equation in ctx.admit_iter(&equations.rows, "creo section source equation rows")? {
+    let equation_solver_rows = ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver = EquationIncidences::new(ctx, definition)?;
+    for equation in equation_solver_rows {
         if equation.function_id == 10 {
             if function_ten_points.is_none() {
                 function_ten_points = Some(
@@ -291,7 +291,7 @@ pub(in crate::decode) fn section_equation_coordinate_equality_rows(
                     function_id: equation.function_id,
                     equation_id: equation.equation_id,
                     offset: equation.offset,
-                    active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                    active: !equation_solver.is_disabled(equation.equation_id),
                 },
                 "creo section equation coordinate equality rows",
             )?;
@@ -379,7 +379,7 @@ pub(in crate::decode) fn section_equation_coordinate_equality_rows(
                 function_id: equation.function_id,
                 equation_id: equation.equation_id,
                 offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                active: !equation_solver.is_disabled(equation.equation_id),
             },
             "creo section equation coordinate equality rows",
         )?;
@@ -456,9 +456,11 @@ pub(super) fn section_equation_auxiliary_constraints(
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     let mut constraints = SectionEquationAuxiliaryConstraints::default();
-    for equation in ctx
-        .admit_iter(&equations.rows, "creo auxiliary constraint equations")?
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
+    let equation_solver_rows = ctx
+        .admit_iter(&equations.rows, "creo auxiliary constraint equations")?;
+    let equation_solver = EquationIncidences::new(ctx, definition)?;
+    for equation in equation_solver_rows
+        .filter(|equation| !equation_solver.is_disabled(equation.equation_id))
     {
         match (equation.function_id, equation.arguments.as_slice()) {
             (42, [Some(first), Some(second), Some(result)]) => {
@@ -623,7 +625,9 @@ pub(in crate::decode) fn section_equation_function_forty_two_midpoint_coordinate
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     let mut rows = Vec::new();
-    for equation in ctx.admit_iter(&equations.rows, "creo section source equation rows")? {
+    let equation_solver_rows = ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver = EquationIncidences::new(ctx, definition)?;
+    for equation in equation_solver_rows {
         let [Some(first), Some(second), Some(result)] = equation.arguments.as_slice() else {
             continue;
         };
@@ -689,7 +693,7 @@ pub(in crate::decode) fn section_equation_function_forty_two_midpoint_coordinate
                 value,
                 equation_id: equation.equation_id,
                 offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                active: !equation_solver.is_disabled(equation.equation_id),
             },
             "creo section equation function forty two midpoint coordinate rows",
         )?;
@@ -734,7 +738,9 @@ pub(in crate::decode) fn section_equation_function_thirty_one_point_coordinate_r
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     let mut rows = Vec::new();
-    for equation in ctx.admit_iter(&equations.rows, "creo section source equation rows")? {
+    let equation_solver_rows = ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver = EquationIncidences::new(ctx, definition)?;
+    for equation in equation_solver_rows {
         let [Some(first_u), Some(first_v), Some(second_u), Some(second_v)] =
             equation.arguments.as_slice()
         else {
@@ -811,7 +817,7 @@ pub(in crate::decode) fn section_equation_function_thirty_one_point_coordinate_r
                 values,
                 equation_id: equation.equation_id,
                 offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                active: !equation_solver.is_disabled(equation.equation_id),
             },
             "creo section equation function thirty one point coordinate rows",
         )?;
@@ -869,8 +875,10 @@ pub(super) fn section_relation_radius_scalar_values(
         return Ok(Vec::new());
     };
     let mut values = Vec::new();
-    for relation in ctx.admit_iter(&table.rows, "creo scalar radius relation rows")? {
-        if section_solver_relation_is_disabled(ctx, definition, relation.relation_id)?
+    let relation_solver_rows = ctx.admit_iter(&table.rows, "creo scalar radius relation rows")?;
+    let relation_solver = RelationIncidences::new(ctx, definition)?;
+    for relation in relation_solver_rows {
+        if relation_solver.is_disabled(relation.relation_id)
             || relation.relation_type != 14
             || relation.sign != 1
         {
@@ -1435,9 +1443,11 @@ pub(super) fn section_equation_scalar_equality_components(
         SectionScalarVariable,
         Option<f64>,
     )>::new();
-    for equation in ctx
-        .admit_iter(&equations.rows, "creo scalar equality source equations")?
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
+    let equation_solver_rows = ctx
+        .admit_iter(&equations.rows, "creo scalar equality source equations")?;
+    let equation_solver = EquationIncidences::new(ctx, definition)?;
+    for equation in equation_solver_rows
+        .filter(|equation| !equation_solver.is_disabled(equation.equation_id))
     {
         if let Some((first, second, selector)) = direct_function_five_scalar_rows(
             equation.function_id,
@@ -1829,8 +1839,10 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
     let scalar_equality_values =
         scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut rows = Vec::new();
-    for equation in ctx
-        .admit_iter(&equations.rows, "creo section source equation rows")?
+    let equation_solver_rows = ctx
+        .admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver = EquationIncidences::new(ctx, definition)?;
+    for equation in equation_solver_rows
         .filter(|equation| equation.function_id == 0 && equation.arguments.len() == 6)
     {
         let [Some(first_u), Some(first_v), Some(second_u), Some(second_v), Some(radius), Some(angle)] =
@@ -1934,7 +1946,7 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
             }
             None => None,
         };
-        let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
+        let active = !equation_solver.is_disabled(equation.equation_id);
         if active {
             let first_point = ctx
                 .get_btree_map(coordinates, &first_u.key, "creo section coordinates get")?
@@ -2181,12 +2193,14 @@ pub(in crate::decode) fn section_equation_function_five_scalar_equality_rows(
     let scalar_equality_values =
         scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut rows = Vec::new();
-    for equation in ctx
-        .admit_iter(&equations.rows, "creo section source equation rows")?
+    let equation_solver_rows = ctx
+        .admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver = EquationIncidences::new(ctx, definition)?;
+    for equation in equation_solver_rows
         .filter(|equation| {
             equation.function_id == 5
                 && equation.arguments.len() == 3
-                && !section_solver_equation_is_disabled(definition, equation.equation_id)
+                && !equation_solver.is_disabled(equation.equation_id)
         })
     {
         let Some((first, second, selector)) = direct_function_five_scalar_rows(
@@ -2288,7 +2302,9 @@ pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_rows
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     let mut rows = Vec::new();
-    for equation in ctx.admit_iter(&equations.rows, "creo section source equation rows")? {
+    let equation_solver_rows = ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver = EquationIncidences::new(ctx, definition)?;
+    for equation in equation_solver_rows {
         if equation.function_id != 16 || equation.arguments.len() != 4 {
             continue;
         }
@@ -2352,7 +2368,7 @@ pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_rows
                 value,
                 equation_id: equation.equation_id,
                 offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                active: !equation_solver.is_disabled(equation.equation_id),
             },
             "creo section equation function sixteen angle difference rows",
         )?;
@@ -2436,7 +2452,9 @@ pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_row
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     let mut rows = Vec::new();
-    for equation in ctx.admit_iter(&equations.rows, "creo section source equation rows")? {
+    let equation_solver_rows = ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver = EquationIncidences::new(ctx, definition)?;
+    for equation in equation_solver_rows {
         if equation.function_id != 43 || equation.arguments.len() != 8 {
             continue;
         }
@@ -2597,7 +2615,7 @@ pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_row
                 value,
                 equation_id: equation.equation_id,
                 offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                active: !equation_solver.is_disabled(equation.equation_id),
             },
             "creo section equation function forty three axis distance rows",
         )?;
