@@ -29,7 +29,7 @@ fn profile_sampling_propagates_evaluator_refusal() {
         &[],
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "IR B-spline basis",
-        &run,
+        run,
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "IR B-spline basis")

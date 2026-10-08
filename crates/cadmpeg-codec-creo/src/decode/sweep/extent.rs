@@ -29,6 +29,7 @@ pub(in super::super) struct ExtrusionCarrierSpan {
     pub(in super::super) vector: [f64; 3],
 }
 
+#[derive(Clone, Copy)]
 pub(super) enum SourceSurfaceGeometry<'a> {
     Missing,
     Present(&'a SurfaceGeometry),
@@ -292,7 +293,10 @@ mod tests {
         );
         assert_eq!(index.len(), 2);
         let geometry = index.get(&7).copied().flatten().expect("unique geometry");
-        assert!(std::ptr::eq(geometry, &ir.model.surfaces[0].geometry));
+        assert!(std::ptr::eq(
+            geometry,
+            &raw const ir.model.surfaces[0].geometry
+        ));
         assert!(index.get(&8).expect("ambiguous geometry").is_none());
         assert!(super::unique_source_surface_geometry(&index, 8).is_none());
         assert!(matches!(
@@ -499,10 +503,8 @@ mod tests {
             bounded_extent_at_limit,
         );
         let result = bounded_extent_at_limit(limit);
-        assert!(
-            matches!(result, Err(CodecError::ResourceLimit(ref refusal))
-            if refusal.operation == "creo bounded cylinder cap planes")
-        );
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref refusal))
+            if refusal.operation == "creo bounded cylinder cap planes"));
     }
 
     #[test]
@@ -513,10 +515,8 @@ mod tests {
             bounded_extent_at_limit,
         );
         let result = bounded_extent_at_limit(limit);
-        assert!(
-            matches!(result, Err(CodecError::ResourceLimit(ref refusal))
-            if refusal.operation == "creo bounded cylinder frames")
-        );
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref refusal))
+            if refusal.operation == "creo bounded cylinder frames"));
     }
 
     #[test]
@@ -527,10 +527,8 @@ mod tests {
             bounded_extent_at_limit,
         );
         let result = bounded_extent_at_limit(limit);
-        assert!(
-            matches!(result, Err(CodecError::ResourceLimit(ref refusal))
-            if refusal.operation == "creo bounded cylinder carriers")
-        );
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref refusal))
+            if refusal.operation == "creo bounded cylinder carriers"));
         assert!(
             bounded_extent_at_limit(crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems,
@@ -624,10 +622,8 @@ mod tests {
             nurbs_extent_at_limit,
         );
         let result = nurbs_extent_at_limit(limit);
-        assert!(
-            matches!(result, Err(CodecError::ResourceLimit(ref refusal))
-            if refusal.operation == "creo NURBS translation carriers")
-        );
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref refusal))
+            if refusal.operation == "creo NURBS translation carriers"));
     }
 
     #[test]
@@ -638,10 +634,8 @@ mod tests {
             nurbs_extent_at_limit,
         );
         let result = nurbs_extent_at_limit(limit);
-        assert!(
-            matches!(result, Err(CodecError::ResourceLimit(ref refusal))
-            if refusal.operation == "creo NURBS translation cap planes")
-        );
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref refusal))
+            if refusal.operation == "creo NURBS translation cap planes"));
         assert!(
             nurbs_extent_at_limit(crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems,
@@ -662,12 +656,12 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
     feature_id: u32,
     transform: Option<&crate::placement::FeatureSectionTransform>,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
-    let mut scratch = ctx.reserve_scoped(0, "creo generated extent scratch")?;
-    let mut source_geometries = None;
     enum CylinderExtentSurface {
         Plane,
         Carrier,
     }
+    let mut scratch = ctx.reserve_scoped(0, "creo generated extent scratch")?;
+    let mut source_geometries = None;
     let (local_planes, _local_plane_storage) = ctx
         .with_scoped_storage("creo extent local plane scratch", || {
             placed_planes(ctx, scan)
@@ -817,53 +811,46 @@ pub(in super::super) fn bounded_cylinder_span(
     planes: &[([f64; 3], [f64; 3])],
 ) -> Result<Option<ExtrusionCarrierSpan>, CodecError> {
     let axis = unit_length(*frame.frame().orthonormal_frame().axis());
-    let vector_for = || -> Result<Option<[f64; 3]>, CodecError> {
-        let vector = match frame.length() {
-            Some(length) => axis.map(|component| component * length.get()),
-            None => {
-                let scale = ctx
-                    .admit_iter(planes, "creo bounded cylinder plane scale")?
-                    .flat_map(|(origin, _)| *origin)
-                    .chain(frame.frame().origin())
-                    .map(f64::abs)
-                    .fold(1.0, f64::max);
-                let tolerance = EPS_SWEEP_EXTENT_GEOMETRY * scale;
-                let start_station = dot(frame.frame().origin(), axis);
-                let mut terminal_offset: Option<f64> = None;
-                let mut planes = planes.iter();
-                while let Some((origin, normal)) =
-                    ctx.next_charged(&mut planes, "creo bounded cylinder terminal plane scan")?
-                {
-                    let Some(normal) = normalize(*normal) else {
-                        return Ok(None);
-                    };
-                    let alignment = dot(normal, axis).abs();
-                    if alignment >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE {
-                        let offset = dot(*origin, axis) - start_station;
-                        if offset.abs() > tolerance {
-                            if let Some(existing) = terminal_offset {
-                                if (offset - existing).abs() > tolerance {
-                                    return Ok(None);
-                                }
-                            } else {
-                                terminal_offset = Some(offset);
-                            }
-                        }
-                    } else if alignment > EPS_SWEEP_EXTENT_DEGENERATE {
-                        return Ok(None);
-                    }
-                }
-                let Some(offset) = terminal_offset else {
+    let vector = match frame.length() {
+        Some(length) => axis.map(|component| component * length.get()),
+        None => {
+            let scale = ctx
+                .admit_iter(planes, "creo bounded cylinder plane scale")?
+                .flat_map(|(origin, _)| *origin)
+                .chain(frame.frame().origin())
+                .map(f64::abs)
+                .fold(1.0, f64::max);
+            let tolerance = EPS_SWEEP_EXTENT_GEOMETRY * scale;
+            let start_station = dot(frame.frame().origin(), axis);
+            let mut terminal_offset: Option<f64> = None;
+            let mut planes = planes.iter();
+            while let Some((origin, normal)) =
+                ctx.next_charged(&mut planes, "creo bounded cylinder terminal plane scan")?
+            {
+                let Some(normal) = normalize(*normal) else {
                     return Ok(None);
                 };
-                axis.map(|component| component * offset)
+                let alignment = dot(normal, axis).abs();
+                if alignment >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE {
+                    let offset = dot(*origin, axis) - start_station;
+                    if offset.abs() > tolerance {
+                        if let Some(existing) = terminal_offset {
+                            if (offset - existing).abs() > tolerance {
+                                return Ok(None);
+                            }
+                        } else {
+                            terminal_offset = Some(offset);
+                        }
+                    }
+                } else if alignment > EPS_SWEEP_EXTENT_DEGENERATE {
+                    return Ok(None);
+                }
             }
-        };
-        Ok(Some(vector))
-    };
-    let vector = vector_for()?;
-    let Some(vector) = vector else {
-        return Ok(None);
+            let Some(offset) = terminal_offset else {
+                return Ok(None);
+            };
+            axis.map(|component| component * offset)
+        }
     };
     let mut starts = Vec::new();
     ctx.reserve_vec(&mut starts, 1, "creo bounded cylinder starts")?;
@@ -978,12 +965,12 @@ pub(in super::super) fn generated_nurbs_translation_extent(
     feature_id: u32,
     transform: Option<&crate::placement::FeatureSectionTransform>,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
-    let mut scratch = ctx.reserve_scoped(0, "creo generated extent scratch")?;
-    let mut source_geometries = None;
     enum TranslationExtentSurface {
         Plane,
         Carrier,
     }
+    let mut scratch = ctx.reserve_scoped(0, "creo generated extent scratch")?;
+    let mut source_geometries = None;
     let mut carriers = Vec::new();
     let mut planes = Vec::new();
     let (local_planes, _local_plane_storage) = ctx

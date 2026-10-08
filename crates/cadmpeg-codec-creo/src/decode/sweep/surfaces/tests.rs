@@ -41,7 +41,7 @@ fn saved_spline_loss_refuses_text_and_slot_below_limits() {
                 ),
             )
         };
-        let cap = crate::test_support::allocation_limit_at(dimension, Some(operation), &run);
+        let cap = crate::test_support::allocation_limit_at(dimension, Some(operation), run);
         let error = run(cap).expect_err("below-need limit");
         assert!(
             matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == dimension && resource.operation == operation)

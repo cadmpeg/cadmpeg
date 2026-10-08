@@ -100,7 +100,7 @@ fn nurbs_profile_polyline_first_point_refuses_collection_limit() {
     let limit = crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         Some("creo NURBS profile polyline points"),
-        &run,
+        run,
     );
     let error = run(limit).expect_err("named resource boundary");
     assert!(
@@ -151,7 +151,7 @@ fn nurbs_profile_polyline_depth_refuses_before_recursive_span() {
     let limit = crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::RecursionDepth,
         Some("creo NURBS profile sampling depth"),
-        &run,
+        run,
     );
     let error = run(limit).expect_err("named resource boundary");
     assert!(
@@ -1043,11 +1043,11 @@ fn circular_pcurve_refuses_projection_work_before_each_pass() {
             "IR NURBS knot finiteness",
             "IR NURBS knot order",
         ],
-        &run,
+        run,
     );
     let budget =
         crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |limit| {
-            under_work_limit(limit, &run)
+            under_work_limit(limit, run)
         });
     let expected = crate::decode::with_test_decode_ctx(|ctx| {
         super::circular_pcurve(
@@ -1413,7 +1413,7 @@ fn profile_entity_index_borrows_unique_entities_and_keeps_unrelated_ambiguity() 
         .copied()
         .flatten()
         .expect("unique entity");
-    assert!(std::ptr::eq(entity, &ir.model.sketch_entities[0]));
+    assert!(std::ptr::eq(entity, &raw const ir.model.sketch_entities[0]));
     assert!(index
         .get(unrelated_id.as_str())
         .expect("ambiguous entry")

@@ -301,7 +301,7 @@ fn revolution_refuses_at_collection_boundary(operation: &'static str) {
     let limit = crate::test_support::allocation_limit_at(
         ResourceDimension::CollectionItems,
         Some(operation),
-        &run,
+        run,
     );
     assert!(
         matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.dimension == ResourceDimension::CollectionItems && resource.operation == operation)

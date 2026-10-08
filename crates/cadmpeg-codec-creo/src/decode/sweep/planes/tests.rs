@@ -133,7 +133,7 @@ fn feature_plane_limit_error(operation: &'static str) -> cadmpeg_core::CodecErro
     let limit = crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         Some(operation),
-        &run,
+        run,
     );
     run(limit).expect_err("named collection boundary")
 }
@@ -954,7 +954,7 @@ fn plane_carrier_index_borrows_rows_and_keeps_unrelated_ambiguity() {
     );
     assert!(std::ptr::eq(
         index.get(&7).copied().flatten().expect("unique carrier"),
-        &records[0]
+        &raw const records[0]
     ));
     assert!(index.get(&8).expect("ambiguous carrier").is_none());
     let mut scan = crate::test_support::empty_container_scan();
