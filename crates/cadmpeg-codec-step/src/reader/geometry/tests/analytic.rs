@@ -29,7 +29,7 @@ const EPS_APLL_POINT: f64 = 1.0e-12;
 const EPS_TP03_PARAMETER_SCALE: f64 = 1.0e-12;
 
 #[test]
-fn apll_point_name_refuses_retained_limit() {
+fn apll_point_name_refuses_materialized_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -38,27 +38,27 @@ fn apll_point_name_refuses_retained_limit() {
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
             .expect("valid APLL exchange");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         "step_string_text",
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
-                .expect("root fits retained policy");
+                .expect("root fits materialized policy");
             let mut ir = cadmpeg_ir::document::CadIr::empty();
             (super::super::decode(&exchange, &mut ir, &ctx)).map(|_| ())
         },
     );
     assert!(
         matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
+            if refusal.dimension == ResourceDimension::MaterializedBytes
                 && refusal.operation == "step_string_text")
     );
 }
 
 #[test]
-fn tessellated_curve_name_refuses_retained_limit() {
+fn tessellated_curve_name_refuses_materialized_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -67,28 +67,42 @@ fn tessellated_curve_name_refuses_retained_limit() {
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
             .expect("valid tessellation exchange");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         "step_string_text",
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
-                .expect("root fits retained policy");
+                .expect("root fits materialized policy");
             let mut ir = cadmpeg_ir::document::CadIr::empty();
-            (super::super::decode(&exchange, &mut ir, &ctx)).map(|_| ())
+            let units = super::super::UnitScales {
+                default_length: cadmpeg_ir::scalar::PositiveReal::ONE,
+                default_angle: cadmpeg_ir::scalar::PositiveReal::ONE,
+                length: std::collections::BTreeMap::new(),
+                angle: std::collections::BTreeMap::new(),
+            };
+            // The geometry-wide index peak does not define the local name boundary.
+            super::super::decode_tessellated_curve_sets(
+                &exchange,
+                &units,
+                &mut ir,
+                &mut std::collections::BTreeSet::new(),
+                &mut Vec::new(),
+                &ctx,
+            )
         },
     );
     assert!(
         matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
+            if refusal.dimension == ResourceDimension::MaterializedBytes
                 && refusal.operation == "step_string_text")
     );
 }
 
 fn assert_association_name_refuses(
     source: &[u8],
-    run: impl FnOnce(
+    mut run: impl FnMut(
         &crate::parse::Exchange,
         &mut cadmpeg_ir::document::CadIr,
         &crate::reader::index::CarrierIndex,
@@ -103,39 +117,45 @@ fn assert_association_name_refuses(
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid association exchange");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits retained policy");
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)
-        .expect("empty model has no carrier index entries");
-    let owned = super::super::topology_owned_carriers(&ir, &index, &ctx)
-        .expect("empty model has no owned carriers");
-    let mut losses = Vec::new();
-    assert!(matches!(
-        run(&exchange, &mut ir, &index, &owned, &mut losses, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "step_string_text",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits materialized policy");
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)
+                .expect("empty model has no carrier index entries");
+            let owned = super::super::topology_owned_carriers(&ir, &index, &ctx)
+                .expect("empty model has no owned carriers");
+            let mut losses = Vec::new();
+            run(&exchange, &mut ir, &index, &owned, &mut losses, &ctx)
+        },
+    );
+    assert!(matches!(error,
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::MaterializedBytes
                 && refusal.operation == "step_string_text"
     ));
 }
 
 #[test]
-fn geometric_set_member_name_refuses_retained_limit() {
+fn geometric_set_member_name_refuses_materialized_limit() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('member',(0.,0.,0.));#2=GEOMETRIC_SET('',(#1));ENDSEC;END-ISO-10303-21;";
     assert_association_name_refuses(SOURCE, super::super::associate_free_geometric_set_members);
 }
 
 #[test]
-fn representation_member_name_refuses_retained_limit() {
+fn representation_member_name_refuses_materialized_limit() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('member',(0.,0.,0.));#2=REPRESENTATION('',(#1),$);ENDSEC;END-ISO-10303-21;";
     assert_association_name_refuses(SOURCE, super::super::associate_free_representation_members);
 }
 
 #[test]
-fn presentation_carrier_name_refuses_retained_limit() {
+fn presentation_carrier_name_refuses_materialized_limit() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('member',(0.,0.,0.));ENDSEC;END-ISO-10303-21;";
     assert_association_name_refuses(SOURCE, |exchange, ir, index, owned, losses, ctx| {
         super::super::associate_presentation_carrier(
@@ -1239,4 +1259,34 @@ fn tessellated_curve_set_with_invalid_indices_stays_source_native() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| record.id.as_str().ends_with("#2")));
+}
+
+#[test]
+fn non_finite_scaled_offset_keeps_the_unresolved_carrier() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=VECTOR('',#2,1.);
+#4=LINE('',#1,#3);
+#5=OFFSET_CURVE_3D('',#4,1.E308,.F.,#2);
+#6=GEOMETRIC_SET('',(#5));
+#7=SHAPE_REPRESENTATION('',(#6),#8);
+#8=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#9)) REPRESENTATION_CONTEXT('',''));
+#9=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.EXA.,.METRE.));",
+    );
+    let curve = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#5")
+        .expect("unresolved offset carrier");
+    assert!(matches!(
+        curve.geometry.solved(),
+        Some(SolvedCurveGeometry::Unknown { .. })
+    ));
+    assert!(result.ir().model.procedural_curves.is_empty());
+    assert!(result.report().losses.iter().any(|loss| loss
+        .message
+        .contains("SpatialOffset.distance is not finite")));
 }

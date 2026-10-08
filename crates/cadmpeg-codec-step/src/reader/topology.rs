@@ -6688,42 +6688,33 @@ fn pcurve_selection_seeds(
         }
     }
     if let Some((origin, direction)) = geometry.line_parameters(ctx)? {
-        let periodic_domains = if let Some(mut solved) = surface.solved() {
-            loop {
-                ctx.charge_work(1, "STEP surface periodic domain traversal")?;
-                if let SolvedSurfaceGeometry::Transformed(placed) = solved {
-                    solved = placed.basis();
-                } else {
-                    break surface_periodic_domains(solved);
-                }
-            }
-        } else {
-            [None, None]
-        };
-        if let Some(domain) = periodic_domains[0] {
-            if direction.u != 0.0 {
-                for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
-                    if let Some(coordinate) = periodic_seed_coordinate(domain, fraction) {
-                        ctx.push_scoped_vec(
-                            &mut seed_storage,
-                            &mut seeds,
-                            (coordinate - origin.u) / direction.u,
-                            "step_pcurve_selection_seeds",
-                        )?;
+        if let Some(solved) = surface.solved() {
+            let periodic_domains = surface_periodic_domains(solved, ctx)?;
+            if let Some(domain) = periodic_domains[0] {
+                if direction.u != 0.0 {
+                    for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                        if let Some(coordinate) = periodic_seed_coordinate(domain, fraction) {
+                            ctx.push_scoped_vec(
+                                &mut seed_storage,
+                                &mut seeds,
+                                (coordinate - origin.u) / direction.u,
+                                "step_pcurve_selection_seeds",
+                            )?;
+                        }
                     }
                 }
             }
-        }
-        if let Some(domain) = periodic_domains[1] {
-            if direction.v != 0.0 {
-                for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
-                    if let Some(coordinate) = periodic_seed_coordinate(domain, fraction) {
-                        ctx.push_scoped_vec(
-                            &mut seed_storage,
-                            &mut seeds,
-                            (coordinate - origin.v) / direction.v,
-                            "step_pcurve_selection_seeds",
-                        )?;
+            if let Some(domain) = periodic_domains[1] {
+                if direction.v != 0.0 {
+                    for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                        if let Some(coordinate) = periodic_seed_coordinate(domain, fraction) {
+                            ctx.push_scoped_vec(
+                                &mut seed_storage,
+                                &mut seeds,
+                                (coordinate - origin.v) / direction.v,
+                                "step_pcurve_selection_seeds",
+                            )?;
+                        }
                     }
                 }
             }
