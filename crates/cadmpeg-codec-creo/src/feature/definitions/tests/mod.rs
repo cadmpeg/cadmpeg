@@ -30,7 +30,7 @@ fn trim_endpoint_radius_preserves_missing_agreement_and_refusal() {
     ] {
         let points = points.into_iter().collect();
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| super::trim_endpoint_radius(ctx, &segment, [0.0; 2], &points)).expect("endpoint budget")
+            crate::decode::with_test_decode_ctx(|ctx| super::trim::trim_endpoint_radius(ctx, &segment, [0.0; 2], &points)).expect("endpoint budget")
                 .map(|radius| radius.map(cadmpeg_ir::scalar::PositiveReal::get)),
             expected
         );
@@ -333,7 +333,7 @@ fn feature_outline_scalar_refuses_before_retained_copy() {
 fn numerical_ranges_trim_line_intersection_is_scale_independent() {
     for length in [1e-7, 1.0, 1e150] {
         assert_eq!(
-            super::trim_line_line_intersection(
+            super::trim::trim_line_line_intersection(
                 [-length, 0.],
                 [length, 0.],
                 [0., -length],
@@ -342,7 +342,7 @@ fn numerical_ranges_trim_line_intersection_is_scale_independent() {
             Some([0., 0.])
         );
         assert_eq!(
-            super::trim_line_line_intersection(
+            super::trim::trim_line_line_intersection(
                 [-length, 0.],
                 [length, 0.],
                 [-length, length],
@@ -357,15 +357,15 @@ fn numerical_ranges_trim_line_intersection_is_scale_independent() {
 fn numerical_followup_circle_intersection_requires_a_unique_tangent() {
     for r in [1.0, 1e-6, 1e-150, 1e150] {
         assert_eq!(
-            super::trim_circle_circle_intersection([0., 0.], r, [r, 0.], r),
+            super::trim::trim_circle_circle_intersection([0., 0.], r, [r, 0.], r),
             None
         );
         assert_eq!(
-            super::trim_circle_circle_intersection([0., 0.], r, [2. * r, 0.], r),
+            super::trim::trim_circle_circle_intersection([0., 0.], r, [2. * r, 0.], r),
             Some([r, 0.])
         );
         assert_eq!(
-            super::trim_circle_circle_intersection([0., 0.], r, [3. * r, 0.], r),
+            super::trim::trim_circle_circle_intersection([0., 0.], r, [3. * r, 0.], r),
             None
         );
     }
@@ -375,7 +375,7 @@ fn numerical_followup_circle_intersection_requires_a_unique_tangent() {
 fn numerical_audit_trim_line_circle_rejects_disjoint_small_carriers() {
     for radius in [1.0e-150, 1.0e-4, 1.0, 1.0e150] {
         assert_eq!(
-            super::trim_line_circle_intersection(
+            super::trim::trim_line_circle_intersection(
                 [-radius, 2.0 * radius],
                 [radius, 2.0 * radius],
                 [0.0; 2],
@@ -384,7 +384,7 @@ fn numerical_audit_trim_line_circle_rejects_disjoint_small_carriers() {
             None
         );
         assert_eq!(
-            super::trim_line_circle_intersection(
+            super::trim::trim_line_circle_intersection(
                 [-radius, radius],
                 [radius, radius],
                 [0.0; 2],

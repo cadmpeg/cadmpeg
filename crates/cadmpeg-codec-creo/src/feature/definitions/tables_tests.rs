@@ -6,7 +6,7 @@ use crate::feature::definitions::definitions;
 use crate::feature::definitions::definitions_in_ranges;
 use crate::feature::definitions::depdb_definitions;
 use crate::feature::definitions::dimension_table as parse_dimension_table;
-use crate::feature::definitions::entity_intersection as parse_entity_intersection;
+use crate::feature::definitions::trim::entity_intersection as parse_entity_intersection;
 use crate::feature::definitions::equation_table as parse_equation_table;
 use crate::feature::definitions::feature_relation_triples as parse_feature_relation_triples;
 use crate::feature::definitions::feature_skamps as parse_feature_skamps;
