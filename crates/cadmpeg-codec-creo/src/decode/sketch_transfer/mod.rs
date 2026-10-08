@@ -8,4 +8,5 @@ pub(super) mod loci;
 pub(super) mod profiles;
 pub(super) mod recipe;
 pub(super) mod skamp_constraints;
+pub(super) mod solver_links;
 pub(super) mod transfer;

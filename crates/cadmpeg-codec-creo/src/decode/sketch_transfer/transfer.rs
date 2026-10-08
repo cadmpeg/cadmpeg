@@ -32,7 +32,7 @@ use crate::coverage::SketchSegmentFamily;
 use crate::decode::sketch_transfer::constraints::{
     native_section_segment_verhor_definition, reconcile_constraint_entity_references,
     reconcile_constraint_parameter_reference, reconcile_section_dimension_constraint,
-    section_dimension_constraints, section_equation_axis_distance_constraints,
+    section_dimension_constraints_with_links, section_equation_axis_distance_constraints,
     section_equation_equal_distance_constraints,
     section_equation_function_five_scalar_equality_constraints,
     section_equation_function_forty_two_midpoint_coordinate_constraints,
@@ -55,6 +55,7 @@ use crate::decode::sketch_transfer::profiles::{
     SectionEntityIncidenceFamily,
 };
 use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
+use super::solver_links::RelationIncidences;
 use crate::feature::segment_rows::SegmentRow;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::Feature;
@@ -834,8 +835,9 @@ pub(in super::super) fn transfer_sketches(
                 )?;
             }
         }
+        let relation_solver = RelationIncidences::new(ctx, definition)?;
         for (mut constraint, offset, relation_index) in
-            ctx.admit_iter(section_dimension_constraints(ctx, definition, &sketch_id)?, "creo transferred dimension rows")?
+            ctx.admit_iter(section_dimension_constraints_with_links(ctx, definition, &sketch_id, &relation_solver)?, "creo transferred dimension rows")?
         {
             let Some(relation) = definition
                 .relations
@@ -853,6 +855,7 @@ pub(in super::super) fn transfer_sketches(
                     relation,
                     &emitted_entity_ids,
                     &available_parameter_ids,
+                    &relation_solver,
                 )
             }) {
                 Ok(result) => result?,

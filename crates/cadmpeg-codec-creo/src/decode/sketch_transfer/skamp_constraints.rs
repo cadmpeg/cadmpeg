@@ -14,13 +14,13 @@ use crate::decode::sketch_transfer::loci::{
     section_skamp_same_coordinate, section_skamp_same_coordinate_axis, section_skamp_tangent_loci,
     unique_bounded_curve_segment,
 };
-use crate::feature::definitions::SolverSubtable;
 use cadmpeg_ir::scalar::PositiveAngle;
 use cadmpeg_ir::sketches::{
     NativeOperandField, SketchConstraint, SketchConstraintDefinitionInput, SketchCoordinateAxis,
     SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
     SketchNativeOperand,
 };
+use super::solver_links::SkampEquations;
 use std::cell::Cell;
 use std::collections::BTreeMap;
 
@@ -78,15 +78,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
     } else {
         None
     };
-    let complete_skamps = relations
-        .skamps
-        .as_ref()
-        .is_none_or(SolverSubtable::is_complete);
-    let mut skamp_id_counts = BTreeMap::<u32, usize>::new();
-    for skamp in ctx.admit_iter(relations.skamps(), "creo SKAMP constraint row traversal")? {
-        *ctx.entry_btree_map(&mut skamp_id_counts, skamp.id, "creo skamp ID count nodes")?
-            .or_default() += 1;
-    }
+    let solver = SkampEquations::new(ctx, definition)?;
     let available_entities = if let Some(geometry) = geometry {
         let mut ids = std::collections::BTreeSet::new();
         for skamp in ctx.admit_iter(
@@ -112,23 +104,8 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
     for skamp in ctx.admit_iter(relations.skamps(), "creo SKAMP constraint row traversal")? {
         let resource_error = Cell::new(None);
         let candidate = (|| {
-            let unique_skamp_id = complete_skamps && defer_resource(ctx.get_btree_map(&skamp_id_counts, &skamp.id, "creo SKAMP identity count lookup"), &resource_error)? == Some(&1);
-            let joined_equation_id = if unique_skamp_id
-                && relations
-                    .triples
-                    .as_ref()
-                    .is_none_or(SolverSubtable::is_complete)
-            {
-                let mut equation_ids = relations
-                    .triples()
-                    .iter()
-                    .filter(|triple| triple.skamp_id == Some(skamp.id))
-                    .filter_map(|triple| triple.equation_id);
-                let equation_id = equation_ids.next();
-                equation_id.filter(|_| equation_ids.next().is_none())
-            } else {
-                None
-            };
+            let unique_skamp_id = solver.is_unique(skamp.id);
+            let joined_equation_id = solver.equation_id(skamp.id);
             let active = section_skamp_active(skamp.status);
             let native_constraint = |resource_error: &Cell<Option<cadmpeg_core::CodecError>>| {
                 let native_ref =
@@ -1572,31 +1549,18 @@ mod tests {
             })
             .expect("valid point geometry"),
         )]);
-        let arena = DecodeArena::new();
-        for (limit, operation) in [
-            (0, "creo skamp ID count nodes"),
-            (1, "creo skamp available entity nodes"),
-            (2, "creo skamp native entities"),
-            (3, "creo skamp native operands"),
-            (4, "creo skamp constraints"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-            let error = super::section_skamp_constraints_for_geometry(
-                &ctx,
-                &definition,
-                &sketch,
-                Some(&geometry),
-            )
-            .expect_err("skamp collection exceeds its limit");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-                if resource.operation == operation),
-                "{error:?}"
-            );
-        }
+        crate::test_support::assert_refusal_order(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            &["creo solver incidence identity rows", "creo skamp available entity nodes",
+              "creo skamp native entities", "creo skamp native operands", "creo skamp constraints"],
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+                super::section_skamp_constraints_for_geometry(&ctx, &definition, &sketch, Some(&geometry))
+            },
+        );
         let constraints = crate::decode::with_test_decode_ctx(|ctx| {
             super::section_skamp_constraints_for_geometry(
                 ctx,
@@ -1621,22 +1585,14 @@ mod tests {
         let mut second = rows[0].clone();
         second.offset = 1;
         rows.push(second);
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 4;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = super::section_skamp_constraints_for_geometry(
-            &ctx,
-            &duplicate,
-            &sketch,
-            Some(&geometry),
-        )
-        .expect_err("native property node exceeds its limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == "creo skamp native property nodes"),
-            "{error:?}"
+        let error = crate::test_support::last_refusal_at(
+            &[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "creo skamp native property nodes", |ctx| {
+                super::section_skamp_constraints_for_geometry(ctx, &duplicate, &sketch, Some(&geometry))
+            },
         );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == "creo skamp native property nodes"), "{error:?}");
 
         let Some(relations) = definition.relations.as_mut() else {
             panic!("fixture relation table");
@@ -1663,22 +1619,15 @@ mod tests {
             })
             .expect("valid point geometry"),
         );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 4;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = super::section_skamp_constraints_for_geometry(
-            &ctx,
-            &definition,
-            &sketch,
-            Some(&geometry),
-        )
-        .expect_err("typed loci exceed their limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == "creo skamp coincident loci"),
-            "{error:?}"
+        let error = crate::test_support::last_refusal_at(
+            &[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "creo skamp coincident loci", |ctx| {
+                super::section_skamp_constraints_for_geometry(ctx, &definition, &sketch, Some(&geometry))
+            },
         );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == "creo skamp coincident loci"), "{error:?}");
+
         let constraints = crate::decode::with_test_decode_ctx(|ctx| {
             super::section_skamp_constraints_for_geometry(
                 ctx,
