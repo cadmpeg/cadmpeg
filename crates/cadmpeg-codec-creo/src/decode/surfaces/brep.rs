@@ -1092,14 +1092,18 @@ fn native_circle_loop_geometry(
             "creo:visibgeom:curve#",
             first.curve_id,
         )
-    })) else { return Ok(None); };
+    })) else {
+        return Ok(None);
+    };
     let Some(second) = exactly_one(model_curves.iter().filter(|curve| {
         crate::identity::matches_numbered_identity(
             curve.id.as_str(),
             "creo:visibgeom:curve#",
             second.curve_id,
         )
-    })) else { return Ok(None); };
+    })) else {
+        return Ok(None);
+    };
     let (
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve_2)),
@@ -1637,7 +1641,8 @@ impl BrepEdgeIndexes {
         ir: &CadIr,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut edge_vertices = BTreeMap::new();
-        let (unique_rows, _unique_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+        let (unique_rows, _unique_rows_storage) =
+            crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
         for row in ctx
             .admit_iter(&unique_rows, "creo B-rep unique edge row traversal")?
             .copied()
@@ -1779,7 +1784,8 @@ impl BrepEligibleFaceIndexes {
             )?;
         }
         let mut curve_faces = BTreeMap::new();
-        let (unique_rows, _unique_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, topology_rows, |row| row.id)?;
+        let (unique_rows, _unique_rows_storage) =
+            crate::identity::uniquely_identified_rows_checked(ctx, topology_rows, |row| row.id)?;
         for row in ctx
             .admit_iter(&unique_rows, "creo B-rep unique topology row traversal")?
             .copied()
@@ -3346,7 +3352,10 @@ pub(in super::super) fn transfer_native_brep(
                             else {
                                 return Ok(None);
                             };
-                            Ok(Some((source_carriers.surface_geometry(surface)?, traversal)))
+                            Ok(Some((
+                                source_carriers.surface_geometry(surface)?,
+                                traversal,
+                            )))
                         })()?;
                         match inputs {
                             Some((surface, traversal)) => {
@@ -3427,18 +3436,13 @@ pub(in super::super) fn transfer_native_brep(
                                     .map(|geometry| (geometry, "projected_parallel_conic_pcurve"))
                                 })
                                 .or_else(|| {
-                                    meridian_circle_pcurve(
-                                        source_surface,
-                                        source_curve,
-                                    )
-                                    .map(|geometry| (geometry, "projected_meridian_pcurve"))
+                                    meridian_circle_pcurve(source_surface, source_curve)
+                                        .map(|geometry| (geometry, "projected_meridian_pcurve"))
                                 })
                                 .or_else(|| {
-                                    ruled_generator_line_pcurve(
-                                        source_surface,
-                                        source_curve,
+                                    ruled_generator_line_pcurve(source_surface, source_curve).map(
+                                        |geometry| (geometry, "projected_ruled_generator_pcurve"),
                                     )
-                                    .map(|geometry| (geometry, "projected_ruled_generator_pcurve"))
                                 })
                             else {
                                 return Ok(None);

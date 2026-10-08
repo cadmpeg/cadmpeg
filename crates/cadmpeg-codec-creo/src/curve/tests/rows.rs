@@ -320,7 +320,8 @@ fn typed_parameter_rows_require_unique_identity() {
                 ctx,
                 std::slice::from_ref(&unique),
                 |record| record.curve_id,
-            ).map(|(rows, _storage)| rows)
+            )
+            .map(|(rows, _storage)| rows)
         })
         .expect("service unique rows")
         .len(),
@@ -330,7 +331,8 @@ fn typed_parameter_rows_require_unique_identity() {
     assert!(crate::decode::with_test_decode_ctx(|ctx| {
         crate::identity::uniquely_identified_rows_checked(ctx, &duplicates, |record| {
             record.curve_id
-        }).map(|(rows, _storage)| rows)
+        })
+        .map(|(rows, _storage)| rows)
     })
     .expect("service duplicate rows")
     .is_empty());

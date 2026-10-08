@@ -160,7 +160,8 @@ pub(in super::super) fn connected_sketch_profile_vertices(
         let mut valid = true;
         for entity_use in profile {
             let Some(geometry) = unique_profile_entity(ctx, ir, sketch_id, &entity_use.entity)?
-                .map(|entity| source_carriers.sketch_geometry(entity)).transpose()?
+                .map(|entity| source_carriers.sketch_geometry(entity))
+                .transpose()?
             else {
                 valid = false;
                 break;

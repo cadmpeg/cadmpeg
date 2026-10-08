@@ -378,7 +378,9 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                         found = Some(surface);
                     }
                 }
-                found.map(|surface| source_carriers.surface_geometry(surface)).transpose()
+                found
+                    .map(|surface| source_carriers.surface_geometry(surface))
+                    .transpose()
             };
         let Some(first_geometry) = geometry(first.id)? else {
             continue;

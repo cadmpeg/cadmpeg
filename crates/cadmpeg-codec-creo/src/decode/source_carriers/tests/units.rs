@@ -53,7 +53,8 @@ fn planar_sketch_lengths_are_in_millimeters_at_admission() {
     };
     assert_eq!(distance.get(), 50.8);
     let SketchGeometryDefinition::Line { start, .. } = carriers
-        .sketch_geometry(&ir.model.sketch_entities[0]).expect("source carrier lookup")
+        .sketch_geometry(&ir.model.sketch_entities[0])
+        .expect("source carrier lookup")
         .definition()
     else {
         panic!("source sketch line changed family");
@@ -88,14 +89,30 @@ fn sketch_entity_overflow_refuses_before_admission() {
 #[test]
 fn sketch_entity_admission_refuses_each_source_and_model_boundary() {
     for (dimension, operation) in [
-        (ResourceDimension::CollectionItems, "creo source sketch entity nodes"),
-        (ResourceDimension::CollectionItems, "creo model sketch entities"),
-        (ResourceDimension::MaterializedBytes, "creo source sketch entity IDs"),
+        (
+            ResourceDimension::CollectionItems,
+            "creo source sketch entity nodes",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "creo model sketch entities",
+        ),
+        (
+            ResourceDimension::MaterializedBytes,
+            "creo source sketch entity IDs",
+        ),
     ] {
         let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
-            SourceUnitCarriers::for_decode(ctx, PositiveReal::new(25.4)).admit_sketch_entities(ctx, &mut CadIr::empty(), vec![source_sketch_line(1.0)])
+            SourceUnitCarriers::for_decode(ctx, PositiveReal::new(25.4)).admit_sketch_entities(
+                ctx,
+                &mut CadIr::empty(),
+                vec![source_sketch_line(1.0)],
+            )
         });
-        assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation), "{error:?}");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation),
+            "{error:?}"
+        );
     }
 }
 
@@ -104,11 +121,7 @@ fn sketch_constraint_overflow_refuses_before_admission() {
     let mut ir = CadIr::empty();
     let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
     let error = crate::decode::with_test_decode_ctx(|ctx| {
-        carriers.admit_sketch_constraints(
-            ctx,
-            &mut ir,
-            vec![source_distance_constraint(f64::MAX)],
-        )
+        carriers.admit_sketch_constraints(ctx, &mut ir, vec![source_distance_constraint(f64::MAX)])
     })
     .expect_err("millimeter constraint cannot be represented");
     assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
@@ -212,8 +225,7 @@ fn product_transform_translations_are_in_millimeters_at_admission() {
             ctx,
             &mut ir,
             Body {
-                id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0")
-                    .expect("identity grammar"),
+                id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0").expect("identity grammar"),
                 kind: BodyKind::Solid,
                 regions: Vec::new(),
                 transform: Some(translated_product_transform(1.0)),
@@ -310,10 +322,9 @@ fn scaled_line_origin_overflow_refuses_unrepresentable_ir() {
     };
     let mut ir = CadIr::empty();
     let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-    let error = crate::decode::with_test_decode_ctx(|ctx| {
-        source_carriers.admit_curve(ctx, &mut ir, curve)
-    })
-    .expect_err("millimeter origin cannot be represented");
+    let error =
+        crate::decode::with_test_decode_ctx(|ctx| source_carriers.admit_curve(ctx, &mut ir, curve))
+            .expect_err("millimeter origin cannot be represented");
     assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
     assert!(ir.model.curves.is_empty());
 }
@@ -336,10 +347,8 @@ fn extrusion_construction_direction_is_in_millimeters_at_attachment() {
     let mut ir = CadIr::empty();
     let scale = PositiveReal::new(25.4).expect("inch scale");
     let mut source_carriers = SourceUnitCarriers::new(Some(scale));
-    crate::decode::with_test_decode_ctx(|ctx| {
-        source_carriers.admit_surface(ctx, &mut ir, surface)
-    })
-    .expect("surface admission");
+    crate::decode::with_test_decode_ctx(|ctx| source_carriers.admit_surface(ctx, &mut ir, surface))
+        .expect("surface admission");
     let procedural = ProceduralSurface::new(
         ProceduralSurfaceId::mint("creo:visibgeom:extrusion#1").expect("identity grammar"),
         ProceduralSurfaceDefinition::Extrusion(
@@ -376,14 +385,13 @@ fn extrusion_construction_direction_is_in_millimeters_at_attachment() {
 fn procedural_surface_without_owner_is_malformed_at_attachment() {
     let mut ir = CadIr::empty();
     let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-    let error = crate::decode::with_test_decode_ctx(|ctx| source_carriers
-        .admit_procedural_surface(
+    let error = crate::decode::with_test_decode_ctx(|ctx| {
+        source_carriers.admit_procedural_surface(
             ctx,
             &mut ir,
             &SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
             ProceduralSurface::new(
-                ProceduralSurfaceId::mint("creo:visibgeom:extrusion#1")
-                    .expect("identity grammar"),
+                ProceduralSurfaceId::mint("creo:visibgeom:extrusion#1").expect("identity grammar"),
                 ProceduralSurfaceDefinition::Extrusion(
                     cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                         CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar"),
@@ -396,8 +404,9 @@ fn procedural_surface_without_owner_is_malformed_at_attachment() {
                 ),
                 None,
             ),
-        ))
-        .expect_err("missing owner must refuse attachment");
+        )
+    })
+    .expect_err("missing owner must refuse attachment");
     assert!(matches!(error, CodecError::Malformed(_)), "{error}");
     assert!(ir.model.procedural_surfaces.is_empty());
 }
@@ -521,8 +530,7 @@ fn helix_construction_lengths_are_in_millimeters_at_attachment() {
         )
     })
     .expect("helix attachment");
-    let ProceduralCurveDefinition::Helix(helix) = ir.model.procedural_curves[0].definition()
-    else {
+    let ProceduralCurveDefinition::Helix(helix) = ir.model.procedural_curves[0].definition() else {
         panic!("helix construction changed family");
     };
     assert_eq!(helix.center().get(), Point3::new(25.4, 0.0, 0.0));
@@ -588,7 +596,9 @@ fn bounded_line_edge_range_is_in_millimeters_at_admission() {
         Some([0.0, 50.8])
     );
     assert_eq!(
-        source_carriers.source_edge_parameter_range(&ir.model.edges[0]).expect("source carrier lookup"),
+        source_carriers
+            .source_edge_parameter_range(&ir.model.edges[0])
+            .expect("source carrier lookup"),
         Some([0.0, 2.0])
     );
     assert_eq!(
@@ -651,8 +661,8 @@ fn bounded_line_edge_range_overflow_refuses_at_admission() {
 fn coedge_line_use_range_overflow_refuses_at_admission() {
     crate::decode::with_test_decode_ctx(|ctx| {
         let (mut ir, source_carriers, curve_id) = source_line_for_range_tests();
-        let coedge_id = cadmpeg_ir::ids::CoedgeId::mint("creo:visibgeom:coedge#1")
-            .expect("identity grammar");
+        let coedge_id =
+            cadmpeg_ir::ids::CoedgeId::mint("creo:visibgeom:coedge#1").expect("identity grammar");
         let error = source_carriers
             .admit_coedge(
                 ctx,
@@ -725,8 +735,7 @@ fn vertex_face_tolerances_and_coedge_line_range_are_in_millimeters_at_admission(
                         .expect("identity grammar"),
                     shell: cadmpeg_ir::ids::ShellId::mint("creo:visibgeom:shell#1")
                         .expect("identity grammar"),
-                    surface: SurfaceId::mint("creo:visibgeom:surface#1")
-                        .expect("identity grammar"),
+                    surface: SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
                     sense: Sense::Forward,
                     loops: FaceLoops::unspecified(Vec::new()),
                     name: None,
@@ -735,8 +744,8 @@ fn vertex_face_tolerances_and_coedge_line_range_are_in_millimeters_at_admission(
                 },
             )
             .expect("face admission");
-        let coedge_id = cadmpeg_ir::ids::CoedgeId::mint("creo:visibgeom:coedge#1")
-            .expect("identity grammar");
+        let coedge_id =
+            cadmpeg_ir::ids::CoedgeId::mint("creo:visibgeom:coedge#1").expect("identity grammar");
         source_carriers
             .admit_coedge(
                 ctx,
@@ -942,8 +951,7 @@ fn plane_pcurve_coordinate_overflow_refuses_at_admission() {
 #[test]
 fn pcurve_normalization_failure_text_refuses_below_retained_limit() {
     let make_pcurve = || cadmpeg_ir::geometry::pcurve::Pcurve {
-        id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1")
-            .expect("identity grammar"),
+        id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
             cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 cadmpeg_ir::math::Point2::new(f64::MAX, 0.0),
@@ -1015,21 +1023,35 @@ fn source_sketch_nurbs_copy_refuses_knots_and_poles_separately() {
     }
 }
 
-
 #[test]
 fn source_sketch_input_traversals_refuse_work() {
     crate::test_support::assert_work_boundaries(&["creo source sketch entity traversal"], |ctx| {
-        SourceUnitCarriers::default().admit_sketch_entities(ctx, &mut CadIr::empty(), vec![source_sketch_line(1.0)])
+        SourceUnitCarriers::default().admit_sketch_entities(
+            ctx,
+            &mut CadIr::empty(),
+            vec![source_sketch_line(1.0)],
+        )
     });
-    crate::test_support::assert_work_boundaries(&["creo source sketch constraint traversal"], |ctx| {
-        SourceUnitCarriers::default().admit_sketch_constraints(ctx, &mut CadIr::empty(), vec![source_distance_constraint(2.0)])
-    });
+    crate::test_support::assert_work_boundaries(
+        &["creo source sketch constraint traversal"],
+        |ctx| {
+            SourceUnitCarriers::default().admit_sketch_constraints(
+                ctx,
+                &mut CadIr::empty(),
+                vec![source_distance_constraint(2.0)],
+            )
+        },
+    );
 }
 
 #[test]
 fn source_pcurve_surface_search_stops_at_first_match() {
     let target = SurfaceId::mint("creo:test:surface#1").expect("source ID");
-    let surface = Surface { id: target.clone(), geometry: admission_plane(), source_object: None };
+    let surface = Surface {
+        id: target.clone(),
+        geometry: admission_plane(),
+        source_object: None,
+    };
     let short = vec![surface.clone()];
     let mut long = short.clone();
     long.extend(std::iter::repeat_n(surface, 64));
@@ -1038,11 +1060,28 @@ fn source_pcurve_surface_search_stops_at_first_match() {
         ir.model.surfaces = surfaces.to_vec();
         SourceUnitCarriers::default().admit_pcurve(ctx, &mut ir, admission_pcurve(), &target)
     };
-    crate::test_support::assert_work_boundaries(&["creo source pcurve surface search", "creo source pcurve surface ID comparison"], |ctx| run(ctx, &short));
-    let refusal = |surfaces: &[Surface]| crate::test_support::last_refusal_at(b"", ResourceDimension::WorkUnits,
-        "creo source pcurve surface search", |ctx| run(ctx, surfaces));
-    let CodecError::ResourceLimit(short_refusal) = refusal(&short) else { panic!("work refusal") };
-    let CodecError::ResourceLimit(long_refusal) = refusal(&long) else { panic!("work refusal") };
+    crate::test_support::assert_work_boundaries(
+        &[
+            "creo source pcurve surface search",
+            "creo source pcurve surface ID comparison",
+        ],
+        |ctx| run(ctx, &short),
+    );
+    let refusal = |surfaces: &[Surface]| {
+        crate::test_support::last_refusal_at(
+            b"",
+            ResourceDimension::WorkUnits,
+            "creo source pcurve surface search",
+            |ctx| run(ctx, surfaces),
+        )
+    };
+    let CodecError::ResourceLimit(short_refusal) = refusal(&short) else {
+        panic!("work refusal")
+    };
+    let CodecError::ResourceLimit(long_refusal) = refusal(&long) else {
+        panic!("work refusal")
+    };
     assert_eq!(short_refusal, long_refusal);
-    crate::decode::with_test_decode_ctx(|ctx| run(ctx, &long)).expect("first source surface admits pcurve");
+    crate::decode::with_test_decode_ctx(|ctx| run(ctx, &long))
+        .expect("first source surface admits pcurve");
 }

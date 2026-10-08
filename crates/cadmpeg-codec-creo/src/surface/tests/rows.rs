@@ -853,7 +853,8 @@ fn unique_surface_projection_excludes_every_collided_identity() {
 
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
-            crate::identity::uniquely_identified_rows_checked(ctx, &rows, |row| row.id).map(|(rows, _storage)| rows)
+            crate::identity::uniquely_identified_rows_checked(ctx, &rows, |row| row.id)
+                .map(|(rows, _storage)| rows)
         })
         .expect("service unique surface projection")
         .iter()

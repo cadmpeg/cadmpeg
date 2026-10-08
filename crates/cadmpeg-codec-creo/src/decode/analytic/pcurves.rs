@@ -354,11 +354,12 @@ impl PcurvePathActivity {
             }
         }
         let mut topology_faces = BTreeMap::new();
-        let (topology_rows, _topology_rows_storage) = crate::identity::uniquely_identified_rows_checked(
-            ctx,
-            &scan.curves.topology_rows,
-            |row| row.id,
-        )?;
+        let (topology_rows, _topology_rows_storage) =
+            crate::identity::uniquely_identified_rows_checked(
+                ctx,
+                &scan.curves.topology_rows,
+                |row| row.id,
+            )?;
         for row in ctx.admit_iter(&topology_rows, "creo pcurve topology face rows")? {
             ctx.insert_btree_map(
                 &mut topology_faces,
@@ -2247,7 +2248,8 @@ pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
     let mut selected = None;
     for face_id in faces {
         let Some(surface) = unique_model_surface(surfaces, face_id)
-            .map(|surface| source_carriers.surface_geometry(surface)).transpose()?
+            .map(|surface| source_carriers.surface_geometry(surface))
+            .transpose()?
         else {
             continue;
         };

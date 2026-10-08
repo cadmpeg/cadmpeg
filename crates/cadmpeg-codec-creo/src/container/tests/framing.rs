@@ -258,7 +258,7 @@ fn scan_enumerates_toc_backed_compound_close_section_boundaries() {
         scan.framing
             .sections
             .iter()
-            .map(|section| section.name())
+            .map(super::super::Section::name)
             .collect::<Vec<_>>(),
         ["DEPDB_DATA", "VisibGeom", "AllFeatur"]
     );
@@ -487,7 +487,11 @@ fn legacy_geom_depend_discriminator_withholds_distinct_values() {
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::super::legacy_first_quilt_ptr(ctx, &persistence)).expect("legacy value selection admitted"),
+        crate::decode::with_test_decode_ctx(|ctx| super::super::legacy_first_quilt_ptr(
+            ctx,
+            &persistence
+        ))
+        .expect("legacy value selection admitted"),
         None
     );
 }

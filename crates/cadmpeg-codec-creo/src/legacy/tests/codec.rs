@@ -483,4 +483,3 @@ fn incomplete_or_payload_embedded_p_object_does_not_select_legacy_ascii_layout()
         Layout::Unknown(UnknownLayout::NoDiscriminant)
     );
 }
-

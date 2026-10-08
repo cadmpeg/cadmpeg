@@ -46,21 +46,29 @@ fn native_variable_projection_refuses_copy_before_output_slot() {
     });
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-        ResourceDimension::CollectionItems, Some("creo native sketch variables"), |cap| {
+        ResourceDimension::CollectionItems,
+        Some("creo native sketch variables"),
+        |cap| {
             let trial_arena = DecodeArena::new();
             let mut trial_policy = DecodePolicy::service();
             trial_policy.limits.max_collection_items = cap;
-            let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+            let (trial_ctx, _) =
+                DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
             super::super::sketch_records(&trial_ctx, &scan).map(|_| ())
-        });
+        },
+    );
     policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
-        ResourceDimension::MaterializedBytes, Some("creo native sketch variable value body"), |cap| {
+        ResourceDimension::MaterializedBytes,
+        Some("creo native sketch variable value body"),
+        |cap| {
             let trial_arena = DecodeArena::new();
             let mut trial_policy = DecodePolicy::service();
             trial_policy.limits.max_materialized_bytes = cap;
-            let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+            let (trial_ctx, _) =
+                DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
             super::super::sketch_records(&trial_ctx, &scan).map(|_| ())
-        });
+        },
+    );
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = super::super::sketch_records(&ctx, &scan)

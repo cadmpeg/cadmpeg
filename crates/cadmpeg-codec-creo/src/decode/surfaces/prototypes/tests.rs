@@ -421,8 +421,9 @@ fn first_instance_torus_radii_are_in_millimeters_at_ir_admission() {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus)) = &surface.geometry else {
         panic!("torus carrier changed family");
     };
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(source_torus)) =
-        source_carriers.surface_geometry(surface).expect("source carrier lookup")
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(source_torus)) = source_carriers
+        .surface_geometry(surface)
+        .expect("source carrier lookup")
     else {
         panic!("source torus carrier changed family");
     };

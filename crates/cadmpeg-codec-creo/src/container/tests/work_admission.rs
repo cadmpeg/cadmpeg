@@ -26,12 +26,22 @@ fn geometry_census_charges_each_namespace_pass() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     let boundary = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::WorkUnits, "creo geometry census search", |ctx| {
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo geometry census search",
+        |ctx| {
             read_array_count(ctx, &region, b"srf_array")?;
             read_array_count(ctx, &region, b"crv_array")
-        });
-    let CodecError::ResourceLimit(boundary) = boundary else { panic!("resource boundary"); };
-    policy.limits.max_work_units = boundary.used.checked_add(boundary.additional).expect("work need") - 1;
+        },
+    );
+    let CodecError::ResourceLimit(boundary) = boundary else {
+        panic!("resource boundary");
+    };
+    policy.limits.max_work_units = boundary
+        .used
+        .checked_add(boundary.additional)
+        .expect("work need")
+        - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
         read_array_count(&ctx, &region, b"srf_array").expect("first scan"),
@@ -103,7 +113,6 @@ fn legacy_toc_count_prefix_refuses_work() {
             && resource.operation == "creo legacy TOC count prefix")
     );
 }
-
 
 #[test]
 fn loop_array_section_deduplication_refuses_work() {
@@ -216,28 +225,39 @@ fn cmnm_forbidden_name_search_charges_only_visited_bytes() {
 #[test]
 fn skipped_sections_still_require_traversal_work() {
     let bytes = b"#Other\n";
-    let sections = [Section::scan_for_test("Other".into(), 0, bytes.len(), None, bytes).expect("section")];
-    let selected = crate::test_support::assert_work_boundaries(&["creo section traversal"], |ctx| {
-        super::super::nonvisible_geometry_sections(ctx, &sections)
-    });
+    let sections =
+        [Section::scan_for_test("Other".into(), 0, bytes.len(), None, bytes).expect("section")];
+    let selected =
+        crate::test_support::assert_work_boundaries(&["creo section traversal"], |ctx| {
+            super::super::nonvisible_geometry_sections(ctx, &sections)
+        });
     assert!(selected.is_empty());
 }
 
 #[test]
 fn native_model_name_search_stops_before_unvisited_sections() {
     let bytes = b"model_name\0part\0";
-    let first = Section::scan_for_test("Other".into(), 0, bytes.len(), None, bytes).expect("section");
+    let first =
+        Section::scan_for_test("Other".into(), 0, bytes.len(), None, bytes).expect("section");
     let mut sections = vec![first.clone()];
     let boundary = |sections: &[super::super::ScannedSection<'_>]| {
-        let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits,
-            "creo native model-name section selection", |ctx| super::super::native_model_name(ctx, sections));
-        let CodecError::ResourceLimit(resource) = error else { panic!("work refusal") };
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo native model-name section selection",
+            |ctx| super::super::native_model_name(ctx, sections),
+        );
+        let CodecError::ResourceLimit(resource) = error else {
+            panic!("work refusal")
+        };
         resource
     };
     let one = boundary(&sections);
     sections.extend(std::iter::repeat_n(first, 64));
     assert_eq!(one, boundary(&sections));
-    let name = crate::decode::with_test_decode_ctx(|ctx| super::super::native_model_name(ctx, &sections)).expect("search");
+    let name =
+        crate::decode::with_test_decode_ctx(|ctx| super::super::native_model_name(ctx, &sections))
+            .expect("search");
     assert_eq!(name, Some(("part".into(), 11)));
 }
 
@@ -260,12 +280,19 @@ fn legacy_witness_merges_admit_each_source_before_copying() {
         offset: 7,
     }];
     let (topology, pcurves) = crate::test_support::assert_work_boundaries(
-        &["creo topology row append traversal", "creo legacy pcurve append traversal"],
+        &[
+            "creo topology row append traversal",
+            "creo legacy pcurve append traversal",
+        ],
         |ctx| {
             let mut topology = Vec::new();
             let mut pcurves = Vec::new();
             super::super::append_legacy_curve_witnesses(
-                ctx, &mut topology, &mut pcurves, &source_topology, &source_pcurves,
+                ctx,
+                &mut topology,
+                &mut pcurves,
+                &source_topology,
+                &source_pcurves,
             )?;
             Ok((topology, pcurves))
         },

@@ -691,7 +691,8 @@ fn line_at(ctx: &DecodeContext<'_>, data: &[u8], start: usize) -> Result<String,
         return ctx.copy_retained_text(trimmed, "creo version line");
     }
     let mut text_storage = ctx.reserve_scoped(0, "creo version text storage")?;
-    let line = text_storage.with_storage(|| ctx.copy_retained_lossy_utf8(bytes, "creo version lossy scratch"))?;
+    let line = text_storage
+        .with_storage(|| ctx.copy_retained_lossy_utf8(bytes, "creo version lossy scratch"))?;
     let trimmed = ctx.trim_text(&line, "creo version line trim")?;
     ctx.copy_retained_text(trimmed, "creo version line")
 }
@@ -704,7 +705,9 @@ fn normalized_name_range(
     ctx: &DecodeContext<'_>,
     raw: &str,
 ) -> Result<std::ops::Range<usize>, CodecError> {
-    let base_end = ctx.find_text(raw, "#", "creo section name normalization")?.unwrap_or(raw.len());
+    let base_end = ctx
+        .find_text(raw, "#", "creo section name normalization")?
+        .unwrap_or(raw.len());
     let base = &raw[..base_end];
     let Some(rest) = base.strip_prefix("ND:") else {
         return Ok(0..base_end);
@@ -713,7 +716,8 @@ fn normalized_name_range(
         return Ok(0..base_end);
     };
     let start = "ND:".len() + first_colon + 1;
-    let end = ctx.find_text(&base[start..], ":", "creo section name normalization")?
+    let end = ctx
+        .find_text(&base[start..], ":", "creo section name normalization")?
         .map_or(base_end, |length| start + length);
     Ok(start..end)
 }
@@ -767,8 +771,17 @@ fn scan_sections<'a>(
         positions = nl..data.len().saturating_sub(1);
         // A name contains only defined ASCII name bytes and has an alphanumeric byte.
         if name_bytes.len() < 2
-            || !ctx.all_by(name_bytes, |byte| Ok(is_name_byte(*byte)), "creo section name validation")?
-            || !ctx.any_by(name_bytes, |byte| Ok(byte.is_ascii_alphanumeric()), "creo section name validation")? {
+            || !ctx.all_by(
+                name_bytes,
+                |byte| Ok(is_name_byte(*byte)),
+                "creo section name validation",
+            )?
+            || !ctx.any_by(
+                name_bytes,
+                |byte| Ok(byte.is_ascii_alphanumeric()),
+                "creo section name validation",
+            )?
+        {
             continue;
         }
         let name = ctx
@@ -801,7 +814,9 @@ fn scan_sections<'a>(
     let mut sections = Vec::new();
     ctx.reserve_vec(&mut sections, hits.len(), "creo scanned sections")?;
     let mut headers = hits.into_iter().peekable();
-    while let Some((offset, name)) = ctx.next_charged(&mut headers, "creo section header traversal")? {
+    while let Some((offset, name)) =
+        ctx.next_charged(&mut headers, "creo section header traversal")?
+    {
         let end = headers.peek().map_or(data.len(), |(next, _)| *next);
         sections.extend(Section::scan(ctx, name, offset, end, None, data)?);
     }
@@ -828,7 +843,8 @@ fn toc_sections<'a>(
         else {
             continue;
         };
-        let mut fields = ctx.trim_end_matches(header, |c| Ok(c == '#'), "creo TOC header padding")?;
+        let mut fields =
+            ctx.trim_end_matches(header, |c| Ok(c == '#'), "creo TOC header padding")?;
         legacy::text_field(ctx, &mut fields, false)?;
         legacy::text_field(ctx, &mut fields, false)?;
         let count = match legacy::text_field(ctx, &mut fields, false)? {
@@ -864,8 +880,14 @@ fn toc_sections<'a>(
             let Some(row) = data.get(start..end) else {
                 break;
             };
-            let Ok(row) = ctx.validate_utf8(row, "creo TOC row UTF-8")? else { continue; };
-            let mut fields = ctx.trim_end_matches(row, |c| Ok(matches!(c, '#' | '\n' | '\r' | ' ')), "creo TOC row padding")?;
+            let Ok(row) = ctx.validate_utf8(row, "creo TOC row UTF-8")? else {
+                continue;
+            };
+            let mut fields = ctx.trim_end_matches(
+                row,
+                |c| Ok(matches!(c, '#' | '\n' | '\r' | ' ')),
+                "creo TOC row padding",
+            )?;
             let Some(name) = legacy::text_field(ctx, &mut fields, false)? else {
                 continue;
             };
@@ -873,17 +895,23 @@ fn toc_sections<'a>(
                 continue;
             }
             let (raw_name, offset_field, length_field, expanded_field) = if name == "ModelView" {
-                let (Some(id), Some(offset), Some(length), Some(expanded)) =
-                    (legacy::text_field(ctx, &mut fields, false)?, legacy::text_field(ctx, &mut fields, false)?, legacy::text_field(ctx, &mut fields, false)?, legacy::text_field(ctx, &mut fields, false)?)
-                else {
+                let (Some(id), Some(offset), Some(length), Some(expanded)) = (
+                    legacy::text_field(ctx, &mut fields, false)?,
+                    legacy::text_field(ctx, &mut fields, false)?,
+                    legacy::text_field(ctx, &mut fields, false)?,
+                    legacy::text_field(ctx, &mut fields, false)?,
+                ) else {
                     continue;
                 };
-                let raw_name = ctx.format_retained(format_args!("ModelView#{id}"), "creo TOC section names")?;
+                let raw_name =
+                    ctx.format_retained(format_args!("ModelView#{id}"), "creo TOC section names")?;
                 (raw_name, offset, length, expanded)
             } else {
-                let (Some(offset), Some(length), Some(expanded)) =
-                    (legacy::text_field(ctx, &mut fields, false)?, legacy::text_field(ctx, &mut fields, false)?, legacy::text_field(ctx, &mut fields, false)?)
-                else {
+                let (Some(offset), Some(length), Some(expanded)) = (
+                    legacy::text_field(ctx, &mut fields, false)?,
+                    legacy::text_field(ctx, &mut fields, false)?,
+                    legacy::text_field(ctx, &mut fields, false)?,
+                ) else {
                     continue;
                 };
                 (
@@ -921,7 +949,11 @@ fn toc_sections<'a>(
             };
             if length < marker_len
                 || marker.first() != Some(&b'#')
-                || !ctx.equal(&marker[1..1 + raw_name.len()], raw_name.as_bytes(), "creo TOC marker name equality")?
+                || !ctx.equal(
+                    &marker[1..=raw_name.len()],
+                    raw_name.as_bytes(),
+                    "creo TOC marker name equality",
+                )?
                 || marker.last() != Some(&b'\n')
             {
                 continue;
@@ -967,7 +999,8 @@ fn legacy_toc_sections<'a>(
     else {
         return Ok(Vec::new());
     };
-    let Some((toc_declaration, after_toc_declaration)) = legacy::line(ctx, data, toc_offset)? else {
+    let Some((toc_declaration, after_toc_declaration)) = legacy::line(ctx, data, toc_offset)?
+    else {
         return Ok(Vec::new());
     };
     let Some((toc_id, _, _)) =
@@ -995,7 +1028,8 @@ fn legacy_toc_sections<'a>(
         return Ok(Vec::new());
     }
 
-    let Some((entry_declaration, after_entry_declaration)) = legacy::line(ctx, data, after_toc_value)?
+    let Some((entry_declaration, after_entry_declaration)) =
+        legacy::line(ctx, data, after_toc_value)?
     else {
         return Ok(Vec::new());
     };
@@ -1047,30 +1081,62 @@ fn legacy_toc_sections<'a>(
     }
     let mut sections = Vec::new();
     let mut entries = 0..count;
-    while ctx.next_charged(&mut entries, "creo legacy TOC entries")?.is_some() {
+    while ctx
+        .next_charged(&mut entries, "creo legacy TOC entries")?
+        .is_some()
+    {
         let Some((entry, after_entry)) = legacy::line(ctx, data, next)? else {
             break;
         };
         next = after_entry;
-        let Ok(entry) = ctx.validate_utf8(entry, "creo legacy TOC entry UTF-8")? else { continue; };
-        let entry = ctx.trim_end_matches(entry, |c| Ok(c == '#'), "creo legacy TOC entry padding")?;
+        let Ok(entry) = ctx.validate_utf8(entry, "creo legacy TOC entry UTF-8")? else {
+            continue;
+        };
+        let entry =
+            ctx.trim_end_matches(entry, |c| Ok(c == '#'), "creo legacy TOC entry padding")?;
         let mut fields = ctx.trim_end_text(entry, "creo legacy TOC entry whitespace")?;
-        let (Some(kind), Some(id), Some(raw_name), Some(offset_field), Some(length_field), Some(zero), Some(revision), None) = (
-            legacy::text_field(ctx, &mut fields, true)?, legacy::text_field(ctx, &mut fields, true)?,
-            legacy::text_field(ctx, &mut fields, true)?, legacy::text_field(ctx, &mut fields, true)?,
-            legacy::text_field(ctx, &mut fields, true)?, legacy::text_field(ctx, &mut fields, true)?,
-            legacy::text_field(ctx, &mut fields, true)?, legacy::text_field(ctx, &mut fields, true)?,
-        ) else { continue; };
+        let (
+            Some(kind),
+            Some(id),
+            Some(raw_name),
+            Some(offset_field),
+            Some(length_field),
+            Some(zero),
+            Some(revision),
+            None,
+        ) = (
+            legacy::text_field(ctx, &mut fields, true)?,
+            legacy::text_field(ctx, &mut fields, true)?,
+            legacy::text_field(ctx, &mut fields, true)?,
+            legacy::text_field(ctx, &mut fields, true)?,
+            legacy::text_field(ctx, &mut fields, true)?,
+            legacy::text_field(ctx, &mut fields, true)?,
+            legacy::text_field(ctx, &mut fields, true)?,
+            legacy::text_field(ctx, &mut fields, true)?,
+        )
+        else {
+            continue;
+        };
         if kind != "2"
             || ctx.parse_text::<u32>(id, "creo legacy TOC entry ID")?.ok() != Some(entry_id)
             || zero != "0"
-            || ctx.parse_text::<u32>(revision, "creo legacy TOC entry revision")?.is_err()
+            || ctx
+                .parse_text::<u32>(revision, "creo legacy TOC entry revision")?
+                .is_err()
         {
             continue;
         }
         if raw_name.len() < 2
-            || !ctx.all_by(raw_name.bytes(), |byte| Ok(is_name_byte(byte)), "creo legacy TOC name validation")?
-            || !ctx.any_by(raw_name.bytes(), |byte| Ok(byte.is_ascii_alphanumeric()), "creo legacy TOC name validation")?
+            || !ctx.all_by(
+                raw_name.bytes(),
+                |byte| Ok(is_name_byte(byte)),
+                "creo legacy TOC name validation",
+            )?
+            || !ctx.any_by(
+                raw_name.bytes(),
+                |byte| Ok(byte.is_ascii_alphanumeric()),
+                "creo legacy TOC name validation",
+            )?
         {
             continue;
         }
@@ -1097,7 +1163,11 @@ fn legacy_toc_sections<'a>(
         };
         if length < marker_len
             || marker.first() != Some(&b'#')
-            || !ctx.equal(&marker[1..1 + raw_name.len()], raw_name.as_bytes(), "creo TOC marker name equality")?
+            || !ctx.equal(
+                &marker[1..=raw_name.len()],
+                raw_name.as_bytes(),
+                "creo TOC marker name equality",
+            )?
             || marker.last() != Some(&b'\n')
         {
             continue;
@@ -1204,9 +1274,15 @@ pub(crate) fn section_region<'a>(data: &'a [u8], section: &Section) -> Option<&'
 }
 
 fn toc_lists_section(ctx: &DecodeContext<'_>, toc: &[u8], name: &[u8]) -> Result<bool, CodecError> {
-    ctx.any_by(toc.windows(name.len() + 2), |window| {
-        Ok(window[0] == b'\n' && window[1 + name.len()] == b' ' && ctx.equal(&window[1..=name.len()], name, "creo TOC name equality")?)
-    }, "creo TOC name lookup")
+    ctx.any_by(
+        toc.windows(name.len() + 2),
+        |window| {
+            Ok(window[0] == b'\n'
+                && window[1 + name.len()] == b' '
+                && ctx.equal(&window[1..=name.len()], name, "creo TOC name equality")?)
+        },
+        "creo TOC name lookup",
+    )
 }
 
 /// Section-name bytes: printable ASCII minus space, plus the `ND:` decoration
@@ -1224,25 +1300,57 @@ fn legacy_product_release(
     let mut pending = banner;
     let mut separate_release = false;
     loop {
-        let Some(start) = ctx.position_by(pending, |byte| Ok(!byte.is_ascii_whitespace()), "creo legacy banner word start")? else { return Ok(None); };
+        let Some(start) = ctx.position_by(
+            pending,
+            |byte| Ok(!byte.is_ascii_whitespace()),
+            "creo legacy banner word start",
+        )?
+        else {
+            return Ok(None);
+        };
         let rest = &pending[start..];
-        let boundary = ctx.position_by(&rest[1..], |byte| Ok(byte.is_ascii_whitespace()), "creo legacy banner word end")?.map(|offset| offset + 1);
+        let boundary = ctx
+            .position_by(
+                &rest[1..],
+                |byte| Ok(byte.is_ascii_whitespace()),
+                "creo legacy banner word end",
+            )?
+            .map(|offset| offset + 1);
         let end = boundary.unwrap_or(rest.len());
         let word = &rest[..end];
         pending = boundary.map_or(&[][..], |offset| &rest[offset + 1..]);
         let release = if separate_release {
-            if !ctx.all_by(word, |byte| Ok(byte.is_ascii_graphic()), "creo legacy product release validation")? { return Ok(None); }
+            if !ctx.all_by(
+                word,
+                |byte| Ok(byte.is_ascii_graphic()),
+                "creo legacy product release validation",
+            )? {
+                return Ok(None);
+            }
             word
         } else if word == b"Version" || word == b"Release" {
             separate_release = true;
             continue;
         } else if let Some(release) = word.strip_prefix(b"Release") {
-            if release.is_empty() || !ctx.all_by(release, |byte| Ok(byte.is_ascii_graphic()), "creo legacy product release validation")? { continue; }
+            if release.is_empty()
+                || !ctx.all_by(
+                    release,
+                    |byte| Ok(byte.is_ascii_graphic()),
+                    "creo legacy product release validation",
+                )?
+            {
+                continue;
+            }
             release
-        } else { continue; };
-        let release = ctx.validate_utf8(release, "creo UTF-8 validation")?
+        } else {
+            continue;
+        };
+        let release = ctx
+            .validate_utf8(release, "creo UTF-8 validation")?
             .map_err(|_| CodecError::malformed("non-ASCII Creo release"))?;
-        return ctx.copy_retained_text(release, "creo legacy product release").map(Some);
+        return ctx
+            .copy_retained_text(release, "creo legacy product release")
+            .map(Some);
     }
 }
 
@@ -1275,7 +1383,13 @@ fn legacy_ascii_framing(
         return Ok(None);
     };
     let schema = &body[LEGACY_OBJECT_START.len()..object_header_end];
-    if schema.is_empty() || !ctx.all_by(schema, |byte| Ok(byte.is_ascii_digit()), "creo legacy schema digit validation")? {
+    if schema.is_empty()
+        || !ctx.all_by(
+            schema,
+            |byte| Ok(byte.is_ascii_digit()),
+            "creo legacy schema digit validation",
+        )?
+    {
         return Ok(None);
     }
     let schema = ctx
@@ -1361,7 +1475,9 @@ fn identify_layout(
         if section.section.name() == "DEPDB_DATA" {
             has_depdb_section = true;
             let header_length = section.section.raw_name.len() + 2;
-            has_depdb_root |= section.region.get(header_length..)
+            has_depdb_root |= section
+                .region
+                .get(header_length..)
                 .is_some_and(|payload| payload.starts_with(DEPDB_ROOT_RECORD));
         }
     }
@@ -1527,30 +1643,30 @@ fn cmnm_model_name(
         return Ok(None);
     }
 
-        let Some(length_bytes) = data.get(start..marker + cmnm::LEN) else {
-            return Ok(None);
-        };
-        let Ok(length_text) = std::str::from_utf8(length_bytes) else {
-            return Ok(None);
-        };
-        let Ok(length) =
-            usize::from_str_radix(length_text, 16)
-        else {
-            return Ok(None);
-        };
-        let Some(name) = data.get(marker + cmnm::LEN..marker + cmnm::LEN + length) else {
-            return Ok(None);
-        };
-        if name.is_empty()
-            || ctx.any_by(
-                name,
-                |byte| Ok(matches!(byte, 0 | b'\n' | b'\r')),
-                "creo CMNM forbidden name byte traversal",
-            )?
-        {
-            return Ok(None);
-        }
-    let Ok(name) = ctx.validate_utf8(name, "creo UTF-8 validation")? else { return Ok(None); };
+    let Some(length_bytes) = data.get(start..marker + cmnm::LEN) else {
+        return Ok(None);
+    };
+    let Ok(length_text) = std::str::from_utf8(length_bytes) else {
+        return Ok(None);
+    };
+    let Ok(length) = usize::from_str_radix(length_text, 16) else {
+        return Ok(None);
+    };
+    let Some(name) = data.get(marker + cmnm::LEN..marker + cmnm::LEN + length) else {
+        return Ok(None);
+    };
+    if name.is_empty()
+        || ctx.any_by(
+            name,
+            |byte| Ok(matches!(byte, 0 | b'\n' | b'\r')),
+            "creo CMNM forbidden name byte traversal",
+        )?
+    {
+        return Ok(None);
+    }
+    let Ok(name) = ctx.validate_utf8(name, "creo UTF-8 validation")? else {
+        return Ok(None);
+    };
     Ok(Some((
         ctx.copy_retained_text(name, "creo CMNM model name")?,
         marker + cmnm::LEN,
@@ -1565,58 +1681,70 @@ fn native_model_name(
 ) -> Result<Option<(String, usize)>, CodecError> {
     const FIELD: &[u8] = b"model_name\0";
 
-    ctx.find_map(sections, |section| {
-        if section.section.role() == SectionRole::Thumbnail {
-            return Ok(None);
-        }
-        let region = section.region;
-        let mut from = 0;
-        while let Some(field) =
-            ctx.find_bytes_from(region, FIELD, from, "find Creo native model-name field")?
-        {
-            let value_start = field + FIELD.len();
-            if region.get(value_start) == Some(&0xe1) {
-                from = value_start + 1;
-                continue;
+    ctx.find_map(
+        sections,
+        |section| {
+            if section.section.role() == SectionRole::Thumbnail {
+                return Ok(None);
             }
-            let Some(value_end) = ctx.find_bytes_from(
-                region,
-                b"\0",
-                value_start,
-                "find Creo native model-name end",
-            )?
-            else {
-                break;
-            };
-            let mut name_start = value_start;
-            if region.get(name_start) == Some(&0xf1) {
-                name_start += 1;
-            }
-            let value = &region[name_start..value_end];
-            if let Ok(name) = ctx.validate_utf8(value, "creo UTF-8 validation")? {
-                if !name.is_empty() && ctx.all_by(name.chars(), |character| Ok(!character.is_control()), "creo native name control validation")? {
-                    return Ok(Some((
-                        ctx.copy_retained_text(name, "creo native model name")?,
-                        section.section.offset() + name_start,
-                    )));
+            let region = section.region;
+            let mut from = 0;
+            while let Some(field) =
+                ctx.find_bytes_from(region, FIELD, from, "find Creo native model-name field")?
+            {
+                let value_start = field + FIELD.len();
+                if region.get(value_start) == Some(&0xe1) {
+                    from = value_start + 1;
+                    continue;
                 }
+                let Some(value_end) = ctx.find_bytes_from(
+                    region,
+                    b"\0",
+                    value_start,
+                    "find Creo native model-name end",
+                )?
+                else {
+                    break;
+                };
+                let mut name_start = value_start;
+                if region.get(name_start) == Some(&0xf1) {
+                    name_start += 1;
+                }
+                let value = &region[name_start..value_end];
+                if let Ok(name) = ctx.validate_utf8(value, "creo UTF-8 validation")? {
+                    if !name.is_empty()
+                        && ctx.all_by(
+                            name.chars(),
+                            |character| Ok(!character.is_control()),
+                            "creo native name control validation",
+                        )?
+                    {
+                        return Ok(Some((
+                            ctx.copy_retained_text(name, "creo native model name")?,
+                            section.section.offset() + name_start,
+                        )));
+                    }
+                }
+                from = value_end + 1;
             }
-            from = value_end + 1;
-        }
-        Ok(None)
-    }, "creo native model-name section selection")
+            Ok(None)
+        },
+        "creo native model-name section selection",
+    )
 }
 
 fn relation_model_name<'a>(
     ctx: &DecodeContext<'_>,
     filename: &'a str,
 ) -> Result<Option<&'a str>, CodecError> {
-    let filename = ctx.trim_end_matches(filename, |character| Ok(character == ' '), "creo relation model name padding")?;
+    let filename = ctx.trim_end_matches(
+        filename,
+        |character| Ok(character == ' '),
+        "creo relation model name padding",
+    )?;
     let part_suffix = if filename.len() >= 4 {
         match filename.get(filename.len() - 4..) {
-            Some(suffix) => {
-                suffix.eq_ignore_ascii_case(".prt")
-            }
+            Some(suffix) => suffix.eq_ignore_ascii_case(".prt"),
             None => false,
         }
     } else {
@@ -1624,7 +1752,10 @@ fn relation_model_name<'a>(
     };
     let name = if part_suffix {
         &filename[..filename.len() - 4]
-    } else if ctx.find_text(filename, ".", "creo relation model extension search")?.is_none() {
+    } else if ctx
+        .find_text(filename, ".", "creo relation model extension search")?
+        .is_none()
+    {
         filename
     } else {
         return Ok(None);
@@ -1682,14 +1813,22 @@ fn model_geometry_sections<'a>(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'a>],
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
-    let visible_namespace_present = ctx.any_by(sections, |candidate| {
-        if candidate.section.name() != VISIBGEOM {
-            return Ok(false);
-        }
-        let payload = candidate.region;
-        Ok(ctx.find_bytes_from(payload, b"srf_array\0", 0, "find Creo container marker")?.is_some()
-            || ctx.find_bytes_from(payload, b"crv_array\0", 0, "find Creo container marker")?.is_some())
-    }, "creo visible geometry section selection")?;
+    let visible_namespace_present = ctx.any_by(
+        sections,
+        |candidate| {
+            if candidate.section.name() != VISIBGEOM {
+                return Ok(false);
+            }
+            let payload = candidate.region;
+            Ok(ctx
+                .find_bytes_from(payload, b"srf_array\0", 0, "find Creo container marker")?
+                .is_some()
+                || ctx
+                    .find_bytes_from(payload, b"crv_array\0", 0, "find Creo container marker")?
+                    .is_some())
+        },
+        "creo visible geometry section selection",
+    )?;
     let mut selected = Vec::new();
     for section in ctx.admit_iter(sections, "creo section traversal")? {
         let keep = if visible_namespace_present {
@@ -1734,7 +1873,10 @@ fn loop_array_sections<'a>(
     sections: &[ScannedSection<'a>],
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     let mut selected = Vec::new();
-    for section in ctx.admit_iter(model, "creo loop model section traversal")?.chain(ctx.admit_iter(nonvisible, "creo loop nonvisible section traversal")?) {
+    for section in ctx
+        .admit_iter(model, "creo loop model section traversal")?
+        .chain(ctx.admit_iter(nonvisible, "creo loop nonvisible section traversal")?)
+    {
         ctx.reserve_vec(&mut selected, 1, "creo loop array sections")?;
         selected.push(section.copy_retained(ctx)?);
     }
@@ -1777,7 +1919,10 @@ fn surface_rows(
         ctx,
         ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| surface::rows(ctx, bytes),
-        |row, base| { row.offset += base; Ok(()) },
+        |row, base| {
+            row.offset += base;
+            Ok(())
+        },
         |row| row.offset,
     )
 }
@@ -1790,7 +1935,10 @@ fn cross_section_surface_rows(
         ctx,
         cross_sections(ctx, sections)?,
         |bytes| surface::cross_section_rows(ctx, bytes),
-        |record, base| { record.offset += base; Ok(()) },
+        |record, base| {
+            record.offset += base;
+            Ok(())
+        },
         |record| record.offset,
     )
 }
@@ -1818,7 +1966,10 @@ fn surface_prototype_records(
         |bytes| surface::named_prototype_records(ctx, bytes, refusals),
         |record, base| {
             record.offset += base;
-            for parameter in ctx.admit_iter(&mut record.parameters, "creo record child relocation traversal")? {
+            for parameter in ctx.admit_iter(
+                &mut record.parameters,
+                "creo record child relocation traversal",
+            )? {
                 parameter.offset += base;
                 parameter.value_offset += base;
             }
@@ -1912,23 +2063,29 @@ fn loop_array_scan(
             scan.frames.len(),
             "creo loop array aggregate frames",
         )?;
-        frames.extend(ctx.admit_iter(scan.frames, "creo loop frame relocation traversal")?.map(|mut frame| {
-            frame.offset += section.section.offset();
-            frame.prototype_end += section.section.offset();
-            frame.end += section.section.offset();
-            frame
-        }));
+        frames.extend(
+            ctx.admit_iter(scan.frames, "creo loop frame relocation traversal")?
+                .map(|mut frame| {
+                    frame.offset += section.section.offset();
+                    frame.prototype_end += section.section.offset();
+                    frame.end += section.section.offset();
+                    frame
+                }),
+        );
         ctx.reserve_vec(
             &mut records,
             scan.records.len(),
             "creo loop array aggregate records",
         )?;
-        records.extend(ctx.admit_iter(scan.records, "creo loop record relocation traversal")?.map(|mut record| {
-            record.frame_offset += section.section.offset();
-            record.offset += section.section.offset();
-            record.body_offset += section.section.offset();
-            record
-        }));
+        records.extend(
+            ctx.admit_iter(scan.records, "creo loop record relocation traversal")?
+                .map(|mut record| {
+                    record.frame_offset += section.section.offset();
+                    record.offset += section.section.offset();
+                    record.body_offset += section.section.offset();
+                    record
+                }),
+        );
     }
     ctx.stable_sort_by(
         frames.as_mut_slice(),
@@ -2021,7 +2178,10 @@ fn cross_section_plane_envelopes(
         ctx,
         cross_sections(ctx, sections)?,
         |bytes| surface::cross_section_plane_envelopes(ctx, bytes),
-        |record, base| { record.offset += base; Ok(()) },
+        |record, base| {
+            record.offset += base;
+            Ok(())
+        },
         |record| record.offset,
     )
 }
@@ -2034,7 +2194,10 @@ fn curve_prototypes(
         ctx,
         ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::prototypes(ctx, bytes),
-        |prototype, base| { prototype.offset += base; Ok(()) },
+        |prototype, base| {
+            prototype.offset += base;
+            Ok(())
+        },
         |prototype| prototype.offset,
     )
 }
@@ -2051,19 +2214,33 @@ fn curve_expressions(
         |record, base| {
             record.offset += base;
             record.expression_offset += base;
-            for line in ctx.admit_iter(&mut record.lines, "creo record child relocation traversal")? {
+            for line in
+                ctx.admit_iter(&mut record.lines, "creo record child relocation traversal")?
+            {
                 line.offset += base;
             }
-            for assignment in ctx.admit_iter(&mut record.assignments, "creo record child relocation traversal")? {
+            for assignment in ctx.admit_iter(
+                &mut record.assignments,
+                "creo record child relocation traversal",
+            )? {
                 assignment.offset += base;
             }
-            for block in ctx.admit_iter(&mut record.solve_blocks, "creo record child relocation traversal")? {
+            for block in ctx.admit_iter(
+                &mut record.solve_blocks,
+                "creo record child relocation traversal",
+            )? {
                 block.offset += base;
                 block.for_offset += base;
-                for equation in ctx.admit_iter(&mut block.equations, "creo record child relocation traversal")? {
+                for equation in ctx.admit_iter(
+                    &mut block.equations,
+                    "creo record child relocation traversal",
+                )? {
                     equation.offset += base;
                 }
-                for assignment in ctx.admit_iter(&mut block.assignments, "creo record child relocation traversal")? {
+                for assignment in ctx.admit_iter(
+                    &mut block.assignments,
+                    "creo record child relocation traversal",
+                )? {
                     assignment.offset += base;
                 }
             }
@@ -2101,13 +2278,20 @@ fn two_chart_pcurves(
         ctx,
         ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::two_chart_pcurve_samples(ctx, bytes, Some(face_ids)),
-        |record, base| { record.offset += base; Ok(()) },
+        |record, base| {
+            record.offset += base;
+            Ok(())
+        },
         |record| record.offset,
     )?;
     let mut count_storage = ctx.reserve_scoped(0, "creo two-chart pcurve count storage")?;
     let mut counts = std::collections::HashMap::new();
     for record in ctx.admit_iter(&records, "creo two-chart pcurve count traversal")? {
-        let count = count_storage.with_storage(|| ctx.entry_hash_map(&mut counts, record.curve_id, "creo two-chart pcurve counts"))?.or_insert(0usize);
+        let count = count_storage
+            .with_storage(|| {
+                ctx.entry_hash_map(&mut counts, record.curve_id, "creo two-chart pcurve counts")
+            })?
+            .or_insert(0usize);
         *count += 1;
     }
     ctx.retain_vec(
@@ -2126,7 +2310,10 @@ fn prototype_pcurves(
         ctx,
         ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::prototype_pcurve_endpoints(ctx, bytes),
-        |record, base| { record.offset += base; Ok(()) },
+        |record, base| {
+            record.offset += base;
+            Ok(())
+        },
         |record| record.offset,
     )
 }
@@ -2139,7 +2326,10 @@ fn curve_prototype_topology(
         ctx,
         ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::prototype_topology(ctx, bytes),
-        |record, base| { record.offset += base; Ok(()) },
+        |record, base| {
+            record.offset += base;
+            Ok(())
+        },
         |record| record.offset,
     )
 }
@@ -2153,7 +2343,10 @@ fn curve_topology_rows(
         ctx,
         ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::topology_rows_with_face_ids(ctx, bytes, Some(face_ids)),
-        |row, base| { row.offset += base; Ok(()) },
+        |row, base| {
+            row.offset += base;
+            Ok(())
+        },
         |row| row.offset,
     )
 }
@@ -2166,7 +2359,10 @@ fn cross_section_curve_rows(
         ctx,
         cross_sections(ctx, sections)?,
         |bytes| curve::depdb_cross_section_rows(ctx, bytes),
-        |record, base| { record.offset += base; Ok(()) },
+        |record, base| {
+            record.offset += base;
+            Ok(())
+        },
         |record| record.offset,
     )
 }
@@ -2179,7 +2375,10 @@ fn cross_section_curve_prototypes(
         ctx,
         cross_sections(ctx, sections)?,
         |bytes| curve::prototypes(ctx, bytes),
-        |record, base| { record.offset += base; Ok(()) },
+        |record, base| {
+            record.offset += base;
+            Ok(())
+        },
         |record| record.offset,
     )
 }
@@ -2201,7 +2400,10 @@ fn datum_planes(
             }
             Ok(planes)
         },
-        |plane, base| { plane.offset_in_payload += base; Ok(()) },
+        |plane, base| {
+            plane.offset_in_payload += base;
+            Ok(())
+        },
         |plane| plane.offset_in_payload,
     )
 }
@@ -2216,7 +2418,10 @@ fn datum_cylinders(
             .filter(|section| section.section.name() == "ActDatums")
             .map(Ok),
         |bytes| datum::cylinders(ctx, bytes),
-        |cylinder, base| { cylinder.offset_in_payload += base; Ok(()) },
+        |cylinder, base| {
+            cylinder.offset_in_payload += base;
+            Ok(())
+        },
         |cylinder| cylinder.offset_in_payload,
     )
 }
@@ -2228,9 +2433,13 @@ fn structural_feature_ids(
     curve_rows: &[CurveTopologyRow],
 ) -> Result<std::collections::BTreeSet<u32>, CodecError> {
     let mut ids = std::collections::BTreeSet::new();
-    for id in ctx.admit_iter(surface_rows, "creo structural surface traversal")?
+    for id in ctx
+        .admit_iter(surface_rows, "creo structural surface traversal")?
         .map(|row| row.feature_id)
-        .chain(ctx.admit_iter(curve_rows, "creo structural curve traversal")?.map(|row| row.feature_id))
+        .chain(
+            ctx.admit_iter(curve_rows, "creo structural curve traversal")?
+                .map(|row| row.feature_id),
+        )
         .filter(|id| *id != 0)
     {
         ctx.insert_btree_set(&mut ids, id, "creo structural feature ids")?;
@@ -2255,7 +2464,10 @@ fn structural_feature_ids(
             let (count, mut cursor) = psb::complete_compact_int(payload, start + 1)
                 .ok_or_else(|| CodecError::malformed("incomplete parent-feature count"))?;
             let mut entries = 0..count;
-            while ctx.next_charged(&mut entries, "creo parent-feature entries")?.is_some() {
+            while ctx
+                .next_charged(&mut entries, "creo parent-feature entries")?
+                .is_some()
+            {
                 let (id, next) = psb::complete_compact_int(payload, cursor)
                     .ok_or_else(|| CodecError::malformed("incomplete parent-feature entry"))?;
                 if id != 0 {
@@ -2359,7 +2571,7 @@ struct FeatureIdentityIndex<'ctx> {
     operation_classes: std::collections::HashSet<(u32, Option<u32>)>,
     known_operation_ids: std::collections::HashSet<u32>,
     reference_kinds: std::collections::HashMap<u32, u8>,
-    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 impl<'ctx> FeatureIdentityIndex<'ctx> {
@@ -2379,29 +2591,51 @@ impl<'ctx> FeatureIdentityIndex<'ctx> {
             operation_classes: std::collections::HashSet::new(),
             known_operation_ids: std::collections::HashSet::new(),
             reference_kinds: std::collections::HashMap::new(),
-            _storage: storage,
+            storage,
         };
         if rows.is_empty() {
             return Ok(index);
         }
-        let mut needed_storage = ctx.reserve_scoped(0, "creo reference identity selection storage")?;
+        let mut needed_storage =
+            ctx.reserve_scoped(0, "creo reference identity selection storage")?;
         let mut owners = std::collections::HashSet::new();
         needed_storage.with_storage(|| {
             for row in ctx.admit_iter(rows, "creo operation identity row selection")? {
-                if !ctx.contains_btree_set(structural, &row.feature_id, "creo structural model identity lookup")? {
-                    ctx.insert_hash_set(&mut owners, row.feature_id, "creo operation identity owner selection")?;
+                if !ctx.contains_btree_set(
+                    structural,
+                    &row.feature_id,
+                    "creo structural model identity lookup",
+                )? {
+                    ctx.insert_hash_set(
+                        &mut owners,
+                        row.feature_id,
+                        "creo operation identity owner selection",
+                    )?;
                 }
             }
             Ok::<(), CodecError>(())
         })?;
-        if owners.is_empty() { return Ok(index); }
-        index._storage.with_storage(|| {
+        if owners.is_empty() {
+            return Ok(index);
+        }
+        index.storage.with_storage(|| {
             for operation in ctx.admit_iter(operations, "creo operation identity indexing")? {
-                if !owners.contains(&operation.feature_id) { continue; }
-                let class = stored_operation_schema_class(operation).map(|class| class.code());
-                ctx.insert_hash_set(&mut index.operation_classes, (operation.feature_id, class), "creo operation identity classes")?;
+                if !owners.contains(&operation.feature_id) {
+                    continue;
+                }
+                let class = stored_operation_schema_class(operation)
+                    .map(feature::schema::SchemaClass::code);
+                ctx.insert_hash_set(
+                    &mut index.operation_classes,
+                    (operation.feature_id, class),
+                    "creo operation identity classes",
+                )?;
                 if class.is_some() {
-                    ctx.insert_hash_set(&mut index.known_operation_ids, operation.feature_id, "creo known operation identities")?;
+                    ctx.insert_hash_set(
+                        &mut index.known_operation_ids,
+                        operation.feature_id,
+                        "creo known operation identities",
+                    )?;
                 }
             }
             Ok::<(), CodecError>(())
@@ -2409,19 +2643,32 @@ impl<'ctx> FeatureIdentityIndex<'ctx> {
         let mut needed = std::collections::HashMap::<u32, u8>::new();
         needed_storage.with_storage(|| {
             for row in ctx.admit_iter(rows, "creo reference identity row selection")? {
-                if owners.contains(&row.feature_id) && !index.has_operation(row)
-                    && matches!(row.root_schema_class,
-                        Some(crate::feature::schema::SchemaClass::Section
-                            | crate::feature::schema::SchemaClass::DatumPlane
-                            | crate::feature::schema::SchemaClass::CoordinateSystem))
+                if owners.contains(&row.feature_id)
+                    && !index.has_operation(row)
+                    && matches!(
+                        row.root_schema_class,
+                        Some(
+                            crate::feature::schema::SchemaClass::Section
+                                | crate::feature::schema::SchemaClass::DatumPlane
+                                | crate::feature::schema::SchemaClass::CoordinateSystem
+                        )
+                    )
                 {
                     let kind = match row.root_schema_class {
                         Some(crate::feature::schema::SchemaClass::Section) => Self::SECTION,
                         Some(crate::feature::schema::SchemaClass::DatumPlane) => Self::DATUM,
-                        Some(crate::feature::schema::SchemaClass::CoordinateSystem) => Self::COORDINATE_SYSTEM,
+                        Some(crate::feature::schema::SchemaClass::CoordinateSystem) => {
+                            Self::COORDINATE_SYSTEM
+                        }
                         _ => continue,
                     };
-                    let mask = ctx.entry_hash_map(&mut needed, row.feature_id, "creo reference identity owner selection")?.or_default();
+                    let mask = ctx
+                        .entry_hash_map(
+                            &mut needed,
+                            row.feature_id,
+                            "creo reference identity owner selection",
+                        )?
+                        .or_default();
                     *mask |= kind;
                 }
             }
@@ -2430,30 +2677,61 @@ impl<'ctx> FeatureIdentityIndex<'ctx> {
         if needed.is_empty() {
             return Ok(index);
         }
-        index._storage.with_storage(|| {
-            for reference in ctx.admit_iter(reference_names, "creo feature identity reference scan")? {
-                let Some(&requested) = needed.get(&reference.feature_id) else { continue; };
-                let Ok(name) = ctx.validate_utf8(&reference.name_bytes, "creo UTF-8 validation")? else {
+        index.storage.with_storage(|| {
+            for reference in
+                ctx.admit_iter(reference_names, "creo feature identity reference scan")?
+            {
+                let Some(&requested) = needed.get(&reference.feature_id) else {
+                    continue;
+                };
+                let Ok(name) = ctx.validate_utf8(&reference.name_bytes, "creo UTF-8 validation")?
+                else {
                     continue;
                 };
                 let numbered_family = |family: &str| -> Result<bool, CodecError> {
-                    let Some(suffix) = name.strip_prefix(family) else { return Ok(false); };
-                    let Some(digits) = suffix.strip_prefix(" id ").or_else(|| suffix.strip_prefix(" ID ")) else {
+                    let Some(suffix) = name.strip_prefix(family) else {
                         return Ok(false);
                     };
-                    Ok(ctx.parse_text::<u32>(digits, "creo scalar text parsing")?.ok() == Some(reference.feature_id))
+                    let Some(digits) = suffix
+                        .strip_prefix(" id ")
+                        .or_else(|| suffix.strip_prefix(" ID "))
+                    else {
+                        return Ok(false);
+                    };
+                    Ok(ctx
+                        .parse_text::<u32>(digits, "creo scalar text parsing")?
+                        .ok()
+                        == Some(reference.feature_id))
                 };
-                let datum = requested & Self::DATUM != 0 && (matches!(name, "Datum Plane" | "Bezugsebene")
-                    || numbered_family("Datum Plane")?
-                    || numbered_family("Bezugsebene")?
-                    || match name.strip_prefix("DTM") {
-                        Some(ordinal) => !ordinal.is_empty() && ctx.all_by(ordinal.bytes(), |byte| Ok(byte.is_ascii_digit()), "creo datum ordinal validation")?,
-                        None => false,
-                    });
+                let datum = requested & Self::DATUM != 0
+                    && (matches!(name, "Datum Plane" | "Bezugsebene")
+                        || numbered_family("Datum Plane")?
+                        || numbered_family("Bezugsebene")?
+                        || match name.strip_prefix("DTM") {
+                            Some(ordinal) => {
+                                !ordinal.is_empty()
+                                    && ctx.all_by(
+                                        ordinal.bytes(),
+                                        |byte| Ok(byte.is_ascii_digit()),
+                                        "creo datum ordinal validation",
+                                    )?
+                            }
+                            None => false,
+                        });
                 let kinds = requested & Self::SECTION
                     | if datum { Self::DATUM } else { 0 }
-                    | if requested & Self::COORDINATE_SYSTEM != 0 && name == "PRT_CSYS_DEF" { Self::COORDINATE_SYSTEM } else { 0 };
-                let previous = ctx.entry_hash_map(&mut index.reference_kinds, reference.feature_id, "creo reference identity kinds")?.or_default();
+                    | if requested & Self::COORDINATE_SYSTEM != 0 && name == "PRT_CSYS_DEF" {
+                        Self::COORDINATE_SYSTEM
+                    } else {
+                        0
+                    };
+                let previous = ctx
+                    .entry_hash_map(
+                        &mut index.reference_kinds,
+                        reference.feature_id,
+                        "creo reference identity kinds",
+                    )?
+                    .or_default();
                 *previous |= kinds;
             }
             Ok::<(), CodecError>(())
@@ -2462,17 +2740,28 @@ impl<'ctx> FeatureIdentityIndex<'ctx> {
     }
 
     fn has_operation(&self, row: &FeatureRow) -> bool {
-        self.operation_classes.contains(&(row.feature_id, row.root_schema_class.map(|class| class.code())))
-            || (row.root_schema_class.is_some_and(|class| !registered_feature_schema_class(class))
-                && self.known_operation_ids.contains(&row.feature_id))
+        self.operation_classes.contains(&(
+            row.feature_id,
+            row.root_schema_class
+                .map(feature::schema::SchemaClass::code),
+        )) || (row
+            .root_schema_class
+            .is_some_and(|class| !registered_feature_schema_class(class))
+            && self.known_operation_ids.contains(&row.feature_id))
     }
 
     fn contains(
-        &self, ctx: &DecodeContext<'_>, row: &FeatureRow, structural: &BTreeSet<u32>,
+        &self,
+        ctx: &DecodeContext<'_>,
+        row: &FeatureRow,
+        structural: &BTreeSet<u32>,
     ) -> Result<bool, CodecError> {
         use crate::feature::schema::SchemaClass;
-        if ctx.contains_btree_set(structural, &row.feature_id, "creo structural model identity lookup")?
-            || self.has_operation(row)
+        if ctx.contains_btree_set(
+            structural,
+            &row.feature_id,
+            "creo structural model identity lookup",
+        )? || self.has_operation(row)
         {
             return Ok(true);
         }
@@ -2482,17 +2771,29 @@ impl<'ctx> FeatureIdentityIndex<'ctx> {
             Some(SchemaClass::CoordinateSystem) => Self::COORDINATE_SYSTEM,
             _ => return Ok(false),
         };
-        Ok(self.reference_kinds.get(&row.feature_id).is_some_and(|kinds| kinds & kind != 0))
+        Ok(self
+            .reference_kinds
+            .get(&row.feature_id)
+            .is_some_and(|kinds| kinds & kind != 0))
     }
 }
 
 #[cfg(test)]
 fn feature_row_has_model_identity(
-    ctx: &DecodeContext<'_>, row: &FeatureRow, structural: &BTreeSet<u32>,
-    operations: &[FeatureOperation], reference_names: &[FeatureReferenceName],
+    ctx: &DecodeContext<'_>,
+    row: &FeatureRow,
+    structural: &BTreeSet<u32>,
+    operations: &[FeatureOperation],
+    reference_names: &[FeatureReferenceName],
 ) -> Result<bool, CodecError> {
-    FeatureIdentityIndex::new(ctx, std::slice::from_ref(row), structural, operations, reference_names)?
-        .contains(ctx, row, structural)
+    FeatureIdentityIndex::new(
+        ctx,
+        std::slice::from_ref(row),
+        structural,
+        operations,
+        reference_names,
+    )?
+    .contains(ctx, row, structural)
 }
 
 fn feature_entity_tables(
@@ -2501,20 +2802,21 @@ fn feature_entity_tables(
     feature_ids: &[u32],
     rows: &[SurfaceRow],
 ) -> Result<Vec<FeatureEntityTable>, CodecError> {
-    let mut identity_storage = ctx.reserve_scoped(0, "creo feature entity admission index storage")?;
+    let mut identity_storage =
+        ctx.reserve_scoped(0, "creo feature entity admission index storage")?;
     let mut feature_ids_set = BTreeSet::new();
     let mut surface_ids = BTreeSet::new();
     identity_storage.with_storage(|| {
-    for &feature_id in ctx.admit_iter(feature_ids, "creo feature ID traversal")? {
-        ctx.insert_btree_set(
-            &mut feature_ids_set,
-            feature_id,
-            "creo feature entity owner ids",
-        )?;
-    }
-    for row in ctx.admit_iter(rows, "creo container row traversal")? {
-        ctx.insert_btree_set(&mut surface_ids, row.id, "creo feature entity surface ids")?;
-    }
+        for &feature_id in ctx.admit_iter(feature_ids, "creo feature ID traversal")? {
+            ctx.insert_btree_set(
+                &mut feature_ids_set,
+                feature_id,
+                "creo feature entity owner ids",
+            )?;
+        }
+        for row in ctx.admit_iter(rows, "creo container row traversal")? {
+            ctx.insert_btree_set(&mut surface_ids, row.id, "creo feature entity surface ids")?;
+        }
         Ok::<(), CodecError>(())
     })?;
     collect_section_records_result(
@@ -2525,7 +2827,9 @@ fn feature_entity_tables(
         |bytes| feature::entity::entity_tables(ctx, bytes, &feature_ids_set, &surface_ids),
         |table, base| {
             table.offset += base;
-            for entry in ctx.admit_iter(&mut table.entries, "creo record child relocation traversal")? {
+            for entry in
+                ctx.admit_iter(&mut table.entries, "creo record child relocation traversal")?
+            {
                 entry.offset += base;
                 entry.end_offset += base;
             }
@@ -2590,17 +2894,30 @@ fn feature_entity_graph(
     Ok((entities, references))
 }
 
-fn offset_feature_definition(ctx: &DecodeContext<'_>, definition: &mut FeatureDefinition, section_offset: usize) -> Result<(), CodecError> {
+fn offset_feature_definition(
+    ctx: &DecodeContext<'_>,
+    definition: &mut FeatureDefinition,
+    section_offset: usize,
+) -> Result<(), CodecError> {
     definition.offset += section_offset;
-    for frame in ctx.admit_iter(&mut definition.parameter_frames, "creo feature definition relocation traversal")? {
+    for frame in ctx.admit_iter(
+        &mut definition.parameter_frames,
+        "creo feature definition relocation traversal",
+    )? {
         frame.offset += section_offset;
     }
-    for outline in ctx.admit_iter(&mut definition.outlines, "creo feature definition relocation traversal")? {
+    for outline in ctx.admit_iter(
+        &mut definition.outlines,
+        "creo feature definition relocation traversal",
+    )? {
         outline.offset += section_offset;
     }
     if let Some(variables) = &mut definition.variables {
         variables.offset += section_offset;
-        for row in ctx.admit_iter(&mut variables.rows, "creo feature definition relocation traversal")? {
+        for row in ctx.admit_iter(
+            &mut variables.rows,
+            "creo feature definition relocation traversal",
+        )? {
             row.offset += section_offset;
         }
     }
@@ -2611,13 +2928,19 @@ fn offset_feature_definition(ctx: &DecodeContext<'_>, definition: &mut FeatureDe
     }
     if let Some(entities) = &mut definition.trim_entities {
         entities.offset += section_offset;
-        for row in ctx.admit_iter(&mut entities.rows, "creo feature definition relocation traversal")? {
+        for row in ctx.admit_iter(
+            &mut entities.rows,
+            "creo feature definition relocation traversal",
+        )? {
             row.offset += section_offset;
         }
     }
     if let Some(vertices) = &mut definition.trim_vertices {
         vertices.offset += section_offset;
-        for row in ctx.admit_iter(&mut vertices.rows, "creo feature definition relocation traversal")? {
+        for row in ctx.admit_iter(
+            &mut vertices.rows,
+            "creo feature definition relocation traversal",
+        )? {
             row.offset += section_offset;
         }
     }
@@ -2631,11 +2954,17 @@ fn offset_feature_definition(ctx: &DecodeContext<'_>, definition: &mut FeatureDe
     }
     if let Some(dimensions) = &mut definition.dimensions {
         dimensions.offset += section_offset;
-        for row in ctx.admit_iter(&mut dimensions.rows, "creo feature definition relocation traversal")? {
+        for row in ctx.admit_iter(
+            &mut dimensions.rows,
+            "creo feature definition relocation traversal",
+        )? {
             row.offset += section_offset;
             if let Some(references) = &mut row.references {
                 references.offset += section_offset;
-                for reference in ctx.admit_iter(&mut references.rows, "creo feature definition relocation traversal")? {
+                for reference in ctx.admit_iter(
+                    &mut references.rows,
+                    "creo feature definition relocation traversal",
+                )? {
                     reference.offset += section_offset;
                 }
             }
@@ -2643,21 +2972,29 @@ fn offset_feature_definition(ctx: &DecodeContext<'_>, definition: &mut FeatureDe
     }
     if let Some(relations) = &mut definition.relations {
         relations.offset += section_offset;
-        for row in ctx.admit_iter(&mut relations.rows, "creo feature definition relocation traversal")? {
+        for row in ctx.admit_iter(
+            &mut relations.rows,
+            "creo feature definition relocation traversal",
+        )? {
             row.offset += section_offset;
         }
-        let _skamps = ctx.admit_iter(relations.skamps(), "creo solver subtable offset traversal")?;
+        let _skamps =
+            ctx.admit_iter(relations.skamps(), "creo solver subtable offset traversal")?;
         if let Some(table) = &mut relations.skamps {
             table.shift_offsets(section_offset);
         }
-        let _triples = ctx.admit_iter(relations.triples(), "creo solver subtable offset traversal")?;
+        let _triples =
+            ctx.admit_iter(relations.triples(), "creo solver subtable offset traversal")?;
         if let Some(table) = &mut relations.triples {
             table.shift_offsets(section_offset);
         }
     }
     if let Some(saved) = &mut definition.saved_section {
         saved.offset += section_offset;
-        for entity in ctx.admit_iter(&mut saved.entities, "creo feature definition relocation traversal")? {
+        for entity in ctx.admit_iter(
+            &mut saved.entities,
+            "creo feature definition relocation traversal",
+        )? {
             match entity {
                 feature::definitions::FeatureSavedEntity::Line(line) => {
                     line.offset += section_offset;
@@ -2697,21 +3034,31 @@ fn feature_definitions(
             feature::definitions::definitions(ctx, payload)?
         };
         ctx.reserve_vec(&mut definitions, decoded.len(), "creo feature definitions")?;
-        for mut definition in ctx.admit_iter(decoded, "creo definition aggregate relocation traversal")? {
+        for mut definition in
+            ctx.admit_iter(decoded, "creo definition aggregate relocation traversal")?
+        {
             offset_feature_definition(ctx, &mut definition, section.section.offset())?;
             definitions.push(definition);
         }
         if section.section.name() == "DEPDB_DATA" {
             let recipe_operations = feature::operations::operations(ctx, payload)?;
-            if let Some(operation) = crate::decode::uniqueness::exactly_one_by(ctx, &recipe_operations,
-                |operation| Ok(operation.recipe.resolved().is_some()), "creo definition recipe operation selection")? {
+            if let Some(operation) = crate::decode::uniqueness::exactly_one_by(
+                ctx,
+                &recipe_operations,
+                |operation| Ok(operation.recipe.resolved().is_some()),
+                "creo definition recipe operation selection",
+            )? {
                 if let Some(mut definition) = feature::definitions::depdb_section_definition(
                     ctx,
                     payload,
                     Some(operation.feature_id),
                 )? {
                     offset_feature_definition(ctx, &mut definition, section.section.offset())?;
-                    if let Some(position) = ctx.position_by(&definitions, |existing| Ok(existing.offset == definition.offset), "creo definition aggregate replacement search")? {
+                    if let Some(position) = ctx.position_by(
+                        &definitions,
+                        |existing| Ok(existing.offset == definition.offset),
+                        "creo definition aggregate replacement search",
+                    )? {
                         definitions[position] = definition;
                     } else {
                         ctx.reserve_vec(&mut definitions, 1, "creo feature definitions")?;
@@ -2759,7 +3106,8 @@ fn claimed_definition_owners(
     definitions: &[FeatureDefinition],
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut owners = BTreeSet::new();
-    for id in ctx.admit_iter(definitions, "creo claimed definition traversal")?
+    for id in ctx
+        .admit_iter(definitions, "creo claimed definition traversal")?
         .filter_map(|definition| definition.identity.owner_feature_id())
     {
         ctx.insert_btree_set(&mut owners, id, "creo claimed definition owners")?;
@@ -2779,7 +3127,10 @@ fn feature_geometry_tables(
         depdb_tables.len(),
         "creo feature geometry table aggregation",
     )?;
-    tables.extend(ctx.admit_iter(depdb_tables, "creo feature geometry table aggregation traversal")?);
+    tables.extend(ctx.admit_iter(
+        depdb_tables,
+        "creo feature geometry table aggregation traversal",
+    )?);
     ctx.stable_sort_by(
         tables.as_mut_slice(),
         |value| &value.offset,
@@ -2825,7 +3176,10 @@ fn feature_revolution_extents(
         definition_extents.len(),
         "creo revolution extent aggregation",
     )?;
-    extents.extend(ctx.admit_iter(definition_extents, "creo revolution extent aggregation traversal")?);
+    extents.extend(ctx.admit_iter(
+        definition_extents,
+        "creo revolution extent aggregation traversal",
+    )?);
     ctx.stable_sort_by(
         extents.as_mut_slice(),
         |value| &value.offset,
@@ -2893,12 +3247,14 @@ fn feature_operations(
     let mut by_feature = BTreeMap::new();
     let mut node_storage = ctx.reserve_scoped(0, "creo current operation index storage")?;
     for record in ctx.admit_iter(records, "creo operation aggregate traversal")? {
-        node_storage.with_storage(|| ctx.insert_btree_map(
-            &mut by_feature,
-            record.feature_id,
-            record,
-            "creo current feature operation nodes",
-        ))?;
+        node_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut by_feature,
+                record.feature_id,
+                record,
+                "creo current feature operation nodes",
+            )
+        })?;
     }
     let mut current = Vec::new();
     ctx.reserve_vec(
@@ -2906,7 +3262,10 @@ fn feature_operations(
         by_feature.len(),
         "creo current feature operation order",
     )?;
-    current.extend(ctx.admit_iter(by_feature, "creo current operation traversal")?.map(|(_, record)| record));
+    current.extend(
+        ctx.admit_iter(by_feature, "creo current operation traversal")?
+            .map(|(_, record)| record),
+    );
     drop(node_storage);
     ctx.stable_sort_by(
         current.as_mut_slice(),
@@ -2929,10 +3288,13 @@ fn feature_reference_names(
         let section_bytes = section.region;
         let decoded = feature::operations::reference_names(ctx, section_bytes)?;
         ctx.reserve_vec(&mut records, decoded.len(), "creo feature reference names")?;
-        records.extend(ctx.admit_iter(decoded, "creo reference name relocation traversal")?.map(|mut record| {
-            record.offset += section.section.offset();
-            record
-        }));
+        records.extend(
+            ctx.admit_iter(decoded, "creo reference name relocation traversal")?
+                .map(|mut record| {
+                    record.offset += section.section.offset();
+                    record
+                }),
+        );
     }
     Ok(records)
 }
@@ -2967,7 +3329,9 @@ fn depdb_recipe_rows(
         }
         let payload = section.region;
         let recipe_rows = feature::operations::operation_states(ctx, payload)?;
-        let recipe_operations = ctx.admit_iter(recipe_rows, "creo DEPDB recipe source traversal")?.filter_map(|operation| {
+        let recipe_operations = ctx
+            .admit_iter(recipe_rows, "creo DEPDB recipe source traversal")?
+            .filter_map(|operation| {
                 operation
                     .recipe
                     .candidate()
@@ -3047,32 +3411,51 @@ fn geomlists_value(
 /// than in a binary `Geomlists` section. Distinct complete values remain
 /// unresolved; equal duplicate records are one value witness.
 fn legacy_first_quilt_ptr(
-    ctx: &DecodeContext<'_>, persistence: &legacy::Persistence,
+    ctx: &DecodeContext<'_>,
+    persistence: &legacy::Persistence,
 ) -> Result<Option<u32>, CodecError> {
     let mut parent_storage = ctx.reserve_scoped(0, "creo legacy geometry parent index storage")?;
     let mut parents = std::collections::HashMap::<usize, bool>::new();
     let mut parents_indexed = false;
     let mut selected = None;
     let mut records = persistence.integer_values.rows.iter();
-    while let Some(record) = ctx.next_charged(&mut records, "creo legacy geometry value traversal")? {
-        if record.name != "first_quilt_ptr" { continue; }
-        let Some(parent_id) = record.parent else { continue; };
+    while let Some(record) =
+        ctx.next_charged(&mut records, "creo legacy geometry value traversal")?
+    {
+        if record.name != "first_quilt_ptr" {
+            continue;
+        }
+        let Some(parent_id) = record.parent else {
+            continue;
+        };
         if !parents_indexed {
             parent_storage.with_storage(|| {
-                for object in ctx.admit_iter(&persistence.objects, "creo legacy geometry parent indexing")? {
-                    ctx.entry_hash_map(&mut parents, object.offset, "creo legacy geometry parent nodes")?
-                        .or_insert(object.name == "Sld_GeomDepend");
+                for object in
+                    ctx.admit_iter(&persistence.objects, "creo legacy geometry parent indexing")?
+                {
+                    ctx.entry_hash_map(
+                        &mut parents,
+                        object.offset,
+                        "creo legacy geometry parent nodes",
+                    )?
+                    .or_insert(object.name == "Sld_GeomDepend");
                 }
                 Ok::<(), CodecError>(())
             })?;
             parents_indexed = true;
         }
-        if parents.get(&parent_id) != Some(&true) { continue; }
-        let legacy::NumericPayload::Scalar { value } = record.payload else { continue; };
-        let Ok(value) = u32::try_from(value) else { continue; };
+        if parents.get(&parent_id) != Some(&true) {
+            continue;
+        }
+        let legacy::NumericPayload::Scalar { value } = record.payload else {
+            continue;
+        };
+        let Ok(value) = u32::try_from(value) else {
+            continue;
+        };
         match selected {
             Some(previous) if previous != value => return Ok(None),
-            Some(_) => {},
+            Some(_) => {}
             None => selected = Some(value),
         }
     }
@@ -3091,20 +3474,37 @@ fn reference_scan(
             continue;
         }
         let payload = section.region;
-        for mut line in ctx.admit_iter(reference::lines(ctx, payload)?, "creo reference line merge traversal")?
-            .chain(ctx.admit_iter(reference::line3d_lines(ctx, payload)?, "creo reference line3d merge traversal")?)
+        for mut line in ctx
+            .admit_iter(
+                reference::lines(ctx, payload)?,
+                "creo reference line merge traversal",
+            )?
+            .chain(ctx.admit_iter(
+                reference::line3d_lines(ctx, payload)?,
+                "creo reference line3d merge traversal",
+            )?)
         {
             ctx.reserve_vec(&mut lines, 1, "creo reference line aggregation")?;
             line.offset += section.section.offset();
             lines.push(line);
         }
-        for mut circle in ctx.admit_iter(reference::arc_z_circles(ctx, payload)?, "creo reference circle merge traversal")? {
+        for mut circle in ctx.admit_iter(
+            reference::arc_z_circles(ctx, payload)?,
+            "creo reference circle merge traversal",
+        )? {
             ctx.reserve_vec(&mut circles, 1, "creo reference circle aggregation")?;
             circle.offset += section.section.offset();
             circles.push(circle);
         }
-        for mut conic in ctx.admit_iter(reference::named_conics(ctx, payload)?, "creo named conic merge traversal")?
-            .chain(ctx.admit_iter(reference::positional_conics(ctx, payload)?, "creo positional conic merge traversal")?)
+        for mut conic in ctx
+            .admit_iter(
+                reference::named_conics(ctx, payload)?,
+                "creo named conic merge traversal",
+            )?
+            .chain(ctx.admit_iter(
+                reference::positional_conics(ctx, payload)?,
+                "creo positional conic merge traversal",
+            )?)
         {
             ctx.reserve_vec(&mut conics, 1, "creo reference conic aggregation")?;
             conic.offset += section.section.offset();
@@ -3129,12 +3529,25 @@ fn placement_outline_planes(
     let mut identity_storage = ctx.reserve_scoped(0, "creo outline plane identity storage")?;
     let mut ids = std::collections::HashSet::new();
     let mut result = Vec::new();
-    ctx.reserve_vec(&mut result, outline_planes.len(), "creo placement outline plane copies")?;
+    ctx.reserve_vec(
+        &mut result,
+        outline_planes.len(),
+        "creo placement outline plane copies",
+    )?;
     for plane in ctx.admit_iter(outline_planes, "creo outline plane source traversal")? {
-        identity_storage.with_storage(|| ctx.insert_hash_set(&mut ids, plane.surface_id, "creo outline plane identity nodes"))?;
+        identity_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut ids,
+                plane.surface_id,
+                "creo outline plane identity nodes",
+            )
+        })?;
         result.push(plane.clone());
     }
-    for plane in ctx.admit_iter(positional_frame_planes, "creo positional plane source traversal")? {
+    for plane in ctx.admit_iter(
+        positional_frame_planes,
+        "creo positional plane source traversal",
+    )? {
         if !ids.contains(&plane.surface_id) {
             ctx.reserve_vec(&mut result, 1, "creo positional placement plane copies")?;
             result.push(plane.clone());
@@ -3176,7 +3589,8 @@ fn append_legacy_curve_witnesses(
     append_topology_rows(
         ctx,
         topology_rows,
-        ctx.admit_iter(legacy_topology_rows, "creo topology row append traversal")?.cloned(),
+        ctx.admit_iter(legacy_topology_rows, "creo topology row append traversal")?
+            .cloned(),
         "creo legacy topology row aggregation",
     )?;
     ctx.reserve_vec(
@@ -3184,7 +3598,10 @@ fn append_legacy_curve_witnesses(
         legacy_pcurves.len(),
         "creo legacy pcurve aggregation",
     )?;
-    pcurves.extend(ctx.admit_iter(legacy_pcurves, "creo legacy pcurve append traversal")?.cloned());
+    pcurves.extend(
+        ctx.admit_iter(legacy_pcurves, "creo legacy pcurve append traversal")?
+            .cloned(),
+    );
     ctx.stable_sort_by(
         pcurves.as_mut_slice(),
         |value| &value.offset,
@@ -3249,10 +3666,10 @@ pub(crate) fn scan_bytes<'a>(
         sections
     };
     if let Some(framing) = &mut legacy_ascii {
-        let (scopes, _scope_storage) = ctx.with_scoped_storage(
-            "creo legacy scope range storage",
-            || legacy_scope_ranges(ctx, &data, framing, &sections),
-        )?;
+        let (scopes, _scope_storage) = ctx
+            .with_scoped_storage("creo legacy scope range storage", || {
+                legacy_scope_ranges(ctx, &data, framing, &sections)
+            })?;
         framing.persistence = legacy::scan(ctx, &data, scopes.iter().cloned())?;
     }
     if model_name.is_none() {
@@ -3314,10 +3731,16 @@ pub(crate) fn scan_bytes<'a>(
         .flatten();
     let nonvisible_geometry_sections =
         selection_storage.with_storage(|| nonvisible_geometry_sections(ctx, &sections))?;
-    let mut loop_selection_storage = ctx.reserve_scoped(0, "creo loop array section selection storage")?;
-    let loop_array_sections = loop_selection_storage.with_storage(|| loop_array_sections(
-        ctx, &model_geometry_sections, &nonvisible_geometry_sections, &sections,
-    ))?;
+    let mut loop_selection_storage =
+        ctx.reserve_scoped(0, "creo loop array section selection storage")?;
+    let loop_array_sections = loop_selection_storage.with_storage(|| {
+        loop_array_sections(
+            ctx,
+            &model_geometry_sections,
+            &nonvisible_geometry_sections,
+            &sections,
+        )
+    })?;
     let loop_arrays = loop_array_scan(ctx, &loop_array_sections)?;
     let mut nonvisible_surface_rows = surface_rows(ctx, &nonvisible_geometry_sections)?;
     ctx.reserve_vec(
@@ -3325,7 +3748,10 @@ pub(crate) fn scan_bytes<'a>(
         legacy_geometry.nonvisible_rows.len(),
         "creo legacy nonvisible surface row aggregation",
     )?;
-    nonvisible_surface_rows.extend(ctx.admit_iter(legacy_geometry.nonvisible_rows, "creo legacy nonvisible surface append traversal")?);
+    nonvisible_surface_rows.extend(ctx.admit_iter(
+        legacy_geometry.nonvisible_rows,
+        "creo legacy nonvisible surface append traversal",
+    )?);
     ctx.stable_sort_by(
         nonvisible_surface_rows.as_mut_slice(),
         |value| &value.offset,
@@ -3338,7 +3764,8 @@ pub(crate) fn scan_bytes<'a>(
         legacy_geometry.rows.len(),
         "creo legacy surface row aggregation",
     )?;
-    surface_rows.extend(ctx.admit_iter(legacy_geometry.rows, "creo legacy surface append traversal")?);
+    surface_rows
+        .extend(ctx.admit_iter(legacy_geometry.rows, "creo legacy surface append traversal")?);
     ctx.stable_sort_by(
         surface_rows.as_mut_slice(),
         |value| &value.offset,
@@ -3385,10 +3812,10 @@ pub(crate) fn scan_bytes<'a>(
         surface::placed_outline_planes(ctx, &plane_envelopes, &plane_local_systems)?;
     let positional_frame_planes =
         surface::positional_frame_planes(ctx, &surface_parameters, &surface_rows)?;
-    let (placement_outline_planes, placement_outline_storage) = ctx.with_scoped_storage(
-        "creo placement outline plane storage",
-        || placement_outline_planes(ctx, &outline_planes, &positional_frame_planes),
-    )?;
+    let (placement_outline_planes, placement_outline_storage) = ctx
+        .with_scoped_storage("creo placement outline plane storage", || {
+            placement_outline_planes(ctx, &outline_planes, &positional_frame_planes)
+        })?;
     let cross_section_outline_planes = surface::placed_outline_planes(
         ctx,
         &cross_section_plane_envelopes,
@@ -3415,13 +3842,18 @@ pub(crate) fn scan_bytes<'a>(
             None => None,
         },
     )?;
-    let (topology_face_ids, topology_face_storage) = ctx.with_scoped_storage(
-        "creo topology face index storage", || topology_face_ids(
-        ctx,
-        ctx.admit_iter(&nonvisible_surface_rows[..], "creo nonvisible topology face traversal")?
-            .chain(ctx.admit_iter(&surface_rows[..], "creo visible topology face traversal")?)
-            .map(|row| row.id),
-    ))?;
+    let (topology_face_ids, topology_face_storage) =
+        ctx.with_scoped_storage("creo topology face index storage", || {
+            topology_face_ids(
+                ctx,
+                ctx.admit_iter(
+                    &nonvisible_surface_rows[..],
+                    "creo nonvisible topology face traversal",
+                )?
+                .chain(ctx.admit_iter(&surface_rows[..], "creo visible topology face traversal")?)
+                .map(|row| row.id),
+            )
+        })?;
     let nonvisible_curve_parameters =
         curve_parameters(ctx, &nonvisible_geometry_sections, &topology_face_ids)?;
     let curve_parameters = curve_parameters(ctx, &model_geometry_sections, &topology_face_ids)?;
@@ -3440,7 +3872,10 @@ pub(crate) fn scan_bytes<'a>(
     append_topology_rows(
         ctx,
         &mut curve_topology_rows,
-        ctx.admit_iter(prototype_topology_rows, "creo topology row append traversal")?,
+        ctx.admit_iter(
+            prototype_topology_rows,
+            "creo topology row append traversal",
+        )?,
         "creo prototype topology row aggregation",
     )?;
     let cross_section_curve_rows = cross_section_curve_rows(ctx, &sections)?;
@@ -3472,21 +3907,33 @@ pub(crate) fn scan_bytes<'a>(
     let feature_reference_names = feature_reference_names(ctx, &sections)?;
     let structural_feature_ids =
         structural_feature_ids(ctx, &sections, &surface_rows, &curve_topology_rows)?;
-    let (candidate_feature_ids, candidate_feature_storage) = ctx.with_scoped_storage(
-        "creo candidate feature index storage", || candidate_feature_ids(
-        ctx,
-        &structural_feature_ids,
-        ctx.admit_iter(&feature_operations, "creo operation identity source traversal")?
-            .map(|operation| operation.feature_id)
-            .chain(
-                ctx.admit_iter(&feature_reference_names, "creo reference identity source traversal")?
+    let (candidate_feature_ids, candidate_feature_storage) =
+        ctx.with_scoped_storage("creo candidate feature index storage", || {
+            candidate_feature_ids(
+                ctx,
+                &structural_feature_ids,
+                ctx.admit_iter(
+                    &feature_operations,
+                    "creo operation identity source traversal",
+                )?
+                .map(|operation| operation.feature_id)
+                .chain(
+                    ctx.admit_iter(
+                        &feature_reference_names,
+                        "creo reference identity source traversal",
+                    )?
                     .map(|reference| reference.feature_id),
-            ),
-    ))?;
+                ),
+            )
+        })?;
     let mut feature_rows = feature_rows(ctx, &sections, &candidate_feature_ids)?;
     drop((candidate_feature_ids, candidate_feature_storage));
     let feature_identity_index = FeatureIdentityIndex::new(
-        ctx, &feature_rows, &structural_feature_ids, &feature_operations, &feature_reference_names,
+        ctx,
+        &feature_rows,
+        &structural_feature_ids,
+        &feature_operations,
+        &feature_reference_names,
     )?;
     ctx.retain_vec(
         &mut feature_rows,
@@ -3496,7 +3943,11 @@ pub(crate) fn scan_bytes<'a>(
     let feature_ids = complete_feature_ids(
         ctx,
         structural_feature_ids,
-        ctx.admit_iter(&feature_rows, "creo final feature identity source traversal")?.map(|row| row.feature_id),
+        ctx.admit_iter(
+            &feature_rows,
+            "creo final feature identity source traversal",
+        )?
+        .map(|row| row.feature_id),
     )?;
     let feature_round_replay_scalars = feature::rows::round_replay_scalars(ctx, &feature_rows)?;
     let feature_choices = feature::rows::choices(ctx, &feature_rows)?;
@@ -3534,10 +3985,10 @@ pub(crate) fn scan_bytes<'a>(
         Ord::cmp,
         "creo scan bytes feature definitions ordering",
     )?;
-    let (claimed_definition_owners, claimed_owner_storage) = ctx.with_scoped_storage(
-        "creo claimed definition owner storage",
-        || claimed_definition_owners(ctx, &feature_definitions),
-    )?;
+    let (claimed_definition_owners, claimed_owner_storage) = ctx
+        .with_scoped_storage("creo claimed definition owner storage", || {
+            claimed_definition_owners(ctx, &feature_definitions)
+        })?;
     let replay_definitions = feature::definitions::bind_replay_definition_owners(
         ctx,
         positional_replay_definitions(ctx, &sections)?,
@@ -3556,10 +4007,10 @@ pub(crate) fn scan_bytes<'a>(
         Ord::cmp,
         "creo scan bytes feature definitions ordering",
     )?;
-    let (section_owner_ranges, section_owner_storage) = ctx.with_scoped_storage(
-        "creo section owner range storage",
-        || section_owner_ranges(ctx, &sections, &feature_rows),
-    )?;
+    let (section_owner_ranges, section_owner_storage) = ctx
+        .with_scoped_storage("creo section owner range storage", || {
+            section_owner_ranges(ctx, &sections, &feature_rows)
+        })?;
     let feature_definitions = feature::definitions::bind_section_owners(
         ctx,
         feature_definitions,
@@ -3568,29 +4019,34 @@ pub(crate) fn scan_bytes<'a>(
     )?;
     drop((section_owner_ranges, section_owner_storage));
     let mut relation_dimension_symbols = ExternalRelationSymbols::default();
-    for definition in ctx.admit_iter(&feature_definitions, "creo relation dimension definition traversal")? {
-        let Some(table) = &definition.dimensions else { continue; };
+    for definition in ctx.admit_iter(
+        &feature_definitions,
+        "creo relation dimension definition traversal",
+    )? {
+        let Some(table) = &definition.dimensions else {
+            continue;
+        };
         for dimension in ctx.admit_iter(&table.rows, "creo relation dimension row traversal")? {
-        let value = dimension
-            .value
-            .resolved()
-            .and_then(|value| match dimension.unit() {
-                feature::definitions::DimensionUnit::Radians => {
-                    cadmpeg_ir::scalar::FiniteReal::new(value.to_degrees())
-                        .map(CurveExpressionValue::Angle)
-                }
-                feature::definitions::DimensionUnit::Millimeters => {
-                    cadmpeg_ir::scalar::FiniteReal::new(value).map(CurveExpressionValue::Length)
-                }
-                feature::definitions::DimensionUnit::SchemaDefined => {
-                    cadmpeg_ir::scalar::FiniteReal::new(value).map(CurveExpressionValue::Number)
-                }
-            });
-        let (name, _reservation) = ctx.format_scoped(
-            format_args!("d{}", dimension.external_id),
-            "creo relation dimension symbol formatting",
-        )?;
-        relation_dimension_symbols.observe(ctx, name, value)?;
+            let value = dimension
+                .value
+                .resolved()
+                .and_then(|value| match dimension.unit() {
+                    feature::definitions::DimensionUnit::Radians => {
+                        cadmpeg_ir::scalar::FiniteReal::new(value.to_degrees())
+                            .map(CurveExpressionValue::Angle)
+                    }
+                    feature::definitions::DimensionUnit::Millimeters => {
+                        cadmpeg_ir::scalar::FiniteReal::new(value).map(CurveExpressionValue::Length)
+                    }
+                    feature::definitions::DimensionUnit::SchemaDefined => {
+                        cadmpeg_ir::scalar::FiniteReal::new(value).map(CurveExpressionValue::Number)
+                    }
+                });
+            let (name, _reservation) = ctx.format_scoped(
+                format_args!("d{}", dimension.external_id),
+                "creo relation dimension symbol formatting",
+            )?;
+            relation_dimension_symbols.observe(ctx, name, value)?;
         }
     }
     curve::reevaluate_expression_records(
@@ -3629,7 +4085,10 @@ pub(crate) fn scan_bytes<'a>(
     let declared_body_count = geomlists_value(ctx, &sections, b"n_bodies\0")?;
     let first_quilt_ptr = match geomlists_value(ctx, &sections, b"first_quilt_ptr\0")? {
         Some(value) => Some(value),
-        None => legacy_ascii.map(|framing| legacy_first_quilt_ptr(ctx, &framing.persistence)).transpose()?.flatten(),
+        None => legacy_ascii
+            .map(|framing| legacy_first_quilt_ptr(ctx, &framing.persistence))
+            .transpose()?
+            .flatten(),
     };
 
     // The `Cow` takes the bytes here, so the scan's borrowed regions end and
@@ -3780,14 +4239,16 @@ fn scan_primitives(
                 arrays.len(),
                 "creo model primitive scalar arrays",
             )?;
-            primitive_scalar_arrays.extend(ctx.admit_iter(arrays, "creo primitive scalar append traversal")?);
+            primitive_scalar_arrays
+                .extend(ctx.admit_iter(arrays, "creo primitive scalar append traversal")?);
             let scan = primdata::triangle_strips(ctx, &section.data)?;
             ctx.reserve_vec(
                 &mut primitive_triangle_strips,
                 scan.strips.len(),
                 "creo model triangle strips",
             )?;
-            primitive_triangle_strips.extend(ctx.admit_iter(scan.strips, "creo primitive strip append traversal")?);
+            primitive_triangle_strips
+                .extend(ctx.admit_iter(scan.strips, "creo primitive strip append traversal")?);
             conflicting_triangle_strip_representation_count +=
                 scan.conflicting_representation_count;
         }
@@ -3803,22 +4264,27 @@ fn scan_primitives(
 fn cross_sections<'a, 'data, 'ctx>(
     ctx: &'a DecodeContext<'ctx>,
     sections: &'a [ScannedSection<'data>],
-) -> Result<impl Iterator<Item = Result<&'a ScannedSection<'data>, CodecError>> + use<'a, 'data, 'ctx>, CodecError> {
-    Ok(ctx.admit_iter(sections, "creo cross-section traversal")?.filter_map(move |section| {
-        if section.section.name() != "Xsections" {
-            return None;
-        }
-        match ctx.find_bytes_from(
-            section.region,
-            b"Sld_Xsections\0",
-            0,
-            "find Creo cross-section namespace",
-        ) {
-            Ok(Some(_)) => Some(Ok(section)),
-            Ok(None) => None,
-            Err(error) => Some(Err(error)),
-        }
-    }))
+) -> Result<
+    impl Iterator<Item = Result<&'a ScannedSection<'data>, CodecError>> + use<'a, 'data, 'ctx>,
+    CodecError,
+> {
+    Ok(ctx
+        .admit_iter(sections, "creo cross-section traversal")?
+        .filter_map(move |section| {
+            if section.section.name() != "Xsections" {
+                return None;
+            }
+            match ctx.find_bytes_from(
+                section.region,
+                b"Sld_Xsections\0",
+                0,
+                "find Creo cross-section namespace",
+            ) {
+                Ok(Some(_)) => Some(Ok(section)),
+                Ok(None) => None,
+                Err(error) => Some(Err(error)),
+            }
+        }))
 }
 
 fn collect_section_records_result<'a, 'data: 'a, T>(
@@ -3874,38 +4340,42 @@ pub(crate) fn has_thumbnail(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<bool, CodecError> {
-    ctx.any_by(&scan.framing.sections, |section| {
-        if section.role() != SectionRole::Thumbnail {
-            return Ok(false);
-        }
-        let Some(raw) = section_region(&scan.framing.data, section) else {
-            return Ok(false);
-        };
-        // The `#<name>\n` header precedes the payload.
-        let payload_start = section.raw_name.len() + 2;
-        let raw_is_compressed = raw
-            .get(payload_start..)
-            .is_some_and(|payload| payload.starts_with(UNIX_COMPRESS_MAGIC));
-        let expanded_carries_jpeg = match expanded_section_for(ctx, scan, section)? {
-            Some(expanded) => ctx
-                .find_bytes_from(
-                    &expanded.data,
-                    JPEG_MAGIC,
-                    0,
-                    "find Creo expanded thumbnail",
-                )?
-                .is_some(),
-            None => false,
-        };
-        let carries_jpeg = if raw_is_compressed {
-            expanded_carries_jpeg
-        } else {
-            ctx.find_bytes_from(raw, JPEG_MAGIC, 0, "find Creo thumbnail")?
-                .is_some()
-                || expanded_carries_jpeg
-        };
-        Ok(carries_jpeg)
-    }, "creo thumbnail section selection")
+    ctx.any_by(
+        &scan.framing.sections,
+        |section| {
+            if section.role() != SectionRole::Thumbnail {
+                return Ok(false);
+            }
+            let Some(raw) = section_region(&scan.framing.data, section) else {
+                return Ok(false);
+            };
+            // The `#<name>\n` header precedes the payload.
+            let payload_start = section.raw_name.len() + 2;
+            let raw_is_compressed = raw
+                .get(payload_start..)
+                .is_some_and(|payload| payload.starts_with(UNIX_COMPRESS_MAGIC));
+            let expanded_carries_jpeg = match expanded_section_for(ctx, scan, section)? {
+                Some(expanded) => ctx
+                    .find_bytes_from(
+                        &expanded.data,
+                        JPEG_MAGIC,
+                        0,
+                        "find Creo expanded thumbnail",
+                    )?
+                    .is_some(),
+                None => false,
+            };
+            let carries_jpeg = if raw_is_compressed {
+                expanded_carries_jpeg
+            } else {
+                ctx.find_bytes_from(raw, JPEG_MAGIC, 0, "find Creo thumbnail")?
+                    .is_some()
+                    || expanded_carries_jpeg
+            };
+            Ok(carries_jpeg)
+        },
+        "creo thumbnail section selection",
+    )
 }
 
 /// Build a codec-neutral summary of the sections, layout, and namespace census.
@@ -4039,15 +4509,10 @@ pub(crate) fn notes(
             format_args!(
                 "legacy ASCII persistence: schema {}; product release {release}; {} attribute \
              declarations, {} resolved values, {continuation_count} continuation rows in {} scopes",
-                legacy.schema,
-                counts.declarations,
-                counts.values,
-                counts.scopes,
+                legacy.schema, counts.declarations, counts.values, counts.scopes,
             ),
         )?;
-        if counts.unresolved_values != 0
-            || counts.conflicting_declarations != 0
-        {
+        if counts.unresolved_values != 0 || counts.conflicting_declarations != 0 {
             push_note(
                 ctx,
                 &mut notes,
@@ -4164,7 +4629,6 @@ mod feature_row_definition_tests {
             std::collections::BTreeSet::from([40, 41])
         );
     }
-
 
     #[test]
     fn toc_offset_radix_parse_refuses_work() {

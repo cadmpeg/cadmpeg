@@ -1136,17 +1136,22 @@ fn reconciled_datum_plane_definition(
         None => {
             match exactly_one(ir.model.surfaces.iter().filter(|surface| {
                 crate::identity::matches_numbered_identity(
-                    surface.id.as_str(), "creo:visibgeom:surface#", surface_id,
+                    surface.id.as_str(),
+                    "creo:visibgeom:surface#",
+                    surface_id,
                 )
             })) {
                 Some(surface) => match source_carriers.surface_geometry(surface)? {
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => Some(*plane.frame().reference().as_raw()),
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => {
+                        Some(*plane.frame().reference().as_raw())
+                    }
                     _ => None,
                 },
                 None => None,
             }
         }
-    }.unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal));
+    }
+    .unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal));
     Ok(cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
         Point3::from(plane.origin),
         normal,
