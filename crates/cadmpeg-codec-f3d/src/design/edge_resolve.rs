@@ -1581,8 +1581,7 @@ fn context_only_edge_group_candidates<'a>(
     if edges.is_empty() {
         return Ok(None);
     }
-    storage.commit()?;
-    Ok(Some(edges))
+    storage.commit_value(Some(edges))
 }
 
 fn unique_edge_group_assignment(
@@ -1814,8 +1813,7 @@ pub(super) fn radius_edge_group_candidates(
     if chain.is_empty() || !complete {
         return Ok(None);
     }
-    storage.commit()?;
-    Ok(Some(chain))
+    storage.commit_value(Some(chain))
 }
 
 fn radius_edge_identity_group_candidates(
@@ -2847,8 +2845,7 @@ fn corroborated_edge_candidates<'a>(
             return Ok(None);
         }
     }
-    storage.commit()?;
-    Ok(Some(candidates))
+    storage.commit_value(Some(candidates))
 }
 
 fn selector_candidate_edges(
