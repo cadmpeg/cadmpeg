@@ -51,3 +51,14 @@ fn compact_real_is_bounded_and_preserves_bits() {
     assert_eq!(compact_real(b"00000000000000000"), None);
     assert_eq!(compact_real(b"3ff"), None);
 }
+
+#[test]
+fn integer_grammar_rejects_plus_and_nondecimal_text() {
+    for bytes in [b"+0".as_slice(), b"+1", b"--1", b" 1", b"1 ", b"1_0", b"", b"-", b"\xff", "١".as_bytes()] {
+        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::super::signed_integer(ctx, bytes)).expect("signed grammar"), None);
+        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::super::unsigned_integer(ctx, bytes)).expect("unsigned grammar"), None);
+    }
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::super::signed_integer(ctx, b"-0")).expect("signed zero"), Some(0));
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::super::unsigned_integer(ctx, b"-0")).expect("unsigned sign"), None);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::super::signed_integer(ctx, b"0001")).expect("leading zeros"), Some(1));
+}

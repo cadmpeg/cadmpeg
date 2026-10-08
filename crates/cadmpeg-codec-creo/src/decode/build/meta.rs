@@ -55,6 +55,7 @@ pub(super) fn source_meta(
         )?;
     }
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
+        let counts = &legacy.persistence.counts;
         insert_source_attribute(
             ctx,
             &mut attribute_nodes,
@@ -76,42 +77,42 @@ pub(super) fn source_meta(
             &mut attribute_nodes,
             &mut attributes,
             "legacy_ascii_declaration_count",
-            legacy.persistence.declaration_count(),
+            counts.declarations,
         )?;
         insert_source_attribute(
             ctx,
             &mut attribute_nodes,
             &mut attributes,
             "legacy_ascii_scope_count",
-            legacy.persistence.scopes.len(),
+            counts.scopes,
         )?;
         insert_source_attribute(
             ctx,
             &mut attribute_nodes,
             &mut attributes,
             "legacy_ascii_value_count",
-            legacy.persistence.value_count(),
+            counts.values,
         )?;
         insert_source_attribute(
             ctx,
             &mut attribute_nodes,
             &mut attributes,
             "legacy_ascii_continuation_count",
-            legacy.persistence.continuation_count(),
+            counts.continuations,
         )?;
         insert_source_attribute(
             ctx,
             &mut attribute_nodes,
             &mut attributes,
             "legacy_ascii_unresolved_value_count",
-            legacy.persistence.unresolved_value_count(),
+            counts.unresolved_values,
         )?;
         insert_source_attribute(
             ctx,
             &mut attribute_nodes,
             &mut attributes,
             "legacy_ascii_conflicting_declaration_count",
-            legacy.persistence.conflicting_declaration_count(),
+            counts.conflicting_declarations,
         )?;
     }
     insert_source_attribute(
@@ -332,7 +333,7 @@ pub(super) fn source_meta(
                                 )
                             })?,
                         undecoded_encodings
-                            .checked_add(record.payload.undecoded_encoding_count())
+                            .checked_add(record.payload.undecoded_encoding_count(ctx)?)
                             .ok_or_else(|| {
                                 ctx.refuse_codec_limit(
                                     "creo legacy string encoding count",

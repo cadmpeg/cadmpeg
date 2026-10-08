@@ -320,9 +320,7 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
         2
     );
     assert_eq!(
-        persistence.string_values[3]
-            .payload
-            .undecoded_encoding_count(),
+        crate::decode::with_test_decode_ctx(|ctx| persistence.string_values[3].payload.undecoded_encoding_count(ctx)).expect("legacy encoding count admitted"),
         1
     );
     assert_eq!(persistence.string_values[4].parent, Some(root_offset));

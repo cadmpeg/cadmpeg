@@ -61,7 +61,7 @@ fn legacy_scope_bounds_error_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = super::scan_scope(&ctx, &[0], 0..2).expect_err("scope end exceeds source length");
+    let error = super::scan(&ctx, &[0], std::iter::once(0..2)).expect_err("scope end exceeds source length");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -69,7 +69,7 @@ fn legacy_scope_bounds_error_refuses_retained_limit() {
     );
     crate::decode::with_test_decode_ctx(|ctx| {
         let error =
-            super::scan_scope(ctx, &[0], 0..2).expect_err("scope end exceeds source length");
+            super::scan(ctx, &[0], std::iter::once(0..2)).expect_err("scope end exceeds source length");
         assert!(error.to_string().contains("past the file length"));
         Ok::<(), cadmpeg_core::CodecError>(())
     })
@@ -91,14 +91,9 @@ fn scan(
     crate::decode::with_test_decode_ctx(|ctx| super::scan(ctx, data, ranges))
 }
 
-fn assert_scope_collection_refusal(data: &[u8], limit: u64, operation: &'static str) {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::scan(&ctx, data, std::iter::once(0..data.len()))
-        .expect_err("the next collection item exceeds the limit");
+fn assert_scope_collection_refusal(data: &[u8], operation: &'static str) {
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems,
+        operation, |ctx| super::scan(ctx, data, std::iter::once(0..data.len())));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -108,28 +103,26 @@ fn assert_scope_collection_refusal(data: &[u8], limit: u64, operation: &'static 
 
 #[test]
 fn legacy_scope_vec_refuses_before_first_scope() {
-    assert_scope_collection_refusal(b"@size 1 1\n0 1 9\n", 0, "creo legacy parsed scopes");
+    assert_scope_collection_refusal(b"@size 1 1\n0 1 9\n", "creo legacy parsed scopes");
 }
 
 #[test]
 fn legacy_declaration_index_refuses_before_new_node() {
     assert_scope_collection_refusal(
         b"@size 1 1\n0 1 9\n",
-        1,
         "creo legacy declaration index nodes",
     );
 }
 
 #[test]
 fn legacy_declaration_vec_refuses_before_row() {
-    assert_scope_collection_refusal(b"@size 1 1\n0 1 9\n", 2, "creo legacy declarations");
+    assert_scope_collection_refusal(b"@size 1 1\n0 1 9\n", "creo legacy declarations");
 }
 
 #[test]
 fn legacy_scope_candidate_vec_refuses_before_value_row() {
     assert_scope_collection_refusal(
         b"@size 1 1\n0 1 9\n",
-        3,
         "creo legacy scope value candidates",
     );
 }
@@ -138,38 +131,31 @@ fn legacy_scope_candidate_vec_refuses_before_value_row() {
 fn legacy_conflicting_id_set_refuses_before_new_node() {
     assert_scope_collection_refusal(
         b"@size 1 1\n@size 1 2\n",
-        3,
         "creo legacy conflicting declaration IDs",
     );
 }
 
 #[test]
-fn legacy_declaration_name_refuses_before_retained_copy() {
+fn legacy_declaration_name_refuses_before_scoped_copy() {
     let data = b"@size 1 1\n0 1 9\n";
     let error = crate::test_support::last_refusal_at(
         &[],
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         "creo legacy declaration names",
         |ctx| super::scan(ctx, data, std::iter::once(0..data.len())),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
+        if resource.dimension == ResourceDimension::MaterializedBytes
             && resource.operation == "creo legacy declaration names")
     );
 }
 
-fn assert_parent_lookup_refusal(limit: u64, operation: &'static str) {
+fn assert_parent_lookup_refusal(operation: &'static str) {
     let data = b"@root 1 0\n@child 2 0\n0 1 ->\n1 2 ->\n";
-    let persistence = scan(data, std::iter::once(0..data.len()))
-        .expect("the fixture states every scope inside its own bytes");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::parent_object_offsets(&ctx, &persistence.scopes)
-        .expect_err("the next lookup node exceeds the limit");
+    let scopes = vec![scope_fixture(data, 0..data.len())];
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems,
+        operation, |ctx| super::parent_object_offsets(ctx, &scopes));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -178,18 +164,13 @@ fn assert_parent_lookup_refusal(limit: u64, operation: &'static str) {
 }
 
 #[test]
-fn legacy_declaration_lookup_refuses_before_btree_node() {
-    assert_parent_lookup_refusal(0, "creo legacy declaration lookup nodes");
+fn legacy_active_object_refuses_before_growth() {
+    assert_parent_lookup_refusal("creo legacy active object nodes");
 }
 
 #[test]
-fn legacy_active_object_refuses_before_btree_node() {
-    assert_parent_lookup_refusal(2, "creo legacy active object nodes");
-}
-
-#[test]
-fn legacy_parent_offset_refuses_before_btree_node() {
-    assert_parent_lookup_refusal(3, "creo legacy parent offset nodes");
+fn legacy_parent_offset_refuses_before_hash_node() {
+    assert_parent_lookup_refusal("creo legacy parent offset nodes");
 }
 
 #[test]
@@ -224,27 +205,20 @@ fn legacy_continuation_run_refuses_before_vec_growth() {
     );
 }
 
-fn object_fixture_parts(
-    data: &[u8],
-) -> (super::Persistence, std::collections::BTreeMap<usize, usize>) {
-    let persistence = scan(data, std::iter::once(0..data.len()))
-        .expect("the fixture states every scope inside its own bytes");
-    let parents = crate::decode::with_test_decode_ctx(|ctx| {
-        super::parent_object_offsets(ctx, &persistence.scopes)
-    })
-    .expect("parent lookup fits service limits");
-    (persistence, parents)
+fn scope_fixture(data: &[u8], range: std::ops::Range<usize>) -> super::Scope {
+    crate::decode::with_test_decode_ctx(|ctx| super::scan_scope(ctx, data, range)).expect("fixture scope")
 }
 
-fn assert_object_collection_refusal(data: &[u8], limit: u64, operation: &'static str) {
-    let (persistence, parents) = object_fixture_parts(data);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::object_records(&ctx, data, &persistence.scopes, &parents)
-        .expect_err("the next object item exceeds the limit");
+fn object_fixture_parts(data: &[u8]) -> (Vec<super::Scope>, std::collections::HashMap<usize, usize>) {
+    let scopes = vec![scope_fixture(data, 0..data.len())];
+    let parents = crate::decode::with_test_decode_ctx(|ctx| super::parent_object_offsets(ctx, &scopes)).expect("parent lookup fits service limits");
+    (scopes, parents)
+}
+
+fn assert_object_collection_refusal(data: &[u8], operation: &'static str) {
+    let (scopes, parents) = object_fixture_parts(data);
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems,
+        operation, |ctx| super::object_records(ctx, data, &scopes, &parents));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -256,7 +230,6 @@ fn assert_object_collection_refusal(data: &[u8], limit: u64, operation: &'static
 fn legacy_object_value_attribute_index_refuses_before_node() {
     assert_object_collection_refusal(
         b"@root 1 0\n0 1 ->\n",
-        1,
         "creo legacy object value attribute nodes",
     );
 }
@@ -265,7 +238,6 @@ fn legacy_object_value_attribute_index_refuses_before_node() {
 fn legacy_object_array_index_refuses_before_node() {
     assert_object_collection_refusal(
         b"@arr 1 0\n0 1 [1]\n1 1 ->\n",
-        3,
         "creo legacy object array index nodes",
     );
 }
@@ -274,7 +246,6 @@ fn legacy_object_array_index_refuses_before_node() {
 fn legacy_object_array_index_rows_refuse_before_growth() {
     assert_object_collection_refusal(
         b"@arr 1 0\n0 1 [1]\n1 1 ->\n",
-        4,
         "creo legacy object array index rows",
     );
 }
@@ -283,18 +254,17 @@ fn legacy_object_array_index_rows_refuse_before_growth() {
 fn legacy_object_array_elements_refuse_before_growth() {
     assert_object_collection_refusal(
         b"@arr 1 0\n0 1 [1]\n1 1 ->\n",
-        6,
         "creo legacy object array elements",
     );
 }
 
 #[test]
 fn legacy_object_records_refuse_before_growth() {
-    assert_object_collection_refusal(b"@root 1 0\n0 1 ->\n", 2, "creo legacy object records");
+    assert_object_collection_refusal(b"@root 1 0\n0 1 ->\n", "creo legacy object records");
 }
 
 fn assert_object_retained_refusal(data: &[u8], operation: &'static str) {
-    let (persistence, parents) = object_fixture_parts(data);
+    let (scopes, parents) = object_fixture_parts(data);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
@@ -310,12 +280,12 @@ fn assert_object_retained_refusal(data: &[u8], operation: &'static str) {
                 &trial_policy,
             )
             .expect("root");
-            super::object_records(&trial_ctx, data, &persistence.scopes, &parents)
+            super::object_records(&trial_ctx, data, &scopes, &parents)
         },
     );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::object_records(&ctx, data, &persistence.scopes, &parents)
+    let error = super::object_records(&ctx, data, &scopes, &parents)
         .expect_err("object output needs retained bytes");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -355,12 +325,12 @@ fn scan_withholds_ambiguous_and_undeclared_values() {
 
     let persistence = scan(data, std::iter::once(0..data.len()))
         .expect("the fixture states every scope inside its own bytes");
-    let scope = &persistence.scopes[0];
+    let scope = scope_fixture(data, 0..data.len());
 
     assert!(scope.values.is_empty());
     assert_eq!(scope.declarations.len(), 1);
-    assert_eq!(persistence.conflicting_declaration_count(), 1);
-    assert_eq!(persistence.unresolved_value_count(), 2);
+    assert_eq!(persistence.counts.conflicting_declarations, 1);
+    assert_eq!(persistence.counts.unresolved_values, 2);
 }
 
 mod codec;

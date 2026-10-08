@@ -2,7 +2,7 @@
 //! Structural grammar for legacy ASCII persistence records.
 
 use cadmpeg_core::{decode::DecodeContext, CodecError};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroUsize;
 use std::ops::Range;
 
@@ -18,7 +18,7 @@ pub(crate) fn value_index<'a, K: LegacyCode>(
     records: &'a [ValueRecord<K>],
     index: &mut BTreeMap<(usize, &'a str), Vec<&'a ValueRecord<K>>>,
 ) -> Result<(), CodecError> {
-    for record in records {
+    for record in ctx.admit_iter(records, "creo legacy value index traversal")? {
         if let Some(parent) = record.parent {
             let key = (parent, record.name.as_str());
             match ctx.entry_btree_map(index, key, "creo legacy value index nodes")? {
@@ -456,17 +456,15 @@ impl StringPayload {
         })
     }
 
-    /// Number of elements whose character encoding remains uninterpreted.
-    pub(crate) fn undecoded_encoding_count(&self) -> usize {
-        match self {
+    /// Count elements whose character encoding remains uninterpreted.
+    pub(crate) fn undecoded_encoding_count(&self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
+        Ok(match self {
             Self::Scalar { value } => value.undecoded_encoding_count(),
-            Self::Array { values, .. } => values
-                .iter()
-                .filter_map(|value| value.as_ref().ok())
-                .map(StringValue::undecoded_encoding_count)
-                .sum(),
-        }
+            Self::Array { values, .. } => ctx.admit_iter(values, "creo legacy string encoding count")?
+                .filter_map(|value| value.as_ref().ok()).map(StringValue::undecoded_encoding_count).sum(),
+        })
     }
+
 }
 
 /// One decoded legacy byte-string value.
@@ -555,6 +553,8 @@ pub(crate) struct Scope {
     range: Range<usize>,
     /// First declaration for each identifier, in source order.
     declarations: Vec<AttributeDeclaration>,
+    /// Fixed-key positions in the source-ordered declaration table.
+    declaration_positions: HashMap<u32, usize>,
     /// Value rows whose declaration resolves uniquely in this scope.
     values: Vec<AttributeValue>,
     /// Numeric value rows whose identifier has no unique local declaration.
@@ -581,11 +581,11 @@ impl<T> Default for TypedValues<T> {
     }
 }
 
-/// Structurally resolved legacy ASCII persistence scopes.
+/// Source-ordered typed values and structural counts from legacy ASCII persistence.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Persistence {
-    /// Outer persistence scope followed by each named ASCII section scope.
-    pub(crate) scopes: Vec<Scope>,
+    /// Counts of the outer persistence scope and named ASCII section scopes.
+    pub(crate) counts: PersistenceCounts,
     /// Complete finite type-2 scalar and array values in source order.
     pub(crate) real_values: TypedValues<RealRecord>,
     /// Complete type-1 signed-integer scalars and arrays in source order.
@@ -618,6 +618,16 @@ pub(crate) struct Persistence {
     pub(crate) type_11_values: TypedValues<Type11Record>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct PersistenceCounts {
+    pub(crate) scopes: usize,
+    pub(crate) declarations: usize,
+    pub(crate) values: usize,
+    pub(crate) continuations: usize,
+    pub(crate) unresolved_values: usize,
+    pub(crate) conflicting_declarations: usize,
+}
+
 impl Persistence {
     /// Resolve one unambiguous native model identity from legacy string rows.
     ///
@@ -630,22 +640,21 @@ impl Persistence {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<(String, usize)>, CodecError> {
-        let mut objects = BTreeMap::new();
-        for object in &self.objects {
-            ctx.insert_btree_map(
+        let mut object_storage = ctx.reserve_scoped(0, "creo legacy model name object storage")?;
+        let mut objects = std::collections::HashMap::new();
+        for object in ctx.admit_iter(&self.objects, "creo legacy model name object traversal")? {
+            object_storage.with_storage(|| ctx.insert_hash_map(
                 &mut objects,
                 object.offset,
                 object,
                 "creo legacy model name object nodes",
-            )?;
+            ))?;
         }
         let mut all = None::<(&str, usize)>;
         let mut all_conflict = false;
         let mut preferred = None::<(&str, usize)>;
         let mut preferred_conflict = false;
-        for record in self
-            .string_values
-            .iter()
+        for record in ctx.admit_iter(&self.string_values, "creo legacy model name value traversal")?
             .filter(|record| record.name == "model_name")
         {
             let StringPayload::Scalar {
@@ -660,7 +669,7 @@ impl Persistence {
             }
             match all {
                 None => all = Some((text, record.offset)),
-                Some((known, _)) if known != text => all_conflict = true,
+                Some((known, _)) if !ctx.equal(known, text, "creo legacy model name equality")? => all_conflict = true,
                 Some(_) => {}
             }
             let is_root_solid = match record
@@ -681,16 +690,14 @@ impl Persistence {
             if is_root_solid {
                 match preferred {
                     None => preferred = Some((text, record.offset)),
-                    Some((known, _)) if known != text => preferred_conflict = true,
+                    Some((known, _)) if !ctx.equal(known, text, "creo legacy model name equality")? => preferred_conflict = true,
                     Some(_) => {}
                 }
             }
         }
         let selected = if preferred.is_some() {
-            (!preferred_conflict).then_some(preferred).flatten()
-        } else {
-            (!all_conflict).then_some(all).flatten()
-        };
+            if preferred_conflict { None } else { preferred }
+        } else if all_conflict { None } else { all };
         selected
             .map(|(text, offset)| {
                 ctx.copy_retained_text(text, "creo legacy model name")
@@ -737,49 +744,6 @@ impl Persistence {
             .transpose()
     }
 
-    /// Number of unique local attribute declarations across all scopes.
-    pub(crate) fn declaration_count(&self) -> usize {
-        self.scopes
-            .iter()
-            .map(|scope| scope.declarations.len())
-            .sum()
-    }
-
-    /// Number of structurally resolved value rows across all scopes.
-    pub(crate) fn value_count(&self) -> usize {
-        self.scopes.iter().map(|scope| scope.values.len()).sum()
-    }
-
-    /// Number of `$` continuation rows across all resolved values.
-    pub(crate) fn continuation_count(&self) -> usize {
-        self.scopes
-            .iter()
-            .flat_map(|scope| &scope.values)
-            .map(|value| {
-                value
-                    .continuation
-                    .as_ref()
-                    .map_or(0, |continuation| continuation.count.get())
-            })
-            .sum()
-    }
-
-    /// Number of numeric rows without a unique declaration in their scope.
-    pub(crate) fn unresolved_value_count(&self) -> usize {
-        self.scopes
-            .iter()
-            .map(|scope| scope.unresolved_value_count)
-            .sum()
-    }
-
-    /// Number of conflicting declaration identifiers across all scopes.
-    pub(crate) fn conflicting_declaration_count(&self) -> usize {
-        self.scopes
-            .iter()
-            .map(|scope| scope.conflicting_declaration_count)
-            .sum()
-    }
-
     /// Resolve one unambiguous legacy principal-unit string.
     pub(crate) fn principal_unit_system(
         &self,
@@ -787,11 +751,9 @@ impl Persistence {
     ) -> Result<Option<PrincipalUnitSystem>, CodecError> {
         let mut candidate = None;
         let mut found = false;
-        for record in self
-            .string_values
-            .iter()
-            .filter(|record| record.name == PRINCIPAL_UNIT_NAME)
-        {
+        let mut records = self.string_values.iter();
+        while let Some(record) = ctx.next_charged(&mut records, "creo legacy principal unit selection")? {
+            if record.name != PRINCIPAL_UNIT_NAME { continue; }
             found = true;
             if candidate.is_some() {
                 return Ok(None);
@@ -821,35 +783,40 @@ impl Persistence {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<PrincipalUnitSystem>, CodecError> {
-        let mut arrays = self.objects.iter().filter_map(|object| {
-            let ObjectPayload::Array { elements, .. } = &object.payload else {
-                return None;
-            };
-            (object.name == "unit_arr" && object.payload.is_complete())
-                .then_some((object, elements))
-        });
-        let Some((array, elements)) = arrays.next() else {
-            return Ok(None);
-        };
-        if arrays.next().is_some() {
-            return Ok(None);
-        }
+        let Some(array) = crate::decode::uniqueness::exactly_one_by(ctx, &self.objects, |object| {
+            if object.name != "unit_arr" { return Ok(false); }
+            let ObjectPayload::Array { dimensions, elements } = &object.payload else { return Ok(false); };
+            let mut count = 1u64;
+            let mut dimensions = dimensions.iter();
+            while let Some(dimension) = ctx.next_charged(&mut dimensions, "creo legacy unit dimensions")? {
+                let Some(product) = count.checked_mul(u64::from(*dimension)) else { return Ok(false); };
+                count = product;
+            }
+            Ok(usize::try_from(count).ok() == Some(elements.len()))
+        }, "creo legacy unit array selection")? else { return Ok(None); };
+        let ObjectPayload::Array { elements, .. } = &array.payload else { return Ok(None); };
         if elements.is_empty() {
             return Ok(None);
         }
+        let mut identity_storage = ctx.reserve_scoped(0, "creo legacy unit identity storage")?;
         let mut element_ids = BTreeSet::new();
-        for element_id in elements {
-            if element_ids.contains(element_id) {
-                return Ok(None);
+        let mut ids = elements.iter();
+        while let Some(element_id) = ctx.next_charged(&mut ids, "creo legacy unit identity traversal")? {
+            if ctx.contains_btree_set(&element_ids, element_id, "creo legacy unit identity membership")? { return Ok(None); }
+            identity_storage.with_storage(|| ctx.insert_btree_set(&mut element_ids, element_id, "creo legacy unit array element identities"))?;
+        }
+        let mut object_storage = ctx.reserve_scoped(0, "creo legacy unit object storage")?;
+        let mut objects = HashMap::<usize, Option<&ObjectRecord>>::new();
+        for object in ctx.admit_iter(&self.objects, "creo legacy unit object index traversal")? {
+            if object.parent != Some(array.offset) || object.name != "unit_arr" { continue; }
+            match object_storage.with_storage(|| ctx.entry_hash_map(&mut objects, object.offset, "creo legacy unit object index nodes"))? {
+                std::collections::hash_map::Entry::Vacant(entry) => { entry.insert(Some(object)); }
+                std::collections::hash_map::Entry::Occupied(mut entry) => { entry.insert(None); }
             }
-            ctx.insert_btree_set(
-                &mut element_ids,
-                element_id,
-                "creo legacy unit array element identities",
-            )?;
         }
         let mut first = None;
-        for element_id in elements {
+        let mut ids = elements.iter();
+        while let Some(element_id) = ctx.next_charged(&mut ids, "creo legacy unit element traversal")? {
             let offset = match ctx.strip_prefix(
                 element_id,
                 "creo:legacy_ascii:object#",
@@ -860,33 +827,23 @@ impl Persistence {
                     .ok(),
                 None => None,
             };
-            let mut matches = self.objects.iter().filter(|object| {
-                Some(object.offset) == offset
-                    && object.parent == Some(array.offset)
-                    && object.name == "unit_arr"
-            });
-            let Some(element) = matches.next() else {
-                return Ok(None);
-            };
-            if matches.next().is_some() {
-                return Ok(None);
-            }
+            let Some(element) = offset.and_then(|offset| objects.get(&offset)).copied().flatten() else { return Ok(None); };
             first.get_or_insert(element);
         }
         let Some(first) = first else {
             return Ok(None);
         };
-        let Some(unit_type) = self.unique_integer_scalar(first.offset, "unit_type") else {
+        let Some(unit_type) = self.unique_integer_scalar(ctx, first.offset, "unit_type")? else {
             return Ok(None);
         };
         if unit_type != LEGACY_LENGTH_UNIT_TYPE
             || self
-                .unique_utf8_scalar(first.offset, "name")
+                .unique_utf8_scalar(ctx, first.offset, "name")?
                 .is_none_or(str::is_empty)
         {
             return Ok(None);
         }
-        let Some(factor) = self.unique_real_scalar(first.offset, "factor") else {
+        let Some(factor) = self.unique_real_scalar(ctx, first.offset, "factor")? else {
             return Ok(None);
         };
         let scale_mm = factor * LEGACY_INCH_TO_MM;
@@ -894,47 +851,36 @@ impl Persistence {
             .map(PrincipalUnitSystem::LegacyLengthScale))
     }
 
-    fn unique_integer_scalar(&self, parent: usize, name: &str) -> Option<i32> {
-        let mut matches = self
-            .integer_values
-            .rows
-            .iter()
-            .filter(|record| record.parent == Some(parent) && record.name == name);
-        let record = matches.next()?;
-        matches.next().is_none().then_some(())?;
-        match &record.payload {
+    fn unique_integer_scalar(&self, ctx: &DecodeContext<'_>, parent: usize, name: &str) -> Result<Option<i32>, CodecError> {
+        let Some(record) = crate::decode::uniqueness::exactly_one_by(ctx, &self.integer_values.rows, |record| {
+            Ok(record.parent == Some(parent) && ctx.equal(record.name.as_str(), name, "creo legacy unit scalar name equality")?)
+        }, "creo legacy unit scalar selection")? else { return Ok(None); };
+        Ok(match &record.payload {
             NumericPayload::Scalar { value } => Some(*value),
             NumericPayload::Array(_) => None,
-        }
+        })
     }
 
-    fn unique_real_scalar(&self, parent: usize, name: &str) -> Option<f64> {
-        let mut matches = self
-            .real_values
-            .rows
-            .iter()
-            .filter(|record| record.parent == Some(parent) && record.name == name);
-        let record = matches.next()?;
-        matches.next().is_none().then_some(())?;
-        match &record.payload {
+    fn unique_real_scalar(&self, ctx: &DecodeContext<'_>, parent: usize, name: &str) -> Result<Option<f64>, CodecError> {
+        let Some(record) = crate::decode::uniqueness::exactly_one_by(ctx, &self.real_values.rows, |record| {
+            Ok(record.parent == Some(parent) && ctx.equal(record.name.as_str(), name, "creo legacy unit scalar name equality")?)
+        }, "creo legacy unit scalar selection")? else { return Ok(None); };
+        Ok(match &record.payload {
             NumericPayload::Scalar { value } => Some(value.value()),
             NumericPayload::Array(_) => None,
-        }
+        })
     }
 
-    fn unique_utf8_scalar<'a>(&'a self, parent: usize, name: &str) -> Option<&'a str> {
-        let mut matches = self
-            .string_values
-            .iter()
-            .filter(|record| record.parent == Some(parent) && record.name == name);
-        let record = matches.next()?;
-        matches.next().is_none().then_some(())?;
-        match &record.payload {
+    fn unique_utf8_scalar<'a>(&'a self, ctx: &DecodeContext<'_>, parent: usize, name: &str) -> Result<Option<&'a str>, CodecError> {
+        let Some(record) = crate::decode::uniqueness::exactly_one_by(ctx, &self.string_values, |record| {
+            Ok(record.parent == Some(parent) && ctx.equal(record.name.as_str(), name, "creo legacy unit scalar name equality")?)
+        }, "creo legacy unit scalar selection")? else { return Ok(None); };
+        Ok(match &record.payload {
             StringPayload::Scalar {
                 value: StringValue::Utf8 { text },
             } => Some(text),
             _ => None,
-        }
+        })
     }
 }
 
@@ -1018,13 +964,8 @@ fn signed_integer(
     bytes: &[u8],
 ) -> Result<Option<i32>, cadmpeg_core::CodecError> {
     let Some(text) = ctx.validate_utf8(bytes, "creo UTF-8 validation")?.ok() else { return Ok(None); };
-    if text.is_empty()
-        || !ctx.all_by(text.strip_prefix("-")
-            .unwrap_or(text)
-            .bytes(), |byte| Ok(byte.is_ascii_digit()), "creo legacy integer digit validation")?
-    {
-        return Ok(None);
-    }
+    // FromStr admits ASCII decimal digits and one sign. The persistence grammar excludes '+'.
+    if text.starts_with('+') { return Ok(None); }
     Ok(ctx.parse_text(text, "creo scalar text parsing")?.ok())
 }
 
@@ -1033,9 +974,7 @@ fn unsigned_integer(
     bytes: &[u8],
 ) -> Result<Option<u32>, cadmpeg_core::CodecError> {
     let Some(text) = ctx.validate_utf8(bytes, "creo UTF-8 validation")?.ok() else { return Ok(None); };
-    if text.is_empty() || !ctx.all_by(text.bytes(), |byte| Ok(byte.is_ascii_digit()), "creo legacy integer digit validation")? {
-        return Ok(None);
-    }
+    if text.starts_with('+') { return Ok(None); }
     Ok(ctx.parse_text(text, "creo scalar text parsing")?.ok())
 }
 
@@ -1153,54 +1092,41 @@ pub(crate) fn checked_object_node_id(
     Ok(id)
 }
 
-fn declaration_index<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scope: &'a Scope,
-) -> Result<BTreeMap<u32, &'a AttributeDeclaration>, CodecError> {
-    let mut declarations = BTreeMap::new();
-    for declaration in &scope.declarations {
-        ctx.insert_btree_map(
-            &mut declarations,
-            declaration.id,
-            declaration,
-            "creo legacy declaration lookup nodes",
-        )?;
+impl Scope {
+    fn declaration(&self, id: u32) -> Option<&AttributeDeclaration> {
+        self.declaration_positions.get(&id).and_then(|position| self.declarations.get(*position))
     }
-    Ok(declarations)
 }
 
 fn parent_object_offsets(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scopes: &[Scope],
-) -> Result<BTreeMap<usize, usize>, CodecError> {
-    let mut parents = BTreeMap::new();
-    for scope in scopes {
-        let declarations = declaration_index(ctx, scope)?;
-        let mut active_objects = BTreeMap::<u32, usize>::new();
-        for value in &scope.values {
-            active_objects.retain(|depth, _| *depth < value.depth);
-            if let Some(parent) = value
-                .depth
-                .checked_sub(1)
-                .and_then(|depth| active_objects.get(&depth))
+) -> Result<HashMap<usize, usize>, CodecError> {
+    let mut parents = HashMap::new();
+    for scope in ctx.admit_iter(scopes, "creo legacy scope traversal")? {
+        let (mut active_objects, mut active_storage) = ctx.temporary_vec::<(u32, usize)>(0, "creo legacy active object storage")?;
+        for value in ctx.admit_iter(&scope.values, "creo legacy value traversal")? {
             {
-                ctx.insert_btree_map(
+                let mut expired = std::iter::from_fn(|| {
+                    if active_objects.last().is_some_and(|(depth, _)| *depth >= value.depth) { active_objects.pop() } else { None }
+                });
+                while ctx.next_charged(&mut expired, "creo legacy active object pruning")?.is_some() {}
+            }
+            let parent = active_objects.last().filter(|(depth, _)| value.depth.checked_sub(1) == Some(*depth)).map(|(_, offset)| offset);
+            if let Some(parent) = parent
+            {
+                ctx.insert_hash_map(
                     &mut parents,
                     value.offset,
                     *parent,
                     "creo legacy parent offset nodes",
                 )?;
             }
-            if declarations
-                .get(&value.attribute_id)
+            if scope.declaration(value.attribute_id)
                 .is_some_and(|declaration| matches!(declaration.type_code, LegacyTypeCode::Object))
             {
-                ctx.insert_btree_map(
-                    &mut active_objects,
-                    value.depth,
-                    value.offset,
-                    "creo legacy active object nodes",
-                )?;
+                active_storage.with_storage(|| ctx.reserve_vec(&mut active_objects, 1, "creo legacy active object nodes"))?;
+                active_objects.push((value.depth, value.offset));
             }
         }
     }
@@ -1211,56 +1137,57 @@ fn object_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     scopes: &[Scope],
-    parents: &BTreeMap<usize, usize>,
+    parents: &HashMap<usize, usize>,
 ) -> Result<(Vec<ObjectRecord>, usize, usize), CodecError> {
     let mut records = Vec::new();
     let mut incomplete_arrays = 0usize;
     let mut unresolved = 0usize;
-    for scope in scopes {
-        let declarations = declaration_index(ctx, scope)?;
-        let mut value_attributes = BTreeMap::new();
-        for value in &scope.values {
-            ctx.insert_btree_map(
+    for scope in ctx.admit_iter(scopes, "creo legacy scope traversal")? {
+        let mut projection_storage = ctx.reserve_scoped(0, "creo legacy projection index storage")?;
+        let mut value_attributes = HashMap::new();
+        for value in ctx.admit_iter(&scope.values, "creo legacy value traversal")? {
+            projection_storage.with_storage(|| ctx.insert_hash_map(
                 &mut value_attributes,
                 value.offset,
                 value.attribute_id,
                 "creo legacy object value attribute nodes",
-            )?;
+            ))?;
         }
-        let mut direct_array_elements = BTreeMap::<usize, Vec<usize>>::new();
-        for child in &scope.values {
+        let mut direct_array_elements = HashMap::<usize, Vec<usize>>::new();
+        for child in ctx.admit_iter(&scope.values, "creo legacy object child traversal")? {
             let Some(parent_offset) = parents.get(&child.offset).copied() else {
                 continue;
             };
             if value_attributes.get(&parent_offset) == Some(&child.attribute_id)
-                && declarations
-                    .get(&child.attribute_id)
+                && scope.declaration(child.attribute_id)
                     .is_some_and(|declaration| {
                         matches!(declaration.type_code, LegacyTypeCode::Object)
                     })
             {
-                match ctx.entry_btree_map(
+                projection_storage.with_storage(|| {
+                match ctx.entry_hash_map(
                     &mut direct_array_elements,
                     parent_offset,
                     "creo legacy object array index nodes",
                 )? {
-                    std::collections::btree_map::Entry::Vacant(entry) => {
+                    std::collections::hash_map::Entry::Vacant(entry) => {
                         let mut elements = Vec::new();
                         ctx.reserve_vec(&mut elements, 1, "creo legacy object array index rows")?;
                         elements.push(child.offset);
                         entry.insert(elements);
                     }
-                    std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
                         let elements = entry.get_mut();
                         ctx.reserve_vec(elements, 1, "creo legacy object array index rows")?;
                         elements.push(child.offset);
                     }
                 }
+                Ok::<(), CodecError>(())
+                })?;
             }
         }
-        for value in &scope.values {
-            let Some(declaration) = declarations
-                .get(&value.attribute_id)
+        for value in ctx.admit_iter(&scope.values, "creo legacy value traversal")? {
+            let Some(declaration) = scope.declaration(value.attribute_id)
                 .filter(|declaration| matches!(declaration.type_code, LegacyTypeCode::Object))
             else {
                 continue;
@@ -1273,8 +1200,7 @@ fn object_records(
             } else if bytes == b"NULL" {
                 ObjectPayload::Null
             } else if let Some(dimensions) = array_dimensions(ctx, bytes)? {
-                let offsets = direct_array_elements
-                    .get(&value.offset)
+                let offsets = direct_array_elements.get(&value.offset)
                     .map_or(&[][..], Vec::as_slice);
                 let mut elements = Vec::new();
                 ctx.reserve_vec(
@@ -1282,7 +1208,7 @@ fn object_records(
                     offsets.len(),
                     "creo legacy object array elements",
                 )?;
-                for offset in offsets {
+                for offset in ctx.admit_iter(offsets, "creo legacy object element traversal")? {
                     elements.push(checked_object_node_id(
                         ctx,
                         *offset,
@@ -1355,25 +1281,19 @@ fn scalar_string_records<K: LegacyCode<Payload = StringValue>>(
     scopes: &[Scope],
     identity_kind: ValueKind<K>,
     null_token: NullToken,
-    parents: &BTreeMap<usize, usize>,
+    parents: &HashMap<usize, usize>,
 ) -> Result<TypedValues<ValueRecord<K>>, CodecError> {
     let mut records = Vec::new();
     let mut unresolved = 0usize;
-    for scope in scopes {
-        let declarations = declaration_index(ctx, scope)?;
-        for value in &scope.values {
-            let Some(declaration) = declarations
-                .get(&value.attribute_id)
+    for scope in ctx.admit_iter(scopes, "creo legacy scope traversal")? {
+        for value in ctx.admit_iter(&scope.values, "creo legacy value traversal")? {
+            let Some(declaration) = scope.declaration(value.attribute_id)
                 .filter(|declaration| declaration.type_code == declaration_code(identity_kind))
             else {
                 continue;
             };
-            let Some(bytes) = value
-                .continuation
-                .is_none()
-                .then(|| data.get(value.payload.clone()))
-                .flatten()
-            else {
+            if value.continuation.is_some() { unresolved += 1; continue; }
+            let Some(bytes) = data.get(value.payload.clone()) else {
                 unresolved += 1;
                 continue;
             };
@@ -1402,77 +1322,75 @@ fn string_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     scopes: &[Scope],
-    parents: &BTreeMap<usize, usize>,
+    parents: &HashMap<usize, usize>,
 ) -> Result<(Vec<StringRecord>, usize, usize), CodecError> {
     let mut records = Vec::new();
     let mut incomplete_arrays = 0usize;
     let mut unresolved = 0usize;
-    for scope in scopes {
-        let declarations = declaration_index(ctx, scope)?;
-        let mut active_arrays = BTreeMap::<u32, (usize, u32)>::new();
-        let mut array_children = BTreeMap::<usize, Vec<&AttributeValue>>::new();
-        let mut array_element_offsets = BTreeSet::new();
-        for value in &scope.values {
-            active_arrays.retain(|depth, _| *depth < value.depth);
-            let array_parent = value.depth.checked_sub(1).and_then(|depth| {
-                active_arrays
-                    .get(&depth)
-                    .filter(|(_, attribute_id)| *attribute_id == value.attribute_id)
-                    .map(|(offset, _)| *offset)
-            });
+    for scope in ctx.admit_iter(scopes, "creo legacy scope traversal")? {
+        let (mut active_arrays, mut active_storage) = ctx.temporary_vec::<(u32, usize, u32)>(0, "creo legacy active string array storage")?;
+        let mut projection_storage = ctx.reserve_scoped(0, "creo legacy projection index storage")?;
+        let mut array_children = HashMap::<usize, Vec<&AttributeValue>>::new();
+        let mut array_element_offsets = HashSet::new();
+        for value in ctx.admit_iter(&scope.values, "creo legacy value traversal")? {
+            {
+                let mut expired = std::iter::from_fn(|| {
+                    if active_arrays.last().is_some_and(|(depth, _, _)| *depth >= value.depth) { active_arrays.pop() } else { None }
+                });
+                while ctx.next_charged(&mut expired, "creo legacy active string array pruning")?.is_some() {}
+            }
+            let array_parent = active_arrays.last()
+                .filter(|(depth, _, attribute_id)| value.depth.checked_sub(1) == Some(*depth) && *attribute_id == value.attribute_id)
+                .map(|(_, offset, _)| *offset);
             if let Some(parent_offset) = array_parent {
-                match ctx.entry_btree_map(
+                projection_storage.with_storage(|| {
+                match ctx.entry_hash_map(
                     &mut array_children,
                     parent_offset,
                     "creo legacy string array child nodes",
                 )? {
-                    std::collections::btree_map::Entry::Vacant(entry) => {
+                    std::collections::hash_map::Entry::Vacant(entry) => {
                         let mut children = Vec::new();
                         ctx.reserve_vec(&mut children, 1, "creo legacy string array child rows")?;
                         children.push(value);
                         entry.insert(children);
                     }
-                    std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
                         let children = entry.get_mut();
                         ctx.reserve_vec(children, 1, "creo legacy string array child rows")?;
                         children.push(value);
                     }
                 }
-                ctx.insert_btree_set(
+                Ok::<(), CodecError>(())
+                })?;
+                projection_storage.with_storage(|| ctx.insert_hash_set(
                     &mut array_element_offsets,
                     value.offset,
                     "creo legacy string array element offsets",
-                )?;
+                ))?;
                 continue;
             }
-            if declarations
-                .get(&value.attribute_id)
+            if scope.declaration(value.attribute_id)
                 .is_some_and(|declaration| matches!(declaration.type_code, LegacyTypeCode::String))
                 && array_dimensions(ctx, &data[value.payload.clone()])?.is_some()
             {
-                ctx.insert_btree_map(
-                    &mut active_arrays,
-                    value.depth,
-                    (value.offset, value.attribute_id),
-                    "creo legacy active string arrays",
-                )?;
+                active_storage.with_storage(|| ctx.reserve_vec(&mut active_arrays, 1, "creo legacy active string arrays"))?;
+                active_arrays.push((value.depth, value.offset, value.attribute_id));
             }
         }
 
-        for value in &scope.values {
+        for value in ctx.admit_iter(&scope.values, "creo legacy value traversal")? {
             if array_element_offsets.contains(&value.offset) {
                 continue;
             }
-            let Some(declaration) = declarations
-                .get(&value.attribute_id)
+            let Some(declaration) = scope.declaration(value.attribute_id)
                 .filter(|declaration| matches!(declaration.type_code, LegacyTypeCode::String))
             else {
                 continue;
             };
             let bytes = &data[value.payload.clone()];
             let payload = if let Some(dimensions) = array_dimensions(ctx, bytes)? {
-                let children = array_children
-                    .get(&value.offset)
+                let children = array_children.get(&value.offset)
                     .map_or(&[][..], Vec::as_slice);
                 let mut values = Vec::new();
                 ctx.reserve_vec(
@@ -1480,7 +1398,7 @@ fn string_records(
                     children.len(),
                     "creo legacy string array values",
                 )?;
-                for child in children {
+                for child in ctx.admit_iter(children, "creo legacy string child traversal")? {
                     if let Some(continuation) = &child.continuation {
                         unresolved += 1;
                         values.push(Err(continuation.clone()));
@@ -1528,50 +1446,44 @@ fn numeric_records<K, T>(
     scopes: &[Scope],
     identity_kind: ValueKind<K>,
     scalar: fn(&cadmpeg_core::decode::DecodeContext<'_>, &[u8]) -> Result<Option<T>, CodecError>,
-    parents: &BTreeMap<usize, usize>,
+    parents: &HashMap<usize, usize>,
 ) -> Result<TypedValues<ValueRecord<K>>, CodecError>
 where
     K: LegacyCode<Payload = NumericPayload<T>>,
 {
     let mut records = Vec::new();
     let mut unresolved = 0usize;
-    for scope in scopes {
-        let declarations = declaration_index(ctx, scope)?;
-        let mut index = 0;
-        while let Some(value) = scope.values.get(index) {
-            let Some(declaration) = declarations
-                .get(&value.attribute_id)
+    for scope in ctx.admit_iter(scopes, "creo legacy scope traversal")? {
+        let mut pending = scope.values.iter().enumerate();
+        while let Some((index, value)) = ctx.next_charged(&mut pending, "creo legacy numeric value traversal")? {
+            let Some(declaration) = scope.declaration(value.attribute_id)
                 .filter(|declaration| declaration.type_code == declaration_code(identity_kind))
             else {
-                index += 1;
                 continue;
             };
             let Some(payload_bytes) = data.get(value.payload.clone()) else {
                 unresolved += 1;
-                index += 1;
                 continue;
             };
-            let (payload, next_index) =
+            let payload =
                 if let Some(dimensions) = array_dimensions(ctx, payload_bytes)? {
                     let mut next_index = index + 1;
                     let runs = if let Some(continuation) = &value.continuation {
                         let Some(bytes) = data.get(continuation.rows.clone()) else {
                             unresolved += 1;
-                            index += 1;
-                            continue;
+                                        continue;
                         };
                         let Some(runs) = continuation_numeric_runs(ctx, bytes, scalar)? else {
                             unresolved += 1;
-                            index += 1;
-                            continue;
+                                        continue;
                         };
                         runs
                     } else if dimensions.as_slice() == [1] {
                         let mut runs = Vec::new();
-                        while let Some(child) = scope.values.get(next_index).filter(|child| {
-                            child.attribute_id == value.attribute_id
-                                && value.depth.checked_add(1) == Some(child.depth)
-                        }) {
+                        loop {
+                            let mut probe = pending.clone();
+                            let Some((position, child)) = ctx.next_charged(&mut probe, "creo legacy numeric child traversal")? else { break; };
+                            if child.attribute_id != value.attribute_id || value.depth.checked_add(1) != Some(child.depth) { break; }
                             let Some(bytes) = data.get(child.payload.clone()) else {
                                 break;
                             };
@@ -1585,7 +1497,8 @@ where
                             };
                             ctx.reserve_vec(&mut runs, 1, "creo legacy numeric child runs")?;
                             runs.push(run);
-                            next_index += 1;
+                            next_index = position + 1;
+                            pending = probe;
                         }
                         runs
                     } else {
@@ -1593,10 +1506,9 @@ where
                     };
                     let Some(payload) = NumericPayload::array(ctx, dimensions, runs)? else {
                         unresolved += next_index - index;
-                        index = next_index;
                         continue;
                     };
-                    (payload, next_index)
+                    payload
                 } else {
                     let scalar_value = if value.continuation.is_none() {
                         scalar(ctx, payload_bytes)?
@@ -1605,15 +1517,9 @@ where
                     };
                     let Some(scalar_value) = scalar_value else {
                         unresolved += 1;
-                        index += 1;
-                        continue;
+                                continue;
                     };
-                    (
-                        NumericPayload::Scalar {
-                            value: scalar_value,
-                        },
-                        index + 1,
-                    )
+                    NumericPayload::Scalar { value: scalar_value }
                 };
             let name =
                 ctx.copy_retained_text(&declaration.name, "creo legacy numeric record names")?;
@@ -1627,7 +1533,6 @@ where
                 payload,
                 offset: value.offset,
             });
-            index = next_index;
         }
     }
     Ok(TypedValues {
@@ -1655,20 +1560,10 @@ fn scan_scope(
     data: &[u8],
     range: Range<usize>,
 ) -> Result<Scope, CodecError> {
-    if range.end > data.len() {
-        return Err(CodecError::malformed(ctx.format_retained(
-            format_args!(
-                "creo legacy persistence scope at offset {} declares end {}, past the file length {}",
-                range.start,
-                range.end,
-                data.len(),
-            ),
-            "creo legacy scope bounds error",
-        )?));
-    }
     let mut declarations = Vec::<AttributeDeclaration>::new();
-    let mut declaration_indices = BTreeMap::<u32, usize>::new();
-    let mut conflicting_ids = BTreeSet::<u32>::new();
+    let mut declaration_indices = HashMap::<u32, usize>::new();
+    let mut conflict_storage = ctx.reserve_scoped(0, "creo legacy declaration conflicts")?;
+    let mut conflicting_ids = HashSet::<u32>::new();
     let mut candidates = Vec::<AttributeValue>::new();
     let mut continuation_owner = None::<usize>;
     let mut next = range.start;
@@ -1710,24 +1605,15 @@ fn scan_scope(
         if let Some((id, name, type_code)) = parse_declaration(ctx, current)? {
             if let Some(index) = declaration_indices.get(&id).copied() {
                 let previous = &declarations[index];
-                if (previous.name != name || previous.type_code != type_code)
-                    && !conflicting_ids.contains(&id)
+                if !conflicting_ids.contains(&id)
+                    && (previous.type_code != type_code || !ctx.equal(previous.name.as_str(), name, "creo legacy declaration name equality")?)
                 {
-                    ctx.insert_btree_set(
-                        &mut conflicting_ids,
-                        id,
-                        "creo legacy conflicting declaration IDs",
-                    )?;
+                    conflict_storage.with_storage(|| ctx.insert_hash_set(&mut conflicting_ids, id, "creo legacy conflicting declaration IDs"))?;
                 }
             } else {
                 let name = ctx.copy_retained_text(name, "creo legacy declaration names")?;
-                ctx.admit_btree_entry(
-                    &declaration_indices,
-                    &id,
-                    "creo legacy declaration index nodes",
-                )?;
                 ctx.reserve_vec(&mut declarations, 1, "creo legacy declarations")?;
-                declaration_indices.insert(id, declarations.len());
+                ctx.insert_hash_map(&mut declaration_indices, id, declarations.len(), "creo legacy declaration index nodes")?;
                 declarations.push(AttributeDeclaration {
                     id,
                     name,
@@ -1758,6 +1644,7 @@ fn scan_scope(
     Ok(Scope {
         range,
         declarations,
+        declaration_positions: declaration_indices,
         unresolved_value_count: candidate_count - candidates.len(),
         values: candidates,
         conflicting_declaration_count: conflicting_ids.len(),
@@ -1770,14 +1657,41 @@ pub(crate) fn scan(
     data: &[u8],
     ranges: impl IntoIterator<Item = Range<usize>>,
 ) -> Result<Persistence, CodecError> {
-    let mut scopes = Vec::new();
-    for range in ranges {
+    let (mut scopes, mut scope_storage) = ctx.temporary_vec(0, "creo legacy scope storage")?;
+    let mut ranges = ranges.into_iter();
+    while let Some(range) = ctx.next_charged(&mut ranges, "creo legacy scope extent traversal")? {
         if range.start < range.end && range.start < data.len() {
-            ctx.reserve_vec(&mut scopes, 1, "creo legacy parsed scopes")?;
-            scopes.push(scan_scope(ctx, data, range)?);
+            if range.end > data.len() {
+                return Err(CodecError::malformed(ctx.format_retained(
+                    format_args!(
+                        "creo legacy persistence scope at offset {} declares end {}, past the file length {}",
+                        range.start,
+                        range.end,
+                        data.len(),
+                    ),
+                    "creo legacy scope bounds error",
+                )?));
+            }
+            scope_storage.with_storage(|| {
+                ctx.reserve_vec(&mut scopes, 1, "creo legacy parsed scopes")?;
+                scopes.push(scan_scope(ctx, data, range)?);
+                Ok::<(), CodecError>(())
+            })?;
         }
     }
-    let parents = parent_object_offsets(ctx, &scopes)?;
+        let mut counts = PersistenceCounts { scopes: scopes.len(), ..PersistenceCounts::default() };
+        for scope in ctx.admit_iter(&scopes, "creo legacy persistence scope counts")? {
+            counts.declarations += scope.declarations.len();
+            counts.values += scope.values.len();
+            counts.unresolved_values += scope.unresolved_value_count;
+            counts.conflicting_declarations += scope.conflicting_declaration_count;
+            for value in ctx.admit_iter(&scope.values, "creo legacy persistence continuation counts")? {
+                counts.continuations = counts.continuations.checked_add(value.continuation.as_ref().map_or(0, |continuation| continuation.count.get()))
+                    .ok_or_else(|| ctx.refuse_codec_limit("creo legacy continuation count", u64::MAX, u64::MAX))?;
+            }
+        }
+    let mut parent_storage = ctx.reserve_scoped(0, "creo legacy parent offset storage")?;
+    let parents = parent_storage.with_storage(|| parent_object_offsets(ctx, &scopes))?;
     let (objects, incomplete_object_array_count, unresolved_object_value_count) =
         object_records(ctx, data, &scopes, &parents)?;
     let (string_values, incomplete_string_array_count, unresolved_string_value_count) =
@@ -1842,7 +1756,7 @@ pub(crate) fn scan(
         &parents,
     )?;
     Ok(Persistence {
-        scopes,
+        counts,
         real_values,
         integer_values,
         objects,

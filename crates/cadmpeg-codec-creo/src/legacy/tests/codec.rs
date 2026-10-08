@@ -369,8 +369,8 @@ fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
     let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.schema, "6");
     assert_eq!(legacy.product_release.as_deref(), Some("H-01-21"));
-    assert_eq!(legacy.persistence.declaration_count(), 1);
-    assert_eq!(legacy.persistence.value_count(), 1);
+    assert_eq!(legacy.persistence.counts.declarations, 1);
+    assert_eq!(legacy.persistence.counts.values, 1);
     let classification =
         crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
             .expect("dialect classification admitted");
@@ -416,9 +416,9 @@ fn legacy_ascii_toc_is_authoritative_for_named_section_extents() {
         .legacy_ascii()
         .expect("legacy framing")
         .persistence;
-    assert_eq!(persistence.scopes.len(), 2);
-    assert_eq!(persistence.declaration_count(), 3);
-    assert_eq!(persistence.value_count(), 5);
+    assert_eq!(persistence.counts.scopes, 2);
+    assert_eq!(persistence.counts.declarations, 3);
+    assert_eq!(persistence.counts.values, 5);
 }
 
 #[test]

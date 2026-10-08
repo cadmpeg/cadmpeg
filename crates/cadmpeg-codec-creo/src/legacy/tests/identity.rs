@@ -7,12 +7,13 @@ fn unknown_declaration_codes_retain_scope_identity() {
     let data = b"@future 1 8\n@future 1 12\n0 1 value\n@next 2 255\n0 2 value\n";
     let persistence = scan(data, std::iter::once(0..data.len()))
         .expect("the fixture states every scope inside its own bytes");
-    assert_eq!(persistence.conflicting_declaration_count(), 1);
-    assert_eq!(persistence.unresolved_value_count(), 1);
-    assert_eq!(persistence.scopes[0].values.len(), 1);
-    assert_eq!(persistence.scopes[0].values[0].attribute_id, 2);
+    assert_eq!(persistence.counts.conflicting_declarations, 1);
+    assert_eq!(persistence.counts.unresolved_values, 1);
+    let scope = scope_fixture(data, 0..data.len());
+    assert_eq!(scope.values.len(), 1);
+    assert_eq!(scope.values[0].attribute_id, 2);
     assert!(matches!(
-        persistence.scopes[0].declarations[1].type_code,
+        scope.declarations[1].type_code,
         LegacyTypeCode::Other(_)
     ));
     assert!(
@@ -29,7 +30,7 @@ fn scan_resolves_declarations_values_and_continuations() {
 
     let persistence = scan(data, std::iter::once(0..data.len()))
         .expect("the fixture states every scope inside its own bytes");
-    let scope = &persistence.scopes[0];
+    let scope = scope_fixture(data, 0..data.len());
 
     assert_eq!(scope.declarations.len(), 2);
     assert_eq!(scope.declarations[1].name, "matrix");
@@ -43,8 +44,8 @@ fn scan_resolves_declarations_values_and_continuations() {
         .expect("continuations");
     assert_eq!(continuation.count.get(), 2);
     assert_eq!(&data[continuation.rows.clone()], b"$3FF,0\n$0,3FF");
-    assert_eq!(persistence.unresolved_value_count(), 0);
-    assert_eq!(persistence.conflicting_declaration_count(), 0);
+    assert_eq!(persistence.counts.unresolved_values, 0);
+    assert_eq!(persistence.counts.conflicting_declarations, 0);
 }
 
 #[test]
@@ -58,10 +59,10 @@ fn scan_resolves_identifiers_within_independent_scopes() {
     let persistence = scan(data, [0..second, second..data.len()])
         .expect("the fixture states every scope inside its own bytes");
 
-    assert_eq!(persistence.scopes.len(), 2);
-    assert_eq!(persistence.declaration_count(), 2);
-    assert_eq!(persistence.value_count(), 2);
-    assert_eq!(persistence.conflicting_declaration_count(), 0);
+    assert_eq!(persistence.counts.scopes, 2);
+    assert_eq!(persistence.counts.declarations, 2);
+    assert_eq!(persistence.counts.values, 2);
+    assert_eq!(persistence.counts.conflicting_declarations, 0);
     assert_eq!(persistence.real_values.rows.len(), 1);
     assert_eq!(persistence.real_values.rows[0].scope_offset, second);
 }

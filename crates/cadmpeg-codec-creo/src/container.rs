@@ -3994,8 +3994,9 @@ pub(crate) fn notes(
         )?;
     }
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
+        let counts = &legacy.persistence.counts;
         let release = legacy.product_release.as_deref().unwrap_or("unspecified");
-        let continuation_count = legacy.persistence.continuation_count();
+        let continuation_count = counts.continuations;
         push_note(
             ctx,
             &mut notes,
@@ -4003,21 +4004,21 @@ pub(crate) fn notes(
                 "legacy ASCII persistence: schema {}; product release {release}; {} attribute \
              declarations, {} resolved values, {continuation_count} continuation rows in {} scopes",
                 legacy.schema,
-                legacy.persistence.declaration_count(),
-                legacy.persistence.value_count(),
-                legacy.persistence.scopes.len(),
+                counts.declarations,
+                counts.values,
+                counts.scopes,
             ),
         )?;
-        if legacy.persistence.unresolved_value_count() != 0
-            || legacy.persistence.conflicting_declaration_count() != 0
+        if counts.unresolved_values != 0
+            || counts.conflicting_declarations != 0
         {
             push_note(
                 ctx,
                 &mut notes,
                 format_args!(
                 "legacy ASCII structural gaps: {} unresolved values, {} conflicting declarations",
-                legacy.persistence.unresolved_value_count(),
-                legacy.persistence.conflicting_declaration_count(),
+                counts.unresolved_values,
+                counts.conflicting_declarations,
             ),
             )?;
         }
