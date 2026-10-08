@@ -1,15 +1,15 @@
-use crate::native::attach::attach_parasolid_topology_numeric_attributes;
-use crate::native::attach::attach_parasolid_topology_string_attributes;
-use crate::native::attach::attach_parasolid_topology_structured_attributes;
-use crate::native::attach::insert_sole;
-use crate::native::attach::parasolid_topology_attribute_class_names;
-use crate::native::attach::parasolid_topology_attribute_targets;
-use crate::native::attach::topology_attribute_name;
-use crate::native::attach::ParasolidAttributeNameIndex;
-use crate::native::attach::ParasolidNumericAttributeSources;
-use crate::native::attach::ParasolidStringAttributeSources;
-use crate::native::attach::ParasolidStructuredAttributeSources;
-use crate::native::attach::ParasolidTopologyAttributeIndex;
+use super::attach_parasolid_topology_numeric_attributes;
+use super::attach_parasolid_topology_string_attributes;
+use super::attach_parasolid_topology_structured_attributes;
+use super::insert_sole;
+use super::parasolid_topology_attribute_class_names;
+use super::parasolid_topology_attribute_targets;
+use super::topology_attribute_name;
+use super::ParasolidAttributeNameIndex;
+use super::ParasolidNumericAttributeSources;
+use super::ParasolidStringAttributeSources;
+use super::ParasolidStructuredAttributeSources;
+use super::ParasolidTopologyAttributeIndex;
 use std::collections::BTreeMap;
 
 use crate::native::parasolid::topology_attribute_kind::TopologyAttributeKind;
@@ -53,8 +53,22 @@ fn attribute_name_index_with_limit(
             let mut reservation = ctx.reserve_scoped(0, "NX attribute name index test")?;
             let mut index = BTreeMap::<&str, Option<&u8>>::new();
             let value = 7_u8;
-            insert_sole(ctx, &mut reservation, &mut index, "first", &value)?;
-            insert_sole(ctx, &mut reservation, &mut index, "second", &value)?;
+            insert_sole(
+                ctx,
+                &mut reservation,
+                &mut index,
+                "first",
+                &value,
+                "NX insert sole values entry",
+            )?;
+            insert_sole(
+                ctx,
+                &mut reservation,
+                &mut index,
+                "second",
+                &value,
+                "NX insert sole values entry",
+            )?;
             assert_eq!(index.len(), 2);
             Ok(())
         },
@@ -266,6 +280,7 @@ enum AttributeRoute {
 
 fn attribute_output_route(
     route: AttributeRoute,
+    with_reference: bool,
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<usize, cadmpeg_core::CodecError> {
     use crate::native::parasolid::structured_value_kind::StructuredValueKind;
@@ -292,13 +307,21 @@ fn attribute_output_route(
         let index = ParasolidTopologyAttributeIndex::new(
             index_ctx,
             &ir,
-            std::slice::from_ref(&reference),
+            if with_reference {
+                std::slice::from_ref(&reference)
+            } else {
+                &[]
+            },
             &[],
             &[],
             &[],
             &[],
         )?;
-        assert_eq!(index.contexts.len(), 1);
+        if with_reference {
+            assert_eq!(index.contexts.len(), 1);
+        } else {
+            assert!(index.contexts.is_empty());
+        }
 
         crate::test_support::with_decode_context_over(
             &[],
@@ -419,7 +442,7 @@ fn attribute_output_route(
 #[test]
 fn string_attribute_output_preserves_value() {
     assert_eq!(
-        attribute_output_route(AttributeRoute::String, |_| {}).unwrap(),
+        attribute_output_route(AttributeRoute::String, true, |_| {}).unwrap(),
         1
     );
 }
@@ -428,7 +451,7 @@ macro_rules! attribute_output_limit_test {
     ($name:ident, $route:expr, $field:ident, $dimension:ident) => {
         #[test]
         fn $name() {
-            let error = attribute_output_route($route, |policy| policy.limits.$field = 0).unwrap_err();
+            let error = attribute_output_route($route, true, |policy| policy.limits.$field = 0).unwrap_err();
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::$dimension));
         }
@@ -1330,4 +1353,81 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
             [AttributeValue::String("μ".into())]
         );
     });
+}
+
+#[test]
+fn attribute_record_and_group_refusals_identify_the_record_family() {
+    use cadmpeg_core::decode::ResourceDimension;
+    for (route, records, groups) in [
+        (
+            AttributeRoute::String,
+            "NX Parasolid string record index",
+            "NX Parasolid string use groups",
+        ),
+        (
+            AttributeRoute::Numeric,
+            "NX Parasolid integer record index",
+            "NX Parasolid numeric use groups",
+        ),
+        (
+            AttributeRoute::Structured,
+            "NX Parasolid vector record index",
+            "NX Parasolid structured use groups",
+        ),
+    ] {
+        assert_eq!(attribute_output_route(route, true, |_| {}).unwrap(), 1);
+        for operation in [records, groups] {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    attribute_output_route(route, true, |policy| policy.limits.max_work_units = cap)
+                },
+            );
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == operation && limit.dimension == ResourceDimension::WorkUnits)
+            );
+        }
+    }
+}
+
+#[test]
+fn attributes_without_references_need_no_topology_index_budget() {
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    assert!(!ir.model.faces.is_empty());
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = 0;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 0;
+        },
+        |ctx| {
+            let index =
+                ParasolidTopologyAttributeIndex::new(ctx, &ir, &[], &[], &[], &[], &[]).unwrap();
+            assert!(index.contexts.is_empty());
+        },
+    );
+}
+
+#[test]
+fn attribute_records_without_contexts_need_no_output_index_budget() {
+    for route in [
+        AttributeRoute::String,
+        AttributeRoute::Numeric,
+        AttributeRoute::Structured,
+    ] {
+        assert_eq!(
+            attribute_output_route(route, false, |policy| {
+                policy.limits.max_work_units = 0;
+                policy.limits.max_collection_items = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_materialized_bytes = 0;
+            })
+            .unwrap(),
+            0,
+        );
+    }
 }

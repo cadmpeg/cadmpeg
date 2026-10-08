@@ -1409,6 +1409,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
     let use_refs = uses.iter().collect::<Vec<_>>();
     let parameters = crate::test_support::with_decode_context(|ctx| {
         native_feature_parameters(ctx, &use_refs, &expressions)
+            .map(|(parameters, _nodes)| parameters)
     })
     .unwrap();
     assert_eq!(
@@ -1426,8 +1427,10 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             None,
             HoleProjection::default(),
-            cadmpeg_core::text::named_entries("UNKNOWN OPERATION", parameters)
-                .expect("the fixture states named parameters"),
+            || Ok(
+                cadmpeg_core::text::named_entries("UNKNOWN OPERATION", parameters)
+                    .expect("the fixture states named parameters")
+            ),
         )
         .unwrap(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1453,7 +1456,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             None,
             HoleProjection::default(),
-            std::collections::BTreeMap::default(),
+            || Ok(std::collections::BTreeMap::default()),
         ).unwrap(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. }) if kind.as_str() == "DELETE"
     ));
@@ -1465,7 +1468,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             None,
             HoleProjection::default(),
-            std::collections::BTreeMap::new(),
+            || Ok(std::collections::BTreeMap::new()),
         )
         .unwrap(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1481,7 +1484,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             None,
             HoleProjection::default(),
-            std::collections::BTreeMap::new(),
+            || Ok(std::collections::BTreeMap::new()),
         ).unwrap(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             path: None,
@@ -1498,7 +1501,8 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             ctx,
             &use_refs,
             &duplicate_expressions
-        ))
+        )
+        .map(|(parameters, _nodes)| parameters))
         .unwrap()
         .is_empty()
     );
@@ -1508,7 +1512,8 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             ctx,
             &unresolved.iter().collect::<Vec<_>>(),
             &expressions
-        ))
+        )
+        .map(|(parameters, _nodes)| parameters))
         .unwrap()
         .is_empty()
     );
@@ -1545,7 +1550,8 @@ fn native_parameter_with_limit(
             configure(policy);
         },
         |ctx| {
-            let parameters = native_feature_parameters(ctx, &[&use_], &[expression])?;
+            let parameters = native_feature_parameters(ctx, &[&use_], &[expression])
+                .map(|(parameters, _nodes)| parameters)?;
             assert_eq!(parameters["length"], "12.5");
             Ok(())
         },
@@ -1591,7 +1597,7 @@ fn nx_intersection_labels_project_without_fabricating_construction_fields() {
                 None,
                 None,
                 HoleProjection::default(),
-                std::collections::BTreeMap::default(),
+            || Ok(std::collections::BTreeMap::default()),
             ).unwrap(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::SectionShape {
                 operands,
 
@@ -1609,7 +1615,7 @@ fn nx_multi_instance_output_projects_as_an_unresolved_pattern() {
                 None,
                 None,
                 HoleProjection::default(),
-                std::collections::BTreeMap::default(),
+            || Ok(std::collections::BTreeMap::default()),
             ).unwrap()),
             cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
                 seeds,
@@ -1768,7 +1774,7 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
                     }],
                     ..HoleProjection::default()
                 },
-                std::collections::BTreeMap::new(),
+            || Ok(std::collections::BTreeMap::new()),
             ).unwrap(),
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 placements,
