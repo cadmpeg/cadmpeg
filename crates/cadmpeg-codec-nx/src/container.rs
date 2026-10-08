@@ -709,10 +709,11 @@ impl<'a> Container<'a> {
     }
 
     /// Decode indexed EXTREFSTREAM record prefixes and sorted handle lanes.
-    pub(crate) fn external_reference_records(
+    pub(crate) fn external_reference_records<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<(&DirEntry, ExtrefRecord)>, CodecError> {
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<(Vec<(&DirEntry, ExtrefRecord)>, ScopedReservation<'ctx>), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "nx external reference record entries")?;
         let mut out = Vec::new();
         for entry in &self.entries {
             ctx.charge_work(1, "scan NX external reference entries")?;
@@ -735,23 +736,37 @@ impl<'a> Container<'a> {
             let Some(payload) = self.data.get(offset..end) else {
                 continue;
             };
-            let records = parse_extref_records(ctx, payload)?;
-            for record in ctx.admit_iter(records, "project NX external reference record entries")? {
-                ctx.push_vec(
-                    &mut out,
-                    (entry, record),
-                    "nx external reference record entries",
-                )?;
-            }
+            let (records, records_storage) = parse_extref_records(ctx, payload)?;
+            let projection = (|| {
+                let mut records = records.into_iter();
+                while records.len() != 0 {
+                    let Some(record) = ctx.next_charged(
+                        &mut records,
+                        "project NX external reference record entries",
+                    )? else {
+                        break;
+                    };
+                    ctx.push_scoped_vec(
+                        &mut storage,
+                        &mut out,
+                        (entry, record),
+                        "nx external reference record entries",
+                    )?;
+                }
+                Ok::<(), CodecError>(())
+            })();
+            drop(records_storage);
+            projection?;
         }
-        Ok(out)
+        Ok((out, storage))
     }
 
     /// Retain every record boundary from each valid EXTREFSTREAM index.
-    pub(crate) fn external_reference_indexed_records(
+    pub(crate) fn external_reference_indexed_records<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<(&DirEntry, ExtrefIndexedRecord)>, CodecError> {
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<(Vec<(&DirEntry, ExtrefIndexedRecord)>, ScopedReservation<'ctx>), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "nx external reference indexed entries")?;
         let mut out = Vec::new();
         for entry in &self.entries {
             ctx.charge_work(1, "scan NX external reference entries")?;
@@ -774,20 +789,31 @@ impl<'a> Container<'a> {
             let Some(payload) = self.data.get(offset..end) else {
                 continue;
             };
-            let Some(records) = parse_extref_record_index(ctx, payload)? else {
+            let Some((records, records_storage)) = parse_extref_record_index(ctx, payload)? else {
                 continue;
             };
-            for record in
-                ctx.admit_iter(records, "project NX external reference indexed entries")?
-            {
-                ctx.push_vec(
-                    &mut out,
-                    (entry, record),
-                    "nx external reference indexed entries",
-                )?;
-            }
+            let projection = (|| {
+                let mut records = records.into_iter();
+                while records.len() != 0 {
+                    let Some(record) = ctx.next_charged(
+                        &mut records,
+                        "project NX external reference indexed entries",
+                    )? else {
+                        break;
+                    };
+                    ctx.push_scoped_vec(
+                        &mut storage,
+                        &mut out,
+                        (entry, record),
+                        "nx external reference indexed entries",
+                    )?;
+                }
+                Ok::<(), CodecError>(())
+            })();
+            drop(records_storage);
+            projection?;
         }
-        Ok(out)
+        Ok((out, storage))
     }
 
     /// Borrow the admitted object-id table from `/Root/FastLoad/RMFastLoad`.
@@ -933,10 +959,12 @@ fn locate_extref_string_table(
 
         let mut pos = start;
         let mut entries = 0..count;
-        while ctx
-            .next_charged(&mut entries, "nx external reference string table entries")?
-            .is_some()
-        {
+        while entries.len() != 0 {
+            let Some(_) = ctx
+                .next_charged(&mut entries, "nx external reference string table entries")?
+            else {
+                break;
+            };
             let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
                 continue 'candidate;
             };
@@ -987,10 +1015,10 @@ fn parse_extref_string_table<'bytes, 'ctx>(
     let (mut out, storage) = ctx.temporary_vec(count, "nx external reference string table")?;
     let mut pos = start;
     let mut visits = 0..count;
-    while ctx
-        .next_charged(&mut visits, "read NX external reference strings")?
-        .is_some()
-    {
+    while visits.len() != 0 {
+        let Some(_) = ctx.next_charged(&mut visits, "read NX external reference strings")? else {
+            break;
+        };
         let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
             return Ok(None);
         };
@@ -1012,14 +1040,14 @@ fn parse_extref_string_table<'bytes, 'ctx>(
     Ok(Some(((marker, out), storage)))
 }
 
-fn parse_extref_records(
-    ctx: &DecodeContext<'_>,
+fn parse_extref_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     payload: &[u8],
-) -> Result<Vec<ExtrefRecord>, CodecError> {
-    let mut index_storage = ctx.reserve_scoped(0, "NX external reference parser index")?;
-    let Some(index) = index_storage.with_storage(|| parse_extref_record_index(ctx, payload))?
-    else {
-        return Ok(Vec::new());
+) -> Result<(Vec<ExtrefRecord>, ScopedReservation<'ctx>), CodecError> {
+    let mut records_storage = ctx.reserve_scoped(0, "nx external reference records")?;
+    let mut records = Vec::new();
+    let Some((index, index_storage)) = parse_extref_record_index(ctx, payload)? else {
+        return Ok((records, records_storage));
     };
     let parse_record = |record_id, offset, end| -> Result<Option<ExtrefRecord>, CodecError> {
         let Some(bytes) = payload.get(offset..end) else {
@@ -1087,25 +1115,38 @@ fn parse_extref_records(
             tail_byte_len: bytes.len() - prefix_byte_len,
         }))
     };
-    let mut records = Vec::new();
-    let mut visits = index.into_iter();
-    while let Some(record) = ctx.next_charged(&mut visits, "parse NX external reference records")? {
-        let Some(end) = record.offset.checked_add(record.byte_len) else {
-            continue;
-        };
-        let Some(parsed) = parse_record(record.record_id, record.offset, end)? else {
-            continue;
-        };
-        ctx.reserve_vec(&mut records, 1, "nx external reference records")?;
-        records.push(parsed);
-    }
-    Ok(records)
+    let parsing = (|| {
+        let mut visits = index.into_iter();
+        while visits.len() != 0 {
+            let Some(record) =
+                ctx.next_charged(&mut visits, "parse NX external reference records")?
+            else {
+                break;
+            };
+            let Some(end) = record.offset.checked_add(record.byte_len) else {
+                continue;
+            };
+            let Some(parsed) = parse_record(record.record_id, record.offset, end)? else {
+                continue;
+            };
+            ctx.push_scoped_vec(
+                &mut records_storage,
+                &mut records,
+                parsed,
+                "nx external reference records",
+            )?;
+        }
+        Ok::<(), CodecError>(())
+    })();
+    drop(index_storage);
+    parsing?;
+    Ok((records, records_storage))
 }
 
-fn parse_extref_record_index(
-    ctx: &DecodeContext<'_>,
+fn parse_extref_record_index<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     payload: &[u8],
-) -> Result<Option<Vec<ExtrefIndexedRecord>>, CodecError> {
+) -> Result<Option<(Vec<ExtrefIndexedRecord>, ScopedReservation<'ctx>)>, CodecError> {
     if !payload.starts_with(b"EXTREFSTREAM") || payload.get(24) != Some(&0) {
         return Ok(None);
     }
@@ -1162,11 +1203,17 @@ fn parse_extref_record_index(
         return Ok(None);
     }
     let count = directory.len();
-    let mut records = ctx.collection_vec(count, "nx external reference index")?;
+    ctx.charge_collection_items(u64_from_index(count), "nx external reference index")?;
+    let mut records_storage = ctx.reserve_scoped(0, "nx external reference index")?;
+    let mut records = records_storage
+        .with_storage(|| ctx.vector_storage(count, "nx external reference index"))?;
     let mut visits = directory.iter().copied().enumerate();
-    while let Some((index, (record_id, offset))) =
-        ctx.next_charged(&mut visits, "form NX external reference index")?
-    {
+    while visits.len() != 0 {
+        let Some((index, (record_id, offset))) =
+            ctx.next_charged(&mut visits, "form NX external reference index")?
+        else {
+            break;
+        };
         let end = directory
             .get(index + 1)
             .map_or(string_table, |(_, offset)| *offset);
@@ -1179,7 +1226,7 @@ fn parse_extref_record_index(
             byte_len,
         });
     }
-    Ok(Some(records))
+    Ok(Some((records, records_storage)))
 }
 
 /// Decode the two exact empty indexed-record forms.

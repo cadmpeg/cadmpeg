@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Operand and selection completeness predicates.
 
-use super::{positive_feature_length, CompletenessAdmission};
+use super::positive_feature_length;
+use cadmpeg_core::decode::{cost::DecodeCost, DecodeContext};
+use cadmpeg_core::CodecError;
+use std::collections::BTreeSet;
 use cadmpeg_ir::{
     features::{
         holes::HoleKind,
@@ -16,31 +19,47 @@ use cadmpeg_ir::{
 
 const DEPENDENCIES: &str = "nx feature completeness dependencies";
 
-pub(super) fn hole_feature_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(super) fn hole_feature_is_incomplete(
+    ctx: &DecodeContext<'_>,
     profile: Option<&PlanarProfileRef>,
     face: Option<&FaceSelection>,
     placements: Option<&[cadmpeg_ir::features::holes::HolePlacement]>,
     treatments: (&HoleKind, Option<&HoleKind>),
     diameter: Option<Length>,
     extent: Option<&LinearTermination>,
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     let (kind, exit_kind) = treatments;
     let profile_incomplete = match profile {
-        Some(profile) => planar_profile_ref_is_incomplete(admission, profile)?,
+        Some(profile) => planar_profile_ref_is_incomplete(ctx, profile)?,
         None => false,
     };
     let face_incomplete = match face {
-        Some(face) => face_selection_is_incomplete(admission, face)?,
+        Some(face) => face_selection_is_incomplete(ctx, face)?,
         None => false,
     };
     let axis_is_direction_invariant = matches!(extent, Some(LinearTermination::ThroughAll {}))
         && exit_kind.is_none_or(|exit| exit == kind);
     let placements_complete = match placements {
         Some(placements) => {
+            let operation = "nx hole placement duplicates";
+            let mut visits = placements.iter();
+            let mut index = 0;
+            let has_duplicate = loop {
+                if visits.as_slice().is_empty() {
+                    break false;
+                }
+                let Some(placement) = ctx.next_charged(&mut visits, operation)? else {
+                    break false;
+                };
+                let duplicate = ctx.contains(&placements[..index], placement, operation)?;
+                index += 1;
+                if duplicate {
+                    break true;
+                }
+            };
             !placements.is_empty()
-                && !admission.has_equal_pair(placements, "nx hole placement duplicates")?
-                && !admission.any_by(
+                && !has_duplicate
+                && !ctx.any_by(
                     placements,
                     |placement| {
                         Ok(match placement {
@@ -75,7 +94,7 @@ pub(super) fn hole_feature_is_incomplete<A: CompletenessAdmission>(
         || exit_kind.is_some_and(|kind| hole_kind_is_incomplete(kind, diameter))
         || diameter.is_none_or(|diameter| !positive_feature_length(diameter))
         || match extent {
-            Some(extent) => termination_is_incomplete(admission, extent)?,
+            Some(extent) => termination_is_incomplete(ctx, extent)?,
             None => true,
         })
 }
@@ -103,15 +122,16 @@ fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Length>) -> bo
     }
 }
 
-pub(super) fn extrude_extent_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(super) fn extrude_extent_is_incomplete(
+    ctx: &DecodeContext<'_>,
     extent: &ExtrudeExtent,
     dependencies: &[FeatureId],
-) -> Result<bool, A::Error> {
-    let side_is_incomplete = |side: &cadmpeg_ir::features::ExtrudeSide| {
-        Ok(termination_is_incomplete(admission, &side.termination)?
-            || termination_dependency_is_incomplete(admission, &side.termination, dependencies)?)
-    };
+) -> Result<bool, CodecError> {
+    let side_is_incomplete =
+        |side: &cadmpeg_ir::features::ExtrudeSide| -> Result<bool, CodecError> {
+            Ok(termination_is_incomplete(ctx, &side.termination)?
+                || termination_dependency_is_incomplete(ctx, &side.termination, dependencies)?)
+        };
     match extent {
         ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
             side_is_incomplete(side)
@@ -122,23 +142,23 @@ pub(super) fn extrude_extent_is_incomplete<A: CompletenessAdmission>(
     }
 }
 
-pub(super) fn extrude_start_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(super) fn extrude_start_is_incomplete(
+    ctx: &DecodeContext<'_>,
     start: &ExtrudeStart,
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match start {
         ExtrudeStart::Unresolved {} => Ok(true),
-        ExtrudeStart::FromFace { face, .. } => face_selection_is_incomplete(admission, face),
+        ExtrudeStart::FromFace { face, .. } => face_selection_is_incomplete(ctx, face),
         ExtrudeStart::OffsetProfilePlane { .. } | ExtrudeStart::ProfilePlane {} => Ok(false),
     }
 }
 
-pub(super) fn revolve_feature_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(super) fn revolve_feature_is_incomplete(
+    ctx: &DecodeContext<'_>,
     construction: &RevolveConstruction,
     op: BooleanOp,
     dependencies: &[FeatureId],
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     let RevolveConstruction::Resolved {
         profile,
         axis,
@@ -149,12 +169,12 @@ pub(super) fn revolve_feature_is_incomplete<A: CompletenessAdmission>(
     else {
         return Ok(true);
     };
-    let side_is_incomplete = |termination: &AngularTermination| {
-        Ok(angular_termination_is_incomplete(admission, termination)?
-            || angular_termination_dependency_is_incomplete(admission, termination, dependencies)?)
+    let side_is_incomplete = |termination: &AngularTermination| -> Result<bool, CodecError> {
+        Ok(angular_termination_is_incomplete(ctx, termination)?
+            || angular_termination_dependency_is_incomplete(ctx, termination, dependencies)?)
     };
-    Ok(planar_profile_ref_is_incomplete(admission, profile)?
-        || planar_profile_dependency_is_incomplete(admission, profile, dependencies)?
+    Ok(planar_profile_ref_is_incomplete(ctx, profile)?
+        || planar_profile_dependency_is_incomplete(ctx, profile, dependencies)?
         || match extent {
             RevolveExtent::OneSided { termination } | RevolveExtent::Symmetric { termination } => {
                 side_is_incomplete(termination)?
@@ -164,7 +184,7 @@ pub(super) fn revolve_feature_is_incomplete<A: CompletenessAdmission>(
             }
         }
         || match &axis.reference {
-            Some(reference) => path_ref_is_incomplete(admission, reference)?,
+            Some(reference) => path_ref_is_incomplete(ctx, reference)?,
             None => false,
         }
         || solid.is_none()
@@ -181,18 +201,18 @@ fn vertex_selection_is_incomplete(vertex: &VertexSelection) -> bool {
     }
 }
 
-pub(super) fn termination_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(super) fn termination_is_incomplete(
+    ctx: &DecodeContext<'_>,
     termination: &LinearTermination,
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match termination {
         LinearTermination::Unresolved {} => Ok(true),
-        LinearTermination::ToFace { face, .. } => face_selection_is_incomplete(admission, face),
+        LinearTermination::ToFace { face, .. } => face_selection_is_incomplete(ctx, face),
         LinearTermination::ToVertex { vertex } => Ok(vertex_selection_is_incomplete(vertex)),
         LinearTermination::OffsetFromFace { face, .. } => {
-            face_selection_is_incomplete(admission, face)
+            face_selection_is_incomplete(ctx, face)
         }
-        LinearTermination::ToShape { target } => face_selection_is_incomplete(admission, target),
+        LinearTermination::ToShape { target } => face_selection_is_incomplete(ctx, target),
         LinearTermination::Blind { .. } => Ok(false),
         LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
@@ -201,31 +221,31 @@ pub(super) fn termination_is_incomplete<A: CompletenessAdmission>(
     }
 }
 
-pub(super) fn termination_dependency_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(super) fn termination_dependency_is_incomplete(
+    ctx: &DecodeContext<'_>,
     termination: &LinearTermination,
     dependencies: &[FeatureId],
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match termination {
         LinearTermination::ToVertex {
             vertex: VertexSelection::Generated { vertex, .. },
-        } => Ok(!admission.contains(dependencies, &vertex.feature, DEPENDENCIES)?),
+        } => Ok(!ctx.contains(dependencies, &vertex.feature, DEPENDENCIES)?),
         _ => Ok(false),
     }
 }
 
-fn angular_termination_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+fn angular_termination_is_incomplete(
+    ctx: &DecodeContext<'_>,
     termination: &AngularTermination,
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match termination {
         AngularTermination::Unresolved {} => Ok(true),
-        AngularTermination::ToFace { face, .. } => face_selection_is_incomplete(admission, face),
+        AngularTermination::ToFace { face, .. } => face_selection_is_incomplete(ctx, face),
         AngularTermination::ToVertex { vertex } => Ok(vertex_selection_is_incomplete(vertex)),
         AngularTermination::OffsetFromFace { face, .. } => {
-            face_selection_is_incomplete(admission, face)
+            face_selection_is_incomplete(ctx, face)
         }
-        AngularTermination::ToShape { target } => face_selection_is_incomplete(admission, target),
+        AngularTermination::ToShape { target } => face_selection_is_incomplete(ctx, target),
         AngularTermination::Angle { .. } => Ok(false),
         AngularTermination::ThroughAll {}
         | AngularTermination::ThroughNext {}
@@ -234,26 +254,26 @@ fn angular_termination_is_incomplete<A: CompletenessAdmission>(
     }
 }
 
-fn angular_termination_dependency_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+fn angular_termination_dependency_is_incomplete(
+    ctx: &DecodeContext<'_>,
     termination: &AngularTermination,
     dependencies: &[FeatureId],
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match termination {
         AngularTermination::ToVertex {
             vertex: VertexSelection::Generated { vertex, .. },
-        } => Ok(!admission.contains(dependencies, &vertex.feature, DEPENDENCIES)?),
+        } => Ok(!ctx.contains(dependencies, &vertex.feature, DEPENDENCIES)?),
         _ => Ok(false),
     }
 }
 
-pub(super) fn rib_feature_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(super) fn rib_feature_is_incomplete(
+    ctx: &DecodeContext<'_>,
     construction: &RibConstruction,
     op: BooleanOp,
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     Ok(match &construction.profile {
-        Some(profile) => planar_profile_ref_is_incomplete(admission, profile)?,
+        Some(profile) => planar_profile_ref_is_incomplete(ctx, profile)?,
         None => true,
     } || construction.direction.is_none()
         || construction.thickness.is_none()
@@ -273,13 +293,13 @@ pub(super) fn sweep_mode_is_incomplete(mode: SweepMode) -> bool {
     }
 }
 
-pub(super) fn sweep_orientation_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(super) fn sweep_orientation_is_incomplete(
+    ctx: &DecodeContext<'_>,
     orientation: &SweepOrientation,
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match orientation {
-        SweepOrientation::Auxiliary { path, .. } => path_ref_is_incomplete(admission, path),
-        SweepOrientation::GuideSurface { faces } => face_selection_is_incomplete(admission, faces),
+        SweepOrientation::Auxiliary { path, .. } => path_ref_is_incomplete(ctx, path),
+        SweepOrientation::GuideSurface { faces } => face_selection_is_incomplete(ctx, faces),
         SweepOrientation::Binormal { .. } => Ok(false),
         SweepOrientation::CorrectedFrenet {}
         | SweepOrientation::Fixed {}
@@ -287,13 +307,10 @@ pub(super) fn sweep_orientation_is_incomplete<A: CompletenessAdmission>(
     }
 }
 
-pub(super) fn pattern_is_incomplete<
-    A: CompletenessAdmission,
-    C: cadmpeg_ir::features::patterns::CompositeStages,
->(
-    admission: &A,
+pub(super) fn pattern_is_incomplete<C: cadmpeg_ir::features::patterns::CompositeStages>(
+    ctx: &DecodeContext<'_>,
     pattern: &PatternKind<C>,
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match pattern.definition() {
         PatternTransform::Unresolved { .. } => Ok(true),
         PatternTransform::Linear {
@@ -307,39 +324,39 @@ pub(super) fn pattern_is_incomplete<
         PatternTransform::Mirror { .. } => Ok(false),
         PatternTransform::MirrorReference { .. } => Ok(true),
         PatternTransform::CurveDriven { path, count, .. } => Ok(match path {
-            Some(path) => path_ref_is_incomplete(admission, path)?,
+            Some(path) => path_ref_is_incomplete(ctx, path)?,
             None => true,
         } || *count < 2),
         PatternTransform::Scale { center, .. } => Ok(matches!(
             center,
             cadmpeg_ir::features::patterns::PatternScaleCenter::Native(_)
         )),
-        PatternTransform::Composite { stages } => admission.any_by(
+        PatternTransform::Composite { stages } => ctx.any_by(
             stages.stages(),
-            |stage| pattern_is_incomplete(admission, &stage.pattern),
+            |stage| pattern_is_incomplete(ctx, &stage.pattern),
             "nx pattern stages",
         ),
     }
 }
 
-pub(crate) fn pattern_feature_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(crate) fn pattern_feature_is_incomplete(
+    ctx: &DecodeContext<'_>,
     seeds: &[cadmpeg_ir::features::patterns::PatternSeed],
     pattern: &PatternKind,
     dependencies: &[cadmpeg_ir::features::FeatureId],
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     Ok(seeds.is_empty()
-        || admission.any_by(
+        || ctx.any_by(
             seeds,
             |seed| match seed {
                 cadmpeg_ir::features::patterns::PatternSeed::Feature(feature) => {
-                    Ok(!admission.contains(dependencies, feature, DEPENDENCIES)?)
+                    Ok(!ctx.contains(dependencies, feature, DEPENDENCIES)?)
                 }
                 cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) => {
-                    face_selection_is_incomplete(admission, faces)
+                    face_selection_is_incomplete(ctx, faces)
                 }
                 cadmpeg_ir::features::patterns::PatternSeed::Bodies(bodies) => {
-                    body_selection_is_incomplete(admission, bodies)
+                    Ok(body_selection_is_incomplete(bodies))
                 }
                 cadmpeg_ir::features::patterns::PatternSeed::Occurrences(occurrences) => {
                     Ok(occurrences.is_empty())
@@ -347,19 +364,33 @@ pub(crate) fn pattern_feature_is_incomplete<A: CompletenessAdmission>(
             },
             "nx pattern seeds",
         )?
-        || admission.has_equal_pair(seeds, "nx pattern seed duplicates")?
-        || pattern_is_incomplete(admission, pattern)?)
+        || {
+            let operation = "nx pattern seed duplicates";
+            let mut visits = seeds.iter();
+            let mut index = 0;
+            loop {
+                if visits.as_slice().is_empty() {
+                    break false;
+                }
+                let Some(seed) = ctx.next_charged(&mut visits, operation)? else {
+                    break false;
+                };
+                let duplicate = ctx.contains(&seeds[..index], seed, operation)?;
+                index += 1;
+                if duplicate {
+                    break true;
+                }
+            }
+        }
+        || pattern_is_incomplete(ctx, pattern)?)
 }
 
 /// The occurrence count of a complete pattern transform. Composite stages
 /// are visited in order and never nest.
-pub(crate) fn pattern_occurrence_count<
-    A: CompletenessAdmission,
-    C: cadmpeg_ir::features::patterns::CompositeStages,
->(
-    admission: &A,
+pub(crate) fn pattern_occurrence_count<C: cadmpeg_ir::features::patterns::CompositeStages>(
+    ctx: &DecodeContext<'_>,
     pattern: &PatternKind<C>,
-) -> Result<Option<usize>, A::Error> {
+) -> Result<Option<usize>, CodecError> {
     Ok(match pattern.definition() {
         PatternTransform::Linear { count, .. }
         | PatternTransform::Circular { count, .. }
@@ -371,10 +402,10 @@ pub(crate) fn pattern_occurrence_count<
         PatternTransform::Composite { stages } => {
             // The occurrence product so far; `None` before the first stage.
             let mut occurrences = None::<usize>;
-            let incomplete = admission.any_by(
+            let incomplete = ctx.any_by(
                 stages.stages(),
                 |stage| {
-                    let Some(stage_count) = pattern_occurrence_count(admission, &stage.pattern)?
+                    let Some(stage_count) = pattern_occurrence_count(ctx, &stage.pattern)?
                     else {
                         return Ok(true);
                     };
@@ -404,30 +435,27 @@ pub(crate) fn pattern_occurrence_count<
     })
 }
 
-pub(crate) fn body_selection_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
-    selection: &BodySelection,
-) -> Result<bool, A::Error> {
+pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
     match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-            selection_ids_are_incomplete(admission, bodies)
+            bodies.is_empty()
         }
         // Local members are nonempty, distinct and nonblank, and the native
         // reference is nonblank, by construction.
-        BodySelection::ResolvedSet { .. } | BodySelection::Local { .. } => Ok(false),
+        BodySelection::ResolvedSet { .. } | BodySelection::Local { .. } => false,
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Native(_)
-        | BodySelection::NativeSet(_) => Ok(true),
+        | BodySelection::NativeSet(_) => true,
     }
 }
 
-pub(in crate::decode) fn face_selection_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(in crate::decode) fn face_selection_is_incomplete(
+    ctx: &DecodeContext<'_>,
     selection: &FaceSelection,
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match selection {
         FaceSelection::Unresolved
         | FaceSelection::Generated { .. }
@@ -435,15 +463,15 @@ pub(in crate::decode) fn face_selection_is_incomplete<A: CompletenessAdmission>(
         | FaceSelection::Historical { .. }
         | FaceSelection::HistoricalPartial { .. } => Ok(true),
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => {
-            selection_ids_are_incomplete(admission, faces)
+            selection_ids_are_incomplete(ctx, faces)
         }
     }
 }
 
-pub(super) fn edge_selection_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(super) fn edge_selection_is_incomplete(
+    ctx: &DecodeContext<'_>,
     selection: &EdgeSelection,
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match selection {
         EdgeSelection::Unresolved
         | EdgeSelection::Generated { .. }
@@ -452,26 +480,26 @@ pub(super) fn edge_selection_is_incomplete<A: CompletenessAdmission>(
         | EdgeSelection::HistoricalPartial { .. } => Ok(true),
         EdgeSelection::All => Ok(false),
         EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => {
-            selection_ids_are_incomplete(admission, edges)
+            selection_ids_are_incomplete(ctx, edges)
         }
     }
 }
 
-pub(super) fn profile_ref_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(super) fn profile_ref_is_incomplete(
+    ctx: &DecodeContext<'_>,
     profile: &ProfileRef,
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match profile {
         ProfileRef::SpatialSketchSelection { .. } => Ok(true),
         ProfileRef::SpatialSketchProfiles { .. } => Ok(false),
-        ProfileRef::Planar(planar) => planar_profile_ref_is_incomplete(admission, planar),
+        ProfileRef::Planar(planar) => planar_profile_ref_is_incomplete(ctx, planar),
     }
 }
 
-pub(super) fn planar_profile_ref_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(super) fn planar_profile_ref_is_incomplete(
+    ctx: &DecodeContext<'_>,
     profile: &PlanarProfileRef,
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match profile {
         PlanarProfileRef::Unresolved(_)
         | PlanarProfileRef::Native(_)
@@ -483,20 +511,35 @@ pub(super) fn planar_profile_ref_is_incomplete<A: CompletenessAdmission>(
         | PlanarProfileRef::HistoricalFaces { .. }
         | PlanarProfileRef::Feature(_) => Ok(false),
         PlanarProfileRef::Generated { curves, .. } => {
-            admission.has_equal_pair(curves, "nx generated profile curve duplicates")
+            let operation = "nx generated profile curve duplicates";
+            let mut visits = curves.iter();
+            let mut index = 0;
+            loop {
+                if visits.as_slice().is_empty() {
+                    break Ok(false);
+                }
+                let Some(curve) = ctx.next_charged(&mut visits, operation)? else {
+                    break Ok(false);
+                };
+                let duplicate = ctx.contains(&curves[..index], curve, operation)?;
+                index += 1;
+                if duplicate {
+                    break Ok(true);
+                }
+            }
         }
-        PlanarProfileRef::Faces(faces) => selection_ids_are_incomplete(admission, faces),
+        PlanarProfileRef::Faces(faces) => selection_ids_are_incomplete(ctx, faces),
     }
 }
 
-pub(super) fn profile_dependency_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(super) fn profile_dependency_is_incomplete(
+    ctx: &DecodeContext<'_>,
     profile: &ProfileRef,
     dependencies: &[FeatureId],
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match profile {
         ProfileRef::Planar(planar) => {
-            planar_profile_dependency_is_incomplete(admission, planar, dependencies)
+            planar_profile_dependency_is_incomplete(ctx, planar, dependencies)
         }
         ProfileRef::SpatialSketchProfiles { .. } | ProfileRef::SpatialSketchSelection { .. } => {
             Ok(false)
@@ -504,50 +547,65 @@ pub(super) fn profile_dependency_is_incomplete<A: CompletenessAdmission>(
     }
 }
 
-pub(super) fn planar_profile_dependency_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(super) fn planar_profile_dependency_is_incomplete(
+    ctx: &DecodeContext<'_>,
     profile: &PlanarProfileRef,
     dependencies: &[FeatureId],
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match profile {
         PlanarProfileRef::Feature(feature) => {
-            Ok(!admission.contains(dependencies, feature, DEPENDENCIES)?)
+            Ok(!ctx.contains(dependencies, feature, DEPENDENCIES)?)
         }
-        PlanarProfileRef::Generated { curves, .. } => admission.any_by(
+        PlanarProfileRef::Generated { curves, .. } => ctx.any_by(
             curves,
-            |curve| Ok(!admission.contains(dependencies, &curve.feature, DEPENDENCIES)?),
+            |curve| Ok(!ctx.contains(dependencies, &curve.feature, DEPENDENCIES)?),
             "nx generated profile curves",
         ),
         _ => Ok(false),
     }
 }
 
-pub(super) fn loft_section_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(super) fn loft_section_is_incomplete(
+    ctx: &DecodeContext<'_>,
     section: &LoftSection,
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match section {
-        LoftSection::Profile(profile) => profile_ref_is_incomplete(admission, profile),
+        LoftSection::Profile(profile) => profile_ref_is_incomplete(ctx, profile),
         LoftSection::Point(LoftPointSection::Native(_)) => Ok(true),
         LoftSection::Point(LoftPointSection::Point(_)) => Ok(false),
         LoftSection::Point(LoftPointSection::Vertex(_)) => Ok(false),
     }
 }
 
-fn selection_ids_are_incomplete<A: CompletenessAdmission, T>(
-    admission: &A,
+fn selection_ids_are_incomplete<T>(
+    ctx: &DecodeContext<'_>,
     ids: &[T],
-) -> Result<bool, A::Error>
+) -> Result<bool, CodecError>
 where
-    T: Ord + cadmpeg_core::decode::cost::DecodeCost,
+    T: Ord + DecodeCost,
 {
-    Ok(ids.is_empty() || admission.has_duplicate(ids, "nx selection duplicates")?)
+    const OPERATION: &str = "nx selection duplicates";
+    if ids.is_empty() {
+        return Ok(true);
+    }
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut seen = BTreeSet::new();
+    let mut visits = ids.iter();
+    while !visits.as_slice().is_empty() {
+        let Some(id) = ctx.next_charged(&mut visits, OPERATION)? else {
+            break;
+        };
+        if !storage.with_storage(|| ctx.insert_btree_set(&mut seen, id, OPERATION))? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
-pub(in crate::decode) fn path_ref_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
+pub(in crate::decode) fn path_ref_is_incomplete(
+    ctx: &DecodeContext<'_>,
     path: &PathRef,
-) -> Result<bool, A::Error> {
+) -> Result<bool, CodecError> {
     match path {
         PathRef::Unresolved(_) | PathRef::Native(_) | PathRef::SpatialSketchSelection { .. } => {
             Ok(true)
@@ -556,8 +614,8 @@ pub(in crate::decode) fn path_ref_is_incomplete<A: CompletenessAdmission>(
         PathRef::Sketch(_) => Ok(false),
         PathRef::SketchCurves { .. } => Ok(false),
         PathRef::SpatialSketchCurves { .. } => Ok(false),
-        PathRef::Edges(edges) => selection_ids_are_incomplete(admission, edges),
-        PathRef::Curves(curves) => selection_ids_are_incomplete(admission, curves),
+        PathRef::Edges(edges) => selection_ids_are_incomplete(ctx, edges),
+        PathRef::Curves(curves) => selection_ids_are_incomplete(ctx, curves),
     }
 }
 

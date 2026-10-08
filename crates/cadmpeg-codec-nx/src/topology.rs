@@ -17,6 +17,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Sense;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::ControlFlow;
 use std::sync::OnceLock;
 
 use crate::framing::{
@@ -1030,6 +1031,11 @@ pub(crate) struct BodyShell<'graph> {
     pub(crate) faces: Vec<u32>,
 }
 
+enum BodyShapeShellVisitor<'graph, 'visit> {
+    Faces(&'visit mut dyn FnMut(BodyShell<'graph>) -> Result<ControlFlow<()>, CodecError>),
+    Summary(&'visit mut dyn FnMut(u32, usize) -> Result<ControlFlow<()>, CodecError>),
+}
+
 const INDEX_OPERATION: &str = "NX topology node index";
 
 impl Graph {
@@ -1722,14 +1728,65 @@ impl Graph {
     ///
     /// One pass indexes faces by their owning shell, so classifying every shell
     /// visits each face a bounded number of times.
-    pub(crate) fn body_shape_shells(
+    pub(crate) fn body_shape_shells<'graph>(
+        &'graph self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<BodyShell<'graph>>, CodecError> {
+        const OPERATION: &str = "classify NX body shells";
+        let mut body_shells = Vec::new();
+        let mut visit = |shell| {
+            ctx.push_vec(&mut body_shells, shell, OPERATION)?;
+            Ok(ControlFlow::Continue(()))
+        };
+        let _ = self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit))?;
+        Ok(body_shells)
+    }
+
+    /// Visit each validated body-shape shell's body identity in physical shell
+    /// order. A shared body identity may be visited more than once.
+    pub(crate) fn visit_body_shape_body_ids(
         &self,
         ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<BodyShell<'_>>, CodecError> {
-        const OPERATION: &str = "classify NX body shells";
-        let mut index_storage = ctx.reserve_scoped(0, "NX shell face index")?;
+        mut visit_body_id: impl FnMut(u32) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        let mut visit = |body_id, _| {
+            visit_body_id(body_id)?;
+            Ok(ControlFlow::Continue(()))
+        };
+        let _ = self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Summary(&mut visit))?;
+        Ok(())
+    }
+
+    /// Return whether any validated body-shape shell exists.
+    pub(crate) fn has_body_shape_shell(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
+        let mut visit = |_, _| Ok(ControlFlow::Break(()));
+        Ok(matches!(
+            self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Summary(&mut visit))?,
+            ControlFlow::Break(())
+        ))
+    }
+
+    /// Traverse shells against one owner index. Both modes validate shell
+    /// fields and face ownership. `Faces` materializes face IDs and sorts
+    /// linked chains; `Summary` returns only body and face counts. A visitor
+    /// break stops the shell scan at that candidate.
+    fn visit_body_shape_shells<'graph>(
+        &'graph self,
+        ctx: &DecodeContext<'_>,
+        mut visitor: BodyShapeShellVisitor<'graph, '_>,
+    ) -> Result<ControlFlow<()>, CodecError> {
+        const FACE_INDEX: &str = "NX shell face index";
+        const SHELL_VISIT: &str = "classify NX body shells";
+        let mut index_storage = ctx.reserve_scoped(0, FACE_INDEX)?;
         let mut faces_by_shell = BTreeMap::<u32, Vec<u32>>::new();
-        for face in ctx.admit_iter(self.of_kind(NodeKind::Face), "NX shell face index")? {
+        let mut remaining_faces = self.of_kind(NodeKind::Face).iter();
+        while !remaining_faces.as_slice().is_empty() {
+            let Some(face) = ctx.next_charged(&mut remaining_faces, FACE_INDEX)? else {
+                break;
+            };
             let Some(shell) = face.face_fields().and_then(|fields| fields.shell) else {
                 continue;
             };
@@ -1738,36 +1795,63 @@ impl Graph {
                     &mut faces_by_shell,
                     u32::from(shell),
                     face.xmt(),
-                    "NX shell face index",
-                    "NX shell face index",
+                    FACE_INDEX,
+                    FACE_INDEX,
                 )
             })?;
         }
-        let mut shells = Vec::new();
-        for shell in ctx.admit_iter(self.of_kind(NodeKind::Shell), OPERATION)? {
-            if let Some(faces) = self.body_shell_faces(ctx, shell, &faces_by_shell)? {
-                ctx.push_vec(&mut shells, BodyShell { node: shell, faces }, OPERATION)?;
+        let mut remaining_shells = self.of_kind(NodeKind::Shell).iter();
+        while !remaining_shells.as_slice().is_empty() {
+            let Some(shell) = ctx.next_charged(&mut remaining_shells, SHELL_VISIT)? else {
+                break;
+            };
+            let flow = match &mut visitor {
+                BodyShapeShellVisitor::Faces(visit) => {
+                    let mut faces = Vec::new();
+                    if self
+                        .body_shell_faces(ctx, shell, &faces_by_shell, Some(&mut faces))?
+                        .is_none()
+                    {
+                        continue;
+                    }
+                    visit(BodyShell { node: shell, faces })?
+                }
+                BodyShapeShellVisitor::Summary(visit) => {
+                    let Some((body_id, face_count)) =
+                        self.body_shell_faces(ctx, shell, &faces_by_shell, None)?
+                    else {
+                        continue;
+                    };
+                    visit(body_id, face_count)?
+                }
+            };
+            if let ControlFlow::Break(()) = flow {
+                return Ok(ControlFlow::Break(()));
             }
         }
-        Ok(shells)
+        Ok(ControlFlow::Continue(()))
     }
 
-    /// Validate one shell as a body shape and return its faces.
+    /// Validate one shell as a body shape, optionally collecting its faces.
     fn body_shell_faces(
         &self,
         ctx: &DecodeContext<'_>,
         shell: &Node,
         faces_by_shell: &BTreeMap<u32, Vec<u32>>,
-    ) -> Result<Option<Vec<u32>>, CodecError> {
+        mut collected_faces: Option<&mut Vec<u32>>,
+    ) -> Result<Option<(u32, usize)>, CodecError> {
         const OPERATION: &str = "validate NX shell faces";
         let Some(fields) = shell.shell_fields() else {
+            return Ok(None);
+        };
+        let Some(body_id) = fields.body.map(u32::from) else {
             return Ok(None);
         };
         if fields.attributes.is_some()
             || fields.next_shell.is_some()
             || fields.sentinel_0.is_some()
             || fields.sentinel_1.is_some()
-            || fields.body.is_none_or(|target| u32::from(target) == 0)
+            || body_id == 0
             || fields.region.is_none_or(|target| u32::from(target) == 0)
         {
             return Ok(None);
@@ -1788,16 +1872,20 @@ impl Graph {
             if !anchored {
                 return Ok(None);
             }
-            return Ok(Some(ctx.copy_slice(owned, "NX shell face identities")?));
+            if let Some(faces) = collected_faces {
+                *faces = ctx.copy_slice(owned, "NX shell face identities")?;
+            }
+            return Ok(Some((body_id, owned.len())));
         }
         // A FACE chain visits only faces owned by this shell, each once, so a
         // chain longer than the owned faces repeats one.
-        let mut faces = Vec::new();
+        let mut face_count = 0;
         let mut face_xmt = fields.first_face;
         while let Some(target) = face_xmt {
-            if faces.len() == owned.len() {
+            if face_count == owned.len() {
                 return Ok(None);
             }
+            ctx.charge_work(1, OPERATION)?;
             let current = u32::from(target);
             let Some(face) = self
                 .get(ctx, NodeKind::Face, current)?
@@ -1808,14 +1896,19 @@ impl Graph {
             if face.shell.map(u32::from) != Some(shell.xmt()) {
                 return Ok(None);
             }
-            ctx.push_vec(&mut faces, current, "NX shell face identities")?;
+            if let Some(faces) = collected_faces.as_mut() {
+                ctx.push_vec(&mut **faces, current, "NX shell face identities")?;
+            }
+            face_count += 1;
             face_xmt = face.next_face;
         }
-        if faces.is_empty() {
+        if face_count == 0 {
             return Ok(None);
         }
-        ctx.sort_unstable_by(&mut faces, |value| value, Ord::cmp, "sort NX shell faces")?;
-        Ok(Some(faces))
+        if let Some(faces) = collected_faces {
+            ctx.sort_unstable_by(&mut *faces, |value| value, Ord::cmp, "sort NX shell faces")?;
+        }
+        Ok(Some((body_id, face_count)))
     }
 
     /// Return whether every body-shape face has a non-empty valid loop chain
@@ -1833,9 +1926,15 @@ impl Graph {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<usize, CodecError> {
-        let mut storage = ctx.reserve_scoped(0, "NX body shells")?;
-        let shells = storage.with_storage(|| self.body_shape_shells(ctx))?;
-        Self::face_count(ctx, &shells)
+        let mut face_count = 0;
+        let mut visit = |_, shell_face_count| {
+            // Shell face ownership partitions the graph's faces, and each
+            // accepted chain stays within its owned set.
+            face_count += shell_face_count;
+            Ok(ControlFlow::Continue(()))
+        };
+        let _ = self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Summary(&mut visit))?;
+        Ok(face_count)
     }
 
     /// Total faces of the body shells. Each face belongs to one shell, so the
@@ -1858,10 +1957,19 @@ impl Graph {
             return Ok((false, faces));
         }
         let mut reachable_fins = BTreeSet::new();
-        for shell in ctx.admit_iter(&shells, "NX body shell faces")? {
-            for &face_xmt in ctx.admit_iter(&shell.faces, "NX body shell faces")? {
+        let mut remaining_shells = shells.iter();
+        while !remaining_shells.as_slice().is_empty() {
+            let Some(shell) = ctx.next_charged(&mut remaining_shells, "NX body shell faces")? else {
+                break;
+            };
+            let mut remaining_faces = shell.faces.iter();
+            while !remaining_faces.as_slice().is_empty() {
+                let Some(&face_xmt) = ctx.next_charged(&mut remaining_faces, "NX body shell faces")? else {
+                    break;
+                };
+                let mut ring_storage = ctx.reserve_scoped(0, "NX body face rings")?;
                 let Ok(rings) =
-                    storage.with_storage(|| match self.face_loop_rings(ctx, face_xmt) {
+                    ring_storage.with_storage(|| match self.face_loop_rings(ctx, face_xmt) {
                         Ok(rings) => Ok(Ok(rings)),
                         Err(FaceLoopError::Invalid(failure)) => Ok(Err(failure)),
                         Err(FaceLoopError::Codec(error)) => Err(error),
@@ -1881,7 +1989,11 @@ impl Graph {
                 }
             }
         }
-        for &xmt in ctx.admit_iter(&reachable_fins, OPERATION)? {
+        let mut remaining_fins = reachable_fins.iter();
+        while remaining_fins.len() != 0 {
+            let Some(&xmt) = ctx.next_charged(&mut remaining_fins, OPERATION)? else {
+                break;
+            };
             let Some(fields) = self
                 .get(ctx, NodeKind::Fin, xmt)?
                 .and_then(Node::fin_fields)
@@ -1914,8 +2026,8 @@ impl Graph {
             .and_then(Node::face_fields)
             .ok_or(FaceLoopFailure::InvalidFace { face_xmt })?;
         let mut loop_xmt = face.loop_xmt;
-        let mut seen_loops = BTreeSet::new();
         let mut seen_storage = ctx.reserve_scoped(0, "NX face loop identities")?;
+        let mut seen_loops = BTreeSet::new();
         let mut rings = Vec::new();
         while let Some(target) = loop_xmt {
             let current = u32::from(target);
@@ -1951,10 +2063,11 @@ impl Graph {
         let first = u32::from(first);
         let mut current = first;
         let mut previous = None;
-        let mut seen = BTreeSet::new();
         let mut seen_storage = ctx.reserve_scoped(0, "NX FIN ring identities")?;
+        let mut seen = BTreeSet::new();
         let mut ring = Vec::new();
         loop {
+            ctx.charge_work(1, OPERATION)?;
             if !seen_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut seen, current, "NX FIN ring identities")
             })? {
@@ -2015,7 +2128,6 @@ impl Graph {
             if next.backward.map(u32::from) != Some(current) {
                 return Err(invalid_fin.into());
             }
-            ctx.charge_work(1, OPERATION)?;
             previous = Some(current);
             current = u32::from(fields.forward.ok_or(invalid_fin)?);
         }

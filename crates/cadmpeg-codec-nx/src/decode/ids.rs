@@ -9,15 +9,6 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::{identity_component, identity_key};
 use std::fmt::{self, Display, Write};
 
-struct CountBytes(usize);
-
-impl Write for CountBytes {
-    fn write_str(&mut self, text: &str) -> fmt::Result {
-        self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
-        Ok(())
-    }
-}
-
 /// The format component every NX identity carries.
 fn nx() -> IdentityComponent {
     identity_component!("nx")
@@ -51,6 +42,17 @@ impl IdScope {
         ctx: &DecodeContext<'_>,
         stream_index: usize,
     ) -> Result<Self, CodecError> {
+        struct CountBytes(usize);
+
+        impl Write for CountBytes {
+            fn write_str(&mut self, text: &str) -> fmt::Result {
+                self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
+                Ok(())
+            }
+        }
+
+        // The stream index is a usize, so its decimal rendering is bounded by
+        // usize::BITS digits plus the fixed `s` prefix on this target.
         let mut count = CountBytes(0);
         write!(&mut count, "s{stream_index}")
             .map_err(|_| ctx.refuse_codec_limit("nx stream scope text", 0, u64::MAX))?;
@@ -85,15 +87,9 @@ impl IdScope {
         Some(Self(scope))
     }
 
-    /// Copy this scope's prefix after charging its retained text.
+    /// Format this scope's prefix after admitting its work and retained bytes.
     pub(crate) fn prefix_charged(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
-        let mut count = CountBytes(0);
-        write!(&mut count, "nx:{}", self.0.as_str())
-            .map_err(|_| ctx.refuse_codec_limit("nx scope prefix", 0, u64::MAX))?;
-        let mut text = ctx.retained_string(count.0, "nx scope prefix")?;
-        write!(&mut text, "nx:{}", self.0.as_str())
-            .map_err(|_| ctx.refuse_codec_limit("nx scope prefix", 0, u64_from_index(count.0)))?;
-        Ok(text)
+        ctx.format_retained(format_args!("nx:{}", self.0.as_str()), "nx scope prefix")
     }
 
     /// Mint `<scope>:<kind>#<key>`.
@@ -109,19 +105,17 @@ impl IdScope {
         .into()
     }
 
-    /// Mint an NX identity after charging its retained text.
+    /// Mint an NX identity after admitting its formatting work and retained bytes.
     pub(crate) fn id_charged<T: From<Identity>>(
         &self,
         ctx: &DecodeContext<'_>,
         kind: &IdentityComponent,
         key: impl Display,
     ) -> Result<T, CodecError> {
-        let mut count = CountBytes(0);
-        write!(&mut count, "nx:{}:{}#{key}", self.0.as_str(), kind.as_str())
-            .map_err(|_| ctx.refuse_codec_limit("nx identity text", 0, u64::MAX))?;
-        let mut text = ctx.retained_string(count.0, "nx identity text")?;
-        write!(&mut text, "nx:{}:{}#{key}", self.0.as_str(), kind.as_str())
-            .map_err(|_| ctx.refuse_codec_limit("nx identity text", 0, u64_from_index(count.0)))?;
+        let text = ctx.format_retained(
+            format_args!("nx:{}:{}#{key}", self.0.as_str(), kind.as_str()),
+            "nx identity text",
+        )?;
         Identity::new(text)
             .map(Into::into)
             .map_err(CodecError::malformed)
@@ -163,4 +157,174 @@ pub(crate) fn native_entity_key(id: &str) -> Option<IdentityKey> {
         return None;
     };
     Some(key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IdScope;
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::ids::{Identity, IdentityComponent, IdentityKey};
+
+    fn long_scope() -> (IdScope, String) {
+        // IdentityComponent has no maximum length; a decoded component can be
+        // arbitrarily long while remaining nonempty and separator-free.
+        let text = "scope".repeat(256);
+        let component = IdentityComponent::try_new(text.clone()).expect("valid component");
+        (IdScope::native(component), text)
+    }
+
+    #[test]
+    fn charged_identity_formatters_admit_long_component_work_and_copy() {
+        let (scope, scope_text) = long_scope();
+        let key_text = "part".repeat(128);
+        let key = IdentityKey::try_new(key_text.clone()).expect("valid key");
+        let kind = cadmpeg_ir::identity_component!("face");
+
+        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+            let prefix_error = crate::test_support::resource_refusal_at(
+                &[],
+                dimension,
+                "nx scope prefix",
+                |ctx| scope.prefix_charged(ctx).map(|_| ()),
+            );
+            assert!(matches!(prefix_error, CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension && limit.operation == "nx scope prefix"));
+
+            let id_error = crate::test_support::resource_refusal_at(
+                &[],
+                dimension,
+                "nx identity text",
+                |ctx| {
+                    scope
+                        .id_charged::<Identity>(ctx, &kind, key.clone())
+                        .map(|_| ())
+                },
+            );
+            assert!(matches!(id_error, CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension && limit.operation == "nx identity text"));
+        }
+
+        assert_eq!(scope.0.as_str(), scope_text);
+    }
+
+    #[test]
+    fn charged_identity_formatters_preserve_exact_text_and_admit_each_copy() {
+        let scope = IdScope::native(IdentityComponent::try_new("s2").expect("valid scope"));
+        let kind = cadmpeg_ir::identity_component!("face");
+        let key = IdentityKey::try_new("partition-0123456789".to_owned()).expect("valid key");
+        let expected = "nx:s2:face#partition-0123456789";
+        let expected_work = 2 * expected.len();
+        let expected_prefix = "nx:s2";
+        let expected_prefix_work = 2 * expected_prefix.len();
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units =
+                    u64::try_from(expected_prefix_work).expect("prefix work fits u64");
+            },
+            |ctx| {
+                let prefix = scope
+                    .prefix_charged(ctx)
+                    .expect("exact prefix formatting work is admitted");
+                assert_eq!(prefix, expected_prefix);
+                let error = ctx
+                    .charge_work(1, "probe NX scope prefix formatting work")
+                    .expect_err("formatted prefix work is fully charged");
+                assert!(matches!(error, CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.used
+                            == u64::try_from(expected_prefix_work).expect("prefix work fits u64")
+                        && limit.additional == 1));
+            },
+        );
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes =
+                    u64::try_from(expected_prefix.len()).expect("prefix length fits u64");
+            },
+            |ctx| {
+                let prefix = scope
+                    .prefix_charged(ctx)
+                    .expect("exact prefix copy fits");
+                assert_eq!(prefix, expected_prefix);
+                let error = ctx
+                    .charge_retained(1, "probe NX scope prefix retained copy")
+                    .expect_err("the formatted prefix remains retained");
+                assert!(matches!(error, CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.used
+                            == u64::try_from(expected_prefix.len())
+                                .expect("prefix length fits u64")
+                        && limit.additional == 1));
+            },
+        );
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units =
+                    u64::try_from(expected_work).expect("identity work fits u64");
+            },
+            |ctx| {
+                let id = scope
+                    .id_charged::<Identity>(ctx, &kind, key.clone())
+                    .expect("exact formatting work is admitted");
+                assert_eq!(id.as_str(), expected);
+                let error = ctx
+                    .charge_work(1, "probe NX identity formatting work")
+                    .expect_err("formatted text work is fully charged");
+                assert!(matches!(error, CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.used
+                            == u64::try_from(expected_work).expect("identity work fits u64")
+                        && limit.additional == 1));
+            },
+        );
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes =
+                    u64::try_from(expected.len()).expect("identity length fits u64");
+            },
+            |ctx| {
+                let id = scope
+                    .id_charged::<Identity>(ctx, &kind, key.clone())
+                    .expect("exact formatted copy fits");
+                assert_eq!(id.as_str(), expected);
+                let error = ctx
+                    .charge_retained(1, "probe NX identity retained copy")
+                    .expect_err("the formatted identity remains retained");
+                assert!(matches!(error, CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.used
+                            == u64::try_from(expected.len()).expect("identity length fits u64")
+                        && limit.additional == 1));
+            },
+        );
+    }
+
+    #[test]
+    fn charged_stream_scope_keeps_fixed_usize_formatting() {
+        let expected = format!("s{}", usize::MAX);
+        let scope = crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 0;
+                policy.limits.max_retained_bytes =
+                    u64::try_from(expected.len()).expect("stream scope length fits u64");
+            },
+            |ctx| IdScope::stream_charged(ctx, usize::MAX),
+        )
+        .expect("fixed-width usize rendering is retained");
+        let prefix = crate::test_support::with_decode_context(|ctx| {
+            scope.prefix_charged(ctx)
+        })
+        .expect("stream scope can be copied");
+        assert_eq!(prefix, format!("nx:{expected}"));
+    }
 }

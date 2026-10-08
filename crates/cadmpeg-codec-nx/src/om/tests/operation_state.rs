@@ -151,6 +151,45 @@ fn operation_state_group_table_handles_a_long_adjacent_group_run_and_refuses_col
 }
 
 #[test]
+fn operation_state_group_prefix_stops_before_unvisited_suffix() {
+    let bytes = [0x01, 0x00, 0x00, 0x01, 0x00, 0x00];
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX selected state group path traversal",
+        |ctx| {
+            operation_state_group_table_before_counter_map(
+                ctx,
+                &bytes,
+                bytes.len(),
+                usize::MAX - 1,
+            )
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("selected group traversal must be admitted per candidate");
+    };
+    assert_eq!(limit.additional, 1);
+
+    let work_limit = limit.used + limit.additional;
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = work_limit,
+        |ctx| {
+            assert!(operation_state_group_table_before_counter_map(
+                ctx,
+                &bytes,
+                bytes.len(),
+                usize::MAX - 1,
+            )
+            .unwrap()
+            .is_none());
+            assert_eq!(ctx.resource_refusal(), None);
+        },
+    );
+}
+
+#[test]
 fn operation_state_journal_decodes_timestamp_value_schema_and_ordinal() {
     let bytes = [
         0x04, 0x01, 0x02, 0x00, 0x00, 0xe0, 0x65, 0x53, 0x4d, 0x20, 0xc0, 0x01, 0x02, 0x03, 0x83,

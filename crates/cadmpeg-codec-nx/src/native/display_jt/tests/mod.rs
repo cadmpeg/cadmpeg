@@ -329,6 +329,8 @@ use cadmpeg_ir::topology::Color;
 const EPS_JT_TRANSFORMED_VERTEX: f64 = 1.0e-6;
 
 mod framing;
+mod late_parser_prefix;
+mod parser_prefix;
 mod wires;
 
 fn finite<const N: usize>(values: [f32; N]) -> [FiniteBinary32; N] {

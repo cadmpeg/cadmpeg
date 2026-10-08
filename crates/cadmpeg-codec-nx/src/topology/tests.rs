@@ -115,6 +115,7 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
         })
         .unwrap();
         assert_eq!(graph.body_shape_shells(ctx).unwrap().len(), 1);
+        assert!(graph.has_body_shape_shell(ctx).unwrap());
 
         let mut broken = valid;
         let face = broken
@@ -122,15 +123,10 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
             .position(|window| window == [0, 14])
             .expect("face record");
         put_ref(&mut broken, face + 24, 99);
-        assert!(
-            crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(
-                ctx, &broken
-            ))
-            .unwrap()
-            .body_shape_shells(ctx)
-            .unwrap()
-            .is_empty()
-        );
+        let broken_graph =
+            crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &broken)).unwrap();
+        assert!(broken_graph.body_shape_shells(ctx).unwrap().is_empty());
+        assert!(!broken_graph.has_body_shape_shell(ctx).unwrap());
 
         let mut independent_previous = topology_partition_stream();
         let face = independent_previous
@@ -138,17 +134,14 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
             .position(|window| window == [0, 14])
             .expect("face record");
         put_ref(&mut independent_previous, face + 20, 99);
-        assert_eq!(
-            crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(
-                ctx,
-                &independent_previous
-            ))
-            .unwrap()
-            .body_shape_shells(ctx)
-            .unwrap()
-            .len(),
-            1
-        );
+        let independent_previous_graph = crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &independent_previous)
+        })
+        .unwrap();
+        assert_eq!(independent_previous_graph.body_shape_shells(ctx).unwrap().len(), 1);
+        assert!(independent_previous_graph
+            .has_body_shape_shell(ctx)
+            .unwrap());
     });
 }
 
@@ -458,6 +451,105 @@ fn topology_body_shells_refuse_at_shell_face_identities() {
     );
 }
 
+#[test]
+fn body_shape_projections_do_not_retain_face_id_vectors() {
+    let stream = topology_partition_stream();
+    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx| {
+            assert!(graph.has_body_shape_shell(ctx).unwrap());
+            assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 1);
+            let mut body_id = None;
+            graph
+                .visit_body_shape_body_ids(ctx, |candidate| {
+                    body_id = Some(candidate);
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(body_id, Some(2));
+        },
+    );
+}
+
+#[test]
+fn body_shape_presence_stops_at_the_first_valid_shell() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    // Use an unrelated node in the prefix graph to match the trailing graph's
+    // index size. The work cap then measures the same prefix lookups.
+    let mut first_stream = topology_partition_stream();
+    let mut unrelated_point = record(29, 40);
+    put_ref(&mut unrelated_point, 2, 24);
+    put_vec3(&mut unrelated_point, 16, [0.01, 0.02, 0.03]);
+    first_stream.extend(unrelated_point);
+    let first_graph = crate::test_support::with_decode_context(|ctx| {
+        Graph::parse(ctx, &first_stream)
+    })
+    .unwrap();
+
+    let mut trailing_stream = topology_partition_stream();
+    let mut trailing_shell = record(13, 24);
+    for (offset, reference) in [
+        (2, 13),
+        (8, 1),
+        (10, 2),
+        (12, 1),
+        (14, 1),
+        (16, 1),
+        (18, 1),
+        (20, 12),
+        (22, 1),
+    ] {
+        put_ref(&mut trailing_shell, offset, reference);
+    }
+    trailing_stream.extend(trailing_shell);
+    let trailing_graph = crate::test_support::with_decode_context(|ctx| {
+        Graph::parse(ctx, &trailing_stream)
+    })
+    .unwrap();
+    assert_eq!(first_graph.of_kind(NodeKind::Shell).len(), 1);
+    assert_eq!(trailing_graph.of_kind(NodeKind::Shell).len(), 2);
+    assert_eq!(first_graph.keys.len(), trailing_graph.keys.len());
+    assert_eq!(
+        first_graph.of_kind(NodeKind::Face).len(),
+        trailing_graph.of_kind(NodeKind::Face).len()
+    );
+
+    let allows_presence = |graph: &Graph, work_limit| {
+        match crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = work_limit,
+            |ctx| graph.has_body_shape_shell(ctx),
+        ) {
+            Ok(true) => true,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits =>
+            {
+                false
+            }
+            result => panic!("presence query did not return true or a work refusal: {result:?}"),
+        }
+    };
+
+    let mut high = 1_u64;
+    while !allows_presence(&first_graph, high) {
+        high = high.checked_mul(2).expect("presence work bound");
+    }
+    let mut low = 0_u64;
+    while high - low > 1 {
+        let middle = low + (high - low) / 2;
+        if allows_presence(&first_graph, middle) {
+            high = middle;
+        } else {
+            low = middle;
+        }
+    }
+
+    assert!(allows_presence(&trailing_graph, high));
+}
+
 fn face_ring_refusal(
     adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> FaceLoopError {
@@ -591,6 +683,15 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
         assert!(graph.node(NodeKind::Region, 12).is_none());
         assert_eq!(graph.body_shape_shells(ctx).unwrap().len(), 1);
         assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 2);
+        assert!(graph.has_body_shape_shell(ctx).unwrap());
+        let mut body_id = None;
+        graph
+            .visit_body_shape_body_ids(ctx, |candidate| {
+                body_id = Some(candidate);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(body_id, Some(2));
 
         let mut input = Cursor::new(prt_with_partition(&stream));
         let result = NxCodec
@@ -1399,4 +1500,72 @@ fn topology_field_tolerances_require_finite_native_values() {
             .tolerance()
             .is_finite());
     });
+}
+
+#[test]
+fn topology_body_census_stops_after_the_first_face_without_loops() {
+    let mut stream = Vec::new();
+    for (shell_xmt, face_xmt) in [(10, 11), (12, 13)] {
+        let mut shell = record(13, crate::layout::shell_node::LEN);
+        put_ref(&mut shell, 2, shell_xmt);
+        for (offset, target) in [(8, 1), (10, 2), (12, 1), (14, face_xmt), (16, 1), (18, 1), (20, 3), (22, 1)] {
+            put_ref(&mut shell, offset, target);
+        }
+        stream.extend(shell);
+        let mut face = record(14, crate::layout::face_node::LEN);
+        put_ref(&mut face, 2, face_xmt);
+        for offset in [8, 18, 20, 22, 26, 29, 31, 33, 35, 37] {
+            put_ref(&mut face, offset, 1);
+        }
+        put_ref(&mut face, 24, shell_xmt);
+        face[28] = b'+';
+        stream.extend(face);
+    }
+    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    assert_eq!(graph.keys.len(), 4);
+    assert_eq!(graph.of_kind(NodeKind::Shell).len(), 2);
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX body shell faces",
+        |ctx| graph.body_topology_census(ctx),
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("the first shell visit must refuse");
+    };
+    assert_eq!(limit.additional, 1);
+    // After complete shell classification and face counting, the census reads
+    // one shell, one face, and one four-key lookup. The first face has no loops.
+    let lookup_work = 4 * cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<NodeKind>() + std::mem::size_of::<u32>(),
+    );
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = limit.used + 2 + lookup_work,
+        |ctx| {
+            assert_eq!(graph.body_topology_census(ctx).unwrap(), (false, 2));
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
+}
+
+#[test]
+fn topology_fin_visit_refuses_before_building_the_identity_index() {
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            let error = Graph::default().fin_ring(
+                ctx,
+                3,
+                crate::framing::xmt_reference::XmtTarget::from_wire(2).unwrap(),
+            ).unwrap_err();
+            let FaceLoopError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error else {
+                panic!("the FIN visit must refuse before its identity insertion");
+            };
+            assert_eq!(limit.operation, "walk NX FIN ring");
+            assert_eq!(limit.additional, 1);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        },
+    );
 }

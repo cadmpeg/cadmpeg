@@ -50,6 +50,16 @@ impl<S: crate::immutable_text::ImmutableText> PayloadText<S> {
     }
 }
 
+impl PayloadText<&str> {
+    pub(crate) fn try_into_owned_for_decode(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<PayloadText<String>, cadmpeg_core::CodecError> {
+        Ok(PayloadText(ctx.copy_retained_text(self.0, operation)?))
+    }
+}
+
 #[cfg(test)]
 impl PayloadText<&str> {
     pub(crate) fn into_owned(self) -> PayloadText<String> {
@@ -141,5 +151,37 @@ mod tests {
                 assert!(PayloadText::new(text.as_str()).is_err());
             },
         );
+    }
+
+    #[test]
+    fn payload_text_checked_copy_pays_one_exact_copy() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+
+        let value = PayloadText::new("μ").unwrap();
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 2,
+            |ctx| {
+                let owned = value
+                    .try_into_owned_for_decode(ctx, "NX checked payload text copy")
+                    .unwrap();
+                assert_eq!(owned.as_str(), "μ");
+                assert_eq!(ctx.resource_refusal(), None);
+            },
+        );
+
+        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+            let error = crate::test_support::resource_refusal_at(
+                &[],
+                dimension,
+                "NX checked payload text copy",
+                |ctx| value.try_into_owned_for_decode(ctx, "NX checked payload text copy"),
+            );
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension
+                    && limit.operation == "NX checked payload text copy"
+                    && limit.additional == 2));
+        }
     }
 }

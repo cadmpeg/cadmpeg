@@ -420,18 +420,8 @@ struct Chart {
     ext_support_uv: SupportUv,
 }
 
-/// Decode type-38 and single-byte `0x5a` records whose referenced chart and
-/// endpoint witnesses form a complete solved cache.
-pub(crate) fn curves(
-    ctx: &DecodeContext<'_>,
-    stream: &[u8],
-    point_layout: ChartPointLayout,
-) -> Result<Vec<IntersectionCurve>, CodecError> {
-    Ok(scan(ctx, stream, point_layout)?.curves)
-}
-
 /// Decode chart-backed constructions and classify every rejected construction.
-fn scan(
+pub(crate) fn scan(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
     point_layout: ChartPointLayout,

@@ -2187,23 +2187,18 @@ pub(super) fn topology_body_node_ids(
     let scope = IdScope::stream_charged(ctx, stream_index)?;
     let mut storage = ctx.reserve_scoped(0, OWNERS)?;
     let mut bodies = BTreeMap::<u32, BodyTopology>::new();
-    for shell in graph.body_shape_shells(ctx)? {
-        if let Some(body_xmt) = shell
-            .node
-            .shell_fields()
-            .and_then(|fields| fields.body.map(u32::from))
-        {
-            if !ctx.contains_key_btree_map(&bodies, &body_xmt, "nx topology body nodes")? {
-                let body = BodyTopology {
-                    complete: true,
-                    ..BodyTopology::default()
-                };
-                storage.with_storage(|| {
-                    ctx.insert_btree_map(&mut bodies, body_xmt, body, "nx topology body nodes")
-                })?;
-            }
+    graph.visit_body_shape_body_ids(ctx, |body_xmt| {
+        if !ctx.contains_key_btree_map(&bodies, &body_xmt, "nx topology body nodes")? {
+            let body = BodyTopology {
+                complete: true,
+                ..BodyTopology::default()
+            };
+            storage.with_storage(|| {
+                ctx.insert_btree_map(&mut bodies, body_xmt, body, "nx topology body nodes")
+            })?;
         }
-    }
+        Ok(())
+    })?;
     let mut shell_owners = NodeOwners::new();
     for shell in graph.of_kind(NodeKind::Shell) {
         ctx.charge_work(1, "nx topology body shells")?;

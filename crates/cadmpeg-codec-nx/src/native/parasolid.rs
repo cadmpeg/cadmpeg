@@ -378,14 +378,6 @@ pub(super) fn parasolid_groups(
     })
 }
 
-/// A malformed-record error whose message is copied under the decode budget.
-fn retained_malformed(ctx: &DecodeContext<'_>, message: &str) -> CodecError {
-    match ctx.copy_retained_text(message, "retain NX Parasolid rejection") {
-        Ok(message) => CodecError::Malformed(message),
-        Err(error) => error,
-    }
-}
-
 fn replace_group_record_id(ctx: &DecodeContext<'_>, id: &str) -> Result<String, CodecError> {
     let operation = "NX GROUP record identity";
     match ctx.split_once(id, "deltas-record", operation)? {
@@ -3436,14 +3428,9 @@ pub(super) fn parasolid_attribute_definitions(
         payloads.commit()?;
         for definition in ctx.admit_iter(scanned, "NX attribute definitions")? {
             ctx.reserve_vec(&mut records, 1, "NX attribute definitions")?;
-            let name = crate::printable_string::PrintableString::from_wire(
-                ctx,
-                ctx.copy_retained_text(
-                    definition.name.as_str(),
-                    "retain NX attribute definition name",
-                )?,
-            )?
-            .map_err(|message| retained_malformed(ctx, message))?;
+            let name = definition
+                .name
+                .try_into_owned_for_decode(ctx, "retain NX attribute definition name")?;
             let id = parasolid_record_id(
                 ctx,
                 stream_ordinal,
@@ -3952,11 +3939,9 @@ pub(super) fn parasolid_entity_value_records(
                 u32::from(record.xmt),
                 record.offset,
             )?;
-            let value = crate::printable_string::PrintableString::from_wire(
-                ctx,
-                ctx.copy_retained_text(record.value.as_str(), "retain NX Parasolid string value")?,
-            )?
-            .map_err(|message| retained_malformed(ctx, message))?;
+            let value = record
+                .value
+                .try_into_owned_for_decode(ctx, "retain NX Parasolid string value")?;
             records.strings.push(ParasolidEntity54StringRecord {
                 id,
                 stream_ordinal: ordinal,

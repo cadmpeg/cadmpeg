@@ -3694,10 +3694,14 @@ fn operation_state_group_table_before_counter_map(
     let mut group_storage = ctx.reserve_scoped(0, "NX selected group candidate storage")?;
     let mut groups = group_storage
         .with_storage(|| ctx.collection_vec(path.len(), "NX operation-state groups"))?;
-    for candidate in ctx
-        .admit_iter(&path, "NX selected state group path traversal")?
-        .copied()
-    {
+    let mut selected_candidates = path.iter().copied();
+    while selected_candidates.len() != 0 {
+        let Some(candidate) = ctx.next_charged(
+            &mut selected_candidates,
+            "NX selected state group path traversal",
+        )? else {
+            break;
+        };
         let Some(group) = group_storage.with_storage(|| {
             operation_state_group_at(ctx, bytes, candidates[candidate].0, map_start, base_offset)
         })?
@@ -5558,22 +5562,40 @@ pub(crate) enum OffsetStoreControlForm {
 /// Product-anchored storage may cross the physical boundary between the
 /// control block and the first column block. Exactly one admitted grammar must
 /// accept the complete control envelope.
-pub(crate) fn offset_store_control_form(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn offset_store_control_form<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     control: &[u8],
     first_record: Option<&[u8]>,
-) -> Result<Option<OffsetStoreControlForm>, CodecError> {
+) -> Result<
+    Option<(
+        OffsetStoreControlForm,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    )>,
+    CodecError,
+> {
     let zero = offset_store_control_values(ctx, control)?;
-    let product =
-        offset_store_product_anchored_form(ctx, control, first_record.unwrap_or_default())?;
-    match (zero, product) {
-        (Some((values, zero_storage)), None) => {
-            zero_storage.commit()?;
-            Ok(Some(OffsetStoreControlForm::ZeroPrefixed { values }))
+    let product_result =
+        offset_store_product_anchored_form(ctx, control, first_record.unwrap_or_default());
+    let product = match product_result {
+        Ok(product) => product,
+        Err(error) => {
+            if let Some((values, storage)) = zero {
+                drop(values);
+                drop(storage);
+            }
+            return Err(error);
         }
-        (_, Some((form, product_storage))) => {
-            product_storage.commit()?;
-            Ok(Some(form))
+    };
+    match (zero, product) {
+        (Some((values, storage)), None) => Ok(Some((
+            OffsetStoreControlForm::ZeroPrefixed { values },
+            storage,
+        ))),
+        (None, Some((form, storage))) => Ok(Some((form, storage))),
+        (Some((zero_values, zero_storage)), Some((product_form, product_storage))) => {
+            drop(zero_values);
+            drop(zero_storage);
+            Ok(Some((product_form, product_storage)))
         }
         (None, None) => Ok(None),
     }

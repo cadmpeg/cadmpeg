@@ -52,6 +52,16 @@ impl<S: crate::immutable_text::ImmutableText> PrintableString<S> {
 }
 
 impl PrintableString<&str> {
+    pub(crate) fn try_into_owned_for_decode(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<PrintableString<String>, cadmpeg_core::CodecError> {
+        Ok(PrintableString(
+            ctx.copy_retained_text(self.0, operation)?,
+        ))
+    }
+
     #[cfg(test)]
     pub(crate) fn into_owned(self) -> PrintableString<String> {
         PrintableString(self.0.to_owned())
@@ -144,5 +154,37 @@ mod tests {
                 assert!(PrintableString::new(text.as_str()).is_err());
             },
         );
+    }
+
+    #[test]
+    fn printable_string_checked_copy_pays_one_exact_copy() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+
+        let value = PrintableString::new("Name").unwrap();
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 4,
+            |ctx| {
+                let owned = value
+                    .try_into_owned_for_decode(ctx, "NX checked printable string copy")
+                    .unwrap();
+                assert_eq!(owned.as_str(), "Name");
+                assert_eq!(ctx.resource_refusal(), None);
+            },
+        );
+
+        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+            let error = crate::test_support::resource_refusal_at(
+                &[],
+                dimension,
+                "NX checked printable string copy",
+                |ctx| value.try_into_owned_for_decode(ctx, "NX checked printable string copy"),
+            );
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension
+                    && limit.operation == "NX checked printable string copy"
+                    && limit.additional == 4));
+        }
     }
 }

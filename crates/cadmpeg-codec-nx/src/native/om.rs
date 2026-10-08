@@ -3213,37 +3213,49 @@ pub(super) fn external_reference_records(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<ExternalReferenceRecord>, cadmpeg_core::CodecError> {
-    let parsed = container.external_reference_records(ctx)?;
-    let count = parsed.len();
-    let mut output = ctx.vector_storage(count, "nx native external reference records")?;
-    for (entry, record) in ctx.admit_iter(parsed, "nx native external reference records")? {
-        ctx.reserve_vec(&mut output, 1, "nx native external reference records")?;
-        let id = external_reference_record_id(
-            ctx,
-            "nx:external-reference-record:",
-            &entry.name,
-            record.record_id,
-            "nx native external reference record id",
-        )?;
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let source_offset = entry_offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(record.offset))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("nx native external reference record offset", 0, 1)
-            })?;
-        output.push(ExternalReferenceRecord {
-            id,
-            record_id: record.record_id,
-            declared_count: record.declared_count,
-            id_slots: record.id_slots,
-            handles: record.handles,
-            tail_byte_len: cadmpeg_core::decode::u64_from_index(record.tail_byte_len),
-            source_entry: ctx
-                .copy_retained_text(&entry.name, "nx native external reference source entry")?,
-            source_offset,
-        });
-    }
-    Ok(output)
+    let (parsed, parsed_storage) = container.external_reference_records(ctx)?;
+    let projection = (|| {
+        let count = parsed.len();
+        let mut output = ctx.vector_storage(count, "nx native external reference records")?;
+        let mut visits = parsed.into_iter();
+        while visits.len() != 0 {
+            let Some((entry, record)) =
+                ctx.next_charged(&mut visits, "nx native external reference records")?
+            else {
+                break;
+            };
+            ctx.reserve_vec(&mut output, 1, "nx native external reference records")?;
+            let id = external_reference_record_id(
+                ctx,
+                "nx:external-reference-record:",
+                &entry.name,
+                record.record_id,
+                "nx native external reference record id",
+            )?;
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+            let source_offset = entry_offset
+                .checked_add(cadmpeg_core::decode::u64_from_index(record.offset))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("nx native external reference record offset", 0, 1)
+                })?;
+            output.push(ExternalReferenceRecord {
+                id,
+                record_id: record.record_id,
+                declared_count: record.declared_count,
+                id_slots: record.id_slots,
+                handles: record.handles,
+                tail_byte_len: cadmpeg_core::decode::u64_from_index(record.tail_byte_len),
+                source_entry: ctx.copy_retained_text(
+                    &entry.name,
+                    "nx native external reference source entry",
+                )?,
+                source_offset,
+            });
+        }
+        Ok::<_, CodecError>(output)
+    })();
+    drop(parsed_storage);
+    projection
 }
 
 fn external_reference_record_id(
@@ -3283,62 +3295,71 @@ pub(super) fn external_reference_indexed_records(
             })?;
         }
     }
-    let parsed = container.external_reference_indexed_records(ctx)?;
-    let mut output = Vec::new();
-    for (entry, record) in ctx.admit_iter(parsed, "NX OM parsed visits")? {
-        let Some((entry_offset, _)) = entry.file_span() else {
-            continue;
-        };
-        let Some(source_offset) =
-            entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(record.offset))
-        else {
-            continue;
-        };
-        let byte_len = cadmpeg_core::decode::u64_from_index(record.byte_len);
-        let Some(bytes) = container.bounded_entry_bytes(ctx, source_offset, byte_len)? else {
-            continue;
-        };
-        ctx.reserve_vec(
-            &mut output,
-            1,
-            "nx native external reference indexed records",
-        )?;
-        let id = external_reference_record_id(
-            ctx,
-            "nx:external-reference-indexed-record:",
-            &entry.name,
-            record.record_id,
-            "nx native external reference indexed record id",
-        )?;
-        let handle_set_record = ctx
-            .get_btree_map(
-                &decoded_by_key,
-                &(entry.name.as_str(), record.record_id),
-                "nx external reference decoded index",
-            )?
-            .and_then(|record| *record)
-            .map(|record| {
-                ctx.copy_retained_text(&record.id, "nx external reference handle-set link")
-            })
-            .transpose()?;
-        output.push(ExternalReferenceIndexedRecord {
-            id,
-            record_id: record.record_id,
-            byte_len,
-            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+    let (parsed, parsed_storage) = container.external_reference_indexed_records(ctx)?;
+    let projection = (|| {
+        let mut output = Vec::new();
+        let mut visits = parsed.into_iter();
+        while visits.len() != 0 {
+            let Some((entry, record)) = ctx.next_charged(&mut visits, "NX OM parsed visits")?
+            else {
+                break;
+            };
+            let Some((entry_offset, _)) = entry.file_span() else {
+                continue;
+            };
+            let Some(source_offset) =
+                entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(record.offset))
+            else {
+                continue;
+            };
+            let byte_len = cadmpeg_core::decode::u64_from_index(record.byte_len);
+            let Some(bytes) = container.bounded_entry_bytes(ctx, source_offset, byte_len)? else {
+                continue;
+            };
+            ctx.reserve_vec(
+                &mut output,
+                1,
+                "nx native external reference indexed records",
+            )?;
+            let id = external_reference_record_id(
                 ctx,
-                bytes,
-                "nx external reference indexed digest",
-            )?,
-            handle_set_record,
-            source_entry: ctx.copy_retained_text(
+                "nx:external-reference-indexed-record:",
                 &entry.name,
-                "nx native external reference indexed source entry",
-            )?,
-            source_offset,
-        });
-    }
-    Ok(output)
+                record.record_id,
+                "nx native external reference indexed record id",
+            )?;
+            let handle_set_record = ctx
+                .get_btree_map(
+                    &decoded_by_key,
+                    &(entry.name.as_str(), record.record_id),
+                    "nx external reference decoded index",
+                )?
+                .and_then(|record| *record)
+                .map(|record| {
+                    ctx.copy_retained_text(&record.id, "nx external reference handle-set link")
+                })
+                .transpose()?;
+            output.push(ExternalReferenceIndexedRecord {
+                id,
+                record_id: record.record_id,
+                byte_len,
+                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                    ctx,
+                    bytes,
+                    "nx external reference indexed digest",
+                )?,
+                handle_set_record,
+                source_entry: ctx.copy_retained_text(
+                    &entry.name,
+                    "nx native external reference indexed source entry",
+                )?,
+                source_offset,
+            });
+        }
+        Ok::<_, CodecError>(output)
+    })();
+    drop(parsed_storage);
+    projection
 }
 
 /// Decode every exact six- or seven-byte empty indexed record.
@@ -3348,7 +3369,13 @@ pub(super) fn external_reference_empty_records(
     indexed: &[ExternalReferenceIndexedRecord],
 ) -> Result<Vec<ExternalReferenceEmptyRecord>, CodecError> {
     let mut output = Vec::new();
-    for record in ctx.admit_iter(indexed, "NX external reference indexed records")? {
+    let mut visits = indexed.iter();
+    while visits.len() != 0 {
+        let Some(record) =
+            ctx.next_charged(&mut visits, "NX external reference indexed records")?
+        else {
+            break;
+        };
         let Some(bytes) =
             container.bounded_entry_bytes(ctx, record.source_offset, record.byte_len)?
         else {
@@ -3388,7 +3415,12 @@ pub(super) fn external_reference_tail_reference_pairs(
     records: &[ExternalReferenceRecord],
 ) -> Result<Vec<ExternalReferenceTailReferencePair>, cadmpeg_core::CodecError> {
     let mut out = Vec::new();
-    for record in ctx.admit_iter(records, "NX external reference records")? {
+    let mut visits = records.iter();
+    while visits.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut visits, "NX external reference records")?
+        else {
+            break;
+        };
         let Some(source_offset) =
             record
                 .source_offset
@@ -3403,14 +3435,19 @@ pub(super) fn external_reference_tail_reference_pairs(
         else {
             continue;
         };
-        let pairs = crate::container::parse_extref_reference_pairs(ctx, bytes)?;
+        let mut pair_storage = ctx.reserve_scoped(0, "nx external reference tail pairs")?;
+        let pairs = pair_storage
+            .with_storage(|| crate::container::parse_extref_reference_pairs(ctx, bytes))?;
         let record_key = ctx
             .split_once(&record.id, "#", "nx native external reference tail pair id")?
             .map_or(record.id.as_str(), |(_, key)| key);
-        for (ordinal, &(offset, persistent_handle, tagged_reference)) in ctx
-            .admit_iter(&pairs, "nx native external reference tail pairs")?
-            .enumerate()
-        {
+let mut pair_visits = pairs.into_iter().enumerate();
+while pair_visits.len() != 0 {
+let Some((ordinal, (offset, persistent_handle, tagged_reference))) =
+ctx.next_charged(&mut pair_visits, "nx native external reference tail pairs")?
+else {
+break;
+            };
             ctx.reserve_vec(&mut out, 1, "nx native external reference tail pairs")?;
             let id = ctx.format_retained(
                 format_args!("nx:external-reference:tail-reference-pair#{record_key}-{ordinal}"),
@@ -3434,9 +3471,11 @@ pub(super) fn external_reference_tail_reference_pairs(
                 persistent_handle,
                 tagged_reference,
                 source_offset,
-            });
-        }
-    }
+});
+}
+drop(pair_visits);
+drop(pair_storage);
+}
     Ok(out)
 }
 
@@ -4703,7 +4742,7 @@ pub(super) fn data_block_control_forms(
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
-        let Some(form) = crate::om::offset_store_control_form(
+        let Some((form, control_storage)) = crate::om::offset_store_control_form(
             ctx,
             control.bytes,
             records.first().map(|record| record.bytes),
@@ -4711,37 +4750,36 @@ pub(super) fn data_block_control_forms(
         else {
             continue;
         };
-        let kind = match form {
+        let kind = match &form {
             crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => {
-                let Some(value_count) = u32::try_from(values.len())
+                u32::try_from(values.len())
                     .ok()
                     .and_then(std::num::NonZeroU32::new)
-                else {
-                    continue;
-                };
-                DataBlockControlFormKind::ZeroPrefixed { value_count }
+                    .map(|value_count| DataBlockControlFormKind::ZeroPrefixed { value_count })
             }
             crate::om::OffsetStoreControlForm::ProductAnchored {
                 leading_value,
                 values,
             } => {
-                let Some(value_count) = u32::try_from(values.len())
+                let value_count = u32::try_from(values.len())
                     .ok()
-                    .and_then(std::num::NonZeroU32::new)
-                else {
-                    continue;
-                };
-                let Some(byte_len) = std::num::NonZeroU64::new(
+                    .and_then(std::num::NonZeroU32::new);
+                let byte_len = std::num::NonZeroU64::new(
                     cadmpeg_core::decode::u64_from_index(control.bytes.len()),
-                ) else {
-                    continue;
-                };
-                DataBlockControlFormKind::ProductAnchored {
-                    leading: leading_value,
-                    value_count,
-                    byte_len,
-                }
+                );
+                value_count.zip(byte_len).map(|(value_count, byte_len)| {
+                    DataBlockControlFormKind::ProductAnchored {
+                        leading: *leading_value,
+                        value_count,
+                        byte_len,
+                    }
+                })
             }
+        };
+        drop(form);
+        drop(control_storage);
+        let Some(kind) = kind else {
+            continue;
         };
         let id = retained_om_number_id(
             ctx,
@@ -4846,14 +4884,21 @@ pub(super) fn data_block_control_values(
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
-        let Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { values }) =
-            crate::om::offset_store_control_form(
+        let Some((form, control_storage)) = crate::om::offset_store_control_form(
                 ctx,
                 control.bytes,
                 records.first().map(|record| record.bytes),
             )?
         else {
             continue;
+        };
+        let values = match form {
+            crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => values,
+            product => {
+                drop(product);
+                drop(control_storage);
+                continue;
+            }
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let data_block = scoped_om_index_id(
@@ -4864,7 +4909,15 @@ pub(super) fn data_block_control_values(
             0,
             "NX control value block id",
         )?;
-        for (ordinal, value) in values.into_iter().enumerate() {
+        let mut remaining = values.len();
+        let mut values = values.into_iter().enumerate();
+        while remaining != 0 {
+            let Some((ordinal, value)) =
+                ctx.next_charged(&mut values, "NX control value projection")?
+            else {
+                break;
+            };
+            remaining -= 1;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX data block control value ordinal", 0, 1))?;
             let source_offset = entry_offset
@@ -4893,6 +4946,8 @@ pub(super) fn data_block_control_values(
                 source_offset,
             });
         }
+        drop(values);
+        drop(control_storage);
     }
     Ok(rows)
 }
@@ -4912,14 +4967,20 @@ pub(super) fn data_block_control_class_references(
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
-        if !matches!(
-            crate::om::offset_store_control_form(
-                ctx,
-                control.bytes,
-                records.first().map(|record| record.bytes),
-            )?,
-            Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { .. })
-        ) {
+        let Some((form, control_storage)) = crate::om::offset_store_control_form(
+            ctx,
+            control.bytes,
+            records.first().map(|record| record.bytes),
+        )? else {
+            continue;
+        };
+        let is_zero_prefixed = matches!(
+            &form,
+            crate::om::OffsetStoreControlForm::ZeroPrefixed { .. }
+        );
+        drop(form);
+        drop(control_storage);
+        if !is_zero_prefixed {
             continue;
         }
         let mut registry_reservation = ctx.reserve_scoped(0, "NX control class registry")?;
@@ -5034,16 +5095,24 @@ pub(super) fn data_block_control_index_values(
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
-        let Some(crate::om::OffsetStoreControlForm::ProductAnchored {
-            leading_value,
-            values,
-        }) = crate::om::offset_store_control_form(
+        let Some((form, control_storage)) = crate::om::offset_store_control_form(
             ctx,
             control.bytes,
             records.first().map(|record| record.bytes),
         )?
         else {
             continue;
+        };
+        let (leading_value, values) = match form {
+            crate::om::OffsetStoreControlForm::ProductAnchored {
+                leading_value,
+                values,
+            } => (leading_value, values),
+            zero => {
+                drop(zero);
+                drop(control_storage);
+                continue;
+            }
         };
         let leading_value_width = leading_value.map_or(0, ControlLeadingValue::width);
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
@@ -5059,7 +5128,15 @@ pub(super) fn data_block_control_index_values(
             .len()
             .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit("NX control index value block count", 0, 1))?;
-        for (ordinal, value) in values.into_iter().enumerate() {
+        let mut remaining = values.len();
+        let mut values = values.into_iter().enumerate();
+        while remaining != 0 {
+            let Some((ordinal, value)) =
+                ctx.next_charged(&mut values, "NX control index value projection")?
+            else {
+                break;
+            };
+            remaining -= 1;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX control index value ordinal", 0, 1))?;
             let source_offset = entry_offset
@@ -5107,6 +5184,8 @@ pub(super) fn data_block_control_index_values(
                 source_offset,
             });
         }
+        drop(values);
+        drop(control_storage);
     }
     Ok(rows)
 }
@@ -5823,9 +5902,9 @@ pub(super) fn string_values(
                 let source_offset = entry_offset
                     .checked_add(cadmpeg_core::decode::u64_from_index(value.offset))
                     .ok_or_else(|| ctx.refuse_codec_limit("NX string value source offset", 0, 1))?;
-                let text = ctx.copy_retained_text(value.value.as_str(), "NX string value text")?;
-                let text = PrintableString::from_wire(ctx, text)?
-                    .map_err(|_| ctx.refuse_codec_limit("validate NX string value", 0, 1))?;
+                let text = value
+                    .value
+                    .try_into_owned_for_decode(ctx, "NX string value text")?;
                 ctx.reserve_vec(&mut output, 1, "NX native string values")?;
                 output.push(StringValue {
                     id: retained_om_three_number_id(

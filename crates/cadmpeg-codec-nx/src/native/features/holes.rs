@@ -712,10 +712,9 @@ fn owned_symbolic_thread(
             Some(ordinal),
         )?;
         let owner = ctx.copy_retained_text(&id, "NX symbolic thread text frame owner")?;
-        let value =
-            ctx.copy_retained_text(frame.value.as_str(), "NX symbolic thread text frame value")?;
-        let value = crate::payload_text::PayloadText::from_wire(ctx, value)?
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        let value = frame
+            .value
+            .try_into_owned_for_decode(ctx, "NX symbolic thread text frame value")?;
         let source_offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(frame.offset))
             .ok_or_else(|| ctx.refuse_codec_limit("NX symbolic thread text frame offset", 0, 1))?;

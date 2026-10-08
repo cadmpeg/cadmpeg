@@ -356,9 +356,10 @@ fn data_blocks_refuses_identity_work_at_caller_limit() {
         &[0],
         |_| {},
         |ctx| {
-            container
-                .indexed_om_sections(ctx)
-                .map(|(sections, _storage)| sections)
+            let (sections, storage) = container.indexed_om_sections(ctx)?;
+            drop(sections);
+            drop(storage);
+            Ok::<(), cadmpeg_core::CodecError>(())
         },
     )
     .expect("cached control section");

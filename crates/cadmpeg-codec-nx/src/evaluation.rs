@@ -935,7 +935,7 @@ fn rederived_body_census<'ir>(
                     } else {
                         ToolRetention::Delete
                     },
-                    feature_completeness::combine_definition_is_incomplete(ctx, feature)?,
+                    feature_completeness::combine_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::SewBodies {
@@ -949,7 +949,7 @@ fn rederived_body_census<'ir>(
                     feature,
                     &mut bodies,
                     selection,
-                    feature_completeness::sew_bodies_definition_is_incomplete(ctx, feature)?,
+                    feature_completeness::sew_bodies_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::TrimBodies { operands, .. }) => {
@@ -964,7 +964,7 @@ fn rederived_body_census<'ir>(
                     &bodies,
                     targets,
                     tools,
-                    feature_completeness::trim_bodies_definition_is_incomplete(ctx, feature)?,
+                    feature_completeness::trim_bodies_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
@@ -978,7 +978,7 @@ fn rederived_body_census<'ir>(
                     selection,
                     ResolvedBodyRetentionMode::try_from(*mode)
                         .map_err(|reason| CensusError::Unsupported(feature, reason))?,
-                    feature_completeness::operands::body_selection_is_incomplete(ctx, selection)?,
+                    feature_completeness::operands::body_selection_is_incomplete(selection),
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) => {

@@ -1333,3 +1333,66 @@ fn nurbs_surface_headers_admit_low_nonnull_identity() {
         );
     }
 }
+
+#[test]
+fn nurbs_invalid_float_prefix_does_not_visit_the_unused_suffix() {
+    let mut bytes = f64::INFINITY.to_be_bytes().to_vec();
+    bytes.extend_from_slice(&1.0_f64.to_be_bytes().repeat(4096));
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 1,
+        |ctx| {
+            assert!(super::finite_f64_bytes(ctx, &bytes).unwrap().is_none());
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
+}
+
+#[test]
+fn nurbs_invalid_knot_prefix_does_not_visit_the_unused_suffix() {
+    let distinct = vec![0.0; 4097];
+    let mut multiplicities = vec![1_u16; 4097];
+    multiplicities[0] = 0;
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 1,
+        |ctx| {
+            assert!(super::expand_knots(ctx, &distinct, &multiplicities, 4096).unwrap().is_none());
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
+}
+
+#[test]
+fn nurbs_control_point_refusals_admit_one_visit() {
+    let bytes = bspline_partition_stream();
+    for (operation, surface) in [
+        ("NX decode surfaces range traversal", true),
+        ("NX decode curves range traversal", false),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &bytes,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            |ctx| if surface { super::surfaces(ctx, &bytes).map(|_| ()) } else { super::curves(ctx, &bytes).map(|_| ()) },
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation && limit.additional == 1));
+    }
+    let mut bytes = bytes;
+    let descriptor = bytes.windows(4).position(|window| window == [0, 136, 0, 40]).unwrap();
+    put_ref(&mut bytes, descriptor + 10, 2);
+    let payload = bytes.windows(4).position(|window| window == [0, 135, 0, 41]).unwrap();
+    for (index, value) in [0.0, 0.0, 1.0, 0.02, 0.0, 1.0].into_iter().enumerate() {
+        put_f64(&mut bytes, payload + 15 + index * 8, value);
+    }
+    let operation = "NX decode pcurves range traversal";
+    let error = crate::test_support::resource_refusal_at(
+        &bytes,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        |ctx| super::pcurves(ctx, &bytes).map(|_| ()),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation && limit.additional == 1));
+}

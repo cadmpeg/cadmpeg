@@ -3,11 +3,15 @@
 
 use crate::decode::blend::{
     closest_nurbs_curve_parameter_with_budget, closest_pcurve_parameters,
-    homogeneous_residual_distance, real_polynomial_roots,
+    closest_periodic_analytic_curve_parameter, homogeneous_residual_distance,
+    real_polynomial_roots,
 };
 use cadmpeg_ir::geometry::nurbs::{bezier::homogeneous_spans, NurbsCurve};
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::math::{Point2, Point3};
+
+const EPS_QUARTIC_ROOT_VALUE: f64 = 1.0e-10;
+const EPS_FIXED_ANALYTIC_PARAMETER: f64 = 1.0e-8;
 
 #[test]
 fn rational_pcurve_incidence_isolates_close_branches() {
@@ -214,17 +218,114 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
 
 #[test]
 fn polynomial_root_isolation_retains_repeated_real_roots() {
-    let roots = real_polynomial_roots(
-        &cadmpeg_test_support::service_decode_context(),
-        &[-1.0, 3.5, -3.0, -0.5, 1.0],
-    )
-    .expect("root sorts are admitted")
-    .expect("finite quartic roots");
+    let roots = real_polynomial_roots(&[-1.0, 3.5, -3.0, -0.5, 1.0])
+        .expect("finite quartic roots");
 
-    assert_eq!(roots.len(), 3);
-    for (actual, expected) in roots.iter().zip([-2.0, 0.5, 1.0]) {
-        assert!((actual - expected).abs() < 1.0e-10, "{actual}");
+    assert_eq!(roots.as_slice().len(), 3);
+    for (actual, expected) in roots.as_slice().iter().zip([-2.0, 0.5, 1.0]) {
+        assert!((actual - expected).abs() < EPS_QUARTIC_ROOT_VALUE, "{actual}");
     }
+}
+
+#[test]
+fn fixed_analytic_curve_search_uses_no_decode_resources() {
+    use cadmpeg_ir::geometry::analytic::{CircleCurve, EllipseCurve};
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+
+    let center = Point3::new(2.0, 3.0, 4.0);
+    let axis = cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0);
+    let reference = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
+    let parameter = 1.2;
+    let ellipse = SolvedCurveGeometry::Ellipse(
+        EllipseCurve::try_new(center, axis, reference, 12.0, 5.0).unwrap(),
+    );
+    let ellipse_geometry = CurveGeometry::Solved(ellipse.clone());
+    let mut ellipse_point = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &ellipse_geometry,
+        parameter,
+    )
+    .unwrap()
+    .get();
+    ellipse_point.y += 3.0;
+
+    let circle = SolvedCurveGeometry::Circle(
+        CircleCurve::try_new(center, axis, reference, 12.0).unwrap(),
+    );
+    let circle_geometry = CurveGeometry::Solved(circle.clone());
+    let mut circle_point = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &circle_geometry,
+        parameter,
+    )
+    .unwrap()
+    .get();
+    circle_point.y += 3.0;
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = 0;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let ellipse_parameter =
+                closest_periodic_analytic_curve_parameter(&ellipse, ellipse_point, None)
+                    .expect("ellipse closest parameter");
+            let continued_ellipse_parameter = closest_periodic_analytic_curve_parameter(
+                &ellipse,
+                ellipse_point,
+                Some(parameter + std::f64::consts::TAU),
+            )
+            .expect("continued ellipse parameter");
+            let circle_parameter =
+                closest_periodic_analytic_curve_parameter(&circle, circle_point, None)
+                    .expect("circle closest parameter");
+            let continued_circle_parameter = closest_periodic_analytic_curve_parameter(
+                &circle,
+                circle_point,
+                Some(parameter + std::f64::consts::TAU),
+            )
+            .expect("continued circle parameter");
+            let ellipse_center = closest_periodic_analytic_curve_parameter(
+                &ellipse,
+                center,
+                Some(1.4),
+            )
+            .expect("upper ellipse center branch");
+            let lower_ellipse_center = closest_periodic_analytic_curve_parameter(
+                &ellipse,
+                center,
+                Some(4.8),
+            )
+            .expect("lower ellipse center branch");
+
+            assert!(
+                (ellipse_parameter - parameter).abs() < EPS_FIXED_ANALYTIC_PARAMETER
+            );
+            assert!(
+                (continued_ellipse_parameter - parameter - std::f64::consts::TAU).abs()
+                    < EPS_FIXED_ANALYTIC_PARAMETER
+            );
+            assert!(
+                (circle_parameter - parameter).abs() < EPS_FIXED_ANALYTIC_PARAMETER
+            );
+            assert!(
+                (continued_circle_parameter - parameter - std::f64::consts::TAU).abs()
+                    < EPS_FIXED_ANALYTIC_PARAMETER
+            );
+            assert!(
+                (ellipse_center - std::f64::consts::FRAC_PI_2).abs()
+                    < EPS_FIXED_ANALYTIC_PARAMETER
+            );
+            assert!(
+                (lower_ellipse_center - 3.0 * std::f64::consts::FRAC_PI_2).abs()
+                    < EPS_FIXED_ANALYTIC_PARAMETER
+            );
+            assert_eq!(ctx.resource_refusal(), None);
+        },
+    );
 }
 
 #[test]

@@ -693,9 +693,7 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
             ),
             native_ref: None,
         };
-        assert!(!crate::decode::feature_completeness::decode_check(|ctx| {
-            combine_definition_is_incomplete(ctx, &feature)
-        }));
+        assert!(!combine_definition_is_incomplete(&feature));
     });
 }
 
