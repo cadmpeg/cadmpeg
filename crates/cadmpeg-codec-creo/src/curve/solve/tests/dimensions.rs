@@ -424,16 +424,6 @@ fn nonlinear_magnitude_seed_refuses_collection_limit() {
 }
 
 #[test]
-fn nonlinear_axis_seed_refuses_collection_limit() {
-    assert!(matches!(
-        nonlinear_seed_error("creo_solve_seed_axis"),
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "creo_solve_seed_axis"
-                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-    ));
-}
-
-#[test]
 fn nonlinear_initial_seed_refuses_collection_limit() {
     assert!(matches!(
         nonlinear_seed_error("creo solve initial seed"),
@@ -507,4 +497,72 @@ fn dimension_inference_refuses_inexact_integer_constant() {
     let error = dimension_conversion_result("length")
         .expect_err("127 to the eighth power is not exact in f64");
     assert!(matches!(error, CodecError::Malformed(_)));
+}
+
+#[test]
+fn nonlinear_duplicate_seeds_reserve_only_distinct_values() {
+    let initial = [Some(CurveExpressionValue::Number(
+        cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite seed"),
+    ))];
+    let seeds = crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &[],
+        |limit| {
+            with_collection_limit(limit, |ctx| {
+                let result = crate::curve::solve::nonlinear_initial_guesses(
+                    ctx,
+                    &initial,
+                    &[RelationDimension::default()],
+                );
+                if let Err(CodecError::ResourceLimit(ref refusal)) = result {
+                    assert_ne!(refusal.operation, "creo_solve_seed_zero");
+                    assert_ne!(refusal.operation, "creo_solve_seed_axis");
+                }
+                result
+            })
+        },
+    )
+    .expect("valid seed dimensions");
+    assert_eq!(
+        seeds,
+        [
+            vec![0.0],
+            vec![0.01],
+            vec![-0.01],
+            vec![0.1],
+            vec![-0.1],
+            vec![1.0],
+            vec![-1.0],
+            vec![10.0],
+            vec![-10.0],
+            vec![100.0],
+            vec![-100.0],
+        ]
+    );
+}
+
+#[test]
+fn nonlinear_distinct_axis_seed_refuses_collection_growth() {
+    let initial = std::array::from_fn::<_, 2, _>(|_| {
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite seed"),
+        ))
+    });
+    let dimensions = [RelationDimension::default(); 2];
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        "creo_solve_seed_axis",
+        |ctx| crate::curve::solve::nonlinear_initial_guesses(ctx, &initial, &dimensions),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo_solve_seed_axis"));
+    let seeds = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::curve::solve::nonlinear_initial_guesses(ctx, &initial, &dimensions)
+    })
+    .expect("service seeds")
+    .expect("valid dimensions");
+    assert!(seeds.contains(&vec![0.1, 0.0]));
+    assert!(seeds.contains(&vec![0.0, 0.1]));
 }
