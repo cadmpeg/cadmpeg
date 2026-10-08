@@ -9,22 +9,22 @@ use crate::families::standard::decode::combine_propagated_endpoint_pairs;
 use crate::families::standard::decode::corroborate_successor_endpoint_points;
 use crate::families::standard::decode::edge_geometry::build_standard_edge_curve;
 use crate::families::standard::decode::edge_geometry::ensure_native_edge_support_surface;
+use crate::families::standard::decode::edge_geometry::intersection_line_direction;
 use crate::families::standard::decode::edge_geometry::plane_intersection_line;
+use crate::families::standard::decode::edge_geometry::point_on_standard_face;
+use crate::families::standard::decode::edge_geometry::same_cone_generator_pair;
 use crate::families::standard::decode::edge_geometry::standard_analytic_curve_parameter_range;
 use crate::families::standard::decode::edge_geometry::standard_oriented_analytic_curve_parameter_range;
 use crate::families::standard::decode::edge_geometry::standard_pcurve_geometry as charged_standard_pcurve_geometry;
 use crate::families::standard::decode::edge_geometry::witness_arc_end;
 use crate::families::standard::decode::emit_standard_topology;
 use crate::families::standard::decode::include_native_endpoint_pairs;
-use crate::families::standard::decode::intersection_line_direction;
 use crate::families::standard::decode::invariant_face_carrier_bindings;
 use crate::families::standard::decode::merge_derived_endpoint_pair;
 use crate::families::standard::decode::merge_native_endpoint_evidence;
 use crate::families::standard::decode::merge_standard_edge_vertex_references;
 use crate::families::standard::decode::owner_contains_face_bounds;
 use crate::families::standard::decode::owner_matches_a5_carrier;
-use crate::families::standard::decode::point_on_standard_face;
-use crate::families::standard::decode::same_cone_generator_pair;
 use crate::families::standard::decode::standard_circle_endpoint_candidates;
 use crate::families::standard::decode::standard_curve_edge_classes;
 use crate::families::standard::decode::standard_curve_geometry_gauge_keys;
@@ -33,7 +33,6 @@ use crate::families::standard::decode::standard_face_boundary_witnesses;
 use crate::families::standard::decode::standard_face_point_membership;
 use crate::families::standard::decode::standard_freeform_e5_carrier_ids;
 use crate::families::standard::decode::standard_id;
-use crate::families::standard::decode::standard_native_support_edge_ids;
 use crate::families::standard::decode::standard_serialized_endpoint_pairs;
 use crate::families::standard::decode::standard_successor_endpoint_points;
 use crate::families::standard::decode::unique_native_identity_points;
@@ -491,7 +490,7 @@ fn a5_owner_binding_refuses_before_carrier_row_growth() {
     .is_empty());
     let owner_packets = crate::test_support::with_service_context(|ctx| {
         crate::families::b2::records::b2_owner_packets_from_records(ctx, &bytes, &records)
-            .map(|packets| packets.collect::<Vec<_>>())
+            .map(std::iter::Iterator::collect::<Vec<_>>)
     })
     .expect("service context admits owner packet scan");
     assert!(!owner_packets.is_empty());
@@ -637,81 +636,6 @@ fn standard_object_journal_binds_ordered_edge_endpoints_through_roster_position(
         .expect("service budget")
         .is_none()
     );
-}
-
-#[test]
-fn standard_native_binding_arrays_refuse_before_each_collection() {
-    use cadmpeg_core::CodecError;
-    use std::collections::HashSet;
-
-    let supports = [StandardCurveSupport {
-        pos: 0,
-        tag: 70,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Line,
-    }];
-    let native_edges = BTreeMap::from([(70, [100, 300])]);
-    let native_support_ids = HashMap::from([(70, ())]);
-    let mut operations = HashSet::new();
-    for limit in 0..=10 {
-        match crate::test_support::with_collection_limit(limit, |ctx| {
-            standard_serialized_endpoint_pairs(ctx, &supports, &native_edges, &[100, 300])
-        }) {
-            Err(CodecError::ResourceLimit(error)) => {
-                operations.insert(error.operation);
-            }
-            Ok(Some(_)) => break,
-            outcome => panic!("unexpected roster binding: {outcome:?}"),
-        }
-    }
-    for operation in [
-        "catia_roster_point_identities",
-        "catia_roster_endpoint_pairs",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
-    operations.clear();
-    for limit in 0..=10 {
-        match crate::test_support::with_collection_limit(limit, |ctx| {
-            standard_native_support_edge_ids(ctx, &supports, &native_support_ids)
-        }) {
-            Err(CodecError::ResourceLimit(error)) => {
-                operations.insert(error.operation);
-            }
-            Ok(ids) if ids == [Some(70)] => break,
-            outcome => panic!("unexpected support binding: {outcome:?}"),
-        }
-    }
-    for operation in [
-        "catia_native_support_row_counts",
-        "catia_native_support_edge_ids",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
-    operations.clear();
-    for limit in 0..=10 {
-        match crate::test_support::with_collection_limit(limit, |ctx| {
-            standard_successor_endpoint_points(ctx, &supports, &[71, 72])
-        }) {
-            Err(CodecError::ResourceLimit(error)) => {
-                operations.insert(error.operation);
-            }
-            Ok(points) if points == [[Some(0), Some(1)]] => break,
-            outcome => panic!("unexpected successor binding: {outcome:?}"),
-        }
-    }
-    for operation in [
-        "catia_successor_point_identities",
-        "catia_successor_endpoint_points",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
-    let mut candidates = [Vec::new()];
-    assert!(matches!(
-        crate::test_support::with_collection_limit(0, |ctx| include_native_endpoint_pairs(ctx, &mut candidates, &[Some([0, 1])])),
-        Err(CodecError::ResourceLimit(error)) if error.operation == "catia_native_endpoint_domain_points"
-    ));
-    assert!(candidates[0].is_empty());
 }
 
 #[test]
@@ -1999,3 +1923,19 @@ fn owner_carrier_helper_preserves_session_depth_refusal() {
         assert_eq!(owner_matches_a5_carrier(ctx, &tail, &surface), Err(limit));
     });
 }
+
+#[test]
+fn native_endpoint_evidence_stops_before_trailing_conflicts() {
+    let graph = vec![Some([0, 1]); 1025];
+    let mut roster = vec![None; 1025];
+    roster[0] = Some([1, 0]);
+    crate::test_support::with_work_limit(64, |ctx| {
+        assert_eq!(
+            merge_native_endpoint_evidence(ctx, Some(&graph), Some(&roster))
+                .expect("first conflicting pair"),
+            Err("conflicting native endpoint evidence")
+        );
+    });
+}
+
+mod native_binding;

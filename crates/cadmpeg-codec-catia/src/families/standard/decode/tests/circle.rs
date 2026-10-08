@@ -120,6 +120,11 @@ fn standard_edge_circle_axes_use_fixed_slots_before_curve_growth() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut service_ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &bindings,
@@ -143,6 +148,11 @@ fn standard_edge_circle_axes_use_fixed_slots_before_curve_growth() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &bindings,
@@ -159,7 +169,8 @@ fn standard_edge_circle_axes_use_fixed_slots_before_curve_growth() {
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation != "catia_standard_edge_circle_axes")
+        if limit.operation == "catia_family_emit_curves"
+            && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
     );
 }
 
@@ -244,6 +255,11 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &bindings,

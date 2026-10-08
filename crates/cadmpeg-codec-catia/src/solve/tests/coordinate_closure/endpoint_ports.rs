@@ -5,7 +5,7 @@ use super::{
     bind_edge_port_candidates, propagate_edge_port_points, resolve_edge_faces_from_runs,
     same_unordered_pair, unique_coordinate_bijection, unique_duplicate_face_assignment,
     unique_mesh_edge_port_candidate_pairs, unique_mesh_edge_port_candidate_pairs_with_deferred,
-    visit_duplicate_face_assignments, DuplicateFaceAssignmentVisit, HashSet, MeshEdgeRun,
+    visit_duplicate_face_assignments, DuplicateFaceAssignmentVisit, MeshEdgeRun,
 };
 
 #[test]
@@ -356,7 +356,10 @@ fn duplicate_coordinate_rows_have_one_geometric_bijection() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("matching fixture fits the service profile");
-    let domains = [HashSet::from([0, 1]), HashSet::from([0, 1])];
+    let domains = [
+        std::collections::BTreeSet::from([0, 1]),
+        std::collections::BTreeSet::from([0, 1]),
+    ];
     assert_eq!(
         unique_coordinate_bijection(&ctx, &domains, &[[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]])
             .expect("bijection fits the service profile"),
@@ -375,7 +378,7 @@ fn forced_coordinate_bijection_has_no_recursive_depth_limit() {
     )
     .expect("matching fixture fits the service profile");
     let domains = (0..POINT_COUNT)
-        .map(|point| HashSet::from([point]))
+        .map(|point| std::collections::BTreeSet::from([point]))
         .collect::<Vec<_>>();
     let points = (0..POINT_COUNT)
         .map(|point| {
@@ -404,9 +407,9 @@ fn coordinate_bijection_respects_duplicate_class_capacity() {
     )
     .expect("matching fixture fits the service profile");
     let domains = [
-        HashSet::from([0, 2]),
-        HashSet::from([0, 1]),
-        HashSet::from([0, 1]),
+        std::collections::BTreeSet::from([0, 2]),
+        std::collections::BTreeSet::from([0, 1]),
+        std::collections::BTreeSet::from([0, 1]),
     ];
     let points = [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
 
@@ -426,7 +429,10 @@ fn distinct_coordinate_bijections_remain_ambiguous() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("matching fixture fits the service profile");
-    let domains = [HashSet::from([0, 1]), HashSet::from([0, 1])];
+    let domains = [
+        std::collections::BTreeSet::from([0, 1]),
+        std::collections::BTreeSet::from([0, 1]),
+    ];
     assert_eq!(
         unique_coordinate_bijection(&ctx, &domains, &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
             .expect("bijection fits the service profile"),
