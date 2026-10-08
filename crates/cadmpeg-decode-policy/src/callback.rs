@@ -885,7 +885,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             summary.work == external::Work::Fixed
                                 || matches!(
                                     self.tcx.item_name(definition).as_str(),
-                                    "stable_sort_by"
+                                    "is_sorted_by"
+                                        | "stable_sort_by"
                                         | "stable_sort_by_key"
                                         | "sort_unstable_by"
                                         | "sort_unstable_by_key"

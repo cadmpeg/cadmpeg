@@ -24,7 +24,7 @@ use std::fmt;
 use std::hash::{BuildHasher, Hash};
 
 use super::cost::DecodeCost;
-use super::{DecodeContext, ScopedReservation};
+use super::{DecodeContext, DepthGuard, ResourceLimit, ScopedReservation};
 use crate::CodecError;
 
 mod sealed {
@@ -58,9 +58,19 @@ pub trait Admission: sealed::Sealed {
     type Scope<'scope>: AdmissionScope<Error = Self::Error>
     where
         Self: 'scope;
+    /// Owner of one recursive nesting level, released when dropped.
+    type Depth<'scope>
+    where
+        Self: 'scope;
 
     /// See [`DecodeContext::charge_work`].
     fn charge_work(&self, units: u64, operation: &'static str) -> Result<(), Self::Error>;
+
+    /// See [`DecodeContext::enter_nested`].
+    fn enter_nested(&self, operation: &'static str) -> Result<Self::Depth<'_>, Self::Error>;
+
+    /// See [`DecodeContext::resource_refusal`].
+    fn resource_refusal(&self) -> Option<ResourceLimit>;
 
     /// See [`DecodeContext::reserve_scoped`].
     fn reserve_scoped(
@@ -83,6 +93,24 @@ pub trait Admission: sealed::Sealed {
         right: &[u8],
         operation: &'static str,
     ) -> Result<bool, Self::Error>;
+
+    /// See [`DecodeContext::is_sorted_by`].
+    fn is_sorted_by<T, K: DecodeCost + ?Sized>(
+        &self,
+        values: &[T],
+        key: impl Fn(&T) -> &K,
+        compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
+        operation: &'static str,
+    ) -> Result<bool, Self::Error>;
+
+    /// See [`DecodeContext::stable_sort_by`].
+    fn stable_sort_by<T, K: DecodeCost + ?Sized>(
+        &self,
+        values: &mut [T],
+        key: impl Fn(&T) -> &K,
+        compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
+        operation: &'static str,
+    ) -> Result<(), Self::Error>;
 
     /// See [`DecodeContext::get_hash_map`].
     fn get_hash_map<'values, K, Q, V, S>(
@@ -123,10 +151,24 @@ impl Admission for DecodeContext<'_> {
         = ScopedReservation<'scope>
     where
         Self: 'scope;
+    type Depth<'scope>
+        = DepthGuard<'scope>
+    where
+        Self: 'scope;
 
     #[inline]
     fn charge_work(&self, units: u64, operation: &'static str) -> Result<(), CodecError> {
         DecodeContext::charge_work(self, units, operation)
+    }
+
+    #[inline]
+    fn enter_nested(&self, operation: &'static str) -> Result<DepthGuard<'_>, CodecError> {
+        DecodeContext::enter_nested(self, operation)
+    }
+
+    #[inline]
+    fn resource_refusal(&self) -> Option<ResourceLimit> {
+        DecodeContext::resource_refusal(self)
     }
 
     #[inline]
@@ -155,6 +197,28 @@ impl Admission for DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         DecodeContext::equal_bytes(self, left, right, operation)
+    }
+
+    #[inline]
+    fn is_sorted_by<T, K: DecodeCost + ?Sized>(
+        &self,
+        values: &[T],
+        key: impl Fn(&T) -> &K,
+        compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        DecodeContext::is_sorted_by(self, values, key, compare, operation)
+    }
+
+    #[inline]
+    fn stable_sort_by<T, K: DecodeCost + ?Sized>(
+        &self,
+        values: &mut [T],
+        key: impl Fn(&T) -> &K,
+        compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        DecodeContext::stable_sort_by(self, values, key, compare, operation)
     }
 
     #[inline]
@@ -206,9 +270,18 @@ impl AdmissionScope for StandardScope {
 impl Admission for StandardAdmission {
     type Error = Infallible;
     type Scope<'scope> = StandardScope;
+    type Depth<'scope> = ();
 
     fn charge_work(&self, _units: u64, _operation: &'static str) -> Result<(), Infallible> {
         Ok(())
+    }
+
+    fn enter_nested(&self, _operation: &'static str) -> Result<(), Infallible> {
+        Ok(())
+    }
+
+    fn resource_refusal(&self) -> Option<ResourceLimit> {
+        None
     }
 
     fn reserve_scoped(
@@ -234,6 +307,32 @@ impl Admission for StandardAdmission {
         _operation: &'static str,
     ) -> Result<bool, Infallible> {
         Ok(left == right)
+    }
+
+    fn is_sorted_by<T, K: DecodeCost + ?Sized>(
+        &self,
+        values: &[T],
+        key: impl Fn(&T) -> &K,
+        mut compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
+        _operation: &'static str,
+    ) -> Result<bool, Infallible> {
+        for pair in values.windows(2) {
+            if compare(key(&pair[1]), key(&pair[0])).is_lt() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn stable_sort_by<T, K: DecodeCost + ?Sized>(
+        &self,
+        values: &mut [T],
+        key: impl Fn(&T) -> &K,
+        mut compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
+        _operation: &'static str,
+    ) -> Result<(), Infallible> {
+        values.sort_by(|left, right| compare(key(left), key(right)));
+        Ok(())
     }
 
     fn get_hash_map<'values, K, Q, V, S>(
@@ -267,5 +366,29 @@ impl Admission for StandardAdmission {
             })
         });
         refusal.map_or(Ok(()), Err)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Admission, StandardAdmission};
+
+    #[test]
+    fn standard_admission_uses_infallible_nesting_and_stable_sorting() {
+        let admission = StandardAdmission;
+        assert_eq!(admission.enter_nested("nested"), Ok(()));
+        assert_eq!(admission.resource_refusal(), None);
+
+        let mut values = [(2_u8, 'a'), (1, 'b'), (2, 'c'), (1, 'd')];
+        assert!(!admission
+            .is_sorted_by(&values, |value| &value.0, Ord::cmp, "sorted")
+            .expect("standard comparison cannot refuse"));
+        admission
+            .stable_sort_by(&mut values, |value| &value.0, Ord::cmp, "sort")
+            .expect("standard sort cannot refuse");
+        assert_eq!(values, [(1, 'b'), (1, 'd'), (2, 'a'), (2, 'c')]);
+        assert!(admission
+            .is_sorted_by(&values, |value| &value.0, Ord::cmp, "sorted")
+            .expect("standard comparison cannot refuse"));
     }
 }
