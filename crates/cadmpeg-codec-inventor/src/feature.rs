@@ -261,26 +261,19 @@ impl Serialize for ClassId {
 }
 
 impl ClassId {
-    fn from_text(ctx: &DecodeContext<'_>, value: &str) -> Result<Self, CodecError> {
-        let invalid = || {
-            Ok::<_, CodecError>(CodecError::Malformed(ctx.copy_retained_text(
-                "class_id must contain 32 lowercase hexadecimal digits",
-                "retain Inventor invalid feature class identity",
-            )?))
-        };
+    fn from_text(value: &str) -> Result<Self, CodecError> {
+        let invalid =
+            || CodecError::malformed("class_id must contain 32 lowercase hexadecimal digits");
         if value.len() != 32 {
-            return Err(invalid()?);
+            return Err(invalid());
         }
         // One pass over the 32 digits validates and decodes them.
         let mut bytes = [0; 16];
-        for (index, digit) in ctx
-            .admit_iter(value.as_bytes(), "decode Inventor feature class identity")?
-            .enumerate()
-        {
+        for (index, digit) in value.as_bytes().iter().enumerate() {
             let nibble = match digit {
                 b'0'..=b'9' => *digit - b'0',
                 b'a'..=b'f' => *digit - b'a' + 10,
-                _ => return Err(invalid()?),
+                _ => return Err(invalid()),
             };
             if index % 2 == 0 {
                 bytes[index / 2] = nibble << 4;
@@ -350,7 +343,7 @@ impl PmDcFeatureLabelPayloadWire {
         self,
         ctx: &DecodeContext<'_>,
     ) -> Result<PmDcFeatureLabelPayload, CodecError> {
-        let class_id = ClassId::from_text(ctx, &self.class_id)?;
+        let class_id = ClassId::from_text(&self.class_id)?;
         PmDcFeatureLabelPayload::new(
             ctx,
             self.save_version_major,
@@ -375,10 +368,7 @@ impl PmDcFeatureLabelPayload {
     ) -> Result<Self, CodecError> {
         let name = ctx.validate_nonblank_text(name, "validate Inventor feature label name")?;
         let Ok(name) = NonBlankString::try_from(name) else {
-            return Err(CodecError::Malformed(ctx.copy_retained_text(
-                "name must not be empty",
-                "retain Inventor invalid feature label name",
-            )?));
+            return Err(CodecError::malformed("name must not be empty"));
         };
         Ok(Self {
             save_version_major,
@@ -637,14 +627,12 @@ fn parse_pattern_feature(
                 )?;
             }
             if version > 20 {
-                ctx.charge_collection_items(6, "admit Inventor pattern feature extension values")?;
-                ctx.reserve_capacity(
-                    &mut extension_values,
-                    6,
-                    "admit Inventor pattern feature extension values",
-                )?;
                 for _ in 0..6 {
-                    extension_values.push(cursor.u32("pattern-feature extension value")?);
+                    ctx.push_vec(
+                        &mut extension_values,
+                        cursor.u32("pattern-feature extension value")?,
+                        "admit Inventor pattern feature extension values",
+                    )?;
                 }
             }
             for _ in 0..2 {
@@ -1155,22 +1143,45 @@ pub(crate) fn project(
         .len()
         .checked_add(inventory.pattern_features.len())
         .ok_or_else(|| ctx.refuse_codec_limit("Inventor feature count", u64::MAX, u64::MAX))?;
-    let (feature_tokens, _feature_tokens_storage) =
-        ctx.with_scoped_storage("index Inventor feature token", || {
-            let mut feature_tokens = HashSet::new();
-            for token in ctx
-                .admit_iter(&inventory.features, "index Inventor feature token")?
-                .map(|feature| feature.identity.segment_token.as_str())
-                .chain(
-                    ctx.admit_iter(&inventory.pattern_features, "index Inventor feature token")?
-                        .map(|feature| feature.identity.segment_token.as_str()),
-                )
-            {
-                ctx.insert_hash_set(&mut feature_tokens, token, "index Inventor feature token")?;
-            }
-            Ok::<_, CodecError>(feature_tokens)
-        })?;
-    if feature_tokens.len() > 1 {
+    let Some((first, feature_tail)) = inventory
+        .features
+        .split_first()
+        .filter(|_| !inventory.labels.is_empty())
+    else {
+        return Ok(FeatureProjection {
+            features: Vec::new(),
+            result_topologies: Vec::new(),
+            unresolved_features: total,
+            unresolved_states: 0,
+        });
+    };
+    let token = first.identity.segment_token.as_str();
+    let pattern_tail = inventory.pattern_features.as_slice();
+    let multiple_tokens = (!feature_tail.is_empty()
+        && ctx.any_by(
+            feature_tail,
+            |feature| {
+                Ok(!ctx.equal(
+                    token,
+                    feature.identity.segment_token.as_str(),
+                    "check Inventor feature tokens",
+                )?)
+            },
+            "check Inventor feature tokens",
+        )?)
+        || (!pattern_tail.is_empty()
+            && ctx.any_by(
+                pattern_tail,
+                |feature| {
+                    Ok(!ctx.equal(
+                        token,
+                        feature.identity.segment_token.as_str(),
+                        "check Inventor feature tokens",
+                    )?)
+                },
+                "check Inventor feature tokens",
+            )?);
+    if multiple_tokens {
         return Ok(FeatureProjection {
             features: Vec::new(),
             result_topologies: Vec::new(),
@@ -1570,9 +1581,10 @@ fn project_extrusion(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    if let Err(error) = admit_projected_feature(ctx, source, label, "extrude") {
-        return Some(Err(error));
-    }
+    let source_tag = match admit_projected_feature(ctx, source, "extrude") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     let profile = match PlanarProfileRef::sketch_selection(sketch_id, selections, ctx) {
         Ok(Ok(profile)) => profile,
         Ok(Err(_)) => return None,
@@ -1588,7 +1600,7 @@ fn project_extrusion(
         suppressed: None,
         dependencies: DistinctMembers::default(),
         source_properties,
-        source_tag: Some("extrude".into()),
+        source_tag: Some(source_tag),
         source_text: None,
         source_content: FeatureContent::default(),
 
@@ -1617,26 +1629,16 @@ fn project_extrusion(
 fn admit_projected_feature(
     ctx: &DecodeContext<'_>,
     source: &PmDcFeature,
-    label: &PmDcFeatureLabel,
     tag: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "project Inventor feature")?;
+) -> Result<String, CodecError> {
     ctx.charge_entities(1, "project Inventor feature")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(label.name.as_str().len()),
-        "retain Inventor projected feature name",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(tag.len()),
-        "retain Inventor projected feature tag",
-    )?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(source.id_len().ok_or_else(|| {
             CodecError::Malformed("Inventor identifier length exceeds address space".into())
         })?),
         "retain Inventor projected feature native id",
     )?;
-    Ok(())
+    ctx.copy_retained_text(tag, "retain Inventor projected feature tag")
 }
 
 fn project_fillet(
@@ -1758,9 +1760,10 @@ fn project_fillet(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    if let Err(error) = admit_projected_feature(ctx, source, label, "fillet") {
-        return Some(Err(error));
-    }
+    let source_tag = match admit_projected_feature(ctx, source, "fillet") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     Some(Ok((
         Feature {
             id: feature_id,
@@ -1772,7 +1775,7 @@ fn project_fillet(
             suppressed: None,
             dependencies: DistinctMembers::default(),
             source_properties,
-            source_tag: Some("fillet".into()),
+            source_tag: Some(source_tag),
             source_text: None,
             source_content: FeatureContent::default(),
 
@@ -1832,12 +1835,10 @@ fn project_chamfer(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    if let Err(error) = admit_projected_feature(ctx, source, label, "chamfer") {
-        return Some(Err(error));
-    }
-    if let Err(error) = ctx.charge_collection_items(1, "collect Inventor chamfer group") {
-        return Some(Err(error));
-    }
+    let source_tag = match admit_projected_feature(ctx, source, "chamfer") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     let groups = cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
         edges: EdgeSelection::Native(option_result_value!(edges.id(ctx))),
         spec: ChamferSpec::Distance { distance },
@@ -1853,7 +1854,7 @@ fn project_chamfer(
             suppressed: None,
             dependencies: DistinctMembers::default(),
             source_properties,
-            source_tag: Some("chamfer".into()),
+            source_tag: Some(source_tag),
             source_text: None,
             source_content: FeatureContent::default(),
 
@@ -1973,12 +1974,10 @@ fn project_hole(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    if let Err(error) = admit_projected_feature(ctx, source, label, "hole") {
-        return Some(Err(error));
-    }
-    if let Err(error) = ctx.charge_collection_items(1, "project Inventor hole placement") {
-        return Some(Err(error));
-    }
+    let source_tag = match admit_projected_feature(ctx, source, "hole") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     Some(Ok((
         Feature {
             id: feature_id,
@@ -1990,7 +1989,7 @@ fn project_hole(
             suppressed: None,
             dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::new(),
-            source_tag: Some("hole".into()),
+            source_tag: Some(source_tag),
             source_text: None,
             source_content: FeatureContent::default(),
 
@@ -2147,9 +2146,6 @@ fn feature_result(
             "generated Inventor feature result identity is invalid",
         )));
     };
-    if let Err(error) = ctx.charge_collection_items(1, "project Inventor feature result topology") {
-        return Some(Err(error));
-    }
     if let Err(error) = ctx.charge_entities(1, "project Inventor feature result topology") {
         return Some(Err(error));
     }
@@ -2174,16 +2170,16 @@ fn closed_edge_items(
     if items.references().is_empty() {
         return Ok(false);
     }
-    for reference in ctx.admit_iter(items.references(), "check Inventor closed edge items")? {
-        let Some(property) = resolve_property(ctx, token, reference.index(), index)? else {
-            return Ok(false);
-        };
-        if !matches!(&property.kind, PmDcFeaturePropertyKind::EdgeItem { index_references, .. } if !index_references.values().is_empty())
-        {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    ctx.all_by(
+        items.references(),
+        |reference| {
+            let Some(property) = resolve_property(ctx, token, reference.index(), index)? else {
+                return Ok(false);
+            };
+            Ok(matches!(&property.kind, PmDcFeaturePropertyKind::EdgeItem { index_references, .. } if !index_references.values().is_empty()))
+        },
+        "check Inventor closed edge items",
+    )
 }
 
 fn slot_property<'a>(
@@ -2395,7 +2391,8 @@ fn boolean_properties(
     index: &ProjectionIndex<'_>,
 ) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     let mut properties = BTreeMap::new();
-    for slot in ctx.admit_iter(slots, "visit Inventor feature items")? {
+    // Callers pass fixed property-slot lists.
+    for slot in slots {
         if let Some(value) = boolean(ctx, source, *slot, index)? {
             ctx.insert_btree_map(
                 &mut properties,
@@ -2484,7 +2481,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn feature_projection_refuses_collection_limit_before_token_index() {
+    fn feature_projection_without_labels_needs_no_collection_storage() {
         let inventory = super::FeatureInventory {
             features: vec![test_feature(0, 0, &[])],
             pattern_features: Vec::new(),
@@ -2513,12 +2510,15 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            super::project(&ctx, &inventory, &design, &sketch, &[], &[]),
+        let projection = super::project(&ctx, &inventory, &design, &sketch, &[], &[])
+            .expect("token check stores no entries");
+        assert_eq!(projection.unresolved_features, 1);
+        assert!(projection.features.is_empty());
+        assert!(projection.result_topologies.is_empty());
+        // No labels can produce a feature, so projection stores zero collection entries.
+        assert!(matches!(ctx.charge_collection_items(1, "probe"),
             Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "index Inventor feature token"
-        ));
+                if limit.dimension == ResourceDimension::CollectionItems && limit.used == 0));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("service projection context");
         assert_eq!(
@@ -2527,6 +2527,51 @@ mod tests {
                 .unresolved_features,
             1
         );
+    }
+
+    #[test]
+    fn boolean_property_literal_slots_need_no_work_admission() {
+        let source = test_feature(0, 0, &[]);
+        let index = test_projection_index(&[], &[], &[], &[], &[], &[], &[], &[]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        for slots in [&[20, 22][..], &[2, 3, 4, 5, 8][..], &[6, 9][..]] {
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            assert!(super::boolean_properties(&ctx, &source, slots, &index)
+                .expect("fixed slot lists need no variable-work admission")
+                .is_empty());
+        }
+    }
+
+    #[test]
+    fn feature_result_fixed_record_uses_no_extra_collection_slot() {
+        let source = test_feature(0, 1, &[(0, 1)]);
+        let properties = [
+            test_property(
+                1,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::ObjectCollection,
+                    items: reference_list(&[3]),
+                },
+            ),
+            test_property(
+                2,
+                PmDcFeaturePropertyKind::SurfaceBody { body: reference(0) },
+            ),
+        ];
+        let index = test_projection_index(&properties, &[], &[], &[], &[], &[], &[], &[]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One stored body member and one uniqueness-index slot use two slots.
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (_, result) = super::feature_result(&ctx, &source, 0, &index)
+            .expect("result candidate")
+            .expect("fixed record adds no collection entry");
+        assert_eq!(result.bodies().len(), 1);
+        assert!(matches!(ctx.charge_collection_items(1, "probe"),
+            Err(CodecError::ResourceLimit(limit)) if limit.used == 2));
     }
 
     #[test]
@@ -2627,23 +2672,66 @@ mod tests {
     }
 
     #[test]
+    fn feature_label_errors_do_not_retain_error_text() {
+        let label = test_label(0, 1, EXTRUSION_CLASS_ID, &[]);
+        for (name, class_id) in [("", "ab".repeat(16)), ("valid", "z".repeat(32))] {
+            let wire = PmDcFeatureLabelPayloadWire {
+                save_version_major: label.save_version_major,
+                header: label.header.clone(),
+                index: label.index,
+                participants: label.participants.clone(),
+                name: name.to_owned(),
+                class_id,
+            };
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_work_units = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            assert!(matches!(
+                wire.into_record(&ctx),
+                Err(CodecError::Malformed(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn projected_feature_tag_copies_text_without_a_collection_slot() {
+        let source = test_feature(0, 0, &[]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_entities = 1;
+        // Copying the seven tag bytes uses seven work units.
+        policy.limits.max_work_units = 7;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert_eq!(
+            super::admit_projected_feature(&ctx, &source, "extrude").expect("charged tag copy"),
+            "extrude"
+        );
+        assert!(matches!(ctx.charge_work(1, "probe"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits && limit.used == 7));
+    }
+
+    #[test]
     fn feature_projection_refuses_entity_limit_before_creation() {
         let source = test_feature(0, 0, &[]);
-        let label = test_label(0, 1, EXTRUSION_CLASS_ID, &[]);
+        let _label = test_label(0, 1, EXTRUSION_CLASS_ID, &[]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_entities = 0;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(
-            super::admit_projected_feature(&ctx, &source, &label, "extrude"),
+            super::admit_projected_feature(&ctx, &source, "extrude"),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.operation == "project Inventor feature"
         ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("service projection context");
-        assert!(super::admit_projected_feature(&ctx, &source, &label, "extrude").is_ok());
+        assert!(super::admit_projected_feature(&ctx, &source, "extrude").is_ok());
     }
 
     fn inventory_with_record(
@@ -2789,7 +2877,7 @@ mod tests {
         }
     }
 
-    fn segment() -> cadmpeg_ir::ids::IdentityKey {
+    pub(super) fn segment() -> cadmpeg_ir::ids::IdentityKey {
         cadmpeg_ir::identity_key!("generated")
     }
 
@@ -2870,7 +2958,7 @@ mod tests {
         )
     }
 
-    fn test_feature(ordinal: u32, slot_count: usize, slots: &[(usize, u32)]) -> PmDcFeature {
+    pub(super) fn test_feature(ordinal: u32, slot_count: usize, slots: &[(usize, u32)]) -> PmDcFeature {
         let mut references = vec![reference(0); slot_count];
         for (slot, record_ordinal) in slots {
             references[*slot] = reference(record_ordinal + 1);
@@ -2903,7 +2991,7 @@ mod tests {
         )
     }
 
-    fn test_type_id(value: [u8; 16]) -> crate::record_identity::RecordTypeId {
+    pub(super) fn test_type_id(value: [u8; 16]) -> crate::record_identity::RecordTypeId {
         let ctx = cadmpeg_test_support::service_decode_context();
         crate::record_identity::RecordTypeId::from_bytes(
             &ctx,
@@ -2958,7 +3046,7 @@ mod tests {
         assert!(decode_label(wire).is_err());
     }
 
-    fn test_label(
+    pub(super) fn test_label(
         owner_ordinal: u32,
         index: u32,
         class_id: ClassId,
@@ -3182,7 +3270,7 @@ mod tests {
         assert_eq!(parsed.state, -1);
     }
 
-    fn pattern_feature_bytes(version: u8, family: PmDcPatternFamily) -> Vec<u8> {
+    pub(super) fn pattern_feature_bytes(version: u8, family: PmDcPatternFamily) -> Vec<u8> {
         let mut bytes = content(21);
         bytes.extend_from_slice(&69u32.to_le_bytes());
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -3368,7 +3456,8 @@ mod tests {
     fn pattern_feature_extension_values_refuse_collection_limit_before_allocation() {
         let bytes = pattern_feature_bytes(21, PmDcPatternFamily::Mirror);
         let mut policy = DecodePolicy::service();
-        // Two participants and eleven property slots precede the six-slot extension admission.
+        // Two participants, eleven property slots and five extension pushes
+        // use 2 + 11 + 5 = 18 slots before the sixth extension push.
         policy.limits.max_collection_items = 2 + 11 + 6 - 1;
         let arena = DecodeArena::new();
         let (ctx, source) =
@@ -3378,7 +3467,7 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "admit Inventor pattern feature extension values"
-                    && limit.used == 13
+                    && limit.used == 18
         ));
         let (ctx, source) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
@@ -3390,6 +3479,22 @@ mod tests {
                 .len(),
             6
         );
+    }
+
+    #[test]
+    fn closed_edge_items_stops_at_first_missing_reference() {
+        let items = reference_list(&[0, 1, 2, 3]);
+        let index = test_projection_index(&[], &[], &[], &[], &[], &[], &[], &[]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The null first reference stops validation after one source step.
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(
+            !super::closed_edge_items(&ctx, "generated", &items, &index).expect("early rejection")
+        );
+        assert!(matches!(ctx.charge_work(1, "probe"),
+            Err(CodecError::ResourceLimit(limit)) if limit.used == 1));
     }
 
     #[test]
@@ -3507,6 +3612,14 @@ mod tests {
                 .expect("service fixture record identity")]
         );
 
+        let mut policy = DecodePolicy::service();
+        // One fillet group, one body member and one uniqueness-index slot use three slots.
+        policy.limits.max_collection_items = 3;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(project_fillet(&limited, &fillet, &label, &index)
+            .expect("candidate")
+            .is_ok());
+
         let raw_distance = raw_parameter(40);
         let neutral_distance = neutral_parameter(
             &raw_distance,
@@ -3581,6 +3694,13 @@ mod tests {
         let (projected, _) = project_chamfer(&ctx, &chamfer, &label, &index)
             .expect("chamfer candidate")
             .expect("chamfer projection");
+        let mut policy = DecodePolicy::service();
+        // One body member and one uniqueness-index slot use two slots; the chamfer group is fixed.
+        policy.limits.max_collection_items = 2;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(project_chamfer(&limited, &chamfer, &label, &index)
+            .expect("candidate")
+            .is_ok());
         assert!(matches!(
             projected.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Chamfer {
@@ -3801,6 +3921,20 @@ mod tests {
     }
 
     #[test]
+    fn extrusion_projection_charges_only_stored_collection_members() {
+        let mut policy = DecodePolicy::service();
+        // Selection uniqueness, selected property, body member, body uniqueness
+        // and planar selection uniqueness each use one slot: five in total.
+        policy.limits.max_collection_items = 5;
+        let (feature, result) = generated_extrusion(&[4], policy)
+            .expect("candidate")
+            .expect("five stored member and index slots");
+        assert_eq!(feature.source_tag.as_deref(), Some("extrude"));
+        assert_eq!(feature.name.as_deref(), Some("Feature 5"));
+        assert_eq!(result.bodies().len(), 1);
+    }
+
+    #[test]
     fn projects_generated_extrusion() {
         let (projected, _) = generated_extrusion(&[4], DecodePolicy::service())
             .expect("extrusion candidate")
@@ -3980,6 +4114,13 @@ mod tests {
         let (projected, _) = project_hole(&ctx, &feature, &label, &index)
             .expect("hole candidate")
             .expect("hole projection");
+        let mut policy = DecodePolicy::service();
+        // One body member and one uniqueness-index slot use two slots; the placement is fixed.
+        policy.limits.max_collection_items = 2;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(project_hole(&limited, &feature, &label, &index)
+            .expect("candidate")
+            .is_ok());
         assert!(matches!(
             projected.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
                 placements,
@@ -4178,7 +4319,7 @@ mod tests {
     fn class_id_admits_only_the_canonical_lowercase_spelling() {
         let lower = "ab".repeat(16);
         let ctx = cadmpeg_test_support::service_decode_context();
-        let class_id = ClassId::from_text(&ctx, &lower).expect("lowercase class id");
+        let class_id = ClassId::from_text(&lower).expect("lowercase class id");
         assert_eq!(
             class_id
                 .into_text(&ctx, "retain Inventor class id test text")
@@ -4186,7 +4327,7 @@ mod tests {
             lower
         );
         let upper = "AB".repeat(16);
-        assert!(ClassId::from_text(&ctx, &upper).is_err());
+        assert!(ClassId::from_text(&upper).is_err());
     }
 
     #[test]
@@ -4267,5 +4408,110 @@ mod tests {
             serde_json::json!({"id": record.id, "value": owned}),
         );
         crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    }
+}
+
+#[cfg(test)]
+mod token_tests {
+    use super::tests::{pattern_feature_bytes, segment, test_feature, test_label, test_type_id};
+    use super::{parse_pattern_feature, PmDcPatternFamily, EXTRUSION_CLASS_ID, MIRROR_FEATURE_TYPE};
+    use crate::record_identity::Located;
+    use crate::test_support::test_fixtures::parse;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn feature_token_check_stops_at_first_distinct_token() {
+        let bytes = pattern_feature_bytes(21, PmDcPatternFamily::Mirror);
+        let pattern = parse(&bytes, |ctx, source| {
+            parse_pattern_feature(ctx, source, 21, PmDcPatternFamily::Mirror)
+                .expect("pattern fixture")
+        });
+        for count in [2_u32, 256] {
+            // Ordinary-only, pattern-only and ordinary followed by patterns.
+            for mode in 0..3 {
+                for with_label in [false, true] {
+                    let mut features = Vec::new();
+                    let mut pattern_features = Vec::new();
+                    for ordinal in 0..count {
+                        let token = if ordinal == 1 {
+                            cadmpeg_ir::identity_key!("other")
+                        } else {
+                            segment()
+                        };
+                        if mode == 0 || (mode == 2 && ordinal == 0) {
+                            let mut feature = test_feature(ordinal, 0, &[]);
+                            feature.identity.segment_token = token;
+                            features.push(feature);
+                        } else {
+                            pattern_features.push(Located::new(
+                                pattern.clone(),
+                                test_type_id(MIRROR_FEATURE_TYPE),
+                                token,
+                                ordinal,
+                            ));
+                        }
+                    }
+                    let inventory = super::FeatureInventory {
+                        features,
+                        pattern_features,
+                        terminators: Vec::new(),
+                        properties: Vec::new(),
+                        labels: if with_label {
+                            vec![test_label(0, 1, EXTRUSION_CLASS_ID, &[])]
+                        } else {
+                            Vec::new()
+                        },
+                        entity_style_links: Vec::new(),
+                        issues: Vec::new(),
+                    };
+                    let design = crate::design::DesignInventory {
+                        parameters: Vec::new(),
+                        expressions: Vec::new(),
+                        units: Vec::new(),
+                        issues: Vec::new(),
+                    };
+                    let sketch = crate::sketch::SketchInventory {
+                        sketches: Vec::new(),
+                        entities: Vec::new(),
+                        transforms: Vec::new(),
+                        directions: Vec::new(),
+                        constraints: Vec::new(),
+                        issues: Vec::new(),
+                    };
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_collection_items = 0;
+                    policy.limits.max_materialized_bytes = 0;
+                    // One source visit compares the first token and the second token.
+                    let work = 1 + cadmpeg_core::decode::u64_from_index(
+                        segment().as_str().len() + "other".len(),
+                    );
+                    policy.limits.max_work_units = work;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+                    let projection = super::project(&ctx, &inventory, &design, &sketch, &[], &[])
+                        .expect("second token ends the check");
+                    assert_eq!(
+                        projection.unresolved_features,
+                        usize::try_from(count).expect("count")
+                    );
+                    assert!(projection.features.is_empty());
+                    assert!(projection.result_topologies.is_empty());
+                    if with_label && mode != 1 {
+                        assert!(matches!(ctx.charge_work(1, "probe"),
+                        Err(CodecError::ResourceLimit(limit))
+                            if limit.dimension == ResourceDimension::WorkUnits && limit.used == work));
+                    } else {
+                        // No labels or no ordinary features means zero projection work.
+                        ctx.charge_work(1, "probe")
+                            .expect("no token search is needed");
+                        assert!(matches!(ctx.charge_work(work, "probe"),
+                        Err(CodecError::ResourceLimit(limit))
+                            if limit.dimension == ResourceDimension::WorkUnits && limit.used == 1));
+                    }
+                }
+            }
+        }
     }
 }
