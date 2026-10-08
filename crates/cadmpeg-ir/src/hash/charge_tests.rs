@@ -83,3 +83,19 @@ fn canonical_hash_releases_its_buffer_before_the_next_digest() {
     drop(storage);
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn canonical_hash_matches_standard_pretty_json_for_compound_shapes() {
+    let value = serde_json::json!({
+        "empty": [],
+        "links": ["a\\b\"c\n", "æΩ🎛", null, true, -17, 0.125],
+        "nested": {"first": [1, 2, 3], "second": "x".repeat(16384)},
+    });
+    let expected = super::sha256_hex(&serde_json::to_vec_pretty(&value).unwrap());
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(
+        canonical_json_sha256(&ctx, &value, "standard pretty JSON digest").unwrap(),
+        expected
+    );
+    ctx.finish_session().unwrap();
+}

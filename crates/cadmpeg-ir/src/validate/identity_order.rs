@@ -132,8 +132,9 @@ pub(super) fn check_identity_and_order(
         ctx.reserve_scoped(0, "validation native order storage")?,
     );
     view.visit(
-        |work| ctx.charge_work(u64_from_index(work), "validation native arena scan"),
-        |format, arena, records| {
+        &crate::index::DecodeStorage(ctx),
+        "validation native arena scan",
+        |format, arena, records| -> Result<(), CodecError> {
             use crate::native::view::{NativeArena, NativeEntity};
             let (products, sources, order): (&[_], &[_], &[_]) = match records {
                 NativeArena::Product(records) => (records, &[], &[]),
@@ -160,8 +161,10 @@ pub(super) fn check_identity_and_order(
                 let ids = ctx
                     .entry_btree_map(&mut by_arena.0, label, "group validation native arenas")?
                     .or_default();
-                for record in records.records() {
-                    ctx.charge_work(1, "validation native order scan")?;
+                for record in records.records(
+                    &crate::index::DecodeStorage(ctx),
+                    "validation native order scan",
+                )? {
                     ctx.push_vec(ids, record.id(), "validation native order slots")?;
                 }
                 Ok::<_, CodecError>(())

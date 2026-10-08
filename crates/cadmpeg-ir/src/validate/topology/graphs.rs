@@ -383,12 +383,12 @@ pub(in crate::validate) fn check_shell_connectivity(
         }
     }
     let mut neighbors = BorrowedIdentities::build(ctx, |_| Ok(()))?;
-    for incident_faces in faces_by_edge.values().chain(faces_by_vertex.values()) {
-        ctx.charge_work(1, "shell incidence group scan")?;
-        for face in incident_faces.identities() {
-            ctx.charge_work(1, "shell incidence face scan")?;
-            for other in incident_faces.identities() {
-                ctx.charge_work(1, "shell neighbor face scan")?;
+    for incident_faces in faces_by_edge
+        .values("shell incidence group scan")?
+        .chain(faces_by_vertex.values("shell incidence group scan")?)
+    {
+        for face in incident_faces.identities("shell incidence face scan")? {
+            for other in incident_faces.identities("shell neighbor face scan")? {
                 ctx.charge_work(
                     u64_from_index(face.len()),
                     "shell neighbor identity comparison",
@@ -433,8 +433,7 @@ pub(in crate::validate) fn check_shell_connectivity(
                 break;
             };
             if let Some(group) = neighbors.get(ctx, face)? {
-                for neighbor in group.identities() {
-                    ctx.charge_work(1, "shell connectivity neighbor scan")?;
+                for neighbor in group.identities("shell connectivity neighbor scan")? {
                     if owned.contains(ctx, neighbor)? && reached.insert_unique(neighbor, ())? {
                         pending_storage.with_storage(|| {
                             ctx.push_vec(&mut pending, neighbor, "shell pending slots")

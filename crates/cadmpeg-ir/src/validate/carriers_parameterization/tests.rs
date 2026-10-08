@@ -555,7 +555,7 @@ fn carrier_law_walk_preserves_first_later_and_active_session_refusals() {
                 "carrier law visit"
             }
         );
-        assert!(index.identities().next().is_none());
+        assert_eq!(index.len(), 0);
         drop(caller);
         drop(index);
         assert!(
