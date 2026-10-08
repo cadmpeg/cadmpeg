@@ -453,9 +453,11 @@ fn jt_arithmetic_decode_does_not_admit_unvisited_table_work() {
         |_| {},
         |ctx| {
             // No symbols are searched when the sixteen-bit prefix is absent.
-            assert!(super::decode_arithmetic(
-                ctx, &[], 0, super::MAX_ARITHMETIC_VALUES, &entries
-            ).unwrap().is_none());
+            assert!(
+                super::decode_arithmetic(ctx, &[], 0, super::MAX_ARITHMETIC_VALUES, &entries)
+                    .unwrap()
+                    .is_none()
+            );
         },
     );
 }
@@ -962,7 +964,8 @@ fn jt_arithmetic_missing_prefix_does_not_refuse_prospective_work() {
         |ctx| {
             // The 70,000,000 prospective visits never occur without code bits.
             assert!(super::decode_arithmetic(ctx, &[], 0, 700_000, &entries)
-                .unwrap().is_none());
+                .unwrap()
+                .is_none());
         },
     );
 }
@@ -1112,7 +1115,9 @@ fn signed_fixed_bit_range_needs_no_decode_admission() {
 #[test]
 fn jt_arithmetic_search_refuses_at_the_visited_entry() {
     let entries = [super::ProbabilityEntry {
-        symbol: 0, occurrence_count: 1, value: 0,
+        symbol: 0,
+        occurrence_count: 1,
+        value: 0,
     }; 65];
     let code = 0xffff_0000_u32.to_le_bytes();
     let error = crate::test_support::resource_refusal_at(
@@ -1121,14 +1126,18 @@ fn jt_arithmetic_search_refuses_at_the_visited_entry() {
         "JT probability entry search",
         |ctx| super::decode_arithmetic(ctx, &code, 32, 1, &entries).map(|_| ()),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "JT probability entry search" && limit.additional == 1));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "JT probability entry search" && limit.additional == 1)
+    );
 }
 
 #[test]
 fn jt_arithmetic_short_search_admits_large_lane_at_actual_work() {
     let mut entries = [super::ProbabilityEntry {
-        symbol: 0, occurrence_count: 0, value: 7,
+        symbol: 0,
+        occurrence_count: 0,
+        value: 7,
     }; 65];
     entries[0].occurrence_count = 1;
     let code = [0; 4];
@@ -1140,7 +1149,8 @@ fn jt_arithmetic_short_search_admits_large_lane_at_actual_work() {
         |policy| policy.limits.max_work_units = 66 + 1_000_001 + 1_000_000,
         |ctx| {
             let lane = super::decode_arithmetic(ctx, &code, 16, count, &entries)
-                .unwrap().unwrap();
+                .unwrap()
+                .unwrap();
             assert_eq!(lane.len(), count);
             assert!(lane.iter().all(|value| *value == Some(7)));
         },

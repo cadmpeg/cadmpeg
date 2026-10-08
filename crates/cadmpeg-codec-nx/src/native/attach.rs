@@ -300,7 +300,8 @@ pub(super) fn attach(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
-    let no_native_content = model.is_empty() && scan.container.indexed_om_sections(ctx)?.0.is_empty();
+    let no_native_content =
+        model.is_empty() && scan.container.indexed_om_sections(ctx)?.0.is_empty();
     let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),

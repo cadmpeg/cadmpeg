@@ -347,7 +347,8 @@ fn schema_carrier_labels_refuse_materialized_storage_at_the_named_boundary() {
     let scan = crate::decode::Scan {
         container: crate::test_support::with_decode_context(|ctx| {
             crate::container::scan_bytes(ctx, &bytes)
-        }).unwrap(),
+        })
+        .unwrap(),
         streams: extract_streams(&bytes),
     };
     crate::test_support::resource_refusal_at(

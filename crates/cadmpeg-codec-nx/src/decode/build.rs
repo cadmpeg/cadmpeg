@@ -1060,7 +1060,9 @@ pub(super) fn try_decode_geometry(
                 stream_storage.with_storage(|| {
                     let pending = (
                         procedural_id.try_clone_for_decode(ctx, "nx pending EXT11 construction")?,
-                        charted.samples.clone_charged(ctx, "NX solved chart sample copy")?,
+                        charted
+                            .samples
+                            .clone_charged(ctx, "NX solved chart sample copy")?,
                         charted.fit_tolerance.get(),
                         SerializedSupportUv {
                             values: [
