@@ -1254,7 +1254,7 @@ pub(in super::super) fn transfer_sketches(
                 native_ref: Some(sketch_native_ref_admitted(ctx, &sketch_id)?),
             },
         )?;
-        if owned_section_feature_id(scan, definition.identity.id()).is_none() {
+        if owned_section_feature_id(ctx, scan, definition.identity.id())?.is_none() {
             let Some(feature_id) = sketch_feature_id_admitted(ctx, &sketch_id)? else {
                 continue;
             };

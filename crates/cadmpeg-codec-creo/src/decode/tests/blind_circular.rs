@@ -528,20 +528,19 @@ fn torus_outline_identifies_exactly_one_prototype_radius_delta() {
         selector: 0,
         offset: 0,
     };
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        outline_has_unique_radius_delta(
-            ctx,
+    assert!(crate::decode::with_test_decode_ctx(|_| {
+        Ok::<_, cadmpeg_core::CodecError>(outline_has_unique_radius_delta(
             outline([-192.5, -5.0, -40.0, -167.5, -3.0, 52.5]),
             2.0,
-        )
+        ))
     })
     .expect("admitted torus outline comparison"));
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| {
-        outline_has_unique_radius_delta(ctx, outline([-2.0, -2.0, 0.0, 0.0, 0.0, 8.0]), 2.0)
+    assert!(!crate::decode::with_test_decode_ctx(|_| {
+        Ok::<_, cadmpeg_core::CodecError>(outline_has_unique_radius_delta(outline([-2.0, -2.0, 0.0, 0.0, 0.0, 8.0]), 2.0))
     })
     .expect("admitted torus outline comparison"));
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| {
-        outline_has_unique_radius_delta(ctx, outline([-2.0, 0.0, 0.0, 2.0, 0.0, 8.0]), 2.0)
+    assert!(!crate::decode::with_test_decode_ctx(|_| {
+        Ok::<_, cadmpeg_core::CodecError>(outline_has_unique_radius_delta(outline([-2.0, 0.0, 0.0, 2.0, 0.0, 8.0]), 2.0))
     })
     .expect("admitted torus outline comparison"));
     let five_coordinate =
@@ -568,26 +567,24 @@ fn torus_outline_identifies_exactly_one_prototype_radius_delta() {
         0.5
     ));
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| paired_five_coordinate_sphere_center(
-            ctx,
+        crate::decode::with_test_decode_ctx(|_| Ok::<_, cadmpeg_core::CodecError>(paired_five_coordinate_sphere_center(
             [
                 five_coordinate([-2.65, -15.0, -2.65, 2.65, -17.65]),
                 five_coordinate([-2.65, -12.35, -2.65, 2.65, -15.0]),
             ],
             2.65,
-        ))
+        )))
         .expect("service profile admits paired sphere coordinates"),
         Some([0.0, 0.0, -15.0])
     );
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| paired_five_coordinate_sphere_center(
-            ctx,
+        crate::decode::with_test_decode_ctx(|_| Ok::<_, cadmpeg_core::CodecError>(paired_five_coordinate_sphere_center(
             [
                 five_coordinate([-2.65, -15.0, -2.65, 2.65, -17.65]),
                 five_coordinate([-2.65, -12.0, -2.65, 2.65, -15.0]),
             ],
             2.65,
-        ))
+        )))
         .expect("service profile admits paired sphere coordinates")
         .is_none()
     );

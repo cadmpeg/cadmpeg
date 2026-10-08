@@ -1479,19 +1479,19 @@ fn boundary_surface_entity_graph_requires_the_complete_generated_chain() {
         offset: 0,
     };
 
-    assert!(class_942_boundary_surface_entity_graph(
-        144,
+    assert!(crate::decode::with_test_decode_ctx(|ctx| class_942_boundary_surface_entity_graph(
+        ctx, 144,
         &tables,
         std::slice::from_ref(&surface),
-    ));
+    )).expect("admitted boundary surface graph"));
 
     let mut incomplete = tables.clone();
     incomplete[1].entries.pop();
-    assert!(!class_942_boundary_surface_entity_graph(
-        144,
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| class_942_boundary_surface_entity_graph(
+        ctx, 144,
         &incomplete,
         &[surface],
-    ));
+    )).expect("admitted boundary surface graph"));
 }
 
 #[test]

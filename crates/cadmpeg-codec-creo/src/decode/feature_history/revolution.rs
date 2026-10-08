@@ -26,7 +26,7 @@ use super::link::{
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::identity::visit_semantic_saved_section_entities;
 use crate::decode::sketch_transfer::recipe::{
-    feature_recipe, feature_revolution_extent, unique_feature_revolution_extent,
+    feature_revolution_extent, unique_feature_revolution_extent,
 };
 use crate::decode::source_carriers::SourceUnitCarriers;
 use cadmpeg_ir::document::CadIr;
@@ -36,7 +36,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 fn revolution_unit_axis(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -82,15 +82,6 @@ fn push_revolution_surface_loss(
     Ok(())
 }
 
-fn insert_generating_segment_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ids: &mut BTreeSet<u32>,
-    id: u32,
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.insert_btree_set(ids, id, "creo revolution generating segment IDs")?;
-    Ok(())
-}
-
 /// Transfer one exact surface carrier per resolved revolution generator.
 ///
 /// A saved spline whose revolved lanes the IR carrier refuses states no
@@ -106,6 +97,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
+    let mut operation_rows = None;
     for transform in ctx.admit_iter(&scan.features.section_transforms, "creo revolution surface transforms")? {
         if unique_feature_section_transform(
             ctx,
@@ -120,7 +112,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if feature_recipe(scan, feature_id)
+        let operation_rows = match &operation_rows {
+            Some(rows) => rows,
+            None => operation_rows.insert(super::operations::OperationRows::new(ctx, &scan.features.operations)?),
+        };
+        if operation_rows.get(feature_id).and_then(|row| row.recipe.resolved()).map(crate::feature::operations::FeatureRecipe::kind)
             != Some(crate::feature::operations::FeatureRecipeKind::Revolve)
         {
             continue;
@@ -148,16 +144,18 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         else {
             continue;
         };
-        let points = resolved_section_points(ctx, definition)?;
-        let mut generating_ids = BTreeSet::new();
+        let mut scratch = ctx.reserve_scoped(0, "creo revolution generator evidence")?;
+        let points = scratch.with_storage(|| resolved_section_points(ctx, definition))?;
+        let segments = scratch.with_storage(|| complete_section_segment_rows(ctx, definition))?;
+        let mut generating_ids = HashSet::new();
         for id in ctx
             .admit_iter(
-                trim_segment_ids(ctx, definition)?,
+                scratch.with_storage(|| trim_segment_ids(ctx, definition))?,
                 "creo revolution trim rows",
             )?
             .flatten()
         {
-            insert_generating_segment_id(ctx, &mut generating_ids, id)?;
+            scratch.with_storage(|| ctx.insert_hash_set(&mut generating_ids, id, "creo revolution generating segment IDs"))?;
         }
         let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
             continue;
@@ -168,34 +166,30 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 "creo revolution sketch identity comparison",
             ), "creo revolution model sketches")?;
         if let Some(sketch) = matching_sketch {
-            let segments = complete_section_segment_rows(ctx, definition)?;
             let profile_ids =
-                profile_segment_ids(ctx, definition.identity.id(), &segments, &sketch.profiles)?;
+                scratch.with_storage(|| profile_segment_ids(ctx, definition.identity.id(), &segments, &sketch.profiles))?;
             for id in ctx.admit_iter(&profile_ids, "creo revolution profile segment IDs")? {
-                insert_generating_segment_id(ctx, &mut generating_ids, *id)?;
+                scratch.with_storage(|| ctx.insert_hash_set(&mut generating_ids, *id, "creo revolution generating segment IDs"))?;
             }
         }
         let arc_bindings = match definition.order_table.as_ref() {
             None => BTreeMap::new(),
             Some(order) => {
-                let arc_segments = complete_section_segment_rows(ctx, definition)?;
-                ordered_family_surface_bindings_for_feature(
+                let mut arc_ids = Vec::new();
+                for segment in ctx.admit_iter(&segments, "creo revolution arc generator segments")? {
+                    if generating_ids.contains(&segment.external_id) && matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Arc(_)) {
+                        scratch.with_storage(|| ctx.push_vec(&mut arc_ids, segment.external_id, "creo revolution arc generator IDs"))?;
+                    }
+                }
+                scratch.with_storage(|| ordered_family_surface_bindings_for_feature(
                     ctx,
                     &scan.surfaces.rows,
                     feature_id,
                     &scan.features.entity_tables,
                     order,
-                    ctx.admit_iter(&arc_segments, "creo revolution arc generator segments")?
-                        .filter(|segment| {
-                            generating_ids.contains(&segment.external_id)
-                                && matches!(
-                                    segment.kind,
-                                    crate::feature::definitions::FeatureSegmentKind::Arc(_)
-                                )
-                        })
-                        .map(|segment| segment.external_id),
+                    arc_ids,
                     crate::surface::SurfaceKind::TorusOrSphere,
-                )?
+                ))?
             }
         };
         let spline_bindings = match definition.order_table.as_ref() {
@@ -213,7 +207,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                                 None => None,
                             };
                             if let Some(external_id) = external_id {
-                                if !insert_ordered_family_surface_binding(
+                                if !scratch.with_storage(|| insert_ordered_family_surface_binding(
                                     ctx,
                                     &SurfaceBindingSource {
                                         surface_rows: &scan.surfaces.rows,
@@ -225,7 +219,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                                     external_id,
                                     &mut bindings,
                                     &mut bound_surfaces,
-                                )? {
+                                ))? {
                                     return Ok(std::ops::ControlFlow::Break(()));
                                 }
                             }
@@ -238,7 +232,6 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 }
             }
         };
-        let segments = complete_section_segment_rows(ctx, definition)?;
         for segment in ctx
             .admit_iter(&segments, "creo revolution generator segments")?
             .filter(|segment| generating_ids.contains(&segment.external_id))
@@ -606,7 +599,9 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo vertex orbit staging")?;
     let mut pending = Vec::new();
+    let mut operation_rows = None;
     for transform in ctx.admit_iter(
         &scan.features.section_transforms,
         "creo revolution vertex orbit transforms",
@@ -624,7 +619,11 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if feature_recipe(scan, feature_id)
+        let operation_rows = match &operation_rows {
+            Some(rows) => rows,
+            None => operation_rows.insert(super::operations::OperationRows::new(ctx, &scan.features.operations)?),
+        };
+        if operation_rows.get(feature_id).and_then(|row| row.recipe.resolved()).map(crate::feature::operations::FeatureRecipe::kind)
             != Some(crate::feature::operations::FeatureRecipeKind::Revolve)
         {
             continue;
@@ -650,7 +649,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
-        let profiles = connected_sketch_profile_vertices(ctx, ir, source_carriers, &sketch_id)?;
+        let profiles = scratch.with_storage(|| connected_sketch_profile_vertices(ctx, ir, source_carriers, &sketch_id))?;
         for (profile_index, vertices) in
             ctx.admit_iter(&profiles, "creo revolution profile rows")?
         {
@@ -663,7 +662,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                 };
                 let geometry = CurveGeometry::try_from(geometry)
                     .map_err(cadmpeg_core::CodecError::malformed)?;
-                ctx.reserve_vec(&mut pending, 1, "creo revolution vertex orbit candidates")?;
+                scratch.with_storage(|| ctx.reserve_vec(&mut pending, 1, "creo revolution vertex orbit candidates"))?;
                 pending.push((
                     crate::identity::compose_checked::<CurveId>(
                         ctx, &crate::identity::FEATURE_REVOLUTION_VERTEX_ORBIT,
@@ -681,7 +680,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         }
     }
     let mut transferred = 0;
-    for (id, geometry, offset, object_id) in pending {
+    for (id, geometry, offset, object_id) in ctx.admit_iter(pending, "creo vertex orbit candidate moves")? {
         let curve_exists = ctx.any_by(&ir.model.curves, |curve| ctx.equal(
                 &curve.id,
                 &id,
@@ -736,6 +735,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo vertex orbit staging")?;
     let mut pending = Vec::new();
     for transform in ctx.admit_iter(
         &scan.features.section_transforms,
@@ -765,7 +765,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
         let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
-        let profiles = connected_sketch_profile_vertices(ctx, ir, source_carriers, &sketch_id)?;
+        let profiles = scratch.with_storage(|| connected_sketch_profile_vertices(ctx, ir, source_carriers, &sketch_id))?;
         for (profile_index, vertices) in ctx.admit_iter(&profiles, "creo extrusion profile rows")? {
             for (vertex_index, point) in ctx
                 .admit_iter(vertices, "creo extrusion profile vertices")?
@@ -774,7 +774,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                 let Some(geometry) = extruded_section_line(transform, *point) else {
                     continue;
                 };
-                ctx.reserve_vec(&mut pending, 1, "creo extrusion vertex orbit candidates")?;
+                scratch.with_storage(|| ctx.reserve_vec(&mut pending, 1, "creo extrusion vertex orbit candidates"))?;
                 pending.push((
                     crate::identity::compose_checked::<CurveId>(
                         ctx, &crate::identity::FEATURE_EXTRUSION_VERTEX_ORBIT,
@@ -792,7 +792,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
         }
     }
     let mut transferred = 0;
-    for (id, geometry, offset, object_id) in pending {
+    for (id, geometry, offset, object_id) in ctx.admit_iter(pending, "creo vertex orbit candidate moves")? {
         let curve_exists = ctx.any_by(&ir.model.curves, |curve| ctx.equal(
                 &curve.id,
                 &id,
