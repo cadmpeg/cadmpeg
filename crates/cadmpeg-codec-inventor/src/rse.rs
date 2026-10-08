@@ -1252,8 +1252,12 @@ mod tests {
             policy.limits.max_retained_bytes = width;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
                 .expect("exact known segment label context");
-            assert_eq!(kind.retained_label(&ctx).expect("exact label storage"), expected);
-            ctx.finish_session().expect("known label needs no work or materialization");
+            assert_eq!(
+                kind.retained_label(&ctx).expect("exact label storage"),
+                expected
+            );
+            ctx.finish_session()
+                .expect("known label needs no work or materialization");
         }
     }
 
@@ -1290,8 +1294,13 @@ mod tests {
         policy.limits.max_materialized_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("exact unknown label context");
-        assert_eq!(kind.retained_label(&ctx).expect("exact variable label copy"), source);
-        ctx.finish_session().expect("unknown copy admits its exact extent");
+        assert_eq!(
+            kind.retained_label(&ctx)
+                .expect("exact variable label copy"),
+            source
+        );
+        ctx.finish_session()
+            .expect("unknown copy admits its exact extent");
     }
 
     #[test]

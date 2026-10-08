@@ -2436,10 +2436,8 @@ fn boolean_properties(
         if let Some(value) = boolean(ctx, source, *slot, index)? {
             let key = cadmpeg_core::nonblank_literal!(ctx, "property_{slot}_boolean")?;
             let value_text = if value { "true" } else { "false" };
-            let mut value = ctx.retained_string(
-                value_text.len(),
-                "retain Inventor feature property value",
-            )?;
+            let mut value =
+                ctx.retained_string(value_text.len(), "retain Inventor feature property value")?;
             value.push_str(value_text);
             ctx.insert_btree_map(
                 &mut properties,
