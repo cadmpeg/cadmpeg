@@ -8,7 +8,7 @@
 
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::{index_from_u32, u64_from_index, DecodeContext};
@@ -1889,7 +1889,7 @@ fn decode_graph(
     // Edge attr -> [(coedge attr, start vuse, next coedge's start vuse)] from
     // the ring walk. The ring order supplies a boundary edge's second endpoint;
     // a reciprocal twin supplies it for a two-sided edge.
-    let mut edge_incidence: HashMap<u16, Vec<(u16, u16, u16)>> = HashMap::new();
+    let mut edge_incidence: BTreeMap<u16, Vec<(u16, u16, u16)>> = BTreeMap::new();
 
     for f in &faces {
         for (_loop_attr, ring) in &f.loops {
@@ -1904,7 +1904,7 @@ fn decode_graph(
                 let next_vuse = t.coedges().get(&next_attr).map_or(0, |next| next.refs[4]);
                 let edge_attr = ce.refs[6];
                 if edge_attr != 0 {
-                    ctx.push_hash_group(
+                    ctx.push_btree_group(
                         &mut edge_incidence,
                         edge_attr,
                         (ce_attr, start_vuse, next_vuse),

@@ -865,12 +865,14 @@ mod tests {
     #[test]
     fn fixed_coordinate_graph_work_refuses_before_scan_and_traversal() {
         let definition = fixed_coordinate_graph_fixture();
-        // Adjacency and parity insertions admit key comparisons and four passes over each bounded node.
+        // A first insertion into a tree shifts its node once and pays two passes for the
+        // node it adds to the node bound; a second only shifts, and compares its four
+        // bytes once with the one stored key.
         let pointer_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
         let adjacency_node = 11 * (4 + 3 * pointer_bytes) + 18 * pointer_bytes;
         let parity_node = 11 * (4 + 1) + 18 * pointer_bytes;
-        let first_visit = 1 + 4 * 3 * adjacency_node + 11 * 4;
-        let second_visit = first_visit + 1 + 11 * 4 + 4 * 2 * parity_node;
+        let first_visit = 1 + 3 * adjacency_node + 4 + adjacency_node;
+        let second_visit = first_visit + 1 + 4 + parity_node;
         let axis_node = 11
             * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::SectionAxis>())
             + 18 * pointer_bytes;
@@ -880,11 +882,11 @@ mod tests {
             (first_visit, "creo fixed-coordinate graph traversal"),
             (second_visit, "creo fixed-coordinate graph traversal"),
             (
-                second_visit + 1 + 4 * axis_node,
+                second_visit + 1 + 3 * axis_node,
                 "creo direct fixed-coordinate skamp scan",
             ),
             (
-                second_visit + 2 + 8 * axis_node,
+                second_visit + 2 + 6 * axis_node,
                 "creo direct fixed-coordinate skamp scan",
             ),
         ] {

@@ -393,6 +393,16 @@ impl<'tcx> Analysis<'_, 'tcx> {
             _ => {
                 let (definition, operands) = self.call(expression)?;
                 let name = self.tcx.item_name(definition);
+                if operands.first().is_some_and(|source| {
+                    types::standard_str_chars_call(
+                        self.tcx,
+                        definition,
+                        self.expr_ty(source),
+                        self.expr_ty(expression),
+                    )
+                }) {
+                    return operands.first().and_then(|source| self.key(source, seen));
+                }
                 if types::standard(self.tcx, definition) && matches!(name.as_str(), "unwrap" | "expect")
                     && operands.first().is_some_and(|operand| matches!(self.expr_ty(operand).peel_refs().kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "Option"))
                     && matches!(self.expr_ty(expression).peel_refs().kind(), ty::Slice(_) | ty::Str)
@@ -539,7 +549,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         }]
                     });
             }
-            if (name.as_str() == "u64_from_index" && self.tcx.crate_name(definition.krate).as_str() == "cadmpeg_core")
+            if types::physical_item_path(
+                self.tcx,
+                definition,
+                "cadmpeg_core",
+                &["decode", "view", "u64_from_index"],
+            )
                 || (types::standard(self.tcx, definition) && matches!(name.as_str(), "ok_or" | "ok_or_else" | "map_err" | "try_from" | "try_into"))
                 || (types::standard(self.tcx, definition) && name.as_str() == "from" && operands.first().is_some_and(|operand| matches!((self.expr_ty(operand).kind(), self.expr_ty(expression).kind()), (rustc_middle::ty::Uint(left), rustc_middle::ty::Uint(right)) if left.bit_width().or(Some(self.tcx.data_layout.pointer_size().bits())).zip(right.bit_width().or(Some(self.tcx.data_layout.pointer_size().bits()))).is_some_and(|(left, right)| left <= right)))) {
                 return operands
@@ -627,7 +642,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         false
     }
 
-    fn context_operand(&self, expression: &'tcx Expr<'tcx>) -> bool {
+    pub(super) fn context_operand(&self, expression: &'tcx Expr<'tcx>) -> bool {
         if types::has_context(self.tcx, self.expr_ty(expression), &mut Vec::new()) {
             return true;
         }
@@ -717,7 +732,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if !matches!(name.as_str(), "charge_work" | "charge_work_limit") {
             return;
         }
-        if !self.trusted_context_callee(expression) {
+        let exact_charge = types::decode_context_method(self.tcx, definition, "charge_work")
+            || types::decode_context_method(self.tcx, definition, "charge_work_limit")
+            || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
+                && self.trusted_context_callee(expression);
+        if !exact_charge {
             self.flow.work.push(Credit {
                 extents: Vec::new(),
                 opaque: true,

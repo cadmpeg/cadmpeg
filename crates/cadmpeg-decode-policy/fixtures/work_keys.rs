@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 pub mod decode {
+    pub mod context {
+        pub struct DecodeContext;
+    }
     pub mod cost {
         pub trait DecodeCost {}
         impl<T: ?Sized> DecodeCost for T {}
     }
 }
-pub struct DecodeContext;
+pub use decode::context::DecodeContext;
 impl DecodeContext {
     fn charge_key<T: decode::cost::DecodeCost + ?Sized>(
         &self,
@@ -218,15 +221,17 @@ pub fn dropped_suffix(
     }
     if let Some(removed) = values.get(length..) {
         ctx.charge_key(removed, 1, "wrong target")?;
-        other.truncate(length); // finding: uncharged_decode_work
+        other.truncate(length);
     }
     if let Some(removed) = values.get(length..) {
         ctx.charge_key(removed, 1, "wrong length")?;
-        values.truncate(wrong_length); // finding: uncharged_decode_work
+        values.truncate(wrong_length);
     }
     ctx.charge_key(&values[length..], 1, "indexed suffix")?;
     values.truncate(length);
-    values.truncate(length); // finding: uncharged_decode_work
+    // Releasing values is paid by the charges that admitted them; truncation
+    // needs no receipt.
+    values.truncate(length);
     Ok(())
 }
 
@@ -306,4 +311,26 @@ pub fn heap_sifts(
     replacement = changed;
     heap.push(replacement); // finding: uncharged_decode_work
     Ok(())
+}
+
+impl DecodeContext {
+    // The charged removal itself performs the raw removal it names.
+    pub fn remove_hash_map(
+        &self,
+        values: &mut std::collections::HashMap<String, u8>,
+        key: &str,
+    ) -> Result<Option<u8>, ()> {
+        self.charge_key(key, 1, "remove")?;
+        Ok(values.remove(key))
+    }
+
+    // Any other core body reports a raw removal, even after charging its key.
+    pub fn evict(
+        &self,
+        values: &mut std::collections::HashMap<String, u8>,
+        key: &str,
+    ) -> Result<Option<u8>, ()> {
+        self.charge_key(key, 1, "evict")?;
+        Ok(values.remove(key)) // finding: uncharged_decode_work
+    }
 }

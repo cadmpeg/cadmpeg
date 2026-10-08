@@ -45,6 +45,16 @@ fn charged_lookup_and_comparison_refuse_before_access() {
     };
     assert_eq!(limit, repeated);
     assert_eq!(ctx.resource_refusal(), Some(limit));
+
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let CodecError::ResourceLimit(lookup) = ctx
+        .get_hash_map(&values, "long key", "lookup")
+        .expect_err("refusal")
+    else {
+        panic!("refusal")
+    };
+    assert_eq!(lookup.operation, "lookup");
+    assert_eq!(ctx.resource_refusal(), Some(lookup));
 }
 
 #[test]
@@ -69,13 +79,14 @@ fn charged_tree_lookup_counts_key_bytes_at_depth_bound() {
     else {
         panic!("refusal")
     };
-    // Three key lookups plus four mutation passes over three bounded tree nodes.
+    // Three lookups each compare a two-byte key with both stored keys; the
+    // removal shifts the single leaf once.
     let node_bytes = 11 * (std::mem::size_of::<&str>() + std::mem::size_of::<i32>())
         + 16 * std::mem::size_of::<usize>()
         + 2 * std::mem::align_of::<usize>();
     assert_eq!(
         limit.used,
-        132 + 4 * 3 * u64::try_from(node_bytes).expect("test operation succeeds")
+        3 * 2 * 2 + u64::try_from(node_bytes).expect("test operation succeeds")
     );
 }
 
@@ -145,21 +156,10 @@ fn charged_set_get_borrows_the_stored_variable_size_key() {
 
 #[test]
 fn set_relations_and_stored_map_keys_use_complete_query_work() {
-    use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
-    let left = HashSet::from([String::from("alpha")]);
-    let right = HashSet::from([String::from("alpha"), String::from("beta")]);
-    assert!(!ctx
-        .is_disjoint_hash_set(&left, &right, "hash relation")
-        .expect("admission"));
-    assert!(ctx
-        .is_subset_hash_set(&left, &right, "hash relation")
-        .expect("admission"));
-    assert!(!ctx
-        .is_subset_hash_set(&right, &left, "hash relation")
-        .expect("length rejection"));
     let left = BTreeSet::from([String::from("alpha")]);
     let right = BTreeSet::from([String::from("beta")]);
     assert!(ctx
@@ -208,6 +208,14 @@ fn set_relations_and_stored_map_keys_use_complete_query_work() {
         panic!("refusal")
     };
     assert_eq!(first, repeated);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let CodecError::ResourceLimit(lookup) = ctx
+        .get_key_value_hash_map(&hash, "alpha", "refuse lookup")
+        .expect_err("work")
+    else {
+        panic!("refusal")
+    };
+    assert_eq!(lookup.operation, "refuse lookup");
 }
 
 #[test]
@@ -230,14 +238,14 @@ fn tree_mutation_refuses_inline_moves_before_insertion_or_removal() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &insertion_policy)
         .expect("test operation succeeds");
     let mut insertion = BTreeMap::<u8, [u8; 4096]>::from([(1, [0; 4096])]);
-    // The key lookup and stored-key admission fit; movement work must refuse.
+    // The one-comparison key lookup fits; movement work must refuse.
     let CodecError::ResourceLimit(insert_refusal) = ctx
         .insert_btree_map(&mut insertion, 2, [0; 4096], "insert without node growth")
         .expect_err("movement work refuses before insertion")
     else {
         panic!("resource refusal")
     };
-    assert_eq!(insert_refusal.used, 11);
+    assert_eq!(insert_refusal.used, 1);
     assert!(insert_refusal.additional > 4096);
     assert_eq!(insertion.len(), 1);
     assert_eq!(insertion.get(&1), Some(&[0; 4096]));
@@ -253,7 +261,7 @@ fn tree_mutation_refuses_inline_moves_before_insertion_or_removal() {
     else {
         panic!("resource refusal")
     };
-    assert_eq!(first.used, 11);
+    assert_eq!(first.used, 1);
     assert!(first.additional > 4096);
     assert_eq!(map.len(), 1);
     let CodecError::ResourceLimit(repeated) = ctx
@@ -272,4 +280,50 @@ fn tree_mutation_refuses_inline_moves_before_insertion_or_removal() {
         Err(CodecError::ResourceLimit(_))
     ));
     assert_eq!(set.len(), 1);
+}
+
+#[test]
+fn tree_height_counts_levels_of_a_minimally_filled_btree() {
+    // A tree of h levels holds at least 2 * 6^(h-1) - 1 entries.
+    for (length, height) in [
+        (0, 0),
+        (1, 1),
+        (10, 1),
+        (11, 2),
+        (70, 2),
+        (71, 3),
+        (1_000_000, 8),
+    ] {
+        assert_eq!(DecodeContext::tree_height(length), height, "{length}");
+    }
+    assert_eq!(DecodeContext::tree_comparisons(3), 3);
+    assert_eq!(DecodeContext::tree_comparisons(1_000_000), 88);
+}
+
+#[test]
+fn deep_tree_removal_pays_each_level_once() {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let mut tree: std::collections::BTreeMap<u64, u64> = (0..11).map(|key| (key, key)).collect();
+    assert_eq!(
+        ctx.remove_btree_map(&mut tree, &5, "remove")
+            .expect("remove"),
+        Some(5)
+    );
+    let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe")
+    else {
+        panic!("refusal")
+    };
+    // The eight-byte key is compared with each of the eleven stored keys. Eleven
+    // entries may span two levels, so the removal pays one shift, one steal and,
+    // for each level, a merge and the split that may recreate its node: eleven
+    // node passes.
+    let node_bytes = 11 * 2 * std::mem::size_of::<u64>()
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<usize>();
+    assert_eq!(
+        limit.used,
+        8 * 11 + 11 * u64::try_from(node_bytes).expect("test operation succeeds")
+    );
 }

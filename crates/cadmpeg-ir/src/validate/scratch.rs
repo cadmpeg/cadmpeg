@@ -56,13 +56,13 @@ impl<'ctx, T> Scratch<'ctx, T> {
         })
     }
 
-    pub(super) fn extend<'values, S>(
+    pub(super) fn extend<S>(
         &mut self,
-        values: &'values S,
-        mut project: impl FnMut(<<S as IterSource>::Iter<'values> as Iterator>::Item) -> T,
+        values: S,
+        mut project: impl FnMut(<S::Iter as Iterator>::Item) -> T,
     ) -> Result<(), CodecError>
     where
-        S: IterSource + ?Sized + 'values,
+        S: IterSource,
     {
         for value in self.ctx.admit_iter(values, "validation extension scan")? {
             self.push(project(value))?;
@@ -98,7 +98,7 @@ impl<'ctx, T> IntoIterator for Scratch<'ctx, T> {
     type IntoIter = IntoIter<'ctx, T>;
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
-            values: self.values.into_iter(),
+            values: IntoIterator::into_iter(self.values),
             _storage: self.storage,
         }
     }
