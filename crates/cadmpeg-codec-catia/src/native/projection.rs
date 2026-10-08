@@ -2416,12 +2416,12 @@ mod consolidated_analytic_limit_tests {
     fn native_revolution_refuses_profile_map_output_and_id_limits() {
         let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(2, |ctx| {
+        let limited = crate::test_support::with_collection_limit(6, |ctx| {
             consolidated_revolutions(ctx, &bytes, &records, &[])
         });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_revolution_profile_index"));
-        let limited = crate::test_support::with_collection_limit(3, |ctx| {
+        let limited = crate::test_support::with_collection_limit(7, |ctx| {
             consolidated_revolutions(ctx, &bytes, &records, &[])
         });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))

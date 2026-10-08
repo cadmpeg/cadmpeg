@@ -331,9 +331,8 @@ fn a8_class21_pcurve_multiplicities_propagate_collection_refusal() {
     let payload = a8_class21_test_payload();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Two distinct knots, two raw knots, twelve scalar-lane slots, six
-    // projected jet slots, and two six-control nets use 34 items.
-    policy.limits.max_collection_items = 34;
+    // Two knots use forty-six items before the retained multiplicity vector.
+    policy.limits.max_collection_items = 46;
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
         .expect("fixture fits the input limit");
     let error = parse_a8_class21_pcurve(&ctx, 7, &payload)

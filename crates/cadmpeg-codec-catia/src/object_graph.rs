@@ -1119,6 +1119,7 @@ impl ExtentIndex {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn extent_contains(
     owner_start: usize,
     owner_len: usize,
