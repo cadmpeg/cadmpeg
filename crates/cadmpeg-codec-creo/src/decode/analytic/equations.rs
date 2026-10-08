@@ -429,17 +429,36 @@ pub(super) fn intersect_two_planes_with_quadric(
     Ok(points)
 }
 
-fn polynomial_value(
-    ctx: &DecodeContext<'_>,
-    coefficients: &[f64],
-    parameter: f64,
-) -> Result<f64, CodecError> {
-    Ok(ctx
-        .admit_iter(coefficients, "creo polynomial coefficients")?
-        .rev()
-        .fold(0.0, |value, coefficient| {
-            value.mul_add(parameter, *coefficient)
-        }))
+/// The analytic equations here have degree at most four. The conic
+/// Sylvester shape and the torus line expansion each produce five coefficients.
+#[derive(Clone, Copy)]
+struct QuarticPolynomial<T> {
+    coefficients: [T; 5],
+    len: usize,
+}
+
+#[cfg(test)]
+impl<T: Copy + Default> QuarticPolynomial<T> {
+    fn from_slice(coefficients: &[T]) -> Option<Self> {
+        if coefficients.len() > 5 {
+            return None;
+        }
+        let mut result = Self { coefficients: [T::default(); 5], len: coefficients.len() };
+        result.coefficients[..result.len].copy_from_slice(coefficients);
+        Some(result)
+    }
+}
+
+impl<T> QuarticPolynomial<T> {
+    fn as_slice(&self) -> &[T] {
+        &self.coefficients[..self.len]
+    }
+}
+
+fn polynomial_value(coefficients: &QuarticPolynomial<BoundedCoefficient>, parameter: f64) -> f64 {
+    coefficients.as_slice().iter().rev().fold(0.0, |value, coefficient| {
+        value.mul_add(parameter, coefficient.value)
+    })
 }
 
 fn operation_rounding_bound(value: f64) -> f64 {
@@ -451,180 +470,94 @@ fn inflate_positive_bound(value: f64) -> f64 {
 }
 
 fn polynomial_value_and_bound(
-    ctx: &DecodeContext<'_>,
-    coefficients: &[BoundedCoefficient],
+    coefficients: &QuarticPolynomial<BoundedCoefficient>,
     parameter: f64,
-) -> Result<(f64, f64), CodecError> {
-    Ok(ctx
-        .admit_iter(coefficients, "creo bounded polynomial coefficients")?
-        .rev()
-        .fold((0.0, 0.0), |(value, bound), coefficient| {
-            let next_value = value.mul_add(parameter, coefficient.value);
-            let propagated = bound.mul_add(parameter.abs(), coefficient.bound);
-            (
-                next_value,
-                inflate_positive_bound(propagated + operation_rounding_bound(next_value)),
-            )
-        }))
+) -> (f64, f64) {
+    coefficients.as_slice().iter().rev().fold((0.0, 0.0), |(value, bound), coefficient| {
+        let next_value = value.mul_add(parameter, coefficient.value);
+        let propagated = bound.mul_add(parameter.abs(), coefficient.bound);
+        (next_value, inflate_positive_bound(propagated + operation_rounding_bound(next_value)))
+    })
 }
 
 fn polynomial_value_bound(
-    ctx: &DecodeContext<'_>,
-    coefficients: &[BoundedCoefficient],
+    coefficients: &QuarticPolynomial<BoundedCoefficient>,
     parameter: f64,
-) -> Result<f64, CodecError> {
+) -> f64 {
     let magnitude = parameter.abs();
-    let (coefficient_error, evaluation_terms, _) = ctx
-        .admit_iter(coefficients, "creo bounded polynomial value terms")?
-        .fold(
-            (0.0, 0.0, 1.0),
-            |(coefficient_error, evaluation_terms, power), coefficient| {
-                (
-                    coefficient.bound.mul_add(power, coefficient_error),
-                    coefficient.value.abs().mul_add(power, evaluation_terms),
-                    power * magnitude,
-                )
-            },
-        );
-    Ok(coefficient_error + cancellation_bound(evaluation_terms))
+    let (coefficient_error, evaluation_terms, _) = coefficients.as_slice().iter().fold(
+        (0.0, 0.0, 1.0),
+        |(coefficient_error, evaluation_terms, power), coefficient| {
+            (coefficient.bound.mul_add(power, coefficient_error),
+             coefficient.value.abs().mul_add(power, evaluation_terms), power * magnitude)
+        },
+    );
+    coefficient_error + cancellation_bound(evaluation_terms)
 }
 
 fn polynomial_interval_value_bound(
-    ctx: &DecodeContext<'_>,
-    coefficients: &[BoundedCoefficient],
+    coefficients: &QuarticPolynomial<BoundedCoefficient>,
     parameter: f64,
     parameter_error: f64,
-) -> Result<f64, CodecError> {
-    let mut derivative_storage = ctx.reserve_scoped(0, "creo polynomial interval value bound scratch")?;
-    let (_, mut bound) = polynomial_value_and_bound(ctx, coefficients, parameter)?;
-    let mut derivative = Vec::new();
-    derivative_storage.with_storage(|| ctx.extend_from_slice(
-        &mut derivative,
-        coefficients,
-        "creo polynomial interval coefficients",
-    ))?;
+) -> f64 {
+    let (_, mut bound) = polynomial_value_and_bound(coefficients, parameter);
+    let mut derivative = *coefficients;
     let mut parameter_error_power = 1.0;
     let mut factorial = 1.0;
-    for order_offset in ctx
-        .admit_iter(
-            &coefficients[1..],
-            "creo polynomial interval derivative orders",
-        )?
-        .enumerate()
-        .map(|(order_offset, _)| order_offset)
-    {
-        let order = order_offset + 1;
-        let mut next_storage = ctx.reserve_scoped(0, "creo polynomial interval value bound scratch")?;
-        let mut next_derivative = Vec::new();
-        next_storage.with_storage(|| ctx.reserve_vec(
-            &mut next_derivative,
-            derivative.len() - 1,
-            "creo polynomial interval derivatives",
-        ))?;
-        next_derivative.extend(
-            ctx.admit_iter(
-                &derivative[1..],
-                "creo polynomial interval derivative coefficients",
-            )?
-            .enumerate()
-            .map(|(power_offset, coefficient)| {
-                let power = power_offset + 1;
-                let Ok(power) = u32::try_from(power) else {
-                    return BoundedCoefficient {
-                        value: f64::INFINITY,
-                        bound: f64::INFINITY,
-                    };
-                };
-                let factor = f64::from(power);
-                let value = coefficient.value * factor;
-                BoundedCoefficient {
-                    value,
-                    bound: inflate_positive_bound(
-                        coefficient.bound * factor + operation_rounding_bound(value),
-                    ),
-                }
-            }),
-        );
-        derivative = next_derivative;
-        derivative_storage = next_storage;
-        let Ok(order) = u32::try_from(order) else {
-            return Ok(f64::INFINITY);
+    for order in 1..coefficients.len {
+        let mut next_derivative = QuarticPolynomial {
+            coefficients: [BoundedCoefficient::default(); 5], len: derivative.len - 1,
         };
+        for power in 1..derivative.len {
+            let coefficient = derivative.coefficients[power];
+            // Both order and power are in 1..=4.
+            let factor = POLYNOMIAL_POWERS[power];
+            let value = coefficient.value * factor;
+            next_derivative.coefficients[power - 1] = BoundedCoefficient {
+                value,
+                bound: inflate_positive_bound(coefficient.bound * factor + operation_rounding_bound(value)),
+            };
+        }
+        derivative = next_derivative;
         parameter_error_power *= parameter_error;
-        factorial *= f64::from(order);
-        let (derivative_value, derivative_bound) =
-            polynomial_value_and_bound(ctx, &derivative, parameter)?;
+        factorial *= POLYNOMIAL_POWERS[order];
+        let (derivative_value, derivative_bound) = polynomial_value_and_bound(&derivative, parameter);
         let term = inflate_positive_bound(
             (derivative_value.abs() + derivative_bound) * parameter_error_power / factorial,
         );
         bound = inflate_positive_bound(bound + term);
     }
-    drop(derivative);
-    drop(derivative_storage);
-    Ok(bound)
+    bound
 }
 
-fn polynomial_sign(
-    ctx: &DecodeContext<'_>,
-    coefficients: &[BoundedCoefficient],
-    parameter: f64,
-) -> Result<Option<bool>, CodecError> {
-    let (value, bound) = polynomial_value_and_bound(ctx, coefficients, parameter)?;
-    Ok(
-        (value.is_finite() && bound.is_finite() && value.abs() > bound)
-            .then_some(value.is_sign_positive()),
-    )
+fn polynomial_sign(coefficients: &QuarticPolynomial<BoundedCoefficient>, parameter: f64) -> Option<bool> {
+    let (value, bound) = polynomial_value_and_bound(coefficients, parameter);
+    (value.is_finite() && bound.is_finite() && value.abs() > bound).then_some(value.is_sign_positive())
 }
 
-fn polynomial_is_exactly_zero(
-    ctx: &DecodeContext<'_>,
-    coefficients: &[BoundedCoefficient],
-    parameter: f64,
-) -> Result<bool, CodecError> {
-    if ctx.any_by(
-        coefficients,
-        |coefficient| Ok(coefficient.bound != 0.0),
-        "creo exact polynomial coefficient bounds",
-    )? {
-        return Ok(false);
+fn polynomial_is_exactly_zero(coefficients: &QuarticPolynomial<BoundedCoefficient>, parameter: f64) -> bool {
+    if coefficients.as_slice().iter().any(|coefficient| coefficient.bound != 0.0) {
+        return false;
     }
     let mut value = 0.0;
-    let mut traversal = (coefficients).iter().rev();
-    while let Some(coefficient) = ctx.next_charged(
-        &mut traversal,
-        "creo exact polynomial evaluation coefficients",
-    )? {
+    for coefficient in coefficients.as_slice().iter().rev() {
         let parameter_magnitude = parameter.abs();
         let parameter_bits = parameter_magnitude.to_bits();
         let parameter_exponent = parameter_bits & F64_EXPONENT_MASK;
         let parameter_fraction = parameter_bits & !F64_EXPONENT_MASK;
         let parameter_is_power_of_two = parameter_magnitude.is_finite()
-            && if parameter_exponent == 0 {
-                parameter_fraction.is_power_of_two()
-            } else {
-                parameter_fraction == 0
-            };
-        if value != 0.0 && parameter != 0.0 && !parameter_is_power_of_two {
-            return Ok(false);
-        }
+            && if parameter_exponent == 0 { parameter_fraction.is_power_of_two() } else { parameter_fraction == 0 };
+        if value != 0.0 && parameter != 0.0 && !parameter_is_power_of_two { return false; }
         let product = value * parameter;
-        if !product.is_finite()
-            || (value != 0.0 && parameter != 0.0 && product / parameter != value)
-        {
-            return Ok(false);
-        }
+        if !product.is_finite() || (value != 0.0 && parameter != 0.0 && product / parameter != value) { return false; }
         let sum = product + coefficient.value;
-        if !sum.is_finite() {
-            return Ok(false);
-        }
+        if !sum.is_finite() { return false; }
         let product_part = sum - coefficient.value;
         let coefficient_part = sum - product_part;
-        if (product - product_part) + (coefficient.value - coefficient_part) != 0.0 {
-            return Ok(false);
-        }
+        if (product - product_part) + (coefficient.value - coefficient_part) != 0.0 { return false; }
         value = sum;
     }
-    Ok(value == 0.0)
+    value == 0.0
 }
 
 /// A polynomial coefficient beside the bound on its distance from the exact
@@ -632,7 +565,7 @@ fn polynomial_is_exactly_zero(
 ///
 /// The two travel together because the degree of a polynomial formed by
 /// cancelling sums is stated by its leading coefficient against that bound.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct BoundedCoefficient {
     value: f64,
     bound: f64,
@@ -650,6 +583,7 @@ struct BoundedCoefficient {
 /// `7 u` against the bound's `128 u`; products of two bars are smaller again by
 /// that same ratio. The fifth multiple covers both.
 const POLYNOMIAL_ERROR_FACTOR: f64 = 5.0;
+const POLYNOMIAL_POWERS: [f64; 5] = [0.0, 1.0, 2.0, 3.0, 4.0];
 
 /// A real-root candidate beside its certified or uncertain location interval.
 ///
@@ -658,13 +592,27 @@ const POLYNOMIAL_ERROR_FACTOR: f64 = 5.0;
 /// candidate spans the complete root bound and does not state that a root
 /// exists. `multiple` is true only when exact arithmetic states that the
 /// polynomial and its derivative both vanish at the candidate value.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct PolynomialRoot {
     value: f64,
     error: f64,
     certified: bool,
     stationary: bool,
     multiple: bool,
+}
+
+/// A degree-one polynomial returns at most one candidate. Each higher
+/// degree returns at most one candidate per derivative station and per gap:
+/// R(d) <= 2 R(d-1) + 1. Degrees 1..=4 therefore need 1, 3, 7, 15 slots.
+struct PolynomialRoots {
+    roots: [PolynomialRoot; 15],
+    len: usize,
+}
+
+impl PolynomialRoots {
+    fn new() -> Self { Self { roots: [PolynomialRoot::default(); 15], len: 0 } }
+    fn push(&mut self, root: PolynomialRoot) { self.roots[self.len] = root; self.len += 1; }
+    fn as_slice(&self) -> &[PolynomialRoot] { &self.roots[..self.len] }
 }
 
 /// Return finite certified roots and derivative-station candidates in ascending order.
@@ -674,18 +622,13 @@ struct PolynomialRoot {
 /// the polynomial is of lower degree. A residue kept as a leading coefficient
 /// states roots of order `1 / residue` that no exact polynomial has; a real
 /// leading coefficient dropped loses the roots it carries.
-fn real_polynomial_roots(
-    ctx: &DecodeContext<'_>,
-    coefficients: &[BoundedCoefficient],
-) -> Result<Vec<PolynomialRoot>, CodecError> {
-    let mut scratch = ctx.reserve_scoped(0, "creo real polynomial roots scratch")?;
-    let _depth = ctx.enter_nested("creo polynomial root recursion")?;
-    let largest = ctx
-        .admit_iter(coefficients, "creo polynomial root coefficient scale")?
+fn real_polynomial_roots(coefficients: &QuarticPolynomial<BoundedCoefficient>) -> PolynomialRoots {
+    if coefficients.len == 0 { return PolynomialRoots::new(); }
+    let largest = coefficients.as_slice().iter()
         .map(|coefficient| coefficient.value.abs())
         .fold(0.0, f64::max);
     if largest == 0.0 || !largest.is_finite() {
-        return Ok(Vec::new());
+        return PolynomialRoots::new();
     }
     // Division by the power of two at the largest coefficient is exact. The
     // largest quotient remains below two for a normal coefficient and below
@@ -697,59 +640,33 @@ fn real_polynomial_roots(
     } else {
         normal_scale
     };
-    let mut scaled = Vec::new();
-    scratch.with_storage(|| {
-        ctx.reserve_vec(
-            &mut scaled,
-            coefficients.len(),
-            "creo polynomial scaled coefficients",
-        )
-    })?;
-    scaled.extend(
-        ctx.admit_iter(coefficients, "creo polynomial coefficient normalization")?
-            .map(|coefficient| BoundedCoefficient {
-                value: coefficient.value / scale,
-                bound: coefficient.bound / scale,
-            }),
-    );
-    while scaled.len() > 1 {
-        ctx.charge_work(1, "creo polynomial leading coefficient trim")?;
-        let should_trim = scaled
+    let mut scaled = *coefficients;
+    for coefficient in &mut scaled.coefficients[..scaled.len] {
+        coefficient.value /= scale;
+        coefficient.bound /= scale;
+    }
+    while scaled.len > 1 {
+        let should_trim = scaled.as_slice()
             .last()
             .is_some_and(|coefficient| coefficient.value.abs() <= coefficient.bound);
         if !should_trim {
             break;
         }
-        scaled.pop();
+        scaled.len -= 1;
     }
-    let degree = scaled.len() - 1;
-    if degree == 0 {
-        return Ok(Vec::new());
-    }
-    let mut coefficients = Vec::new();
-    scratch.with_storage(|| {
-        ctx.reserve_vec(
-            &mut coefficients,
-            scaled.len(),
-            "creo polynomial coefficient values",
-        )
-    })?;
-    coefficients.extend(
-        ctx.admit_iter(&scaled, "creo polynomial coefficient values source")?
-            .map(|coefficient| coefficient.value),
-    );
+    let degree = scaled.len - 1;
+    if degree == 0 { return PolynomialRoots::new(); }
     if degree == 1 {
         // The pop loop stopped because the leading coefficient is outside its
         // own bound, so the difference below is positive. The exact root is
         // `-(c0 + e0)/(c1 + e1)` for some `|e| <= bound`, which is within
         // `(b0 + |root| b1)/(|c1| - b1)` of the stated one, and the division
         // itself rounds once.
-        let value = -coefficients[0] / coefficients[1];
-        let error = (scaled[0].bound + value.abs() * scaled[1].bound)
-            / (coefficients[1].abs() - scaled[1].bound)
+        let value = -scaled.coefficients[0].value / scaled.coefficients[1].value;
+        let error = (scaled.coefficients[0].bound + value.abs() * scaled.coefficients[1].bound)
+            / (scaled.coefficients[1].value.abs() - scaled.coefficients[1].bound)
             + cancellation_bound(value);
-        let mut roots = Vec::new();
-        ctx.reserve_vec(&mut roots, 1, "creo polynomial roots")?;
+        let mut roots = PolynomialRoots::new();
         roots.push(PolynomialRoot {
             value,
             error,
@@ -757,64 +674,33 @@ fn real_polynomial_roots(
             stationary: false,
             multiple: false,
         });
-        return Ok(roots);
+        return roots;
     }
-    let mut derivative = Vec::new();
-    scratch.with_storage(|| {
-        ctx.reserve_vec(
-            &mut derivative,
-            degree,
-            "creo polynomial derivative coefficients",
-        )
-    })?;
-    let mut traversal = scaled[1..].iter().enumerate();
-    while let Some((power_offset, coefficient)) = ctx.next_charged(
-        &mut traversal,
-        "creo polynomial derivative source coefficients",
-    )? {
-        let power = power_offset + 1;
-        let Some(power) = cadmpeg_core::convert::f64_from_index(power) else {
-            return Err(CodecError::malformed(
-                "Creo polynomial power cannot be represented exactly",
-            ));
+    let mut derivative = QuarticPolynomial { coefficients: [BoundedCoefficient::default(); 5], len: degree };
+    for power in 1..scaled.len {
+        let coefficient = scaled.coefficients[power];
+        let factor = POLYNOMIAL_POWERS[power];
+        derivative.coefficients[power - 1] = BoundedCoefficient {
+            value: coefficient.value * factor, bound: coefficient.bound * factor,
         };
-        derivative.push(BoundedCoefficient {
-            value: coefficient.value * power,
-            bound: coefficient.bound * power,
-        });
     }
-    let leading = coefficients[degree].abs() - scaled[degree].bound;
+    let leading = scaled.coefficients[degree].value.abs() - scaled.coefficients[degree].bound;
     let bound = 1.0
-        + ctx
-            .admit_iter(&scaled[..degree], "creo polynomial root bound coefficients")?
+        + scaled.coefficients[..degree].iter()
             .map(|coefficient| coefficient.value.abs() + coefficient.bound)
             .fold(0.0, f64::max)
             / leading;
     // Each derivative root partitions the polynomial into monotone intervals.
     // Its reported location interval, rather than its approximate value, is
     // removed from those intervals before their endpoint signs are compared.
-    let derivative_roots = scratch.with_storage(|| real_polynomial_roots(ctx, &derivative))?;
-    let mut derivative_values = Vec::new();
-    scratch.with_storage(|| {
-        ctx.reserve_vec(
-            &mut derivative_values,
-            derivative.len(),
-            "creo polynomial derivative values",
-        )
-    })?;
-    derivative_values.extend(
-        ctx.admit_iter(&derivative, "creo polynomial derivative values source")?
-            .map(|coefficient| coefficient.value),
-    );
-    let mut roots = Vec::new();
+    // The derivative has degree at most three, hence at most seven stations.
+    let derivative_roots = real_polynomial_roots(&derivative);
+    let mut roots = PolynomialRoots::new();
     let mut gap_lower = -bound;
-    let mut gap_lower_sign = polynomial_sign(ctx, &scaled, gap_lower)?;
-    let mut gaps = Vec::new();
-    for station in ctx
-        .admit_iter(
-            &derivative_roots,
-            "creo polynomial derivative root candidates",
-        )?
+    let mut gap_lower_sign = polynomial_sign(&scaled, gap_lower);
+    let mut gaps = [(0.0, None, 0.0, None); 8];
+    let mut gap_count = 0;
+    for station in derivative_roots.as_slice().iter()
         .filter(|root| root.value.is_finite() && root.value > -bound && root.value < bound)
     {
         let station = PolynomialRoot {
@@ -824,20 +710,19 @@ fn real_polynomial_roots(
         let station_lower = station.value - station.error;
         let station_upper = station.value + station.error;
         if gap_lower < station_lower {
-            scratch
-                .with_storage(|| ctx.reserve_vec(&mut gaps, 1, "creo polynomial monotone gaps"))?;
-            gaps.push((
+            gaps[gap_count] = (
                 gap_lower,
                 gap_lower_sign,
                 station_lower,
-                polynomial_sign(ctx, &scaled, station_lower)?,
-            ));
+                polynomial_sign(&scaled, station_lower),
+            );
+            gap_count += 1;
         }
-        let (station_value, _) = polynomial_value_and_bound(ctx, &scaled, station.value)?;
+        let (station_value, _) = polynomial_value_and_bound(&scaled, station.value);
         let station_value_bound =
-            polynomial_interval_value_bound(ctx, &scaled, station.value, station.error)?;
-        let station_lower_sign = polynomial_sign(ctx, &scaled, station_lower)?;
-        let station_upper_sign = polynomial_sign(ctx, &scaled, station_upper)?;
+            polynomial_interval_value_bound(&scaled, station.value, station.error);
+        let station_lower_sign = polynomial_sign(&scaled, station_lower);
+        let station_upper_sign = polynomial_sign(&scaled, station_upper);
         let certified_crossing = station_lower_sign
             .zip(station_upper_sign)
             .is_some_and(|(lower, upper)| lower != upper);
@@ -852,10 +737,9 @@ fn real_polynomial_roots(
                             station_value - station_value_bound >= 0.0
                         }
                 });
-        let certified_multiple = polynomial_is_exactly_zero(ctx, &scaled, station.value)?
-            && polynomial_is_exactly_zero(ctx, &derivative, station.value)?;
+        let certified_multiple = polynomial_is_exactly_zero(&scaled, station.value)
+            && polynomial_is_exactly_zero(&derivative, station.value);
         if certified_crossing || certified_touch || certified_multiple {
-            ctx.reserve_vec(&mut roots, 1, "creo polynomial roots")?;
             roots.push(PolynomialRoot {
                 certified: true,
                 multiple: certified_multiple,
@@ -865,7 +749,6 @@ fn real_polynomial_roots(
             && station_value_bound.is_finite()
             && station_value.abs() <= station_value_bound
         {
-            ctx.reserve_vec(&mut roots, 1, "creo polynomial roots")?;
             roots.push(PolynomialRoot {
                 error: (station.value + bound)
                     .abs()
@@ -876,16 +759,16 @@ fn real_polynomial_roots(
             });
         }
         gap_lower = gap_lower.max(station_upper);
-        gap_lower_sign = polynomial_sign(ctx, &scaled, gap_lower)?;
+        gap_lower_sign = polynomial_sign(&scaled, gap_lower);
     }
-    scratch.with_storage(|| ctx.reserve_vec(&mut gaps, 1, "creo polynomial monotone gaps"))?;
-    gaps.push((
+    gaps[gap_count] = (
         gap_lower,
         gap_lower_sign,
         bound,
-        polynomial_sign(ctx, &scaled, bound)?,
-    ));
-    for gap in ctx.admit_iter(&gaps, "creo polynomial monotone gap candidates")? {
+        polynomial_sign(&scaled, bound),
+    );
+    gap_count += 1;
+    for gap in &gaps[..gap_count] {
         let (mut lower, lower_sign, mut upper, upper_sign) = *gap;
         let (Some(mut lower_sign), Some(upper_sign)) = (lower_sign, upper_sign) else {
             continue;
@@ -897,9 +780,9 @@ fn real_polynomial_roots(
         let complete_upper = upper;
         for _ in 0..80 {
             let midpoint = 0.5 * (lower + upper);
-            let midpoint_sign = match polynomial_sign(ctx, &scaled, midpoint)? {
+            let midpoint_sign = match polynomial_sign(&scaled, midpoint) {
                 Some(sign) => sign,
-                None => polynomial_value(ctx, &coefficients, midpoint)?.is_sign_positive(),
+                None => polynomial_value(&scaled, midpoint).is_sign_positive(),
             };
             if lower_sign == midpoint_sign {
                 lower = midpoint;
@@ -909,19 +792,18 @@ fn real_polynomial_roots(
             }
         }
         let value = 0.5 * (lower + upper);
-        let derivative_value = polynomial_value(ctx, &derivative_values, value)?.abs();
-        let derivative_error = polynomial_value_bound(ctx, &derivative, value)?;
+        let derivative_value = polynomial_value(&derivative, value).abs();
+        let derivative_error = polynomial_value_bound(&derivative, value);
         // The value bound divided by the derivative magnitude outside its own
         // bound is the displacement that coefficient and evaluation error can
         // give this simple root. If the derivative does not state a nonzero
         // slope, the complete gap between derivative-station intervals is the
         // location statement.
         let coefficient_error = if derivative_value > derivative_error {
-            polynomial_value_bound(ctx, &scaled, value)? / (derivative_value - derivative_error)
+            polynomial_value_bound(&scaled, value) / (derivative_value - derivative_error)
         } else {
             (value - complete_lower).max(complete_upper - value)
         };
-        ctx.reserve_vec(&mut roots, 1, "creo polynomial roots")?;
         roots.push(PolynomialRoot {
             value,
             error: (0.5 * (upper - lower).abs())
@@ -932,40 +814,30 @@ fn real_polynomial_roots(
             multiple: false,
         });
     }
-    ctx.stable_sort_by(
-        roots.as_mut_slice(),
-        |value| &value.value,
-        f64::total_cmp,
-        "creo real polynomial roots roots ordering",
-    )?;
-    Ok(roots)
+    // Stable insertion order over at most fifteen candidates uses no heap scratch.
+    for end in 1..roots.len {
+        let mut index = end;
+        while index > 0 && roots.roots[index - 1].value.total_cmp(&roots.roots[index].value).is_gt() {
+            roots.roots.swap(index - 1, index);
+            index -= 1;
+        }
+    }
+    roots
 }
 
 fn polynomial_product(
-    ctx: &DecodeContext<'_>,
-    first: &[f64],
-    second: &[f64],
-) -> Result<Vec<f64>, CodecError> {
-    let Some(count) = first
-        .len()
-        .checked_add(second.len())
-        .and_then(|len| len.checked_sub(1))
-    else {
-        return Ok(Vec::new());
-    };
-    let mut product = ctx.alloc_filled(count, 0.0, "creo polynomial product")?;
-    for (first_power, first_coefficient) in ctx
-        .admit_iter(first, "creo polynomial product left coefficients")?
-        .enumerate()
-    {
-        for (second_power, second_coefficient) in ctx
-            .admit_iter(second, "creo polynomial product right coefficients")?
-            .enumerate()
-        {
-            product[first_power + second_power] += first_coefficient * second_coefficient;
+    first: &QuarticPolynomial<f64>,
+    second: &SylvesterEntry,
+) -> Option<QuarticPolynomial<f64>> {
+    let count = first.len.checked_add(second.len)?.checked_sub(1)?;
+    if count > 5 { return None; }
+    let mut product = QuarticPolynomial { coefficients: [0.0; 5], len: count };
+    for (first_power, first_coefficient) in first.as_slice().iter().enumerate() {
+        for (second_power, second_coefficient) in second.as_slice().iter().enumerate() {
+            product.coefficients[first_power + second_power] += first_coefficient * second_coefficient;
         }
     }
-    Ok(product)
+    Some(product)
 }
 
 const QUARTIC_RESULTANT_PERMUTATIONS: [([usize; 4], f64); 24] = [
@@ -1055,102 +927,42 @@ fn sylvester_matrix(
     ]
 }
 
-/// The determinant of the Sylvester matrix as a polynomial in u.
-///
-/// `sign` is the identity for the determinant itself and `f64::abs` for the
-/// sum of the magnitudes of the same products, which is what a matrix of term
-/// magnitudes folds to.
-///
-/// The length of the returned vector is the degree the construction reaches
-/// plus one. It is stated by the fold rather than allocated ahead of it: each
-/// contributing permutation's product extends the determinant to its own
-/// length. For two plane conics that length is five, which
-/// `conic_resultant_is_a_quartic` pins.
+/// The determinant of the conic Sylvester matrix as a polynomial in u.
+/// Every contributing permutation has degree at most four. The same product
+/// order computes coefficient values and their term magnitudes.
 fn sylvester_polynomial(
-    ctx: &DecodeContext<'_>,
     matrix: &[[Option<SylvesterEntry>; 4]; 4],
     sign: impl Fn(f64) -> f64,
-) -> Result<Vec<f64>, CodecError> {
-    let mut determinant = Vec::new();
+) -> Result<QuarticPolynomial<f64>, CodecError> {
+    let mut determinant = QuarticPolynomial { coefficients: [0.0; 5], len: 0 };
     for (permutation, permutation_sign) in QUARTIC_RESULTANT_PERMUTATIONS {
-        if (0..4).any(|row| matrix[row][permutation[row]].is_none()) {
-            continue;
+        if (0..4).any(|row| matrix[row][permutation[row]].is_none()) { continue; }
+        let mut term = QuarticPolynomial { coefficients: [1.0, 0.0, 0.0, 0.0, 0.0], len: 1 };
+        for factor in (0..4).filter_map(|row| matrix[row][permutation[row]].as_ref()) {
+            term = polynomial_product(&term, factor)
+                .ok_or_else(|| CodecError::malformed("Creo conic determinant exceeds degree four"))?;
         }
-        let mut term_storage = ctx.reserve_scoped(0, "creo Sylvester product storage")?;
-        let mut term =
-            term_storage.with_storage(|| ctx.alloc_filled(1, 1.0, "creo polynomial identity"))?;
-        for factor in (0..4).filter_map(|row| {
-            matrix[row][permutation[row]]
-                .as_ref()
-                .map(SylvesterEntry::as_slice)
-        }) {
-            let (next_term, next_storage) = ctx.with_scoped_storage(
-                "creo Sylvester product storage",
-                || polynomial_product(ctx, &term, factor),
-            )?;
-            term = next_term;
-            term_storage = next_storage;
+        determinant.len = determinant.len.max(term.len);
+        for (index, coefficient) in term.as_slice().iter().copied().enumerate() {
+            determinant.coefficients[index] += sign(permutation_sign) * coefficient;
         }
-        if determinant.len() < term.len() {
-            let additional = term.len() - determinant.len();
-            ctx.reserve_vec(
-                &mut determinant,
-                additional,
-                "creo polynomial determinant terms",
-            )?;
-            determinant.resize(term.len(), 0.0);
-        }
-        for (index, coefficient) in ctx
-            .admit_iter(&term, "creo polynomial determinant product terms")?
-            .copied()
-            .enumerate()
-        {
-            determinant[index] += sign(permutation_sign) * coefficient;
-        }
-        drop(term);
-        drop(term_storage);
     }
     Ok(determinant)
 }
 
 fn conic_resultant(
-    ctx: &DecodeContext<'_>,
     first: PlaneConicEquation,
     second: PlaneConicEquation,
-) -> Result<Vec<BoundedCoefficient>, CodecError> {
-    let mut scratch = ctx.reserve_scoped(0, "creo conic resultant scratch")?;
-    let values = scratch.with_storage(|| {
-        sylvester_polynomial(
-            ctx,
-            &sylvester_matrix(first, second, Coefficient::stated),
-            |sign| sign,
-        )
-    })?;
-    let terms = scratch.with_storage(|| {
-        sylvester_polynomial(
-            ctx,
-            &sylvester_matrix(first, second, Coefficient::terms),
-            f64::abs,
-        )
-    })?;
-    let mut result = Vec::new();
-    ctx.reserve_vec(
-        &mut result,
-        values.len().min(terms.len()),
-        "creo conic resultant coefficients",
-    )?;
-    for (value, terms) in ctx
-        .admit_iter(&values, "creo conic resultant values")?
-        .copied()
-        .zip(
-            ctx.admit_iter(&terms, "creo conic resultant term magnitudes")?
-                .copied(),
-        )
-    {
-        result.push(BoundedCoefficient {
-            value,
-            bound: POLYNOMIAL_ERROR_FACTOR * cancellation_bound(terms),
-        });
+) -> Result<QuarticPolynomial<BoundedCoefficient>, CodecError> {
+    let values = sylvester_polynomial(&sylvester_matrix(first, second, Coefficient::stated), |sign| sign)?;
+    let terms = sylvester_polynomial(&sylvester_matrix(first, second, Coefficient::terms), f64::abs)?;
+    let len = values.len.min(terms.len);
+    let mut result = QuarticPolynomial { coefficients: [BoundedCoefficient::default(); 5], len };
+    for index in 0..len {
+        result.coefficients[index] = BoundedCoefficient {
+            value: values.coefficients[index],
+            bound: POLYNOMIAL_ERROR_FACTOR * cancellation_bound(terms.coefficients[index]),
+        };
     }
     Ok(result)
 }
@@ -1462,11 +1274,11 @@ pub(super) fn common_plane_conic_parameters(
     first: PlaneConicEquation,
     second: PlaneConicEquation,
 ) -> Result<Vec<[f64; 2]>, CodecError> {
-    let mut scratch = ctx.reserve_scoped(0, "creo common plane conic parameters scratch")?;
-    let resultant = scratch.with_storage(|| conic_resultant(ctx, first, second))?;
+    if let Some(refusal) = ctx.resource_refusal() { return Err(CodecError::ResourceLimit(refusal)); }
+    let resultant = conic_resultant(first, second)?;
     let mut parameters = Vec::<[f64; 2]>::new();
-    let roots = scratch.with_storage(|| real_polynomial_roots(ctx, &resultant))?;
-    for root in ctx.admit_iter(&roots, "creo common plane conic roots")? {
+    let roots = real_polynomial_roots(&resultant);
+    for root in roots.as_slice() {
         let u = root.value;
         let first_v_roots = conic_v_roots(first, u);
         let second_v_roots = conic_v_roots(second, u);
@@ -1490,16 +1302,11 @@ pub(super) fn common_plane_conic_parameters(
                 <= plane_conic_residual_bound(first, refined)
                 && plane_conic_value(second, candidate[0], candidate[1]).abs()
                     <= plane_conic_residual_bound(second, refined)
-                && !ctx.any_by(
-                    &parameters,
-                    |known| {
-                        Ok((known[0] - candidate[0])
-                            .abs()
-                            .max((known[1] - candidate[1]).abs())
-                            <= EPS_PARAM_UNIQUE * scale)
-                    },
-                    "creo unique conic intersection parameters",
-                )?
+                && !parameters.iter().any(|known| {
+                    // At most fifteen root candidates each supply four v candidates.
+                    (known[0] - candidate[0]).abs().max((known[1] - candidate[1]).abs())
+                        <= EPS_PARAM_UNIQUE * scale
+                })
             {
                 ctx.reserve_vec(&mut parameters, 1, "creo conic intersection parameters")?;
                 parameters.push(candidate);
@@ -1566,6 +1373,7 @@ pub(in crate::decode) fn intersect_two_planes_with_torus(
     second: PlaneEquation,
     torus: TorusEquation,
 ) -> Result<Vec<[f64; 3]>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() { return Err(CodecError::ResourceLimit(refusal)); }
     let Some((line_origin, direction)) = plane_intersection_line(first, second) else {
         return Ok(Vec::new());
     };
@@ -1620,12 +1428,9 @@ pub(in crate::decode) fn intersect_two_planes_with_torus(
         bound: POLYNOMIAL_ERROR_FACTOR * cancellation_bound(polynomial_terms[power]),
     });
     let mut points = Vec::new();
-    let mut root_storage = ctx.reserve_scoped(0, "creo plane torus root storage")?;
-    let roots = root_storage.with_storage(|| real_polynomial_roots(ctx, &polynomial))?;
-    let mut traversal = roots.iter();
-    while let Some(root) =
-        ctx.next_charged(&mut traversal, "creo plane torus intersection roots")?
-    {
+    let polynomial = QuarticPolynomial { coefficients: polynomial, len: 5 };
+    let roots = real_polynomial_roots(&polynomial);
+    for root in roots.as_slice() {
         let point = std::array::from_fn(|index| {
             // The coordinate is the two-term sum `origin + parameter *
             // direction`. Its distance from the coordinate at the exact
@@ -1932,64 +1737,22 @@ mod tests {
     const REF_DIRECTION: [f64; 3] = [1.0, 0.0, 0.0];
 
     fn polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<super::PolynomialRoot> {
-        crate::decode::with_test_decode_ctx(|ctx| super::real_polynomial_roots(ctx, coefficients))
-            .expect("polynomial roots admitted")
+        let polynomial = super::QuarticPolynomial::from_slice(coefficients).expect("degree at most four");
+        super::real_polynomial_roots(&polynomial).as_slice().to_vec()
     }
 
-    macro_rules! polynomial_root_limit_test {
-        ($name:ident, $operation:literal) => {
-            #[test]
-            fn $name() {
-                let coefficients = [
-                    BoundedCoefficient { value: -1.0, bound: 0.0 },
-                    BoundedCoefficient { value: 0.0, bound: 0.0 },
-                    BoundedCoefficient { value: 1.0, bound: 0.0 },
-                ];
-                let run = |limit| {
-                    let arena = DecodeArena::new();
-                    let mut policy = DecodePolicy::service();
-                    policy.limits.max_collection_items = limit;
-                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                        .expect("empty root admitted");
-                    super::real_polynomial_roots(&ctx, &coefficients)
-                };
-                let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some($operation), run);
-                assert!(matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                    if refusal.dimension == ResourceDimension::CollectionItems
-                        && refusal.operation == $operation));
-                assert_eq!(run(u64::MAX).expect("service roots admitted").len(), 2);
-            }
-        };
+    #[test]
+    fn polynomial_roots_have_fixed_workspace() {
+        let coefficients = [
+            BoundedCoefficient { value: -1.0, bound: 0.0 },
+            BoundedCoefficient { value: 0.0, bound: 0.0 },
+            BoundedCoefficient { value: 1.0, bound: 0.0 },
+        ];
+        let roots = polynomial_roots(&coefficients);
+        assert_eq!(roots.len(), 2);
+        assert_eq!(roots[0].value, -1.0);
+        assert_eq!(roots[1].value, 1.0);
     }
-
-    polynomial_root_limit_test!(
-        polynomial_scaled_coefficients_refuse_before_growth,
-        "creo polynomial scaled coefficients"
-    );
-    polynomial_root_limit_test!(
-        polynomial_coefficient_values_refuse_before_growth,
-        "creo polynomial coefficient values"
-    );
-    polynomial_root_limit_test!(
-        polynomial_derivative_coefficients_refuse_before_growth,
-        "creo polynomial derivative coefficients"
-    );
-    polynomial_root_limit_test!(
-        polynomial_derivative_values_refuse_before_growth,
-        "creo polynomial derivative values"
-    );
-    polynomial_root_limit_test!(
-        polynomial_interval_coefficients_refuse_before_growth,
-        "creo polynomial interval coefficients"
-    );
-    polynomial_root_limit_test!(
-        polynomial_interval_derivatives_refuse_before_growth,
-        "creo polynomial interval derivatives"
-    );
-    polynomial_root_limit_test!(
-        polynomial_monotone_gaps_refuse_before_growth,
-        "creo polynomial monotone gaps"
-    );
 
     #[test]
     fn plane_solver_fixed_candidates_need_no_scan_work() {
@@ -2048,57 +1811,14 @@ mod tests {
             .expect("plane residual scan is admitted")
             .is_none());
     }
-    polynomial_root_limit_test!(
-        polynomial_roots_refuse_before_growth,
-        "creo polynomial roots"
-    );
-
     #[test]
-    fn polynomial_root_recursion_refuses_at_nesting_limit() {
+    fn polynomial_leading_coefficient_trim_uses_fixed_workspace() {
         let coefficients = [
-            BoundedCoefficient {
-                value: -1.0,
-                bound: 0.0,
-            },
-            BoundedCoefficient {
-                value: 0.0,
-                bound: 0.0,
-            },
-            BoundedCoefficient {
-                value: 1.0,
-                bound: 0.0,
-            },
+            BoundedCoefficient { value: -1.0, bound: 0.0 },
+            BoundedCoefficient { value: 1.0, bound: 0.0 },
+            BoundedCoefficient { value: 0.0, bound: 0.0 },
         ];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_recursion_depth = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        assert!(matches!(super::real_polynomial_roots(&ctx, &coefficients),
-            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                if refusal.operation == "creo polynomial root recursion"));
-    }
-
-    #[test]
-    fn polynomial_leading_coefficient_trim_refuses_work() {
-        let coefficients = [
-            BoundedCoefficient {
-                value: -1.0,
-                bound: 0.0,
-            },
-            BoundedCoefficient {
-                value: 1.0,
-                bound: 0.0,
-            },
-            BoundedCoefficient {
-                value: 0.0,
-                bound: 0.0,
-            },
-        ];
-        let roots = crate::test_support::assert_work_boundaries(
-            &["creo polynomial leading coefficient trim"],
-            |ctx| super::real_polynomial_roots(ctx, &coefficients),
-        );
+        let roots = polynomial_roots(&coefficients);
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0].value, 1.0);
     }
@@ -2172,36 +1892,10 @@ mod tests {
     }
 
     #[test]
-    fn conic_resultant_coefficients_refuse_before_vec_growth() {
+    fn conic_resultant_coefficients_have_fixed_workspace() {
         let first = dense_conic([1.0, 2.0, 3.0, 5.0, 7.0, 11.0]);
         let second = dense_conic([13.0, -3.0, 2.0, -17.0, 4.0, -6.0]);
-        let run = |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root fits the collection policy");
-            super::conic_resultant(&ctx, first, second)
-        };
-        let limit = crate::test_support::allocation_limit_at(
-            ResourceDimension::CollectionItems,
-            Some("creo conic resultant coefficients"),
-            run,
-        );
-        let error = run(limit)
-            .map(|coefficients| coefficients.len())
-            .expect_err("five coefficients need a reserved Vec");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo conic resultant coefficients")
-        );
-        assert_eq!(
-            run(u64::MAX)
-                .expect("service budget admits the resultant")
-                .len(),
-            5
-        );
+        assert_eq!(super::conic_resultant(first, second).expect("quartic resultant").len, 5);
     }
 
     #[test]
@@ -2310,53 +2004,22 @@ mod tests {
     }
 
     #[test]
-    fn polynomial_product_reports_collection_limit() {
-        let error = crate::test_support::last_refusal_at(
-            &[0],
-            ResourceDimension::CollectionItems,
-            "creo polynomial product",
-            |ctx| super::polynomial_product(ctx, &[1.0, 2.0], &[3.0, 4.0]),
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "creo polynomial product"
-        ));
+    fn polynomial_product_has_fixed_workspace() {
+        let first = super::QuarticPolynomial::from_slice(&[1.0, 2.0]).expect("linear polynomial");
+        let second = super::SylvesterEntry { coefficients: [3.0, 4.0, 0.0], len: 2 };
+        let product = super::polynomial_product(&first, &second).expect("quadratic product");
+        assert_eq!(product.as_slice(), [3.0, 10.0, 8.0]);
     }
 
     #[test]
-    fn polynomial_determinant_refuses_before_growth() {
+    fn polynomial_determinant_has_fixed_workspace() {
         let matrix = std::array::from_fn(|row| {
             std::array::from_fn(|column| {
-                (row == column).then_some(super::SylvesterEntry {
-                    coefficients: [1.0, 0.0, 0.0],
-                    len: 1,
-                })
+                (row == column).then_some(super::SylvesterEntry { coefficients: [1.0, 0.0, 0.0], len: 1 })
             })
         });
-        let arena = DecodeArena::new();
-        let service = DecodePolicy::service();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[0], &arena, &service).expect("test decode context");
-        assert_eq!(
-            super::sylvester_polynomial(&ctx, &matrix, |value| value)
-                .expect("service profile admits the determinant"),
-            [1.0]
-        );
-
-        let error = crate::test_support::last_refusal_at(
-            &[0],
-            ResourceDimension::CollectionItems,
-            "creo polynomial determinant terms",
-            |ctx| super::sylvester_polynomial(ctx, &matrix, |value| value),
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "creo polynomial determinant terms"
-        ));
+        assert_eq!(super::sylvester_polynomial(&matrix, |value| value)
+            .expect("degree-zero determinant").as_slice(), [1.0]);
     }
 
     #[test]
@@ -2519,17 +2182,12 @@ mod tests {
         // carries four structural zeros. Every permutation that avoids them has
         // total degree four, so the resultant has five coefficients however
         // dense the conics are.
-        let resultant = crate::decode::with_test_decode_ctx(|ctx| {
-            super::conic_resultant(
-                ctx,
-                dense_conic([1.0, 2.0, 3.0, 5.0, 7.0, 11.0]),
-                dense_conic([13.0, -3.0, 2.0, -17.0, 4.0, -6.0]),
-            )
-        })
-        .expect("conic resultant");
-
-        assert_eq!(resultant.len(), 5);
-        assert!(resultant[4].value != 0.0);
+        let resultant = super::conic_resultant(
+            dense_conic([1.0, 2.0, 3.0, 5.0, 7.0, 11.0]),
+            dense_conic([13.0, -3.0, 2.0, -17.0, 4.0, -6.0]),
+        ).expect("conic resultant");
+        assert_eq!(resultant.len, 5);
+        assert!(resultant.coefficients[4].value != 0.0);
     }
 
     #[test]
