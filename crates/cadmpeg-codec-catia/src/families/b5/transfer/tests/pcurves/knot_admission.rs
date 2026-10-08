@@ -144,7 +144,10 @@ fn plane_knot_order_refusal_remains_sticky() {
             panic!("typed caller work refusal")
         };
         assert_eq!(original.operation, "IR NURBS knot order");
-        assert_eq!((original.used, original.additional), (PLANE_NATIVE_WORK - 1, 1));
+        assert_eq!(
+            (original.used, original.additional),
+            (PLANE_NATIVE_WORK - 1, 1)
+        );
         assert_eq!(ctx.resource_refusal(), Some(original));
         pcurve.distinct_knots.clear();
         pcurve.multiplicities.clear();

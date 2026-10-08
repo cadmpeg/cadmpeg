@@ -48,7 +48,9 @@ fn b5_transfer_plan_preserves_finite_knot_admission() {
             "IR NURBS knot finiteness",
             None,
         );
-        let mut storage = ctx.reserve_scoped(0, "test_plan_storage").expect("scratch owner");
+        let mut storage = ctx
+            .reserve_scoped(0, "test_plan_storage")
+            .expect("scratch owner");
         let plan = super::super::build_plan(
             ctx,
             &graph,
