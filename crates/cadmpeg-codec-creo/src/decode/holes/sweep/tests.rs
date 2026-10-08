@@ -39,7 +39,7 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
             ctx,
             107,
             std::slice::from_ref(&table),
-            std::slice::from_ref(&row),
+            &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())
         ))
         .expect("admitted surface roster"),
         Some(117)
@@ -54,7 +54,7 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
             ctx,
             107,
             std::slice::from_ref(&duplicate),
-            std::slice::from_ref(&row),
+            &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())
         ))
         .expect("admitted surface roster"),
         None
@@ -110,16 +110,27 @@ fn extrusion_span_refuses_offsets_whose_length_overflows() {
         ([0.0, 0.0, f64::MAX], [0.0, 0.0, 1.0]),
         ([0.0, 0.0, -f64::MAX], [0.0, 0.0, 1.0]),
     ];
-    assert!(super::extrusion_span([0.0; 3], [0.0, 0.0, 1.0], planes).is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(
+            ctx,
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            planes
+        ))
+        .expect("service resources")
+        .is_none()
+    );
     assert_eq!(
-        super::extrusion_span(
+        crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(
+            ctx,
             [0.0; 3],
             [0.0, 0.0, 1.0],
             [
                 ([0.0, 0.0, 2.0], [0.0, 0.0, 1.0]),
                 ([0.0, 0.0, -1.0], [0.0, 0.0, -1.0]),
-            ],
-        ),
+            ]
+        ))
+        .expect("service resources"),
         Some(super::ExtrusionSpan::new(-1.0, 2.0).expect("valid span fixture"))
     );
 }
@@ -128,15 +139,23 @@ fn extrusion_span_refuses_offsets_whose_length_overflows() {
 fn extrusion_span_keeps_the_first_offset_in_a_near_duplicate_pair() {
     let plane = |z| ([0.0, 0.0, z], [0.0, 0.0, 1.0]);
     assert_eq!(
-        super::extrusion_span(
+        crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(
+            ctx,
             [0.0; 3],
             [0.0, 0.0, 1.0],
             [plane(1.0), plane(1.0 + 5.0e-10)]
-        ),
+        ))
+        .expect("service resources"),
         super::ExtrusionSpan::new(0.0, 1.0)
     );
     assert_eq!(
-        super::extrusion_span([0.0; 3], [0.0, 0.0, 1.0], [plane(5.0e-10), plane(-5.0e-10)]),
+        crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(
+            ctx,
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [plane(5.0e-10), plane(-5.0e-10)]
+        ))
+        .expect("service resources"),
         super::ExtrusionSpan::new(0.0, 5.0e-10)
     );
 }
@@ -151,7 +170,7 @@ fn test_decode_ctx_with_collection_limit<'a>(
 }
 
 #[test]
-fn simple_hole_cylinder_rows_refuse_collection_limit() {
+fn simple_hole_cylinder_rows_preserve_source_order() {
     let mut scan = crate::test_support::empty_container_scan();
     let entry = |entity_id| crate::feature::entity::dummy_table_entry(entity_id);
     scan.features.entity_tables.push(
@@ -211,24 +230,27 @@ fn simple_hole_cylinder_rows_refuse_collection_limit() {
         });
     }
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let service_ctx = test_decode_ctx_with_collection_limit(&arena, &policy);
     assert!(super::simple_hole_geometry(&service_ctx, &scan, 7)
         .expect("service resources")
         .is_some());
-    policy.limits.max_collection_items = 2;
-    let ctx = test_decode_ctx_with_collection_limit(&arena, &policy);
-    let error =
-        super::simple_hole_geometry(&ctx, &scan, 7).expect_err("cylinder rows exceed limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo simple hole cylinder rows")
+    let geometry = super::simple_hole_geometry(&service_ctx, &scan, 7)
+        .expect("service resources")
+        .expect("solved hole");
+    assert_eq!(
+        geometry
+            .cylinder_rows
+            .as_slice()
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        [13, 14]
     );
 }
 
 #[test]
-fn compact_hole_cylinder_rows_refuse_collection_limit() {
+fn compact_hole_cylinder_rows_preserve_source_order() {
     let entry =
         |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
             payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
@@ -289,21 +311,24 @@ fn compact_hole_cylinder_rows_refuse_collection_limit() {
             body_offset: 0,
         });
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let service_ctx = test_decode_ctx_with_collection_limit(&arena, &policy);
     assert!(
         super::compact_simple_hole_geometry(&service_ctx, &scan, 107)
             .expect("service resources")
             .is_some()
     );
-    policy.limits.max_collection_items = 0;
-    let ctx = test_decode_ctx_with_collection_limit(&arena, &policy);
-    let error = super::compact_simple_hole_geometry(&ctx, &scan, 107)
-        .expect_err("cylinder row exceeds limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo compact hole cylinder rows")
+    let geometry = super::compact_simple_hole_geometry(&service_ctx, &scan, 107)
+        .expect("service resources")
+        .expect("solved hole");
+    assert_eq!(
+        geometry
+            .cylinder_rows
+            .as_slice()
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        [117]
     );
 }
 
@@ -400,45 +425,51 @@ fn circular_sweep_limit_scan(two_cap: bool) -> crate::container::ContainerScan<'
 }
 
 #[test]
-fn single_cap_circular_cylinder_rows_refuse_collection_limit() {
+fn single_cap_circular_cylinder_rows_preserve_source_order() {
     let scan = circular_sweep_limit_scan(false);
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let service_ctx = test_decode_ctx_with_collection_limit(&arena, &policy);
     assert!(
         super::single_cap_circular_sweep_geometry(&service_ctx, &scan, 40)
             .expect("service resources")
             .is_some()
     );
-    policy.limits.max_collection_items = 0;
-    let ctx = test_decode_ctx_with_collection_limit(&arena, &policy);
-    let error = super::single_cap_circular_sweep_geometry(&ctx, &scan, 40)
-        .expect_err("cylinder row exceeds limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo single-cap circular cylinder rows")
+    let geometry = super::single_cap_circular_sweep_geometry(&service_ctx, &scan, 40)
+        .expect("service resources")
+        .expect("solved hole");
+    assert_eq!(
+        geometry
+            .cylinder_rows
+            .as_slice()
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        [51]
     );
 }
 
 #[test]
-fn two_cap_circular_cylinder_rows_refuse_collection_limit() {
+fn two_cap_circular_cylinder_rows_preserve_source_order() {
     let scan = circular_sweep_limit_scan(true);
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let service_ctx = test_decode_ctx_with_collection_limit(&arena, &policy);
     assert!(
         super::two_cap_circular_sweep_geometry(&service_ctx, &scan, 40)
             .expect("service resources")
             .is_some()
     );
-    policy.limits.max_collection_items = 0;
-    let ctx = test_decode_ctx_with_collection_limit(&arena, &policy);
-    let error = super::two_cap_circular_sweep_geometry(&ctx, &scan, 40)
-        .expect_err("cylinder row exceeds limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo two-cap circular cylinder rows")
+    let geometry = super::two_cap_circular_sweep_geometry(&service_ctx, &scan, 40)
+        .expect("service resources")
+        .expect("solved hole");
+    assert_eq!(
+        geometry
+            .cylinder_rows
+            .as_slice()
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        [51]
     );
 }

@@ -278,10 +278,18 @@ pub(in super::super) fn revolved_brep_surface(
         geometry.definition(),
         SketchGeometryDefinition::Nurbs { .. }
     ) {
-        let Some(directrix) = oriented_sketch_nurbs_curve(ctx, geometry, reversed)? else {
+        let (directrix, _directrix_storage) = ctx
+            .with_scoped_storage("creo revolved directrix scratch", || {
+                oriented_sketch_nurbs_curve(ctx, geometry, reversed)
+            })?;
+        let Some(directrix) = directrix else {
             return Ok(None);
         };
-        let Some(placed_directrix) = placed_section_nurbs(ctx, transform, &directrix)? else {
+        let (placed_directrix, _placed_storage) = ctx
+            .with_scoped_storage("creo revolved placed directrix scratch", || {
+                placed_section_nurbs(ctx, transform, &directrix)
+            })?;
+        let Some(placed_directrix) = placed_directrix else {
             return Ok(None);
         };
         let Some(surface) = revolved_nurbs_surface(ctx, &placed_directrix, axis, record, refusal)?
@@ -335,10 +343,18 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
         segment.geometry(),
         super::profiles::ProfileGeometry::Nurbs { .. }
     ) {
-        let Some(sketch) = segment.geometry().to_sketch(ctx)? else {
+        let (sketch, _sketch_storage) = ctx
+            .with_scoped_storage("creo revolution boundary sketch scratch", || {
+                segment.geometry().to_sketch(ctx)
+            })?;
+        let Some(sketch) = sketch else {
             return Ok(None);
         };
-        let Some(nurbs) = oriented_sketch_nurbs_curve(ctx, &sketch, segment.reversed())? else {
+        let (nurbs, _nurbs_storage) = ctx
+            .with_scoped_storage("creo revolution boundary curve scratch", || {
+                oriented_sketch_nurbs_curve(ctx, &sketch, segment.reversed())
+            })?;
+        let Some(nurbs) = nurbs else {
             return Ok(None);
         };
         let Some(range) = nurbs_intrinsic_parameter_range(&nurbs) else {
@@ -390,17 +406,23 @@ pub(in super::super) fn revolution_face_sense(
         segment.geometry(),
         super::profiles::ProfileGeometry::Nurbs { .. }
     );
+    let mut nurbs_parameter = None;
     let (point, tangent, pcurve_parameter, u_epsilon) = if is_nurbs {
-        let geometry = require_some!(segment.geometry().to_sketch(ctx)?);
-        let nurbs = require_some!(oriented_sketch_nurbs_curve(
-            ctx,
-            &geometry,
-            segment.reversed()
-        )?);
+        let (geometry, _geometry_storage) = ctx
+            .with_scoped_storage("creo revolution sense sketch scratch", || {
+                segment.geometry().to_sketch(ctx)
+            })?;
+        let geometry = require_some!(geometry);
+        let (nurbs, _nurbs_storage) = ctx
+            .with_scoped_storage("creo revolution sense curve scratch", || {
+                oriented_sketch_nurbs_curve(ctx, &geometry, segment.reversed())
+            })?;
+        let nurbs = require_some!(nurbs);
         let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(require_some!(
             nurbs_intrinsic_parameter_range(&nurbs)
         ));
         let (parameter, u_epsilon) = nurbs_sense_sample(lower, upper);
+        nurbs_parameter = Some(parameter);
         let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
         let point = require_some!(cadmpeg_ir::eval::finite_or_refusal(
             cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
@@ -447,17 +469,7 @@ pub(in super::super) fn revolution_face_sense(
         outward[0] * transform.u_axis()[index] + outward[1] * transform.v_axis()[index]
     })));
     let model_point = section_point_in_model(transform, point);
-    let pcurve = if is_nurbs {
-        let geometry = require_some!(segment.geometry().to_sketch(ctx)?);
-        let nurbs = require_some!(oriented_sketch_nurbs_curve(
-            ctx,
-            &geometry,
-            segment.reversed()
-        )?);
-        let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(require_some!(
-            nurbs_intrinsic_parameter_range(&nurbs)
-        ));
-        let (parameter, _) = nurbs_sense_sample(lower, upper);
+    let pcurve = if let Some(parameter) = nurbs_parameter {
         require_some!(line_pcurve(
             [parameter, 0.0],
             [parameter, std::f64::consts::TAU]
