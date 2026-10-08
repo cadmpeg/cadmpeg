@@ -275,6 +275,33 @@ impl DocumentKind {
 }
 
 impl SegmentKind {
+    pub(crate) fn retained_label(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        let label = match self {
+            Self::Unknown(label) => {
+                return ctx.copy_retained_text(label, "retain Inventor segment kind");
+            }
+            Self::PmBRep
+            | Self::PmDc
+            | Self::PmGraphics
+            | Self::PmApp
+            | Self::PmBrowser
+            | Self::PmResult
+            | Self::FbAttribute
+            | Self::AmDc
+            | Self::AmBRep
+            | Self::AmGraphics
+            | Self::AmApp
+            | Self::AmBrowser
+            | Self::AmRx
+            | Self::Notebook
+            | Self::DesignView
+            | Self::Unresolved => self.label(),
+        };
+        let mut retained = ctx.retained_string(label.len(), "retain Inventor segment kind")?;
+        retained.push_str(label);
+        Ok(retained)
+    }
+
     fn classify(
         ctx: &DecodeContext<'_>,
         display_name: &str,
@@ -1182,6 +1209,90 @@ mod tests {
     use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn known_segment_labels_admit_exact_storage_without_work() {
+        for (kind, expected) in [
+            (SegmentKind::PmBRep, "pm_brep"),
+            (SegmentKind::PmDc, "pm_dc"),
+            (SegmentKind::PmGraphics, "pm_graphics"),
+            (SegmentKind::PmApp, "pm_app"),
+            (SegmentKind::PmBrowser, "pm_browser"),
+            (SegmentKind::PmResult, "pm_result"),
+            (SegmentKind::FbAttribute, "fb_attribute"),
+            (SegmentKind::AmDc, "am_dc"),
+            (SegmentKind::AmBRep, "am_brep"),
+            (SegmentKind::AmGraphics, "am_graphics"),
+            (SegmentKind::AmApp, "am_app"),
+            (SegmentKind::AmBrowser, "am_browser"),
+            (SegmentKind::AmRx, "am_rx"),
+            (SegmentKind::Notebook, "notebook"),
+            (SegmentKind::DesignView, "design_view"),
+            (SegmentKind::Unresolved, "unresolved"),
+        ] {
+            let width = cadmpeg_core::decode::u64_from_index(expected.len());
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 0;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = width - 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("known segment label context");
+            let Err(CodecError::ResourceLimit(limit)) = kind.retained_label(&ctx) else {
+                panic!("known label must refuse below its exact storage width");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.operation, "retain Inventor segment kind");
+            assert_eq!(limit.used, 0);
+            assert_eq!(limit.additional, width);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            assert!(matches!(ctx.finish_session(),
+                Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+
+            policy.limits.max_retained_bytes = width;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("exact known segment label context");
+            assert_eq!(kind.retained_label(&ctx).expect("exact label storage"), expected);
+            ctx.finish_session().expect("known label needs no work or materialization");
+        }
+    }
+
+    #[test]
+    fn unknown_segment_label_keeps_variable_copy_admission() {
+        let source = "unknown-λ";
+        let width = cadmpeg_core::decode::u64_from_index(source.len());
+        let kind = SegmentKind::Unknown(source.into());
+        let arena = DecodeArena::new();
+        for (work, retained, dimension) in [
+            (width - 1, width, ResourceDimension::WorkUnits),
+            (width, width - 1, ResourceDimension::RetainedBytes),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work;
+            policy.limits.max_retained_bytes = retained;
+            policy.limits.max_materialized_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("unknown label context");
+            let Err(CodecError::ResourceLimit(limit)) = kind.retained_label(&ctx) else {
+                panic!("unknown label must keep variable copy admission");
+            };
+            assert_eq!(limit.dimension, dimension);
+            assert_eq!(limit.operation, "retain Inventor segment kind");
+            assert_eq!(limit.used, 0);
+            assert_eq!(limit.additional, width);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            assert!(matches!(ctx.finish_session(),
+                Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = width;
+        policy.limits.max_retained_bytes = width;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("exact unknown label context");
+        assert_eq!(kind.retained_label(&ctx).expect("exact variable label copy"), source);
+        ctx.finish_session().expect("unknown copy admits its exact extent");
+    }
 
     #[test]
     fn database_issue_detail_refuses_retained_limit_before_copy() {
