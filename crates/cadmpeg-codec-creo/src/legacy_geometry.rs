@@ -1062,6 +1062,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 ObjectPayload::Array {
                     dimensions: vec![1],
                     elements: vec![row.to_string()],
+                    complete: true,
                 },
             ),
             object(row, "srf_array", Some(array), ObjectPayload::Arrow),
@@ -1154,6 +1155,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 ObjectPayload::Array {
                     dimensions: vec![1],
                     elements: vec![row.to_string()],
+                    complete: true,
                 },
             ),
             object(row, "srf_array", Some(array), ObjectPayload::Arrow),
@@ -1246,6 +1248,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 ObjectPayload::Array {
                     dimensions: vec![1],
                     elements: vec![row.to_string()],
+                    complete: true,
                 },
             ),
             object(row, "srf_array", Some(array), ObjectPayload::Arrow),
@@ -1741,6 +1744,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 ObjectPayload::Array {
                     dimensions: vec![2],
                     elements: vec![first.to_string(), second.to_string()],
+                    complete: true,
                 },
             ),
             object(first, "crv_array", Some(array), ObjectPayload::Arrow),

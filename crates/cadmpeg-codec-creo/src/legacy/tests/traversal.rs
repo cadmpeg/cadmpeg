@@ -146,11 +146,13 @@ fn object_completeness_overflow_does_not_visit_trailing_dimensions() {
     let short = super::super::ObjectPayload::Array {
         dimensions: dimensions.clone(),
         elements: Vec::new(),
+        complete: false,
     };
     dimensions.extend_from_slice(&[1; 256]);
     let long = super::super::ObjectPayload::Array {
         dimensions,
         elements: Vec::new(),
+        complete: false,
     };
     let boundary = work_refusal("creo object array extent traversal", |ctx| {
         short.is_complete(ctx)
@@ -177,12 +179,16 @@ fn string_completeness_stops_at_first_unsupported_value() {
         dimensions: vec![1],
         values: values.clone(),
         continuation: None,
+        complete: false,
+        accepted_value_indices: Vec::new(),
     };
     values.extend(std::iter::repeat_n(Ok(StringValue::Null), 256));
     let long = StringPayload::Array {
         dimensions: vec![257],
         values,
         continuation: None,
+        complete: false,
+        accepted_value_indices: (1..257).collect(),
     };
     let boundary = work_refusal("creo string array completeness traversal", |ctx| {
         short.is_complete(ctx)
