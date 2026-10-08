@@ -58,7 +58,16 @@ pub(super) fn collect_carrier(
         vectors: Vec::new(),
         doubles: Vec::new(),
     };
-    for t in rec.tokens.iter() {
+    for (index, t) in rec.tokens.iter().enumerate() {
+        // Cone interval endpoints precede sine and cosine. A present bound
+        // is TRUE DOUBLE; it is not a cone carrier scalar.
+        if rec.head() == "cone"
+            && matches!(t, Token::Double(_))
+            && index > 0
+            && matches!(rec.tokens[index - 1], Token::True)
+        {
+            continue;
+        }
         match t {
             Token::Position(p) => {
                 ctx.push_vec(&mut c.positions, *p, "ASM carrier positions")?;
@@ -1205,6 +1214,43 @@ mod analytic_surface_tests {
             offset: 0,
             len: 0,
         }
+    }
+
+    #[test]
+    fn finite_cone_intervals_do_not_shift_the_carrier_scalars() {
+        let record = surface_record(
+            "cone",
+            vec![
+                Token::Position([0.0, 0.0, 0.0]),
+                Token::Vector3([0.0, 0.0, 1.0]),
+                Token::Vector3([7.0, 0.0, 0.0]),
+                Token::Double(1.0),
+                Token::True,
+                Token::Double(2.0),
+                Token::True,
+                Token::Double(3.0),
+                Token::Double(0.0),
+                Token::Double(1.0),
+                Token::Double(7.0),
+                Token::False,
+                Token::True,
+                Token::Double(4.0),
+                Token::True,
+                Token::Double(5.0),
+                Token::False,
+                Token::False,
+            ],
+        );
+        crate::test_support::with_service_context(&[], |ctx| {
+            let carrier = collect_carrier(ctx, &record).unwrap();
+            assert_eq!(carrier.doubles, [1.0, 0.0, 1.0, 7.0]);
+            let (surface, _) = decode_surface(ctx, &record).unwrap().unwrap();
+            assert!(matches!(
+                surface,
+                cadmpeg_ir::geometry::SolvedSurfaceGeometry::Cylinder(_)
+            ));
+        })
+        .unwrap();
     }
 
     #[test]

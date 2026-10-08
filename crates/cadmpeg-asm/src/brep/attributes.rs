@@ -471,7 +471,14 @@ pub fn unknown_record_id(
     rec: &Record,
     format: IdFormat,
 ) -> Result<UnknownId, cadmpeg_core::CodecError> {
-    let name = ctx.copy_retained_text(rec.head(), "ASM unknown record kind")?;
+    // The record-table index remains its identity when the source name has
+    // no leading component. Keep the source spelling in the retained bytes.
+    let head = if rec.head().is_empty() {
+        "untyped-record"
+    } else {
+        rec.head()
+    };
+    let name = ctx.copy_retained_text(head, "ASM unknown record kind")?;
     let kind = IdentityComponent::try_new(name).map_err(|error| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "invalid ASM source identity component: {error}"

@@ -162,7 +162,14 @@ fn shell_chain_refuses_collection_limit() {
         })
         .collect();
     let error = with_collection_limit(1, |ctx| {
-        super::shell_chain(ctx, &records[0], &by_index, crate::asm_format!("f3d")).unwrap_err()
+        super::shell_chain(
+            ctx,
+            &records[0],
+            &by_index,
+            &std::collections::HashSet::from([1]),
+            crate::asm_format!("f3d"),
+        )
+        .unwrap_err()
     });
     assert_collection_refusal(&error, "ASM region shells");
 }
@@ -214,7 +221,14 @@ fn chains_list_only_children_that_are_emitted() {
             1,
             "a lump owned by another body ends the chain"
         );
-        let shells = super::shell_chain(ctx, &records[1], &by_index, format).unwrap();
+        let shells = super::shell_chain(
+            ctx,
+            &records[1],
+            &by_index,
+            &std::collections::HashSet::from([2]),
+            format,
+        )
+        .unwrap();
         assert_eq!(shells.len(), 1, "a face record is not a shell");
         let missing = ref_record(5, "body", &[-1, -1, -1, 7]);
         assert!(super::region_chain(ctx, &missing, &by_index, format)

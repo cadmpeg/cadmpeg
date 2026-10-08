@@ -32,6 +32,18 @@ pub(crate) enum SatLossCode {
     GeometryFramedWithoutCarriers,
     /// A face rests on a procedural surface construction without a decoded carrier.
     GeometryProceduralSurfaceUntyped,
+    /// A tolerant vertex has no positive finite evaluated tolerance.
+    VertexToleranceUnresolved,
+    /// A shell has no admissible member or owner.
+    TopologyShellUnprojected,
+    /// A standalone source face has no shell owner required by the IR.
+    TopologyFaceOwnerUnprojected,
+    /// A body-owned source wire cannot use the IR's shell ownership.
+    TopologyWireOwnerUnprojected,
+    /// A framed record has no leading source-name component.
+    SourceRecordNameUnresolved,
+    /// ACIS record extensions are retained without neutral projection.
+    SourceRecordExtensionsUnprojected,
     /// A header tolerance cannot supply a positive finite document tolerance.
     HeaderToleranceUnresolved,
     /// Independently framed product metadata is malformed.
@@ -54,6 +66,12 @@ impl SatLossCode {
     const ALL: &'static [SatLossCode] = &[
         Self::GeometryFramedWithoutCarriers,
         Self::GeometryProceduralSurfaceUntyped,
+        Self::VertexToleranceUnresolved,
+        Self::TopologyShellUnprojected,
+        Self::TopologyFaceOwnerUnprojected,
+        Self::TopologyWireOwnerUnprojected,
+        Self::SourceRecordNameUnresolved,
+        Self::SourceRecordExtensionsUnprojected,
         Self::HeaderToleranceUnresolved,
         Self::HeaderMetadataNoncanonical,
         Self::HeaderLengthUnitUnresolved,
@@ -68,6 +86,12 @@ impl SatLossCode {
         match self {
             Self::GeometryFramedWithoutCarriers => "geometry.framed-without-carriers",
             Self::GeometryProceduralSurfaceUntyped => "geometry.procedural-surface-untyped",
+            Self::VertexToleranceUnresolved => "vertex.tolerance-unresolved",
+            Self::TopologyShellUnprojected => "topology.shell-unprojected",
+            Self::TopologyFaceOwnerUnprojected => "topology.face-owner-unprojected",
+            Self::TopologyWireOwnerUnprojected => "topology.wire-owner-unprojected",
+            Self::SourceRecordNameUnresolved => "source.record-name-unresolved",
+            Self::SourceRecordExtensionsUnprojected => "source.record-extensions-unprojected",
             Self::HeaderToleranceUnresolved => "header.tolerance-unresolved",
             Self::HeaderMetadataNoncanonical => "header.metadata-noncanonical",
             Self::HeaderLengthUnitUnresolved => "header.length-unit-unresolved",
@@ -83,6 +107,12 @@ impl SatLossCode {
         match self {
             Self::GeometryFramedWithoutCarriers => Severity::Blocking,
             Self::GeometryProceduralSurfaceUntyped
+            | Self::VertexToleranceUnresolved
+            | Self::TopologyShellUnprojected
+            | Self::TopologyFaceOwnerUnprojected
+            | Self::TopologyWireOwnerUnprojected
+            | Self::SourceRecordNameUnresolved
+            | Self::SourceRecordExtensionsUnprojected
             | Self::HeaderToleranceUnresolved
             | Self::HeaderMetadataNoncanonical
             | Self::HeaderLengthUnitUnresolved
@@ -97,12 +127,17 @@ impl SatLossCode {
             Self::GeometryFramedWithoutCarriers
             | Self::GeometryProceduralSurfaceUntyped
             | Self::HeaderToleranceUnresolved
+            | Self::VertexToleranceUnresolved
+            | Self::TopologyShellUnprojected
+            | Self::TopologyFaceOwnerUnprojected
+            | Self::TopologyWireOwnerUnprojected
             | Self::HeaderLengthUnitUnresolved
             | Self::FramingRecordsUnread => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
-            Self::HeaderMetadataNoncanonical | Self::FramingTerminatorMissing => {
-                LossTaxonomy::NoncanonicalSourceSyntax
-            }
+            Self::SourceRecordExtensionsUnprojected => LossTaxonomy::GeometryNotTransferred,
+            Self::HeaderMetadataNoncanonical
+            | Self::FramingTerminatorMissing
+            | Self::SourceRecordNameUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
         }
     }
 
@@ -191,6 +226,12 @@ mod tests {
             [
                 "geometry.framed-without-carriers",
                 "geometry.procedural-surface-untyped",
+                "vertex.tolerance-unresolved",
+                "topology.shell-unprojected",
+                "topology.face-owner-unprojected",
+                "topology.wire-owner-unprojected",
+                "source.record-name-unresolved",
+                "source.record-extensions-unprojected",
                 "header.tolerance-unresolved",
                 "header.metadata-noncanonical",
                 "header.length-unit-unresolved",

@@ -668,7 +668,7 @@ The third line holds exactly three kernel doubles in the binary order: `scale`, 
 
 ### 7.2 Record grammar
 
-Each record is a record name, its fields, and the terminator field `#`. Record names, bare fields, and counted strings are valid UTF-8. Whitespace — spaces, tabs, and newlines — separates fields, and a record continues across lines until its terminator. The record name is the `-`-joined chain the binary name tokens assemble (§2.2).
+Each record is a record name, its fields, and the terminator field `#`. Record names, bare fields, and counted strings are valid UTF-8. Whitespace — spaces, tabs, and newlines — separates fields, and a record continues across lines until its terminator. Outside counted string payloads, `#`, `{`, and `}` delimit tokens without a whitespace separator. Delimiters within a counted payload are data. The record name is the `-`-joined chain the binary name tokens assemble (§2.2).
 
 Field forms:
 
@@ -692,3 +692,40 @@ The stream ends with a terminator line that identifies the serialization branch:
 ### 7.4 Save-format 700 record layouts
 
 A save-format 700 stream stores three topology records with fewer fields than the layouts of §5.2. The `vertex` record stores no endpoint-index integer: the owning edge is followed directly by the point reference. The `tvertex` record stores the vertex fields, then one model-space tolerance and no trailing integer. The `coedge` and `tcoedge` records store no reserved integer between the owner loop and the pcurve reference; the tolerant parameters follow the pcurve reference directly. The other §5.2 records keep their field sequences.
+
+### 7.5 Save formats 102 through 600
+
+An entity starts with its attribute-head reference. It has no entity-id integer or pattern reference. A transform has this same one-reference prefix. References are bare signed integers before save format 103 and `$`-prefixed integers from 103 onward. The record-table index supplies identity in both forms.
+
+After the prefix, topology fields are:
+
+| Record | Fields in order |
+|---|---|
+| `body` | first lump, first wire, transform |
+| `lump` | next lump, first shell, body |
+| `shell` | next shell, first subshell, first face, first wire, lump |
+| `face` | next face, first loop, shell, reserved reference, surface, sense, sides, conditional containment |
+| `loop` | next loop, first coedge, face |
+| `wire` | next wire, first coedge, owner, isolated vertex, side |
+| `coedge` | next coedge, previous coedge, partner, edge, sense, loop, pcurve |
+| `vertex` | owning edge, point |
+| `tvertex` | owning edge, point, tolerance |
+| `point` | position |
+
+The shell wire field is absent before 107. The face sides and containment fields are absent before 105; those faces are single-sided. Numeric sense `0` is forward and `1` is reversed. Face and edge senses are numeric before 200. Coedge senses are numeric before 202; legacy records can retain this numeric representation in later save formats. Face sides, surface V senses, transform classifications, and subtype enumerations use numeric values before 200. The logical values are `0` for false and `1` for true. Named words have the same meanings as their binary tokens.
+
+An edge stores start vertex, end vertex, owner coedge, curve, and sense through save format 400. Save format 500 inserts a real parameter after each endpoint reference. Save format 500 permits continuity after the sense; save format 600 requires it. An absent parameter supplies no interval. Continuity is a length-prefixed string or a bare word. Before save format 700, the byte count has no `@` prefix. A zero count represents an empty string; a nonzero continuity count must equal the following word's byte length.
+
+Curve subset intervals and surface U/V intervals are absent before 106. From 106 onward, they use the bound grammar of §7.2. Cone records store the base ellipse, its subset interval, sine, cosine, reversal, and surface intervals. Before 400, the cone has no explicit U scale; its scale is the magnitude of the base ellipse major-axis vector. Before 103, the cone reversal field is absent and denotes forward.
+
+Before 103, a plane stores its origin and normal without a chart reference vector or V sense. A sphere stores its center and radius without chart axes or V sense. From 103 onward, these records carry the chart fields of §6.3. The physical plane and sphere do not depend on a choice of chart axes.
+
+The `exactcur`, `surfintcur`, and `exactsur` subtype layouts can start directly with a `nubs` or `nurbs` solved block. No cache-form enum precedes that block. The curve or surface block uses the knot and control-grid grammar of §6.5 and is followed by a model-space fit tolerance. Construction context follows the tolerance and ends at the matching subtype close. The solved block belongs to this subtype; blocks in nested support scopes belong to those supports.
+
+The [ACIS save-file reference](https://paulbourke.net/dataformats/sat/sat.pdf) defines the reference, bound, coedge-sense, and cone-scale version gates.
+
+### 7.6 Later ACIS text extensions
+
+The ACIS branch from save format 1100 stores an additional integer between the entity-id integer and the pattern reference. Shared topology and geometry fields follow this four-field prefix. Class-specific fields can follow the shared fields. A face can carry extra logicals, position values, and an integer after its sidedness fields. These fields do not shift the preceding surface, owner, loop, or sense fields.
+
+Sun attachment transport headers can precede a SAT stream. Each header line starts with `X-Sun-` and contains a colon. A blank line ends the transport header block. The SAT header and record offsets follow that block.
