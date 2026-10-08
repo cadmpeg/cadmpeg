@@ -1668,6 +1668,7 @@ fn display_jt_material_accumulation_respects_inhibit_final_and_force() {
         shininess: super::JtShininess::new(1.0).unwrap(),
         source_offset: 0,
     };
+    crate::test_support::with_decode_context(|ctx| {
     let mut path = super::DisplayJtPath {
         matrix: [[0.0; 4]; 4],
         final_transform: false,
@@ -1676,6 +1677,8 @@ fn display_jt_material_accumulation_respects_inhibit_final_and_force() {
         final_material: false,
         node_path: Vec::new(),
         instance_path: Vec::new(),
+        node_storage: ctx.reserve_scoped(0, "test node path").unwrap(),
+        instance_storage: ctx.reserve_scoped(0, "test instance path").unwrap(),
     };
     super::accumulate_display_jt_material(&mut path, &material([0.1, 0.2, 0.3, 0.4], 0x01, 1 << 8));
     assert_eq!(
@@ -1705,6 +1708,7 @@ fn display_jt_material_accumulation_respects_inhibit_final_and_force() {
         path.diffuse.map(|value| value.map(UnitBinary32::get)),
         [Some(0.1), Some(0.2), Some(0.3), Some(0.8)]
     );
+    });
 }
 
 #[test]
@@ -1908,3 +1912,4 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
 }
 
 mod scene_admission;
+mod scene_paths;

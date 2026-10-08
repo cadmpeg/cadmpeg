@@ -13,7 +13,7 @@ mod scene_admission_tests;
 mod segment_admission_tests;
 mod version;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
@@ -6116,7 +6116,7 @@ const DISPLAY_JT_VERTEX_FLAG_CHANNEL: u32 = 0x4e58_0002;
 const DISPLAY_JT_TEXTURE_CHANNEL_BASE: u32 = 0x4e58_0100;
 type DisplayJtMatrix = [[f64; 4]; 4];
 
-struct DisplayJtPath {
+struct DisplayJtPath<'ctx> {
     matrix: DisplayJtMatrix,
     final_transform: bool,
     diffuse: [Option<UnitBinary32>; 4],
@@ -6124,6 +6124,8 @@ struct DisplayJtPath {
     final_material: bool,
     node_path: Vec<u32>,
     instance_path: Vec<String>,
+    node_storage: ScopedReservation<'ctx>,
+    instance_storage: ScopedReservation<'ctx>,
 }
 
 #[derive(Clone, Copy)]
@@ -6148,7 +6150,7 @@ pub(super) struct DisplayJtTessellationInputs<'a> {
 }
 
 fn accumulate_display_jt_material(
-    path: &mut DisplayJtPath,
+    path: &mut DisplayJtPath<'_>,
     attribute: &DisplayJtMaterialAttribute,
 ) {
     const LEGACY_DIFFUSE: u32 = 1 << 1;
@@ -6181,7 +6183,7 @@ fn accumulate_display_jt_material(
     path.final_material |= attribute.state_flags & 0x01 != 0;
 }
 
-fn display_jt_path_color(path: &DisplayJtPath) -> Option<Color> {
+fn display_jt_path_color(path: &DisplayJtPath<'_>) -> Option<Color> {
     Some(Color::from_unit_binary32([
         path.diffuse[0]?,
         path.diffuse[1]?,
@@ -6205,8 +6207,11 @@ fn multiply_jt_matrices(left: DisplayJtMatrix, right: DisplayJtMatrix) -> Option
     Some(product)
 }
 
-/// Resolved scene paths and the scoped reservation that holds them.
-type JtResolvedPaths<'ctx> = (Vec<DisplayJtPath>, ScopedReservation<'ctx>);
+/// Path states own their child buffers; this receipt owns only vector slots.
+struct JtResolvedPaths<'ctx> {
+    values: Vec<DisplayJtPath<'ctx>>,
+    storage: ScopedReservation<'ctx>,
+}
 
 /// A keyed record, or a key that more than one record carries.
 #[derive(Clone, Copy)]
@@ -6520,43 +6525,32 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
             return Ok(None);
         }
         let mut visiting_storage = ctx.reserve_scoped(0, "nx JT visiting nodes")?;
-        let mut paths_storage = ctx.reserve_scoped(0, "nx JT resolved paths")?;
-        let mut visiting = BTreeSet::new();
-        Ok(self
-            .resolve(
-                ctx,
-                object_id,
-                &mut visiting,
-                &mut visiting_storage,
-                &mut paths_storage,
-            )?
-            .map(|paths| (paths, paths_storage)))
+        let mut visiting = Vec::new();
+        self.resolve(ctx, object_id, &mut visiting, &mut visiting_storage)
     }
 
-    /// Every path state of `object_id`. All path storage, including the
-    /// node-path buffers that outlive this call, is held by `paths_storage`.
-    fn resolve(
+    /// Each recursive result owns its slots and each path owns its buffers.
+    fn resolve<'paths>(
         &self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'paths DecodeContext<'_>,
         object_id: u32,
-        visiting: &mut BTreeSet<u32>,
+        visiting: &mut Vec<u32>,
         visiting_storage: &mut ScopedReservation<'_>,
-        paths_storage: &mut ScopedReservation<'_>,
-    ) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
+    ) -> Result<Option<JtResolvedPaths<'paths>>, CodecError> {
         let _depth = ctx.enter_nested("resolve JT node path")?;
         let Some(&base) = ctx.get_btree_map(&self.by_object, &object_id, "nx JT node index")?
         else {
             return Ok(None);
         };
+        let mut paths_storage = ctx.reserve_scoped(0, "nx JT resolved paths")?;
+        let mut parent_states = Vec::new();
         if base.flags & 1 != 0 {
-            return Ok(Some(Vec::new()));
+            return Ok(Some(JtResolvedPaths { values: parent_states, storage: paths_storage }));
         }
-        if ctx.contains_btree_set(visiting, &object_id, "nx JT visiting nodes")? {
+        if ctx.contains(visiting, &object_id, "nx JT visiting nodes")? {
             return Ok(None);
         }
-        visiting_storage
-            .with_storage(|| ctx.insert_btree_set(visiting, object_id, "nx JT visiting nodes"))?;
-        let mut parent_states = Vec::new();
+        ctx.push_scoped_vec(visiting_storage, visiting, object_id, "nx JT visiting nodes")?;
         if let Some(ids) = ctx.get_hash_map(&self.parents, &object_id, "nx JT parent index")? {
             let mut remaining_ids = ids.iter();
             while !remaining_ids.as_slice().is_empty() {
@@ -6566,17 +6560,19 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
                     break;
                 };
                 let Some(paths) =
-                    self.resolve(ctx, id, visiting, visiting_storage, paths_storage)?
+                    self.resolve(ctx, id, visiting, visiting_storage)?
                 else {
                     return Ok(None);
                 };
+                let JtResolvedPaths { values, storage } = paths;
                 paths_storage.with_storage(|| {
-                    ctx.extend_vec(&mut parent_states, paths, "nx JT parent path states")
+                    ctx.extend_vec(&mut parent_states, values, "nx JT parent path states")
                 })?;
+                drop(storage);
             }
         } else {
             ctx.push_scoped_vec(
-                paths_storage,
+                &mut paths_storage,
                 &mut parent_states,
                 DisplayJtPath {
                     matrix: [
@@ -6591,17 +6587,18 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
                     final_material: false,
                     node_path: Vec::new(),
                     instance_path: Vec::new(),
+                    node_storage: ctx.reserve_scoped(0, "nx JT node path nodes")?,
+                    instance_storage: ctx.reserve_scoped(0, "nx JT instance path nodes")?,
                 },
                 "nx JT root path state",
             )?;
         }
-        ctx.remove_btree_set(visiting, &object_id, "nx JT visiting nodes")?;
+        visiting.pop();
         let instance_id =
             ctx.get_hash_map(&self.instance_ids, &object_id, "nx JT instance index")?;
-        let mut results = Vec::new();
-        let mut remaining_parent_states = parent_states.into_iter();
+        let mut remaining_parent_states = parent_states.iter_mut();
         while remaining_parent_states.len() != 0 {
-            let Some(mut path) =
+            let Some(path) =
                 ctx.next_charged(&mut remaining_parent_states, "resolve JT path states")?
             else {
                 break;
@@ -6638,25 +6635,24 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
                     }
                 }
                 if let Some(attribute) = material {
-                    accumulate_display_jt_material(&mut path, attribute);
+                    accumulate_display_jt_material(path, attribute);
                 }
             }
             if let Some(instance_id) = instance_id {
-                ctx.reserve_vec(&mut path.instance_path, 1, "nx JT instance path nodes")?;
-                path.instance_path
-                    .push(ctx.copy_retained_text(instance_id, "nx JT instance path identity")?);
+                ctx.reserve_scoped_vec(&mut path.instance_storage, &mut path.instance_path,
+                    1, "nx JT instance path nodes")?;
+                path.instance_path.push(ctx.copy_scoped_text(instance_id,
+                    &mut path.instance_storage, "nx JT instance path identity")?);
             }
             ctx.reserve_scoped_vec(
-                paths_storage,
+                &mut path.node_storage,
                 &mut path.node_path,
                 1,
                 "nx JT node path nodes",
             )?;
             path.node_path.push(object_id);
-            ctx.reserve_scoped_vec(paths_storage, &mut results, 1, "nx JT resolved paths")?;
-            results.push(path);
         }
-        Ok(Some(results))
+        Ok(Some(JtResolvedPaths { values: parent_states, storage: paths_storage }))
     }
 }
 
@@ -6961,9 +6957,8 @@ fn display_jt_tessellation_rows<'ctx>(
                 "nx JT scene graphs"
             )?
             .and_then(Option::as_ref));
-        let (paths_candidate, paths_storage) =
+        let JtResolvedPaths { values: paths_candidate, storage: _paths_storage } =
             required!(graph.node_paths(ctx, shape_node.object_id)?);
-        let _paths_storage = paths_storage;
         let mut remaining_paths = paths_candidate.into_iter();
         let render_count = ctx
             .admit_iter(&mesh.polygons, "nx JT rendered triangles")?
@@ -7055,7 +7050,8 @@ fn display_jt_tessellation_rows<'ctx>(
             } else {
                 None
             };
-            let instance_path = path.instance_path;
+            let DisplayJtPath { instance_path: candidate_instance_path, instance_storage, .. } = path;
+            let instance_path = candidate_instance_path;
             let mut node_path_storage = ctx.reserve_scoped(0, "nx JT rendered node path")?;
             let node_path = node_path_storage.with_storage(|| {
                 ctx.join_display_retained(path.node_path.iter(), "-", "nx JT rendered node path")
@@ -7354,6 +7350,7 @@ fn display_jt_tessellation_rows<'ctx>(
             };
             let tessellation = Tessellation::from_parts(tessellation_id, mesh, channels)
                 .map_err(DisplayJtTessellationCandidateFailure::Validation)?;
+            instance_storage.commit()?;
             ctx.push_vec(
                 &mut tessellations,
                 (
