@@ -77,8 +77,8 @@ fn scene_node_paths(
 ) -> Result<usize, CodecError> {
     let index = JtTessellationIndex::new(ctx, inputs)?;
     let graph = JtSceneGraph::new(ctx, "scene", inputs, &index)?.expect("complete scene graph");
-    let (paths, _storage) = graph.node_paths(ctx, 7)?.expect("resolved node paths");
-    Ok(paths.len())
+    let paths = graph.node_paths(ctx, 7)?.expect("resolved node paths");
+    Ok(paths.values.len())
 }
 
 #[test]
