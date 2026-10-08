@@ -314,56 +314,35 @@ impl<'a, 'aliases, 'ctx, 'arena> ParameterExpressionParser<'a, 'aliases, 'ctx, '
                         .get_hash_map(values, id, "look up SLDPRT hash key")?
                 }
                 ParameterValues::Validation {
-                    values,
-                    configuration,
                     excluded,
-                } => {
+                    ..
+                }
+                | ParameterValues::LazyValidation { excluded, .. }
                     if self
                         .ctx
-                        .equal(id, *excluded, "check SLDPRT parameter evaluation")?
-                    {
-                        None
-                    } else {
-                        super::configuration_parameter_value(self.ctx, values, *configuration, id)?
-                    }
-                }
+                        .equal(id, *excluded, "check SLDPRT parameter evaluation")? => None,
+                ParameterValues::Validation {
+                    values,
+                    configuration,
+                    ..
+                } => super::configuration_parameter_value(self.ctx, *configuration, id, || {
+                    Ok(self.ctx.get_hash_map(values, &id, "check SLDPRT parameter evaluation")?.copied())
+                })?,
                 ParameterValues::LazyValidation {
                     parameters,
                     values,
                     configuration,
-                    excluded,
-                } => {
-                    if self
-                        .ctx
-                        .equal(id, *excluded, "check SLDPRT parameter evaluation")?
-                    {
-                        None
-                    } else {
-                        let configured = match configuration {
-                            Some(configuration) => self.ctx.get_btree_map(
-                                &configuration.parameter_values,
-                                id,
-                                "check SLDPRT parameter evaluation",
-                            )?,
-                            None => None,
-                        };
-                        if let Some(value) = configured {
-                            Some(value)
-                        } else {
-                            let mut values = values.borrow_mut();
-                            if values.is_none() {
-                                *values = Some(super::parameter_value_index(self.ctx, parameters)?);
-                            }
-                            values
-                                .as_ref()
-                                .map(|(values, _storage)| {
-                                    super::configuration_parameter_value(self.ctx, values, None, id)
-                                })
-                                .transpose()?
-                                .flatten()
-                        }
+                    ..
+                } => super::configuration_parameter_value(self.ctx, *configuration, id, || {
+                    let mut values = values.borrow_mut();
+                    if values.is_none() {
+                        *values = Some(super::parameter_value_index(self.ctx, parameters)?);
                     }
-                }
+                    Ok(values.as_ref().map(|(values, _storage)| {
+                        self.ctx.get_hash_map(values, &id, "check SLDPRT parameter evaluation")
+                            .map(|value| value.copied())
+                    }).transpose()?.flatten())
+                })?,
                 ParameterValues::Indexed {
                     parameters,
                     positions,

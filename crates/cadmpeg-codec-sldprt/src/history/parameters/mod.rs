@@ -1167,8 +1167,9 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
         while let Some(configuration) =
             ctx.next_charged(&mut states, "check SLDPRT evaluated parameter coherence")?
         {
-            let Some(actual) =
-                configuration_parameter_value(ctx, &values, configuration, &parameter.id)?
+            let Some(actual) = configuration_parameter_value(ctx, configuration, &parameter.id, || {
+                Ok(ctx.get_hash_map(&values, &parameter.id, "check SLDPRT parameter evaluation")?.copied())
+            })?
             else {
                 continue;
             };
@@ -1228,9 +1229,9 @@ fn parameter_value_index<'values, 'ctx>(
 /// A configuration value overrides the stated model value of the same identity.
 pub(super) fn configuration_parameter_value<'values>(
     ctx: &DecodeContext<'_>,
-    values: &ParameterValueIndex<'values>,
     configuration: Option<&'values cadmpeg_ir::features::DesignConfiguration>,
     id: &ParameterId,
+    model_value: impl FnOnce() -> Result<Option<&'values ParameterValue>, CodecError>,
 ) -> Result<Option<&'values ParameterValue>, CodecError> {
     const OPERATION: &str = "check SLDPRT parameter evaluation";
     let local = match configuration {
@@ -1239,7 +1240,7 @@ pub(super) fn configuration_parameter_value<'values>(
     };
     match local {
         Some(value) => Ok(Some(value)),
-        None => Ok(ctx.get_hash_map(values, &id, OPERATION)?.copied()),
+        None => model_value(),
     }
 }
 
