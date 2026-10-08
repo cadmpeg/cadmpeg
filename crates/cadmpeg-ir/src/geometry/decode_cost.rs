@@ -18,6 +18,10 @@ pub(super) fn checked_sum(
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
 }
 
+pub(super) fn inline_bytes<T>(value: &T) -> u64 {
+    cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value))
+}
+
 fn array_cost<T: DecodeCost, const N: usize>(
     ctx: &DecodeContext<'_>,
     values: &[T; N],
@@ -53,19 +57,11 @@ impl DecodeCost for SolvedSurfaceGeometry {
         operation: &'static str,
     ) -> Result<u64, CodecError> {
         let bytes = match self {
-            Self::Plane(value) => {
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value))
-            }
-            Self::Cylinder(value) => {
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value))
-            }
-            Self::Cone(value) => cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value)),
-            Self::Sphere(value) => {
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value))
-            }
-            Self::Torus(value) => {
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(value))
-            }
+            Self::Plane(value) => inline_bytes(value),
+            Self::Cylinder(value) => inline_bytes(value),
+            Self::Cone(value) => inline_bytes(value),
+            Self::Sphere(value) => inline_bytes(value),
+            Self::Torus(value) => inline_bytes(value),
             Self::Nurbs(value) => value.decode_cost(ctx, operation)?,
             Self::Polygonal(value) => value.decode_cost(ctx, operation)?,
             Self::Transformed(value) => {
