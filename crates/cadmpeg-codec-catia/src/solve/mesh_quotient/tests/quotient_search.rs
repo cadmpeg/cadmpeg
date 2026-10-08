@@ -519,8 +519,6 @@ fn coordinate_root_candidate_copy_and_changed_edge_refuse_before_growth() {
         "catia_quotient_supported_candidate_rows",
         "catia_quotient_supported_candidate_pairs",
         "catia_quotient_changed_edges",
-        "catia_quotient_refine_domain_copy",
-        "catia_quotient_refine_domain_points",
     ] {
         assert!(operations.contains(operation), "no refusal at {operation}");
     }
