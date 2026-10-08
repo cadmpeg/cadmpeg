@@ -1641,6 +1641,7 @@ pub(crate) struct NativeStoreResult<'ctx> {
     pub(crate) boundary_storage: ScopedReservation<'ctx>,
     pub(crate) count_storage: ScopedReservation<'ctx>,
     pub(crate) attribute_storage: ScopedReservation<'ctx>,
+    pub(crate) reference_storage: ScopedReservation<'ctx>,
     pub(crate) occurrence_expansion: ProductOccurrenceExpansion,
     pub(crate) ambiguous_parameter_boundaries: Vec<AmbiguousParameterBoundary>,
     pub(crate) overdeclared_counts: BTreeMap<u32, OverdeclaredCount>,
@@ -2402,7 +2403,7 @@ pub(crate) fn store<'ctx>(
     limits: ProductOccurrenceLimits,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<NativeStoreResult<'ctx>, CodecError> {
-    let global_table = global.global_table(ctx)?;
+    let global_table = global.global_table();
     let NativeStoreInputs {
         scan,
         directory,
@@ -2507,17 +2508,8 @@ pub(crate) fn store<'ctx>(
             continue;
         };
         ctx.reserve_vec(&mut macro_instances, 1, "iges native macro instance slots")?;
-        let structure_sequence = match references.get(&entry.sequence) {
-            Some(edges) if edges.len() == 1 => {
-                crate::graph::resolved_structure_sequence(references, entry.sequence)
-            }
-            Some(edges) => ctx.find_map(
-                edges,
-                |edge| Ok(edge.resolved_target_sequence_for(ReferenceKind::Structure)),
-                "iges native structure reference search",
-            )?,
-            None => None,
-        };
+        let structure_sequence =
+            crate::graph::resolved_structure_sequence(references, entry.sequence, ctx)?;
         let structure_entry = match structure_sequence {
             Some(sequence) => entry_by_sequence(directory, sequence, ctx)?,
             None => None,
@@ -2697,6 +2689,7 @@ pub(crate) fn store<'ctx>(
         cadmpeg_core::decode::u64_from_index(directory.len()),
         "iges_native_entities",
     )?;
+    let mut reference_copy_storage = ctx.reserve_scoped(0, "IGES native reference copies")?;
     let mut entities =
         ctx.collect_indexed_vec(directory.len(), "iges native entity slots", |index| {
             let entry = &directory[index];
@@ -3041,7 +3034,7 @@ pub(crate) fn store<'ctx>(
                 view: entry.view,
                 line_weight_number: entry.line_weight,
                 line_weight_mm: global
-                    .length_context(ctx)?
+                    .length_context()
                     .and_then(|context| context.line_weight_mm(entry.line_weight)),
                 color: resolve_display_ref(
                     ctx,
@@ -5699,17 +5692,8 @@ pub(crate) fn store<'ctx>(
         "iges native attribute instance slots",
         |entry| {
             let record = record_by_sequence(parameters, entry.sequence, ctx)?;
-            let definition_sequence = match references.get(&entry.sequence) {
-                Some(edges) if edges.len() == 1 => {
-                    crate::graph::resolved_structure_sequence(references, entry.sequence)
-                }
-                Some(edges) => ctx.find_map(
-                    edges,
-                    |edge| Ok(edge.resolved_target_sequence_for(ReferenceKind::Structure)),
-                    "iges native structure reference search",
-                )?,
-                None => None,
-            };
+            let definition_sequence =
+                crate::graph::resolved_structure_sequence(references, entry.sequence, ctx)?;
             // Structure admission resolves only Type 322 Form 0 definitions.
             let definition = match definition_sequence {
                 Some(sequence) if record.is_some() => match definition_widths.get(&sequence) {
@@ -6766,7 +6750,7 @@ pub(crate) fn store<'ctx>(
     let fem_entities = fem::build(directory, parameters, &parameter_resolver, ctx)?;
     // Read every definition for root inference and keep admitted member lists.
     let occurrence_length_factor = global
-        .length_context(ctx)?
+        .length_context()
         .map(|context| context.length_factor_mm());
     let mut parameter_index_storage = ctx.reserve_scoped(0, "iges occurrence parameter index")?;
     let mut by_directory = BTreeMap::new();
@@ -7147,7 +7131,7 @@ pub(crate) fn store<'ctx>(
             })
         },
     )?;
-    parameter_resolver.append_to(references)?;
+    let reference_storage = parameter_resolver.append_to(references)?;
     for entity in ctx.admit_iter(&mut entities, "iges native resolved entity scan")? {
         entity.links = native_entity_ids(
             ctx,
@@ -7165,7 +7149,7 @@ pub(crate) fn store<'ctx>(
                 let mut copies =
                     ctx.collection_vec(edges.len(), "iges resolved native reference slots")?;
                 for edge in ctx.admit_iter(edges, "iges native reference copy scan")? {
-                    copies.push(edge.copy_for_native(ctx)?);
+                    copies.push(edge.copy_for_native(ctx, &mut reference_copy_storage)?);
                 }
                 copies
             }
@@ -7309,6 +7293,7 @@ pub(crate) fn store<'ctx>(
         quarantined_parameter_records,
     )?;
     Ok(NativeStoreResult {
+        reference_storage,
         occurrence_expansion: ProductOccurrenceExpansion {
             malformed_definition_sequences,
             malformed_placement_sequences,

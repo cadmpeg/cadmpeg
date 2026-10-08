@@ -105,7 +105,7 @@ pub(in crate::native) enum NativeFemEntity {
 pub(super) fn build(
     directory: &[DirectoryEntry],
     records: &[ParameterRecord],
-    resolver: &ParameterResolver<'_, '_>,
+    resolver: &ParameterResolver<'_, '_, '_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<NativeFemEntity>, CodecError> {
     let mut result = Vec::new();
@@ -196,7 +196,7 @@ fn resolved_id(
 
 fn resolve_type(
     ctx: &DecodeContext<'_>,
-    resolver: &ParameterResolver<'_, '_>,
+    resolver: &ParameterResolver<'_, '_, '_>,
     source: u32,
     index: usize,
     raw_pointer: Option<i64>,
@@ -214,7 +214,7 @@ fn resolve_type(
 
 fn resolve_note(
     ctx: &DecodeContext<'_>,
-    resolver: &ParameterResolver<'_, '_>,
+    resolver: &ParameterResolver<'_, '_, '_>,
     source: u32,
     index: usize,
     raw_pointer: Option<i64>,
@@ -236,7 +236,7 @@ fn resolve_note(
 
 fn resolve_transformation(
     ctx: &DecodeContext<'_>,
-    resolver: &ParameterResolver<'_, '_>,
+    resolver: &ParameterResolver<'_, '_, '_>,
     source: u32,
     index: usize,
     raw_pointer: i64,
@@ -256,7 +256,7 @@ fn resolve_transformation(
 fn node(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
-    resolver: &ParameterResolver<'_, '_>,
+    resolver: &ParameterResolver<'_, '_, '_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<NativeFemEntity, CodecError> {
     let sequence = entry.sequence;
@@ -292,7 +292,7 @@ fn node(
 fn finite_element(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
-    resolver: &ParameterResolver<'_, '_>,
+    resolver: &ParameterResolver<'_, '_, '_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<NativeFemEntity, CodecError> {
     let sequence = entry.sequence;
@@ -350,7 +350,7 @@ fn nodal_displacement_layout(
 fn nodal_displacement_rotation(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
-    resolver: &ParameterResolver<'_, '_>,
+    resolver: &ParameterResolver<'_, '_, '_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<NativeFemEntity, CodecError> {
     let sequence = entry.sequence;
@@ -442,7 +442,7 @@ fn result_value_count(form: i64) -> Option<i64> {
 fn nodal_results(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
-    resolver: &ParameterResolver<'_, '_>,
+    resolver: &ParameterResolver<'_, '_, '_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<NativeFemEntity, CodecError> {
     let sequence = entry.sequence;
@@ -511,7 +511,7 @@ fn nodal_results(
 fn element_results(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
-    resolver: &ParameterResolver<'_, '_>,
+    resolver: &ParameterResolver<'_, '_, '_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<NativeFemEntity, CodecError> {
     let sequence = entry.sequence;
@@ -624,7 +624,7 @@ fn element_results(
 fn nodal_load_constraint(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
-    resolver: &ParameterResolver<'_, '_>,
+    resolver: &ParameterResolver<'_, '_, '_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<NativeFemEntity, CodecError> {
     let sequence = entry.sequence;

@@ -395,6 +395,8 @@ struct PhysicalParse<'a, 'ctx> {
     quarantined_parameters: Vec<parameter::QuarantinedParameterRecord>,
     framing_recoveries: card::FramingRecoveries,
     references: BTreeMap<u32, Vec<graph::ReferenceEdge>>,
+    _global_storage: ScopedReservation<'ctx>,
+    _reference_storage: ScopedReservation<'ctx>,
     _scan_storage: ScopedReservation<'ctx>,
 }
 
@@ -411,9 +413,9 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         // The card framing borrows the source and is dropped with this parse.
         let mut scan_storage = ctx.reserve_scoped(0, card_storage)?;
         let scan = scan_storage.with_storage(|| card::scan_with_context(bytes, ctx))?;
-        let (global, mut global_losses) = global::parse(&scan, ctx)?;
+        let (global, mut global_losses, global_storage) = global::parse(&scan, ctx)?;
         let (directory, quarantined_directory) =
-            directory::parse(&scan, global.global_table(ctx)?, ctx)?;
+            directory::parse(&scan, global.global_table(), ctx)?;
         if mode == ParseMode::Decode {
             entities::geometry::enforce_transform_depth(&directory, ctx)?;
         }
@@ -439,7 +441,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             &mut conditional_losses,
             "iges combined global loss notes",
         )?;
-        let references = graph::build(&directory, ctx)?;
+        let (references, reference_storage) = graph::build(&directory, ctx)?;
         let mut scan = scan;
         let mut framing_recoveries = std::mem::take(&mut scan.recoveries);
         framing_recoveries.merge(parameter_recoveries, ctx)?;
@@ -454,6 +456,8 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             quarantined_parameters,
             framing_recoveries,
             references,
+            _global_storage: global_storage,
+            _reference_storage: reference_storage,
             _scan_storage: scan_storage,
         })
     }
@@ -469,7 +473,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             &mut self.global_losses,
             "iges admission loss slots",
         )?;
-        if matches!(self.global.global_table(ctx)?, global::GlobalTable::V4_0) {
+        if matches!(self.global.global_table(), global::GlobalTable::V4_0) {
             let post_terminate_count = self.scan.post_terminate_count();
             if post_terminate_count > 0 {
                 ctx.reserve_vec(&mut losses, 1, "iges admission loss slots")?;
@@ -579,7 +583,7 @@ fn decode_with_occurrence_limits(
     ctx: &DecodeContext<'_>,
 ) -> Result<Decoded, CodecError> {
     let mut parse = PhysicalParse::run(parse_bytes, ctx, ParseMode::Decode)?;
-    let length_context = parse.global.length_context(ctx)?;
+    let length_context = parse.global.length_context();
     let quarantined_parameter_sequences =
         quarantined_parameter_sequences(&parse.quarantined_parameters, ctx)?;
     let projected_directory =
@@ -629,6 +633,7 @@ fn decode_with_occurrence_limits(
         boundary_storage,
         count_storage,
         attribute_storage,
+        reference_storage: _parameter_reference_storage,
         occurrence_expansion: product_occurrence_expansion,
         ambiguous_parameter_boundaries,
         overdeclared_counts,
@@ -771,7 +776,7 @@ fn decode_with_occurrence_limits(
         )?;
     }
     drop(attribute_storage);
-    let global_table = parse.global.global_table(ctx)?;
+    let global_table = parse.global.global_table();
     let attributed = if ctx.container_only() {
         BTreeSet::new()
     } else {

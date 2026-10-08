@@ -20,7 +20,7 @@ fn global_defaults_apply_only_to_omitted_fields() {
     let bytes = fixed_ascii_with_global(global);
     let scan = crate::test_support::scan(&bytes).unwrap();
     let (parsed, losses) = crate::test_support::parse_global(&scan).unwrap();
-    let context = crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().unwrap();
+    let context = parsed.length_context().unwrap();
 
     assert_eq!(context.length_factor_mm(), 25.4);
     assert_eq!(parsed.declared_version_flag(), 3);
@@ -39,7 +39,7 @@ fn global_field_categories_apply_defaults_and_require_no_default_fields() {
     }
 
     let (parsed, losses) = resolve_global_fields(&fields);
-    let context = crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().unwrap();
+    let context = parsed.length_context().unwrap();
     assert_eq!(context.length_factor_mm(), 25.4);
     assert_eq!(parsed.declared_version_flag(), 3);
     assert!((context.minimum_resolution_mm() - 0.0254).abs() <= f64::EPSILON * 64.0);
@@ -69,7 +69,7 @@ fn global_field_categories_apply_defaults_and_require_no_default_fields() {
             None => assert!(losses.is_empty(), "field {}: {losses:#?}", index + 1),
         }
         assert!(
-            crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().is_some(),
+            parsed.length_context().is_some(),
             "field {} suppressed the length factor",
             index + 1
         );
@@ -128,7 +128,7 @@ fn malformed_global_values_select_the_matrix_disposition_and_loss() {
         assert_eq!(losses.len(), 1, "field {}: {losses:#?}", index + 1);
         assert_eq!(code_count(&losses, expected), 1, "field {}", index + 1);
         assert_eq!(
-            crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().is_none(),
+            parsed.length_context().is_none(),
             expected == length,
             "field {} length suppression",
             index + 1
@@ -196,7 +196,7 @@ fn malformed_global_integer_does_not_select_its_default() {
     )
     .unwrap();
 
-    assert!(crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().is_none());
+    assert!(parsed.length_context().is_none());
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert_eq!(
         code_count(&losses, IgesLossCode::GlobalLengthUnitUnresolved),
