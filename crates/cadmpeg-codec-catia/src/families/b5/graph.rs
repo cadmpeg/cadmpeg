@@ -2707,7 +2707,9 @@ pub(in crate::families) fn edge_vertex_references(
     if !ambiguous.is_empty() {
         ctx.retain_btree_map(
             &mut edges,
-            |object_id, _| Ok::<_, CodecError>(!ctx.contains_hash_set(&ambiguous, object_id, AMBIGUOUS)?),
+            |object_id, _| {
+                Ok::<_, CodecError>(!ctx.contains_hash_set(&ambiguous, object_id, AMBIGUOUS)?)
+            },
             AMBIGUOUS,
         )?;
     }
@@ -3743,12 +3745,13 @@ pub(super) fn pcurve_knot_expansion_is_finite(
                 return Ok(false);
             };
             count = next;
-            Ok(multiplicity == 0 || match pcurve.parameterization {
-                B5PcurveParameterization::Native => true,
-                B5PcurveParameterization::Translated { native_origin } => {
-                    FiniteReal::new(knot.get() - native_origin.get()).is_some()
-                }
-            })
+            Ok(multiplicity == 0
+                || match pcurve.parameterization {
+                    B5PcurveParameterization::Native => true,
+                    B5PcurveParameterization::Translated { native_origin } => {
+                        FiniteReal::new(knot.get() - native_origin.get()).is_some()
+                    }
+                })
         },
         "catia_b5_pcurve_knot_validity",
     )?)

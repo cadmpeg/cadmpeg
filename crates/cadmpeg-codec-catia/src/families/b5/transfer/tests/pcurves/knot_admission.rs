@@ -1,5 +1,7 @@
 use super::{B5Pcurve, B5PcurveParameterization, B5Surface, CurveGeometry, SolvedCurveGeometry};
-use crate::test_support::test_b5::{finite, finite_lane, finite_vector, frame, increasing, point, positive_length};
+use crate::test_support::test_b5::{
+    finite, finite_lane, finite_vector, frame, increasing, point, positive_length,
+};
 
 fn fixture() -> (B5Pcurve, B5Surface) {
     let pcurve = B5Pcurve {
@@ -35,14 +37,18 @@ fn analytic_lifting_does_not_allocate_discarded_knots() {
         super::super::super::pcurves::lifted_curve_geometry(ctx, &pcurve, &cylinder)
     })
     .expect("analytic lifting needs no expanded knot storage");
-    assert!(matches!(geometry, Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle))) if circle.radius().get() == 2.0));
+    assert!(
+        matches!(geometry, Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle))) if circle.radius().get() == 2.0)
+    );
 }
 
 #[test]
 fn analytic_lifting_preserves_translated_knot_refusal() {
     let (mut pcurve, cylinder) = fixture();
     pcurve.distinct_knots = finite_lane(&[-f64::MAX, 1.0]);
-    pcurve.parameterization = B5PcurveParameterization::Translated { native_origin: finite(f64::MAX) };
+    pcurve.parameterization = B5PcurveParameterization::Translated {
+        native_origin: finite(f64::MAX),
+    };
     let result = crate::test_support::with_collection_limit(0, |ctx| {
         super::super::super::pcurves::lifted_curve_geometry(ctx, &pcurve, &cylinder)
     })
@@ -56,14 +62,19 @@ fn analytic_lifting_preserves_translated_knot_refusal() {
 fn analytic_knot_validation_charges_only_visited_distinct_pairs() {
     let (mut pcurve, _) = fixture();
     pcurve.distinct_knots = finite_lane(&[-f64::MAX, 1.0]);
-    pcurve.parameterization = B5PcurveParameterization::Translated { native_origin: finite(f64::MAX) };
+    pcurve.parameterization = B5PcurveParameterization::Translated {
+        native_origin: finite(f64::MAX),
+    };
     crate::test_support::with_work_limit(1, |ctx| {
         assert!(!crate::families::b5::graph::pcurve_knot_expansion_is_finite(ctx, &pcurve)?);
         assert!(ctx.resource_refusal().is_none());
         pcurve.parameterization = B5PcurveParameterization::Native;
         let cadmpeg_core::CodecError::ResourceLimit(original) =
-            crate::families::b5::graph::pcurve_knot_expansion_is_finite(ctx, &pcurve).expect_err("second pair scan refuses")
-        else { panic!("typed refusal") };
+            crate::families::b5::graph::pcurve_knot_expansion_is_finite(ctx, &pcurve)
+                .expect_err("second pair scan refuses")
+        else {
+            panic!("typed refusal")
+        };
         assert_eq!((original.used, original.additional), (1, 1));
         pcurve.distinct_knots.clear();
         assert!(matches!(
@@ -71,5 +82,6 @@ fn analytic_knot_validation_charges_only_visited_distinct_pairs() {
             Err(cadmpeg_core::CodecError::ResourceLimit(next)) if next == original
         ));
         Ok::<_, cadmpeg_core::CodecError>(())
-    }).expect("admission assertions");
+    })
+    .expect("admission assertions");
 }

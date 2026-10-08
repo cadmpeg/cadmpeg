@@ -18,8 +18,8 @@ use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{
-    edge_pcurve_parameters, evaluate_pcurve, pcurve_knot_expansion_is_finite, pcurve_nurbs_knots, B5Graph, B5Pcurve,
-    B5SphereGreatCirclePcurve, B5Surface,
+    edge_pcurve_parameters, evaluate_pcurve, pcurve_knot_expansion_is_finite, pcurve_nurbs_knots,
+    B5Graph, B5Pcurve, B5SphereGreatCirclePcurve, B5Surface,
 };
 use super::super::vecmath::{add, components, coordinates, cross, scale};
 use super::edges::ordered_subrange;
