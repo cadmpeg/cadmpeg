@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of `FCStd` construction history into neutral design entities.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -11,12 +11,8 @@ use cadmpeg_ir::geometry::nurbs::KnotVector;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
-    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
-    SketchId, SketchLocus, SketchNativeOperand,
-};
-use cadmpeg_ir::spreadsheets::{
-    CellAddress, Spreadsheet, SpreadsheetCell, SpreadsheetDimension, SpreadsheetId,
-    SpreadsheetRange,
+    SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
+    SketchNativeOperand,
 };
 use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::{
@@ -43,7 +39,7 @@ use cadmpeg_ir::{
 };
 
 use crate::brep::ShapePayloadRecord;
-use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
+use crate::native::{EntryRecord, ObjectRecord, PropertyRecord};
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
@@ -61,6 +57,9 @@ macro_rules! required {
     };
 }
 
+mod profiles;
+mod spreadsheets;
+
 fn malformed_design(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> CodecError {
     crate::resource::malformed_charged(ctx, message, "fcstd design diagnostic")
 }
@@ -74,420 +73,603 @@ pub(crate) fn transfer(
     entries: &[EntryRecord],
     program_version: Option<&str>,
 ) -> Result<BTreeSet<String>, CodecError> {
-    let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
-    for property in properties {
-        if !properties_by_owner.contains_key(property.owner.as_str()) {
-            ctx.insert_hash_map(
-                &mut properties_by_owner,
-                property.owner.as_str(),
-                Vec::new(),
-                "fcstd design owner index",
-            )?;
-        }
-        if let Some(owned) = properties_by_owner.get_mut(property.owner.as_str()) {
-            ctx.reserve_vec(owned, 1, "fcstd design owner properties")?;
-            owned.push(property);
-        }
-    }
-    let mut feature_ids = HashMap::new();
-    for object in objects
-        .iter()
-        .filter(|object| is_design_object(&object.type_name))
-    {
-        ctx.insert_hash_map(
-            &mut feature_ids,
-            object.id().as_str(),
-            feature_id(ctx, object)?,
-            "fcstd design feature ids",
-        )?;
-    }
-    let mut parent_by_member = HashMap::new();
-    for body in objects.iter().filter(|object| is_body(&object.type_name)) {
-        let Some(property) = properties_by_owner
-            .get(body.id().as_str())
-            .and_then(|properties| body_membership_property(properties))
-        else {
-            continue;
-        };
-        for member in property
-            .links()
+    let (properties_by_owner, _properties_by_owner_storage) = ctx.collect_scoped_btree_groups(
+        properties
             .iter()
-            .flatten()
-            .filter_map(crate::native::LinkTarget::object)
-        {
-            ctx.insert_hash_map(
-                &mut parent_by_member,
-                member,
-                feature_id(ctx, body)?,
-                "fcstd design body membership",
-            )?;
-        }
-    }
-    let mut sketch_ids = HashMap::new();
-    for object in objects.iter().filter(|object| is_sketch(&object.type_name)) {
-        let id = SketchId::mint(design_identity_text(
-            ctx,
-            "sketch",
-            object,
-            format_args!(""),
-            "fcstd design sketch identity",
-        )?)
-        .map_err(CodecError::malformed)?;
-        ctx.insert_hash_map(
-            &mut sketch_ids,
-            object.id().as_str(),
-            id,
-            "fcstd design sketch ids",
-        )?;
-    }
-    let mut body_ids = ctx.collection_vec(ir.model.bodies.len(), "fcstd design body ids")?;
-    for body in &ir.model.bodies {
-        body_ids.push(body.id.try_clone_for_decode(ctx, "fcstd design body id")?);
-    }
-    let (feature_ordinals, mut cycle_affected) =
-        feature_ordinals(ctx, objects, &properties_by_owner, &parent_by_member)?;
-    let mut ordinal_by_feature = HashMap::new();
-    for object in objects
-        .iter()
-        .filter(|object| is_design_object(&object.type_name))
-    {
-        ctx.insert_hash_map(
-            &mut ordinal_by_feature,
-            feature_id(ctx, object)?,
-            feature_ordinals[object.id().as_str()],
-            "fcstd design feature ordinals",
-        )?;
-    }
+            .map(|property| (property.owner.as_str(), property)),
+        "fcstd design owner index",
+    )?;
+    let (properties_by_id, _property_id_storage) = ctx.collect_scoped_btree_groups(
+        properties
+            .iter()
+            .map(|property| (property.id.as_str(), property)),
+        "fcstd design property identity index",
+    )?;
+    let (payloads_by_owner, _payload_storage) =
+        ctx.with_scoped_storage("fcstd design payload owner storage", || {
+            let mut by_owner = BTreeMap::new();
+            for payload in ctx.admit_iter(payloads, "fcstd design payload index inputs")? {
+                let Some(properties) = ctx.get_btree_map(
+                    &properties_by_id,
+                    payload.property.as_str(),
+                    "fcstd design payload property lookup",
+                )?
+                else {
+                    continue;
+                };
+                let (mut owners, mut owner_storage) = ctx
+                    .with_scoped_storage("fcstd design payload unique owner storage", || {
+                        Ok::<_, CodecError>(BTreeSet::new())
+                    })?;
+                for property in
+                    ctx.admit_iter(properties, "fcstd design payload property owners")?
+                {
+                    if owner_storage.with_storage(|| {
+                        ctx.insert_btree_set(
+                            &mut owners,
+                            property.owner.as_str(),
+                            "fcstd design payload unique owner",
+                        )
+                    })? {
+                        ctx.push_btree_group(
+                            &mut by_owner,
+                            property.owner.as_str(),
+                            payload,
+                            "fcstd design payload owners",
+                            "fcstd design owner payloads",
+                        )?;
+                    }
+                }
+            }
+            Ok::<_, CodecError>(by_owner)
+        })?;
+    let (object_by_id, _object_storage) = ctx.collect_scoped_btree_map(
+        objects
+            .iter()
+            .rev()
+            .map(|object| (object.id().as_str(), object)),
+        "fcstd design object index",
+    )?;
+    let (feature_ids, feature_ids_storage) =
+        ctx.with_scoped_storage("fcstd design feature index storage", || {
+            let mut feature_ids = HashMap::new();
+            for object in ctx.admit_iter(objects, "fcstd design feature objects")? {
+                if !is_design_object(&object.type_name) {
+                    continue;
+                }
+                ctx.insert_hash_map(
+                    &mut feature_ids,
+                    object.id().as_str(),
+                    feature_id(ctx, object)?,
+                    "fcstd design feature ids",
+                )?;
+            }
+            Ok::<_, CodecError>(feature_ids)
+        })?;
+    let (predecessors, predecessor_storage) =
+        body_predecessors(ctx, objects, &feature_ids, &properties_by_owner)?;
+    let (parent_by_member, parent_by_member_storage) =
+        ctx.with_scoped_storage("fcstd design membership index storage", || {
+            let mut parent_by_member = HashMap::new();
+            for body in ctx
+                .admit_iter(objects, "fcstd design body objects")?
+                .filter(|object| is_body(&object.type_name))
+            {
+                let property = match ctx.get_btree_map(
+                    &properties_by_owner,
+                    body.id().as_str(),
+                    "fcstd design owner index lookup",
+                )? {
+                    Some(properties) => body_membership_property(ctx, properties)?,
+                    None => None,
+                };
+                let Some(property) = property else {
+                    continue;
+                };
+                for link in
+                    ctx.admit_iter(property.links(), "fcstd design body membership links")?
+                {
+                    let Some(member) = link.as_ref().and_then(crate::native::LinkTarget::object)
+                    else {
+                        continue;
+                    };
+                    ctx.insert_hash_map(
+                        &mut parent_by_member,
+                        member,
+                        feature_id(ctx, body)?,
+                        "fcstd design body membership",
+                    )?;
+                }
+            }
+            Ok::<_, CodecError>(parent_by_member)
+        })?;
+    let (mut sketch_ids, mut sketch_ids_storage) =
+        ctx.with_scoped_storage("fcstd design sketch index storage", || {
+            let mut sketch_ids = HashMap::new();
+            for object in ctx
+                .admit_iter(objects, "fcstd design sketch objects")?
+                .filter(|object| is_sketch(&object.type_name))
+            {
+                let id = SketchId::mint(design_identity_text(
+                    ctx,
+                    "sketch",
+                    object,
+                    format_args!(""),
+                    "fcstd design sketch identity",
+                )?)
+                .map_err(CodecError::malformed)?;
+                ctx.insert_hash_map(
+                    &mut sketch_ids,
+                    object.id().as_str(),
+                    id,
+                    "fcstd design sketch ids",
+                )?;
+            }
+            Ok::<_, CodecError>(sketch_ids)
+        })?;
+    let (body_ids, body_ids_storage) =
+        ctx.with_scoped_storage("fcstd design body id storage", || {
+            let mut body_ids =
+                ctx.vector_storage(ir.model.bodies.len(), "fcstd design body ids")?;
+            for body in ctx.admit_iter(&ir.model.bodies, "fcstd design body source ids")? {
+                ctx.push_vec(&mut body_ids, &body.id, "fcstd design body ids")?;
+            }
+            Ok::<_, CodecError>(body_ids)
+        })?;
+    let FeatureOrdering {
+        ordinals: feature_ordinals,
+        mut cycle_affected,
+        storage: feature_ordinal_storage,
+    } = feature_ordinals(ctx, objects, &properties_by_owner, &parent_by_member)?;
+    drop(parent_by_member);
+    drop(parent_by_member_storage);
+    let (ordinal_by_feature, ordinal_by_feature_storage) =
+        ctx.with_scoped_storage("fcstd design ordinal index storage", || {
+            let mut ordinal_by_feature = HashMap::new();
+            for object in ctx.admit_iter(objects, "fcstd design feature objects")? {
+                if !is_design_object(&object.type_name) {
+                    continue;
+                }
+                ctx.insert_hash_map(
+                    &mut ordinal_by_feature,
+                    feature_id(ctx, object)?,
+                    *ctx.get_hash_map(
+                        &feature_ordinals,
+                        object.id().as_str(),
+                        "fcstd design object ordinal lookup",
+                    )?
+                    .ok_or_else(|| CodecError::malformed("design object lost its ordinal"))?,
+                    "fcstd design feature ordinals",
+                )?;
+            }
+            Ok::<_, CodecError>(ordinal_by_feature)
+        })?;
 
-    for object in objects {
+    for object in ctx.admit_iter(objects, "fcstd design transfer objects")? {
         if !is_design_object(&object.type_name) {
             continue;
         }
-        let source = properties_by_owner
-            .get(object.id().as_str())
+        let owned = ctx
+            .get_btree_map(
+                &properties_by_owner,
+                object.id().as_str(),
+                "fcstd design selected owner properties",
+            )?
             .map_or(&[][..], Vec::as_slice);
-        let mut owned = ctx.collection_vec(source.len(), "fcstd design selected properties")?;
-        owned.extend_from_slice(source);
+        let object_ordinal = *ctx
+            .get_hash_map(
+                &feature_ordinals,
+                object.id().as_str(),
+                "fcstd design object ordinal lookup",
+            )?
+            .ok_or_else(|| CodecError::malformed("design object lost its ordinal"))?;
         let id = feature_id(ctx, object)?;
         let mut definition = if is_spreadsheet(&object.type_name) {
-            ctx.reserve_vec(&mut ir.model.spreadsheets, 1, "fcstd design spreadsheets")?;
-            ir.model.spreadsheets.push(append_spreadsheet(
-                ctx,
-                &mut ir.model.parameters,
-                object,
-                &owned,
-            )?);
+            ctx.push_vec(
+                &mut ir.model.spreadsheets,
+                spreadsheets::append_spreadsheet(ctx, &mut ir.model.parameters, object, owned)?,
+                "fcstd design spreadsheets",
+            )?;
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::Equations,
                 children: TreeChildren::default(),
             })
         } else if is_body(&object.type_name) {
-            body_definition(ctx, &owned, &feature_ids)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            body_definition(ctx, owned, &feature_ids)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_datum(&object.type_name) {
-            datum_definition(&object.type_name, &owned)
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            datum_definition(ctx, &object.type_name, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_sketch(&object.type_name) {
-            let decoded = parse_sketch(ctx, object, &owned)?;
+            let decoded = parse_sketch(ctx, object, owned)?;
             let sketch = decoded.sketch;
             let sketch_id = sketch
                 .id
                 .try_clone_for_decode(ctx, "fcstd design sketch identity")?;
-            ctx.insert_hash_map(
-                &mut sketch_ids,
-                object.id().as_str(),
-                sketch_id.try_clone_for_decode(ctx, "fcstd design sketch index identity")?,
-                "fcstd design sketch ids",
-            )?;
-            ctx.reserve_vec(&mut ir.model.sketches, 1, "fcstd neutral sketches")?;
-            ir.model.sketches.push(sketch);
-            ctx.reserve_vec(
+            sketch_ids_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut sketch_ids,
+                    object.id().as_str(),
+                    sketch_id.try_clone_for_decode(ctx, "fcstd design sketch index identity")?,
+                    "fcstd design sketch ids",
+                )
+            })?;
+            ctx.push_vec(&mut ir.model.sketches, sketch, "fcstd neutral sketches")?;
+            ctx.extend_vec(
                 &mut ir.model.sketch_entities,
-                decoded.entities.len(),
+                decoded.entities,
                 "fcstd neutral sketch entities",
             )?;
-            ir.model.sketch_entities.extend(decoded.entities);
-            ctx.reserve_vec(
+            ctx.extend_vec(
                 &mut ir.model.sketch_constraints,
-                decoded.constraints.len(),
+                decoded.constraints,
                 "fcstd neutral sketch constraints",
             )?;
-            ir.model.sketch_constraints.extend(decoded.constraints);
-            ctx.reserve_vec(
+            ctx.extend_vec(
                 &mut ir.model.parameters,
-                decoded.parameters.len(),
+                decoded.parameters,
                 "fcstd sketch parameters",
             )?;
-            ir.model.parameters.extend(decoded.parameters);
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
             })
         } else if is_stored_geometry_feature(&object.type_name) {
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
         } else if object.type_name == "PartDesign::FeatureBase" {
-            feature_base_definition(ctx, &owned, &feature_ids)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            feature_base_definition(ctx, owned, &feature_ids)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_imported_geometry(&object.type_name) {
-            imported_geometry_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            imported_geometry_definition(ctx, &object.type_name, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_part_construction_geometry(&object.type_name) {
-            part_construction_geometry_definition(ctx, &object.type_name, &owned, entries)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            part_construction_geometry_definition(ctx, &object.type_name, owned, entries)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_primitive(&object.type_name) {
-            primitive_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            primitive_definition(ctx, &object.type_name, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_boolean(&object.type_name) {
-            boolean_definition(ctx, &object.type_name, &owned)?
-                .or_else(|| {
-                    (object.type_name != "PartDesign::Boolean")
-                        .then(|| cached_shape_definition(&owned))
-                        .flatten()
-                })
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            match boolean_definition(ctx, &object.type_name, owned)? {
+                Some(definition) => definition,
+                None if object.type_name != "PartDesign::Boolean" => {
+                    match cached_shape_definition(ctx, owned)? {
+                        Some(definition) => definition,
+                        None => native_definition(ctx, &object.type_name, owned)?,
+                    }
+                }
+                None => native_definition(ctx, &object.type_name, owned)?,
+            }
         } else if is_loft(&object.type_name) {
-            loft_definition(ctx, &object.type_name, &owned, &sketch_ids)?
-                .or_else(|| cached_shape_definition(&owned))
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            match loft_definition(ctx, &object.type_name, owned, &sketch_ids)? {
+                Some(definition) => definition,
+                None => match cached_shape_definition(ctx, owned)? {
+                    Some(definition) => definition,
+                    None => native_definition(ctx, &object.type_name, owned)?,
+                },
+            }
         } else if is_sweep(&object.type_name) {
-            sweep_definition(ctx, &object.type_name, &owned, &sketch_ids)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            sweep_definition(ctx, &object.type_name, owned, &sketch_ids)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_helical_sweep(&object.type_name) {
             helical_sweep_definition(
                 ctx,
                 &object.type_name,
                 object.id(),
-                &owned,
+                owned,
                 &sketch_ids,
-                objects,
+                &object_by_id,
                 &properties_by_owner,
             )?
-            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if matches!(object.type_name.as_str(), "Part::Helix" | "Part::Spiral") {
-            parametric_helix_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            parametric_helix_definition(ctx, &object.type_name, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_binder(&object.type_name) {
-            binder_definition(ctx, &object.type_name, &owned, &feature_ids)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            binder_definition(ctx, &object.type_name, owned, &feature_ids)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_pattern(&object.type_name) {
             pattern_definition(
                 ctx,
                 &object.type_name,
                 object.id(),
-                &owned,
+                owned,
                 &feature_ids,
                 PatternSources {
                     objects,
+                    object_by_id: &object_by_id,
+                    predecessors: &predecessors,
                     properties_by_owner: &properties_by_owner,
                     entries,
                 },
             )?
-            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if object.type_name == "Part::Scale" {
-            scale_definition(ctx, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            scale_definition(ctx, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_hole(&object.type_name) {
             hole_definition(
                 ctx,
                 object.id(),
-                &owned,
+                owned,
                 &sketch_ids,
-                objects,
+                &object_by_id,
                 &properties_by_owner,
                 program_version,
             )?
-            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_extrusion(&object.type_name) {
-            let profile = match profile_ref(ctx, object.id(), &owned, &sketch_ids)? {
+            let profile = match profile_ref(ctx, object.id(), owned, &sketch_ids)? {
                 ProfileRef::Planar(PlanarProfileRef::Unresolved(_)) => {
-                    ["Profile", "Sketch", "Base", "Source"]
-                        .iter()
-                        .find_map(|name| property(&owned, name))
-                        .map_or_else(
-                            || {
-                                ctx.copy_retained_text(
-                                    object.id(),
-                                    "fcstd unresolved profile identity",
-                                )
+                    let mut selected = None;
+                    for name in ["Profile", "Sketch", "Base", "Source"] {
+                        if let Some(candidate) = property(ctx, owned, name)? {
+                            selected = Some(candidate);
+                            break;
+                        }
+                    }
+                    selected.map_or_else(
+                        || {
+                            ctx.copy_retained_text(object.id(), "fcstd unresolved profile identity")
                                 .map(|id| ProfileRef::Planar(PlanarProfileRef::Unresolved(id)))
-                            },
-                            |property| {
-                                ctx.copy_retained_text(
-                                    &property.id,
-                                    "fcstd native profile identity",
-                                )
+                        },
+                        |property| {
+                            ctx.copy_retained_text(&property.id, "fcstd native profile identity")
                                 .map(|id| ProfileRef::Planar(PlanarProfileRef::Native(id)))
-                            },
-                        )?
+                        },
+                    )?
                 }
                 profile => profile,
             };
-            let profile_normal = profile_target(&owned)
-                .and_then(|(_, target)| {
-                    objects.iter().find(|object| object.id().as_str() == target)
-                })
-                .map(|profile_object| {
-                    let profile_properties = properties_by_owner
-                        .get(profile_object.id().as_str())
-                        .map(Vec::as_slice)
-                        .unwrap_or_default();
-                    sketch_frame(ctx, profile_properties).map(|frame| frame.1)
-                })
-                .transpose()?;
+            let profile_normal = match profile_target(ctx, owned)? {
+                Some((_, target)) => {
+                    match ctx.get_btree_map(&object_by_id, target, "fcstd profile object lookup")? {
+                        Some(profile_object) => {
+                            let profile_properties = ctx
+                                .get_btree_map(
+                                    &properties_by_owner,
+                                    profile_object.id().as_str(),
+                                    "fcstd profile owner properties",
+                                )?
+                                .map_or(&[][..], Vec::as_slice);
+                            Some(sketch_frame(ctx, profile_properties)?.1)
+                        }
+                        None => None,
+                    }
+                }
+                None => None,
+            };
             extrusion_definition(
                 ctx,
                 &object.type_name,
-                &owned,
+                owned,
                 profile,
                 profile_normal,
                 &ir.model.sketches,
             )?
-            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_revolution(&object.type_name) {
-            revolution_definition(ctx, &object.type_name, object.id(), &owned, &sketch_ids)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            revolution_definition(ctx, &object.type_name, object.id(), owned, &sketch_ids)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if matches!(
             object.type_name.as_str(),
             "PartDesign::Thickness" | "Part::Thickness"
         ) {
-            thickness_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            thickness_definition(ctx, &object.type_name, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if matches!(object.type_name.as_str(), "Part::Offset" | "Part::Offset2D") {
-            offset_shape_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            offset_shape_definition(ctx, &object.type_name, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if matches!(
             object.type_name.as_str(),
             "Part::Compound" | "Part::Compound2" | "Part::Refine" | "Part::Reverse"
         ) {
-            derived_shape_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            derived_shape_definition(ctx, &object.type_name, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if object.type_name == "Part::RuledSurface" {
-            ruled_surface_definition(ctx, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            ruled_surface_definition(ctx, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if object.type_name == "Part::Section" {
-            section_shape_definition(ctx, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            section_shape_definition(ctx, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if object.type_name == "Part::Mirroring" {
-            mirror_shape_definition(ctx, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            mirror_shape_definition(ctx, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if object.type_name == "Part::ProjectOnSurface" {
-            project_on_surface_definition(ctx, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            project_on_surface_definition(ctx, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if object.type_name == "PartDesign::Draft" {
-            draft_definition(ctx, &owned, objects, &properties_by_owner)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            draft_definition(ctx, owned, &object_by_id, &properties_by_owner)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_fillet(&object.type_name) {
-            fillet_definition(ctx, &object.type_name, &owned, entries)?
-                .or_else(|| cached_shape_definition(&owned))
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            match fillet_definition(ctx, &object.type_name, owned, entries)? {
+                Some(definition) => definition,
+                None => match cached_shape_definition(ctx, owned)? {
+                    Some(definition) => definition,
+                    None => native_definition(ctx, &object.type_name, owned)?,
+                },
+            }
         } else if is_chamfer(&object.type_name) {
-            chamfer_definition(ctx, &object.type_name, &owned, entries, program_version)?
-                .or_else(|| cached_shape_definition(&owned))
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            match chamfer_definition(ctx, &object.type_name, owned, entries, program_version)? {
+                Some(definition) => definition,
+                None => match cached_shape_definition(ctx, owned)? {
+                    Some(definition) => definition,
+                    None => native_definition(ctx, &object.type_name, owned)?,
+                },
+            }
         } else {
-            native_definition(ctx, &object.type_name, &owned)?
+            native_definition(ctx, &object.type_name, owned)?
         };
-        if cycle_affected.contains(object.id().as_str()) {
-            definition = native_definition(ctx, &object.type_name, &owned)?;
+        if ctx.contains_btree_set(
+            &cycle_affected,
+            object.id().as_str(),
+            "fcstd design cycle object lookup",
+        )? {
+            definition = native_definition(ctx, &object.type_name, owned)?;
         }
         let mut semantic_dependencies = Vec::new();
+        let mut semantic_storage = ctx.reserve_scoped(0, "fcstd semantic dependency storage")?;
         if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = &definition {
-            for seed in seeds {
+            for seed in ctx.admit_iter(seeds, "fcstd design pattern seeds")? {
                 if let PatternSeed::Feature(feature) = seed {
-                    ctx.reserve_vec(
-                        &mut semantic_dependencies,
-                        1,
-                        "fcstd design pattern dependencies",
-                    )?;
-                    semantic_dependencies.push(
-                        feature.try_clone_for_decode(ctx, "fcstd design pattern dependency")?,
-                    );
+                    semantic_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut semantic_dependencies,
+                            feature.try_clone_for_decode(ctx, "fcstd design pattern dependency")?,
+                            "fcstd design pattern dependencies",
+                        )
+                    })?;
                 }
             }
         }
-        let definition = post_processed_definition(ctx, definition, &object.type_name, &owned)?;
-        append_operation_parameters(ctx, &mut ir.model.parameters, object, &owned)?;
+        let definition = post_processed_definition(ctx, definition, &object.type_name, owned)?;
+        append_operation_parameters(ctx, &mut ir.model.parameters, object, owned)?;
         let mut outputs = Vec::new();
-        for payload in payloads
-            .iter()
-            .filter(|payload| owned.iter().any(|property| property.id == payload.property))
-        {
-            let prefix = crate::native::model_id_charged_at(
-                ctx,
-                "body",
-                &payload.id,
-                "",
-                "fcstd design body output prefix",
-            )?;
-            for body in body_ids
-                .iter()
-                .filter(|body| body.as_str().starts_with(&prefix))
-            {
-                ctx.reserve_vec(&mut outputs, 1, "fcstd design feature outputs")?;
-                outputs.push(body.try_clone_for_decode(ctx, "fcstd design output body")?);
+        let owned_payloads = ctx
+            .get_btree_map(
+                &payloads_by_owner,
+                object.id().as_str(),
+                "fcstd design owner payload lookup",
+            )?
+            .map_or(&[][..], Vec::as_slice);
+        for payload in ctx.admit_iter(owned_payloads, "fcstd design body payloads")? {
+            let prefix = BodyOutputPrefix::new(ctx, payload)?;
+            for body in ctx.admit_iter(&body_ids, "fcstd design body output candidates")? {
+                if !ctx.starts_with(
+                    body.as_str(),
+                    &prefix.text,
+                    "fcstd design body output prefix",
+                )? {
+                    continue;
+                }
+                ctx.push_vec(
+                    &mut outputs,
+                    body.try_clone_for_decode(ctx, "fcstd design output body")?,
+                    "fcstd design feature outputs",
+                )?;
             }
         }
-        let cycle_affected = cycle_affected.contains(object.id().as_str());
+        let cycle_affected = ctx.contains_btree_set(
+            &cycle_affected,
+            object.id().as_str(),
+            "fcstd design cycle object lookup",
+        )?;
         let dependencies = if cycle_affected {
             // The native object and property arenas retain the exact cycle.
             // A neutral edge would require a decoder-owned cycle break and
             // would change when persisted declaration order changes.
             Vec::new()
         } else {
+            let mut dependency_storage =
+                ctx.reserve_scoped(0, "fcstd design dependency candidates")?;
             let mut dependency_objects = Vec::new();
             if !is_body(&object.type_name) {
-                for dependency in &object.dependencies {
-                    ctx.reserve_vec(
+                for dependency in
+                    ctx.admit_iter(&object.dependencies, "fcstd design declared dependencies")?
+                {
+                    ctx.push_scoped_vec(
+                        &mut dependency_storage,
                         &mut dependency_objects,
-                        1,
+                        (dependency.as_str(), true),
                         "fcstd design dependency candidates",
                     )?;
-                    dependency_objects.push((dependency.as_str(), true));
                 }
             }
-            for dependency in owned
-                .iter()
-                .flat_map(|property| property.links())
-                .filter_map(|link| link.as_ref()?.object())
-            {
-                ctx.reserve_vec(
-                    &mut dependency_objects,
-                    1,
-                    "fcstd design dependency candidates",
-                )?;
-                dependency_objects.push((dependency, false));
+            for property in ctx.admit_iter(owned, "fcstd design dependency properties")? {
+                for link in ctx.admit_iter(property.links(), "fcstd design dependency links")? {
+                    let Some(dependency) =
+                        link.as_ref().and_then(crate::native::LinkTarget::object)
+                    else {
+                        continue;
+                    };
+                    ctx.push_scoped_vec(
+                        &mut dependency_storage,
+                        &mut dependency_objects,
+                        (dependency, false),
+                        "fcstd design dependency candidates",
+                    )?;
+                }
             }
             let mut seen_dependencies = BTreeSet::new();
+            let mut seen_dependency_storage =
+                ctx.reserve_scoped(0, "fcstd design unique dependency storage")?;
             let mut dependencies = Vec::new();
-            for (dependency, declared) in dependency_objects {
-                if seen_dependencies.contains(dependency) {
+            for &(dependency, declared) in ctx.admit_iter(
+                &dependency_objects,
+                "fcstd design dependency candidate traversal",
+            )? {
+                if ctx.contains_btree_set(
+                    &seen_dependencies,
+                    dependency,
+                    "fcstd design unique dependency search",
+                )? {
                     continue;
                 }
-                ctx.insert_btree_set(
-                    &mut seen_dependencies,
+                seen_dependency_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut seen_dependencies,
+                        dependency,
+                        "fcstd design unique dependencies",
+                    )
+                })?;
+                if let Some(feature) = ctx.get_hash_map(
+                    &feature_ids,
                     dependency,
-                    "fcstd design unique dependencies",
-                )?;
-                if let Some(feature) = feature_ids.get(dependency) {
-                    if declared
-                        || ordinal_by_feature.get(feature).is_some_and(|ordinal| {
-                            *ordinal < feature_ordinals[object.id().as_str()]
-                        })
-                    {
-                        ctx.reserve_vec(&mut dependencies, 1, "fcstd design feature dependencies")?;
-                        dependencies.push(
+                    "fcstd design feature dependency lookup",
+                )? {
+                    let include = if declared {
+                        true
+                    } else {
+                        ctx.get_hash_map(
+                            &ordinal_by_feature,
+                            feature,
+                            "fcstd design dependency ordinal lookup",
+                        )?
+                        .is_some_and(|ordinal| *ordinal < object_ordinal)
+                    };
+                    if include {
+                        ctx.push_vec(
+                            &mut dependencies,
                             feature.try_clone_for_decode(ctx, "fcstd design feature dependency")?,
-                        );
+                            "fcstd design feature dependencies",
+                        )?;
                     }
                 }
             }
-            for dependency in semantic_dependencies {
-                if !dependencies.contains(&dependency)
-                    && ordinal_by_feature
-                        .get(&dependency)
-                        .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id().as_str()])
-                {
-                    ctx.reserve_vec(&mut dependencies, 1, "fcstd design feature dependencies")?;
-                    dependencies.push(dependency);
+            for dependency in ctx.admit_iter(
+                &semantic_dependencies,
+                "fcstd semantic dependency candidates",
+            )? {
+                let duplicate = ctx
+                    .find_by(
+                        &dependencies,
+                        |existing| {
+                            ctx.equal(
+                                existing.as_str(),
+                                dependency.as_str(),
+                                "fcstd design semantic dependency identity",
+                            )
+                        },
+                        "fcstd design semantic dependency search",
+                    )?
+                    .is_some();
+                let include = if duplicate {
+                    false
+                } else {
+                    ctx.get_hash_map(
+                        &ordinal_by_feature,
+                        dependency,
+                        "fcstd design semantic dependency ordinal lookup",
+                    )?
+                    .is_some_and(|ordinal| *ordinal < object_ordinal)
+                };
+                if include {
+                    ctx.push_vec(
+                        &mut dependencies,
+                        dependency.try_clone_for_decode(
+                            ctx,
+                            "fcstd design semantic dependency identity",
+                        )?,
+                        "fcstd design feature dependencies",
+                    )?;
                 }
             }
             dependencies
@@ -499,48 +681,78 @@ pub(crate) fn transfer(
             "fcstd distinct feature dependencies",
         )?;
         dependency_members.append(ctx, dependencies, "fcstd distinct feature dependencies")?;
-        ctx.reserve_vec(&mut ir.model.features, 1, "fcstd neutral features")?;
-        ir.model.features.push(Feature {
-            id,
-            ordinal: feature_ordinals[object.id().as_str()],
-            name: Some(ctx.copy_retained_text(object.name(), "fcstd feature name")?),
-            suppressed: bool_property(ctx, &owned, "Suppressed")?,
-            dependencies: dependency_members,
-            source_properties: feature_state(ctx, object.id(), &owned)?,
-            source_tag: Some(
-                ctx.copy_retained_text(&object.type_name, "fcstd feature source type")?,
-            ),
-            source_text: None,
-            source_content: FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-                definition,
-                cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)
-                    .map_err(cadmpeg_core::CodecError::from)?,
-            ),
-            native_ref: Some(
-                ctx.copy_retained_text(object.id(), "fcstd feature native reference")?,
-            ),
-        });
-    }
-    let mut initial_cycle_affected_features = BTreeSet::new();
-    for object in objects
-        .iter()
-        .filter(|object| cycle_affected.contains(object.id().as_str()))
-    {
-        ctx.insert_btree_set(
-            &mut initial_cycle_affected_features,
-            feature_id(ctx, object)?,
-            "fcstd design cycle feature identities",
+        ctx.push_vec(
+            &mut ir.model.features,
+            Feature {
+                id,
+                ordinal: object_ordinal,
+                name: Some(ctx.copy_retained_text(object.name(), "fcstd feature name")?),
+                suppressed: bool_property(ctx, owned, "Suppressed")?,
+                dependencies: dependency_members,
+                source_properties: feature_state(ctx, object.id(), owned)?,
+                source_tag: Some(
+                    ctx.copy_retained_text(&object.type_name, "fcstd feature source type")?,
+                ),
+                source_text: None,
+                source_content: FeatureContent::default(),
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                    definition,
+                    cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)
+                        .map_err(cadmpeg_core::CodecError::from)?,
+                ),
+                native_ref: Some(
+                    ctx.copy_retained_text(object.id(), "fcstd feature native reference")?,
+                ),
+            },
+            "fcstd neutral features",
         )?;
     }
-    let parameter_cycle_features = bind_parameter_dependencies(
+    drop(body_ids);
+    drop(body_ids_storage);
+    drop(predecessors);
+    drop(predecessor_storage);
+    drop(feature_ids);
+    drop(feature_ids_storage);
+    drop(sketch_ids);
+    drop(sketch_ids_storage);
+    drop(ordinal_by_feature);
+    drop(ordinal_by_feature_storage);
+    drop(feature_ordinals);
+    drop(feature_ordinal_storage);
+    let mut initial_cycle_storage = ctx.reserve_scoped(0, "fcstd initial cycle feature storage")?;
+    let mut initial_cycle_affected_features = BTreeSet::new();
+    for object in ctx.admit_iter(objects, "fcstd design cycle objects")? {
+        if !ctx.contains_btree_set(
+            &cycle_affected,
+            object.id().as_str(),
+            "fcstd design cycle object lookup",
+        )? {
+            continue;
+        }
+        initial_cycle_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut initial_cycle_affected_features,
+                feature_id(ctx, object)?,
+                "fcstd design cycle feature identities",
+            )
+        })?;
+    }
+    let (parameter_cycle_features, _parameter_cycle_storage) = bind_parameter_dependencies(
         ctx,
         &mut ir.model.parameters,
         objects,
         &initial_cycle_affected_features,
     )?;
-    for object in objects {
-        if !parameter_cycle_features.contains(&feature_id(ctx, object)?) {
+    for object in ctx.admit_iter(objects, "fcstd design parameter cycle objects")? {
+        let (object_feature, _object_feature_storage) = ctx
+            .with_scoped_storage("fcstd parameter cycle lookup identity storage", || {
+                feature_id(ctx, object)
+            })?;
+        if !ctx.contains_btree_set(
+            &parameter_cycle_features,
+            &object_feature,
+            "fcstd design parameter cycle feature lookup",
+        )? {
             continue;
         }
         ctx.insert_btree_set(
@@ -548,19 +760,29 @@ pub(crate) fn transfer(
             ctx.copy_retained_text(object.id(), "fcstd design parameter cycle identity")?,
             "fcstd design parameter cycle objects",
         )?;
-        if let Some(feature) = ir
-            .model
-            .features
-            .iter_mut()
-            .find(|feature| feature.native_ref.as_deref() == Some(object.id().as_str()))
-        {
+        let feature_index = ctx.position_by(
+            &ir.model.features,
+            |feature| match feature.native_ref.as_deref() {
+                Some(native_ref) => ctx.equal(
+                    native_ref,
+                    object.id().as_str(),
+                    "fcstd design feature native reference",
+                ),
+                None => Ok(false),
+            },
+            "fcstd design feature native reference search",
+        )?;
+        if let Some(feature) = feature_index.and_then(|index| ir.model.features.get_mut(index)) {
             feature.evaluation.set_definition(native_definition(
                 ctx,
                 &object.type_name,
-                properties_by_owner
-                    .get(object.id().as_str())
-                    .map(Vec::as_slice)
-                    .unwrap_or_default(),
+                ctx.get_btree_map(
+                    &properties_by_owner,
+                    object.id().as_str(),
+                    "fcstd design cycle owner properties",
+                )?
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
             )?);
             feature.dependencies.clear();
         }
@@ -568,21 +790,64 @@ pub(crate) fn transfer(
     Ok(cycle_affected)
 }
 
-fn body_membership_property<'a>(properties: &'a [&PropertyRecord]) -> Option<&'a PropertyRecord> {
-    match (property(properties, "Group"), property(properties, "Model")) {
-        (Some(group), None) | (None, Some(group)) if group.type_name == "App::PropertyLinkList" => {
-            Some(group)
-        }
-        _ => None,
+/// A body identity prefix and the reservation for its temporary text.
+struct BodyOutputPrefix<'ctx> {
+    text: String,
+    _storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx> BodyOutputPrefix<'ctx> {
+    fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        payload: &crate::brep::ShapePayloadRecord,
+    ) -> Result<Self, CodecError> {
+        let key = ctx
+            .split_once(&payload.id, "#", "fcstd design body output identity key")?
+            .map_or(payload.id.as_str(), |(_, key)| key);
+        let (text, storage) = ctx.format_scoped(
+            format_args!("fcstd:model:body#{key}:"),
+            "fcstd design body output prefix",
+        )?;
+        Ok(Self {
+            text,
+            _storage: storage,
+        })
     }
 }
 
-fn body_membership_carrier_is_valid(properties: &[&PropertyRecord]) -> bool {
-    match (property(properties, "Group"), property(properties, "Model")) {
-        (None, None) => true,
-        (Some(group), None) | (None, Some(group)) => group.type_name == "App::PropertyLinkList",
-        (Some(_), Some(_)) => false,
-    }
+fn body_membership_property<'a>(
+    ctx: &DecodeContext<'_>,
+    properties: &[&'a PropertyRecord],
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    Ok(
+        match (
+            property(ctx, properties, "Group")?,
+            property(ctx, properties, "Model")?,
+        ) {
+            (Some(group), None) | (None, Some(group))
+                if group.type_name == "App::PropertyLinkList" =>
+            {
+                Some(group)
+            }
+            _ => None,
+        },
+    )
+}
+
+fn body_membership_carrier_is_valid(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+) -> Result<bool, CodecError> {
+    Ok(
+        match (
+            property(ctx, properties, "Group")?,
+            property(ctx, properties, "Model")?,
+        ) {
+            (None, None) => true,
+            (Some(group), None) | (None, Some(group)) => group.type_name == "App::PropertyLinkList",
+            (Some(_), Some(_)) => false,
+        },
+    )
 }
 
 fn body_definition(
@@ -590,20 +855,23 @@ fn body_definition(
     properties: &[&PropertyRecord],
     feature_ids: &HashMap<&str, FeatureId>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    if !body_membership_carrier_is_valid(properties) {
+    if !body_membership_carrier_is_valid(ctx, properties)? {
         return Ok(None);
     }
     let mut children = Vec::new();
-    if let Some(property) = body_membership_property(properties) {
-        for target in property
-            .links()
-            .iter()
-            .filter_map(|link| link.as_ref()?.object())
-        {
-            if let Some(feature) = feature_ids.get(target) {
-                ctx.reserve_vec(&mut children, 1, "fcstd body member features")?;
-                children
-                    .push(feature.try_clone_for_decode(ctx, "fcstd body member feature identity")?);
+    if let Some(property) = body_membership_property(ctx, properties)? {
+        for link in ctx.admit_iter(property.links(), "fcstd body member links")? {
+            let Some(target) = link.as_ref().and_then(|link| link.object()) else {
+                continue;
+            };
+            if let Some(feature) =
+                ctx.get_hash_map(feature_ids, target, "fcstd body member feature lookup")?
+            {
+                ctx.push_vec(
+                    &mut children,
+                    feature.try_clone_for_decode(ctx, "fcstd body member feature identity")?,
+                    "fcstd body member features",
+                )?;
             }
         }
     }
@@ -615,7 +883,7 @@ fn body_definition(
         match cadmpeg_ir::features::TreeChildren::new(children, active_child, ctx) {
             Ok(children) => Some(children),
             Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
-                return Err(limit.into())
+                return Err(CodecError::ResourceLimit(limit))
             }
             Err(_) => None,
         }
@@ -638,7 +906,7 @@ fn body_tip(
     properties: &[&PropertyRecord],
     feature_ids: &HashMap<&str, FeatureId>,
 ) -> Result<BodyTipResolution, CodecError> {
-    let Some(property) = property(properties, "Tip") else {
+    let Some(property) = property(ctx, properties, "Tip")? else {
         return Ok(BodyTipResolution::Valid(None));
     };
     if property.type_name != "App::PropertyLink" {
@@ -654,7 +922,7 @@ fn body_tip(
             let Some(target) = link.object() else {
                 return Ok(BodyTipResolution::Valid(None));
             };
-            match feature_ids.get(target) {
+            match ctx.get_hash_map(feature_ids, target, "fcstd body tip feature lookup")? {
                 Some(feature) => BodyTipResolution::Valid(Some(
                     feature.try_clone_for_decode(ctx, "fcstd body tip feature identity")?,
                 )),
@@ -665,38 +933,59 @@ fn body_tip(
     })
 }
 
-fn feature_ordinals<'a>(
-    ctx: &DecodeContext<'_>,
+struct FeatureOrdering<'ctx, 'a> {
+    ordinals: HashMap<&'a str, u64>,
+    cycle_affected: BTreeSet<String>,
+    storage: ScopedReservation<'ctx>,
+}
+
+fn feature_ordinals<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
     objects: &'a [ObjectRecord],
-    properties_by_owner: &HashMap<&'a str, Vec<&'a PropertyRecord>>,
+    properties_by_owner: &BTreeMap<&'a str, Vec<&'a PropertyRecord>>,
     parent_by_member: &HashMap<&'a str, FeatureId>,
-) -> Result<(HashMap<&'a str, u64>, BTreeSet<String>), CodecError> {
-    let count = objects
-        .iter()
-        .filter(|object| is_design_object(&object.type_name))
-        .count();
-    let mut design_objects = ctx.collection_vec(count, "fcstd design ordered objects")?;
-    design_objects.extend(
-        objects
-            .iter()
-            .filter(|object| is_design_object(&object.type_name)),
-    );
+) -> Result<FeatureOrdering<'ctx, 'a>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "fcstd design ordinal working storage")?;
+    let mut design_objects = Vec::new();
+    for object in ctx.admit_iter(objects, "fcstd design ordered objects")? {
+        if is_design_object(&object.type_name) {
+            storage.with_storage(|| {
+                ctx.push_vec(&mut design_objects, object, "fcstd design ordered objects")
+            })?;
+        }
+    }
+    let count = design_objects.len();
     let mut object_by_id = HashMap::new();
     let mut object_by_name = HashMap::new();
     let mut object_by_feature = HashMap::new();
-    for (map, operation) in [
-        (&mut object_by_id, "fcstd design id index"),
-        (&mut object_by_name, "fcstd design name index"),
-    ] {
-        ctx.reserve_map(map, count, operation)?;
-    }
-    ctx.reserve_map(&mut object_by_feature, count, "fcstd design feature index")?;
-    let mut source_ordinals = ctx.collection_vec(count, "fcstd design source ordinals")?;
-    for object in &design_objects {
-        object_by_id.insert(object.id().as_str(), *object);
-        object_by_name.insert(object.name().as_str(), *object);
-        object_by_feature.insert(feature_id(ctx, object)?, object.id().as_str());
-        source_ordinals.push(cadmpeg_core::decode::u64_from_index(object.order));
+    let mut source_ordinals =
+        storage.with_storage(|| ctx.vector_storage(count, "fcstd design source ordinals"))?;
+    for object in ctx.admit_iter(&design_objects, "fcstd design source indexes")? {
+        storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut object_by_id,
+                object.id().as_str(),
+                *object,
+                "fcstd design id index",
+            )?;
+            ctx.insert_hash_map(
+                &mut object_by_name,
+                object.name().as_str(),
+                *object,
+                "fcstd design name index",
+            )?;
+            ctx.insert_hash_map(
+                &mut object_by_feature,
+                feature_id(ctx, object)?,
+                object.id().as_str(),
+                "fcstd design feature index",
+            )?;
+            ctx.push_vec(
+                &mut source_ordinals,
+                cadmpeg_core::decode::u64_from_index(object.order),
+                "fcstd design source ordinals",
+            )
+        })?;
     }
     ctx.sort_unstable_by(
         &mut source_ordinals,
@@ -705,71 +994,111 @@ fn feature_ordinals<'a>(
         "fcstd design source ordinals sort",
     )?;
     let mut emitted = BTreeSet::new();
+    let mut ordinal_storage = ctx.reserve_scoped(0, "fcstd design ordinal result storage")?;
     let mut ordinals = HashMap::new();
     let mut cycle_affected = BTreeSet::new();
 
-    while emitted.len() < design_objects.len() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(design_objects.len()),
-            "fcstd design dependency ordering",
-        )?;
-        let next = design_objects
-            .iter()
-            .copied()
-            .filter(|object| !emitted.contains(object.id().as_str()))
-            .filter(|object| {
-                let parent_ready = parent_by_member
-                    .get(object.id().as_str())
-                    .and_then(|parent| object_by_feature.get(parent))
-                    .is_none_or(|parent| emitted.contains(parent));
-                if !parent_ready {
-                    return false;
+    let dependencies = storage.with_storage(|| {
+        let mut dependencies =
+            ctx.vector_storage(design_objects.len(), "fcstd design dependency lists")?;
+        for object in ctx.admit_iter(&design_objects, "fcstd design dependency sources")? {
+            let mut required = BTreeSet::new();
+            if let Some(parent) = ctx.get_hash_map(
+                parent_by_member,
+                object.id().as_str(),
+                "fcstd design membership parent lookup",
+            )? {
+                if let Some(parent) = ctx.get_hash_map(
+                    &object_by_feature,
+                    parent,
+                    "fcstd design feature parent lookup",
+                )? {
+                    ctx.insert_btree_set(&mut required, *parent, "fcstd design required parent")?;
                 }
-
-                let declared_ready = is_body(&object.type_name)
-                    || object.dependencies.iter().all(|dependency| {
-                        !object_by_id.contains_key(dependency.as_str())
-                            || emitted.contains(dependency.as_str())
-                    });
-                if !declared_ready {
-                    return false;
+            }
+            if !is_body(&object.type_name) {
+                for dependency in
+                    ctx.admit_iter(&object.dependencies, "fcstd declared design dependencies")?
+                {
+                    if ctx.contains_key_hash_map(
+                        &object_by_id,
+                        dependency.as_str(),
+                        "fcstd declared dependency lookup",
+                    )? {
+                        ctx.insert_btree_set(
+                            &mut required,
+                            dependency.as_str(),
+                            "fcstd design required declaration",
+                        )?;
+                    }
                 }
-                let expressions_ready = properties_by_owner
-                    .get(object.id().as_str())
-                    .into_iter()
-                    .flatten()
-                    .flat_map(|property| property.values())
-                    .filter_map(|value| value.attributes.get("expression"))
-                    .flat_map(|expression| expression_identifiers(expression))
-                    .filter_map(|identifier| identifier.split_once('.').map(|(owner, _)| owner))
-                    .filter_map(|owner| object_by_name.get(owner))
-                    .all(|dependency| {
-                        dependency.id() == object.id() || emitted.contains(dependency.id().as_str())
-                    });
-                if !expressions_ready {
-                    return false;
-                }
-                if is_body(&object.type_name) {
-                    return true;
-                }
-
-                properties_by_owner
-                    .get(object.id().as_str())
-                    .into_iter()
-                    .flatten()
-                    .flat_map(|property| {
-                        property
-                            .links()
-                            .iter()
-                            .map(move |link| (property.name.as_str(), link))
-                    })
-                    .filter_map(|(property_name, link)| {
-                        Some((property_name, link.as_ref()?.object()?))
-                    })
-                    .filter(|(property_name, dependency)| {
-                        object_by_id.get(dependency).is_some_and(|dependency| {
-                            matches!(
-                                *property_name,
+            }
+            if let Some(properties) = ctx.get_btree_map(
+                properties_by_owner,
+                object.id().as_str(),
+                "fcstd design dependency properties",
+            )? {
+                for property in ctx.admit_iter(properties, "fcstd design dependency properties")? {
+                    for value in
+                        ctx.admit_iter(property.values(), "fcstd design expression values")?
+                    {
+                        if let Some(expression) = ctx.get_btree_map(
+                            &value.attributes,
+                            "expression",
+                            "fcstd design expression attribute",
+                        )? {
+                            expression_identifiers_until(
+                                ctx,
+                                expression,
+                                "fcstd design expression identifiers",
+                                |identifier| {
+                                    if let Some((owner, _)) = ctx.split_once(
+                                        identifier,
+                                        ".",
+                                        "fcstd design expression owner separator",
+                                    )? {
+                                        if let Some(dependency) = ctx.get_hash_map(
+                                            &object_by_name,
+                                            owner,
+                                            "fcstd design expression owner lookup",
+                                        )? {
+                                            if !ctx.equal(
+                                                dependency.id(),
+                                                object.id(),
+                                                "fcstd design expression self identity",
+                                            )? {
+                                                ctx.insert_btree_set(
+                                                    &mut required,
+                                                    dependency.id().as_str(),
+                                                    "fcstd design required expression",
+                                                )?;
+                                            }
+                                        }
+                                    }
+                                    Ok(true)
+                                },
+                            )?;
+                        }
+                    }
+                    if !is_body(&object.type_name) {
+                        for link in
+                            ctx.admit_iter(property.links(), "fcstd design property links")?
+                        {
+                            let Some(dependency_id) =
+                                link.as_ref().and_then(crate::native::LinkTarget::object)
+                            else {
+                                continue;
+                            };
+                            let Some(dependency) = ctx.get_hash_map(
+                                &object_by_id,
+                                dependency_id,
+                                "fcstd design linked dependency lookup",
+                            )?
+                            else {
+                                continue;
+                            };
+                            if matches!(
+                                property.name.as_str(),
                                 "Base"
                                     | "BaseFeature"
                                     | "Originals"
@@ -780,47 +1109,100 @@ fn feature_ordinals<'a>(
                                     | "Source"
                                     | "Spine"
                             ) || dependency.order < object.order
-                        })
-                    })
-                    .all(|(_, dependency)| emitted.contains(dependency))
-            })
-            .min_by_key(|object| object.order);
-        let next = if let Some(next) = next {
-            next
-        } else {
-            for object in design_objects
-                .iter()
-                .copied()
-                .filter(|object| !emitted.contains(object.id().as_str()))
-            {
-                ctx.insert_btree_set(
-                    &mut cycle_affected,
-                    ctx.copy_retained_text(object.id(), "fcstd design cycle object")?,
-                    "fcstd design cycle affected objects",
-                )?;
+                            {
+                                ctx.insert_btree_set(
+                                    &mut required,
+                                    dependency_id,
+                                    "fcstd design required link",
+                                )?;
+                            }
+                        }
+                    }
+                }
             }
-            design_objects
-                .iter()
-                .copied()
-                .filter(|object| !emitted.contains(object.id().as_str()))
-                .min_by_key(|object| object.order)
-                .ok_or_else(|| {
+            ctx.push_vec(&mut dependencies, required, "fcstd design dependency lists")?;
+        }
+        Ok::<_, CodecError>(dependencies)
+    })?;
+    for ordinal in ctx.admit_iter(&source_ordinals, "fcstd design dependency ordering passes")? {
+        let mut next: Option<&ObjectRecord> = None;
+        for (index, object) in ctx
+            .admit_iter(&design_objects, "fcstd design dependency ordering")?
+            .enumerate()
+        {
+            if ctx.contains_btree_set(
+                &emitted,
+                object.id().as_str(),
+                "fcstd design emitted object lookup",
+            )? {
+                continue;
+            }
+            if !ctx.all_by(
+                &dependencies[index],
+                |dependency| {
+                    ctx.contains_btree_set(
+                        &emitted,
+                        *dependency,
+                        "fcstd design emitted dependency lookup",
+                    )
+                },
+                "fcstd design dependency readiness",
+            )? {
+                continue;
+            }
+            if next.is_none_or(|current| object.order < current.order) {
+                next = Some(object);
+            }
+        }
+        let next = match next {
+            Some(next) => next,
+            None => {
+                let mut next: Option<&ObjectRecord> = None;
+                for object in ctx.admit_iter(&design_objects, "fcstd design cycle objects")? {
+                    if ctx.contains_btree_set(
+                        &emitted,
+                        object.id().as_str(),
+                        "fcstd design emitted cycle object lookup",
+                    )? {
+                        continue;
+                    }
+                    ctx.insert_btree_set(
+                        &mut cycle_affected,
+                        ctx.copy_retained_text(object.id(), "fcstd design cycle object")?,
+                        "fcstd design cycle affected objects",
+                    )?;
+                    if next.is_none_or(|current| object.order < current.order) {
+                        next = Some(object);
+                    }
+                }
+                next.ok_or_else(|| {
                     CodecError::malformed(
                         "design object ordering lost an un-emitted object while resolving a cycle",
                     )
                 })?
+            }
         };
-        let ordinal = source_ordinals[ordinals.len()];
-        ctx.insert_btree_set(
-            &mut emitted,
-            next.id().as_str(),
-            "fcstd design emitted objects",
-        )?;
-        ctx.reserve_map(&mut ordinals, 1, "fcstd design ordinals")?;
-        ordinals.insert(next.id().as_str(), ordinal);
+        storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut emitted,
+                next.id().as_str(),
+                "fcstd design emitted objects",
+            )
+        })?;
+        ordinal_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut ordinals,
+                next.id().as_str(),
+                *ordinal,
+                "fcstd design ordinals",
+            )
+        })?;
     }
-
-    Ok((ordinals, cycle_affected))
+    Ok(FeatureOrdering {
+        ordinals,
+        cycle_affected,
+        storage: ordinal_storage,
+    })
 }
 
 /// Apply an operation's shape-refinement and boolean-tolerance controls.
@@ -861,7 +1243,7 @@ fn post_process_controls(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
 ) -> Result<PostProcessControlState, CodecError> {
-    let refine = match unique_named_property(properties, "Refine") {
+    let refine = match unique_named_property(ctx, properties, "Refine")? {
         NamedProperty::Present(property) => match direct_bool_value(ctx, property)? {
             Some(value) => Some(value),
             None => return Ok(PostProcessControlState::Malformed),
@@ -869,7 +1251,7 @@ fn post_process_controls(
         NamedProperty::Absent => None,
         NamedProperty::Duplicate => return Ok(PostProcessControlState::Malformed),
     };
-    let fuzzy_tolerance = match unique_named_property(properties, "FuzzyTolerance") {
+    let fuzzy_tolerance = match unique_named_property(ctx, properties, "FuzzyTolerance")? {
         NamedProperty::Present(property) => match direct_fuzzy_tolerance(ctx, property)? {
             Some(value) => Some(value),
             None => return Ok(PostProcessControlState::Malformed),
@@ -892,428 +1274,20 @@ enum NamedProperty<'a> {
     Duplicate,
 }
 
-fn unique_named_property<'a>(properties: &[&'a PropertyRecord], name: &str) -> NamedProperty<'a> {
-    match crate::native::unique_property(properties.iter().copied(), |property| {
-        property.name == name
-    }) {
-        Ok(Some(property)) => NamedProperty::Present(property),
-        Ok(None) => NamedProperty::Absent,
-        Err(_) => NamedProperty::Duplicate,
-    }
-}
-
-fn direct_spreadsheet_value<'a, 'input: 'a>(
+fn unique_named_property<'a>(
     ctx: &DecodeContext<'_>,
-    xml: &'a roxmltree::Document<'input>,
-    tag: &str,
-    property_id: &str,
-) -> Result<roxmltree::Node<'a, 'input>, CodecError> {
-    let total = xml
-        .descendants()
-        .filter(|node| node.has_tag_name(tag))
-        .count();
-    if total == 0 {
-        return Err(malformed_design(
-            ctx,
-            format_args!("{property_id} has no {tag} value"),
-        ));
-    }
-    if total > 1 {
-        return Err(malformed_design(
-            ctx,
-            format_args!("{property_id} has multiple {tag} values"),
-        ));
-    }
-    xml.root_element()
-        .children()
-        .find(|node| node.has_tag_name(tag))
-        .ok_or_else(|| {
-            malformed_design(ctx, format_args!("{property_id} has no direct {tag} value"))
-        })
-}
-
-fn append_spreadsheet(
-    ctx: &DecodeContext<'_>,
-    parameters: &mut Vec<DesignParameter>,
-    object: &ObjectRecord,
-    properties: &[&PropertyRecord],
-) -> Result<Spreadsheet, CodecError> {
-    let property = crate::native::unique_property(properties.iter().copied(), |property| {
-        property.name == "cells" && property.type_name == "Spreadsheet::PropertySheet"
-    })
-    .map_err(|_| malformed("spreadsheet has multiple cells properties"))?
-    .ok_or_else(|| {
-        malformed_design(
-            ctx,
-            format_args!("spreadsheet {} has no cells property", object.id()),
-        )
-    })?;
-    let admitted_xml = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
-        .map_err(|error| {
-            let CodecError::Malformed(error) = error else {
-                return error;
-            };
-            malformed_design(
-                ctx,
-                format_args!("invalid spreadsheet {}: {error}", property.id),
-            )
-        })?;
-    let xml = admitted_xml.document();
-    let cells = direct_spreadsheet_value(ctx, xml, "Cells", &property.id)?;
-    let declared = cells
-        .attribute("Count")
-        .and_then(|value| value.parse::<usize>().ok())
-        .ok_or_else(|| {
-            malformed_design(ctx, format_args!("{} has invalid Cells Count", property.id))
-        })?;
-    if declared > MAX_SKETCH_RECORDS {
-        return Err(malformed_design(
-            ctx,
-            format_args!("{} cell count exceeds {MAX_SKETCH_RECORDS}", property.id),
-        ));
-    }
-    let found = cells
-        .children()
-        .filter(|node| node.has_tag_name("Cell"))
-        .count();
-    if declared != found {
-        return Err(malformed_design(
-            ctx,
-            format_args!(
-                "{} declares {declared} cells but contains {}",
-                property.id, found
-            ),
-        ));
-    }
-    let mut cell_ids = ctx.collection_vec(found, "FreeCAD spreadsheet cells")?;
-    let mut merged_ranges: Vec<SpreadsheetRange> = Vec::new();
-    for (index, cell) in cells
-        .children()
-        .filter(|node| node.has_tag_name("Cell"))
-        .enumerate()
-    {
-        let address = cell.attribute("address").ok_or_else(|| {
-            malformed_design(ctx, format_args!("{} cell has no address", property.id))
-        })?;
-        let content = cell.attribute("content").unwrap_or_default();
-        let name = cell.attribute("alias").unwrap_or(address);
-        let mut retained = BTreeMap::new();
-        ctx.insert_btree_map(
-            &mut retained,
-            cadmpeg_core::nonblank_literal!("address"),
-            ctx.copy_retained_text(address, "fcstd spreadsheet address")?,
-            "fcstd spreadsheet cell properties",
-        )?;
-        for attribute in [
-            cadmpeg_core::nonblank_literal!("alias"),
-            cadmpeg_core::nonblank_literal!("alignment"),
-            cadmpeg_core::nonblank_literal!("style"),
-            cadmpeg_core::nonblank_literal!("foregroundColor"),
-            cadmpeg_core::nonblank_literal!("backgroundColor"),
-            cadmpeg_core::nonblank_literal!("displayUnit"),
-            cadmpeg_core::nonblank_literal!("rowSpan"),
-            cadmpeg_core::nonblank_literal!("colSpan"),
-        ] {
-            if let Some(value) = cell.attribute(attribute.as_str()) {
-                ctx.insert_btree_map(
-                    &mut retained,
-                    attribute,
-                    ctx.copy_retained_text(value, "fcstd spreadsheet cell attribute")?,
-                    "fcstd spreadsheet cell properties",
-                )?;
-            }
-        }
-        let cell_address = CellAddress::parse(address).ok_or_else(|| {
-            malformed_design(
-                ctx,
-                format_args!("{} cell has invalid address", property.id),
-            )
-        })?;
-        let address_key = crate::native::encoded_segment_charged(
-            ctx,
-            address,
-            "fcstd spreadsheet cell address key",
-        )?;
-        let id = ParameterId::mint(design_identity_text(
-            ctx,
-            "parameter",
-            object,
-            format_args!(":cell:{address_key}"),
-            "fcstd spreadsheet cell identity",
-        )?)
-        .map_err(CodecError::malformed)?;
-        cell_ids.push(SpreadsheetCell {
-            address: cell_address,
-            parameter: id.try_clone_for_decode(ctx, "fcstd spreadsheet cell parameter")?,
-        });
-        if let Some(range) = merged_range(cell)? {
-            if !merged_ranges
-                .iter()
-                .any(|existing| existing.contains(range.start()))
-            {
-                ctx.reserve_vec(&mut merged_ranges, 1, "fcstd spreadsheet merged ranges")?;
-                merged_ranges.push(range);
-            }
-        }
-        ctx.reserve_vec(parameters, 1, "fcstd spreadsheet parameters")?;
-        parameters.push(DesignParameter {
-            id,
-            owner: Some(feature_id(ctx, object)?),
-            ordinal: u32::try_from(index).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "FreeCAD ordinal",
-                    u64::from(u32::MAX),
-                    cadmpeg_core::decode::u64_from_index(index),
-                )
-            })?,
-            name: ctx.copy_retained_text(name, "fcstd spreadsheet cell name")?,
-            expression: ctx.copy_retained_text(content, "fcstd spreadsheet cell expression")?,
-            display: None,
-            value: (!content.starts_with('='))
-                .then(|| {
-                    content
-                        .parse::<f64>()
-                        .ok()
-                        .and_then(cadmpeg_ir::scalar::FiniteReal::new)
-                        .map(ParameterValue::Real)
-                })
-                .flatten(),
-            dependencies: DistinctMembers::default(),
-            properties: retained,
-            pmi: None,
-            native_ref: Some(ctx.copy_retained_text(
-                &property.id,
-                "fcstd spreadsheet parameter native reference",
-            )?),
-        });
-    }
-    let column_widths = spreadsheet_dimensions(
-        ctx,
-        properties,
-        "Spreadsheet::PropertyColumnWidths",
-        "columnWidths",
-        "ColumnInfo",
-        "Column",
-        "width",
-    )?;
-    let row_heights = spreadsheet_dimensions(
-        ctx,
-        properties,
-        "Spreadsheet::PropertyRowHeights",
-        "rowHeights",
-        "RowInfo",
-        "Row",
-        "height",
-    )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(cell_ids.len()),
-        "fcstd spreadsheet distinct parameter IDs",
-    )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(cell_ids.len()),
-        "fcstd spreadsheet distinct addresses",
-    )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(column_widths.len()),
-        "fcstd spreadsheet distinct column widths",
-    )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(row_heights.len()),
-        "fcstd spreadsheet distinct row heights",
-    )?;
-    Spreadsheet::new(
-        SpreadsheetId::mint(design_identity_text(
-            ctx,
-            "spreadsheet",
-            object,
-            format_args!(""),
-            "fcstd spreadsheet identity",
-        )?)
-        .map_err(CodecError::malformed)?,
-        feature_id(ctx, object)?,
-        cell_ids,
-        column_widths,
-        row_heights,
-        merged_ranges,
-        Some(ctx.copy_retained_text(object.id(), "fcstd spreadsheet native reference")?),
+    properties: &[&'a PropertyRecord],
+    name: &str,
+) -> Result<NamedProperty<'a>, CodecError> {
+    Ok(
+        match crate::native::sole_property_matching(ctx, properties, |property| {
+            property.name == name
+        })? {
+            Ok(Some(property)) => NamedProperty::Present(property),
+            Ok(None) => NamedProperty::Absent,
+            Err(_) => NamedProperty::Duplicate,
+        },
     )
-    .map_err(CodecError::malformed)
-}
-
-fn spreadsheet_dimensions(
-    ctx: &DecodeContext<'_>,
-    properties: &[&PropertyRecord],
-    type_name: &str,
-    property_name: &str,
-    container: &str,
-    element: &str,
-    value_name: &str,
-) -> Result<Vec<SpreadsheetDimension>, CodecError> {
-    let Some(property) = crate::native::unique_property(properties.iter().copied(), |property| {
-        property.name == property_name && property.type_name == type_name
-    })
-    .map_err(|_| {
-        malformed_design(
-            ctx,
-            format_args!("spreadsheet has multiple {property_name} properties"),
-        )
-    })?
-    else {
-        return Ok(Vec::new());
-    };
-    let admitted_xml = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
-        .map_err(|error| {
-            let CodecError::Malformed(error) = error else {
-                return error;
-            };
-            malformed_design(
-                ctx,
-                format_args!("invalid spreadsheet dimension {}: {error}", property.id),
-            )
-        })?;
-    let xml = admitted_xml.document();
-    let root = direct_spreadsheet_value(ctx, xml, container, &property.id)?;
-    let found = root
-        .children()
-        .filter(|node| node.has_tag_name(element))
-        .count();
-    let declared = root
-        .attribute("Count")
-        .and_then(|value| value.parse::<usize>().ok())
-        .ok_or_else(|| {
-            malformed_design(
-                ctx,
-                format_args!("{} has invalid dimension count", property.id),
-            )
-        })?;
-    if declared != found || declared > MAX_SKETCH_RECORDS {
-        return Err(malformed_design(
-            ctx,
-            format_args!("{} dimension count does not match its records", property.id),
-        ));
-    }
-    let mut dimensions = ctx.collection_vec(found, "fcstd spreadsheet dimensions")?;
-    for record in root.children().filter(|node| node.has_tag_name(element)) {
-        let name = record.attribute("name").ok_or_else(|| {
-            malformed_design(ctx, format_args!("{} dimension has no name", property.id))
-        })?;
-        let pixels = record
-            .attribute(value_name)
-            .and_then(|value| value.parse::<u32>().ok())
-            .ok_or_else(|| {
-                malformed_design(
-                    ctx,
-                    format_args!("{} dimension has invalid size", property.id),
-                )
-            })?;
-        let index = if element == "Column" {
-            CellAddress::parse(&ctx.retained_suffix(
-                name,
-                "1",
-                "fcstd spreadsheet column address",
-            )?)
-            .map(cadmpeg_ir::CellAddress::col)
-            .ok_or_else(|| {
-                malformed_design(
-                    ctx,
-                    format_args!("{} dimension has invalid column {name}", property.id),
-                )
-            })?
-        } else {
-            name.parse::<u32>()
-                .ok()
-                .filter(|row| *row > 0)
-                .ok_or_else(|| {
-                    malformed_design(
-                        ctx,
-                        format_args!("{} dimension has invalid row {name}", property.id),
-                    )
-                })?
-        };
-        let index = std::num::NonZeroU32::new(index).ok_or_else(|| {
-            malformed_design(
-                ctx,
-                format_args!("{} dimension index must be nonzero", property.id),
-            )
-        })?;
-        dimensions.push(SpreadsheetDimension { index, pixels });
-    }
-    Ok(dimensions)
-}
-
-fn merged_range(cell: roxmltree::Node<'_, '_>) -> Result<Option<SpreadsheetRange>, CodecError> {
-    let rows = cell
-        .attribute("rowSpan")
-        .map_or(Ok(1_i32), str::parse::<i32>)
-        .map_err(|_| CodecError::Malformed("spreadsheet cell has invalid row span".into()))?;
-    let columns = cell
-        .attribute("colSpan")
-        .map_or(Ok(1_i32), str::parse::<i32>)
-        .map_err(|_| CodecError::Malformed("spreadsheet cell has invalid column span".into()))?;
-    if rows < 1 || columns < 1 {
-        return Ok(None);
-    }
-    if rows == 1 && columns == 1 {
-        return Ok(None);
-    }
-    let start = cell
-        .attribute("address")
-        .ok_or_else(|| CodecError::Malformed("spreadsheet cell has no address".into()))?;
-    let end = offset_cell_address(
-        start,
-        u32::try_from(rows - 1)
-            .map_err(|_| CodecError::Malformed("spreadsheet cell span is out of range".into()))?,
-        u32::try_from(columns - 1)
-            .map_err(|_| CodecError::Malformed("spreadsheet cell span is out of range".into()))?,
-    )
-    .ok_or_else(|| CodecError::Malformed("spreadsheet cell span is out of range".into()))?;
-    let start = CellAddress::parse(start)
-        .ok_or_else(|| CodecError::Malformed("spreadsheet cell has invalid address".into()))?;
-    let end = CellAddress::parse(&end)
-        .ok_or_else(|| CodecError::Malformed("spreadsheet cell span is out of range".into()))?;
-    SpreadsheetRange::new(start, end)
-        .ok_or_else(|| CodecError::Malformed("spreadsheet cell span is out of range".into()))
-        .map(Some)
-}
-
-fn offset_cell_address(address: &str, rows: u32, columns: u32) -> Option<String> {
-    let (row, mut column) = cell_address(address)?;
-    let row = row.checked_add(rows)?;
-    column = column.checked_add(columns)?;
-    // Seven base-26 letters hold every nonzero u32 column index.
-    let mut label = [0_u8; 7];
-    let mut start = label.len();
-    while column > 0 {
-        start = start.checked_sub(1)?;
-        column -= 1;
-        label[start] = b'A' + u8::try_from(column % 26).ok()?;
-        column /= 26;
-    }
-    let letters = std::str::from_utf8(&label[start..]).ok()?;
-    Some(format!("{letters}{row}"))
-}
-
-fn cell_address(address: &str) -> Option<(u32, u32)> {
-    let split = address.find(|character: char| character.is_ascii_digit())?;
-    let column = address[..split].bytes().try_fold(0_u32, |value, byte| {
-        byte.is_ascii_uppercase().then(|| {
-            value
-                .checked_mul(26)?
-                .checked_add(u32::from(byte - b'A' + 1))
-        })?
-    })?;
-    let row = address[split..].parse::<u32>().ok()?;
-    if row == 0 || column == 0 {
-        return None;
-    }
-    Some((row, column))
-}
-
-#[cfg(test)]
-fn range_contains_address(range: &SpreadsheetRange, address: &str) -> bool {
-    CellAddress::parse(address).is_some_and(|address| range.contains(address))
 }
 
 fn append_operation_parameters(
@@ -1344,82 +1318,105 @@ fn append_operation_parameters(
         "CustomThreadClearance",
     ];
     let owner = feature_id(ctx, object)?;
-    for property in properties
-        .iter()
-        .copied()
-        .filter(|property| NAMES.contains(&property.name.as_str()))
-    {
-        if parameters.iter().any(|parameter| {
-            parameter.owner.as_ref() == Some(&owner) && parameter.name == property.name
-        }) {
+    for property in ctx.admit_iter(properties, "fcstd operation parameter properties")? {
+        let property = *property;
+        if !NAMES.contains(&property.name.as_str()) {
             continue;
         }
-        let Some(value) = scalar_value(ctx, property)? else {
-            continue;
-        };
-        let expression = expression_binding(ctx, properties, &property.name)?;
-        let is_angle = property.type_name.contains("Angle");
-        let mut retained = BTreeMap::new();
-        if let Some((native_ref, _)) = &expression {
-            ctx.insert_btree_map(
-                &mut retained,
-                cadmpeg_core::nonblank_literal!("expression_native_ref"),
-                ctx.copy_retained_text(native_ref, "fcstd operation expression reference")?,
-                "fcstd operation expression properties",
-            )?;
-        }
-        let expression = match expression {
-            Some((_, expression)) => expression,
-            None => match scalar_text(ctx, property, |text| {
-                ctx.copy_retained_text(text, "fcstd operation scalar expression")
-            })? {
-                Some(text) => text?,
-                None => ctx.format_retained(
-                    format_args!("{}", value.get()),
-                    "fcstd operation numeric expression",
-                )?,
-            },
-        };
-        ctx.reserve_vec(parameters, 1, "fcstd operation parameters")?;
-        parameters.push(DesignParameter {
-            id: ParameterId::mint(design_identity_text(
-                ctx,
-                "parameter",
-                object,
-                format_args!(
-                    ":{}",
-                    crate::native::encoded_segment_charged(
-                        ctx,
-                        &property.name,
-                        "fcstd operation parameter name key",
-                    )?
-                ),
-                "fcstd operation parameter identity",
-            )?)
-            .map_err(CodecError::malformed)?,
-            owner: Some(owner.try_clone_for_decode(ctx, "fcstd operation parameter owner")?),
-            ordinal: u32::try_from(property.order).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "FreeCAD ordinal",
-                    u64::from(u32::MAX),
-                    cadmpeg_core::decode::u64_from_index(property.order),
+        if ctx.any_by(
+            parameters.as_slice(),
+            |parameter| {
+                let owner_matches = match parameter.owner.as_ref() {
+                    Some(parameter_owner) => {
+                        ctx.equal(parameter_owner, &owner, "fcstd operation parameter owner")?
+                    }
+                    None => false,
+                };
+                if !owner_matches {
+                    return Ok(false);
+                }
+                ctx.equal(
+                    &parameter.name,
+                    &property.name,
+                    "fcstd operation parameter duplicate name",
                 )
-            })?,
-            name: ctx.copy_retained_text(&property.name, "fcstd operation parameter name")?,
-            expression,
-            display: None,
-            value: if is_angle {
-                cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
-            } else {
-                Some(ParameterValue::Length(Length::from_assigned_real(value)))
             },
-            dependencies: DistinctMembers::default(),
-            properties: retained,
-            pmi: None,
-            native_ref: Some(
-                ctx.copy_retained_text(&property.id, "fcstd operation parameter native reference")?,
-            ),
-        });
+            "fcstd operation parameter duplicate search",
+        )? {
+            continue;
+        }
+        let Some(tag) = scalar_value_tag(&property.type_name) else {
+            continue;
+        };
+        if tag == "Bool" {
+            continue;
+        }
+        let Some((value, expression, retained)) =
+            direct_root_value(ctx, property, tag, "value", |ctx, text| {
+                let Some(value) = ctx
+                    .parse_text::<f64>(text, "fcstd scalar property parse")?
+                    .ok()
+                    .and_then(FiniteReal::new)
+                else {
+                    return Ok(None);
+                };
+                let mut retained = BTreeMap::new();
+                let expression = match expression_binding(ctx, properties, &property.name)? {
+                    Some((native_ref, expression)) => {
+                        ctx.insert_btree_map(
+                            &mut retained,
+                            cadmpeg_core::nonblank_literal!("expression_native_ref"),
+                            native_ref,
+                            "fcstd operation expression properties",
+                        )?;
+                        expression
+                    }
+                    None => ctx.copy_retained_text(text, "fcstd operation scalar expression")?,
+                };
+                Ok(Some((value, expression, retained)))
+            })?
+        else {
+            continue;
+        };
+        let is_angle = property.type_name == "App::PropertyAngle";
+        ctx.push_vec(
+            parameters,
+            DesignParameter {
+                id: ParameterId::mint(design_identity_text(
+                    ctx,
+                    "parameter",
+                    object,
+                    format_args!(":{}", property.name),
+                    "fcstd operation parameter identity",
+                )?)
+                .map_err(CodecError::malformed)?,
+                owner: Some(owner.try_clone_for_decode(ctx, "fcstd operation parameter owner")?),
+                ordinal: u32::try_from(property.order).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "FreeCAD ordinal",
+                        u64::from(u32::MAX),
+                        cadmpeg_core::decode::u64_from_index(property.order),
+                    )
+                })?,
+                name: ctx.copy_retained_text(&property.name, "fcstd operation parameter name")?,
+                expression,
+                display: None,
+                value: if is_angle {
+                    cadmpeg_ir::scalar::Angle::new(value.get().to_radians())
+                        .map(ParameterValue::Angle)
+                } else {
+                    Some(ParameterValue::Length(Length::from_assigned_real(value)))
+                },
+                dependencies: DistinctMembers::default(),
+                properties: retained,
+                pmi: None,
+                native_ref: Some(ctx.copy_retained_text(
+                    &property.id,
+                    "fcstd operation parameter native reference",
+                )?),
+            },
+            "fcstd operation parameters",
+        )?;
     }
     Ok(())
 }
@@ -1432,17 +1429,25 @@ struct SketchTransfer {
 }
 
 fn sketch_carrier<'a, 'input>(
+    ctx: &DecodeContext<'_>,
     node: roxmltree::Node<'a, 'input>,
-) -> Option<roxmltree::Node<'a, 'input>> {
-    let mut carriers = node.children().filter(|child| {
-        child.is_element()
-            && !matches!(
-                child.tag_name().name(),
-                "Construction" | "GeoExtensions" | "UID"
-            )
-    });
-    let carrier = carriers.next()?;
-    carriers.next().is_none().then_some(carrier)
+) -> Result<Option<roxmltree::Node<'a, 'input>>, CodecError> {
+    let mut carrier = None;
+    let mut xml_nodes_7 = node.children();
+    while let Some(child) = ctx.next_charged(&mut xml_nodes_7, "FreeCAD design XML traversal")? {
+        if !child.is_element() {
+            continue;
+        }
+        let tag = child.tag_name().name();
+        if (tag == "Construction") || (tag == "GeoExtensions") || (tag == "UID") {
+            continue;
+        }
+        if carrier.is_some() {
+            return Ok(None);
+        }
+        carrier = Some(child);
+    }
+    Ok(carrier)
 }
 
 fn validate_sketch_carrier(
@@ -1485,60 +1490,95 @@ fn external_geometry_metadata(
     node: roxmltree::Node<'_, '_>,
     ordinal: usize,
 ) -> Result<(Option<String>, bool), CodecError> {
-    let mut extensions = node
-        .children()
-        .filter(|child| child.has_tag_name("GeoExtensions"))
-        .flat_map(|container| container.children())
-        .filter(|child| {
-            child.has_tag_name("GeoExtension")
-                && child.attribute("type") == Some("Sketcher::ExternalGeometryExtension")
-        });
-    let extension = extensions.next();
-    if extensions.next().is_some() {
-        return Err(malformed_design(ctx, format_args!(
-            "sketch ExternalGeo Geometry record {ordinal} has multiple ExternalGeometryExtension values"
-        )));
+    let mut extension = None;
+    let mut xml_nodes_8 = node.children();
+    while let Some(container) =
+        ctx.next_charged(&mut xml_nodes_8, "FreeCAD design XML traversal")?
+    {
+        if !ctx.xml_has_tag_name(container, "GeoExtensions", "FreeCAD design XML tag")? {
+            continue;
+        }
+        let mut xml_nodes_9 = container.children();
+        while let Some(candidate) =
+            ctx.next_charged(&mut xml_nodes_9, "FreeCAD design XML traversal")?
+        {
+            if !ctx.xml_has_tag_name(candidate, "GeoExtension", "FreeCAD design XML tag")? {
+                continue;
+            }
+            let Some(kind) =
+                ctx.xml_attribute(candidate, "type", "FreeCAD design XML attribute")?
+            else {
+                continue;
+            };
+            if kind != "Sketcher::ExternalGeometryExtension" {
+                continue;
+            }
+            if extension.is_some() {
+                return Err(malformed_design(ctx, format_args!(
+                    "sketch ExternalGeo Geometry record {ordinal} has multiple ExternalGeometryExtension values"
+                )));
+            }
+            extension = Some(candidate);
+        }
     }
-    let extension_ref = extension.and_then(|extension| extension.attribute("Ref"));
-    let geometry_ref = node.attribute("ref");
+    let extension_ref = match extension {
+        Some(extension) => ctx.xml_attribute(extension, "Ref", "FreeCAD design XML attribute")?,
+        None => None,
+    };
+    let geometry_ref = ctx.xml_attribute(node, "ref", "FreeCAD design XML attribute")?;
     if let (Some(extension_ref), Some(geometry_ref)) = (extension_ref, geometry_ref) {
-        if extension_ref != geometry_ref {
+        if !ctx.equal(
+            extension_ref,
+            geometry_ref,
+            "fcstd external geometry reference",
+        )? {
             return Err(malformed_design(
                 ctx,
                 format_args!(
-                "sketch ExternalGeo Geometry record {ordinal} has conflicting Ref and ref values"
-            ),
+                    "sketch ExternalGeo Geometry record {ordinal} has conflicting Ref and ref values"
+                ),
             ));
         }
     }
-    let reference = extension_ref
-        .or(geometry_ref)
-        .filter(|value| !value.is_empty())
-        .map(|value| ctx.copy_retained_text(value, "fcstd external geometry reference"))
-        .transpose()?;
-
-    let extension_flags = extension
-        .and_then(|extension| extension.attribute("Flags"))
-        .map(|value| {
-            value.parse::<u64>().map_err(|_| {
-                malformed_design(
-                    ctx,
-                    format_args!("sketch ExternalGeo Geometry record {ordinal} has invalid Flags"),
-                )
-            })
-        })
-        .transpose()?;
-    let geometry_flags = node
-        .attribute("flags")
-        .map(|value| {
-            value.parse::<u64>().map_err(|_| {
-                malformed_design(
-                    ctx,
-                    format_args!("sketch ExternalGeo Geometry record {ordinal} has invalid flags"),
-                )
-            })
-        })
-        .transpose()?;
+    let reference = match extension_ref.or(geometry_ref) {
+        Some(value) if !value.is_empty() => {
+            Some(ctx.copy_retained_text(value, "fcstd external geometry reference")?)
+        }
+        _ => None,
+    };
+    let extension_flags = match extension {
+        Some(extension) => {
+            match ctx.xml_attribute(extension, "Flags", "FreeCAD design XML attribute")? {
+                Some(value) => Some(
+                    ctx.parse_text::<u64>(value, "fcstd external geometry flags")?
+                        .map_err(|_| {
+                            malformed_design(
+                                ctx,
+                                format_args!(
+                                "sketch ExternalGeo Geometry record {ordinal} has invalid Flags"
+                            ),
+                            )
+                        })?,
+                ),
+                None => None,
+            }
+        }
+        None => None,
+    };
+    let geometry_flags = match ctx.xml_attribute(node, "flags", "FreeCAD design XML attribute")? {
+        Some(value) => Some(
+            ctx.parse_text::<u64>(value, "fcstd external geometry flags")?
+                .map_err(|_| {
+                    malformed_design(
+                        ctx,
+                        format_args!(
+                            "sketch ExternalGeo Geometry record {ordinal} has invalid flags"
+                        ),
+                    )
+                })?,
+        ),
+        None => None,
+    };
     if let (Some(extension_flags), Some(geometry_flags)) = (extension_flags, geometry_flags) {
         if extension_flags != geometry_flags {
             return Err(malformed_design(ctx, format_args!(
@@ -1565,16 +1605,22 @@ fn validate_external_geo_prefix(
         [(-1_i64, "-1"), (-2_i64, "-2")].into_iter().enumerate()
     {
         let node = records[index];
-        let id = node.attribute("id").ok_or_else(|| {
-            malformed_design(
-                ctx,
-                format_args!(
-                    "{owner} reserved ExternalGeo record {} has no id",
-                    index + 1
-                ),
-            )
-        })?;
-        if id.parse::<i64>().ok() != Some(expected_value) {
+        let id = ctx
+            .xml_attribute(node, "id", "FreeCAD design XML attribute")?
+            .ok_or_else(|| {
+                malformed_design(
+                    ctx,
+                    format_args!(
+                        "{owner} reserved ExternalGeo record {} has no id",
+                        index + 1
+                    ),
+                )
+            })?;
+        if ctx
+            .parse_text::<i64>(id, "fcstd external geometry record id")?
+            .ok()
+            != Some(expected_value)
+        {
             return Err(malformed_design(
                 ctx,
                 format_args!(
@@ -1607,8 +1653,11 @@ fn external_link_key(
     let Some(subelement) = reference.subelements().first() else {
         return Ok(None);
     };
+    let parent_key = ctx
+        .split_once(object, "#", "fcstd external link parent key")?
+        .map_or(object, |(_, key)| key);
     Ok(Some(ctx.join_retained(
-        &[crate::native::id_key(object), subelement.as_str()],
+        &[parent_key, subelement.as_str()],
         ".",
         "fcstd external link key",
     )?))
@@ -1620,7 +1669,10 @@ fn external_link_indices(
 ) -> Result<HashMap<String, usize>, CodecError> {
     let mut indices = HashMap::new();
     if let Some(references) = references {
-        for (index, reference) in references.links().iter().enumerate() {
+        for (index, reference) in ctx
+            .admit_iter(references.links(), "fcstd external link index")?
+            .enumerate()
+        {
             let Some(key) = reference
                 .as_ref()
                 .map(|reference| external_link_key(ctx, reference))
@@ -1629,7 +1681,7 @@ fn external_link_indices(
             else {
                 continue;
             };
-            if indices.contains_key(&key) {
+            if ctx.contains_key_hash_map(&indices, &key, "fcstd external link duplicate")? {
                 return Err(malformed_design(
                     ctx,
                     format_args!("sketch ExternalGeometry links contain duplicate key {key}"),
@@ -1647,7 +1699,10 @@ fn sketch_attributes(
 ) -> Result<BTreeMap<String, String>, CodecError> {
     let mut attributes = BTreeMap::new();
     if let Some(carrier) = carrier {
-        for attribute in carrier.attributes() {
+        let mut source = carrier.attributes();
+        while let Some(attribute) =
+            ctx.next_charged(&mut source, "FreeCAD sketch carrier attributes")?
+        {
             ctx.insert_btree_map(
                 &mut attributes,
                 ctx.copy_retained_text(attribute.name(), "fcstd sketch attribute name")?,
@@ -1674,7 +1729,8 @@ fn parse_sketch(
     .map_err(CodecError::malformed)?;
     let mut entities = Vec::new();
     let mut matched_references = BTreeSet::new();
-    if let Some(geometry) = property(properties, "Geometry") {
+    let mut matched_storage = ctx.reserve_scoped(0, "fcstd matched reference storage")?;
+    if let Some(geometry) = property(ctx, properties, "Geometry")? {
         if geometry.type_name != "Part::PropertyGeometryList" {
             return Err(malformed_design(
                 ctx,
@@ -1696,28 +1752,53 @@ fn parse_sketch(
                 )
             })?;
         let xml = admitted_xml.document();
-        let records = direct_counted_records(ctx, xml, "GeometryList", "Geometry", &geometry.id)?;
-        for (index, node) in records.into_iter().enumerate() {
-            let carrier = sketch_carrier(node);
-            if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
+        let (records, _record_storage) =
+            direct_counted_records(ctx, xml, "GeometryList", "Geometry", &geometry.id)?;
+        for (index, node) in ctx
+            .admit_iter(&records, "FreeCAD sketch geometry records")?
+            .copied()
+            .enumerate()
+        {
+            let carrier = sketch_carrier(ctx, node)?;
+            let kind = ctx.xml_attribute(node, "type", "FreeCAD design XML attribute")?;
+            if let (Some(kind), Some(carrier)) = (kind, carrier.as_ref()) {
                 validate_sketch_carrier(ctx, kind, carrier, index + 1)?;
             }
-            let native_kind = node
-                .attribute("type")
+            let native_kind = kind
                 .or_else(|| carrier.map(|child| child.tag_name().name()))
                 .unwrap_or("unknown");
-            let native_kind = ctx.copy_retained_text(native_kind, "fcstd sketch geometry kind")?;
-            let attributes = sketch_attributes(ctx, carrier)?;
             let geometry_value = match carrier
-                .map(|carrier| sketch_nurbs(ctx, &native_kind, carrier))
+                .map(|carrier| sketch_nurbs(ctx, native_kind, carrier))
                 .transpose()?
                 .flatten()
             {
                 Some(nurbs) => nurbs,
-                None => sketch_geometry(ctx, &native_kind, &attributes)?,
+                None => {
+                    let (attributes, _attribute_storage) = ctx
+                        .with_scoped_storage("fcstd sketch attribute storage", || {
+                            sketch_attributes(ctx, carrier)
+                        })?;
+                    sketch_geometry(ctx, native_kind, &attributes)?
+                }
             };
-            ctx.reserve_vec(&mut entities, 1, "fcstd sketch entities")?;
-            entities.push(
+            let mut construction = false;
+            let mut xml_nodes_10 = node.descendants();
+            while let Some(child) =
+                ctx.next_charged(&mut xml_nodes_10, "FreeCAD design XML traversal")?
+            {
+                if ctx.xml_has_tag_name(child, "Construction", "FreeCAD design XML tag")? {
+                    construction = ctx
+                        .xml_attribute(child, "value", "FreeCAD design XML attribute")?
+                        .map(|value| Ok::<_, CodecError>(value != "0"))
+                        .transpose()?
+                        .unwrap_or(false);
+                    if construction {
+                        break;
+                    }
+                }
+            }
+            ctx.push_vec(
+                &mut entities,
                 SketchEntity::new(
                     SketchEntityId::mint(design_identity_text(
                         ctx,
@@ -1730,17 +1811,15 @@ fn parse_sketch(
                     id.try_clone_for_decode(ctx, "fcstd sketch entity parent")?,
                     geometry_value,
                 )
-                .with_construction(node.descendants().any(|child| {
-                    child.has_tag_name("Construction")
-                        && child.attribute("value").is_some_and(|value| value != "0")
-                }))
+                .with_construction(construction)
                 .with_native_ref(Some(
                     ctx.copy_retained_text(&geometry.id, "fcstd sketch geometry native reference")?,
                 )),
-            );
+                "fcstd sketch entities",
+            )?;
         }
     }
-    if let Some(external_geometry) = property(properties, "ExternalGeo") {
+    if let Some(external_geometry) = property(ctx, properties, "ExternalGeo")? {
         if external_geometry.type_name != "Part::PropertyGeometryList" {
             return Err(malformed_design(
                 ctx,
@@ -1765,10 +1844,10 @@ fn parse_sketch(
                 )
             })?;
         let xml = admitted_xml.document();
-        let records =
+        let (records, _record_storage) =
             direct_counted_records(ctx, xml, "GeometryList", "Geometry", &external_geometry.id)?;
         validate_external_geo_prefix(ctx, &records, &external_geometry.id)?;
-        let references = property(properties, "ExternalGeometry");
+        let references = property(ctx, properties, "ExternalGeometry")?;
         if let Some(references) = references {
             if references.type_name != "App::PropertyLinkSubList" {
                 return Err(malformed_design(
@@ -1780,17 +1859,30 @@ fn parse_sketch(
                 ));
             }
         }
-        let link_indices = external_link_indices(ctx, references)?;
-        for (external_index, node) in records
-            .into_iter()
+        let (link_indices, _link_storage) = ctx
+            .with_scoped_storage("fcstd external link index storage", || {
+                external_link_indices(ctx, references)
+            })?;
+        for (external_index, node) in ctx
+            .admit_iter(&records, "FreeCAD external sketch geometry records")?
+            .copied()
             .skip(EXTERNAL_GEO_AXIS_COUNT)
             .enumerate()
         {
-            let (cache_reference, missing) =
-                external_geometry_metadata(ctx, node, external_index + 3)?;
-            let reference_index = cache_reference
-                .as_deref()
-                .and_then(|cache_reference| link_indices.get(cache_reference).copied());
+            let ((cache_reference, missing), _cache_storage) = ctx
+                .with_scoped_storage("fcstd external cache reference storage", || {
+                    external_geometry_metadata(ctx, node, external_index + 3)
+                })?;
+            let reference_index = match cache_reference.as_deref() {
+                Some(cache_reference) => ctx
+                    .get_hash_map(
+                        &link_indices,
+                        cache_reference,
+                        "fcstd external geometry link lookup",
+                    )?
+                    .copied(),
+                None => None,
+            };
             if let (Some(cache_reference), None) = (cache_reference.as_deref(), reference_index) {
                 if !missing {
                     return Err(malformed_design(ctx, format_args!(
@@ -1800,33 +1892,38 @@ fn parse_sketch(
                 }
             }
             if let Some(reference_index) = reference_index {
-                ctx.insert_btree_set(
-                    &mut matched_references,
-                    reference_index,
-                    "fcstd sketch matched references",
-                )?;
+                matched_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut matched_references,
+                        reference_index,
+                        "fcstd sketch matched references",
+                    )
+                })?;
             }
-            let carrier = sketch_carrier(node);
-            if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
+            let carrier = sketch_carrier(ctx, node)?;
+            let kind = ctx.xml_attribute(node, "type", "FreeCAD design XML attribute")?;
+            if let (Some(kind), Some(carrier)) = (kind, carrier.as_ref()) {
                 validate_sketch_carrier(ctx, kind, carrier, external_index + 3)?;
             }
-            let native_kind = node
-                .attribute("type")
+            let native_kind = kind
                 .or_else(|| carrier.map(|child| child.tag_name().name()))
                 .unwrap_or("unknown");
-            let native_kind =
-                ctx.copy_retained_text(native_kind, "fcstd external sketch geometry kind")?;
-            let attributes = sketch_attributes(ctx, carrier)?;
             let geometry = match carrier
-                .map(|carrier| sketch_nurbs(ctx, &native_kind, carrier))
+                .map(|carrier| sketch_nurbs(ctx, native_kind, carrier))
                 .transpose()?
                 .flatten()
             {
                 Some(nurbs) => nurbs,
-                None => sketch_geometry(ctx, &native_kind, &attributes)?,
+                None => {
+                    let (attributes, _attribute_storage) = ctx
+                        .with_scoped_storage("fcstd sketch attribute storage", || {
+                            sketch_attributes(ctx, carrier)
+                        })?;
+                    sketch_geometry(ctx, native_kind, &attributes)?
+                }
             };
-            ctx.reserve_vec(&mut entities, 1, "fcstd sketch entities")?;
-            entities.push(
+            ctx.push_vec(
+                &mut entities,
                 SketchEntity::new(
                     SketchEntityId::mint(design_identity_text(
                         ctx,
@@ -1869,12 +1966,20 @@ fn parse_sketch(
                         .transpose()?
                         .unwrap_or_default(),
                 ),
-            );
+                "fcstd sketch entities",
+            )?;
         }
     }
-    if let Some(references) = property(properties, "ExternalGeometry") {
-        for (external_index, reference) in references.links().iter().enumerate() {
-            if matched_references.contains(&external_index) {
+    if let Some(references) = property(ctx, properties, "ExternalGeometry")? {
+        for (external_index, reference) in ctx
+            .admit_iter(references.links(), "fcstd unmatched external links")?
+            .enumerate()
+        {
+            if ctx.contains_btree_set(
+                &matched_references,
+                &external_index,
+                "fcstd matched external link lookup",
+            )? {
                 continue;
             }
             let Some(reference) = reference.as_ref() else {
@@ -1883,17 +1988,27 @@ fn parse_sketch(
             let Some(target_object) = reference.object() else {
                 continue;
             };
-            let numeric_suffix = format!(":external:{external_index}");
-            let entity_kind = if entities
-                .iter()
-                .any(|entity| entity.id().as_str().ends_with(&numeric_suffix))
-            {
+            let (numeric_suffix, _numeric_suffix_storage) = ctx.format_scoped(
+                format_args!(":external:{external_index}"),
+                "fcstd external link identity suffix",
+            )?;
+            let entity_kind = if ctx.any_by(
+                &entities,
+                |entity| {
+                    ctx.ends_with(
+                        entity.id().as_str(),
+                        &numeric_suffix,
+                        "fcstd external link identity suffix",
+                    )
+                },
+                "fcstd external link identity lookup",
+            )? {
                 "external-link"
             } else {
                 "external"
             };
-            ctx.reserve_vec(&mut entities, 1, "fcstd sketch entities")?;
-            entities.push(
+            ctx.push_vec(
+                &mut entities,
                 SketchEntity::new(
                     SketchEntityId::mint(design_identity_text(
                         ctx,
@@ -1939,13 +2054,18 @@ fn parse_sketch(
                     reference.subelements(),
                     "fcstd sketch external endpoint refs",
                 )?),
-            );
+                "fcstd sketch entities",
+            )?;
         }
     }
-    let (horizontal_axis, vertical_axis, root_point) = builtin_reference_usage(ctx, properties)?;
+    let constraint_source = constraint_xml(ctx, properties)?;
+    let (horizontal_axis, vertical_axis, root_point) = builtin_reference_usage(
+        ctx,
+        constraint_source.as_ref().map(|(_, tree)| tree.document()),
+    )?;
     if horizontal_axis {
-        ctx.reserve_vec(&mut entities, 1, "fcstd sketch entities")?;
-        entities.push(
+        ctx.push_vec(
+            &mut entities,
             SketchEntity::new(
                 SketchEntityId::mint(design_identity_text(
                     ctx,
@@ -1966,11 +2086,12 @@ fn parse_sketch(
             .with_native_ref(Some(
                 ctx.copy_retained_text(object.id(), "fcstd sketch axis native reference")?,
             )),
-        );
+            "fcstd sketch entities",
+        )?;
     }
     if vertical_axis {
-        ctx.reserve_vec(&mut entities, 1, "fcstd sketch entities")?;
-        entities.push(
+        ctx.push_vec(
+            &mut entities,
             SketchEntity::new(
                 SketchEntityId::mint(design_identity_text(
                     ctx,
@@ -1991,11 +2112,12 @@ fn parse_sketch(
             .with_native_ref(Some(
                 ctx.copy_retained_text(object.id(), "fcstd sketch axis native reference")?,
             )),
-        );
+            "fcstd sketch entities",
+        )?;
     }
     if root_point {
-        ctx.reserve_vec(&mut entities, 1, "fcstd sketch entities")?;
-        entities.push(
+        ctx.push_vec(
+            &mut entities,
             SketchEntity::new(
                 SketchEntityId::mint(design_identity_text(
                     ctx,
@@ -2015,10 +2137,20 @@ fn parse_sketch(
             .with_native_ref(Some(
                 ctx.copy_retained_text(object.id(), "fcstd sketch axis native reference")?,
             )),
-        );
+            "fcstd sketch entities",
+        )?;
     }
-    let (constraints, parameters) = parse_constraints(ctx, object, properties, &id, &entities)?;
-    let profiles = build_profiles(ctx, &entities, &constraints)?;
+    let (constraints, parameters) = parse_constraints(
+        ctx,
+        object,
+        properties,
+        &id,
+        &entities,
+        constraint_source
+            .as_ref()
+            .map(|(property, tree)| (*property, tree.document())),
+    )?;
+    let profiles = profiles::build_profiles(ctx, &entities, &constraints)?;
     let (origin, normal, u_axis) = sketch_frame(ctx, properties)?;
     Ok(SketchTransfer {
         sketch: Sketch {
@@ -2040,34 +2172,34 @@ fn parse_sketch(
 
 fn builtin_reference_usage(
     ctx: &DecodeContext<'_>,
-    properties: &[&PropertyRecord],
+    source: Option<&roxmltree::Document<'_>>,
 ) -> Result<(bool, bool, bool), CodecError> {
-    let Some(property) = property(properties, "Constraints") else {
+    let Some(xml) = source else {
         return Ok((false, false, false));
     };
-    let admitted_xml = match ctx.parse_xml(property.xml.text(), "FreeCAD XML tree") {
-        Ok(tree) => tree,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => {
-            return Ok((false, false, false));
-        }
-    };
-    let xml = admitted_xml.document();
     let mut horizontal = false;
     let mut vertical = false;
     let mut root = false;
-    for node in xml
-        .descendants()
-        .filter(|node| node.has_tag_name("Constrain"))
-    {
-        let type_code = int_attr(node, "Type");
-        let operands = match constraint_operands(ctx, node) {
+    let document_root = ctx.xml_root_element(xml, "FreeCAD design XML root_element")?;
+    let mut xml_nodes_11 = document_root.descendants();
+    while let Some(node) = ctx.next_charged(&mut xml_nodes_11, "FreeCAD design XML traversal")? {
+        if !ctx.xml_has_tag_name(node, "Constrain", "FreeCAD design XML tag")? {
+            continue;
+        }
+        let type_code = int_attr(ctx, node, "Type")?;
+        let (operands, _operand_storage) = match ctx
+            .with_scoped_storage("fcstd built-in constraint operand storage", || {
+                constraint_operands(ctx, node)
+            }) {
             Ok(operands) => operands,
             Err(CodecError::ResourceLimit(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(_) => continue,
         };
         root |= matches!(type_code, Some(7 | 8)) && operands.len() == 1;
-        for (entity, position) in operands {
+        for (entity, position) in ctx
+            .admit_iter(&operands, "FreeCAD sketch constraint operands")?
+            .copied()
+        {
             if type_code == Some(9) {
                 horizontal |= entity == -1;
                 vertical |= entity == -2;
@@ -2102,16 +2234,22 @@ fn sketch_nurbs(
     let Some(lanes) = sketch_nurbs_lanes(ctx, kind, node)? else {
         return Ok(None);
     };
-    Ok(Some(SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
-            ctx,
-            lanes.degree,
-            lanes.knots,
-            lanes.control_points,
-            lanes.weights,
-            lanes.periodic,
-        )??,
-    )))
+    let curve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
+        ctx,
+        lanes.degree,
+        lanes.knots,
+        lanes.control_points,
+        lanes.weights,
+        lanes.periodic,
+    )?;
+    let curve = match curve {
+        Ok(curve) => curve,
+        Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
+            return Err(CodecError::ResourceLimit(limit));
+        }
+        Err(error) => return Err(malformed_design(ctx, format_args!("{error}"))),
+    };
+    Ok(Some(SketchGeometry::nurbs(curve)))
 }
 
 fn sketch_nurbs_lanes(
@@ -2119,19 +2257,41 @@ fn sketch_nurbs_lanes(
     kind: &str,
     node: roxmltree::Node<'_, '_>,
 ) -> Result<Option<SketchNurbsLanes>, CodecError> {
-    if !matches!(kind, "Part::GeomBSplineCurve" | "BSplineCurve")
-        && !node.has_tag_name("BSplineCurve")
-    {
+    let is_spline_kind = (kind == "Part::GeomBSplineCurve") || (kind == "BSplineCurve");
+    if !is_spline_kind && !ctx.xml_has_tag_name(node, "BSplineCurve", "FreeCAD design XML tag")? {
         return Ok(None);
     }
-    let Some((degree, periodic, pole_count, knot_count)) = (|| {
-        Some((
-            node.attribute("Degree")?.parse::<u32>().ok()?,
-            matches!(node.attribute("IsPeriodic")?, "1" | "true" | "True"),
-            node.attribute("PolesCount")?.parse::<usize>().ok()?,
-            node.attribute("KnotsCount")?.parse::<usize>().ok()?,
-        ))
-    })() else {
+    let Some(degree_text) = ctx.xml_attribute(node, "Degree", "FreeCAD design XML attribute")?
+    else {
+        return Ok(None);
+    };
+    let Ok(degree) = ctx.parse_text::<u32>(degree_text, "fcstd sketch NURBS degree")? else {
+        return Ok(None);
+    };
+    let Some(periodic_text) =
+        ctx.xml_attribute(node, "IsPeriodic", "FreeCAD design XML attribute")?
+    else {
+        return Ok(None);
+    };
+    let periodic = (periodic_text == "1") || (periodic_text == "true") || (periodic_text == "True");
+    let Some(pole_count_text) =
+        ctx.xml_attribute(node, "PolesCount", "FreeCAD design XML attribute")?
+    else {
+        return Ok(None);
+    };
+    let Ok(pole_count) =
+        ctx.parse_text::<usize>(pole_count_text, "fcstd sketch NURBS pole count")?
+    else {
+        return Ok(None);
+    };
+    let Some(knot_count_text) =
+        ctx.xml_attribute(node, "KnotsCount", "FreeCAD design XML attribute")?
+    else {
+        return Ok(None);
+    };
+    let Ok(knot_count) =
+        ctx.parse_text::<usize>(knot_count_text, "fcstd sketch NURBS knot count")?
+    else {
         return Ok(None);
     };
     if pole_count == 0
@@ -2141,51 +2301,91 @@ fn sketch_nurbs_lanes(
     {
         return Ok(None);
     }
-    if node
-        .children()
-        .filter(|child| child.has_tag_name("Pole"))
-        .count()
-        != pole_count
-    {
-        return Ok(None);
-    }
-    let mut poles = ctx.collection_vec(pole_count, "fcstd sketch NURBS poles")?;
-    for pole in node.children().filter(|child| child.has_tag_name("Pole")) {
-        let Some(value) = (|| {
-            let point = FinitePoint2::new(Point2::new(
-                pole.attribute("X")?.parse().ok()?,
-                pole.attribute("Y")?.parse().ok()?,
-            ))?;
-            let z = FiniteReal::new(pole.attribute("Z")?.parse::<f64>().ok()?)?;
-            if z.get().abs() > f64::EPSILON {
-                return None;
-            }
-            let weight = PositiveReal::new(pole.attribute("Weight")?.parse::<f64>().ok()?)?;
-            Some((point, weight))
-        })() else {
+    let mut lane_storage = ctx.reserve_scoped(0, "fcstd sketch NURBS lane storage")?;
+    let mut poles =
+        lane_storage.with_storage(|| ctx.vector_storage(pole_count, "fcstd sketch NURBS poles"))?;
+    let mut xml_nodes_13 = node.children();
+    while let Some(pole) = ctx.next_charged(&mut xml_nodes_13, "FreeCAD design XML traversal")? {
+        if !ctx.xml_has_tag_name(pole, "Pole", "FreeCAD design XML tag")? {
+            continue;
+        }
+        let Some(x_text) = ctx.xml_attribute(pole, "X", "FreeCAD design XML attribute")? else {
             return Ok(None);
         };
-        poles.push(value);
-    }
-    if node
-        .children()
-        .filter(|child| child.has_tag_name("Knot"))
-        .count()
-        != knot_count
-    {
-        return Ok(None);
-    }
-    let mut knots = ctx.collection_vec(knot_count, "fcstd sketch NURBS knots")?;
-    for knot in node.children().filter(|child| child.has_tag_name("Knot")) {
-        let Some(value) = (|| {
-            Some((
-                FiniteReal::new(knot.attribute("Value")?.parse::<f64>().ok()?)?,
-                knot.attribute("Mult")?.parse::<usize>().ok()?,
-            ))
-        })() else {
+        let Ok(x) = ctx.parse_text::<f64>(x_text, "fcstd sketch NURBS pole coordinate")? else {
             return Ok(None);
         };
-        knots.push(value);
+        let Some(y_text) = ctx.xml_attribute(pole, "Y", "FreeCAD design XML attribute")? else {
+            return Ok(None);
+        };
+        let Ok(y) = ctx.parse_text::<f64>(y_text, "fcstd sketch NURBS pole coordinate")? else {
+            return Ok(None);
+        };
+        let Some(point) = FinitePoint2::new(Point2::new(x, y)) else {
+            return Ok(None);
+        };
+        let Some(z_text) = ctx.xml_attribute(pole, "Z", "FreeCAD design XML attribute")? else {
+            return Ok(None);
+        };
+        let Ok(z) = ctx.parse_text::<f64>(z_text, "fcstd sketch NURBS pole coordinate")? else {
+            return Ok(None);
+        };
+        let Some(z) = FiniteReal::new(z) else {
+            return Ok(None);
+        };
+        if z.get().abs() > f64::EPSILON {
+            return Ok(None);
+        }
+        let Some(weight_text) =
+            ctx.xml_attribute(pole, "Weight", "FreeCAD design XML attribute")?
+        else {
+            return Ok(None);
+        };
+        let Ok(weight) = ctx.parse_text::<f64>(weight_text, "fcstd sketch NURBS pole weight")?
+        else {
+            return Ok(None);
+        };
+        let Some(weight) = PositiveReal::new(weight) else {
+            return Ok(None);
+        };
+        lane_storage.with_storage(|| {
+            ctx.push_vec(&mut poles, (point, weight), "fcstd sketch NURBS poles")
+        })?;
+    }
+    let mut knots =
+        lane_storage.with_storage(|| ctx.vector_storage(knot_count, "fcstd sketch NURBS knots"))?;
+    let mut xml_nodes_15 = node.children();
+    while let Some(knot) = ctx.next_charged(&mut xml_nodes_15, "FreeCAD design XML traversal")? {
+        if !ctx.xml_has_tag_name(knot, "Knot", "FreeCAD design XML tag")? {
+            continue;
+        }
+        let Some(value_text) = ctx.xml_attribute(knot, "Value", "FreeCAD design XML attribute")?
+        else {
+            return Ok(None);
+        };
+        let Ok(value) = ctx.parse_text::<f64>(value_text, "fcstd sketch NURBS knot value")? else {
+            return Ok(None);
+        };
+        let Some(value) = FiniteReal::new(value) else {
+            return Ok(None);
+        };
+        let Some(multiplicity_text) =
+            ctx.xml_attribute(knot, "Mult", "FreeCAD design XML attribute")?
+        else {
+            return Ok(None);
+        };
+        let Ok(multiplicity) =
+            ctx.parse_text::<usize>(multiplicity_text, "fcstd sketch NURBS knot multiplicity")?
+        else {
+            return Ok(None);
+        };
+        lane_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut knots,
+                (value, multiplicity),
+                "fcstd sketch NURBS knots",
+            )
+        })?;
     }
     if poles.len() != pole_count
         || knots.len() != knot_count
@@ -2193,20 +2393,36 @@ fn sketch_nurbs_lanes(
         || usize::try_from(degree)
             .ok()
             .is_none_or(|degree| degree >= pole_count)
-        || knots
-            .iter()
-            .any(|(_, multiplicity)| *multiplicity == 0 || *multiplicity > MAX_SKETCH_RECORDS)
-        || knots
-            .windows(2)
-            .any(|pair| pair[0].0.get() >= pair[1].0.get())
+        || ctx.any_by(
+            &knots,
+            |(_, multiplicity)| Ok(*multiplicity == 0 || *multiplicity > MAX_SKETCH_RECORDS),
+            "fcstd sketch NURBS knot multiplicities",
+        )?
     {
         return Ok(None);
     }
-    let Some(expanded_count) = knots.iter().try_fold(0_usize, |count, (_, multiplicity)| {
-        count.checked_add(*multiplicity)
-    }) else {
+    let Some(first_knot) = knots.first() else {
         return Ok(None);
     };
+    let mut previous_knot = first_knot.0;
+    if ctx.any_by(
+        &knots[1..],
+        |(knot, _)| {
+            let unordered = previous_knot.get() >= knot.get();
+            previous_knot = *knot;
+            Ok(unordered)
+        },
+        "fcstd sketch NURBS knot order",
+    )? {
+        return Ok(None);
+    }
+    let mut expanded_count = 0_usize;
+    for (_, multiplicity) in ctx.admit_iter(&knots, "fcstd sketch NURBS expanded knot count")? {
+        let Some(next) = expanded_count.checked_add(*multiplicity) else {
+            return Ok(None);
+        };
+        expanded_count = next;
+    }
     if expanded_count > MAX_SKETCH_RECORDS {
         return Ok(None);
     }
@@ -2222,22 +2438,38 @@ fn sketch_nurbs_lanes(
             return Ok(None);
         }
     }
-    let mut full_knots = ctx.collection_vec(expanded_count, "fcstd sketch NURBS expanded knots")?;
-    full_knots.extend(
-        knots.iter().flat_map(|(value, multiplicity)| {
-            std::iter::repeat_with(|| *value).take(*multiplicity)
-        }),
-    );
-    let mut control_points = ctx.collection_vec(pole_count, "fcstd sketch NURBS control points")?;
-    control_points.extend(poles.iter().map(|(point, _)| *point));
-    let mut weights = ctx.collection_vec(pole_count, "fcstd sketch NURBS weights")?;
-    weights.extend(poles.iter().map(|(_, weight)| *weight));
-    let weights = if weights
-        .iter()
-        .any(|weight| (weight.get() - 1.0).abs() > f64::EPSILON)
-    {
-        let mut converted = ctx.collection_vec(pole_count, "fcstd sketch NURBS nonzero weights")?;
-        converted.extend(weights.into_iter().map(NonZeroReal::from));
+    let mut full_knots = ctx.vector_storage(expanded_count, "fcstd sketch NURBS expanded knots")?;
+    for (value, multiplicity) in ctx.admit_iter(&knots, "fcstd sketch NURBS knot expansion")? {
+        for _ in ctx.admit_iter(&(0..*multiplicity), "fcstd sketch NURBS knot repetition")? {
+            ctx.push_vec(&mut full_knots, *value, "fcstd sketch NURBS expanded knots")?;
+        }
+    }
+    let mut control_points = ctx.vector_storage(pole_count, "fcstd sketch NURBS control points")?;
+    let mut weights = lane_storage
+        .with_storage(|| ctx.vector_storage(pole_count, "fcstd sketch NURBS weights"))?;
+    for (point, weight) in ctx.admit_iter(&poles, "fcstd sketch NURBS pole lanes")? {
+        ctx.push_vec(
+            &mut control_points,
+            *point,
+            "fcstd sketch NURBS control points",
+        )?;
+        lane_storage
+            .with_storage(|| ctx.push_vec(&mut weights, *weight, "fcstd sketch NURBS weights"))?;
+    }
+    let has_non_unit_weights = ctx.any_by(
+        &weights,
+        |weight| Ok((weight.get() - 1.0).abs() > f64::EPSILON),
+        "fcstd sketch NURBS weight check",
+    )?;
+    let weights = if has_non_unit_weights {
+        let mut converted = ctx.vector_storage(pole_count, "fcstd sketch NURBS nonzero weights")?;
+        for weight in ctx.admit_iter(&weights, "fcstd sketch NURBS nonzero weights")? {
+            ctx.push_vec(
+                &mut converted,
+                NonZeroReal::from(*weight),
+                "fcstd sketch NURBS nonzero weights",
+            )?;
+        }
         Some(converted)
     } else {
         None
@@ -2259,7 +2491,7 @@ fn sketch_frame(
     properties: &[&PropertyRecord],
 ) -> Result<(Point3, Vector3, Vector3), CodecError> {
     validate_sketch_placement(ctx, properties)?;
-    Ok(placement_frame(properties).map_or_else(
+    Ok(placement_frame(ctx, properties)?.map_or_else(
         || {
             (
                 Point3::new(0.0, 0.0, 0.0),
@@ -2271,26 +2503,39 @@ fn sketch_frame(
     ))
 }
 
-fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
-    let property =
-        property(properties, "Placement").or_else(|| property(properties, "AttachmentOffset"))?;
-    let matrix = crate::placement::placement_matrix_unreported(property)?.rows();
+fn placement_frame(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+) -> Result<Option<(Point3, Vector3, Vector3, Vector3)>, CodecError> {
+    let property = match property(ctx, properties, "Placement")? {
+        Some(property) => Some(property),
+        None => property(ctx, properties, "AttachmentOffset")?,
+    };
+    let Some(property) = property else {
+        return Ok(None);
+    };
+    let Some(matrix) = crate::placement::placement_matrix_unreported(property) else {
+        return Ok(None);
+    };
+    let matrix = matrix.rows();
     let column = |index| Vector3::new(matrix[0][index], matrix[1][index], matrix[2][index]);
-    Some((
+    Ok(Some((
         Point3::new(matrix[0][3], matrix[1][3], matrix[2][3]),
         column(2),
         column(0),
         column(1),
-    ))
+    )))
 }
 
 fn validate_sketch_placement(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
 ) -> Result<(), CodecError> {
-    let Some(property) =
-        property(properties, "Placement").or_else(|| property(properties, "AttachmentOffset"))
-    else {
+    let property = match property(ctx, properties, "Placement")? {
+        Some(property) => Some(property),
+        None => property(ctx, properties, "AttachmentOffset")?,
+    };
+    let Some(property) = property else {
         return Ok(());
     };
     let error = if property.type_name != "App::PropertyPlacement" {
@@ -2309,7 +2554,7 @@ fn validate_sketch_placement(
             ),
             "FreeCAD sketch placement error",
         )?)
-    } else if placement_frame(properties).is_none() {
+    } else if placement_frame(ctx, properties)?.is_none() {
         Some(ctx.format_retained(
             format_args!(
                 "sketch {} placement carrier has incomplete or invalid components",
@@ -2343,20 +2588,22 @@ fn feature_state(
         "Visibility",
     ];
     let mut state = BTreeMap::new();
-    for property in properties
-        .iter()
-        .filter(|property| STATE_NAMES.contains(&property.name.as_str()))
-    {
+    for property in ctx.admit_iter(properties, "fcstd feature state properties")? {
+        if !STATE_NAMES.contains(&property.name.as_str()) {
+            continue;
+        }
         let value = if let Some(link) = property
             .links()
             .first()
             .and_then(|link| link.as_ref()?.object())
         {
             ctx.copy_retained_text(link, "fcstd feature state value")?
-        } else if let Some(value) = scalar_text(ctx, property, |text| {
-            ctx.copy_retained_text(text, "fcstd feature state value")
+        } else if let Some(value) = scalar_text(ctx, property, |ctx, text| {
+            Ok(Some(
+                ctx.copy_retained_text(text, "fcstd feature state value")?,
+            ))
         })? {
-            value?
+            value
         } else {
             ctx.copy_retained_text(property.xml.text(), "fcstd feature state value")?
         };
@@ -2368,7 +2615,7 @@ fn feature_state(
                 "fcstd feature state blank key error",
             ));
         };
-        if state.contains_key(&name) {
+        if ctx.contains_key_btree_map(&state, &name, "fcstd feature state duplicate key")? {
             return Err(crate::resource::malformed_charged(
                 ctx,
                 format_args!("{object} states the property {name} a second time"),
@@ -2385,19 +2632,19 @@ fn bool_property(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<bool>, CodecError> {
-    Ok(required!(scalar_text(
+    scalar_text(
         ctx,
-        required!(property(properties, name)),
-        |value| {
-            if value == "1" || value.eq_ignore_ascii_case("true") {
-                Some(true)
-            } else if value == "0" || value.eq_ignore_ascii_case("false") {
-                Some(false)
+        required!(property(ctx, properties, name)?),
+        |_ctx, value| {
+            if (value == "1") || value.eq_ignore_ascii_case("true") {
+                Ok(Some(true))
+            } else if (value == "0") || value.eq_ignore_ascii_case("false") {
+                Ok(Some(false))
             } else {
-                None
+                Ok(None)
             }
-        }
-    )?))
+        },
+    )
 }
 
 /// Read an operation enumeration while keeping absence distinct from malformed persistence.
@@ -2409,20 +2656,21 @@ fn enumeration_selector(
     name: &str,
     absent_default: u64,
 ) -> Result<Option<u64>, CodecError> {
-    let Some(property) = property(properties, name) else {
+    let Some(property) = property(ctx, properties, name)? else {
         return Ok(Some(absent_default));
     };
     if property.type_name != "App::PropertyEnumeration" {
         return Ok(None);
     }
-    let value = required!(required!(direct_root_value(
+    let value = required!(direct_root_value(
         ctx,
         property,
         "Integer",
         "value",
-        str::parse::<i64>
-    )?)
-    .ok());
+        |ctx, value| Ok(ctx
+            .parse_text::<i64>(value, "fcstd enumeration value")?
+            .ok())
+    )?);
     Ok(u64::try_from(value).ok())
 }
 
@@ -2435,7 +2683,7 @@ fn bool_selector(
     name: &str,
     absent_default: bool,
 ) -> Result<Option<bool>, CodecError> {
-    let Some(property) = property(properties, name) else {
+    let Some(property) = property(ctx, properties, name)? else {
         return Ok(Some(absent_default));
     };
     direct_bool_value(ctx, property)
@@ -2448,20 +2696,21 @@ fn finite_float_selector(
     runtime_type: &str,
     absent_default: FiniteReal,
 ) -> Result<Option<FiniteReal>, CodecError> {
-    let Some(property) = property(properties, name) else {
+    let Some(property) = property(ctx, properties, name)? else {
         return Ok(Some(absent_default));
     };
-    if property.type_name != runtime_type {
+    if property.type_name.as_str() != runtime_type {
         return Ok(None);
     }
-    let value = required!(required!(direct_root_value(
+    let value = required!(direct_root_value(
         ctx,
         property,
         "Float",
         "value",
-        str::parse::<f64>
-    )?)
-    .ok());
+        |ctx, value| Ok(ctx
+            .parse_text::<f64>(value, "fcstd numeric property value")?
+            .ok())
+    )?);
     Ok(FiniteReal::new(value))
 }
 
@@ -2472,17 +2721,15 @@ fn direct_bool_value(
     if property.type_name != "App::PropertyBool" {
         return Ok(None);
     }
-    Ok(required!(direct_root_value(
-        ctx,
-        property,
-        "Bool",
-        "value",
-        |value| match value {
-            "true" => Some(true),
-            "false" => Some(false),
-            _ => None,
+    direct_root_value(ctx, property, "Bool", "value", |_ctx, value| {
+        if value == "true" {
+            Ok(Some(true))
+        } else if value == "false" {
+            Ok(Some(false))
+        } else {
+            Ok(None)
         }
-    )?))
+    })
 }
 
 fn direct_fuzzy_tolerance(
@@ -2492,15 +2739,18 @@ fn direct_fuzzy_tolerance(
     if property.type_name != "App::PropertyFloatConstraint" {
         return Ok(None);
     }
-    let value = required!(required!(direct_root_value(
+    let value = required!(direct_root_value(
         ctx,
         property,
         "Float",
         "value",
-        str::parse::<f64>
-    )?)
-    .ok()
-    .and_then(FiniteReal::new));
+        |ctx, value| {
+            Ok(ctx
+                .parse_text::<f64>(value, "fcstd fuzzy tolerance value")?
+                .ok()
+                .and_then(FiniteReal::new))
+        }
+    )?);
     Ok(Some(
         match cadmpeg_ir::scalar::PositiveLength::from_assigned_real(value) {
             Some(explicit) => FuzzyTolerance::Explicit(explicit),
@@ -2510,15 +2760,18 @@ fn direct_fuzzy_tolerance(
     ))
 }
 
-fn parse_constraints(
-    ctx: &DecodeContext<'_>,
-    object: &ObjectRecord,
-    properties: &[&PropertyRecord],
-    sketch: &SketchId,
-    entities: &[SketchEntity],
-) -> Result<(Vec<SketchConstraint>, Vec<DesignParameter>), CodecError> {
-    let Some(property) = property(properties, "Constraints") else {
-        return Ok((Vec::new(), Vec::new()));
+fn constraint_xml<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    properties: &[&'a PropertyRecord],
+) -> Result<
+    Option<(
+        &'a PropertyRecord,
+        cadmpeg_core::decode::tree::AdmittedXml<'a, 'ctx>,
+    )>,
+    CodecError,
+> {
+    let Some(property) = property(ctx, properties, "Constraints")? else {
+        return Ok(None);
     };
     if property.type_name != "Sketcher::PropertyConstraintList" {
         return Err(malformed_design(
@@ -2540,25 +2793,65 @@ fn parse_constraints(
                 format_args!("invalid sketch constraints {}: {error}", property.id),
             )
         })?;
-    let xml = admitted_xml.document();
-    let records = direct_counted_records(ctx, xml, "ConstraintList", "Constrain", &property.id)?;
+    Ok(Some((property, admitted_xml)))
+}
+
+fn parse_constraints(
+    ctx: &DecodeContext<'_>,
+    object: &ObjectRecord,
+    properties: &[&PropertyRecord],
+    sketch: &SketchId,
+    entities: &[SketchEntity],
+    source: Option<(&PropertyRecord, &roxmltree::Document<'_>)>,
+) -> Result<(Vec<SketchConstraint>, Vec<DesignParameter>), CodecError> {
+    let Some((property, xml)) = source else {
+        return Ok((Vec::new(), Vec::new()));
+    };
+    let (records, _record_storage) =
+        direct_counted_records(ctx, xml, "ConstraintList", "Constrain", &property.id)?;
     let mut constraints = Vec::new();
     let mut parameters = Vec::new();
-    for (index, node) in records.into_iter().enumerate() {
-        let (type_code, native_kind) = match node.attribute("Type") {
-            None => (None, "missing_type".to_owned()),
-            Some(value) => match value.parse::<i64>() {
-                Ok(type_code) => (Some(type_code), constraint_kind(type_code).to_owned()),
-                Err(_) => (None, "malformed_type".to_owned()),
-            },
-        };
-        let operands = constraint_operands(ctx, node).map_err(|error| match error {
-            CodecError::Malformed(message) => malformed_design(
-                ctx,
-                format_args!("{} constraint {}: {message}", property.id, index + 1),
-            ),
-            error => error,
-        })?;
+    for (index, node) in ctx
+        .admit_iter(&records, "FreeCAD sketch constraints")?
+        .copied()
+        .enumerate()
+    {
+        let (type_code, native_kind) =
+            match ctx.xml_attribute(node, "Type", "FreeCAD design XML attribute")? {
+                None => (
+                    None,
+                    ctx.copy_retained_text("missing_type", "fcstd sketch constraint type")?,
+                ),
+                Some(value) => {
+                    match ctx.parse_text::<i64>(value, "fcstd sketch constraint type")? {
+                        Ok(type_code) => (
+                            Some(type_code),
+                            ctx.copy_retained_text(
+                                constraint_kind(type_code),
+                                "fcstd sketch constraint type",
+                            )?,
+                        ),
+                        Err(_) => (
+                            None,
+                            ctx.copy_retained_text(
+                                "malformed_type",
+                                "fcstd sketch constraint type",
+                            )?,
+                        ),
+                    }
+                }
+            };
+        let (operands, _operand_storage) = ctx
+            .with_scoped_storage("fcstd constraint operand storage", || {
+                constraint_operands(ctx, node)
+            })
+            .map_err(|error| match error {
+                CodecError::Malformed(message) => malformed_design(
+                    ctx,
+                    format_args!("{} constraint {}: {message}", property.id, index + 1),
+                ),
+                error => error,
+            })?;
         let resolve = |entity, position| {
             if type_code == Some(9) {
                 match entity {
@@ -2569,99 +2862,120 @@ fn parse_constraints(
             }
             resolve_operand(ctx, entity, position, entities)
         };
-        let mut resolved =
-            ctx.collection_vec(operands.len(), "fcstd resolved constraint operands")?;
-        for (entity, position) in &operands {
-            if let Some(locus) = resolve(*entity, *position)? {
-                resolved.push(locus);
+        let mut resolved_storage = ctx.reserve_scoped(0, "fcstd resolved constraint storage")?;
+        let mut resolved = resolved_storage.with_storage(|| {
+            ctx.vector_storage(operands.len(), "fcstd resolved constraint operands")
+        })?;
+        for (entity, position) in ctx
+            .admit_iter(&operands, "fcstd resolved constraint operands")?
+            .copied()
+        {
+            if let Some(locus) = resolved_storage.with_storage(|| resolve(entity, position))? {
+                resolved_storage.with_storage(|| {
+                    ctx.push_vec(&mut resolved, locus, "fcstd resolved constraint operands")
+                })?;
             }
         }
         let all_resolved = resolved.len() == operands.len();
         if matches!(type_code, Some(7 | 8)) && operands.len() == 1 && resolved.len() == 1 {
-            if let Some(root) = entities
-                .iter()
-                .find(|entity| entity.id().as_str().ends_with(":reference-root-point"))
-            {
-                ctx.reserve_vec(&mut resolved, 1, "fcstd resolved constraint operands")?;
-                resolved.insert(
-                    0,
-                    SketchLocus::Entity(
-                        root.id()
-                            .try_clone_for_decode(ctx, "fcstd constraint root entity")?,
-                    ),
-                );
+            if let Some(root) = ctx.find_by(
+                entities,
+                |entity| Ok(entity.id().as_str().ends_with(":reference-root-point")),
+                "fcstd reference root entity search",
+            )? {
+                resolved_storage.with_storage(|| {
+                    ctx.insert_vec(
+                        &mut resolved,
+                        0,
+                        SketchLocus::Entity(
+                            root.id()
+                                .try_clone_for_decode(ctx, "fcstd constraint root entity")?,
+                        ),
+                        "fcstd resolved constraint operands",
+                    )
+                })?;
             }
         }
-        let parameter = if matches!(type_code, Some(6..=9 | 11 | 16 | 18 | 19)) {
-            node.attribute("Value")
-                .and_then(|value| value.parse::<f64>().ok())
-                .map(|value| {
-                    let id = ParameterId::mint(design_identity_text(
-                        ctx,
-                        "parameter",
-                        object,
-                        format_args!(":constraint:{}", index + 1),
-                        "fcstd constraint parameter identity",
-                    )?)
-                    .map_err(CodecError::malformed)?;
-                    let value = match type_code {
-                        Some(9) => ParameterValue::Angle(
-                            cadmpeg_ir::scalar::Angle::new(value).ok_or_else(|| {
-                                CodecError::malformed("constraint angle must be finite")
-                            })?,
-                        ),
-                        Some(16 | 19) => ParameterValue::Real(
-                            cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
-                                CodecError::malformed("constraint real must be finite")
-                            })?,
-                        ),
-                        _ => ParameterValue::Length(Length::new(value).ok_or_else(|| {
-                            CodecError::malformed("constraint length must be finite")
-                        })?),
-                    };
-                    let path = ctx.format_retained(
-                        format_args!("Constraints[{index}]"),
-                        "fcstd constraint expression path",
-                    )?;
-                    let expression = expression_binding(ctx, properties, &path)?;
-                    let mut parameter_properties = BTreeMap::new();
+        let parameter_value = if matches!(type_code, Some(6..=9 | 11 | 16 | 18 | 19)) {
+            match ctx.xml_attribute(node, "Value", "FreeCAD design XML attribute")? {
+                Some(value) => ctx
+                    .parse_text::<f64>(value, "fcstd sketch constraint value")?
+                    .ok(),
+                None => None,
+            }
+        } else {
+            None
+        };
+        let parameter = parameter_value
+            .map(|value| {
+                let id = ParameterId::mint(design_identity_text(
+                    ctx,
+                    "parameter",
+                    object,
+                    format_args!(":constraint:{}", index + 1),
+                    "fcstd constraint parameter identity",
+                )?)
+                .map_err(CodecError::malformed)?;
+                let value = match type_code {
+                    Some(9) => {
+                        ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(value).ok_or_else(
+                            || CodecError::malformed("constraint angle must be finite"),
+                        )?)
+                    }
+                    Some(16 | 19) => ParameterValue::Real(
+                        cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
+                            CodecError::malformed("constraint real must be finite")
+                        })?,
+                    ),
+                    _ => ParameterValue::Length(Length::new(value).ok_or_else(|| {
+                        CodecError::malformed("constraint length must be finite")
+                    })?),
+                };
+                let (path, _path_storage) = ctx.format_scoped(
+                    format_args!("Constraints[{index}]"),
+                    "fcstd constraint expression path",
+                )?;
+                let expression = expression_binding(ctx, properties, &path)?;
+                let mut parameter_properties = BTreeMap::new();
+                let driving = ctx
+                    .xml_attribute(node, "IsDriving", "FreeCAD design XML attribute")?
+                    .unwrap_or("1");
+                ctx.insert_btree_map(
+                    &mut parameter_properties,
+                    cadmpeg_core::nonblank_literal!("is_driving"),
+                    ctx.copy_retained_text(driving, "fcstd constraint driving flag")?,
+                    "fcstd constraint parameter properties",
+                )?;
+                if let Some(name) = ctx
+                    .xml_attribute(node, "Name", "FreeCAD design XML attribute")?
+                    .filter(|name| !name.is_empty())
+                {
                     ctx.insert_btree_map(
                         &mut parameter_properties,
-                        cadmpeg_core::nonblank_literal!("is_driving"),
-                        ctx.copy_retained_text(
-                            node.attribute("IsDriving").unwrap_or("1"),
-                            "fcstd constraint driving flag",
-                        )?,
+                        cadmpeg_core::nonblank_literal!("source_name"),
+                        ctx.copy_retained_text(name, "fcstd constraint source name")?,
                         "fcstd constraint parameter properties",
                     )?;
-                    if let Some(name) = node.attribute("Name").filter(|name| !name.is_empty()) {
-                        ctx.insert_btree_map(
-                            &mut parameter_properties,
-                            cadmpeg_core::nonblank_literal!("source_name"),
-                            ctx.copy_retained_text(name, "fcstd constraint source name")?,
-                            "fcstd constraint parameter properties",
-                        )?;
-                    }
-                    if let Some((native_ref, _)) = &expression {
+                }
+                let expression = match expression {
+                    Some((native_ref, expression)) => {
                         ctx.insert_btree_map(
                             &mut parameter_properties,
                             cadmpeg_core::nonblank_literal!("expression_native_ref"),
-                            ctx.copy_retained_text(
-                                native_ref,
-                                "fcstd constraint expression reference",
-                            )?,
+                            native_ref,
                             "fcstd constraint parameter properties",
                         )?;
+                        expression
                     }
-                    ctx.reserve_vec(&mut parameters, 1, "fcstd constraint parameters")?;
-                    let expression = match expression {
-                        Some((_, expression)) => expression,
-                        None => ctx.copy_retained_text(
-                            node.attribute("Value").unwrap_or_default(),
-                            "fcstd constraint expression",
-                        )?,
-                    };
-                    parameters.push(DesignParameter {
+                    None => ctx.copy_retained_text(
+                        ctx.xml_attribute(node, "Value", "FreeCAD design XML attribute")?
+                            .unwrap_or_default(),
+                        "fcstd constraint expression",
+                    )?,
+                };
+                ctx.push_vec(
+                    &mut parameters,
+                    DesignParameter {
                         id: id.try_clone_for_decode(ctx, "fcstd constraint parameter identity")?,
                         owner: Some(feature_id(ctx, object)?),
                         ordinal: u32::try_from(index).map_err(|_| {
@@ -2685,38 +2999,49 @@ fn parse_constraints(
                             &property.id,
                             "fcstd constraint parameter native reference",
                         )?),
-                    });
-                    Ok::<_, CodecError>(id)
-                })
-                .transpose()?
-        } else {
-            None
-        };
+                    },
+                    "fcstd constraint parameters",
+                )?;
+                Ok::<_, CodecError>(id)
+            })
+            .transpose()?;
         let internal_alignment =
             || -> Result<Option<SketchConstraintDefinitionInput>, CodecError> {
                 use cadmpeg_ir::sketches::SketchInternalAlignment as Alignment;
-                let alignment = (|| {
-                    let index = || {
-                        node.attribute("InternalAlignmentIndex")
-                            .and_then(|value| value.parse::<u32>().ok())
-                    };
-                    Some(match int_attr(node, "InternalAlignmentType")? {
-                        1 => Alignment::EllipseMajorDiameter,
-                        2 => Alignment::EllipseMinorDiameter,
-                        3 => Alignment::EllipseFocus1,
-                        4 => Alignment::EllipseFocus2,
-                        5 => Alignment::HyperbolaMajor,
-                        6 => Alignment::HyperbolaMinor,
-                        7 => Alignment::HyperbolaFocus,
-                        8 => Alignment::ParabolaFocus,
-                        9 => Alignment::BsplineControlPoint(index()?),
-                        10 => Alignment::BsplineKnotPoint(index()?),
-                        11 => Alignment::ParabolaFocalAxis,
-                        _ => return None,
-                    })
-                })();
-                let Some(alignment) = alignment else {
+                let Some(alignment_type) = int_attr(ctx, node, "InternalAlignmentType")? else {
                     return Ok(None);
+                };
+                let alignment = match alignment_type {
+                    1 => Alignment::EllipseMajorDiameter,
+                    2 => Alignment::EllipseMinorDiameter,
+                    3 => Alignment::EllipseFocus1,
+                    4 => Alignment::EllipseFocus2,
+                    5 => Alignment::HyperbolaMajor,
+                    6 => Alignment::HyperbolaMinor,
+                    7 => Alignment::HyperbolaFocus,
+                    8 => Alignment::ParabolaFocus,
+                    9 | 10 => {
+                        let Some(index) = ctx.xml_attribute(
+                            node,
+                            "InternalAlignmentIndex",
+                            "FreeCAD design XML attribute",
+                        )?
+                        else {
+                            return Ok(None);
+                        };
+                        let Ok(index) =
+                            ctx.parse_text::<u32>(index, "fcstd sketch alignment index")?
+                        else {
+                            return Ok(None);
+                        };
+                        if alignment_type == 9 {
+                            Alignment::BsplineControlPoint(index)
+                        } else {
+                            Alignment::BsplineKnotPoint(index)
+                        }
+                    }
+                    11 => Alignment::ParabolaFocalAxis,
+                    _ => return Ok(None),
                 };
                 let Some(helper) = resolved.first() else {
                     return Ok(None);
@@ -2741,7 +3066,9 @@ fn parse_constraints(
                     elements: copy_constraint_loci(ctx, &resolved)?,
                 })),
                 Some(21) => {
-                    let Some(metadata) = node.attribute("MetaData") else {
+                    let Some(metadata) =
+                        ctx.xml_attribute(node, "MetaData", "FreeCAD design XML attribute")?
+                    else {
                         return Ok(None);
                     };
                     let (_reservation, metadata) = match ctx
@@ -2779,8 +3106,15 @@ fn parse_constraints(
         )?
         .ok_or_else(|| CodecError::malformed("empty native constraint kind"))?;
         let mut native_operands = Vec::new();
-        for (entity, position) in &operands {
-            if *entity >= 0 && resolve(*entity, *position)?.is_some() {
+        for (entity, position) in ctx
+            .admit_iter(&operands, "fcstd native constraint operands")?
+            .copied()
+        {
+            if entity >= 0
+                && resolved_storage
+                    .with_storage(|| resolve(entity, position))?
+                    .is_some()
+            {
                 continue;
             }
             let native_kind = cadmpeg_core::text::NonBlankString::for_decode(
@@ -2801,13 +3135,16 @@ fn parse_constraints(
                     ),
                 )
             })?;
-            ctx.reserve_vec(&mut native_operands, 1, "fcstd native constraint operands")?;
-            native_operands.push(SketchNativeOperand {
-                native_kind,
-                field: None,
-                object_index: u32::try_from(*entity).ok(),
-                native_ref: None,
-            });
+            ctx.push_vec(
+                &mut native_operands,
+                SketchNativeOperand {
+                    native_kind,
+                    field: None,
+                    object_index: u32::try_from(entity).ok(),
+                    native_ref: None,
+                },
+                "fcstd native constraint operands",
+            )?;
         }
         let mut definition = if type_code == Some(15) && all_resolved {
             internal_alignment()?
@@ -2838,12 +3175,14 @@ fn parse_constraints(
             definition
         } else {
             let mut entities =
-                ctx.collection_vec(resolved.len(), "fcstd native constraint entities")?;
-            for locus in &resolved {
-                entities.push(
+                ctx.vector_storage(resolved.len(), "fcstd native constraint entities")?;
+            for locus in ctx.admit_iter(&resolved, "fcstd native constraint entities")? {
+                ctx.push_vec(
+                    &mut entities,
                     locus_entity(locus)
                         .try_clone_for_decode(ctx, "fcstd constraint entity identity")?,
-                );
+                    "fcstd native constraint entities",
+                )?;
             }
             SketchConstraintDefinitionInput::Native {
                 native_kind,
@@ -2855,34 +3194,42 @@ fn parse_constraints(
                 operands: native_operands,
             }
         };
-        ctx.reserve_vec(&mut constraints, 1, "fcstd sketch constraints")?;
-        constraints.push(SketchConstraint {
-            id: SketchConstraintId::mint(design_identity_text(
-                ctx,
-                "sketch-constraint",
-                object,
-                format_args!(":{}", index + 1),
-                "fcstd sketch constraint identity",
-            )?)
-            .map_err(CodecError::malformed)?,
-            sketch: sketch.try_clone_for_decode(ctx, "fcstd constraint sketch identity")?,
-            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-            name: nonempty_attr(ctx, node, "Name")?,
-            driving: bool_attr(node, "IsDriving"),
-            active: bool_attr(node, "IsActive"),
-            virtual_space: bool_attr(node, "IsInVirtualSpace"),
-            visible: bool_attr(node, "IsVisible"),
-            orientation: node
-                .attribute("Orientation")
-                .and_then(|value| value.parse().ok()),
-            label_distance: label_attr(node, "LabelDistance"),
-            label_position: label_attr(node, "LabelPosition"),
-            metadata: nonempty_attr(ctx, node, "MetaData")?,
-            native_ref: Some(
-                ctx.copy_retained_text(&property.id, "fcstd constraint native reference")?,
-            ),
-        });
+        let orientation =
+            match ctx.xml_attribute(node, "Orientation", "FreeCAD design XML attribute")? {
+                Some(value) => ctx
+                    .parse_text::<u32>(value, "fcstd constraint orientation")?
+                    .ok(),
+                None => None,
+            };
+        ctx.push_vec(
+            &mut constraints,
+            SketchConstraint {
+                id: SketchConstraintId::mint(design_identity_text(
+                    ctx,
+                    "sketch-constraint",
+                    object,
+                    format_args!(":{}", index + 1),
+                    "fcstd sketch constraint identity",
+                )?)
+                .map_err(CodecError::malformed)?,
+                sketch: sketch.try_clone_for_decode(ctx, "fcstd constraint sketch identity")?,
+                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                name: nonempty_attr(ctx, node, "Name")?,
+                driving: bool_attr(ctx, node, "IsDriving")?,
+                active: bool_attr(ctx, node, "IsActive")?,
+                virtual_space: bool_attr(ctx, node, "IsInVirtualSpace")?,
+                visible: bool_attr(ctx, node, "IsVisible")?,
+                orientation,
+                label_distance: label_attr(ctx, node, "LabelDistance")?,
+                label_position: label_attr(ctx, node, "LabelPosition")?,
+                metadata: nonempty_attr(ctx, node, "MetaData")?,
+                native_ref: Some(
+                    ctx.copy_retained_text(&property.id, "fcstd constraint native reference")?,
+                ),
+            },
+            "fcstd sketch constraints",
+        )?;
     }
     Ok((constraints, parameters))
 }
@@ -2904,9 +3251,17 @@ fn midpoint_constraint(
         let Some(midpoint) = resolve_operand(ctx, entity, position, entities)? else {
             return Ok(None);
         };
-        let Some(bounded) = entities
-            .iter()
-            .find(|candidate| candidate.id() == locus_entity(&midpoint))
+        let Some(bounded) = ctx.find_by(
+            entities,
+            |candidate| {
+                ctx.equal(
+                    candidate.id(),
+                    locus_entity(&midpoint),
+                    "fcstd midpoint entity identity",
+                )
+            },
+            "fcstd midpoint line search",
+        )?
         else {
             return Ok(None);
         };
@@ -2920,9 +3275,17 @@ fn midpoint_constraint(
         let Some(point) = resolve_operand(ctx, entity, position, entities)? else {
             return Ok(None);
         };
-        let Some(point_entity) = entities
-            .iter()
-            .find(|candidate| candidate.id() == locus_entity(&point))
+        let Some(point_entity) = ctx.find_by(
+            entities,
+            |candidate| {
+                ctx.equal(
+                    candidate.id(),
+                    locus_entity(&point),
+                    "fcstd midpoint entity identity",
+                )
+            },
+            "fcstd midpoint point search",
+        )?
         else {
             return Ok(None);
         };
@@ -2942,24 +3305,35 @@ fn midpoint_constraint(
     Ok(None)
 }
 
-fn bool_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<bool> {
-    let value = node.attribute(name)?;
-    if value == "1" || value.eq_ignore_ascii_case("true") {
-        Some(true)
-    } else if value == "0" || value.eq_ignore_ascii_case("false") {
-        Some(false)
+fn bool_attr(
+    ctx: &DecodeContext<'_>,
+    node: roxmltree::Node<'_, '_>,
+    name: &str,
+) -> Result<Option<bool>, CodecError> {
+    let Some(value) = ctx.xml_attribute(node, name, "FreeCAD design XML attribute")? else {
+        return Ok(None);
+    };
+    if (value == "1") || value.eq_ignore_ascii_case("true") {
+        Ok(Some(true))
+    } else if (value == "0") || value.eq_ignore_ascii_case("false") {
+        Ok(Some(false))
     } else {
-        None
+        Ok(None)
     }
 }
 
 fn label_attr(
+    ctx: &DecodeContext<'_>,
     node: roxmltree::Node<'_, '_>,
     name: &str,
-) -> Option<cadmpeg_ir::sketches::SketchLabelValue> {
-    node.attribute(name)
-        .and_then(|value| value.parse::<f64>().ok())
-        .and_then(|value| cadmpeg_ir::sketches::SketchLabelValue::try_from(value).ok())
+) -> Result<Option<cadmpeg_ir::sketches::SketchLabelValue>, CodecError> {
+    let Some(value) = ctx.xml_attribute(node, name, "FreeCAD design XML attribute")? else {
+        return Ok(None);
+    };
+    let Ok(value) = ctx.parse_text::<f64>(value, "fcstd constraint label value")? else {
+        return Ok(None);
+    };
+    Ok(cadmpeg_ir::sketches::SketchLabelValue::try_from(value).ok())
 }
 
 fn nonempty_attr(
@@ -2967,10 +3341,12 @@ fn nonempty_attr(
     node: roxmltree::Node<'_, '_>,
     name: &str,
 ) -> Result<Option<String>, CodecError> {
-    node.attribute(name)
-        .filter(|value| !value.is_empty())
-        .map(|value| ctx.copy_retained_text(value, "fcstd constraint attribute"))
-        .transpose()
+    match ctx.xml_attribute(node, name, "FreeCAD design XML attribute")? {
+        Some(value) if !value.is_empty() => Ok(Some(
+            ctx.copy_retained_text(value, "fcstd constraint attribute")?,
+        )),
+        _ => Ok(None),
+    }
 }
 
 fn expression_binding(
@@ -2978,17 +3354,33 @@ fn expression_binding(
     properties: &[&PropertyRecord],
     path: &str,
 ) -> Result<Option<(String, String)>, CodecError> {
-    let Some(engine) = property(properties, "ExpressionEngine") else {
+    let Some(engine) = property(ctx, properties, "ExpressionEngine")? else {
         return Ok(None);
     };
-    let value = engine.values().iter().find(|value| {
-        value.tag == "Expression"
-            && value
-                .attributes
-                .get("path")
-                .is_some_and(|value| value == path)
-    });
-    let Some(expression) = value.and_then(|value| value.attributes.get("expression")) else {
+    let Some(value) = ctx.find_by(
+        engine.values(),
+        |value| {
+            if value.tag.as_str() != "Expression" {
+                return Ok(false);
+            }
+            let Some(value_path) =
+                ctx.get_btree_map(&value.attributes, "path", "fcstd expression binding path")?
+            else {
+                return Ok(false);
+            };
+            ctx.equal(value_path.as_str(), path, "fcstd expression binding path")
+        },
+        "fcstd expression binding values",
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(expression) = ctx.get_btree_map(
+        &value.attributes,
+        "expression",
+        "fcstd expression binding text",
+    )?
+    else {
         return Ok(None);
     };
     Ok(Some((
@@ -2997,265 +3389,414 @@ fn expression_binding(
     )))
 }
 
-fn bind_parameter_dependencies(
-    ctx: &DecodeContext<'_>,
+fn bind_parameter_dependencies<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     parameters: &mut Vec<DesignParameter>,
     objects: &[ObjectRecord],
     cycle_affected_features: &BTreeSet<FeatureId>,
-) -> Result<BTreeSet<FeatureId>, CodecError> {
-    let mut object_names = HashMap::new();
-    for object in objects {
-        ctx.insert_hash_map(
-            &mut object_names,
-            feature_id(ctx, object)?,
-            object.name().as_str(),
-            "fcstd parameter dependency object names",
-        )?;
-    }
-    let mut candidates =
-        ctx.collection_vec(parameters.len(), "fcstd parameter dependency candidates")?;
-    for parameter in parameters.iter() {
-        let source_name = parameter
-            .properties
-            .get("source_name")
-            .filter(|source_name| *source_name != &parameter.name);
-        let mut names = ctx.collection_vec(
-            1 + usize::from(source_name.is_some()),
-            "fcstd parameter candidate names",
-        )?;
-        names.push(ctx.copy_retained_text(&parameter.name, "fcstd parameter candidate name")?);
-        if let Some(source_name) = source_name {
-            names.push(ctx.copy_retained_text(source_name, "fcstd parameter source name")?);
-        }
-        candidates.push((
-            parameter
-                .id
-                .try_clone_for_decode(ctx, "fcstd parameter candidate identity")?,
-            parameter
-                .owner
-                .as_ref()
-                .map(|owner| owner.try_clone_for_decode(ctx, "fcstd parameter candidate owner"))
-                .transpose()?,
-            names,
-        ));
-    }
-    let mut local_candidates = HashMap::<(FeatureId, String), Vec<ParameterId>>::new();
-    let mut qualified_candidates = HashMap::<String, Vec<ParameterId>>::new();
-    for (id, owner, names) in &candidates {
-        let Some(owner) = owner else { continue };
-        for name in names {
-            let key = (
-                owner.try_clone_for_decode(ctx, "fcstd local candidate owner")?,
-                ctx.copy_retained_text(name, "fcstd local candidate name")?,
-            );
-            if !local_candidates.contains_key(&key) {
-                ctx.reserve_map(&mut local_candidates, 1, "fcstd local candidate keys")?;
-            }
-            let bucket = local_candidates.entry(key).or_default();
-            ctx.reserve_vec(bucket, 1, "fcstd local candidate identities")?;
-            bucket.push(id.try_clone_for_decode(ctx, "fcstd local candidate identity")?);
-            if let Some(object) = object_names.get(owner) {
-                let key = ctx.format_retained(
-                    format_args!("{object}.{name}"),
-                    "fcstd qualified candidate name",
+) -> Result<(BTreeSet<FeatureId>, ScopedReservation<'ctx>), CodecError> {
+    let mut dependency_storage =
+        ctx.reserve_scoped(0, "fcstd parameter dependency result storage")?;
+    let (dependencies, candidate_storage) =
+        ctx.with_scoped_storage("fcstd parameter dependency candidates", || {
+            let mut object_names = HashMap::new();
+            for object in ctx.admit_iter(objects, "fcstd parameter dependency objects")? {
+                ctx.insert_hash_map(
+                    &mut object_names,
+                    feature_id(ctx, object)?,
+                    object.name().as_str(),
+                    "fcstd parameter dependency object names",
                 )?;
-                if !qualified_candidates.contains_key(&key) {
-                    ctx.reserve_map(
-                        &mut qualified_candidates,
-                        1,
-                        "fcstd qualified candidate keys",
-                    )?;
-                }
-                let bucket = qualified_candidates.entry(key).or_default();
-                ctx.reserve_vec(bucket, 1, "fcstd qualified candidate identities")?;
-                bucket.push(id.try_clone_for_decode(ctx, "fcstd qualified candidate identity")?);
             }
-        }
-    }
-    let mut local = HashMap::new();
-    for (key, ids) in local_candidates {
-        if ids.len() == 1 {
-            ctx.insert_hash_map(
-                &mut local,
-                key,
-                ids.into_iter().next().ok_or_else(|| {
-                    CodecError::malformed("singleton local candidate lost its identity")
-                })?,
+            let mut candidates =
+                ctx.collection_vec(parameters.len(), "fcstd parameter dependency candidates")?;
+            for parameter in ctx.admit_iter(parameters.as_slice(), "fcstd dependency parameters")? {
+                let source_name = match ctx.get_btree_map(
+                    &parameter.properties,
+                    "source_name",
+                    "fcstd parameter source name",
+                )? {
+                    Some(name)
+                        if !ctx.equal(name, &parameter.name, "fcstd parameter source name")? =>
+                    {
+                        Some(name)
+                    }
+                    _ => None,
+                };
+                let mut names = ctx.collection_vec(
+                    1 + usize::from(source_name.is_some()),
+                    "fcstd parameter candidate names",
+                )?;
+                names.push(parameter.name.as_str());
+                if let Some(source_name) = source_name {
+                    names.push(source_name.as_str());
+                }
+                candidates.push((&parameter.id, parameter.owner.as_ref(), names));
+            }
+            let mut local_candidates = BTreeMap::<(&FeatureId, &str), Vec<&ParameterId>>::new();
+            let mut qualified_candidates = BTreeMap::<String, Vec<&ParameterId>>::new();
+            for (id, owner, names) in
+                ctx.admit_iter(&candidates, "fcstd parameter candidate groups")?
+            {
+                let Some(owner) = owner else { continue };
+                for name in ctx.admit_iter(names, "fcstd parameter candidate names")? {
+                    let key = (*owner, *name);
+                    ctx.push_btree_group(
+                        &mut local_candidates,
+                        key,
+                        *id,
+                        "fcstd local candidate keys",
+                        "fcstd local candidate identities",
+                    )?;
+                    if let Some(object) =
+                        ctx.get_hash_map(&object_names, owner, "fcstd qualified candidate owner")?
+                    {
+                        let key = ctx.format_retained(
+                            format_args!("{object}.{name}"),
+                            "fcstd qualified candidate name",
+                        )?;
+                        ctx.push_btree_group(
+                            &mut qualified_candidates,
+                            key,
+                            *id,
+                            "fcstd qualified candidate keys",
+                            "fcstd qualified candidate identities",
+                        )?;
+                    }
+                }
+            }
+            let local = ctx.collect_hash_map(
+                local_candidates.into_iter().map(|(key, mut ids)| {
+                    let unique = (ids.len() == 1).then(|| ids.pop()).flatten();
+                    (key, unique)
+                }),
                 "fcstd unique local candidates",
             )?;
-        }
-    }
-    let mut qualified = HashMap::new();
-    for (key, ids) in qualified_candidates {
-        if ids.len() == 1 {
-            ctx.insert_hash_map(
-                &mut qualified,
-                key,
-                ids.into_iter().next().ok_or_else(|| {
-                    CodecError::malformed("singleton qualified candidate lost its identity")
-                })?,
+            let qualified = ctx.collect_hash_map(
+                qualified_candidates.into_iter().map(|(key, mut ids)| {
+                    let unique = (ids.len() == 1).then(|| ids.pop()).flatten();
+                    (key, unique)
+                }),
                 "fcstd unique qualified candidates",
             )?;
-        }
-    }
-    for parameter in parameters.iter_mut() {
-        let mut dependencies = BTreeSet::new();
-        for identifier in expression_identifiers(&parameter.expression) {
-            let dependency = if let Some(qualified) = qualified.get(identifier) {
-                Some(qualified)
-            } else if let Some(owner) = parameter.owner.as_ref() {
-                local.get(&(
-                    owner.try_clone_for_decode(ctx, "fcstd dependency lookup owner")?,
-                    ctx.copy_retained_text(identifier, "fcstd dependency lookup name")?,
-                ))
-            } else {
-                None
-            };
-            if let Some(dependency) = dependency.filter(|id| **id != parameter.id) {
-                if !dependencies.contains(dependency) {
-                    ctx.insert_btree_set(
+            dependency_storage.with_storage(|| {
+                let mut dependencies =
+                    ctx.vector_storage(parameters.len(), "fcstd parameter dependency results")?;
+                for parameter in
+                    ctx.admit_iter(parameters.as_slice(), "fcstd parameter dependency scan")?
+                {
+                    let owner_cycle = match parameter.owner.as_ref() {
+                        Some(owner) => ctx.contains_btree_set(
+                            cycle_affected_features,
+                            owner,
+                            "fcstd parameter dependency cycle owner",
+                        )?,
+                        None => false,
+                    };
+                    if owner_cycle {
+                        ctx.push_vec(
+                            &mut dependencies,
+                            None,
+                            "fcstd parameter dependency results",
+                        )?;
+                        continue;
+                    }
+                    let mut found = BTreeSet::new();
+                    expression_identifiers_until(
+                        ctx,
+                        &parameter.expression,
+                        "fcstd parameter expression identifiers",
+                        |identifier| {
+                            let qualified_dependency = ctx
+                                .get_hash_map(
+                                    &qualified,
+                                    identifier,
+                                    "fcstd qualified dependency lookup",
+                                )?
+                                .and_then(Option::as_ref)
+                                .copied();
+                            let dependency = if qualified_dependency.is_some() {
+                                qualified_dependency
+                            } else if let Some(owner) = parameter.owner.as_ref() {
+                                let key = (owner, identifier);
+                                ctx.get_hash_map(&local, &key, "fcstd local dependency lookup")?
+                                    .and_then(Option::as_ref)
+                                    .copied()
+                            } else {
+                                None
+                            };
+                            if let Some(dependency) = dependency {
+                                if !ctx.equal(
+                                    dependency,
+                                    &parameter.id,
+                                    "fcstd parameter self dependency check",
+                                )? && !ctx.contains_btree_set(
+                                    &found,
+                                    dependency,
+                                    "fcstd parameter dependency duplicate lookup",
+                                )? {
+                                    ctx.insert_btree_set(
+                                        &mut found,
+                                        dependency.try_clone_for_decode(
+                                            ctx,
+                                            "fcstd scratch dependency identity",
+                                        )?,
+                                        "fcstd parameter dependencies",
+                                    )?;
+                                }
+                            }
+                            Ok(true)
+                        },
+                    )?;
+                    ctx.push_vec(
                         &mut dependencies,
-                        dependency
-                            .try_clone_for_decode(ctx, "fcstd parameter dependency identity")?,
-                        "fcstd parameter dependencies",
+                        Some(found),
+                        "fcstd parameter dependency results",
                     )?;
                 }
+                Ok::<_, CodecError>(dependencies)
+            })
+        })?;
+    drop(candidate_storage);
+    for index in ctx.admit_iter(
+        &(0..parameters.len()),
+        "fcstd parameter dependency materialization",
+    )? {
+        let parameter = &mut parameters[index];
+        parameter.dependencies = match &dependencies[index] {
+            None => DistinctMembers::default(),
+            Some(dependencies) => {
+                let mut members =
+                    ctx.vector_storage(dependencies.len(), "fcstd parameter dependency members")?;
+                for dependency in
+                    ctx.admit_iter(dependencies, "fcstd parameter dependency members")?
+                {
+                    ctx.push_vec(
+                        &mut members,
+                        dependency
+                            .try_clone_for_decode(ctx, "fcstd parameter dependency identity")?,
+                        "fcstd parameter dependency members",
+                    )?;
+                }
+                DistinctMembers::try_from(members, ctx).map_err(CodecError::from)?
             }
-        }
-        parameter.dependencies = if parameter
-            .owner
-            .as_ref()
-            .is_some_and(|owner| cycle_affected_features.contains(owner))
-        {
-            // The native property record retains the expression. A neutral
-            // parameter edge would create an invented evaluation order for
-            // a history that FreeCAD itself could not topologically sort.
-            DistinctMembers::default()
-        } else {
-            let mut members =
-                ctx.collection_vec(dependencies.len(), "fcstd parameter dependency members")?;
-            members.extend(dependencies);
-            DistinctMembers::try_from(members, ctx).map_err(CodecError::from)?
         };
     }
-    let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();
-    for parameter in parameters.iter() {
-        let owner = parameter
-            .owner
-            .as_ref()
-            .map(|owner| owner.try_clone_for_decode(ctx, "fcstd ordinal owner identity"))
-            .transpose()?;
-        if !owner_ordinals.contains_key(&owner) {
-            ctx.reserve_map(&mut owner_ordinals, 1, "fcstd ordinal owner groups")?;
+    drop(dependencies);
+    drop(dependency_storage);
+
+    let mut owner_ordinal_storage =
+        ctx.reserve_scoped(0, "fcstd owner ordinal grouping storage")?;
+    let mut owner_ordinals = BTreeMap::<Option<FeatureId>, Vec<u32>>::new();
+    for parameter in ctx.admit_iter(parameters.as_slice(), "fcstd ordinal owner groups")? {
+        if let Some(ordinals) = ctx.get_mut_btree_map(
+            &mut owner_ordinals,
+            &parameter.owner,
+            "fcstd ordinal owner groups",
+        )? {
+            owner_ordinal_storage.with_storage(|| {
+                ctx.push_vec(ordinals, parameter.ordinal, "fcstd owner ordinals")
+            })?;
+        } else {
+            owner_ordinal_storage.with_storage(|| {
+                let owner = parameter
+                    .owner
+                    .as_ref()
+                    .map(|owner| owner.try_clone_for_decode(ctx, "fcstd ordinal owner identity"))
+                    .transpose()?;
+                ctx.push_btree_group(
+                    &mut owner_ordinals,
+                    owner,
+                    parameter.ordinal,
+                    "fcstd ordinal owner groups",
+                    "fcstd owner ordinals",
+                )
+            })?;
         }
-        let ordinals = owner_ordinals.entry(owner).or_default();
-        ctx.reserve_vec(ordinals, 1, "fcstd owner ordinals")?;
-        ordinals.push(parameter.ordinal);
     }
-    for ordinals in owner_ordinals.values_mut() {
-        ctx.sort_unstable_by(
+    for (_, ordinals) in ctx.admit_iter(&mut owner_ordinals, "fcstd owner ordinal sorting")? {
+        ctx.stable_sort_by(
             ordinals,
             |value| value,
             Ord::cmp,
             "fcstd owner ordinals sort",
         )?;
     }
-    let parameter_cycle_features = order_parameters_by_dependencies(ctx, parameters)?;
-    for parameter in parameters.iter_mut() {
-        if parameter
-            .owner
-            .as_ref()
-            .is_some_and(|owner| parameter_cycle_features.contains(owner))
-        {
+    let (parameter_cycle_features, parameter_cycle_storage) =
+        order_parameters_by_dependencies(ctx, parameters)?;
+    for index in ctx.admit_iter(
+        &(0..parameters.len()),
+        "fcstd parameter dependency cycle clearing",
+    )? {
+        let has_cycle = match parameters[index].owner.as_ref() {
+            Some(owner) => ctx.contains_btree_set(
+                &parameter_cycle_features,
+                owner,
+                "fcstd parameter dependency cycle check",
+            )?,
+            None => false,
+        };
+        if has_cycle {
             // The native property record retains the expression. A neutral
             // parameter edge would create an invented evaluation order for
             // a history that FreeCAD itself could not topologically sort.
-            parameter.dependencies.clear();
+            parameters[index].dependencies.clear();
         }
     }
-    let mut next_ordinal = HashMap::<Option<FeatureId>, usize>::new();
-    for parameter in parameters {
-        let owner = parameter
-            .owner
-            .as_ref()
-            .map(|owner| owner.try_clone_for_decode(ctx, "fcstd next ordinal owner"))
-            .transpose()?;
-        if !next_ordinal.contains_key(&owner) {
-            ctx.reserve_map(&mut next_ordinal, 1, "fcstd next ordinal owners")?;
-        }
-        let index = next_ordinal.entry(owner).or_default();
-        parameter.ordinal = owner_ordinals[&parameter.owner][*index];
-        *index += 1;
+    let mut next_ordinal_storage = ctx.reserve_scoped(0, "fcstd next ordinal storage")?;
+    let mut next_ordinal = HashMap::<Option<&FeatureId>, usize>::new();
+    for parameter in ctx.admit_iter(
+        parameters.as_mut_slice(),
+        "fcstd parameter ordinal assignment",
+    )? {
+        next_ordinal_storage.with_storage(|| {
+            let owner = parameter.owner.as_ref();
+            let index = ctx
+                .get_hash_map(&next_ordinal, &owner, "fcstd next owner ordinal")?
+                .copied()
+                .unwrap_or(0);
+            let owner_ordinals = ctx
+                .get_btree_map(
+                    &owner_ordinals,
+                    &parameter.owner,
+                    "fcstd owner ordinal values",
+                )?
+                .ok_or_else(|| {
+                    CodecError::malformed("parameter owner lost its source ordinal list")
+                })?;
+            parameter.ordinal = owner_ordinals.get(index).copied().ok_or_else(|| {
+                CodecError::malformed("parameter source ordinal list ended early")
+            })?;
+            let next_index = index.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("fcstd next owner ordinal", u64::MAX, u64::MAX)
+            })?;
+            ctx.insert_hash_map(
+                &mut next_ordinal,
+                owner,
+                next_index,
+                "fcstd next ordinal owners",
+            )
+        })?;
     }
-    Ok(parameter_cycle_features)
+    Ok((parameter_cycle_features, parameter_cycle_storage))
 }
 
-fn order_parameters_by_dependencies(
-    ctx: &DecodeContext<'_>,
+fn order_parameters_by_dependencies<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     parameters: &mut Vec<DesignParameter>,
-) -> Result<BTreeSet<FeatureId>, CodecError> {
+) -> Result<(BTreeSet<FeatureId>, ScopedReservation<'ctx>), CodecError> {
+    let mut known_storage = ctx.reserve_scoped(0, "fcstd known parameter storage")?;
     let mut known = BTreeSet::new();
-    for parameter in parameters.iter() {
-        if !known.contains(&parameter.id) {
-            ctx.insert_btree_set(
-                &mut known,
-                parameter
-                    .id
-                    .try_clone_for_decode(ctx, "fcstd known parameter identity")?,
-                "fcstd known parameter identities",
-            )?;
+    for parameter in ctx.admit_iter(parameters.as_slice(), "fcstd known parameter scan")? {
+        if !ctx.contains_btree_set(&known, &parameter.id, "fcstd known parameter lookup")? {
+            known_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut known,
+                    parameter
+                        .id
+                        .try_clone_for_decode(ctx, "fcstd known parameter identity")?,
+                    "fcstd known parameter identities",
+                )
+            })?;
         }
     }
     let mut remaining = std::mem::take(parameters);
+    let mut emitted_storage = ctx.reserve_scoped(0, "fcstd emitted parameter storage")?;
     let mut emitted = BTreeSet::new();
+    let mut cycle_storage = ctx.reserve_scoped(0, "fcstd parameter cycle feature storage")?;
     let mut cycle_features = BTreeSet::new();
     while !remaining.is_empty() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(remaining.len()),
+        let Some(index) = ctx.position_by(
+            &remaining,
+            |parameter| {
+                ctx.all_by(
+                    &parameter.dependencies,
+                    |dependency| {
+                        Ok(!ctx.contains_btree_set(
+                            &known,
+                            dependency,
+                            "fcstd known dependency lookup",
+                        )? || ctx.contains_btree_set(
+                            &emitted,
+                            dependency,
+                            "fcstd emitted dependency lookup",
+                        )?)
+                    },
+                    "fcstd parameter dependency members",
+                )
+            },
             "fcstd parameter dependency ordering",
-        )?;
-        let Some(index) = remaining.iter().position(|parameter| {
-            parameter
-                .dependencies
-                .iter()
-                .all(|dependency| !known.contains(dependency) || emitted.contains(dependency))
-        }) else {
-            for owner in remaining
-                .iter()
-                .filter_map(|parameter| parameter.owner.as_ref())
-            {
-                if !cycle_features.contains(owner) {
-                    ctx.insert_btree_set(
-                        &mut cycle_features,
-                        owner.try_clone_for_decode(ctx, "fcstd parameter cycle owner identity")?,
-                        "fcstd parameter cycle owners",
-                    )?;
+        )?
+        else {
+            for parameter in ctx.admit_iter(&remaining, "fcstd parameter cycle owners")? {
+                let Some(owner) = parameter.owner.as_ref() else {
+                    continue;
+                };
+                if !ctx.contains_btree_set(
+                    &cycle_features,
+                    owner,
+                    "fcstd parameter cycle owner lookup",
+                )? {
+                    cycle_storage.with_storage(|| {
+                        ctx.insert_btree_set(
+                            &mut cycle_features,
+                            owner.try_clone_for_decode(
+                                ctx,
+                                "fcstd parameter cycle owner identity",
+                            )?,
+                            "fcstd parameter cycle owners",
+                        )
+                    })?;
                 }
             }
-            ctx.reserve_vec(parameters, remaining.len(), "fcstd reordered parameters")?;
-            parameters.append(&mut remaining);
+            ctx.append_vec(parameters, &mut remaining, "fcstd reordered parameters")?;
             break;
         };
-        let parameter = remaining.remove(index);
-        ctx.insert_btree_set(
-            &mut emitted,
-            parameter
-                .id
-                .try_clone_for_decode(ctx, "fcstd emitted parameter identity")?,
-            "fcstd emitted parameter identities",
+        ctx.rotate_left(
+            &mut remaining[index..],
+            1,
+            "fcstd parameter dependency extraction",
         )?;
-        ctx.reserve_vec(parameters, 1, "fcstd reordered parameters")?;
-        parameters.push(parameter);
+        let parameter = remaining
+            .pop()
+            .ok_or_else(|| CodecError::malformed("ready parameter disappeared"))?;
+        emitted_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut emitted,
+                parameter
+                    .id
+                    .try_clone_for_decode(ctx, "fcstd emitted parameter identity")?,
+                "fcstd emitted parameter identities",
+            )
+        })?;
+        ctx.push_vec(parameters, parameter, "fcstd reordered parameters")?;
     }
-    Ok(cycle_features)
+    Ok((cycle_features, cycle_storage))
 }
 
-fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
-    expression
-        .split(|character: char| {
-            !character.is_ascii_alphanumeric() && character != '_' && character != '.'
-        })
-        .filter(|identifier| !identifier.is_empty())
+fn expression_identifiers_until(
+    ctx: &DecodeContext<'_>,
+    expression: &str,
+    operation: &'static str,
+    mut visit: impl FnMut(&str) -> Result<bool, CodecError>,
+) -> Result<bool, CodecError> {
+    let mut identifier_start = None;
+    let mut offset = 0_usize;
+    let mut characters = expression.chars();
+    while let Some(character) = ctx.next_charged(&mut characters, operation)? {
+        if character.is_ascii_alphanumeric() || matches!(character, '_' | '.') {
+            identifier_start.get_or_insert(offset);
+        } else if let Some(start) = identifier_start.take() {
+            if !visit(&expression[start..offset])? {
+                return Ok(false);
+            }
+        }
+        offset += character.len_utf8();
+    }
+    if let Some(start) = identifier_start {
+        return visit(&expression[start..]);
+    }
+    Ok(true)
 }
 
 fn neutral_constraint(
@@ -3277,7 +3818,7 @@ fn neutral_constraint(
     };
     let locus = |index| {
         loci.get(index)
-            .map(|locus| copy_constraint_locus(ctx, locus))
+            .map(|locus| copy_constraint_locus(ctx, locus, "fcstd constraint entity identity"))
             .transpose()
     };
     let pair = || -> Result<Option<(SketchEntityId, SketchEntityId)>, CodecError> {
@@ -3367,12 +3908,14 @@ fn neutral_constraint(
             }
         }
         6 => {
-            let mut entities = ctx.collection_vec(loci.len(), "fcstd constraint entity copies")?;
-            for locus in loci {
-                entities.push(
+            let mut entities = ctx.vector_storage(loci.len(), "fcstd constraint entity copies")?;
+            for locus in ctx.admit_iter(loci, "fcstd constraint entity copies")? {
+                ctx.push_vec(
+                    &mut entities,
                     locus_entity(locus)
                         .try_clone_for_decode(ctx, "fcstd constraint entity identity")?,
-                );
+                    "fcstd constraint entity copies",
+                )?;
             }
             let Some(parameter) = parameter()? else {
                 return Ok(None);
@@ -3557,29 +4100,52 @@ fn constraint_operands(
     ctx: &DecodeContext<'_>,
     node: roxmltree::Node<'_, '_>,
 ) -> Result<Vec<(i64, i64)>, CodecError> {
-    match (
-        node.attribute("ElementIds"),
-        node.attribute("ElementPositions"),
-    ) {
+    let ids_text = ctx.xml_attribute(node, "ElementIds", "FreeCAD design XML attribute")?;
+    let positions_text =
+        ctx.xml_attribute(node, "ElementPositions", "FreeCAD design XML attribute")?;
+    match (ids_text, positions_text) {
         (Some(ids), Some(positions)) => {
-            let ids = split_ints(ctx, ids)?;
-            let positions = split_ints(ctx, positions)?;
-            if ids.len() != positions.len() {
-                return Err(CodecError::malformed(
-                    "ElementIds and ElementPositions counts differ",
+            let ((ids_values, positions_values), integer_storage) = ctx
+                .with_scoped_storage("fcstd constraint integer lane storage", || {
+                    Ok::<_, CodecError>((split_ints(ctx, ids)?, split_ints(ctx, positions)?))
+                })?;
+            if ids_values.len() != positions_values.len() {
+                return Err(malformed_design(
+                    ctx,
+                    format_args!("ElementIds and ElementPositions counts differ"),
                 ));
             }
-            let mut operands = ctx.collection_vec(ids.len(), "fcstd constraint operand pairs")?;
-            operands.extend(
-                ids.into_iter()
-                    .zip(positions)
-                    .filter(|(entity, _)| *entity != -2000),
-            );
+            let mut operands = Vec::new();
+            let ids = ctx
+                .admit_iter(&ids_values, "fcstd constraint entity values")?
+                .copied();
+            let mut positions = ctx
+                .admit_iter(&positions_values, "fcstd constraint position values")?
+                .copied();
+            for entity in ids {
+                let Some(position) = positions.next() else {
+                    return Err(malformed_design(
+                        ctx,
+                        format_args!("ElementIds and ElementPositions counts differ"),
+                    ));
+                };
+                if entity != -2000 {
+                    ctx.push_vec(
+                        &mut operands,
+                        (entity, position),
+                        "fcstd constraint operand pairs",
+                    )?;
+                }
+            }
+            drop(ids_values);
+            drop(positions_values);
+            drop(integer_storage);
             return Ok(operands);
         }
         (Some(_), None) | (None, Some(_)) => {
-            return Err(CodecError::malformed(
-                "ElementIds and ElementPositions must both be present",
+            return Err(malformed_design(
+                ctx,
+                format_args!("ElementIds and ElementPositions must both be present"),
             ));
         }
         (None, None) => {}
@@ -3590,129 +4156,215 @@ fn constraint_operands(
         ("Second", "SecondPos"),
         ("Third", "ThirdPos"),
     ] {
-        match (node.attribute(entity_name), node.attribute(position_name)) {
+        match (
+            ctx.xml_attribute(node, entity_name, "FreeCAD design XML attribute")?,
+            ctx.xml_attribute(node, position_name, "FreeCAD design XML attribute")?,
+        ) {
             (None, None) => {}
             (Some(entity), Some(position)) => {
-                let entity = entity
-                    .parse::<i64>()
-                    .map_err(|_| CodecError::malformed("constraint entity is not an integer"))?;
-                let position = position
-                    .parse::<i64>()
-                    .map_err(|_| CodecError::malformed("constraint position is not an integer"))?;
+                let entity = ctx
+                    .parse_text::<i64>(entity, "fcstd constraint entity index")?
+                    .map_err(|_| {
+                        malformed_design(ctx, format_args!("constraint entity is not an integer"))
+                    })?;
+                let position = ctx
+                    .parse_text::<i64>(position, "fcstd constraint position index")?
+                    .map_err(|_| {
+                        malformed_design(ctx, format_args!("constraint position is not an integer"))
+                    })?;
                 if entity != -2000 {
-                    operands.push((entity, position));
+                    ctx.push_vec(
+                        &mut operands,
+                        (entity, position),
+                        "fcstd constraint operand pairs",
+                    )?;
                 }
             }
             _ => {
-                return Err(CodecError::malformed(
-                    "constraint entity and position must both be present",
-                ))
+                return Err(malformed_design(
+                    ctx,
+                    format_args!("constraint entity and position must both be present"),
+                ));
             }
         }
     }
     Ok(operands)
 }
 
-fn direct_counted_records<'a, 'input>(
-    ctx: &DecodeContext<'_>,
+fn direct_counted_records<'ctx, 'a, 'input>(
+    ctx: &'ctx DecodeContext<'_>,
     xml: &'a roxmltree::Document<'input>,
     container_tag: &str,
     record_tag: &str,
     owner: &str,
-) -> Result<Vec<roxmltree::Node<'a, 'input>>, CodecError> {
-    let mut containers = xml
-        .root_element()
-        .children()
-        .filter(|node| node.is_element() && node.has_tag_name(container_tag));
-    let Some(container) = containers.next() else {
+) -> Result<(Vec<roxmltree::Node<'a, 'input>>, ScopedReservation<'ctx>), CodecError> {
+    let root = ctx.xml_root_element(xml, "FreeCAD counted-list root")?;
+    let mut container = None;
+    let mut nodes = xml.descendants();
+    while let Some(node) = ctx.next_charged(&mut nodes, "FreeCAD counted-list containers")? {
+        if !ctx.xml_has_tag_name(node, container_tag, "FreeCAD counted-list container tag")? {
+            continue;
+        }
+        if container.is_some() || node.parent() != Some(root) {
+            return Err(malformed_design(
+                ctx,
+                format_args!("{owner} must contain exactly one direct {container_tag} value"),
+            ));
+        }
+        container = Some(node);
+    }
+    let Some(container) = container else {
         return Err(malformed_design(
             ctx,
             format_args!("{owner} must contain exactly one direct {container_tag} value"),
         ));
     };
-    if containers.next().is_some()
-        || xml
-            .descendants()
-            .filter(|node| node.has_tag_name(container_tag))
-            .count()
-            != 1
-    {
-        return Err(malformed_design(
-            ctx,
-            format_args!("{owner} must contain exactly one direct {container_tag} value"),
-        ));
-    }
-    let declared = container
-        .attribute("count")
-        .and_then(|value| value.parse::<usize>().ok())
+    let count = ctx
+        .xml_attribute(container, "count", "FreeCAD counted-list count attribute")?
         .ok_or_else(|| {
             malformed_design(ctx, format_args!("{owner} has an invalid record count"))
         })?;
+    let declared = ctx
+        .parse_text::<usize>(count, "FreeCAD counted-list record count")?
+        .map_err(|_| malformed_design(ctx, format_args!("{owner} has an invalid record count")))?;
     if declared > MAX_SKETCH_RECORDS {
         return Err(malformed_design(
             ctx,
             format_args!("{owner} record count exceeds {MAX_SKETCH_RECORDS}"),
         ));
     }
-    let found = container
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .count();
-    if container
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .any(|node| !node.has_tag_name(record_tag))
-    {
-        return Err(malformed_design(
-            ctx,
-            format_args!("{owner} has a non-{record_tag} direct child"),
-        ));
+    let mut storage = ctx.reserve_scoped(0, "FreeCAD counted-list record storage")?;
+    let mut records = Vec::new();
+    let mut children = container.children();
+    while let Some(node) = ctx.next_charged(&mut children, "FreeCAD counted-list records")? {
+        if !node.is_element() {
+            continue;
+        }
+        if !ctx.xml_has_tag_name(node, record_tag, "FreeCAD counted-list record tag")? {
+            return Err(malformed_design(
+                ctx,
+                format_args!("{owner} has a non-{record_tag} direct child"),
+            ));
+        }
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut records,
+            node,
+            "fcstd counted sketch records",
+        )?;
     }
-    if xml
-        .descendants()
-        .filter(|node| node.has_tag_name(record_tag))
-        .count()
-        != found
-    {
+    if ctx.any_by(
+        xml.descendants(),
+        |node| {
+            Ok(
+                ctx.xml_has_tag_name(node, record_tag, "FreeCAD counted-list nested record tag")?
+                    && node.parent() != Some(container),
+            )
+        },
+        "FreeCAD counted-list record descendants",
+    )? {
         return Err(malformed_design(
             ctx,
             format_args!("{owner} has nested {record_tag} records"),
         ));
     }
-    if declared != found {
+    if declared != records.len() {
         return Err(malformed_design(
             ctx,
-            format_args!("{owner} declares {declared} records but contains {found}"),
+            format_args!(
+                "{owner} declares {declared} records but contains {}",
+                records.len()
+            ),
         ));
     }
-    let mut records = ctx.collection_vec(found, "fcstd counted sketch records")?;
-    records.extend(container.children().filter(roxmltree::Node::is_element));
-    Ok(records)
+    Ok((records, storage))
 }
 
 fn split_ints(ctx: &DecodeContext<'_>, value: &str) -> Result<Vec<i64>, CodecError> {
-    if value.trim().is_empty() {
+    if ctx
+        .trim_text(value, "fcstd constraint integer list")?
+        .is_empty()
+    {
         return Ok(Vec::new());
     }
     let mut values = Vec::new();
-    for group in value.split(',') {
-        if group.trim().is_empty() {
-            return Err(CodecError::malformed(
-                "constraint integer list has an empty item",
+    let mut remaining = value;
+    loop {
+        let (group, rest) =
+            match ctx.split_once(remaining, ",", "fcstd constraint integer list groups")? {
+                Some((group, rest)) => (group, Some(rest)),
+                None => (remaining, None),
+            };
+        if ctx
+            .trim_text(group, "fcstd constraint integer list group")?
+            .is_empty()
+        {
+            return Err(malformed_design(
+                ctx,
+                format_args!("constraint integer list has an empty item"),
             ));
         }
-        for part in group.split_ascii_whitespace() {
-            ctx.reserve_vec(&mut values, 1, "fcstd constraint integer list")?;
-            values.push(part.parse::<i64>().map_err(|_| {
-                CodecError::malformed("constraint integer list has an invalid integer")
-            })?);
+        let mut bytes = ctx.admit_iter(group.as_bytes(), "fcstd constraint integer list tokens")?;
+        let mut token_start = None;
+        let mut byte_offset = 0_usize;
+        loop {
+            let byte = bytes.next();
+            match byte {
+                Some(byte) if byte.is_ascii_whitespace() => {
+                    if let Some(start) = token_start.take() {
+                        let token = &group[start..byte_offset];
+                        let parsed = ctx
+                            .parse_text::<i64>(token, "fcstd constraint integer item")?
+                            .map_err(|_| {
+                                malformed_design(
+                                    ctx,
+                                    format_args!("constraint integer list has an invalid integer"),
+                                )
+                            })?;
+                        ctx.push_vec(&mut values, parsed, "fcstd constraint integer list")?;
+                    }
+                    byte_offset += 1;
+                }
+                Some(_) => {
+                    token_start.get_or_insert(byte_offset);
+                    byte_offset += 1;
+                }
+                None => {
+                    if let Some(start) = token_start.take() {
+                        let token = &group[start..byte_offset];
+                        let parsed = ctx
+                            .parse_text::<i64>(token, "fcstd constraint integer item")?
+                            .map_err(|_| {
+                                malformed_design(
+                                    ctx,
+                                    format_args!("constraint integer list has an invalid integer"),
+                                )
+                            })?;
+                        ctx.push_vec(&mut values, parsed, "fcstd constraint integer list")?;
+                    }
+                    break;
+                }
+            }
+        }
+        match rest {
+            Some(rest) => remaining = rest,
+            None => break,
         }
     }
     Ok(values)
 }
 
-fn int_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<i64> {
-    node.attribute(name)?.parse().ok()
+fn int_attr(
+    ctx: &DecodeContext<'_>,
+    node: roxmltree::Node<'_, '_>,
+    name: &str,
+) -> Result<Option<i64>, CodecError> {
+    let Some(value) = ctx.xml_attribute(node, name, "FreeCAD design XML attribute")? else {
+        return Ok(None);
+    };
+    Ok(ctx
+        .parse_text::<i64>(value, "fcstd sketch integer attribute")?
+        .ok())
 }
 
 fn resolve_operand(
@@ -3721,16 +4373,19 @@ fn resolve_operand(
     position: i64,
     entities: &[SketchEntity],
 ) -> Result<Option<SketchLocus>, CodecError> {
-    let reference = |suffix: &str| {
-        entities
-            .iter()
-            .find(|candidate| candidate.id().as_str().ends_with(suffix))
-            .map(|candidate| {
-                ctx.copy_retained_text(candidate.id().as_str(), "fcstd resolved operand identity")
-                    .and_then(|id| SketchEntityId::mint(id).map_err(CodecError::malformed))
-                    .map(SketchLocus::Entity)
-            })
-            .transpose()
+    let reference = |suffix: &str| -> Result<Option<SketchLocus>, CodecError> {
+        ctx.find_by(
+            entities,
+            |candidate| Ok(candidate.id().as_str().ends_with(suffix)),
+            "fcstd sketch reference entity search",
+        )?
+        .map(|candidate| {
+            candidate
+                .id()
+                .try_clone_for_decode(ctx, "fcstd resolved operand identity")
+                .map(SketchLocus::Entity)
+        })
+        .transpose()
     };
     match (entity, position) {
         (-1, 0) => return reference(":reference-horizontal-axis"),
@@ -3747,10 +4402,21 @@ fn resolve_operand(
         else {
             return Ok(None);
         };
-        let suffix = format!(":external:{external_index}");
-        let Some(entity) = entities
-            .iter()
-            .find(|candidate| candidate.id().as_str().ends_with(&suffix))
+        let (suffix, _suffix_storage) = ctx.format_scoped(
+            format_args!(":external:{external_index}"),
+            "fcstd external geometry suffix",
+        )?;
+        let Some(entity) = ctx.find_by(
+            entities,
+            |candidate| {
+                ctx.ends_with(
+                    candidate.id().as_str(),
+                    &suffix,
+                    "fcstd external geometry identity suffix",
+                )
+            },
+            "fcstd external geometry identity lookup",
+        )?
         else {
             return Ok(None);
         };
@@ -3803,9 +4469,9 @@ fn locus_entity(locus: &SketchLocus) -> &SketchEntityId {
 fn copy_constraint_locus(
     ctx: &DecodeContext<'_>,
     locus: &SketchLocus,
+    operation: &'static str,
 ) -> Result<SketchLocus, CodecError> {
-    let entity =
-        locus_entity(locus).try_clone_for_decode(ctx, "fcstd constraint entity identity")?;
+    let entity = locus_entity(locus).try_clone_for_decode(ctx, operation)?;
     Ok(match locus {
         SketchLocus::Entity(_) => SketchLocus::Entity(entity),
         SketchLocus::Start(_) => SketchLocus::Start(entity),
@@ -3818,9 +4484,13 @@ fn copy_constraint_loci(
     ctx: &DecodeContext<'_>,
     loci: &[SketchLocus],
 ) -> Result<Vec<SketchLocus>, CodecError> {
-    let mut copies = ctx.collection_vec(loci.len(), "fcstd constraint locus copies")?;
-    for locus in loci {
-        copies.push(copy_constraint_locus(ctx, locus)?);
+    let mut copies = ctx.vector_storage(loci.len(), "fcstd constraint locus copies")?;
+    for locus in ctx.admit_iter(loci, "fcstd constraint locus copies")? {
+        ctx.push_vec(
+            &mut copies,
+            copy_constraint_locus(ctx, locus, "fcstd constraint entity identity")?,
+            "fcstd constraint locus copies",
+        )?;
     }
     Ok(copies)
 }
@@ -3858,10 +4528,23 @@ fn sketch_geometry(
     kind: &str,
     attributes: &BTreeMap<String, String>,
 ) -> Result<SketchGeometry, CodecError> {
-    if !kind.chars().any(|character| !character.is_whitespace()) {
+    if !ctx.any_by(
+        kind.chars(),
+        |character| Ok(!character.is_whitespace()),
+        "fcstd sketch geometry nonblank kind",
+    )? {
         return Err(CodecError::malformed("native_kind must not be empty"));
     }
-    let number = |name: &str| attributes.get(name).and_then(|value| value.parse().ok());
+    let number = |name: &str| -> Result<Option<f64>, CodecError> {
+        let Some(value) = ctx.get_btree_map(attributes, name, "fcstd sketch geometry attribute")?
+        else {
+            return Ok(None);
+        };
+        Ok(ctx
+            .parse_text::<f64>(value, "fcstd sketch geometry number")?
+            .ok())
+    };
+    let kind_is = |expected: &str| kind == expected;
     let native = || -> Result<SketchGeometry, CodecError> {
         let native_kind = cadmpeg_core::text::NonBlankString::for_decode(
             ctx,
@@ -3871,17 +4554,27 @@ fn sketch_geometry(
         .ok_or_else(|| CodecError::malformed("native_kind must not be empty"))?;
         Ok(SketchGeometry::native(native_kind))
     };
-    if matches!(kind, "Part::GeomArcOfCircle" | "ArcOfCircle") {
-        let frame_angle = number("AngleXU").unwrap_or(0.0);
-        let admitted = (|| {
+    if kind_is("Part::GeomArcOfCircle") || kind_is("ArcOfCircle") {
+        let frame_angle = number("AngleXU")?.unwrap_or(0.0);
+        let center_x = number("CenterX")?;
+        let center_y = number("CenterY")?;
+        let radius = number("Radius")?;
+        let start = match number("StartAngle")? {
+            Some(value) => Some(value),
+            None => number("FirstParameter")?,
+        };
+        let end = match number("EndAngle")? {
+            Some(value) => Some(value),
+            None => number("LastParameter")?,
+        };
+        let admitted = (|| -> Option<SketchGeometry> {
             let center = FinitePoint2::from_coordinates(
-                FiniteReal::new(number("CenterX")?)?,
-                FiniteReal::new(number("CenterY")?)?,
+                FiniteReal::new(center_x?)?,
+                FiniteReal::new(center_y?)?,
             );
-            let radius = PositiveLength::new(number("Radius")?)?;
-            let start =
-                FiniteReal::new(number("StartAngle").or_else(|| number("FirstParameter"))?)?;
-            let end = FiniteReal::new(number("EndAngle").or_else(|| number("LastParameter"))?)?;
+            let radius = PositiveLength::new(radius?)?;
+            let start = FiniteReal::new(start?)?;
+            let end = FiniteReal::new(end?)?;
             let frame_angle = FiniteReal::new(frame_angle)?;
             SketchGeometry::from_parts(SketchGeometryDefinition::Arc {
                 center,
@@ -3896,620 +4589,200 @@ fn sketch_geometry(
             None => native(),
         };
     }
-    let project = || {
-        Some(
-            if matches!(
-                kind,
-                "Part::GeomLine" | "Part::GeomLineSegment" | "Line" | "LineSegment"
-            ) {
-                match (
-                    number("StartX"),
-                    number("StartY"),
-                    number("EndX"),
-                    number("EndY"),
-                ) {
-                    (Some(start_x), Some(start_y), Some(end_x), Some(end_y)) => {
-                        SketchGeometryDefinition::Line {
-                            start: Point2::new(start_x, start_y),
-                            end: Point2::new(end_x, end_y),
-                        }
-                    }
-                    _ => return None,
-                }
-            } else if matches!(
-                kind,
-                "Part::GeomEllipse" | "Part::GeomArcOfEllipse" | "Ellipse" | "ArcOfEllipse"
-            ) {
-                let major_angle = number("MajorAngle")
-                    .or_else(|| number("AngleXU"))
-                    .or_else(|| Some(number("MajorAxisY")?.atan2(number("MajorAxisX")?)));
-                let bounds = if matches!(kind, "Part::GeomArcOfEllipse" | "ArcOfEllipse") {
-                    number("StartAngle")
-                        .or_else(|| number("FirstParameter"))
-                        .zip(number("EndAngle").or_else(|| number("LastParameter")))
-                        .map(|(start, end)| Some([start, end]))
-                } else {
-                    Some(None)
-                };
-                match (
-                    number("CenterX"),
-                    number("CenterY"),
-                    major_angle,
-                    number("MajorRadius"),
-                    number("MinorRadius"),
-                    bounds,
-                ) {
-                    (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some(bounds))
-                        if major > 0.0 && minor > 0.0 =>
-                    {
-                        SketchGeometryDefinition::Ellipse {
-                            center: Point2::new(x, y),
-                            major_angle: cadmpeg_ir::scalar::Angle::new(angle)?,
-                            radii: cadmpeg_ir::sketches::EllipseRadii {
-                                major_radius: Length::new(major)?,
-                                minor_radius: Length::new(minor)?,
-                            },
-                            bounds: match bounds {
-                                Some([start, end]) => Some([
-                                    cadmpeg_ir::scalar::Angle::new(start)?,
-                                    cadmpeg_ir::scalar::Angle::new(end)?,
-                                ]),
-                                None => None,
-                            },
-                        }
-                    }
-                    _ => return None,
-                }
-            } else if matches!(
-                kind,
-                "Part::GeomHyperbola" | "Part::GeomArcOfHyperbola" | "Hyperbola" | "ArcOfHyperbola"
-            ) {
-                let bounds = if matches!(kind, "Part::GeomArcOfHyperbola" | "ArcOfHyperbola") {
-                    number("StartAngle")
-                        .or_else(|| number("FirstParameter"))
-                        .zip(number("EndAngle").or_else(|| number("LastParameter")))
-                        .map(|(start, end)| Some([start, end]))
-                } else {
-                    Some(None)
-                };
-                match (
-                    number("CenterX"),
-                    number("CenterY"),
-                    number("AngleXU").or_else(|| number("MajorAngle")),
-                    number("MajorRadius"),
-                    number("MinorRadius"),
-                    bounds,
-                ) {
-                    (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some(bounds))
-                        if major > 0.0 && minor > 0.0 =>
-                    {
-                        SketchGeometryDefinition::Hyperbola {
-                            center: Point2::new(x, y),
-                            major_angle: cadmpeg_ir::scalar::Angle::new(angle)?,
+    let projected = if kind_is("Part::GeomLine")
+        || kind_is("Part::GeomLineSegment")
+        || kind_is("Line")
+        || kind_is("LineSegment")
+    {
+        match (
+            number("StartX")?,
+            number("StartY")?,
+            number("EndX")?,
+            number("EndY")?,
+        ) {
+            (Some(start_x), Some(start_y), Some(end_x), Some(end_y)) => {
+                Some(SketchGeometryDefinition::Line {
+                    start: Point2::new(start_x, start_y),
+                    end: Point2::new(end_x, end_y),
+                })
+            }
+            _ => None,
+        }
+    } else if kind_is("Part::GeomEllipse")
+        || kind_is("Part::GeomArcOfEllipse")
+        || kind_is("Ellipse")
+        || kind_is("ArcOfEllipse")
+    {
+        let major_angle = match number("MajorAngle")? {
+            Some(angle) => Some(angle),
+            None => match number("AngleXU")? {
+                Some(angle) => Some(angle),
+                None => match (number("MajorAxisY")?, number("MajorAxisX")?) {
+                    (Some(y), Some(x)) => Some(y.atan2(x)),
+                    _ => None,
+                },
+            },
+        };
+        let is_arc = kind_is("Part::GeomArcOfEllipse") || kind_is("ArcOfEllipse");
+        let bounds = if is_arc {
+            let start = match number("StartAngle")? {
+                Some(value) => Some(value),
+                None => number("FirstParameter")?,
+            };
+            let end = match number("EndAngle")? {
+                Some(value) => Some(value),
+                None => number("LastParameter")?,
+            };
+            start.zip(end).map(|(start, end)| Some([start, end]))
+        } else {
+            Some(None)
+        };
+        match (
+            number("CenterX")?,
+            number("CenterY")?,
+            major_angle,
+            number("MajorRadius")?,
+            number("MinorRadius")?,
+            bounds,
+        ) {
+            (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some(bounds))
+                if major > 0.0 && minor > 0.0 =>
+            {
+                (|| -> Option<SketchGeometryDefinition> {
+                    Some(SketchGeometryDefinition::Ellipse {
+                        center: Point2::new(x, y),
+                        major_angle: cadmpeg_ir::scalar::Angle::new(angle)?,
+                        radii: cadmpeg_ir::sketches::EllipseRadii {
                             major_radius: Length::new(major)?,
                             minor_radius: Length::new(minor)?,
-                            bounds,
-                        }
-                    }
-                    _ => return None,
-                }
-            } else if matches!(
-                kind,
-                "Part::GeomParabola" | "Part::GeomArcOfParabola" | "Parabola" | "ArcOfParabola"
-            ) {
-                let bounds = if matches!(kind, "Part::GeomArcOfParabola" | "ArcOfParabola") {
-                    number("StartAngle")
-                        .or_else(|| number("FirstParameter"))
-                        .zip(number("EndAngle").or_else(|| number("LastParameter")))
-                        .map(|(start, end)| Some([start, end]))
-                } else {
-                    Some(None)
-                };
-                match (
-                    number("CenterX"),
-                    number("CenterY"),
-                    number("AngleXU").or_else(|| number("AxisAngle")),
-                    number("Focal"),
-                    bounds,
-                ) {
-                    (Some(x), Some(y), Some(angle), Some(focal), Some(bounds)) if focal > 0.0 => {
-                        SketchGeometryDefinition::Parabola {
-                            vertex: Point2::new(x, y),
-                            axis_angle: cadmpeg_ir::scalar::Angle::new(angle)?,
-                            focal_length: Length::new(focal)?,
-                            bounds,
-                        }
-                    }
-                    _ => return None,
-                }
-            } else if matches!(kind, "Part::GeomCircle" | "Circle") {
-                match (number("CenterX"), number("CenterY"), number("Radius")) {
-                    (Some(x), Some(y), Some(radius)) if radius > 0.0 => {
-                        SketchGeometryDefinition::Circle {
-                            center: Point2::new(x, y),
-                            radius: Length::new(radius)?,
-                        }
-                    }
-                    (Some(x), Some(y), Some(0.0)) => SketchGeometryDefinition::Point {
-                        position: Point2::new(x, y),
-                    },
-                    _ => return None,
-                }
-            } else if kind == "Part::GeomPoint" {
-                match (number("X"), number("Y")) {
-                    (Some(x), Some(y)) => SketchGeometryDefinition::Point {
-                        position: Point2::new(x, y),
-                    },
-                    _ => return None,
-                }
-            } else {
-                return None;
-            },
-        )
+                        },
+                        bounds: match bounds {
+                            Some([start, end]) => Some([
+                                cadmpeg_ir::scalar::Angle::new(start)?,
+                                cadmpeg_ir::scalar::Angle::new(end)?,
+                            ]),
+                            None => None,
+                        },
+                    })
+                })()
+            }
+            _ => None,
+        }
+    } else if kind_is("Part::GeomHyperbola")
+        || kind_is("Part::GeomArcOfHyperbola")
+        || kind_is("Hyperbola")
+        || kind_is("ArcOfHyperbola")
+    {
+        let is_arc = kind_is("Part::GeomArcOfHyperbola") || kind_is("ArcOfHyperbola");
+        let bounds = if is_arc {
+            let start = match number("StartAngle")? {
+                Some(value) => Some(value),
+                None => number("FirstParameter")?,
+            };
+            let end = match number("EndAngle")? {
+                Some(value) => Some(value),
+                None => number("LastParameter")?,
+            };
+            start.zip(end).map(|(start, end)| Some([start, end]))
+        } else {
+            Some(None)
+        };
+        let angle = match number("AngleXU")? {
+            Some(angle) => Some(angle),
+            None => number("MajorAngle")?,
+        };
+        match (
+            number("CenterX")?,
+            number("CenterY")?,
+            angle,
+            number("MajorRadius")?,
+            number("MinorRadius")?,
+            bounds,
+        ) {
+            (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some(bounds))
+                if major > 0.0 && minor > 0.0 =>
+            {
+                (|| -> Option<SketchGeometryDefinition> {
+                    Some(SketchGeometryDefinition::Hyperbola {
+                        center: Point2::new(x, y),
+                        major_angle: cadmpeg_ir::scalar::Angle::new(angle)?,
+                        major_radius: Length::new(major)?,
+                        minor_radius: Length::new(minor)?,
+                        bounds,
+                    })
+                })()
+            }
+            _ => None,
+        }
+    } else if kind_is("Part::GeomParabola")
+        || kind_is("Part::GeomArcOfParabola")
+        || kind_is("Parabola")
+        || kind_is("ArcOfParabola")
+    {
+        let is_arc = kind_is("Part::GeomArcOfParabola") || kind_is("ArcOfParabola");
+        let bounds = if is_arc {
+            let start = match number("StartAngle")? {
+                Some(value) => Some(value),
+                None => number("FirstParameter")?,
+            };
+            let end = match number("EndAngle")? {
+                Some(value) => Some(value),
+                None => number("LastParameter")?,
+            };
+            start.zip(end).map(|(start, end)| Some([start, end]))
+        } else {
+            Some(None)
+        };
+        let angle = match number("AngleXU")? {
+            Some(angle) => Some(angle),
+            None => number("AxisAngle")?,
+        };
+        match (
+            number("CenterX")?,
+            number("CenterY")?,
+            angle,
+            number("Focal")?,
+            bounds,
+        ) {
+            (Some(x), Some(y), Some(angle), Some(focal), Some(bounds)) if focal > 0.0 => {
+                (|| -> Option<SketchGeometryDefinition> {
+                    Some(SketchGeometryDefinition::Parabola {
+                        vertex: Point2::new(x, y),
+                        axis_angle: cadmpeg_ir::scalar::Angle::new(angle)?,
+                        focal_length: Length::new(focal)?,
+                        bounds,
+                    })
+                })()
+            }
+            _ => None,
+        }
+    } else if kind_is("Part::GeomCircle") || kind_is("Circle") {
+        match (number("CenterX")?, number("CenterY")?, number("Radius")?) {
+            (Some(x), Some(y), Some(radius)) if radius > 0.0 => {
+                Length::new(radius).map(|radius| SketchGeometryDefinition::Circle {
+                    center: Point2::new(x, y),
+                    radius,
+                })
+            }
+            (Some(x), Some(y), Some(0.0)) => Some(SketchGeometryDefinition::Point {
+                position: Point2::new(x, y),
+            }),
+            _ => None,
+        }
+    } else if kind_is("Part::GeomPoint") {
+        match (number("X")?, number("Y")?) {
+            (Some(x), Some(y)) => Some(SketchGeometryDefinition::Point {
+                position: Point2::new(x, y),
+            }),
+            _ => None,
+        }
+    } else {
+        None
     };
-    match project() {
+    match projected {
         Some(definition) => SketchGeometry::try_from(definition).map_err(CodecError::malformed),
         None => native(),
     }
-}
-
-fn build_profiles(
-    ctx: &DecodeContext<'_>,
-    entities: &[SketchEntity],
-    constraints: &[SketchConstraint],
-) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
-    // Internal entities arrive in GeometryList order; appended external and built-in reference
-    // entities are construction entries. Indices therefore preserve the persisted ordinal for
-    // every eligible profile entity.
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(entities.len()),
-        "FCStd profile entity scan",
-    )?;
-    let eligible_count = entities
-        .iter()
-        .filter(|entity| !entity.construction)
-        .count();
-    let ordinal_work = cadmpeg_core::decode::u64_from_index(eligible_count)
-        * (u64::from(eligible_count.max(2).ilog2()) + 1);
-    ctx.charge_work(ordinal_work, "FCStd profile ordinal index")?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(eligible_count),
-        "FCStd profile ordinals",
-    )?;
-    let profile_entities = entities
-        .iter()
-        .enumerate()
-        .filter(|(_, entity)| !entity.construction)
-        .map(|(index, _)| index)
-        .collect::<BTreeSet<_>>();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(eligible_count),
-        "FCStd remaining profile ordinals",
-    )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(eligible_count),
-        "FCStd remaining profile ordinals",
-    )?;
-    let mut unused = profile_entities.clone();
-    let explicit_relations =
-        explicit_endpoint_relations(ctx, &profile_entities, entities, constraints)?;
-    let index = EndpointIndex::new(ctx, &profile_entities, entities)?;
-    let mut ambiguous = BTreeSet::new();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(eligible_count) * 2,
-        "FCStd profile ambiguity scan",
-    )?;
-    for &entity in &unused {
-        for start in [true, false] {
-            let matches = endpoint_candidates(
-                ctx,
-                EndpointLocus { entity, start },
-                &unused,
-                &explicit_relations,
-                entities,
-                &index,
-            )?;
-            if matches.len() > 1 {
-                ctx.insert_btree_set(&mut ambiguous, entity, "FCStd ambiguous profile ordinals")?;
-                for candidate in matches {
-                    ctx.insert_btree_set(
-                        &mut ambiguous,
-                        candidate.entity,
-                        "FCStd ambiguous profile ordinals",
-                    )?;
-                }
-            }
-        }
-    }
-    let mut profiles = Vec::new();
-    // FreeCAD persists no profile seed. CADIR selects the first remaining persisted ordinal.
-    while let Some(first) = unused.pop_first() {
-        ctx.charge_work(1, "FCStd profile chain construction")?;
-        let mut chain = VecDeque::new();
-        ctx.push_back(
-            &mut chain,
-            SketchEntityUse {
-                entity: entities[first]
-                    .id()
-                    .try_clone_for_decode(ctx, "FCStd profile use identity")?,
-                reversed: false,
-            },
-            "FCStd profile uses",
-        )?;
-        if ambiguous.contains(&first) {
-            ctx.reserve_vec(&mut profiles, 1, "FCStd profile chains")?;
-            profiles.push(chain.into());
-            continue;
-        }
-        if endpoints(&entities[first]).is_none() {
-            ctx.reserve_vec(&mut profiles, 1, "FCStd profile chains")?;
-            profiles.push(chain.into());
-            continue;
-        }
-        let mut head = EndpointLocus {
-            entity: first,
-            start: true,
-        };
-        let mut tail = EndpointLocus {
-            entity: first,
-            start: false,
-        };
-        loop {
-            let mut candidates =
-                endpoint_candidates(ctx, tail, &unused, &explicit_relations, entities, &index)?;
-            candidates.retain(|candidate| !ambiguous.contains(&candidate.entity));
-            let Some(candidate) = (candidates.len() == 1).then(|| candidates[0]) else {
-                break;
-            };
-            let (reversed, next_tail) = if candidate.start {
-                (
-                    false,
-                    EndpointLocus {
-                        entity: candidate.entity,
-                        start: false,
-                    },
-                )
-            } else {
-                (
-                    true,
-                    EndpointLocus {
-                        entity: candidate.entity,
-                        start: true,
-                    },
-                )
-            };
-            unused.remove(&candidate.entity);
-            ctx.push_back(
-                &mut chain,
-                SketchEntityUse {
-                    entity: entities[candidate.entity]
-                        .id()
-                        .try_clone_for_decode(ctx, "FCStd profile use identity")?,
-                    reversed,
-                },
-                "FCStd profile uses",
-            )?;
-            tail = next_tail;
-        }
-        loop {
-            let mut candidates =
-                endpoint_candidates(ctx, head, &unused, &explicit_relations, entities, &index)?;
-            candidates.retain(|candidate| !ambiguous.contains(&candidate.entity));
-            let Some(candidate) = (candidates.len() == 1).then(|| candidates[0]) else {
-                break;
-            };
-            let (reversed, next_head) = if candidate.start {
-                (
-                    true,
-                    EndpointLocus {
-                        entity: candidate.entity,
-                        start: false,
-                    },
-                )
-            } else {
-                (
-                    false,
-                    EndpointLocus {
-                        entity: candidate.entity,
-                        start: true,
-                    },
-                )
-            };
-            unused.remove(&candidate.entity);
-            ctx.push_front(
-                &mut chain,
-                SketchEntityUse {
-                    entity: entities[candidate.entity]
-                        .id()
-                        .try_clone_for_decode(ctx, "FCStd profile use identity")?,
-                    reversed,
-                },
-                "FCStd profile uses",
-            )?;
-            head = next_head;
-        }
-        ctx.reserve_vec(&mut profiles, 1, "FCStd profile chains")?;
-        profiles.push(chain.into());
-    }
-    Ok(profiles)
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct EndpointLocus {
-    entity: usize,
-    start: bool,
-}
-
-impl cadmpeg_core::decode::cost::DecodeCost for EndpointLocus {
-    const FIXED_BYTES: Option<u64> =
-        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            Self,
-        >()));
-    fn decode_cost(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            Self,
-        >()))
-    }
-}
-
-struct IndexedEndpoint {
-    locus: EndpointLocus,
-    point: Point2,
-}
-
-struct EndpointIndex {
-    by_scale: BTreeMap<u64, Vec<IndexedEndpoint>>,
-}
-
-impl EndpointIndex {
-    fn new(
-        ctx: &DecodeContext<'_>,
-        profile_entities: &BTreeSet<usize>,
-        entities: &[SketchEntity],
-    ) -> Result<Self, CodecError> {
-        let mut by_scale = BTreeMap::<u64, Vec<IndexedEndpoint>>::new();
-        for &index in profile_entities {
-            ctx.charge_work(1, "FCStd profile endpoint extraction")?;
-            if let Some((start, end)) = endpoints(&entities[index]) {
-                for (at_start, point) in [(true, start), (false, end)] {
-                    let scale = endpoint_scale_bucket(point);
-                    ctx.admit_btree_entry(&by_scale, &scale, "FCStd profile endpoint buckets")?;
-                    let bucket = match by_scale.entry(scale) {
-                        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                        std::collections::btree_map::Entry::Vacant(entry) => {
-                            entry.insert(Vec::new())
-                        }
-                    };
-                    ctx.reserve_vec(bucket, 1, "FCStd profile endpoint index")?;
-                    bucket.push(IndexedEndpoint {
-                        locus: EndpointLocus {
-                            entity: index,
-                            start: at_start,
-                        },
-                        point,
-                    });
-                }
-            }
-        }
-        for bucket in by_scale.values_mut() {
-            ctx.stable_sort_by(
-                bucket,
-                |value| &value.point.u,
-                f64::total_cmp,
-                "FCStd profile index sort",
-            )?;
-        }
-        Ok(Self { by_scale })
-    }
-}
-
-fn endpoint_scale_bucket(point: Point2) -> u64 {
-    point.u.abs().max(point.v.abs()).max(1.0).to_bits() >> 52
-}
-
-fn endpoint_candidates(
-    ctx: &DecodeContext<'_>,
-    endpoint: EndpointLocus,
-    available: &BTreeSet<usize>,
-    explicit_relations: &BTreeMap<EndpointLocus, BTreeSet<EndpointLocus>>,
-    entities: &[SketchEntity],
-    index: &EndpointIndex,
-) -> Result<Vec<EndpointLocus>, CodecError> {
-    // Active explicit coincident loci override coordinates. Coordinate matching below is the
-    // decoder-owned CADIR boundary, not a producer tolerance.
-    if let Some(explicit) = explicit_relations.get(&endpoint) {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(explicit.len()),
-            "FCStd explicit profile candidates",
-        )?;
-        let match_count = explicit
-            .iter()
-            .filter(|candidate| available.contains(&candidate.entity))
-            .count();
-        let mut matches = ctx.collection_vec(match_count, "FCStd profile candidates")?;
-        matches.extend(
-            explicit
-                .iter()
-                .copied()
-                .filter(|candidate| available.contains(&candidate.entity)),
-        );
-        return Ok(matches);
-    }
-    let Some(point) = endpoint_point(endpoint, entities) else {
-        return Ok(Vec::new());
-    };
-    let mut matches = Vec::new();
-    let scale = endpoint_scale_bucket(point);
-    for bucket_number in (scale - 1)..=(scale + 1) {
-        let Some(bucket) = index.by_scale.get(&bucket_number) else {
-            continue;
-        };
-        let bucket_scale = f64::from_bits((bucket_number.max(scale) + 1) << 52).min(f64::MAX);
-        let tolerance = SKETCH_ENDPOINT_ROUNDING_ULPS * f64::EPSILON * bucket_scale;
-        ctx.charge_work(
-            u64::from(bucket.len().max(2).ilog2()) + 1,
-            "FCStd profile index search",
-        )?;
-        let first = bucket.partition_point(|candidate| candidate.point.u < point.u - tolerance);
-        for candidate in bucket[first..]
-            .iter()
-            .take_while(|candidate| candidate.point.u <= point.u + tolerance)
-        {
-            ctx.charge_work(1, "FCStd profile candidate comparison")?;
-            if candidate.locus.entity != endpoint.entity
-                && available.contains(&candidate.locus.entity)
-                && !explicit_relations.contains_key(&candidate.locus)
-                && endpoints_match_by_roundoff(point, candidate.point)
-            {
-                ctx.push_vec(&mut matches, candidate.locus, "FCStd profile candidates")?;
-            }
-        }
-    }
-    ctx.sort_unstable_by(
-        &mut matches,
-        |value| value,
-        Ord::cmp,
-        "FCStd profile candidate order",
-    )?;
-    Ok(matches)
-}
-
-fn explicit_endpoint_relations(
-    ctx: &DecodeContext<'_>,
-    profile_entities: &BTreeSet<usize>,
-    entities: &[SketchEntity],
-    constraints: &[SketchConstraint],
-) -> Result<BTreeMap<EndpointLocus, BTreeSet<EndpointLocus>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(entities.len()),
-        "FCStd profile entity lookup",
-    )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(entities.len()),
-        "FCStd profile entity lookup",
-    )?;
-    let entity_indices = entities
-        .iter()
-        .enumerate()
-        .map(|(index, entity)| (entity.id().as_str(), index))
-        .collect::<HashMap<_, _>>();
-    let mut relations = BTreeMap::new();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(constraints.len()),
-        "FCStd profile constraint scan",
-    )?;
-    for constraint in constraints {
-        if constraint.active == Some(false) {
-            continue;
-        }
-        let SketchConstraintDefinitionInput::CoincidentLoci { loci } = constraint.definition.kind()
-        else {
-            continue;
-        };
-        let endpoint_count = loci
-            .iter()
-            .filter(|locus| matches!(locus, SketchLocus::Start(_) | SketchLocus::End(_)))
-            .count();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(endpoint_count),
-            "FCStd explicit profile loci",
-        )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(endpoint_count),
-            "FCStd explicit profile loci",
-        )?;
-        let endpoints = loci
-            .iter()
-            .filter_map(|locus| match locus {
-                SketchLocus::Start(entity) => Some(EndpointLocus {
-                    entity: entity_indices.get(entity.as_str()).copied()?,
-                    start: true,
-                }),
-                SketchLocus::End(entity) => Some(EndpointLocus {
-                    entity: entity_indices.get(entity.as_str()).copied()?,
-                    start: false,
-                }),
-                _ => None,
-            })
-            .filter(|locus| profile_entities.contains(&locus.entity))
-            .collect::<BTreeSet<_>>();
-        for first in endpoints.iter().copied() {
-            for candidate in endpoints
-                .iter()
-                .copied()
-                .filter(|candidate| *candidate != first)
-            {
-                ctx.charge_work(1, "FCStd explicit profile relations")?;
-                let related = relations.entry(first).or_insert_with(BTreeSet::new);
-                ctx.insert_btree_set(related, candidate, "FCStd explicit profile relations")?;
-            }
-        }
-    }
-    Ok(relations)
-}
-
-fn endpoint_point(endpoint: EndpointLocus, entities: &[SketchEntity]) -> Option<Point2> {
-    endpoints(&entities[endpoint.entity])
-        .map(|points| if endpoint.start { points.0 } else { points.1 })
-}
-
-fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
-    match *entity.geometry.definition() {
-        SketchGeometryDefinition::Line { start, end } => Some((start.get(), end.get())),
-        SketchGeometryDefinition::Arc {
-            center,
-            radius,
-            start_angle,
-            end_angle,
-        } => Some((
-            Point2::new(
-                center.u + radius.get() * start_angle.get().cos(),
-                center.v + radius.get() * start_angle.get().sin(),
-            ),
-            Point2::new(
-                center.u + radius.get() * end_angle.get().cos(),
-                center.v + radius.get() * end_angle.get().sin(),
-            ),
-        )),
-        SketchGeometryDefinition::Ellipse {
-            center,
-            major_angle,
-            radii,
-            bounds: Some([start, end]),
-        } => {
-            let major = Point2::new(major_angle.get().cos(), major_angle.get().sin());
-            let minor = Point2::new(-major.v, major.u);
-            let point = |parameter: f64| {
-                let (along_major, along_minor) = (parameter.cos(), parameter.sin());
-                Point2::new(
-                    center.u
-                        + radii.major().get() * along_major * major.u
-                        + radii.minor().get() * along_minor * minor.u,
-                    center.v
-                        + radii.major().get() * along_major * major.v
-                        + radii.minor().get() * along_minor * minor.v,
-                )
-            };
-            Some((point(start.get()), point(end.get())))
-        }
-        _ => None,
-    }
-}
-
-const SKETCH_ENDPOINT_ROUNDING_ULPS: f64 = 64.0;
-
-fn endpoints_match_by_roundoff(a: Point2, b: Point2) -> bool {
-    let scale =
-        a.u.abs()
-            .max(a.v.abs())
-            .max(b.u.abs())
-            .max(b.v.abs())
-            .max(1.0);
-    (a.u - b.u).hypot(a.v - b.v) <= SKETCH_ENDPOINT_ROUNDING_ULPS * f64::EPSILON * scale
 }
 
 fn profile_ref(
@@ -4518,40 +4791,47 @@ fn profile_ref(
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
 ) -> Result<ProfileRef, CodecError> {
-    let Some((property, target)) = profile_target(properties) else {
+    let Some((property, target)) = profile_target(ctx, properties)? else {
         return Ok(ProfileRef::Planar(PlanarProfileRef::Unresolved(
             ctx.copy_retained_text(owner, "fcstd unresolved profile reference")?,
         )));
     };
-    Ok(ProfileRef::Planar(match sketches.get(target) {
-        Some(sketch) => PlanarProfileRef::Sketch(
-            sketch.try_clone_for_decode(ctx, "fcstd sketch profile reference")?,
-        ),
-        None => PlanarProfileRef::Native(
-            ctx.copy_retained_text(&property.id, "fcstd native profile reference")?,
-        ),
-    }))
+    Ok(ProfileRef::Planar(
+        match ctx.get_hash_map(sketches, target, "fcstd sketch profile lookup")? {
+            Some(sketch) => PlanarProfileRef::Sketch(
+                sketch.try_clone_for_decode(ctx, "fcstd sketch profile reference")?,
+            ),
+            None => PlanarProfileRef::Native(
+                ctx.copy_retained_text(&property.id, "fcstd native profile reference")?,
+            ),
+        },
+    ))
 }
 
-fn profile_target<'a>(properties: &'a [&PropertyRecord]) -> Option<(&'a PropertyRecord, &'a str)> {
+fn profile_target<'a>(
+    ctx: &DecodeContext<'_>,
+    properties: &[&'a PropertyRecord],
+) -> Result<Option<(&'a PropertyRecord, &'a str)>, CodecError> {
     let mut selected = None;
     for name in ["Profile", "Sketch", "Base", "Source"] {
-        let Some(property) = property(properties, name) else {
+        let Some(property) = property(ctx, properties, name)? else {
             continue;
         };
         let Some(link) = scalar_link(property) else {
-            if name == "Base" && !is_link_property_type(property.type_name.as_str()) {
+            if (name == "Base") && !is_link_property_type(property.type_name.as_str()) {
                 continue;
             }
-            return None;
+            return Ok(None);
         };
-        let target = link.object()?;
+        let Some(target) = link.object() else {
+            return Ok(None);
+        };
         if target.is_empty() || selected.is_some() {
-            return None;
+            return Ok(None);
         }
         selected = Some((property, target));
     }
-    selected
+    Ok(selected)
 }
 
 fn revolution_axis(
@@ -4578,7 +4858,7 @@ fn revolution_definition(
     sketches: &HashMap<&str, SketchId>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let face_maker_class = if kind == "Part::Revolution" {
-        match property(properties, "FaceMakerClass") {
+        match property(ctx, properties, "FaceMakerClass")? {
             Some(property) => string_property_value(ctx, property)?,
             None => None,
         }
@@ -4646,7 +4926,7 @@ fn revolution_definition(
                 termination: AngularTermination::ToFirst {},
             },
             3 => {
-                let Some(face) = singular_operand(properties, "UpToFace") else {
+                let Some(face) = singular_operand(ctx, properties, "UpToFace")? else {
                     return Ok(None);
                 };
                 RevolveExtent::OneSided {
@@ -4689,17 +4969,17 @@ fn revolution_definition(
     if reversed {
         axis.direction = axis.direction.reversed();
     }
-    let axis_link = property(properties, "AxisLink");
-    let reference_axis = property(properties, "ReferenceAxis");
+    let axis_link = property(ctx, properties, "AxisLink")?;
+    let reference_axis = property(ctx, properties, "ReferenceAxis")?;
     axis.reference = match (axis_link, reference_axis) {
         (None, None) => None,
         (Some(property), None) | (None, Some(property)) => {
-            if property
-                .links()
-                .iter()
-                .any(|link| nonempty_link(link.as_ref()))
-            {
-                if singular_reference_link(property).is_none() {
+            if ctx.any_by(
+                property.links(),
+                |link| Ok(nonempty_link(link.as_ref())),
+                "fcstd revolution axis reference links",
+            )? {
+                if singular_reference_link(ctx, property)?.is_none() {
                     return Ok(None);
                 }
                 Some(PathRef::Native(ctx.copy_retained_text(
@@ -4713,7 +4993,7 @@ fn revolution_definition(
         (Some(_), Some(_)) => return Ok(None),
     };
     let face_maker =
-        if kind == "Part::Revolution" && property(properties, "FaceMakerClass").is_some() {
+        if kind == "Part::Revolution" && property(ctx, properties, "FaceMakerClass")?.is_some() {
             let Some(face_maker_class) = face_maker_class else {
                 return Ok(None);
             };
@@ -4725,7 +5005,7 @@ fn revolution_definition(
             None
         };
     let fuse_order =
-        if kind.starts_with("PartDesign::") && property(properties, "FuseOrder").is_some() {
+        if kind.starts_with("PartDesign::") && property(ctx, properties, "FuseOrder")?.is_some() {
             let Some(value) = integer_property(ctx, properties, "FuseOrder")? else {
                 return Ok(None);
             };
@@ -4796,7 +5076,7 @@ fn vector_property(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<cadmpeg_ir::features::FiniteVector3>, CodecError> {
-    let property = required!(property(properties, name));
+    let property = required!(property(ctx, properties, name)?);
     if !is_vector_property_type(&property.type_name) {
         return Ok(None);
     }
@@ -4804,18 +5084,30 @@ fn vector_property(
         ctx,
         property,
         "PropertyVector",
-        |root| {
-            let component = |name: &str| {
-                root.attribute(name)?
-                    .parse::<f64>()
-                    .ok()
-                    .and_then(FiniteReal::new)
+        |ctx, root| {
+            let component = |name: &str| -> Result<Option<FiniteReal>, CodecError> {
+                let Some(value) = ctx.xml_attribute(root, name, "FreeCAD design XML attribute")?
+                else {
+                    return Ok(None);
+                };
+                let Ok(value) = ctx.parse_text::<f64>(value, "fcstd vector property component")?
+                else {
+                    return Ok(None);
+                };
+                Ok(FiniteReal::new(value))
             };
-            Some(cadmpeg_ir::features::FiniteVector3::from_components(
-                component("valueX")?,
-                component("valueY")?,
-                component("valueZ")?,
-            ))
+            let Some(x) = component("valueX")? else {
+                return Ok(None);
+            };
+            let Some(y) = component("valueY")? else {
+                return Ok(None);
+            };
+            let Some(z) = component("valueZ")? else {
+                return Ok(None);
+            };
+            Ok(Some(cadmpeg_ir::features::FiniteVector3::from_components(
+                x, y, z,
+            )))
         }
     )?))
 }
@@ -4826,33 +5118,43 @@ fn vector_list_property(
     name: &str,
     entries: &[EntryRecord],
 ) -> Result<Option<Vec<cadmpeg_ir::features::FinitePoint3>>, CodecError> {
-    let Some(property) = property(properties, name) else {
+    let Some(property) = property(ctx, properties, name)? else {
         return Ok(None);
     };
     if property.type_name != "App::PropertyVectorList" {
         return Ok(None);
     }
-    direct_root(
+    Ok(direct_root(
         ctx,
         property,
         "VectorList",
-        |root| -> Result<_, CodecError> {
-            let Some(file) = root.attribute("file") else {
+        |ctx, root| -> Result<_, CodecError> {
+            let Some(file) = ctx.xml_attribute(root, "file", "FreeCAD design XML attribute")?
+            else {
                 return Ok(None);
             };
             if file.is_empty() {
                 return Ok(property.side_entries().is_empty().then(Vec::new));
             }
-            if property.side_entries() != [file] {
+            let side_entries = property.side_entries();
+            if side_entries.len() != 1
+                || !ctx.equal(
+                    side_entries[0].as_str(),
+                    file,
+                    "fcstd vector-list side entry",
+                )?
+            {
                 return Ok(None);
             }
-            let Some(data) = entries
-                .iter()
-                .find(|entry| entry.name() == file)
-                .map(crate::native::EntryRecord::data)
+            let Some(entry) = ctx.find_by(
+                entries,
+                |entry| ctx.equal(entry.name(), file, "fcstd vector-list entry name"),
+                "fcstd vector-list entry search",
+            )?
             else {
                 return Ok(None);
             };
+            let data = entry.data();
             let mut view = View::over_retained(data);
             let Some(count) = view.u32_le().and_then(|count| usize::try_from(count).ok()) else {
                 return Ok(None);
@@ -4864,8 +5166,8 @@ fn vector_list_property(
             {
                 return Ok(None);
             }
-            let mut points = ctx.collection_vec(count, "fcstd vector-list points")?;
-            for _ in 0..count {
+            let mut points = ctx.vector_storage(count, "fcstd vector-list points")?;
+            for _ in ctx.admit_iter(&(0..count), "fcstd vector-list points")? {
                 let Some(point) = (|| {
                     cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                         view.f64_le()?,
@@ -4875,12 +5177,12 @@ fn vector_list_property(
                 })() else {
                     return Ok(None);
                 };
-                points.push(point);
+                ctx.push_vec(&mut points, point, "fcstd vector-list points")?;
             }
             Ok(view.is_empty().then_some(points))
         },
     )?
-    .unwrap_or(Ok(None))
+    .flatten())
 }
 
 fn part_construction_geometry_definition(
@@ -4895,7 +5197,7 @@ fn part_construction_geometry_definition(
         None
     };
     let face_maker_class = if kind == "Part::Face" {
-        match property(properties, "FaceMakerClass") {
+        match property(ctx, properties, "FaceMakerClass")? {
             Some(property) => string_property_value(ctx, property)?,
             None => None,
         }
@@ -4903,7 +5205,7 @@ fn part_construction_geometry_definition(
         None
     };
     if kind == "Part::Face" {
-        let Some(sources) = property(properties, "Sources") else {
+        let Some(sources) = property(ctx, properties, "Sources")? else {
             return Ok(None);
         };
         if sources.links().is_empty() {
@@ -4950,7 +5252,7 @@ fn part_construction_geometry_definition(
             },
         )),
         "Part::Circle" => {
-            let legacy_angles = property(properties, "Angle0").is_some();
+            let legacy_angles = property(ctx, properties, "Angle0")?.is_some();
             Some(FeatureDefinition::Operation(
                 FeatureOperation::CircularArc {
                     arc: cadmpeg_ir::features::FeatureCircularArc::from_parts(
@@ -5127,19 +5429,25 @@ fn parametric_helix_definition(
     )))
 }
 
-/// The draft angles an extrude states, one per native taper property.
-///
-/// `taper` and `taper_reverse` are read for every extrude. `taper_second` is
-/// read only when the extent is two-sided, because `TaperAngle2` belongs to the
-/// second side and a one-sided or midplane extent states no second side; on
-/// those the field is `None` without the property being parsed.
-struct ExtrudeDrafts {
-    /// `TaperAngle`: the draft of the first (or only, or symmetric) side.
+/// Persisted extent selectors and draft angles shared by the extrude readers.
+struct ExtrudeSource {
+    extent: ExtrudeExtentSelector,
     taper: Option<cadmpeg_ir::scalar::SlopeAngle>,
-    /// `TaperAngleRev`: the draft of the reverse side of a `Part::Extrusion`.
     taper_reverse: Option<cadmpeg_ir::scalar::SlopeAngle>,
-    /// `TaperAngle2`: the draft of the second side of a two-sided extent.
     taper_second: Option<cadmpeg_ir::scalar::SlopeAngle>,
+}
+
+struct ExtrudeExtentSelector {
+    side_type: Option<u64>,
+    legacy_two_lengths: bool,
+    first_termination: FirstTermination,
+}
+
+#[derive(Clone, Copy)]
+enum FirstTermination {
+    Unread,
+    Invalid,
+    Value(u64),
 }
 
 /// The draft angle the extrude states under `key`, in canonical radians.
@@ -5165,29 +5473,37 @@ fn taper_angle(
         .map_err(|error| malformed_design(ctx, format_args!("{key}: {error}")))
 }
 
-/// Whether the record states the legacy two-length extent.
-fn legacy_two_length_extent(
-    ctx: &DecodeContext<'_>,
-    properties: &[&PropertyRecord],
-) -> Result<bool, CodecError> {
-    Ok(property(properties, "SideType").is_none()
-        && enumeration_selector(ctx, properties, "Type", 0)? == Some(4))
-}
-
-/// The extent kind the extrude record states: 0 one-sided, 1 two-sided,
-/// 2 midplane.
+/// Read extent selectors once. Type also selects the first side's termination.
 fn extrude_side_type(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
-) -> Result<Option<u64>, CodecError> {
-    Ok(if legacy_two_length_extent(ctx, properties)? {
-        Some(1)
-    } else if required!(bool_selector(ctx, properties, "Midplane", false)?) {
-        Some(2)
-    } else if property(properties, "SideType").is_some() {
-        enumeration_selector(ctx, properties, "SideType", 0)?
+) -> Result<ExtrudeExtentSelector, CodecError> {
+    let side_type_property = property(ctx, properties, "SideType")?;
+    let first_termination = if side_type_property.is_none() {
+        match enumeration_selector(ctx, properties, "Type", 0)? {
+            Some(value) => FirstTermination::Value(value),
+            None => FirstTermination::Invalid,
+        }
     } else {
-        Some(0)
+        FirstTermination::Unread
+    };
+    let legacy_two_lengths = matches!(first_termination, FirstTermination::Value(4));
+    let side_type = if legacy_two_lengths {
+        Some(1)
+    } else {
+        match bool_selector(ctx, properties, "Midplane", false)? {
+            Some(true) => Some(2),
+            Some(false) if side_type_property.is_some() => {
+                enumeration_selector(ctx, properties, "SideType", 0)?
+            }
+            Some(false) => Some(0),
+            None => None,
+        }
+    };
+    Ok(ExtrudeExtentSelector {
+        side_type,
+        legacy_two_lengths,
+        first_termination,
     })
 }
 
@@ -5200,7 +5516,7 @@ fn extrusion_definition(
     sketches: &[Sketch],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let face_maker_class = if kind == "Part::Extrusion" {
-        match property(properties, "FaceMakerClass") {
+        match property(ctx, properties, "FaceMakerClass")? {
             Some(property) => string_property_value(ctx, property)?,
             None => None,
         }
@@ -5213,12 +5529,14 @@ fn extrusion_definition(
     // for the kind that carries one. A one-sided or midplane extrude has no
     // second side: reading a property its kind does not carry is over-reach,
     // and refusing the whole feature over it deletes what the record states.
-    let taper_second = if extrude_side_type(ctx, properties)? == Some(1) {
+    let extent = extrude_side_type(ctx, properties)?;
+    let taper_second = if extent.side_type == Some(1) {
         taper_angle(ctx, properties, "TaperAngle2")?
     } else {
         None
     };
-    let drafts = ExtrudeDrafts {
+    let source = ExtrudeSource {
+        extent,
         taper: taper_angle(ctx, properties, "TaperAngle")?,
         taper_reverse: taper_angle(ctx, properties, "TaperAngleRev")?,
         taper_second,
@@ -5229,7 +5547,7 @@ fn extrusion_definition(
         properties,
         (profile, profile_normal),
         sketches,
-        &drafts,
+        &source,
         face_maker_class,
     )
 }
@@ -5240,7 +5558,7 @@ fn extrusion_shape(
     properties: &[&PropertyRecord],
     profile_and_normal: (ProfileRef, Option<Vector3>),
     sketches: &[Sketch],
-    drafts: &ExtrudeDrafts,
+    source: &ExtrudeSource,
     face_maker_class: Option<String>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let (profile, profile_normal) = profile_and_normal;
@@ -5248,48 +5566,54 @@ fn extrusion_shape(
         let raw_direction = vector_property(ctx, properties, "Dir")?;
         let direction_magnitude = raw_direction.map(|direction| direction.get().norm());
         let direction_mode = required!(enumeration_selector(ctx, properties, "DirMode", 0)?);
-        let (mut direction, direction_source) =
-            match direction_mode {
-                0 => (
+        let (mut direction, direction_source) = match direction_mode {
+            0 => (
+                required!(cadmpeg_ir::units::UnitVector3::normalized(
+                    required!(raw_direction).get()
+                )),
+                ExtrusionDirectionSource::Custom {},
+            ),
+            1 => {
+                let reference = required!(property(ctx, properties, "DirLink")?);
+                if reference.links().len() != 1 {
+                    return Ok(None);
+                }
+                (
                     required!(cadmpeg_ir::units::UnitVector3::normalized(
                         required!(raw_direction).get()
                     )),
-                    ExtrusionDirectionSource::Custom {},
-                ),
-                1 => {
-                    let reference = required!(property(properties, "DirLink"));
-                    if reference.links().len() != 1 {
-                        return Ok(None);
-                    }
-                    (
-                        required!(cadmpeg_ir::units::UnitVector3::normalized(
-                            required!(raw_direction).get()
-                        )),
-                        ExtrusionDirectionSource::Edge {
-                            reference: PathRef::Native(ctx.copy_retained_text(
+                    ExtrusionDirectionSource::Edge {
+                        reference: PathRef::Native(
+                            ctx.copy_retained_text(
                                 &reference.id,
                                 "fcstd extrusion direction link",
-                            )?),
-                        },
-                    )
-                }
-                2 => {
-                    let normal = required!(match &profile {
-                        ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)) => sketches
-                            .iter()
-                            .find(|sketch| sketch.id == *sketch_id)
-                            .and_then(Sketch::resolved_placement)
-                            .map(|(_, normal, _)| normal.get())
-                            .or(profile_normal),
-                        _ => profile_normal,
-                    });
-                    (
-                        required!(cadmpeg_ir::units::UnitVector3::normalized(normal)),
-                        ExtrusionDirectionSource::ProfileNormal {},
-                    )
-                }
-                _ => return Ok(None),
-            };
+                            )?,
+                        ),
+                    },
+                )
+            }
+            2 => {
+                let normal = required!(match &profile {
+                    ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)) => ctx
+                        .find_by(
+                            sketches,
+                            |sketch| {
+                                ctx.equal(&sketch.id, sketch_id, "fcstd extrusion profile identity")
+                            },
+                            "fcstd extrusion profile lookup",
+                        )?
+                        .and_then(Sketch::resolved_placement)
+                        .map(|(_, normal, _)| normal.get())
+                        .or(profile_normal),
+                    _ => profile_normal,
+                });
+                (
+                    required!(cadmpeg_ir::units::UnitVector3::normalized(normal)),
+                    ExtrusionDirectionSource::ProfileNormal {},
+                )
+            }
+            _ => return Ok(None),
+        };
         let signed_length = |name| -> Result<_, CodecError> {
             Ok(match scalar_named(ctx, properties, name)? {
                 Some(value) => Some(value),
@@ -5314,18 +5638,18 @@ fn extrusion_shape(
                                 (forward != 0.0).then_some(forward.abs())
                             ),)),
                         },
-                        draft: drafts.taper,
+                        draft: source.taper,
                     },
                 },
                 false,
             )
         } else {
-            let forward_travel = (forward != 0.0).then_some((forward, drafts.taper));
-            let reverse_travel = (reverse != 0.0).then_some((-reverse, drafts.taper_reverse));
+            let forward_travel = (forward != 0.0).then_some((forward, source.taper));
+            let reverse_travel = (reverse != 0.0).then_some((-reverse, source.taper_reverse));
             let same_side = forward_travel
                 .zip(reverse_travel)
                 .is_some_and(|((first, _), (second, _))| first.signum() == second.signum());
-            if same_side && drafts.taper != drafts.taper_reverse {
+            if same_side && source.taper != source.taper_reverse {
                 return Ok(None);
             }
             let farthest = |positive: bool| {
@@ -5383,9 +5707,9 @@ fn extrusion_shape(
         if reverse_direction ^ required!(bool_selector(ctx, properties, "Reversed", false)?) {
             direction = direction.reversed();
         }
-        let face_maker = if property(properties, "FaceMakerClass").is_some() {
+        let face_maker = if property(ctx, properties, "FaceMakerClass")?.is_some() {
             let maker = required!(FaceMaker::new(ctx, required!(face_maker_class))?);
-            if property(properties, "FaceMakerMode").is_some()
+            if property(ctx, properties, "FaceMakerMode")?.is_some()
                 && required!(u32::try_from(required!(integer_property(
                     ctx,
                     properties,
@@ -5400,7 +5724,7 @@ fn extrusion_shape(
         } else {
             None
         };
-        let inner_wire_taper = if property(properties, "InnerWireTaper").is_some() {
+        let inner_wire_taper = if property(ctx, properties, "InnerWireTaper")?.is_some() {
             Some(
                 match required!(integer_property(ctx, properties, "InnerWireTaper")?) {
                     0 => InnerWireTaper::Inverted,
@@ -5429,24 +5753,31 @@ fn extrusion_shape(
             },
         )));
     }
-    let legacy_two_lengths = legacy_two_length_extent(ctx, properties)?;
+    let legacy_two_lengths = source.extent.legacy_two_lengths;
     let termination = |side: u8| -> Result<Option<LinearTermination>, CodecError> {
-        let suffix = if side == 1 { "" } else { "2" };
-        let type_name = format!("Type{suffix}");
-        let length_name = format!("Length{suffix}");
-        let offset_name = format!("Offset{suffix}");
-        let face_name = format!("UpToFace{suffix}");
-        let shape_name = format!("UpToShape{suffix}");
+        let (type_name, length_name, offset_name, face_name, shape_name) = if side == 1 {
+            ("Type", "Length", "Offset", "UpToFace", "UpToShape")
+        } else {
+            ("Type2", "Length2", "Offset2", "UpToFace2", "UpToShape2")
+        };
         let termination_type = if legacy_two_lengths {
             0
+        } else if side == 1 {
+            match source.extent.first_termination {
+                FirstTermination::Value(value) => value,
+                FirstTermination::Invalid => return Ok(None),
+                FirstTermination::Unread => {
+                    required!(enumeration_selector(ctx, properties, type_name, 0)?)
+                }
+            }
         } else {
-            required!(enumeration_selector(ctx, properties, &type_name, 0)?)
+            required!(enumeration_selector(ctx, properties, type_name, 0)?)
         };
-        let offset = if property(properties, &offset_name).is_some() {
+        let offset = if property(ctx, properties, offset_name)?.is_some() {
             Some(Length::from_assigned_real(required!(scalar_named(
                 ctx,
                 properties,
-                &offset_name,
+                offset_name,
             )?)))
         } else {
             None
@@ -5454,7 +5785,7 @@ fn extrusion_shape(
         Ok(match termination_type {
             0 => Some(LinearTermination::Blind {
                 length: required!(cadmpeg_ir::scalar::NonZeroLength::from_assigned_real(
-                    required!(scalar_named(ctx, properties, &length_name,)?)
+                    required!(scalar_named(ctx, properties, length_name,)?)
                 )),
             }),
             1 if kind.contains("Pocket") => Some(LinearTermination::ThroughAll {}),
@@ -5462,21 +5793,21 @@ fn extrusion_shape(
             2 => Some(LinearTermination::ToFirst {}),
             3 => Some(LinearTermination::ToFace {
                 face: cadmpeg_ir::features::FaceSelection::Native(ctx.copy_retained_text(
-                    &required!(singular_operand(properties, &face_name)).id,
+                    &required!(singular_operand(ctx, properties, face_name)?).id,
                     "fcstd extrusion face termination",
                 )?),
                 offset,
             }),
             5 => Some(LinearTermination::ToShape {
                 target: cadmpeg_ir::features::FaceSelection::Native(ctx.copy_retained_text(
-                    &required!(singular_operand(properties, &shape_name)).id,
+                    &required!(singular_operand(ctx, properties, shape_name)?).id,
                     "fcstd extrusion shape termination",
                 )?),
             }),
             _ => None,
         })
     };
-    let side_type = required!(extrude_side_type(ctx, properties)?);
+    let side_type = required!(source.extent.side_type);
     // `TaperAngle2` describes a second, independent side and reaches the IR
     // only when the extent actually carries one (`SideType` 1 / two-sided). A
     // symmetric (Midplane) pad mirrors side one, so it has no second side to
@@ -5485,47 +5816,55 @@ fn extrusion_shape(
         0 => ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: required!(termination(1)?),
-                draft: drafts.taper,
+                draft: source.taper,
             },
         },
         1 => ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
                 termination: required!(termination(1)?),
-                draft: drafts.taper,
+                draft: source.taper,
             },
             second: ExtrudeSide {
                 termination: required!(termination(2)?),
-                draft: drafts.taper_second,
+                draft: source.taper_second,
             },
         },
         2 => ExtrudeExtent::Symmetric {
             side: ExtrudeSide {
                 termination: required!(termination(1)?),
-                draft: drafts.taper,
+                draft: source.taper,
             },
         },
         _ => return Ok(None),
     };
     let use_custom = required!(bool_selector(ctx, properties, "UseCustomVector", false)?);
-    let is_nonempty_link = |link: Option<&crate::native::LinkTarget>| {
-        link.is_some_and(|link| link.document().is_some() || link.object().is_some())
+    let reference_axis = match property(ctx, properties, "ReferenceAxis")? {
+        Some(property) => {
+            let nonempty = |link: &Option<crate::native::LinkTarget>| {
+                Ok(link
+                    .as_ref()
+                    .is_some_and(|link| link.document().is_some() || link.object().is_some()))
+            };
+            match ctx.position_by(
+                property.links(),
+                nonempty,
+                "fcstd extrusion reference axis lookup",
+            )? {
+                None => None,
+                Some(index) => {
+                    if ctx.any_by(
+                        &property.links()[index + 1..],
+                        nonempty,
+                        "fcstd extrusion reference axis count",
+                    )? {
+                        return Ok(None);
+                    }
+                    Some(property)
+                }
+            }
+        }
+        None => None,
     };
-    let reference_axis = property(properties, "ReferenceAxis").filter(|property| {
-        property
-            .links()
-            .iter()
-            .any(|link| is_nonempty_link(link.as_ref()))
-    });
-    if reference_axis.is_some_and(|property| {
-        property
-            .links()
-            .iter()
-            .filter(|link| is_nonempty_link(link.as_ref()))
-            .count()
-            != 1
-    }) {
-        return Ok(None);
-    }
     let mut direction = if use_custom {
         cadmpeg_ir::features::ExtrudeDirection::Explicit {
             vector: cadmpeg_ir::features::FeatureDirection3::from(required!(
@@ -5550,9 +5889,12 @@ fn extrusion_shape(
         }
     } else {
         let normal = match &profile {
-            ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)) => sketches
-                .iter()
-                .find(|sketch| sketch.id == *sketch_id)
+            ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)) => ctx
+                .find_by(
+                    sketches,
+                    |sketch| ctx.equal(&sketch.id, sketch_id, "fcstd extrusion profile identity"),
+                    "fcstd extrusion profile lookup",
+                )?
                 .and_then(Sketch::resolved_placement)
                 .map(|(_, normal, _)| normal.get())
                 .or(profile_normal),
@@ -5622,7 +5964,7 @@ fn dress_up_edge_selection(
     if use_all_edges {
         return Ok(Some(EdgeSelection::All));
     }
-    Ok(Some(match property(properties, "Base") {
+    Ok(Some(match property(ctx, properties, "Base")? {
         Some(property) => EdgeSelection::Native(
             ctx.copy_retained_text(&property.id, "fcstd dress-up edge selection")?,
         ),
@@ -5634,7 +5976,7 @@ fn scale_definition(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(base) = singular_operand(properties, "Base") else {
+    let Some(base) = singular_operand(ctx, properties, "Base")? else {
         return Ok(None);
     };
     let factor = |name| -> Result<_, CodecError> {
@@ -5684,19 +6026,25 @@ fn fillet_definition(
     if matches!(edges, EdgeSelection::Unresolved) {
         return Ok(None);
     }
-    let part_values = if kind == "Part::Fillet" {
-        part_fillet_edge_values(ctx, properties, entries)?
-    } else {
-        None
-    };
+    let (part_values, _part_value_storage) =
+        ctx.with_scoped_storage("fcstd edge-treatment source values", || {
+            Ok::<_, CodecError>(if kind == "Part::Fillet" {
+                part_fillet_edge_values(ctx, properties, entries)?
+            } else {
+                None
+            })
+        })?;
     let radius = if kind == "Part::Fillet" {
         let values = required!(part_values);
         let radius = required!(cadmpeg_ir::scalar::PositiveLength::new(
             required!(values.first())[0]
         ));
-        required!(values
-            .iter()
-            .all(|[first, second]| *first == radius.get() && *second == radius.get())
+        required!(ctx
+            .all_by(
+                &values,
+                |[first, second]| Ok(*first == radius.get() && *second == radius.get()),
+                "fcstd part fillet uniform radius check",
+            )?
             .then_some(()));
         radius
     } else {
@@ -5706,13 +6054,17 @@ fn fillet_definition(
     };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                cadmpeg_ir::features::edge_treatments::FilletGroup {
-                    edges,
-                    radius: RadiusSpec::Constant { radius },
-                    tangency_weight: None,
-                },
-            ),
+            groups: ctx
+                .collect_vec(
+                    [cadmpeg_ir::features::edge_treatments::FilletGroup {
+                        edges,
+                        radius: RadiusSpec::Constant { radius },
+                        tangency_weight: None,
+                    }],
+                    "fcstd fillet groups",
+                )?
+                .try_into()
+                .map_err(CodecError::malformed)?,
         },
     )))
 }
@@ -5730,26 +6082,34 @@ fn chamfer_definition(
     if matches!(edges, EdgeSelection::Unresolved) {
         return Ok(None);
     }
-    let part_values = if kind == "Part::Chamfer" {
-        part_fillet_edge_values(ctx, properties, entries)?
-    } else {
-        None
-    };
-    let spec = if kind == "Part::Chamfer" {
+    let (part_values, _part_value_storage) =
+        ctx.with_scoped_storage("fcstd edge-treatment source values", || {
+            Ok::<_, CodecError>(if kind == "Part::Chamfer" {
+                part_fillet_edge_values(ctx, properties, entries)?
+            } else {
+                None
+            })
+        })?;
+    let (spec, legacy_flip_mode) = if kind == "Part::Chamfer" {
         let values = required!(part_values);
         let [first_raw, second_raw] = *required!(values.first());
         let first = required!(cadmpeg_ir::scalar::PositiveLength::new(first_raw));
         let second = required!(cadmpeg_ir::scalar::PositiveLength::new(second_raw));
-        if !values.iter().all(|[candidate_first, candidate_second]| {
-            *candidate_first == first.get() && *candidate_second == second.get()
-        }) {
+        if !ctx.all_by(
+            &values,
+            |[candidate_first, candidate_second]| {
+                Ok(*candidate_first == first.get() && *candidate_second == second.get())
+            },
+            "fcstd part chamfer uniform distance check",
+        )? {
             return Ok(None);
         }
-        if first == second {
+        let spec = if first == second {
             ChamferSpec::Distance { distance: first }
         } else {
             ChamferSpec::TwoDistances { first, second }
-        }
+        };
+        (spec, false)
     } else {
         required!(chamfer_spec(ctx, properties)?)
     };
@@ -5760,16 +6120,16 @@ fn chamfer_definition(
     };
     let legacy_flip = kind == "PartDesign::Chamfer"
         && program_version.is_some_and(|version| version.starts_with('0'))
-        && property(properties, "ChamferType")
-            .map(|property| scalar_value(ctx, property))
-            .transpose()?
-            .flatten()
-            .is_some_and(|value| value.get() == 1.0 || value.get() == 2.0);
+        && legacy_flip_mode;
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Chamfer {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                cadmpeg_ir::features::edge_treatments::ChamferGroup { edges, spec },
-            ),
+            groups: ctx
+                .collect_vec(
+                    [cadmpeg_ir::features::edge_treatments::ChamferGroup { edges, spec }],
+                    "fcstd chamfer groups",
+                )?
+                .try_into()
+                .map_err(CodecError::malformed)?,
             flip_direction: if legacy_flip {
                 !flip_direction
             } else {
@@ -5784,15 +6144,18 @@ fn part_fillet_edge_values(
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
-    let Some(property) = property(properties, "Edges") else {
+    let Some(property) = property(ctx, properties, "Edges")? else {
         return Ok(None);
     };
     let Some(entry_name) = property.side_entries().first() else {
         return Ok(None);
     };
-    let Some(data) = entries
-        .iter()
-        .find(|entry| entry.name() == *entry_name)
+    let Some(data) = ctx
+        .find_by(
+            entries,
+            |entry| ctx.equal(entry.name(), entry_name.as_str(), "fcstd fillet entry name"),
+            "fcstd fillet entry lookup",
+        )?
         .map(crate::native::EntryRecord::data)
     else {
         return Ok(None);
@@ -5814,14 +6177,14 @@ fn part_fillet_edge_values(
     let Some(bounded) = view.counted(u64::from(count), 20) else {
         return Ok(None);
     };
-    let mut values = ctx.collection_vec(bounded.get(), "fcstd fillet edge values")?;
-    for _ in 0..count {
+    let mut values = ctx.vector_storage(bounded.get(), "fcstd fillet edge values")?;
+    for _ in ctx.admit_iter(&(0..count), "fcstd fillet edge values")? {
         let Some((_, first, second)) =
             (|| Some((view.u32_le()?, view.f64_le()?, view.f64_le()?)))()
         else {
             return Ok(None);
         };
-        values.push([first, second]);
+        ctx.push_vec(&mut values, [first, second], "fcstd fillet edge values")?;
     }
     Ok(view.is_empty().then_some(values))
 }
@@ -5879,7 +6242,7 @@ fn thickness_definition(
     } else {
         "Base"
     };
-    let Some(selection) = property(properties, source_name) else {
+    let Some(selection) = property(ctx, properties, source_name)? else {
         return Ok(None);
     };
     if selection.links().is_empty() {
@@ -5925,7 +6288,7 @@ fn offset_shape_definition(
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(source) = singular_operand(properties, "Source") else {
+    let Some(source) = singular_operand(ctx, properties, "Source")? else {
         return Ok(None);
     };
     let Some(distance) = scalar_named(ctx, properties, "Value")?
@@ -5966,8 +6329,8 @@ fn derived_shape_definition(
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     match kind {
         "Part::Compound" | "Part::Compound2" => {
-            let Some(links) = property(properties, "Links") else {
-                return Ok(property(properties, "Shape")
+            let Some(links) = property(ctx, properties, "Links")? else {
+                return Ok(property(ctx, properties, "Shape")?
                     .map(|_| FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})));
             };
             if links.links().is_empty() {
@@ -5982,7 +6345,7 @@ fn derived_shape_definition(
             )))
         }
         "Part::Refine" | "Part::Reverse" => {
-            let Some(source) = property(properties, "Source") else {
+            let Some(source) = property(ctx, properties, "Source")? else {
                 return Ok(None);
             };
             if source.links().len() != 1 {
@@ -6001,22 +6364,26 @@ fn derived_shape_definition(
     }
 }
 
-fn cached_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
-    property(properties, "Shape")
+fn cached_shape_definition(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    Ok(property(ctx, properties, "Shape")?
         .filter(|shape| !shape.side_entries().is_empty())
-        .map(|_| FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}))
+        .map(|_| FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})))
 }
 
 fn ruled_surface_definition(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(first) = property(properties, "Curve1").filter(|property| property.links().len() == 1)
+    let Some(first) =
+        property(ctx, properties, "Curve1")?.filter(|property| property.links().len() == 1)
     else {
         return Ok(None);
     };
     let Some(second) =
-        property(properties, "Curve2").filter(|property| property.links().len() == 1)
+        property(ctx, properties, "Curve2")?.filter(|property| property.links().len() == 1)
     else {
         return Ok(None);
     };
@@ -6043,11 +6410,13 @@ fn section_shape_definition(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(base) = property(properties, "Base").filter(|property| property.links().len() == 1)
+    let Some(base) =
+        property(ctx, properties, "Base")?.filter(|property| property.links().len() == 1)
     else {
         return Ok(None);
     };
-    let Some(tool) = property(properties, "Tool").filter(|property| property.links().len() == 1)
+    let Some(tool) =
+        property(ctx, properties, "Tool")?.filter(|property| property.links().len() == 1)
     else {
         return Ok(None);
     };
@@ -6074,7 +6443,7 @@ fn mirror_shape_definition(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(source) = property(properties, "Source") else {
+    let Some(source) = property(ctx, properties, "Source")? else {
         return Ok(None);
     };
     if source.links().len() != 1 {
@@ -6083,12 +6452,18 @@ fn mirror_shape_definition(
     let Some(origin) = vector_property(ctx, properties, "Base")? else {
         return Ok(None);
     };
-    let plane_reference = property(properties, "MirrorPlane").filter(|property| {
-        property
-            .links()
-            .iter()
-            .any(|link| nonempty_link(link.as_ref()))
-    });
+    let plane_reference = match property(ctx, properties, "MirrorPlane")? {
+        Some(property)
+            if ctx.any_by(
+                property.links(),
+                |link| Ok(nonempty_link(link.as_ref())),
+                "fcstd mirror plane links",
+            )? =>
+        {
+            Some(property)
+        }
+        _ => None,
+    };
     let Some(plane_normal) = vector_property(ctx, properties, "Normal")?
         .and_then(|normal| cadmpeg_ir::units::UnitVector3::normalized(normal.get()))
     else {
@@ -6116,13 +6491,13 @@ fn project_on_surface_definition(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(sources) = property(properties, "Projection") else {
+    let Some(sources) = property(ctx, properties, "Projection")? else {
         return Ok(None);
     };
     if sources.links().is_empty() {
         return Ok(None);
     }
-    let Some(support) = property(properties, "SupportFace") else {
+    let Some(support) = property(ctx, properties, "SupportFace")? else {
         return Ok(None);
     };
     if support.links().len() != 1 {
@@ -6137,7 +6512,7 @@ fn project_on_surface_definition(
         2 => SurfaceProjectionMode::Edges,
         _ => return Ok(None),
     };
-    let height = if property(properties, "Height").is_some() {
+    let height = if property(ctx, properties, "Height")?.is_some() {
         let Some(value) = scalar_named(ctx, properties, "Height")?
             .and_then(cadmpeg_ir::scalar::NonNegativeLength::from_finite_assigned_real)
         else {
@@ -6147,7 +6522,7 @@ fn project_on_surface_definition(
     } else {
         cadmpeg_ir::scalar::NonNegativeLength::ZERO
     };
-    let offset = if property(properties, "Offset").is_some() {
+    let offset = if property(ctx, properties, "Offset")?.is_some() {
         let Some(value) = scalar_named(ctx, properties, "Offset")? else {
             return Ok(None);
         };
@@ -6179,23 +6554,32 @@ fn project_on_surface_definition(
 fn draft_definition(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    objects: &BTreeMap<&str, &ObjectRecord>,
+    properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(faces) = property(properties, "Base") else {
+    let Some(faces) = property(ctx, properties, "Base")? else {
         return Ok(None);
     };
-    let Some(neutral_plane) = property(properties, "NeutralPlane") else {
+    let Some(neutral_plane) = property(ctx, properties, "NeutralPlane")? else {
         return Ok(None);
     };
-    let plane_normal = plane_reference(properties, "NeutralPlane", objects, properties_by_owner)
-        .map(|(_, normal)| normal);
-    let pull_direction = if property(properties, "PullDirection").is_some_and(|property| {
-        property
-            .links()
-            .iter()
-            .any(|link| nonempty_link(link.as_ref()))
-    }) {
+    let plane_normal = plane_reference(
+        ctx,
+        properties,
+        "NeutralPlane",
+        objects,
+        properties_by_owner,
+    )?
+    .map(|(_, normal)| normal);
+    let has_pull_direction = match property(ctx, properties, "PullDirection")? {
+        Some(property) => ctx.any_by(
+            property.links(),
+            |link| Ok(nonempty_link(link.as_ref())),
+            "fcstd draft pull direction links",
+        )?,
+        None => false,
+    };
+    let pull_direction = if has_pull_direction {
         axis_reference(
             ctx,
             properties,
@@ -6242,34 +6626,32 @@ fn draft_definition(
 fn chamfer_spec(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
-) -> Result<Option<ChamferSpec>, CodecError> {
-    let mode = required!(property(properties, "ChamferType")
-        .map(|property| -> Result<_, CodecError> {
-            Ok(
-                scalar_value(ctx, property)?.and_then(|value| match value.get() {
-                    value if value > -1.0 && value < 1.0 => Some(0),
-                    value if (1.0..2.0).contains(&value) => Some(1),
-                    value if (2.0..3.0).contains(&value) => Some(2),
-                    _ => None,
-                }),
-            )
-        })
+) -> Result<Option<(ChamferSpec, bool)>, CodecError> {
+    let value = required!(property(ctx, properties, "ChamferType")?
+        .map(|property| scalar_value(ctx, property))
         .transpose()?
-        .unwrap_or(Some(0)));
-    let first = property(properties, "Size")
+        .unwrap_or(Some(FiniteReal::ZERO)));
+    let mode = match value.get() {
+        value if value > -1.0 && value < 1.0 => 0,
+        value if (1.0..2.0).contains(&value) => 1,
+        value if (2.0..3.0).contains(&value) => 2,
+        _ => return Ok(None),
+    };
+    let legacy_flip_mode = value.get() == 1.0 || value.get() == 2.0;
+    let first = property(ctx, properties, "Size")?
         .map(|property| scalar_value(ctx, property))
         .transpose()?
         .flatten()
         .and_then(cadmpeg_ir::scalar::PositiveLength::from_assigned_real);
-    Ok(match (mode, first) {
+    let spec = match (mode, first) {
         (0, Some(distance)) => Some(ChamferSpec::Distance { distance }),
-        (1, Some(first)) => property(properties, "Size2")
+        (1, Some(first)) => property(ctx, properties, "Size2")?
             .map(|property| scalar_value(ctx, property))
             .transpose()?
             .flatten()
             .and_then(cadmpeg_ir::scalar::PositiveLength::from_assigned_real)
             .map(|second| ChamferSpec::TwoDistances { first, second }),
-        (2, Some(distance)) => property(properties, "Angle")
+        (2, Some(distance)) => property(ctx, properties, "Angle")?
             .map(|property| scalar_value(ctx, property))
             .transpose()?
             .flatten()
@@ -6281,14 +6663,21 @@ fn chamfer_spec(
                 })
             }),
         _ => None,
-    })
+    };
+    Ok(spec.map(|spec| (spec, legacy_flip_mode)))
 }
 
-fn property<'a>(properties: &'a [&PropertyRecord], name: &str) -> Option<&'a PropertyRecord> {
-    properties
-        .iter()
-        .copied()
-        .find(|property| property.name == name)
+fn property<'a>(
+    ctx: &DecodeContext<'_>,
+    properties: &[&'a PropertyRecord],
+    name: &str,
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    ctx.find_by(
+        properties,
+        |property| Ok(property.name == name),
+        "fcstd design property lookup",
+    )
+    .map(Option::<&&PropertyRecord>::copied)
 }
 
 fn nonempty_link(link: Option<&crate::native::LinkTarget>) -> bool {
@@ -6298,14 +6687,17 @@ fn nonempty_link(link: Option<&crate::native::LinkTarget>) -> bool {
 }
 
 fn singular_operand<'a>(
-    properties: &'a [&PropertyRecord],
+    ctx: &DecodeContext<'_>,
+    properties: &[&'a PropertyRecord],
     name: &str,
-) -> Option<&'a PropertyRecord> {
-    let property = property(properties, name)?;
-    let [Some(link)] = property.links() else {
-        return None;
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    let Some(property) = property(ctx, properties, name)? else {
+        return Ok(None);
     };
-    link.object().map(|_| property)
+    let [Some(link)] = property.links() else {
+        return Ok(None);
+    };
+    Ok(link.object().map(|_| property))
 }
 
 fn is_vector_property_type(type_name: &str) -> bool {
@@ -6415,21 +6807,25 @@ fn scalar_value(
     if tag == "Bool" {
         return Ok(None);
     }
-    let value = required!(required!(direct_root_value(
+    let value = required!(direct_root_value(
         ctx,
         property,
         tag,
         "value",
-        str::parse::<f64>
-    )?)
-    .ok());
-    Ok(FiniteReal::new(value))
+        |ctx, value| {
+            let Ok(value) = ctx.parse_text::<f64>(value, "fcstd scalar property value")? else {
+                return Ok(None);
+            };
+            Ok(FiniteReal::new(value))
+        }
+    )?);
+    Ok(Some(value))
 }
 
 fn scalar_text<T>(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
-    use_value: impl FnOnce(&str) -> T,
+    use_value: impl FnOnce(&DecodeContext<'_>, &str) -> Result<Option<T>, CodecError>,
 ) -> Result<Option<T>, CodecError> {
     let tag = required!(text_value_tag(&property.type_name));
     direct_root_value(ctx, property, tag, "value", use_value)
@@ -6440,21 +6836,23 @@ fn direct_root_value<T>(
     property: &PropertyRecord,
     expected_tag: &str,
     attribute: &str,
-    use_value: impl FnOnce(&str) -> T,
+    use_value: impl FnOnce(&DecodeContext<'_>, &str) -> Result<Option<T>, CodecError>,
 ) -> Result<Option<T>, CodecError> {
-    Ok(required!(direct_root(
-        ctx,
-        property,
-        expected_tag,
-        |root| { root.attribute(attribute).map(use_value) }
-    )?))
+    direct_root(ctx, property, expected_tag, |ctx, root| {
+        let Some(value) = ctx.xml_attribute(root, attribute, "FreeCAD design XML attribute")?
+        else {
+            return Ok(None);
+        };
+        use_value(ctx, value)
+    })
+    .map(Option::flatten)
 }
 
 fn direct_root<T>(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
     expected_tag: &str,
-    use_root: impl FnOnce(roxmltree::Node<'_, '_>) -> T,
+    use_root: impl FnOnce(&DecodeContext<'_>, roxmltree::Node<'_, '_>) -> Result<T, CodecError>,
 ) -> Result<Option<T>, CodecError> {
     let admitted_document =
         match ctx.parse_xml(property.xml.text(), "FreeCAD direct property XML tree") {
@@ -6463,21 +6861,22 @@ fn direct_root<T>(
             Err(_) => return Ok(None),
         };
     let document = admitted_document.document();
-    let mut roots = document
-        .root_element()
-        .children()
-        .filter(|node| node.is_element() && node.has_tag_name(expected_tag));
-    let root = required!(roots.next());
-    if roots.next().is_some()
-        || document
-            .descendants()
-            .filter(|node| node.has_tag_name(expected_tag))
-            .count()
-            != 1
-    {
-        return Ok(None);
+    let wrapper = ctx.xml_root_element(document, "FreeCAD direct property root")?;
+    let mut root = None;
+    let mut nodes = document.descendants();
+    while let Some(node) = ctx.next_charged(&mut nodes, "FreeCAD direct property values")? {
+        if !ctx.xml_has_tag_name(node, expected_tag, "FreeCAD direct property tag")? {
+            continue;
+        }
+        if root.is_some() || node.parent() != Some(wrapper) {
+            return Ok(None);
+        }
+        root = Some(node);
     }
-    Ok(Some(use_root(root)))
+    match root {
+        Some(root) => Ok(Some(use_root(ctx, root)?)),
+        None => Ok(None),
+    }
 }
 
 fn native_parameters(
@@ -6485,9 +6884,12 @@ fn native_parameters(
     properties: &[&PropertyRecord],
 ) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
     let mut parameters = BTreeMap::new();
-    for property in properties {
-        let Some(value) = scalar_text(ctx, property, |text| {
-            ctx.copy_retained_text(text, "fcstd native parameter value")
+    for property in ctx.admit_iter(properties, "fcstd native parameter properties")? {
+        let Some(value) = scalar_text(ctx, property, |ctx, text| {
+            Ok(Some(ctx.copy_retained_text(
+                text,
+                "fcstd native parameter value",
+            )?))
         })?
         else {
             continue;
@@ -6500,7 +6902,6 @@ fn native_parameters(
         else {
             continue;
         };
-        let value = value?;
         ctx.insert_btree_map(&mut parameters, name, value, "fcstd native parameters")?;
     }
     Ok(parameters)
@@ -6525,14 +6926,14 @@ fn primitive_definition(
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let length = |name: &str| -> Result<_, CodecError> {
-        Ok(property(properties, name)
+        Ok(property(ctx, properties, name)?
             .map(|property| scalar_value(ctx, property))
             .transpose()?
             .flatten()
             .map(Length::from_assigned_real))
     };
     let angle = |name: &str| -> Result<_, CodecError> {
-        Ok(property(properties, name)
+        Ok(property(ctx, properties, name)?
             .map(|property| scalar_value(ctx, property))
             .transpose()?
             .flatten()
@@ -6614,13 +7015,7 @@ fn primitive_definition(
     } else {
         return Ok(None);
     };
-    let op = if kind.contains("Subtractive") {
-        BooleanOp::Cut
-    } else if kind.contains("Additive") {
-        BooleanOp::Join
-    } else {
-        BooleanOp::NewBody
-    };
+    let op = operation_boolean(kind);
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Primitive {
             solid: required!(PrimitiveSolid::new(solid).ok()),
@@ -6629,29 +7024,52 @@ fn primitive_definition(
     )))
 }
 
-fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
-    let (origin, z_axis, x_axis, y_axis) = placement_frame(properties)?;
-    Some(match kind {
-        "PartDesign::Plane" => FeatureDefinition::Operation(FeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, z_axis, x_axis)?,
-        }),
-        "PartDesign::Line" => FeatureDefinition::Operation(FeatureOperation::DatumAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-            direction: cadmpeg_ir::features::FeatureDirection3::new(z_axis)?,
-        }),
-        "PartDesign::Point" => FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-            position: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-            construction: None,
-        }),
-        "PartDesign::CoordinateSystem" => {
-            FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem {
-                frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
-                    origin, x_axis, y_axis, z_axis,
-                )?,
+fn datum_definition(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    properties: &[&PropertyRecord],
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some((origin, z_axis, x_axis, y_axis)) = placement_frame(ctx, properties)? else {
+        return Ok(None);
+    };
+    let definition = match kind {
+        "PartDesign::Plane" => {
+            let Some(frame) =
+                cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, z_axis, x_axis)
+            else {
+                return Ok(None);
+            };
+            FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame })
+        }
+        "PartDesign::Line" => {
+            let Some(origin) = cadmpeg_ir::features::FinitePoint3::new(origin) else {
+                return Ok(None);
+            };
+            let Some(direction) = cadmpeg_ir::features::FeatureDirection3::new(z_axis) else {
+                return Ok(None);
+            };
+            FeatureDefinition::Operation(FeatureOperation::DatumAxis { origin, direction })
+        }
+        "PartDesign::Point" => {
+            let Some(position) = cadmpeg_ir::features::FinitePoint3::new(origin) else {
+                return Ok(None);
+            };
+            FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+                position,
+                construction: None,
             })
         }
-        _ => return None,
-    })
+        "PartDesign::CoordinateSystem" => {
+            let Some(frame) =
+                cadmpeg_ir::features::FeatureCoordinateFrame::new(origin, x_axis, y_axis, z_axis)
+            else {
+                return Ok(None);
+            };
+            FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame })
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(definition))
 }
 
 fn boolean_definition(
@@ -6679,19 +7097,22 @@ fn boolean_definition(
         return Ok(None);
     };
     let (target, tools) = if kind == "PartDesign::Boolean" {
-        let Some(group) = property(properties, "Group") else {
+        let Some(group) = property(ctx, properties, "Group")? else {
             return Ok(None);
         };
         if group.links().is_empty() {
             return Ok(None);
         }
-        if property(properties, "BaseFeature").is_some_and(|property| {
-            property
-                .links()
-                .iter()
-                .any(|link| nonempty_link(link.as_ref()))
-        }) {
-            let Some(base) = singular_operand(properties, "BaseFeature") else {
+        let has_base_feature = match property(ctx, properties, "BaseFeature")? {
+            Some(property) => ctx.any_by(
+                property.links(),
+                |link| Ok(nonempty_link(link.as_ref())),
+                "fcstd boolean base feature links",
+            )?,
+            None => false,
+        };
+        if has_base_feature {
+            let Some(base) = singular_operand(ctx, properties, "BaseFeature")? else {
                 return Ok(None);
             };
             (
@@ -6715,11 +7136,13 @@ fn boolean_definition(
                 )?),
             )
         }
-    } else if property(properties, "Base").is_some() || property(properties, "Tool").is_some() {
-        let Some(base) = singular_operand(properties, "Base") else {
+    } else if property(ctx, properties, "Base")?.is_some()
+        || property(ctx, properties, "Tool")?.is_some()
+    {
+        let Some(base) = singular_operand(ctx, properties, "Base")? else {
             return Ok(None);
         };
-        let Some(tool) = singular_operand(properties, "Tool") else {
+        let Some(tool) = singular_operand(ctx, properties, "Tool")? else {
             return Ok(None);
         };
         (
@@ -6727,7 +7150,7 @@ fn boolean_definition(
             BodySelection::Native(ctx.copy_retained_text(&tool.id, "fcstd boolean tool identity")?),
         )
     } else {
-        let Some(shapes) = property(properties, "Shapes") else {
+        let Some(shapes) = property(ctx, properties, "Shapes")? else {
             return Ok(None);
         };
         if shapes.links().len() < 2 {
@@ -6757,35 +7180,78 @@ fn boolean_definition(
     )))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlanarProfileSource<'a> {
+    Sketch(&'a SketchId),
+    Native(&'a str),
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for PlanarProfileSource<'_> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Sketch(id) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(*id, ctx, operation)
+            }
+            Self::Native(id) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(*id, ctx, operation)
+            }
+        }
+    }
+}
+
+impl PlanarProfileSource<'_> {
+    fn into_planar(
+        self,
+        ctx: &DecodeContext<'_>,
+        sketch_operation: &'static str,
+        native_operation: &'static str,
+    ) -> Result<PlanarProfileRef, CodecError> {
+        Ok(match self {
+            Self::Sketch(sketch) => {
+                PlanarProfileRef::Sketch(sketch.try_clone_for_decode(ctx, sketch_operation)?)
+            }
+            Self::Native(native) => {
+                PlanarProfileRef::Native(ctx.copy_retained_text(native, native_operation)?)
+            }
+        })
+    }
+}
+
 fn loft_definition(
     ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let linked_objects = || {
-        property(properties, "Profile")
-            .into_iter()
-            .chain(property(properties, "Sections"))
-            .flat_map(PropertyRecord::links)
-            .filter_map(|link| link.as_ref()?.object())
-    };
-    let mut profiles = ctx.collection_vec(linked_objects().count(), "fcstd loft profiles")?;
-    for object in linked_objects() {
-        let profile = match sketches.get(object) {
-            Some(sketch) => PlanarProfileRef::Sketch(
-                sketch.try_clone_for_decode(ctx, "fcstd loft sketch identity")?,
-            ),
-            None => PlanarProfileRef::Native(
-                ctx.copy_retained_text(object, "fcstd loft native profile identity")?,
-            ),
-        };
-        profiles.push(ProfileRef::Planar(profile));
+    let mut profiles = Vec::new();
+    let mut profile_storage = ctx.reserve_scoped(0, "fcstd loft profile source storage")?;
+    let profile_sources = property(ctx, properties, "Profile")?;
+    let section_sources = property(ctx, properties, "Sections")?;
+    for source in [profile_sources, section_sources].into_iter().flatten() {
+        for link in ctx.admit_iter(source.links(), "fcstd loft profiles")? {
+            let Some(object) = link.as_ref().and_then(|link| link.object()) else {
+                continue;
+            };
+            let profile = match ctx.get_hash_map(sketches, object, "fcstd loft sketch lookup")? {
+                Some(sketch) => PlanarProfileSource::Sketch(sketch),
+                None => PlanarProfileSource::Native(object),
+            };
+            ctx.push_scoped_vec(
+                &mut profile_storage,
+                &mut profiles,
+                profile,
+                "fcstd loft profiles",
+            )?;
+        }
     }
     if profiles.len() < 2 {
         return Ok(None);
     }
-    let max_degree = if property(properties, "MaxDegree").is_some() {
+    let max_degree = if property(ctx, properties, "MaxDegree")?.is_some() {
         let Some(value) = integer_property(ctx, properties, "MaxDegree")?
             .and_then(|value| u32::try_from(value).ok())
             .and_then(std::num::NonZeroU32::new)
@@ -6827,12 +7293,19 @@ fn loft_definition(
     } else {
         None
     };
-    let mut sections = ctx.collection_vec(profiles.len(), "fcstd loft sections")?;
-    sections.extend(
-        profiles
-            .into_iter()
-            .map(cadmpeg_ir::features::LoftSection::Profile),
-    );
+    let mut sections = ctx.vector_storage(profiles.len(), "fcstd loft sections")?;
+    for profile in ctx.admit_iter(profiles, "fcstd loft section sources")? {
+        let profile = ProfileRef::Planar(profile.into_planar(
+            ctx,
+            "fcstd loft sketch identity",
+            "fcstd loft native profile identity",
+        )?);
+        ctx.push_vec(
+            &mut sections,
+            cadmpeg_ir::features::LoftSection::Profile(profile),
+            "fcstd loft sections",
+        )?;
+    }
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Loft {
         sections,
         guidance: cadmpeg_ir::features::LoftGuidance::Guides(Vec::new()),
@@ -6852,42 +7325,43 @@ fn sweep_definition(
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let linked_objects = || {
-        property(properties, "Profile")
-            .into_iter()
-            .chain(property(properties, "Sections"))
-            .flat_map(PropertyRecord::links)
-            .filter_map(|link| link.as_ref()?.object())
-    };
-    let mut profiles = ctx.collection_vec(linked_objects().count(), "fcstd sweep profiles")?;
-    for object in linked_objects() {
-        let profile = match sketches.get(object) {
-            Some(sketch) => PlanarProfileRef::Sketch(
-                sketch.try_clone_for_decode(ctx, "fcstd sweep sketch identity")?,
-            ),
-            None => PlanarProfileRef::Native(
-                ctx.copy_retained_text(object, "fcstd sweep native profile identity")?,
-            ),
-        };
-        profiles.push(ProfileRef::Planar(profile));
+    let mut profiles = Vec::new();
+    let mut profile_storage = ctx.reserve_scoped(0, "fcstd sweep profile source storage")?;
+    let profile_sources = property(ctx, properties, "Profile")?;
+    let section_sources = property(ctx, properties, "Sections")?;
+    for source in [profile_sources, section_sources].into_iter().flatten() {
+        for link in ctx.admit_iter(source.links(), "fcstd sweep profiles")? {
+            let Some(object) = link.as_ref().and_then(|link| link.object()) else {
+                continue;
+            };
+            let profile = match ctx.get_hash_map(sketches, object, "fcstd sweep sketch lookup")? {
+                Some(sketch) => PlanarProfileSource::Sketch(sketch),
+                None => PlanarProfileSource::Native(object),
+            };
+            ctx.push_scoped_vec(
+                &mut profile_storage,
+                &mut profiles,
+                profile,
+                "fcstd sweep profiles",
+            )?;
+        }
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(profiles.len()),
-        "fcstd sweep profile deduplication",
-    )?;
-    profiles.dedup();
+    ctx.dedup_vec(&mut profiles, "fcstd sweep profile deduplication")?;
     if profiles.is_empty() {
         return Ok(None);
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(profiles.len()),
-        "fcstd sweep primary profile removal",
-    )?;
-    let profile = profiles.remove(0);
-    let Some(path_property) = property(properties, "Spine")
-        .or_else(|| property(properties, "Path"))
-        .filter(|property| singular_operand(properties, &property.name).is_some())
-    else {
+    ctx.rotate_left(&mut profiles, 1, "fcstd sweep primary profile removal")?;
+    let profile = profiles
+        .pop()
+        .ok_or_else(|| CodecError::malformed("sweep primary profile disappeared"))?;
+    let path_candidate = match property(ctx, properties, "Spine")? {
+        Some(property) => Some(property),
+        None => property(ctx, properties, "Path")?,
+    };
+    let Some(path_candidate) = path_candidate else {
+        return Ok(None);
+    };
+    let Some(path_property) = singular_operand(ctx, properties, &path_candidate.name)? else {
         return Ok(None);
     };
     let part_design = kind.starts_with("PartDesign::");
@@ -6946,7 +7420,7 @@ fn sweep_definition(
             1 => SweepOrientation::Fixed {},
             2 => SweepOrientation::Frenet {},
             3 => {
-                let Some(auxiliary) = singular_operand(properties, "AuxiliarySpine") else {
+                let Some(auxiliary) = singular_operand(ctx, properties, "AuxiliarySpine")? else {
                     return Ok(None);
                 };
                 SweepOrientation::Auxiliary {
@@ -6997,20 +7471,27 @@ fn sweep_definition(
     } else {
         None
     };
-    let ProfileRef::Planar(primary) = profile else {
-        return Ok(None);
-    };
+    let primary = profile.into_planar(
+        ctx,
+        "fcstd sweep sketch identity",
+        "fcstd sweep native profile identity",
+    )?;
     let shape = if solid {
         let Some(op) = operation_boolean(kind).try_into().ok() else {
             return Ok(None);
         };
-        let mut sections: Vec<cadmpeg_ir::features::SweepSection> =
-            ctx.collection_vec(profiles.len(), "fcstd solid sweep sections")?;
-        for profile in profiles {
-            let ProfileRef::Planar(planar) = profile else {
-                return Ok(None);
-            };
-            sections.push(cadmpeg_ir::features::SweepSection::Profile(planar));
+        let mut sections = ctx.vector_storage(profiles.len(), "fcstd solid sweep sections")?;
+        for profile in ctx.admit_iter(profiles, "fcstd solid sweep section sources")? {
+            let planar = profile.into_planar(
+                ctx,
+                "fcstd sweep sketch identity",
+                "fcstd sweep native profile identity",
+            )?;
+            ctx.push_vec(
+                &mut sections,
+                cadmpeg_ir::features::SweepSection::Profile(planar),
+                "fcstd solid sweep sections",
+            )?;
         }
         cadmpeg_ir::features::SweepShape::Solid {
             op,
@@ -7018,13 +7499,18 @@ fn sweep_definition(
             sections,
         }
     } else {
-        let mut sections: Vec<cadmpeg_ir::features::SheetSweepSection> =
-            ctx.collection_vec(profiles.len(), "fcstd sheet sweep sections")?;
-        for profile in profiles {
-            let ProfileRef::Planar(planar) = profile else {
-                return Ok(None);
-            };
-            sections.push(cadmpeg_ir::features::SweepSection::Profile(planar));
+        let mut sections = ctx.vector_storage(profiles.len(), "fcstd sheet sweep sections")?;
+        for profile in ctx.admit_iter(profiles, "fcstd sheet sweep section sources")? {
+            let planar = profile.into_planar(
+                ctx,
+                "fcstd sweep sketch identity",
+                "fcstd sweep native profile identity",
+            )?;
+            ctx.push_vec(
+                &mut sections,
+                cadmpeg_ir::features::SweepSection::Profile(planar),
+                "fcstd sheet sweep sections",
+            )?;
         }
         cadmpeg_ir::features::SweepShape::Surface {
             section: cadmpeg_ir::features::SweepSection::Profile(primary),
@@ -7058,36 +7544,33 @@ fn hole_definition(
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    objects: &BTreeMap<&str, &ObjectRecord>,
+    properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
     program_version: Option<&str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let profile = profile_ref(ctx, owner, properties, sketches)?;
-    let (designation_label, class_label, fit_label) = if enumeration_selector(
-        ctx,
-        properties,
-        "ThreadType",
-        0,
-    )?
-    .is_some_and(|value| value != 0)
-    {
-        let designation = enumeration_label(ctx, properties, "ThreadSize")?;
-        match bool_selector(ctx, properties, "Threaded", false)? {
-            Some(true) => (
-                designation,
-                enumeration_label(ctx, properties, "ThreadClass")?,
-                None,
-            ),
-            Some(false) => (
-                designation,
-                None,
-                enumeration_label(ctx, properties, "ThreadFit")?,
-            ),
-            None => (designation, None, None),
-        }
-    } else {
-        (None, None, None)
-    };
+    let thread_type = enumeration_selector(ctx, properties, "ThreadType", 0)?;
+    let (designation_label, class_label, fit_label, threaded) =
+        if thread_type.is_some_and(|value| value != 0) {
+            let designation = enumeration_label(ctx, properties, "ThreadSize")?;
+            match bool_selector(ctx, properties, "Threaded", false)? {
+                Some(true) => (
+                    designation,
+                    enumeration_label(ctx, properties, "ThreadClass")?,
+                    None,
+                    Some(true),
+                ),
+                Some(false) => (
+                    designation,
+                    None,
+                    enumeration_label(ctx, properties, "ThreadFit")?,
+                    Some(false),
+                ),
+                None => (designation, None, None, None),
+            }
+        } else {
+            (None, None, None, None)
+        };
     let ProfileRef::Planar(planar_profile) = profile else {
         return Ok(None);
     };
@@ -7114,9 +7597,12 @@ fn hole_definition(
             .filter(|value| value.get() < 180.0)
             .and_then(|value| cadmpeg_ir::scalar::InteriorAngle::new(value.get().to_radians())))
     };
-    let legacy_cut_types = program_version
-        .and_then(freecad_program_version)
-        .is_some_and(|version| version < (0, 21));
+    let legacy_cut_types = match program_version {
+        Some(version) => {
+            freecad_program_version(ctx, version)?.is_some_and(|version| version < (0, 21))
+        }
+        None => false,
+    };
     let kind = match required!(enumeration_selector(ctx, properties, "HoleCutType", 0)?) {
         0 => HoleKind::Simple,
         1 => HoleKind::Counterbore {
@@ -7195,18 +7681,18 @@ fn hole_definition(
     if tapered && taper_angle.is_none() {
         return Ok(None);
     }
-    let thread_type = required!(enumeration_selector(ctx, properties, "ThreadType", 0)?);
+    let thread_type = required!(thread_type);
     let specification = if thread_type == 0 {
         None
     } else {
-        let threaded = required!(bool_selector(ctx, properties, "Threaded", false)?);
+        let threaded = required!(threaded);
         let standard = required!(cadmpeg_core::text::NonBlankString::for_decode(
             ctx,
             required!(thread_standard(thread_type)),
             "validate nonblank text"
         )?);
         let designation = designation_label;
-        let modeled = if property(properties, "ModelThread").is_some() {
+        let modeled = if property(ctx, properties, "ModelThread")?.is_some() {
             required!(bool_selector(ctx, properties, "ModelThread", false)?)
         } else {
             required!(bool_selector(ctx, properties, "ModelActualThread", false)?)
@@ -7299,17 +7785,59 @@ fn hole_definition(
     })))
 }
 
-fn freecad_program_version(value: &str) -> Option<(u64, u64)> {
-    value
-        .split(|character: char| !character.is_ascii_digit() && character != '.')
-        .filter(|part| part.contains('.'))
-        .find_map(|part| {
-            let mut components = part.split('.');
-            Some((
-                components.next()?.parse().ok()?,
-                components.next()?.parse().ok()?,
-            ))
-        })
+fn freecad_program_version(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+) -> Result<Option<(u64, u64)>, CodecError> {
+    let mut part_start = None;
+    let mut first_dot = None;
+    let mut second_dot = None;
+    let mut offset = 0_usize;
+    let mut characters = value.chars();
+    while let Some(character) = ctx.next_charged(&mut characters, "fcstd program version scan")? {
+        if character.is_ascii_digit() || character == '.' {
+            part_start.get_or_insert(offset);
+            if character == '.' {
+                if first_dot.is_none() {
+                    first_dot = Some(offset);
+                } else if second_dot.is_none() {
+                    second_dot = Some(offset);
+                }
+            }
+        } else if let (Some(start), Some(dot)) = (part_start, first_dot) {
+            if let Ok(major) =
+                ctx.parse_text::<u64>(&value[start..dot], "fcstd program version major")?
+            {
+                let minor_end = second_dot.unwrap_or(offset);
+                if let Ok(minor) = ctx
+                    .parse_text::<u64>(&value[dot + 1..minor_end], "fcstd program version minor")?
+                {
+                    return Ok(Some((major, minor)));
+                }
+            }
+            part_start = None;
+            first_dot = None;
+            second_dot = None;
+        } else {
+            part_start = None;
+            first_dot = None;
+            second_dot = None;
+        }
+        offset += character.len_utf8();
+    }
+    if let (Some(start), Some(dot)) = (part_start, first_dot) {
+        if let Ok(major) =
+            ctx.parse_text::<u64>(&value[start..dot], "fcstd program version major")?
+        {
+            let minor_end = second_dot.unwrap_or(offset);
+            if let Ok(minor) =
+                ctx.parse_text::<u64>(&value[dot + 1..minor_end], "fcstd program version minor")?
+            {
+                return Ok(Some((major, minor)));
+            }
+        }
+    }
+    Ok(None)
 }
 
 fn thread_standard(value: u64) -> Option<&'static str> {
@@ -7336,8 +7864,8 @@ fn helical_sweep_definition(
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    objects: &BTreeMap<&str, &ObjectRecord>,
+    properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some((law, axis_origin, axis_direction)) = (|| -> Result<_, CodecError> {
         let law = match required!(enumeration_selector(ctx, properties, "Mode", 0)?) {
@@ -7434,38 +7962,41 @@ fn binder_definition(
     properties: &[&PropertyRecord],
     features: &HashMap<&str, FeatureId>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(support) = property(properties, "Support") else {
+    let Some(support) = property(ctx, properties, "Support")? else {
         return Ok(None);
     };
-    let source_links = || {
-        support
-            .links()
-            .iter()
-            .flatten()
-            .filter(|link| link.object().is_some())
-    };
-    let mut sources = ctx.collection_vec(source_links().count(), "fcstd binder sources")?;
-    for link in source_links() {
+    let mut sources = Vec::new();
+    for link in ctx.admit_iter(support.links(), "fcstd binder sources")? {
+        let Some(link) = link.as_ref().filter(|link| link.object().is_some()) else {
+            continue;
+        };
         let Some(target) = binder_target(ctx, link, features)? else {
             return Ok(None);
         };
-        let mut subelements =
-            ctx.collection_vec(link_selectors(link).count(), "fcstd binder subelements")?;
-        for selector in link_selectors(link) {
+        let mut subelements = Vec::new();
+        let complete = visit_link_selectors(ctx, link, "fcstd binder subelements", |selector| {
             let Some(selector) = cadmpeg_core::text::NonBlankString::for_decode(
                 ctx,
                 ctx.copy_retained_text(selector, "fcstd binder subelement selector")?,
                 "validate nonblank text",
             )?
             else {
-                return Ok(None);
+                return Ok(false);
             };
-            subelements.push(selector);
+            ctx.push_vec(&mut subelements, selector, "fcstd binder subelements")?;
+            Ok(true)
+        })?;
+        if !complete {
+            return Ok(None);
         }
-        sources.push(BinderSource {
-            target,
-            subelements,
-        });
+        ctx.push_vec(
+            &mut sources,
+            BinderSource {
+                target,
+                subelements,
+            },
+            "fcstd binder sources",
+        )?;
     }
     let construction = if kind == "PartDesign::ShapeBinder" {
         let Some(trace_support) = bool_selector(ctx, properties, "TraceSupport", false)? else {
@@ -7518,12 +8049,14 @@ fn binder_definition(
                 intersection: offset_intersection,
             })
         };
-        let mut context_properties = properties
-            .iter()
-            .filter(|property| property.name == "Context");
-        let context = if let Some(property) = context_properties.next() {
-            if context_properties.next().is_some()
-                || property.type_name != "App::PropertyXLink"
+        let context = if let Some(property) =
+            match crate::native::sole_property_matching(ctx, properties, |property| {
+                property.name == "Context"
+            })? {
+                Ok(property) => property,
+                Err(_) => return Ok(None),
+            } {
+            if property.type_name != "App::PropertyXLink"
                 || property.links().len() != 1
                 || !property.links()[0]
                     .as_ref()
@@ -7630,21 +8163,23 @@ fn binder_target(
         };
         return Ok(Some(BinderTarget::External { document, object }));
     }
-    Ok(Some(match features.get(object) {
-        Some(feature) => BinderTarget::Feature {
-            feature: feature.try_clone_for_decode(ctx, "fcstd binder feature target")?,
-        },
-        None => BinderTarget::Native {
-            reference: match cadmpeg_core::text::NonBlankString::for_decode(
-                ctx,
-                ctx.copy_retained_text(object, "fcstd binder native target")?,
-                "validate nonblank text",
-            )? {
-                Some(reference) => reference,
-                None => return Ok(None),
+    Ok(Some(
+        match ctx.get_hash_map(features, object, "fcstd binder feature lookup")? {
+            Some(feature) => BinderTarget::Feature {
+                feature: feature.try_clone_for_decode(ctx, "fcstd binder feature target")?,
+            },
+            None => BinderTarget::Native {
+                reference: match cadmpeg_core::text::NonBlankString::for_decode(
+                    ctx,
+                    ctx.copy_retained_text(object, "fcstd binder native target")?,
+                    "validate nonblank text",
+                )? {
+                    Some(reference) => reference,
+                    None => return Ok(None),
+                },
             },
         },
-    }))
+    ))
 }
 
 fn enumeration_label(
@@ -7652,7 +8187,7 @@ fn enumeration_label(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<String>, CodecError> {
-    let Some(property) = property(properties, name) else {
+    let Some(property) = property(ctx, properties, name)? else {
         return Ok(None);
     };
     if property.type_name != "App::PropertyEnumeration" {
@@ -7661,29 +8196,53 @@ fn enumeration_label(
     let admitted_document = match ctx.parse_xml(property.xml.text(), "FreeCAD XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => {
-            return Ok(None);
-        }
+        Err(_) => return Ok(None),
     };
     let document = admitted_document.document();
-    let root = document.root_element();
-    if !root.has_tag_name("Property") {
+    let root = ctx.xml_root_element(document, "FreeCAD design XML root_element")?;
+    if !ctx.xml_has_tag_name(root, "Property", "FreeCAD design XML tag")? {
         return Ok(None);
     }
-    let mut values = root.children().filter(roxmltree::Node::is_element);
-    let Some(integer) = values.next().filter(|value| value.has_tag_name("Integer")) else {
+    let mut element_values = root.children();
+    let Some(integer) = ctx.find_by(
+        element_values.by_ref(),
+        |node| Ok(node.is_element()),
+        "FreeCAD enumeration value children",
+    )?
+    else {
         return Ok(None);
     };
-    let custom_list = values.next();
-    if values.next().is_some()
-        || custom_list.is_some_and(|value| !value.has_tag_name("CustomEnumList"))
+    if !ctx.xml_has_tag_name(integer, "Integer", "FreeCAD design XML tag")? {
+        return Ok(None);
+    }
+    let custom_list = ctx.find_by(
+        element_values.by_ref(),
+        |node| Ok(node.is_element()),
+        "FreeCAD enumeration value children",
+    )?;
+    if ctx
+        .find_by(
+            element_values.by_ref(),
+            |node| Ok(node.is_element()),
+            "FreeCAD enumeration value children",
+        )?
+        .is_some()
     {
         return Ok(None);
     }
-    if integer.children().any(|child| child.is_element()) {
+    if let Some(custom_list) = custom_list {
+        if !ctx.xml_has_tag_name(custom_list, "CustomEnumList", "FreeCAD design XML tag")? {
+            return Ok(None);
+        }
+    }
+    if ctx.any_by(
+        integer.children(),
+        |node| Ok(node.is_element()),
+        "FreeCAD enumeration integer children",
+    )? {
         return Ok(None);
     }
-    let custom = match integer.attribute("CustomEnum") {
+    let custom = match ctx.xml_attribute(integer, "CustomEnum", "FreeCAD design XML attribute")? {
         None => false,
         Some("true") => true,
         Some(_) => return Ok(None),
@@ -7691,34 +8250,50 @@ fn enumeration_label(
     if custom != custom_list.is_some() {
         return Ok(None);
     }
-    let Some(index) = integer
-        .attribute("value")
-        .and_then(|value| value.parse::<usize>().ok())
+    let Some(index_text) = ctx.xml_attribute(integer, "value", "FreeCAD design XML attribute")?
     else {
+        return Ok(None);
+    };
+    let Ok(index) = ctx.parse_text::<usize>(index_text, "fcstd enumeration index")? else {
         return Ok(None);
     };
     let Some(custom_list) = custom_list else {
         return Ok(None);
     };
-    let Some(count) = custom_list
-        .attribute("count")
-        .and_then(|value| value.parse::<usize>().ok())
+    let Some(count_text) =
+        ctx.xml_attribute(custom_list, "count", "FreeCAD design XML attribute")?
     else {
+        return Ok(None);
+    };
+    let Ok(count) = ctx.parse_text::<usize>(count_text, "fcstd custom enumeration count")? else {
         return Ok(None);
     };
     let mut selected = None;
     let mut actual = 0usize;
-    for value in custom_list.children().filter(roxmltree::Node::is_element) {
-        if !value.has_tag_name("Enum") || value.children().any(|child| child.is_element()) {
+    let mut xml_nodes_22 = custom_list.children();
+    while let Some(value) = ctx.next_charged(&mut xml_nodes_22, "FreeCAD design XML traversal")? {
+        if !value.is_element() {
+            continue;
+        }
+        if !ctx.xml_has_tag_name(value, "Enum", "FreeCAD design XML tag")? {
             return Ok(None);
         }
-        let Some(label) = value.attribute("value") else {
+        if ctx.any_by(
+            value.children(),
+            |node| Ok(node.is_element()),
+            "FreeCAD enumeration label children",
+        )? {
+            return Ok(None);
+        }
+        let Some(label) = ctx.xml_attribute(value, "value", "FreeCAD design XML attribute")? else {
             return Ok(None);
         };
         if actual == index {
             selected = Some(label);
         }
-        actual += 1;
+        actual = actual.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("FreeCAD custom enumeration value count", u64::MAX, u64::MAX)
+        })?;
     }
     if actual != count {
         return Ok(None);
@@ -7731,7 +8306,9 @@ fn enumeration_label(
 #[derive(Clone, Copy)]
 struct PatternSources<'a, 'b> {
     objects: &'a [ObjectRecord],
-    properties_by_owner: &'a HashMap<&'b str, Vec<&'b PropertyRecord>>,
+    object_by_id: &'a BTreeMap<&'b str, &'b ObjectRecord>,
+    predecessors: &'a BTreeMap<&'b str, &'b FeatureId>,
+    properties_by_owner: &'a BTreeMap<&'b str, Vec<&'b PropertyRecord>>,
     entries: &'a [EntryRecord],
 }
 
@@ -7745,89 +8322,116 @@ fn pattern_definition(
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let PatternSources {
         objects,
+        object_by_id,
+        predecessors,
         properties_by_owner,
         ..
     } = sources;
-    let originals = property(properties, "Originals")
-        .filter(|property| !property.links().is_empty())
-        .or_else(|| {
-            property(properties, "BaseFeature").filter(|property| {
-                property
-                    .links()
-                    .iter()
-                    .flatten()
-                    .any(|link| link.object().is_some_and(|object| !object.is_empty()))
-            })
-        });
-    let seeds = if let Some(originals) = originals {
-        let linked_objects = || {
-            originals
-                .links()
-                .iter()
-                .filter_map(|link| link.as_ref()?.object())
-        };
-        let mut count = 0usize;
-        for target in linked_objects() {
-            if features.contains_key(target) {
-                count += 1;
-            } else if !objects.iter().any(|object| {
-                object.id().as_str() == target
-                    && matches!(
+    let originals = match property(ctx, properties, "Originals")? {
+        Some(originals) if !originals.links().is_empty() => Some(originals),
+        _ => match property(ctx, properties, "BaseFeature")? {
+            Some(base_feature)
+                if ctx.any_by(
+                    base_feature.links(),
+                    |link| {
+                        Ok(link
+                            .as_ref()
+                            .and_then(|link| link.object())
+                            .is_some_and(|object| !object.is_empty()))
+                    },
+                    "fcstd pattern base feature links",
+                )? =>
+            {
+                Some(base_feature)
+            }
+            _ => None,
+        },
+    };
+    let (seeds, _seed_storage) = if let Some(originals) = originals {
+        let mut seed_storage = ctx.reserve_scoped(0, "fcstd pattern seed storage")?;
+        let mut seeds = Vec::new();
+        let mut links = originals.links().iter();
+        while let Some(link) = ctx.next_charged(&mut links, "fcstd pattern original links")? {
+            let Some(target) = link.as_ref().and_then(crate::native::LinkTarget::object) else {
+                continue;
+            };
+            if let Some(feature) =
+                ctx.get_hash_map(features, target, "fcstd pattern feature lookup")?
+            {
+                let feature = feature.try_clone_for_decode(ctx, "fcstd pattern seed identity")?;
+                ctx.push_scoped_vec(
+                    &mut seed_storage,
+                    &mut seeds,
+                    feature,
+                    "fcstd pattern source seeds",
+                )?;
+            } else if !ctx
+                .get_btree_map(object_by_id, target, "fcstd pattern object lookup")?
+                .is_some_and(|object| {
+                    matches!(
                         object.type_name.as_str(),
                         "App::Line" | "App::Plane" | "App::Point" | "App::CoordinateSystem"
                     )
-            }) {
+                })
+            {
                 return Ok(None);
             }
         }
-        if count == 0 {
+        if seeds.is_empty() {
             return Ok(None);
         }
-        let mut seeds = ctx.collection_vec(count, "fcstd pattern source seeds")?;
-        for target in linked_objects() {
-            if let Some(feature) = features.get(target) {
-                seeds.push(feature.try_clone_for_decode(ctx, "fcstd pattern seed identity")?);
-            }
-        }
-        seeds
+        (seeds, seed_storage)
     } else if let Some(seeds) =
         multi_transform_stage_seeds(ctx, owner, features, objects, properties_by_owner)?
     {
         seeds
     } else {
-        let Some(feature) =
-            implicit_body_predecessor(owner, features, objects, properties_by_owner)
+        let Some(feature) = ctx
+            .get_btree_map(predecessors, owner, "fcstd implicit body predecessor")?
+            .copied()
         else {
             return Ok(None);
         };
-        let mut seeds = ctx.collection_vec(1, "fcstd implicit pattern seed")?;
-        seeds.push(feature.try_clone_for_decode(ctx, "fcstd implicit pattern seed identity")?);
-        seeds
+        let mut storage = ctx.reserve_scoped(0, "fcstd implicit pattern seed storage")?;
+        let mut seeds = Vec::new();
+        let feature = feature.try_clone_for_decode(ctx, "fcstd implicit pattern seed identity")?;
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut seeds,
+            feature,
+            "fcstd implicit pattern seed",
+        )?;
+        (seeds, storage)
     };
 
     let pattern =
         if kind.ends_with("MultiTransform") {
-            let Some(transformations) = property(properties, "Transformations") else {
+            let Some(transformations) = property(ctx, properties, "Transformations")? else {
                 return Ok(None);
             };
             if transformations.links().is_empty() {
                 return Ok(None);
             }
-            ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(transformations.links().len()),
-                "freecad pattern stages",
-            )?;
             let mut stages =
                 ctx.vector_storage(transformations.links().len(), "freecad pattern stages")?;
-            for link in transformations.links() {
-                let Some((object, owned)) = (|| {
-                    let target = link.as_ref()?.object()?;
-                    let object = objects
-                        .iter()
-                        .find(|object| object.id().as_str() == target)?;
-                    let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
-                    Some((object, owned))
-                })() else {
+            for link in ctx.admit_iter(
+                transformations.links(),
+                "fcstd pattern transformation links",
+            )? {
+                let Some(target) = link.as_ref().and_then(|link| link.object()) else {
+                    return Ok(None);
+                };
+                let Some(object) =
+                    ctx.get_btree_map(object_by_id, target, "fcstd pattern stage object lookup")?
+                else {
+                    return Ok(None);
+                };
+                let Some(owned) = ctx.get_btree_map(
+                    properties_by_owner,
+                    target,
+                    "fcstd pattern transformation properties",
+                )?
+                else {
                     return Ok(None);
                 };
                 let Some(pattern) = pattern_kind::<
@@ -7836,9 +8440,13 @@ fn pattern_definition(
                 else {
                     return Ok(None);
                 };
-                stages.push(PatternStage {
-                    pattern: Box::new(pattern),
-                });
+                ctx.push_vec(
+                    &mut stages,
+                    PatternStage {
+                        pattern: Box::new(pattern),
+                    },
+                    "freecad pattern stages",
+                )?;
             }
             let Some(pattern) = cadmpeg_ir::features::patterns::CompositePattern::new(stages).ok()
             else {
@@ -7856,8 +8464,10 @@ fn pattern_definition(
             };
             pattern
         };
-    let mut pattern_seeds = ctx.collection_vec(seeds.len(), "fcstd pattern seed variants")?;
-    pattern_seeds.extend(seeds.into_iter().map(PatternSeed::Feature));
+    let pattern_seeds = ctx.collect_vec(
+        seeds.into_iter().map(PatternSeed::Feature),
+        "fcstd pattern seed variants",
+    )?;
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Pattern {
             seeds: pattern_seeds,
@@ -7866,75 +8476,153 @@ fn pattern_definition(
     )))
 }
 
-fn multi_transform_stage_seeds(
-    ctx: &DecodeContext<'_>,
+fn multi_transform_stage_seeds<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     stage: &str,
     features: &HashMap<&str, FeatureId>,
     objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-) -> Result<Option<Vec<FeatureId>>, CodecError> {
-    for consumer in objects {
-        let Some(owned) = properties_by_owner.get(consumer.id().as_str()) else {
-            continue;
-        };
-        let Some(transformations) = property(owned, "Transformations") else {
-            continue;
-        };
-        if !transformations
-            .links()
-            .iter()
-            .any(|link| link.as_ref().and_then(crate::native::LinkTarget::object) == Some(stage))
-        {
-            continue;
-        }
-        let Some(originals) = property(owned, "Originals")
-            .filter(|property| !property.links().is_empty())
-            .or_else(|| property(owned, "BaseFeature"))
+    properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
+) -> Result<Option<(Vec<FeatureId>, ScopedReservation<'ctx>)>, CodecError> {
+    let mut consumers = objects.iter();
+    while let Some(consumer) =
+        ctx.next_charged(&mut consumers, "fcstd multi-transform consumers")?
+    {
+        let Some(owned) = ctx.get_btree_map(
+            properties_by_owner,
+            consumer.id().as_str(),
+            "fcstd multi-transform consumer properties",
+        )?
         else {
             continue;
         };
-        let linked_objects = || {
-            originals
-                .links()
-                .iter()
-                .filter_map(|link| link.as_ref()?.object())
+        let Some(transformations) = property(ctx, owned, "Transformations")? else {
+            continue;
         };
-        if linked_objects().any(|object| !features.contains_key(object)) {
+        if !ctx.any_by(
+            transformations.links(),
+            |link| match link.as_ref().and_then(crate::native::LinkTarget::object) {
+                Some(object) => ctx.equal(object, stage, "fcstd multi-transform stage identity"),
+                None => Ok(false),
+            },
+            "fcstd multi-transform stage links",
+        )? {
             continue;
         }
-        let count = linked_objects().count();
-        if count == 0 {
+        let originals = match property(ctx, owned, "Originals")?
+            .filter(|property| !property.links().is_empty())
+        {
+            Some(originals) => Some(originals),
+            None => property(ctx, owned, "BaseFeature")?,
+        };
+        let Some(originals) = originals else {
+            continue;
+        };
+        let (selected, _selected_storage) =
+            ctx.with_scoped_storage("fcstd multi-transform seed selection storage", || {
+                let mut selected = Vec::new();
+                let complete = ctx.all_by(
+                    originals.links(),
+                    |link| {
+                        let Some(object) =
+                            link.as_ref().and_then(crate::native::LinkTarget::object)
+                        else {
+                            return Ok(true);
+                        };
+                        let Some(feature) = ctx.get_hash_map(
+                            features,
+                            object,
+                            "fcstd multi-transform feature lookup",
+                        )?
+                        else {
+                            return Ok(false);
+                        };
+                        ctx.push_vec(
+                            &mut selected,
+                            feature,
+                            "fcstd multi-transform selected seeds",
+                        )?;
+                        Ok(true)
+                    },
+                    "fcstd multi-transform originals",
+                )?;
+                Ok::<_, CodecError>((complete, selected))
+            })?;
+        let (complete, selected) = selected;
+        if !complete || selected.is_empty() {
             continue;
         }
-        let mut seeds = ctx.collection_vec(count, "fcstd multi-transform source seeds")?;
-        for object in linked_objects() {
-            let Some(feature) = features.get(object) else {
-                continue;
-            };
-            seeds.push(feature.try_clone_for_decode(ctx, "fcstd multi-transform seed identity")?);
+        let mut seed_storage = ctx.reserve_scoped(0, "fcstd multi-transform seed storage")?;
+        let mut seeds = Vec::new();
+        for feature in ctx.admit_iter(&selected, "fcstd multi-transform source seeds")? {
+            let feature =
+                feature.try_clone_for_decode(ctx, "fcstd multi-transform seed identity")?;
+            ctx.push_scoped_vec(
+                &mut seed_storage,
+                &mut seeds,
+                feature,
+                "fcstd multi-transform source seeds",
+            )?;
         }
-        return Ok(Some(seeds));
+        return Ok(Some((seeds, seed_storage)));
     }
     Ok(None)
 }
 
-fn implicit_body_predecessor<'a>(
-    owner: &str,
+fn body_predecessors<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    objects: &'a [ObjectRecord],
     features: &'a HashMap<&str, FeatureId>,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-) -> Option<&'a FeatureId> {
-    objects.iter().find_map(|object| {
-        let owned = properties_by_owner.get(object.id().as_str())?;
-        let members = body_membership_property(owned)?;
-        let position = members.links().iter().position(|link| {
-            link.as_ref().and_then(crate::native::LinkTarget::object) == Some(owner)
-        })?;
-        members.links()[..position]
-            .iter()
-            .rev()
-            .filter_map(|link| link.as_ref()?.object())
-            .find_map(|member| features.get(member))
+    properties_by_owner: &BTreeMap<&str, Vec<&'a PropertyRecord>>,
+) -> Result<(BTreeMap<&'a str, &'a FeatureId>, ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("fcstd body predecessor storage", || {
+        let mut predecessors = BTreeMap::new();
+        for object in ctx.admit_iter(objects, "fcstd body predecessor objects")? {
+            let Some(owned) = ctx.get_btree_map(
+                properties_by_owner,
+                object.id().as_str(),
+                "fcstd body predecessor properties",
+            )?
+            else {
+                continue;
+            };
+            let Some(members) = body_membership_property(ctx, owned)? else {
+                continue;
+            };
+            let mut previous = None;
+            let (mut seen, mut seen_storage) = ctx
+                .with_scoped_storage("fcstd body predecessor seen storage", || {
+                    Ok::<_, CodecError>(BTreeSet::new())
+                })?;
+            for link in ctx.admit_iter(members.links(), "fcstd body predecessor members")? {
+                let Some(member) = link.as_ref().and_then(crate::native::LinkTarget::object) else {
+                    continue;
+                };
+                if seen_storage.with_storage(|| {
+                    ctx.insert_btree_set(&mut seen, member, "fcstd body predecessor first member")
+                })? {
+                    if let Some(previous) = previous {
+                        if !ctx.contains_key_btree_map(
+                            &predecessors,
+                            member,
+                            "fcstd body predecessor first body",
+                        )? {
+                            ctx.insert_btree_map(
+                                &mut predecessors,
+                                member,
+                                previous,
+                                "fcstd body predecessor index",
+                            )?;
+                        }
+                    }
+                }
+                if let Some(feature) =
+                    ctx.get_hash_map(features, member, "fcstd body predecessor feature")?
+                {
+                    previous = Some(feature);
+                }
+            }
+        }
+        Ok::<_, CodecError>(predecessors)
     })
 }
 
@@ -7945,14 +8633,19 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
     sources: PatternSources<'_, '_>,
 ) -> Result<Option<PatternKind<C>>, CodecError> {
     let PatternSources {
-        objects,
+        object_by_id,
         properties_by_owner,
         entries,
+        ..
     } = sources;
     if kind.ends_with("Mirrored") {
-        if let Some((plane_origin, plane_normal)) =
-            plane_reference(properties, "MirrorPlane", objects, properties_by_owner)
-        {
+        if let Some((plane_origin, plane_normal)) = plane_reference(
+            ctx,
+            properties,
+            "MirrorPlane",
+            object_by_id,
+            properties_by_owner,
+        )? {
             let Some(plane_origin) = cadmpeg_ir::features::FinitePoint3::new(plane_origin) else {
                 return Ok(None);
             };
@@ -7962,7 +8655,7 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
             })
             .ok());
         }
-        let Some(plane) = property(properties, "MirrorPlane") else {
+        let Some(plane) = property(ctx, properties, "MirrorPlane")? else {
             return Ok(None);
         };
         return Ok(PatternKind::new(PatternTransform::MirrorReference {
@@ -8031,20 +8724,21 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
             else {
                 return Ok(None);
             };
-            let Some(pattern) = (|| {
-                PatternKind::new(PatternTransform::Composite {
-                    stages: C::rebuild(vec![
-                        PatternStage {
-                            pattern: Box::new(first),
-                        },
-                        PatternStage {
-                            pattern: Box::new(second),
-                        },
-                    ])
-                    .ok()?,
-                })
-                .ok()
-            })() else {
+            let mut stages = ctx.vector_storage(2, "freecad linear pattern stages")?;
+            for pattern in [first, second] {
+                ctx.push_vec(
+                    &mut stages,
+                    PatternStage {
+                        pattern: Box::new(pattern),
+                    },
+                    "freecad linear pattern stages",
+                )?;
+            }
+            let Some(stages) = C::rebuild(stages).ok() else {
+                return Ok(None);
+            };
+            let Some(pattern) = PatternKind::new(PatternTransform::Composite { stages }).ok()
+            else {
                 return Ok(None);
             };
             pattern
@@ -8053,7 +8747,7 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         }
     } else if kind.ends_with("PolarPattern") {
         let Some((axis_origin, mut axis_dir)) =
-            axis_reference(ctx, properties, "Axis", objects, properties_by_owner)?
+            axis_reference(ctx, properties, "Axis", object_by_id, properties_by_owner)?
         else {
             return Ok(None);
         };
@@ -8066,19 +8760,22 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         let Some(axis_origin) = cadmpeg_ir::features::FinitePoint3::new(axis_origin) else {
             return Ok(None);
         };
-        let Some(angles) = pattern_locations(
-            ctx,
-            properties,
-            "",
-            count,
-            mode,
-            ("Angle", "Offset"),
-            entries,
-        )?
-        else {
+        let (angles, _location_storage) =
+            ctx.with_scoped_storage("fcstd pattern location storage", || {
+                pattern_locations(
+                    ctx,
+                    properties,
+                    "",
+                    count,
+                    mode,
+                    ("Angle", "Offset"),
+                    entries,
+                )
+            })?;
+        let Some(angles) = angles else {
             return Ok(None);
         };
-        if let Some(step) = uniform_step(&angles) {
+        if let Some(step) = uniform_step(ctx, &angles, "fcstd circular pattern angle spacing")? {
             let Some(angle) = cadmpeg_ir::scalar::PositiveAngle::new(
                 (step.get() * f64::from(count - 1)).to_radians(),
             ) else {
@@ -8096,12 +8793,12 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
             pattern
         } else {
             let mut converted =
-                ctx.collection_vec(angles.len(), "fcstd circular pattern angles")?;
-            for angle in angles {
+                ctx.vector_storage(angles.len(), "fcstd circular pattern angles")?;
+            for angle in ctx.admit_iter(&angles, "fcstd circular pattern angles")? {
                 let Some(angle) = cadmpeg_ir::scalar::Angle::new(angle.get().to_radians()) else {
                     return Ok(None);
                 };
-                converted.push(angle);
+                ctx.push_vec(&mut converted, angle, "fcstd circular pattern angles")?;
             }
             let Some(pattern) = PatternKind::new(PatternTransform::CircularAngles {
                 axis_origin,
@@ -8128,39 +8825,50 @@ fn linear_pattern_axis(
     sources: PatternSources<'_, '_>,
 ) -> Result<Option<cadmpeg_ir::features::patterns::StagePatternKind>, CodecError> {
     let PatternSources {
-        objects,
+        object_by_id,
         properties_by_owner,
         entries,
+        ..
     } = sources;
-    let name = |base: &str| format!("{base}{suffix}");
+    let name = |base: &str| {
+        ctx.format_scoped(
+            format_args!("{base}{suffix}"),
+            "fcstd linear pattern property name",
+        )
+    };
+    let (direction_name, _direction_name_storage) = name("Direction")?;
     let mut direction = axis_reference(
         ctx,
         properties,
-        &name("Direction"),
-        objects,
+        &direction_name,
+        object_by_id,
         properties_by_owner,
     )?
     .map(|(_, direction)| direction);
-    let Some(reversed) = bool_selector(ctx, properties, &name("Reversed"), false)? else {
+    let (reversed_name, _reversed_name_storage) = name("Reversed")?;
+    let Some(reversed) = bool_selector(ctx, properties, &reversed_name, false)? else {
         return Ok(None);
     };
     if reversed {
         direction = direction.map(cadmpeg_ir::units::UnitVector3::reversed);
     }
     let direction = direction.map(cadmpeg_ir::features::FeatureDirection3::from);
-    let Some(offsets) = pattern_locations(
-        ctx,
-        properties,
-        suffix,
-        count,
-        mode,
-        ("Length", "Offset"),
-        entries,
-    )?
-    else {
+    let (offsets, _location_storage) =
+        ctx.with_scoped_storage("fcstd pattern location storage", || {
+            pattern_locations(
+                ctx,
+                properties,
+                suffix,
+                count,
+                mode,
+                ("Length", "Offset"),
+                entries,
+            )
+        })?;
+    let Some(offsets) = offsets else {
         return Ok(None);
     };
-    if let Some(spacing) = uniform_step(&offsets) {
+    if let Some(spacing) = uniform_step(ctx, &offsets, "fcstd linear pattern spacing")? {
         let Some(spacing) = cadmpeg_ir::scalar::PositiveLength::from_assigned_real(spacing) else {
             return Ok(None);
         };
@@ -8172,8 +8880,10 @@ fn linear_pattern_axis(
         })
         .ok())
     } else {
-        let mut converted = ctx.collection_vec(offsets.len(), "fcstd linear pattern offsets")?;
-        converted.extend(offsets.into_iter().map(Length::from_assigned_real));
+        let converted = ctx.collect_vec(
+            offsets.into_iter().map(Length::from_assigned_real),
+            "fcstd linear pattern offsets",
+        )?;
         Ok(PatternKind::new(PatternTransform::LinearOffsets {
             direction,
             offsets: converted,
@@ -8202,133 +8912,141 @@ fn pattern_locations(
             "freecad pattern locations",
         )?));
     }
-    let name = |base: &str| format!("{base}{suffix}");
-    let intervals = match mode {
-        0 => {
-            let Some(extent) = scalar_named(ctx, properties, &name(extent_base))? else {
-                return Ok(None);
-            };
-            let Some(interval) = FiniteReal::new(extent.get() / f64::from(count - 1)) else {
-                return Ok(None);
-            };
-            ctx.alloc_filled(
-                usize::try_from(count).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "FreeCAD count",
-                        cadmpeg_core::decode::u64_from_index(usize::MAX),
-                        u64::from(count),
-                    )
-                })? - 1,
-                interval,
-                "freecad pattern intervals",
-            )?
-        }
-        1 => {
-            let Some(fallback) = scalar_named(ctx, properties, &name(offset_base))? else {
-                return Ok(None);
-            };
-            let spacings = match property(properties, &name("Spacings")) {
-                Some(property) => numeric_list(ctx, property, entries)?,
-                None => Some(Vec::new()),
-            };
-            let Some(spacings) = spacings else {
-                return Ok(None);
-            };
-            let pattern = match property(properties, &name("SpacingPattern")) {
-                Some(property) => numeric_list(ctx, property, entries)?,
-                None => Some(Vec::new()),
-            };
-            let Some(pattern) = pattern else {
-                return Ok(None);
-            };
-            if !spacings.is_empty()
-                && spacings.len()
-                    != usize::try_from(count).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "FreeCAD count",
-                            cadmpeg_core::decode::u64_from_index(usize::MAX),
-                            u64::from(count),
-                        )
-                    })? - 1
-            {
-                return Ok(None);
-            }
-            let mut intervals = ctx.collection_vec(
-                usize::try_from(count).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "FreeCAD count",
-                        cadmpeg_core::decode::u64_from_index(usize::MAX),
-                        u64::from(count),
-                    )
-                })? - 1,
-                "freecad pattern intervals",
-            )?;
-            for index in 0..usize::try_from(count).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "FreeCAD count",
-                    cadmpeg_core::decode::u64_from_index(usize::MAX),
-                    u64::from(count),
-                )
-            })? - 1
-            {
-                let explicit = spacings
-                    .get(index)
-                    .copied()
-                    .filter(|value| value.get() != -1.0);
-                intervals.push(if let Some(explicit) = explicit {
-                    explicit
-                } else if pattern.len() > 1 {
-                    pattern[index % pattern.len()]
-                } else {
-                    fallback
-                });
-            }
-            intervals
-        }
-        _ => return Ok(None),
+    let name = |base: &str| {
+        ctx.format_scoped(
+            format_args!("{base}{suffix}"),
+            "fcstd pattern property name",
+        )
     };
-    ctx.charge_collection_items(u64::from(count), "freecad pattern locations")?;
-    let mut locations = ctx.vector_storage(
-        usize::try_from(count).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "FreeCAD count",
-                cadmpeg_core::decode::u64_from_index(usize::MAX),
-                u64::from(count),
-            )
-        })?,
+    let location_count = usize::try_from(count).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "FreeCAD count",
+            cadmpeg_core::decode::u64_from_index(usize::MAX),
+            u64::from(count),
+        )
+    })?;
+    let interval_count = location_count - 1;
+    let (intervals, _interval_storage) =
+        ctx.with_scoped_storage("fcstd pattern interval storage", || {
+            let intervals = match mode {
+                0 => {
+                    let (extent_name, _extent_name_storage) = name(extent_base)?;
+                    let Some(extent) = scalar_named(ctx, properties, &extent_name)? else {
+                        return Ok(None);
+                    };
+                    let Some(interval) = FiniteReal::new(extent.get() / f64::from(count - 1))
+                    else {
+                        return Ok(None);
+                    };
+                    ctx.alloc_filled(interval_count, interval, "freecad pattern intervals")?
+                }
+                1 => {
+                    let (offset_name, _offset_name_storage) = name(offset_base)?;
+                    let Some(fallback) = scalar_named(ctx, properties, &offset_name)? else {
+                        return Ok(None);
+                    };
+                    let (spacings_name, _spacings_name_storage) = name("Spacings")?;
+                    let spacings = match property(ctx, properties, &spacings_name)? {
+                        Some(property) => numeric_list(ctx, property, entries)?,
+                        None => Some(Vec::new()),
+                    };
+                    let Some(spacings) = spacings else {
+                        return Ok(None);
+                    };
+                    let (pattern_name, _pattern_name_storage) = name("SpacingPattern")?;
+                    let pattern = match property(ctx, properties, &pattern_name)? {
+                        Some(property) => numeric_list(ctx, property, entries)?,
+                        None => Some(Vec::new()),
+                    };
+                    let Some(pattern) = pattern else {
+                        return Ok(None);
+                    };
+                    if !spacings.is_empty()
+                        && spacings.len()
+                            != usize::try_from(count).map_err(|_| {
+                                ctx.refuse_codec_limit(
+                                    "FreeCAD count",
+                                    cadmpeg_core::decode::u64_from_index(usize::MAX),
+                                    u64::from(count),
+                                )
+                            })? - 1
+                    {
+                        return Ok(None);
+                    }
+                    let mut intervals =
+                        ctx.vector_storage(interval_count, "freecad pattern intervals")?;
+                    for index in
+                        ctx.admit_iter(&(0..interval_count), "freecad pattern intervals")?
+                    {
+                        let explicit = spacings
+                            .get(index)
+                            .copied()
+                            .filter(|value| value.get() != -1.0);
+                        ctx.push_vec(
+                            &mut intervals,
+                            if let Some(explicit) = explicit {
+                                explicit
+                            } else if pattern.len() > 1 {
+                                pattern[index % pattern.len()]
+                            } else {
+                                fallback
+                            },
+                            "freecad pattern intervals",
+                        )?;
+                    }
+                    intervals
+                }
+                _ => return Ok(None),
+            };
+            Ok::<_, CodecError>(Some(intervals))
+        })?;
+    let Some(intervals) = intervals else {
+        return Ok(None);
+    };
+    let mut locations = ctx.vector_storage(location_count, "freecad pattern locations")?;
+    ctx.push_vec(
+        &mut locations,
+        FiniteReal::ZERO,
         "freecad pattern locations",
     )?;
-    locations.push(FiniteReal::ZERO);
     let mut location = FiniteReal::ZERO;
-    for interval in intervals {
-        let Some(interval) = cadmpeg_ir::scalar::PositiveReal::from_finite(interval) else {
+    for interval in ctx.admit_iter(&intervals, "freecad pattern location integration")? {
+        let Some(interval) = cadmpeg_ir::scalar::PositiveReal::from_finite(*interval) else {
             return Ok(None);
         };
         let Some(next) = FiniteReal::new(location.get() + interval.get()) else {
             return Ok(None);
         };
         location = next;
-        locations.push(location);
+        ctx.push_vec(&mut locations, location, "freecad pattern locations")?;
     }
     Ok(Some(locations))
 }
 
-fn uniform_step(locations: &[FiniteReal]) -> Option<FiniteReal> {
-    let step = *locations.get(1)?;
-    locations
-        .windows(2)
-        .all(|pair| {
-            (pair[1].get() - pair[0].get() - step.get()).abs() <= f64::EPSILON * step.get().abs()
-        })
-        .then_some(step)
+fn uniform_step(
+    ctx: &DecodeContext<'_>,
+    locations: &[FiniteReal],
+    operation: &'static str,
+) -> Result<Option<FiniteReal>, CodecError> {
+    let step = required!(locations.get(1).copied());
+    Ok(ctx
+        .all_by(
+            locations.windows(2),
+            |pair| {
+                Ok((pair[1].get() - pair[0].get() - step.get()).abs()
+                    <= f64::EPSILON * step.get().abs())
+            },
+            operation,
+        )?
+        .then_some(step))
 }
 
 fn axis_reference(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    objects: &BTreeMap<&str, &ObjectRecord>,
+    properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
 ) -> Result<Option<(Point3, cadmpeg_ir::units::UnitVector3)>, CodecError> {
     if let Some(direction) = vector_property(ctx, properties, name)? {
         return Ok(Some((
@@ -8336,13 +9054,20 @@ fn axis_reference(
             required!(cadmpeg_ir::units::UnitVector3::normalized(direction.get())),
         )));
     }
-    let (link, selector) = required!(singular_reference_link(required!(property(
-        properties, name
-    ))));
+    let Some(property) = property(ctx, properties, name)? else {
+        return Ok(None);
+    };
+    let Some((link, selector)) = singular_reference_link(ctx, property)? else {
+        return Ok(None);
+    };
     let target = required!(link.object());
-    let object = required!(objects.iter().find(|object| object.id().as_str() == target));
-    let owned = required!(properties_by_owner.get(target).map(Vec::as_slice));
-    let (origin, z_axis, x_axis, y_axis) = required!(placement_frame(owned));
+    let object = required!(ctx.get_btree_map(objects, target, "fcstd reference object lookup")?);
+    let owned = required!(ctx.get_btree_map(
+        properties_by_owner,
+        target,
+        "fcstd axis reference properties",
+    )?);
+    let (origin, z_axis, x_axis, y_axis) = required!(placement_frame(ctx, owned)?);
     let direction = match object.type_name.as_str() {
         "PartDesign::Line" | "App::Line" => z_axis,
         "PartDesign::Plane" | "App::Plane" => z_axis,
@@ -8367,58 +9092,116 @@ fn axis_reference(
 }
 
 fn plane_reference(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-) -> Option<(Point3, cadmpeg_ir::units::UnitVector3)> {
-    let (link, selector) = singular_reference_link(property(properties, name)?)?;
-    let target = link.object()?;
-    let object = objects
-        .iter()
-        .find(|object| object.id().as_str() == target)?;
-    let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
-    let (origin, z_axis, x_axis, y_axis) = placement_frame(owned)?;
+    objects: &BTreeMap<&str, &ObjectRecord>,
+    properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
+) -> Result<Option<(Point3, cadmpeg_ir::units::UnitVector3)>, CodecError> {
+    let Some(property) = property(ctx, properties, name)? else {
+        return Ok(None);
+    };
+    let Some((link, selector)) = singular_reference_link(ctx, property)? else {
+        return Ok(None);
+    };
+    let Some(target) = link.object() else {
+        return Ok(None);
+    };
+    let Some(object) = ctx.get_btree_map(objects, target, "fcstd reference object lookup")? else {
+        return Ok(None);
+    };
+    let Some(owned) = ctx.get_btree_map(
+        properties_by_owner,
+        target,
+        "fcstd plane reference properties",
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some((origin, z_axis, x_axis, y_axis)) = placement_frame(ctx, owned)? else {
+        return Ok(None);
+    };
     let normal = match object.type_name.as_str() {
         "PartDesign::Plane" | "App::Plane" => z_axis,
         "PartDesign::CoordinateSystem" => match selector {
             Some("XY_Plane" | "XYPlane" | "XY") | None => z_axis,
             Some("XZ_Plane" | "XZPlane" | "XZ") => y_axis,
             Some("YZ_Plane" | "YZPlane" | "YZ") => x_axis,
-            _ => return None,
+            _ => return Ok(None),
         },
         kind if is_sketch(kind) => match selector {
             None | Some("N_Axis") => z_axis,
             Some("H_Axis") => y_axis,
             Some("V_Axis") => x_axis,
-            _ => return None,
+            _ => return Ok(None),
         },
-        _ => return None,
+        _ => return Ok(None),
     };
-    Some((origin, cadmpeg_ir::units::UnitVector3::normalized(normal)?))
+    let Some(normal) = cadmpeg_ir::units::UnitVector3::normalized(normal) else {
+        return Ok(None);
+    };
+    Ok(Some((origin, normal)))
 }
 
-fn link_selectors(link: &crate::native::LinkTarget) -> impl Iterator<Item = &str> {
-    link.subelements()
-        .iter()
-        .flat_map(|selector| selector.split_ascii_whitespace())
-        .filter(|selector| !selector.is_empty())
+fn visit_link_selectors<'a>(
+    ctx: &DecodeContext<'_>,
+    link: &'a crate::native::LinkTarget,
+    operation: &'static str,
+    mut visit: impl FnMut(&'a str) -> Result<bool, CodecError>,
+) -> Result<bool, CodecError> {
+    let mut selectors = link.subelements().iter();
+    while let Some(selector) = ctx.next_charged(&mut selectors, operation)? {
+        let mut token_start = None;
+        let mut offset = 0usize;
+        let mut characters = selector.chars();
+        while let Some(character) = ctx.next_charged(&mut characters, operation)? {
+            if character.is_ascii_whitespace() {
+                if let Some(start) = token_start.take() {
+                    if !visit(&selector[start..offset])? {
+                        return Ok(false);
+                    }
+                }
+            } else {
+                token_start.get_or_insert(offset);
+            }
+            offset += character.len_utf8();
+        }
+        if let Some(start) = token_start {
+            if !visit(&selector[start..])? {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
 }
 
-fn singular_reference_link(
-    property: &PropertyRecord,
-) -> Option<(&crate::native::LinkTarget, Option<&str>)> {
-    let link = scalar_link(property)?;
-    let object = link.object()?;
+fn singular_reference_link<'a>(
+    ctx: &DecodeContext<'_>,
+    property: &'a PropertyRecord,
+) -> Result<Option<(&'a crate::native::LinkTarget, Option<&'a str>)>, CodecError> {
+    let Some(link) = scalar_link(property) else {
+        return Ok(None);
+    };
+    let Some(object) = link.object() else {
+        return Ok(None);
+    };
     if object.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let mut selectors = link_selectors(link);
-    let selector = selectors.next();
-    if selectors.next().is_some() {
-        return None;
+    let mut selector = None;
+    let mut multiple = false;
+    let complete = visit_link_selectors(ctx, link, "fcstd singular link selectors", |value| {
+        if selector.is_some() {
+            multiple = true;
+            return Ok(false);
+        }
+        selector = Some(value);
+        Ok(true)
+    })?;
+    if !complete || multiple {
+        return Ok(None);
     }
-    Some((link, selector))
+    Ok(Some((link, selector)))
 }
 
 fn scalar_link(property: &PropertyRecord) -> Option<&crate::native::LinkTarget> {
@@ -8473,7 +9256,7 @@ fn scalar_named(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<FiniteReal>, CodecError> {
-    Ok(property(properties, name)
+    Ok(property(ctx, properties, name)?
         .map(|property| scalar_value(ctx, property))
         .transpose()?
         .flatten())
@@ -8486,10 +9269,12 @@ fn string_property_value(
     if property.type_name != "App::PropertyString" {
         return Ok(None);
     }
-    direct_root_value(ctx, property, "String", "value", |value| {
-        ctx.copy_retained_text(value, "fcstd string property value")
-    })?
-    .transpose()
+    direct_root_value(ctx, property, "String", "value", |ctx, value| {
+        Ok(Some(ctx.copy_retained_text(
+            value,
+            "fcstd string property value",
+        )?))
+    })
 }
 
 fn integer_property(
@@ -8515,20 +9300,21 @@ fn integer_selector(
     name: &str,
     absent_default: u64,
 ) -> Result<Option<u64>, CodecError> {
-    let Some(property) = property(properties, name) else {
+    let Some(property) = property(ctx, properties, name)? else {
         return Ok(Some(absent_default));
     };
     if property.type_name != "App::PropertyInteger" {
         return Ok(None);
     }
-    let value = required!(required!(direct_root_value(
+    let value = required!(direct_root_value(
         ctx,
         property,
         "Integer",
         "value",
-        str::parse::<i64>
-    )?)
-    .ok());
+        |ctx, value| Ok(ctx
+            .parse_text::<i64>(value, "fcstd integer property value")?
+            .ok())
+    )?);
     Ok(u64::try_from(value).ok())
 }
 
@@ -8539,7 +9325,7 @@ fn integer_constraint_selector(
     absent_default: u64,
     accept_legacy_integer: bool,
 ) -> Result<Option<u64>, CodecError> {
-    let Some(property) = property(properties, name) else {
+    let Some(property) = property(ctx, properties, name)? else {
         return Ok(Some(absent_default));
     };
     if property.type_name != "App::PropertyIntegerConstraint"
@@ -8547,14 +9333,15 @@ fn integer_constraint_selector(
     {
         return Ok(None);
     }
-    let value = required!(required!(direct_root_value(
+    let value = required!(direct_root_value(
         ctx,
         property,
         "Integer",
         "value",
-        str::parse::<i64>
-    )?)
-    .ok());
+        |ctx, value| Ok(ctx
+            .parse_text::<i64>(value, "fcstd integer constraint value")?
+            .ok())
+    )?);
     Ok(u64::try_from(value).ok())
 }
 
@@ -8566,27 +9353,37 @@ fn numeric_list(
     if property.type_name != "App::PropertyFloatList" {
         return Ok(None);
     }
-    direct_root(
+    Ok(direct_root(
         ctx,
         property,
         "FloatList",
-        |root| -> Result<_, CodecError> {
-            let Some(file) = root.attribute("file") else {
+        |ctx, root| -> Result<_, CodecError> {
+            let Some(file) = ctx.xml_attribute(root, "file", "FreeCAD design XML attribute")?
+            else {
                 return Ok(None);
             };
             if file.is_empty() {
                 return Ok(property.side_entries().is_empty().then(Vec::new));
             }
-            if property.side_entries() != [file] {
+            let side_entries = property.side_entries();
+            if side_entries.len() != 1
+                || !ctx.equal(
+                    side_entries[0].as_str(),
+                    file,
+                    "fcstd numeric-list side entry",
+                )?
+            {
                 return Ok(None);
             }
-            let Some(data) = entries
-                .iter()
-                .find(|entry| entry.name() == file)
-                .map(crate::native::EntryRecord::data)
+            let Some(entry) = ctx.find_by(
+                entries,
+                |entry| ctx.equal(entry.name(), file, "fcstd numeric-list entry name"),
+                "fcstd numeric-list entry search",
+            )?
             else {
                 return Ok(None);
             };
+            let data = entry.data();
             let mut view = View::over_retained(data);
             let Some(count) = view.u32_le().and_then(|count| usize::try_from(count).ok()) else {
                 return Ok(None);
@@ -8598,17 +9395,17 @@ fn numeric_list(
             {
                 return Ok(None);
             }
-            let mut values = ctx.collection_vec(count, "fcstd numeric-list values")?;
-            for _ in 0..count {
+            let mut values = ctx.vector_storage(count, "fcstd numeric-list values")?;
+            for _ in ctx.admit_iter(&(0..count), "fcstd numeric-list values")? {
                 let Some(value) = view.f64_le().and_then(FiniteReal::new) else {
                     return Ok(None);
                 };
-                values.push(value);
+                ctx.push_vec(&mut values, value, "fcstd numeric-list values")?;
             }
             Ok(view.is_empty().then_some(values))
         },
     )?
-    .unwrap_or(Ok(None))
+    .flatten())
 }
 
 fn operation_boolean(kind: &str) -> BooleanOp {
@@ -8642,7 +9439,8 @@ fn design_identity_text(
     ctx.format_retained(
         format_args!(
             "fcstd:design:{kind}#{}{tail}",
-            crate::native::id_key(object.id())
+            ctx.split_once(object.id(), "#", "fcstd design object identity key")?
+                .map_or(object.id().as_str(), |(_, key)| key)
         ),
         operation,
     )
@@ -8653,17 +9451,26 @@ fn feature_base_definition(
     properties: &[&PropertyRecord],
     feature_ids: &HashMap<&str, FeatureId>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let mut base_properties = properties
-        .iter()
-        .filter(|property| property.name == "BaseFeature")
-        .copied();
-    let Some(property) = base_properties.next() else {
+    let Some(index) = ctx.position_by(
+        properties,
+        |property| Ok::<_, CodecError>(property.name.as_str() == "BaseFeature"),
+        "fcstd base feature property search",
+    )?
+    else {
         return Ok(None);
     };
-    if base_properties.next().is_some() {
+    if ctx
+        .position_by(
+            &properties[index + 1..],
+            |property| Ok::<_, CodecError>(property.name.as_str() == "BaseFeature"),
+            "fcstd base feature duplicate search",
+        )?
+        .is_some()
+    {
         return Ok(None);
     }
-    if property.type_name != "App::PropertyLink" || property.links().len() != 1 {
+    let property = properties[index];
+    if property.type_name.as_str() != "App::PropertyLink" || property.links().len() != 1 {
         return Ok(None);
     }
     let Some(source) = property.links()[0]
@@ -8672,7 +9479,9 @@ fn feature_base_definition(
     else {
         return Ok(None);
     };
-    let Some(feature) = feature_ids.get(source) else {
+    let Some(feature) =
+        ctx.get_hash_map(feature_ids, source, "fcstd feature base source lookup")?
+    else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(
@@ -8687,7 +9496,7 @@ fn imported_geometry_definition(
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let path = match property(properties, "FileName") {
+    let path = match property(ctx, properties, "FileName")? {
         Some(property) => string_property_value(ctx, property)?,
         None => None,
     };
@@ -8804,12 +9613,15 @@ fn is_imported_geometry(kind: &str) -> bool {
     )
 }
 fn is_boolean(kind: &str) -> bool {
-    if kind == "PartDesign::Boolean" {
-        return true;
-    }
-    ["Cut", "Fuse", "MultiFuse", "Common", "MultiCommon"]
-        .iter()
-        .any(|operation| kind == format!("Part::{operation}"))
+    matches!(
+        kind,
+        "PartDesign::Boolean"
+            | "Part::Cut"
+            | "Part::Fuse"
+            | "Part::MultiFuse"
+            | "Part::Common"
+            | "Part::MultiCommon"
+    )
 }
 fn is_loft(kind: &str) -> bool {
     kind == "Part::Loft"
@@ -8908,28 +9720,32 @@ pub(crate) fn census(
     objects: &[ObjectRecord],
     features: &[Feature],
 ) -> Result<Vec<crate::native::DesignCensusRecord>, CodecError> {
-    let mut features_by_native = HashMap::new();
-    for feature in features {
-        if let Some(native_ref) = feature.native_ref.as_deref() {
-            ctx.insert_hash_map(
-                &mut features_by_native,
-                native_ref,
-                feature,
-                "FreeCAD design census feature index",
-            )?;
+    let (features_by_native, _features_storage) =
+        ctx.with_scoped_storage("FreeCAD design census index storage", || {
+            let mut features_by_native = HashMap::new();
+            for feature in ctx.admit_iter(features, "FreeCAD design census feature records")? {
+                if let Some(native_ref) = feature.native_ref.as_deref() {
+                    ctx.insert_hash_map(
+                        &mut features_by_native,
+                        native_ref,
+                        feature,
+                        "FreeCAD design census feature index",
+                    )?;
+                }
+            }
+            Ok::<_, CodecError>(features_by_native)
+        })?;
+    let mut census = Vec::new();
+    for object in ctx.admit_iter(objects, "FreeCAD design census objects")? {
+        if !is_design_object(&object.type_name) {
+            continue;
         }
-    }
-    let count = objects
-        .iter()
-        .filter(|object| is_design_object(&object.type_name))
-        .count();
-    let mut census = ctx.collection_vec(count, "FreeCAD design census records")?;
-    for object in objects
-        .iter()
-        .filter(|object| is_design_object(&object.type_name))
-    {
-        let feature = features_by_native
-            .get(object.id().as_str())
+        let feature = ctx
+            .get_hash_map(
+                &features_by_native,
+                object.id().as_str(),
+                "FreeCAD design census feature index",
+            )?
             .ok_or_else(|| {
                 malformed_design(
                     ctx,
@@ -8943,37 +9759,123 @@ pub(crate) fn census(
             FeatureDefinition::PostProcess { operation, .. } => (operation, true),
             FeatureDefinition::Operation(operation) => (operation, false),
         };
-        let value = serde_json::to_value(definition).map_err(|error| {
-            malformed_design(
-                ctx,
-                format_args!("cannot classify design feature {}: {error}", feature.id),
-            )
-        })?;
-        let semantic_kind = value
-            .get("definition")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| {
-                malformed_design(
-                    ctx,
-                    format_args!("design feature {} has no semantic family tag", feature.id),
-                )
-            })?;
+        let semantic_kind = match definition {
+            FeatureOperation::TreeNode { .. } => "tree_node",
+            FeatureOperation::BaseFeature { .. } => "base_feature",
+            FeatureOperation::MeshImport { .. } => "mesh_import",
+            FeatureOperation::InsertBodies { .. } => "insert_bodies",
+            FeatureOperation::InsertComponent { .. } => "insert_component",
+            FeatureOperation::AssemblyJoint { .. } => "assembly_joint",
+            FeatureOperation::Form { .. } => "form",
+            FeatureOperation::CosmeticThread { .. } => "cosmetic_thread",
+            FeatureOperation::ReferenceImage { .. } => "reference_image",
+            FeatureOperation::Decal { .. } => "decal",
+            FeatureOperation::DatumPrincipalPlane { .. } => "datum_principal_plane",
+            FeatureOperation::DatumPlane { .. } => "datum_plane",
+            FeatureOperation::DatumThreePointPlane { .. } => "datum_three_point_plane",
+            FeatureOperation::DatumOffsetPlane { .. } => "datum_offset_plane",
+            FeatureOperation::DatumAxis { .. } => "datum_axis",
+            FeatureOperation::DatumPoint { .. } => "datum_point",
+            FeatureOperation::PointGeometry { .. } => "point_geometry",
+            FeatureOperation::LineSegment { .. } => "line_segment",
+            FeatureOperation::CircularArc { .. } => "circular_arc",
+            FeatureOperation::EllipticArc { .. } => "elliptic_arc",
+            FeatureOperation::Polyline { .. } => "polyline",
+            FeatureOperation::RegularPolygonCurve { .. } => "regular_polygon_curve",
+            FeatureOperation::PlanarPatch { .. } => "planar_patch",
+            FeatureOperation::FaceFromShapes { .. } => "face_from_shapes",
+            FeatureOperation::DatumCoordinateSystem { .. } => "datum_coordinate_system",
+            FeatureOperation::Block { .. } => "block",
+            FeatureOperation::EquationCurve { .. } => "equation_curve",
+            FeatureOperation::ProjectedCurve { .. } => "projected_curve",
+            FeatureOperation::ProjectOnSurface { .. } => "project_on_surface",
+            FeatureOperation::CompositeCurve { .. } => "composite_curve",
+            FeatureOperation::Helix { .. } => "helix",
+            FeatureOperation::HelixNativeAxis { .. } => "helix_native_axis",
+            FeatureOperation::Coil { .. } => "coil",
+            FeatureOperation::Sphere { .. } => "sphere",
+            FeatureOperation::Torus { .. } => "torus",
+            FeatureOperation::Wrap { .. } => "wrap",
+            FeatureOperation::Sketch { .. } => "sketch",
+            FeatureOperation::SpatialSketch { .. } => "spatial_sketch",
+            FeatureOperation::SketchBlockDefinition { .. } => "sketch_block_definition",
+            FeatureOperation::SketchBlockInstance { .. } => "sketch_block_instance",
+            FeatureOperation::StoredGeometry { .. } => "stored_geometry",
+            FeatureOperation::ExtractBody { .. } => "extract_body",
+            FeatureOperation::DerivedGeometry { .. } => "derived_geometry",
+            FeatureOperation::ImportedGeometry { .. } => "imported_geometry",
+            FeatureOperation::Primitive { .. } => "primitive",
+            FeatureOperation::Revolve { .. } => "revolve",
+            FeatureOperation::Sweep { .. } => "sweep",
+            FeatureOperation::HelicalSweep { .. } => "helical_sweep",
+            FeatureOperation::Binder { .. } => "binder",
+            FeatureOperation::Rib { .. } => "rib",
+            FeatureOperation::SheetMetalBaseFlange { .. } => "sheet_metal_base_flange",
+            FeatureOperation::SheetMetalEdgeFlange { .. } => "sheet_metal_edge_flange",
+            FeatureOperation::SheetMetalHem { .. } => "sheet_metal_hem",
+            FeatureOperation::Fillet { .. } => "fillet",
+            FeatureOperation::FullRoundFillet { .. } => "full_round_fillet",
+            FeatureOperation::FaceBlend { .. } => "face_blend",
+            FeatureOperation::Chamfer { .. } => "chamfer",
+            FeatureOperation::Shell { .. } => "shell",
+            FeatureOperation::OffsetShape { .. } => "offset_shape",
+            FeatureOperation::Compound { .. } => "compound",
+            FeatureOperation::RefineShape { .. } => "refine_shape",
+            FeatureOperation::ReverseShape { .. } => "reverse_shape",
+            FeatureOperation::RuledBetweenCurves { .. } => "ruled_between_curves",
+            FeatureOperation::SectionShape { .. } => "section_shape",
+            FeatureOperation::MirrorShape { .. } => "mirror_shape",
+            FeatureOperation::Thicken { .. } => "thicken",
+            FeatureOperation::OffsetSurface { .. } => "offset_surface",
+            FeatureOperation::KnitSurface { .. } => "knit_surface",
+            FeatureOperation::SewBodies { .. } => "sew_bodies",
+            FeatureOperation::FilledSurface { .. } => "filled_surface",
+            FeatureOperation::TrimSurface { .. } => "trim_surface",
+            FeatureOperation::ExtendSurface { .. } => "extend_surface",
+            FeatureOperation::RuledSurface { .. } => "ruled_surface",
+            FeatureOperation::Draft { .. } => "draft",
+            FeatureOperation::Combine { .. } => "combine",
+            FeatureOperation::BoundaryFill { .. } => "boundary_fill",
+            FeatureOperation::CutWithSurface { .. } => "cut_with_surface",
+            FeatureOperation::TrimBodies { .. } => "trim_bodies",
+            FeatureOperation::SplitBody { .. } => "split_body",
+            FeatureOperation::SplitFace { .. } => "split_face",
+            FeatureOperation::DeleteBody { .. } => "delete_body",
+            FeatureOperation::DeleteFace { .. } => "delete_face",
+            FeatureOperation::ReplaceFace { .. } => "replace_face",
+            FeatureOperation::MoveFace { .. } => "move_face",
+            FeatureOperation::MoveBody { .. } => "move_body",
+            FeatureOperation::Dome { .. } => "dome",
+            FeatureOperation::Flex { .. } => "flex",
+            FeatureOperation::Scale { .. } => "scale",
+            FeatureOperation::Hole { .. } => "hole",
+            FeatureOperation::Pattern { .. } => "pattern",
+            FeatureOperation::Unresolved { .. } => "unresolved",
+            FeatureOperation::Native { .. } => "native",
+            FeatureOperation::Extrude { .. } => "extrude",
+            FeatureOperation::Loft { .. } => "loft",
+        };
         let semantic_kind =
             ctx.copy_retained_text(semantic_kind, "FreeCAD design census semantic kind")?;
-        census.push(crate::native::DesignCensusRecord {
-            id: crate::native::native_child_id_charged(
-                ctx,
-                "design-census",
-                object.id(),
-                "projection",
-            )?,
-            object: ctx.copy_retained_text(object.id(), "FreeCAD design census object")?,
-            type_name: ctx.copy_retained_text(&object.type_name, "FreeCAD design census type")?,
-            feature: ctx
-                .copy_retained_text(feature.id.as_str(), "FreeCAD design census feature")?,
-            semantic_kind,
-            post_processed,
-        });
+        ctx.push_vec(
+            &mut census,
+            crate::native::DesignCensusRecord {
+                id: crate::native::native_child_id_charged(
+                    ctx,
+                    "design-census",
+                    object.id(),
+                    "projection",
+                )?,
+                object: ctx.copy_retained_text(object.id(), "FreeCAD design census object")?,
+                type_name: ctx
+                    .copy_retained_text(&object.type_name, "FreeCAD design census type")?,
+                feature: ctx
+                    .copy_retained_text(feature.id.as_str(), "FreeCAD design census feature")?,
+                semantic_kind,
+                post_processed,
+            },
+            "FreeCAD design census records",
+        )?;
     }
     ctx.stable_sort_by(
         &mut census,
@@ -8982,503 +9884,6 @@ pub(crate) fn census(
         "FreeCAD design census sort",
     )?;
     Ok(census)
-}
-
-#[cfg(test)]
-mod profile_tests {
-    use cadmpeg_ir::math::Point2;
-    use cadmpeg_ir::scalar::Length;
-    use cadmpeg_ir::sketches::{
-        SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
-        SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
-    };
-    use cadmpeg_ir::spreadsheets::{CellAddress, SpreadsheetRange};
-
-    use super::{
-        cell_address, endpoints_match_by_roundoff, merged_range, offset_cell_address,
-        range_contains_address,
-    };
-
-    fn build_profiles(
-        entities: &[SketchEntity],
-        constraints: &[SketchConstraint],
-    ) -> Vec<Vec<SketchEntityUse>> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("profile test context");
-        super::build_profiles(&ctx, entities, constraints).expect("profile projection")
-    }
-
-    #[test]
-    fn x64_profile_index_refuses_exhausted_work_before_search() {
-        let entities = [entity(
-            "test:test:entity#work",
-            SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                start: Point2::new(0.0, 0.0),
-                end: Point2::new(1.0, 0.0),
-            })
-            .expect("line geometry"),
-        )];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("profile test context");
-        let error = super::build_profiles(&ctx, &entities, &[])
-            .expect_err("profile construction work must be admitted before scanning");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-        ));
-    }
-
-    #[test]
-    fn profile_endpoint_buckets_refuse_at_matching_collection_limits() {
-        let entities = [entity(
-            "test:test:entity#bucket",
-            SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                start: Point2::new(0.0, 0.0),
-                end: Point2::new(1.0, 0.0),
-            })
-            .expect("line geometry"),
-        )];
-        let profile_entities = std::collections::BTreeSet::from([0]);
-        for operation in [
-            "FCStd profile endpoint buckets",
-            "FCStd profile endpoint index",
-        ] {
-            crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
-                super::EndpointIndex::new(ctx, &profile_entities, &entities)
-            });
-        }
-    }
-
-    #[test]
-    fn explicit_profile_candidates_refuse_at_matching_collection_limit() {
-        let source = super::EndpointLocus {
-            entity: 0,
-            start: true,
-        };
-        let target = super::EndpointLocus {
-            entity: 1,
-            start: true,
-        };
-        let available = std::collections::BTreeSet::from([1]);
-        let relations = std::collections::BTreeMap::from([(
-            source,
-            std::collections::BTreeSet::from([target]),
-        )]);
-        let index = super::EndpointIndex {
-            by_scale: std::collections::BTreeMap::new(),
-        };
-        crate::test_support::assert_collection_refusal_at(&[], "FCStd profile candidates", |ctx| {
-            super::endpoint_candidates(ctx, source, &available, &relations, &[], &index)
-        });
-    }
-
-    #[test]
-    fn ignores_nonpositive_spans_in_the_neutral_spreadsheet_projection() {
-        for xml in [
-            r#"<Cell address="A1" rowSpan="0" colSpan="2"/>"#,
-            r#"<Cell address="A1" rowSpan="2" colSpan="-7"/>"#,
-        ] {
-            let document = roxmltree::Document::parse(xml).expect("cell XML");
-            assert_eq!(merged_range(document.root_element()).unwrap(), None);
-        }
-    }
-
-    #[test]
-    fn detects_cells_covered_by_a_merged_range() {
-        let range = SpreadsheetRange::new(
-            CellAddress::parse("A1").expect("A1"),
-            CellAddress::parse("I2").expect("I2"),
-        )
-        .expect("A1:I2");
-
-        assert!(range_contains_address(&range, "B1"));
-        assert!(range_contains_address(&range, "I2"));
-        assert!(!range_contains_address(&range, "J1"));
-        assert!(!range_contains_address(&range, "A3"));
-    }
-
-    #[test]
-    fn spreadsheet_column_label_holds_maximum_u32_index() {
-        let address = offset_cell_address("A1", 0, u32::MAX - 1).expect("valid column offset");
-        assert_eq!(cell_address(&address), Some((1, u32::MAX)));
-    }
-
-    fn entity(id: &str, geometry: SketchGeometry) -> SketchEntity {
-        SketchEntity::new(
-            cadmpeg_ir::sketches::SketchEntityId::mint(id).unwrap(),
-            SketchId::mint("test:test:sketch#curved").unwrap(),
-            geometry,
-        )
-    }
-
-    #[test]
-    fn profile_chain_refuses_before_use_growth_and_identity_copy() {
-        let entities = [entity(
-            "test:test:entity#profile-line",
-            SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                start: Point2::new(0.0, 0.0),
-                end: Point2::new(1.0, 0.0),
-            })
-            .expect("valid line"),
-        )];
-        crate::test_support::assert_collection_refusal_at(&[], "FCStd profile uses", |ctx| {
-            super::build_profiles(ctx, &entities, &[])
-        });
-        crate::test_support::assert_retained_refusal_at(&[], "FCStd profile use identity", |ctx| {
-            super::build_profiles(ctx, &entities, &[])
-        });
-        crate::test_support::assert_collection_refusal_at(&[], "FCStd profile chains", |ctx| {
-            super::build_profiles(ctx, &entities, &[])
-        });
-    }
-
-    #[test]
-    fn curved_segments_chain_by_their_evaluated_endpoints() {
-        let entities = [
-            entity(
-                "test:test:entity#line",
-                SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                    start: Point2::new(-1.0, 0.0),
-                    end: Point2::new(1.0, 0.0),
-                })
-                .unwrap(),
-            ),
-            entity(
-                "test:test:entity#arc",
-                SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-                    center: Point2::new(0.0, 0.0),
-                    radius: Length::new(1.0).unwrap(),
-                    start_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
-                    end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
-                })
-                .unwrap(),
-            ),
-            entity(
-                "test:test:entity#line-after-arc",
-                SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                    start: Point2::new(0.0, 1.0),
-                    end: Point2::new(1.0, 1.0),
-                })
-                .unwrap(),
-            ),
-        ];
-        let profiles = build_profiles(&entities, &[]);
-        assert_eq!(profiles.len(), 1);
-        assert_eq!(profiles[0].len(), 3);
-    }
-
-    #[test]
-    fn disconnected_profile_seeds_follow_persisted_entity_order() {
-        let entities = (1..=11)
-            .map(|ordinal| {
-                entity(
-                    &format!("test:test:entity#{ordinal}"),
-                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                        start: Point2::new(f64::from(ordinal) * 10.0, 0.0),
-                        end: Point2::new(f64::from(ordinal) * 10.0 + 1.0, 0.0),
-                    })
-                    .unwrap(),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let profiles = build_profiles(&entities, &[]);
-
-        assert_eq!(profiles.len(), entities.len());
-        assert!(profiles
-            .iter()
-            .zip(&entities)
-            .all(|(profile, entity)| profile[0].entity == entity.id().clone()));
-    }
-
-    #[test]
-    fn disconnected_profile_seeds_skip_construction_in_persisted_order() {
-        let mut construction = entity(
-            "test:test:entity#1",
-            SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                start: Point2::new(-1.0, 0.0),
-                end: Point2::new(1.0, 0.0),
-            })
-            .unwrap(),
-        );
-        construction.construction = true;
-        let entities = vec![
-            construction,
-            entity(
-                "test:test:entity#2",
-                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                    center: Point2::new(0.0, 0.0),
-                    radius: Length::new(2.0).unwrap(),
-                })
-                .unwrap(),
-            ),
-            entity(
-                "test:test:entity#3",
-                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                    center: Point2::new(10.0, 0.0),
-                    radius: Length::new(2.0).unwrap(),
-                })
-                .unwrap(),
-            ),
-        ];
-
-        let profiles = build_profiles(&entities, &[]);
-
-        assert_eq!(
-            profiles
-                .iter()
-                .map(|profile| profile[0].entity.clone())
-                .collect::<Vec<_>>(),
-            vec![entities[1].id().clone(), entities[2].id().clone()]
-        );
-    }
-
-    #[test]
-    fn coincident_constraint_connects_numerically_separate_endpoints() {
-        let entities = [
-            entity(
-                "test:test:entity#1",
-                SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                    start: Point2::new(0.0, 0.0),
-                    end: Point2::new(1.0, 0.0),
-                })
-                .unwrap(),
-            ),
-            entity(
-                "test:test:entity#2",
-                SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                    start: Point2::new(2.0, 0.0),
-                    end: Point2::new(3.0, 0.0),
-                })
-                .unwrap(),
-            ),
-        ];
-        let constraint = SketchConstraint {
-            id: SketchConstraintId::mint("test:test:constraint#1").unwrap(),
-            sketch: entities[0].sketch.clone(),
-            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                SketchConstraintDefinitionInput::CoincidentLoci {
-                    loci: vec![
-                        SketchLocus::End(entities[0].id().clone()),
-                        SketchLocus::Start(entities[1].id().clone()),
-                    ],
-                },
-            )
-            .unwrap(),
-            name: None,
-            driving: None,
-            active: None,
-            virtual_space: None,
-            visible: None,
-            orientation: None,
-            label_distance: None,
-            label_position: None,
-            metadata: None,
-            native_ref: None,
-        };
-
-        let profiles = build_profiles(&entities, &[constraint]);
-
-        assert_eq!(profiles.len(), 1);
-        assert_eq!(profiles[0].len(), 2);
-    }
-
-    #[test]
-    fn explicit_endpoint_relations_precede_nearby_geometry() {
-        let entities = [
-            entity(
-                "test:test:entity#anchor",
-                SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                    start: Point2::new(-1.0, 0.0),
-                    end: Point2::new(0.0, 0.0),
-                })
-                .unwrap(),
-            ),
-            entity(
-                "test:test:entity#nearby",
-                SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                    start: Point2::new(32.0 * f64::EPSILON, 0.0),
-                    end: Point2::new(1.0, 0.0),
-                })
-                .unwrap(),
-            ),
-            entity(
-                "test:test:entity#constrained",
-                SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                    start: Point2::new(2.0, 0.0),
-                    end: Point2::new(3.0, 0.0),
-                })
-                .unwrap(),
-            ),
-        ];
-        let constraint = SketchConstraint {
-            id: SketchConstraintId::mint("test:test:constraint#explicit-precedence").unwrap(),
-            sketch: entities[0].sketch.clone(),
-            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                SketchConstraintDefinitionInput::CoincidentLoci {
-                    loci: vec![
-                        SketchLocus::End(entities[0].id().clone()),
-                        SketchLocus::Start(entities[2].id().clone()),
-                    ],
-                },
-            )
-            .unwrap(),
-            name: None,
-            driving: None,
-            active: None,
-            virtual_space: None,
-            visible: None,
-            orientation: None,
-            label_distance: None,
-            label_position: None,
-            metadata: None,
-            native_ref: None,
-        };
-
-        let profiles = build_profiles(&entities, &[constraint]);
-
-        assert_eq!(profiles.len(), 2);
-        assert_eq!(profiles[0].len(), 2);
-        assert_eq!(profiles[0][0].entity, entities[0].id().clone());
-        assert_eq!(profiles[0][1].entity, entities[2].id().clone());
-        assert_eq!(
-            profiles[1],
-            vec![SketchEntityUse {
-                entity: entities[1].id().clone(),
-                reversed: false,
-            }]
-        );
-    }
-
-    #[test]
-    fn profile_junction_uses_the_cadir_roundoff_boundary() {
-        let entities = |gap| {
-            [
-                entity(
-                    "test:test:entity#anchor",
-                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                        start: Point2::new(0.0, 0.0),
-                        end: Point2::new(1.0, 0.0),
-                    })
-                    .unwrap(),
-                ),
-                entity(
-                    "test:test:entity#continuation",
-                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                        start: Point2::new(1.0 + gap, 0.0),
-                        end: Point2::new(2.0, 0.0),
-                    })
-                    .unwrap(),
-                ),
-            ]
-        };
-
-        let inside = entities(32.0 * f64::EPSILON);
-        let inside_profiles = build_profiles(&inside, &[]);
-        assert_eq!(inside_profiles.len(), 1);
-        assert_eq!(inside_profiles[0].len(), 2);
-
-        let outside = entities(128.0 * f64::EPSILON);
-        let outside_profiles = build_profiles(&outside, &[]);
-        assert_eq!(outside_profiles.len(), 2);
-        assert!(outside_profiles.iter().all(|profile| profile.len() == 1));
-    }
-
-    #[test]
-    fn multiple_explicit_coincident_continuations_remain_separate_seeds() {
-        let entities = [
-            entity(
-                "test:test:entity#anchor",
-                SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                    start: Point2::new(-1.0, 0.0),
-                    end: Point2::new(0.0, 0.0),
-                })
-                .unwrap(),
-            ),
-            entity(
-                "test:test:entity#first-continuation",
-                SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                    start: Point2::new(0.0, 0.0),
-                    end: Point2::new(1.0, 0.0),
-                })
-                .unwrap(),
-            ),
-            entity(
-                "test:test:entity#second-continuation",
-                SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                    start: Point2::new(0.0, 0.0),
-                    end: Point2::new(0.0, 1.0),
-                })
-                .unwrap(),
-            ),
-        ];
-        let constraint = SketchConstraint {
-            id: SketchConstraintId::mint("test:test:constraint#ambiguous-explicit").unwrap(),
-            sketch: entities[0].sketch.clone(),
-            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                SketchConstraintDefinitionInput::CoincidentLoci {
-                    loci: vec![
-                        SketchLocus::End(entities[0].id().clone()),
-                        SketchLocus::Start(entities[1].id().clone()),
-                        SketchLocus::Start(entities[2].id().clone()),
-                    ],
-                },
-            )
-            .unwrap(),
-            name: None,
-            driving: None,
-            active: None,
-            virtual_space: None,
-            visible: None,
-            orientation: None,
-            label_distance: None,
-            label_position: None,
-            metadata: None,
-            native_ref: None,
-        };
-
-        let profiles = build_profiles(&entities, &[constraint]);
-
-        assert_eq!(profiles.len(), 3);
-        assert!(profiles.iter().all(|profile| profile.len() == 1));
-    }
-
-    #[test]
-    fn endpoint_roundoff_uses_a_bounded_scale() {
-        let exact = Point2::new(1.0, 0.0);
-        let inside = Point2::new(1.0 + 32.0 * f64::EPSILON, 0.0);
-        let outside = Point2::new(1.0 + 128.0 * f64::EPSILON, 0.0);
-
-        assert!(endpoints_match_by_roundoff(exact, inside));
-        assert!(!endpoints_match_by_roundoff(exact, outside));
-    }
-
-    #[test]
-    fn ambiguous_profile_junctions_remain_separate() {
-        let entities = (0..3)
-            .map(|ordinal| {
-                entity(
-                    &format!("test:test:entity#{}", ordinal + 1),
-                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                        start: Point2::new(0.0, 0.0),
-                        end: Point2::new(f64::from(ordinal) + 1.0, 1.0),
-                    })
-                    .unwrap(),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let profiles = build_profiles(&entities, &[]);
-
-        assert_eq!(profiles.len(), 3);
-        assert!(profiles.iter().all(|profile| profile.len() == 1));
-    }
 }
 
 #[cfg(test)]
