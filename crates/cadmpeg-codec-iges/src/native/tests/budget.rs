@@ -53,8 +53,7 @@ fn assert_native_storage_boundary(bytes: &[u8], operation: &str) {
         DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, quarantined_directory) =
-        crate::directory::parse(&scan, global.global_table(), &parse_ctx)
-            .unwrap();
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
         &directory,
