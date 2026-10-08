@@ -370,6 +370,9 @@ fn project_face_bindings(
     face_keys: &std::collections::HashMap<FaceId, u64>,
     projection: &mut PresentationProjection,
 ) -> Result<(), CodecError> {
+    if face_keys.is_empty() {
+        return Ok(());
+    }
     let mut key_counts = std::collections::HashMap::new();
     for key in face_keys.values() {
         ctx.admit_hash_map_entry(
@@ -393,23 +396,53 @@ fn project_face_bindings(
         |(face_id, _)| face_id.as_str().len(),
         "Inventor presentation face keys sort",
     )?;
-    for (face_id, key) in ordered_face_keys {
-        let mut matching_faces = Vec::new();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(inventory.graphics_faces.len()),
-            "scan Inventor graphics faces for presentation",
-        )?;
-        for face in &inventory.graphics_faces {
-            if u64::from(face.key) == *key {
-                ctx.charge_collection_items(1, "match Inventor graphics face")?;
-                matching_faces.push(face);
+    // Keep a unique face or a duplicate tombstone. Duplicate groups also keep
+    // whether any record has a style, which determines the reported omission.
+    let (graphics_faces, _graphics_face_storage) =
+        ctx.with_scoped_storage("index Inventor graphics faces for presentation", || {
+            let mut faces =
+                std::collections::HashMap::<u64, (Option<&Located<PmGraphicsFace>>, bool)>::new();
+            for face in &inventory.graphics_faces {
+                // Each of the three table probes hashes an eight-byte key.
+                ctx.charge_work(27, "index Inventor graphics faces for presentation")?;
+                if !faces.contains_key(&u64::from(face.key)) && faces.len() == faces.capacity() {
+                    let entry_work = 9 + cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<(u64, (Option<&Located<PmGraphicsFace>>, bool))>(),
+                    );
+                    let work = cadmpeg_core::decode::u64_from_index(faces.len())
+                        .checked_mul(entry_work)
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "rehash Inventor graphics face keys",
+                                u64::MAX - 1,
+                                u64::MAX,
+                            )
+                        })?;
+                    ctx.charge_work(work, "rehash Inventor graphics face keys")?;
+                }
+                ctx.admit_hash_map_entry(
+                    &mut faces,
+                    &u64::from(face.key),
+                    "index Inventor graphics faces for presentation",
+                )?;
+                let has_style = face.styles.index() != 0;
+                faces
+                    .entry(u64::from(face.key))
+                    .and_modify(|(unique, any_style)| {
+                        *unique = None;
+                        *any_style |= has_style;
+                    })
+                    .or_insert((Some(face), has_style));
             }
-        }
-        if matching_faces.is_empty() {
+            Ok::<_, CodecError>(faces)
+        })?;
+    for (face_id, key) in ordered_face_keys {
+        ctx.charge_work(9, "look up Inventor graphics face for presentation")?;
+        let Some((graphics_face, any_style)) = graphics_faces.get(key) else {
             continue;
-        }
-        if matching_faces.len() != 1 {
-            if matching_faces.iter().any(|face| face.styles.index() != 0) {
+        };
+        let Some(graphics_face) = graphics_face else {
+            if *any_style {
                 count_unresolved(
                     ctx,
                     &mut projection.unresolved_face_overrides,
@@ -417,8 +450,7 @@ fn project_face_bindings(
                 )?;
             }
             continue;
-        }
-        let graphics_face = matching_faces[0];
+        };
         let Some(collection_ordinal) = graphics_face.styles.index().checked_sub(1) else {
             continue;
         };
@@ -1247,6 +1279,7 @@ fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::num::NonZeroUsize;
 
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -1258,8 +1291,9 @@ mod tests {
         inventory, parse_default_style, parse_graphics_face, parse_graphics_primary_color_style,
         parse_graphics_style_collection, parse_rendering_style, project_bindings,
         project_default_bindings, Cursor, PmGraphicsFace, PmGraphicsPrimaryColorStyle,
-        PmGraphicsStyleCollection, PresentationInventory, DEFAULT_STYLE_TYPE, GRAPHICS_FACE_TYPE,
-        GRAPHICS_PRIMARY_COLOR_STYLE_TYPE, GRAPHICS_STYLE_COLLECTION_TYPE, RENDERING_STYLE_TYPE,
+        PmGraphicsStyleCollection, PresentationInventory, UnresolvedCause, DEFAULT_STYLE_TYPE,
+        GRAPHICS_FACE_TYPE, GRAPHICS_PRIMARY_COLOR_STYLE_TYPE, GRAPHICS_STYLE_COLLECTION_TYPE,
+        RENDERING_STYLE_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
@@ -1999,21 +2033,22 @@ mod tests {
             .contains("graphics primary-color component is not finite"));
     }
 
-    fn face_override_inventory() -> PresentationInventory<'static> {
+    fn face_override_inventory(key: u32, has_style: bool) -> PresentationInventory<'static> {
         let face = Located::new(
             PmGraphicsFace {
                 segment_version_major: 26,
                 header_value: 0,
                 header_id: 0,
                 flags: 0,
-                styles: PmDcReference::new(5, true).expect("test reference index fits 31 bits"),
+                styles: PmDcReference::new(if has_style { 5 } else { 0 }, true)
+                    .expect("test reference index fits 31 bits"),
                 surface: PmDcReference::new(0, false).expect("test reference index fits 31 bits"),
                 parent: PmDcReference::new(0, false).expect("test reference index fits 31 bits"),
                 state: 0,
                 edge_references: PmDcPairedReferenceList::default(),
                 visibility_state: 0,
                 bounds: [FiniteReal::ZERO; 6],
-                key: 42,
+                key,
                 values: [0; 2],
             },
             crate::record_identity::RecordTypeId::from_bytes(GRAPHICS_FACE_TYPE),
@@ -2080,7 +2115,7 @@ mod tests {
 
     #[test]
     fn projects_face_override_through_native_key_and_style_graph() {
-        let inventory = face_override_inventory();
+        let inventory = face_override_inventory(42, true);
         let face_id = FaceId::mint("inventor:test:face#1").expect("identity grammar");
         let face_keys = std::collections::HashMap::from([(face_id.clone(), 42)]);
 
@@ -2111,7 +2146,7 @@ mod tests {
 
     #[test]
     fn face_binding_projection_refuses_entity_limits_before_creations() {
-        let inventory = face_override_inventory();
+        let inventory = face_override_inventory(42, true);
         let face_id = FaceId::mint("inventor:test:face#1").expect("identity grammar");
         let face_keys = std::collections::HashMap::from([(face_id, 42)]);
         let arena = DecodeArena::new();
@@ -2142,14 +2177,14 @@ mod tests {
     }
 
     #[test]
-    fn face_binding_projection_refuses_work_limit_before_graph_scan() {
-        let inventory = face_override_inventory();
+    fn face_binding_projection_refuses_work_limit_before_graph_index() {
+        let inventory = face_override_inventory(42, true);
         let face_id = FaceId::mint("inventor:test:face#1").expect("identity grammar");
         let face_keys = std::collections::HashMap::from([(face_id, 42)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         // The one-key face sort takes its count plus a sixteen-byte pair and twice the
-        // twenty-byte face id over two levels at eight units each, leaving nothing for the scan.
+        // twenty-byte face id over two levels at eight units each, leaving nothing for the index.
         policy.limits.max_work_units = 1 + (16 + 2 * 20) * 2 * 8;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
@@ -2157,7 +2192,7 @@ mod tests {
             project_bindings(&ctx, &inventory, &[], &[], &face_keys),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "scan Inventor graphics faces for presentation"
+                    && limit.operation == "index Inventor graphics faces for presentation"
         ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("service projection context");
@@ -2168,6 +2203,79 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn face_binding_projection_indexes_large_unstyled_inventory() {
+        let mut inventory = face_override_inventory(42, true);
+        inventory.graphics_faces.clear();
+        let mut face_keys = std::collections::HashMap::new();
+        for key in 0..4096_u32 {
+            let mut source = face_override_inventory(key, false);
+            let face = source
+                .graphics_faces
+                .pop()
+                .expect("synthetic graphics face");
+            inventory.graphics_faces.push(face);
+            face_keys.insert(
+                FaceId::mint(format!("inventor:test:face#{key}")).expect("identity grammar"),
+                u64::from(key),
+            );
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Sorting these identities takes less than 29 million units. The index
+        // fits the remainder; 4096 full graphics scans need 16,777,216 more units.
+        policy.limits.max_work_units = 32_000_000;
+        policy.limits.max_materialized_bytes = 1024 * 1024;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
+        let projection = project_bindings(&ctx, &inventory, &[], &[], &face_keys)
+            .expect("indexed face projection fits the work limit");
+        assert!(projection.bindings.is_empty());
+        assert!(projection.appearances.is_empty());
+        assert!(projection.unresolved_face_overrides.is_empty());
+        ctx.reserve_scoped(policy.limits.max_materialized_bytes, "released face index")
+            .expect("temporary index storage is released");
+        ctx.finish_session().expect("work admission succeeds");
+    }
+
+    #[test]
+    fn face_binding_projection_keeps_duplicate_graphics_keys_ambiguous() {
+        for has_style in [false, true] {
+            let mut inventory = face_override_inventory(42, true);
+            inventory.graphics_faces.clear();
+            for index in 0..3 {
+                let mut source = face_override_inventory(42, has_style && index == 1);
+                let face = source
+                    .graphics_faces
+                    .pop()
+                    .expect("synthetic graphics face");
+                inventory.graphics_faces.push(face);
+            }
+            let face_keys = std::collections::HashMap::from([(
+                FaceId::mint("inventor:test:face#1").expect("identity grammar"),
+                42,
+            )]);
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                .expect("projection context");
+            let projection = project_bindings(&ctx, &inventory, &[], &[], &face_keys)
+                .expect("ambiguous face projection");
+            assert!(projection.bindings.is_empty());
+            assert!(projection.appearances.is_empty());
+            assert_eq!(
+                projection.unresolved_face_overrides,
+                if has_style {
+                    BTreeMap::from([(
+                        UnresolvedCause::GraphicsFace,
+                        NonZeroUsize::new(1).expect("one is nonzero"),
+                    )])
+                } else {
+                    BTreeMap::new()
+                }
+            );
+        }
     }
 
     fn rendering_style_fixture() -> Vec<u8> {
