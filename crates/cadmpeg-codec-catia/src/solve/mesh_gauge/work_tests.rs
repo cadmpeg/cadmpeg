@@ -435,7 +435,7 @@ fn coordinate_gauge_storage_is_scoped_and_released_between_calls() {
         assert_eq!(gauge.components, vec![vec![vec![0, 1], vec![1, 0]]]);
         Ok::<_, CodecError>(())
     };
-    crate::test_support::with_retained_limit(0, &run).expect("gauge is solver scratch");
+    crate::test_support::with_retained_limit(0, run).expect("gauge is solver scratch");
     crate::test_support::with_materialized_limit(32_768, |ctx| {
         for _ in 0..128 {
             run(ctx).expect("only one gauge and its scratch are live");

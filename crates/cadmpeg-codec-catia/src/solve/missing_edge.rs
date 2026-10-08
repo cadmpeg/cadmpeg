@@ -1491,14 +1491,14 @@ pub(crate) fn repeated_face_endpoint_closures(
                 self.states += 1;
                 let (edge, _) = &self.branches[branch];
                 let owner = self.owners[branch];
-                let undo = if face != owner {
+                let undo = if face == owner {
+                    None
+                } else {
                     let Some(undo) = add_pair(ctx, &mut degrees[face], self.endpoint_pairs[*edge])?
                     else {
                         continue;
                     };
                     Some(undo)
-                } else {
-                    None
                 };
                 assignment[branch] = face;
                 used[branch] = true;
@@ -1533,97 +1533,93 @@ pub(crate) fn repeated_face_endpoint_closures(
         return Ok(None);
     }
     let mut scratch = ctx.reserve_scoped(0, "catia missing-edge face degrees")?;
-    let search_result = scratch.with_storage(
-        || -> Result<Option<(Vec<(usize, Vec<usize>)>, Vec<Vec<usize>>)>, CodecError> {
-            let mut degrees =
-                ctx.collect_indexed_vec(face_count, "catia missing-edge face degrees", |_| {
-                    Ok(BTreeMap::<usize, u8>::new())
-                })?;
-            let mut charged_steps = edge_faces.iter().enumerate();
-            while let Some((edge, faces)) =
-                ctx.next_charged(&mut charged_steps, "catia missing-edge face degrees")?
-            {
-                if add_pair(ctx, &mut degrees[faces[0]], endpoint_pairs[edge])?.is_none() {
-                    return Ok(None);
-                }
-                if faces[1] != faces[0]
-                    && add_pair(ctx, &mut degrees[faces[1]], endpoint_pairs[edge])?.is_none()
-                {
-                    return Ok(None);
-                }
-            }
-            let mut branches = Vec::new();
-            for (edge, faces) in ctx
-                .admit_iter(edge_faces, "catia missing-edge branches")?
-                .enumerate()
-            {
-                if faces[0] != faces[1] || allowed_faces[edge].is_empty() {
-                    continue;
-                }
-                let capacity = allowed_faces[edge].len().checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("catia missing-edge branch choices", u64::MAX, u64::MAX)
-                })?;
-                let mut choices =
-                    ctx.collection_vec(capacity, "catia missing-edge branch choices")?;
-                choices.push(faces[0]);
-                for &face in
-                    ctx.admit_iter(&allowed_faces[edge], "catia missing-edge branch choices")?
-                {
-                    if face != faces[0] {
-                        choices.push(face);
-                    }
-                }
-                ctx.sort_unstable_by(
-                    &mut choices,
-                    |value| value,
-                    Ord::cmp,
-                    "catia missing edge duplicate face choices sort",
-                )?;
-                ctx.dedup_vec(&mut choices, "catia missing-edge branch choices")?;
-                ctx.push_vec(
-                    &mut branches,
-                    (edge, choices),
-                    "catia missing-edge branches",
-                )?;
-            }
-            if branches.is_empty() {
-                // Without branches the serialized faces are the one candidate.
-                let mut solutions = Vec::new();
-                if closed(ctx, &degrees)? {
-                    ctx.push_vec(
-                        &mut solutions,
-                        Vec::new(),
-                        "catia missing-edge closed solutions",
-                    )?;
-                }
-                return Ok(Some((branches, solutions)));
-            }
-            let mut owners =
-                ctx.collection_vec(branches.len(), "catia missing-edge branch owners")?;
-            for (edge, _) in ctx.admit_iter(&branches, "catia missing-edge branch owners")? {
-                owners.push(edge_faces[*edge][0]);
-            }
-            let mut search = Search {
-                ctx,
-                branches: &branches,
-                owners: &owners,
-                endpoint_pairs,
-                states: 0,
-                exhausted: false,
-                solutions: Vec::new(),
-            };
-            let mut assignment =
-                ctx.alloc_filled(branches.len(), 0, "catia missing-edge branch assignment")?;
-            let mut used =
-                ctx.alloc_filled(branches.len(), false, "catia missing-edge used branches")?;
-            search.visit(&mut degrees, &mut assignment, &mut used)?;
-            if search.exhausted {
+    let search_result = scratch.with_storage(|| {
+        let mut degrees =
+            ctx.collect_indexed_vec(face_count, "catia missing-edge face degrees", |_| {
+                Ok(BTreeMap::<usize, u8>::new())
+            })?;
+        let mut charged_steps = edge_faces.iter().enumerate();
+        while let Some((edge, faces)) =
+            ctx.next_charged(&mut charged_steps, "catia missing-edge face degrees")?
+        {
+            if add_pair(ctx, &mut degrees[faces[0]], endpoint_pairs[edge])?.is_none() {
                 return Ok(None);
             }
-            let solutions = search.solutions;
-            Ok(Some((branches, solutions)))
-        },
-    )?;
+            if faces[1] != faces[0]
+                && add_pair(ctx, &mut degrees[faces[1]], endpoint_pairs[edge])?.is_none()
+            {
+                return Ok(None);
+            }
+        }
+        let mut branches = Vec::new();
+        for (edge, faces) in ctx
+            .admit_iter(edge_faces, "catia missing-edge branches")?
+            .enumerate()
+        {
+            if faces[0] != faces[1] || allowed_faces[edge].is_empty() {
+                continue;
+            }
+            let capacity = allowed_faces[edge].len().checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia missing-edge branch choices", u64::MAX, u64::MAX)
+            })?;
+            let mut choices = ctx.collection_vec(capacity, "catia missing-edge branch choices")?;
+            choices.push(faces[0]);
+            for &face in
+                ctx.admit_iter(&allowed_faces[edge], "catia missing-edge branch choices")?
+            {
+                if face != faces[0] {
+                    choices.push(face);
+                }
+            }
+            ctx.sort_unstable_by(
+                &mut choices,
+                |value| value,
+                Ord::cmp,
+                "catia missing edge duplicate face choices sort",
+            )?;
+            ctx.dedup_vec(&mut choices, "catia missing-edge branch choices")?;
+            ctx.push_vec(
+                &mut branches,
+                (edge, choices),
+                "catia missing-edge branches",
+            )?;
+        }
+        if branches.is_empty() {
+            // Without branches the serialized faces are the one candidate.
+            let mut solutions = Vec::new();
+            if closed(ctx, &degrees)? {
+                ctx.push_vec(
+                    &mut solutions,
+                    Vec::new(),
+                    "catia missing-edge closed solutions",
+                )?;
+            }
+            return Ok(Some((branches, solutions)));
+        }
+        let mut owners = ctx.collection_vec(branches.len(), "catia missing-edge branch owners")?;
+        for (edge, _) in ctx.admit_iter(&branches, "catia missing-edge branch owners")? {
+            owners.push(edge_faces[*edge][0]);
+        }
+        let mut search = Search {
+            ctx,
+            branches: &branches,
+            owners: &owners,
+            endpoint_pairs,
+            states: 0,
+            exhausted: false,
+            solutions: Vec::new(),
+        };
+        let mut assignment =
+            ctx.alloc_filled(branches.len(), 0, "catia missing-edge branch assignment")?;
+        let mut used =
+            ctx.alloc_filled(branches.len(), false, "catia missing-edge used branches")?;
+        search.visit(&mut degrees, &mut assignment, &mut used)?;
+        if search.exhausted {
+            return Ok(None);
+        }
+        let solutions = search.solutions;
+        Ok::<_, CodecError>(Some((branches, solutions)))
+    })?;
     let Some((branches, solutions)) = search_result else {
         return Ok(None);
     };
@@ -2838,6 +2834,7 @@ fn standard_mesh_missing_edge_assignment_domains(
     );
     type DeadState = (usize, usize, u64, Option<u32>, Vec<usize>, bool);
 
+    #[derive(Clone, Copy)]
     struct EnumerateFaceInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5> {
         face: usize,
         gaps: &'input0 [MeshBoundaryGap],
@@ -2885,7 +2882,7 @@ fn standard_mesh_missing_edge_assignment_domains(
             gap_placed_start: usize,
             placed: &'input0 mut Vec<MeshEdgePlacementCandidate>,
         }
-        impl<'a, 'ctx> Search<'a, 'ctx> {
+        impl<'a> Search<'a, '_> {
             fn walk(&mut self, inputs: GapSearchState<'_>) -> Result<Option<()>, CodecError> {
                 let ctx = self.ctx;
                 let (points, points_storage) =
@@ -5596,7 +5593,7 @@ struct PortCandidateSearch<'a, 'b> {
     outcome_storage: cadmpeg_core::decode::ScopedReservation<'a>,
 }
 
-impl<'a, 'b> PortCandidateSearch<'a, 'b> {
+impl PortCandidateSearch<'_, '_> {
     /// The orientations of a candidate pair that agree with the bound ports
     /// (and, under a point bijection, with the bound points).
     fn compatible(

@@ -68,17 +68,16 @@ fn copy_incidence_edge_rows(
     Ok(copy)
 }
 
+type ScopedSingletonPairs<'ctx> = (
+    Vec<Vec<[usize; 2]>>,
+    cadmpeg_core::decode::ScopedReservation<'ctx>,
+);
+
 /// One single-pair candidate row per edge, held in scoped storage.
 fn singleton_incidence_pairs<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     pairs: &[[usize; 2]],
-) -> Result<
-    (
-        Vec<Vec<[usize; 2]>>,
-        cadmpeg_core::decode::ScopedReservation<'ctx>,
-    ),
-    CodecError,
-> {
+) -> Result<ScopedSingletonPairs<'ctx>, CodecError> {
     ctx.with_scoped_storage("catia_incidence_singleton_rows", || {
         let mut singleton = Vec::new();
         ctx.reserve_vec(
@@ -1144,6 +1143,7 @@ struct AppliedFaceConfiguration<'storage> {
 }
 
 /// The previous degrees of at most two faces times two points.
+#[derive(Clone, Copy)]
 struct IncidenceDegreeUndo {
     entries: [(usize, usize, Option<u8>); 4],
     len: usize,
@@ -1990,9 +1990,8 @@ fn prune_ordered_face_endpoint_support(
             if configurations.is_empty() {
                 return Ok(false);
             }
-            let (supported, _supported_storage) = ctx.with_scoped_storage(
-                "catia ordered face support edges",
-                || -> Result<Option<HashMap<usize, HashSet<[usize; 2]>>>, CodecError> {
+            let (supported, _supported_storage) =
+                ctx.with_scoped_storage("catia ordered face support edges", || {
                     let mut supported = HashMap::<usize, HashSet<[usize; 2]>>::new();
                     let mut charged_steps = configurations.iter();
                     while let Some(configuration) =
@@ -2012,9 +2011,8 @@ fn prune_ordered_face_endpoint_support(
                             ctx.insert_hash_set(pairs, pair, "catia ordered face support pairs")?;
                         }
                     }
-                    Ok(Some(supported))
-                },
-            )?;
+                    Ok::<_, CodecError>(Some(supported))
+                })?;
             let Some(supported) = supported else {
                 return Ok(true);
             };
@@ -4940,6 +4938,7 @@ pub(super) fn deferred_boundary_assignment(
 }
 
 type DeferredCompatibility = Vec<Vec<Option<Vec<MeshBoundaryEdgeCandidate>>>>;
+type DeferredMatching = (DeferredCompatibility, Vec<Option<usize>>);
 
 /// The boundary each mesh cycle would take along each incidence cycle, and a
 /// matching of every mesh cycle to a distinct compatible incidence cycle.
@@ -4947,7 +4946,7 @@ fn deferred_boundary_matching(
     ctx: &DecodeContext<'_>,
     domain: &MeshDeferredFaceBoundary,
     edge_points: &[[usize; 2]],
-) -> Result<Option<(DeferredCompatibility, Vec<Option<usize>>)>, CodecError> {
+) -> Result<Option<DeferredMatching>, CodecError> {
     const OPERATION: &str = "catia deferred incident edges";
     let mut incident = Vec::new();
     push_deferred_edges(ctx, domain, &mut incident, OPERATION)?;
@@ -6941,6 +6940,7 @@ where
     F: Fn(&[[usize; 2]]) -> Result<bool, CodecError>,
     V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
 {
+    const VALIDATION: &str = "catia incidence choice validation";
     let VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs {
         edge_rows,
         vertex_points,
@@ -6976,7 +6976,6 @@ where
         )?;
         ctx.dedup_vec(candidates, "catia incidence choice pairs sort")?;
     }
-    const VALIDATION: &str = "catia incidence choice validation";
     let valid = if ctx.any_by(&choices, |pairs| Ok(pairs.is_empty()), VALIDATION)? {
         mesh_quotient.is_some()
             && choices.len() == edge_faces.len()

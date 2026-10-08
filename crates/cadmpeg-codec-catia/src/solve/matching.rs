@@ -398,6 +398,8 @@ pub(crate) fn retain_distinct_matching_supports(
     Ok(Some(changed))
 }
 
+type MatchingSupportClasses = (Vec<Option<usize>>, Vec<bool>);
+
 /// Strongly connected components of the alternating graph of a complete
 /// matching, and the nodes that reach an unmatched point. An unmatched edge
 /// lies in some complete matching exactly when its domain and point share a
@@ -409,7 +411,7 @@ fn matching_support_classes(
     node_count: usize,
     matching: &[usize],
     budget: Option<&WorkBudget<'_>>,
-) -> Result<Option<(Vec<Option<usize>>, Vec<bool>)>, CodecError> {
+) -> Result<Option<MatchingSupportClasses>, CodecError> {
     let mut graph =
         ctx.collect_indexed_vec(node_count, "catia_match_support_graph", |_| Ok(Vec::new()))?;
     let mut reverse =
