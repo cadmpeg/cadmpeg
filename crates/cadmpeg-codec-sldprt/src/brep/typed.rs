@@ -648,7 +648,7 @@ impl Facts {
             )?;
         }
 
-        let (reachable, _reachable_storage) = reachable_shells(ctx, &candidates)?;
+        let (reachable, _reachable_storage) = reachable_shells(ctx, &regions, &candidates)?;
         let mut shells = BTreeMap::new();
         for &(region, shell) in
             ctx.admit_iter(&candidates, "index typed Parasolid ownership shells")?
@@ -763,30 +763,35 @@ impl ShellReachability {
 /// shared tails or materializing every region/shell pair.
 fn reachable_shells<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
+    regions: &Regions<'_>,
     candidates: &[(u16, &ShellNode)],
 ) -> Result<(ShellReachability, ScopedReservation<'ctx>), CodecError> {
     const RESOLVE: &str = "resolve typed Parasolid shell link";
     const INDEX: &str = "index typed Parasolid shell forest";
+    let mut storage = ctx.reserve_scoped(0, "hold typed Parasolid shell reachability")?;
+    if !ctx.any_by(
+        regions.by_attr.values(),
+        |region| Ok(u16_from_ref_or_none(region.refs[4]).is_some()),
+        "find typed Parasolid shell heads",
+    )? {
+        return Ok((
+            ShellReachability {
+                intervals: BTreeMap::new(),
+            },
+            storage,
+        ));
+    }
     let (by_attr, _index_storage) = ctx.unique_index(
         candidates.iter().map(|&(_, shell)| (shell.attr, shell)),
         "index typed Parasolid shell candidates",
     )?;
     let mut scratch = ctx.reserve_scoped(0, "hold typed Parasolid shell forest")?;
     let mut links = BTreeMap::new();
-    for &(_, shell) in ctx.admit_iter(candidates, RESOLVE)? {
-        if let Some(Some(shell)) = ctx.get_hash_map(&by_attr, &shell.attr, RESOLVE)? {
-            scratch.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut links,
-                    shell.attr,
-                    u16_from_ref_or_none(shell.refs[2]),
-                    RESOLVE,
-                )
-            })?;
-        }
-    }
     let mut components = BTreeMap::<u16, u16>::new();
-    for (&start, _) in ctx.admit_iter(&links, INDEX)? {
+    for (_, region) in ctx.admit_iter(&regions.by_attr, "scan typed Parasolid shell heads")? {
+        let Some(start) = u16_from_ref_or_none(region.refs[4]) else {
+            continue;
+        };
         if ctx.contains_key_btree_map(&components, &start, INDEX)? {
             continue;
         }
@@ -807,9 +812,11 @@ fn reachable_shells<'ctx>(
                 }
                 break;
             }
-            let Some(&next) = ctx.get_btree_map(&links, &attr, INDEX)? else {
+            let Some(Some(shell)) = ctx.get_hash_map(&by_attr, &attr, RESOLVE)? else {
                 break;
             };
+            let next = u16_from_ref_or_none(shell.refs[2]);
+            scratch.with_storage(|| ctx.insert_btree_map(&mut links, attr, next, RESOLVE))?;
             path_storage
                 .with_storage(|| ctx.insert_btree_map(&mut positions, attr, path.len(), INDEX))?;
             ctx.push_scoped_vec(&mut path_storage, &mut path, attr, INDEX)?;
@@ -871,7 +878,6 @@ fn reachable_shells<'ctx>(
             }
         }
     }
-    let mut storage = ctx.reserve_scoped(0, "hold typed Parasolid shell reachability")?;
     let mut intervals = BTreeMap::new();
     for (&attr, component) in ctx.admit_iter(&components, INDEX)? {
         if let Some(&range) = ctx.get_btree_map(&ranges, component, INDEX)? {
@@ -1505,7 +1511,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let (reachable, _storage) = super::reachable_shells(&ctx, &candidates).unwrap();
+        let (reachable, _storage) = super::reachable_shells(&ctx, &regions, &candidates).unwrap();
         let mut memberships = std::collections::BTreeSet::new();
         for region in [20, 21] {
             for shell in [8, 9] {
@@ -1520,6 +1526,49 @@ mod tests {
         );
         assert!(!reachable.contains(&ctx, &regions, 22, 8).unwrap());
         assert!(!reachable.contains(&ctx, &regions, 20, 10).unwrap());
+    }
+
+    #[test]
+    fn shell_forest_omits_null_heads_and_disconnected_components() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let shells = [8, 9, 10].map(|attr| ShellNode {
+            attr,
+            node_id: u32::from(attr),
+            refs: [0, 3, if attr == 8 { 9 } else { 0 }, 0, 0, 0, 20, 0],
+            offset: 0,
+            end: 0,
+        });
+        let candidates: Vec<_> = shells.iter().map(|shell| (20, shell)).collect();
+        for head in [0, 8] {
+            let region = RegionNode {
+                attr: 20,
+                node_id: 20,
+                refs: [0, 3, 0, 0, head],
+                offset: 0,
+                end: 0,
+            };
+            let regions = Regions {
+                by_attr: BTreeMap::from([(20, &region)]),
+                by_previous: BTreeMap::new(),
+            };
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            if head == 0 {
+                policy.limits.max_materialized_bytes = 0;
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let (reachable, storage) =
+                super::reachable_shells(&ctx, &regions, &candidates).unwrap();
+            assert_eq!(reachable.intervals.len(), if head == 0 { 0 } else { 2 });
+            for attr in [8, 9, 10] {
+                assert_eq!(
+                    reachable.contains(&ctx, &regions, 20, attr).unwrap(),
+                    head == 8 && attr != 10
+                );
+            }
+            drop(storage);
+            ctx.finish_session().unwrap();
+        }
     }
 
     #[test]
@@ -1550,7 +1599,8 @@ mod tests {
                     by_previous: BTreeMap::default(),
                 };
                 let candidates: Vec<_> = shells.iter().map(|shell| (20, shell)).collect();
-                let (reachable, _storage) = super::reachable_shells(ctx, &candidates).unwrap();
+                let (reachable, _storage) =
+                    super::reachable_shells(ctx, &regions, &candidates).unwrap();
                 for region in &nodes {
                     let mut expected = BTreeSet::new();
                     let mut current = region.refs[4];
