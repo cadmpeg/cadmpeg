@@ -5707,7 +5707,11 @@ fn relation_type_signature_charged(
             let mut parameter_storage =
                 ctx.reserve_scoped(0, "catia_native_signature_prior_input_checks")?;
             let mut parameters = std::collections::BTreeSet::new();
-            for input in ctx.admit_iter(&inputs, "catia_native_signature_duplicate_input_rows")? {
+            let mut input_rows = inputs.iter();
+            while let Some(input) = ctx.next_charged(
+                &mut input_rows,
+                "catia_native_signature_duplicate_input_rows",
+            )? {
                 if !parameter_storage.with_storage(|| {
                     ctx.insert_btree_set(
                         &mut parameters,
@@ -7515,14 +7519,21 @@ pub(crate) fn relation_symbols(
     ctx: &DecodeContext<'_>,
     source: &str,
 ) -> Result<Vec<(u64, String)>, CodecError> {
-    ctx.charge_work(u64_from_index(source.len()), "catia_native_symbol_scan")?;
     let bytes = source.as_bytes();
     let mut symbols = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
-        if bytes[at] == b'"' {
+        let Some(byte) = ctx.next_charged(&mut bytes[at..].iter(), "catia_native_symbol_scan")?
+        else {
+            break;
+        };
+        if *byte == b'"' {
             at += 1;
-            while bytes.get(at).is_some_and(|byte| *byte != b'"') {
+            let mut quoted = bytes[at..].iter();
+            while let Some(byte) = ctx.next_charged(&mut quoted, "catia_native_symbol_scan")? {
+                if *byte == b'"' {
+                    break;
+                }
                 at += 1;
             }
             at += usize::from(at < bytes.len());
@@ -7535,7 +7546,11 @@ pub(crate) fn relation_symbols(
         let start = at;
         at += 1;
         let digits_start = at;
-        while bytes.get(at).is_some_and(u8::is_ascii_digit) {
+        let mut digits = bytes[at..].iter();
+        while let Some(byte) = ctx.next_charged(&mut digits, "catia_native_symbol_scan")? {
+            if !byte.is_ascii_digit() {
+                break;
+            }
             at += 1;
         }
         if at == digits_start || bytes.get(at) != Some(&b'_') {
@@ -7544,7 +7559,11 @@ pub(crate) fn relation_symbols(
         }
         at += 1;
         let bare_end = at;
-        while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
+        let mut whitespace = bytes[at..].iter();
+        while let Some(byte) = ctx.next_charged(&mut whitespace, "catia_native_symbol_scan")? {
+            if !byte.is_ascii_whitespace() {
+                break;
+            }
             at += 1;
         }
         if bytes.get(at) != Some(&b'/') {
@@ -7561,7 +7580,11 @@ pub(crate) fn relation_symbols(
         }
         at += 1;
         let ordinal_start = at;
-        while bytes.get(at).is_some_and(u8::is_ascii_digit) {
+        let mut digits = bytes[at..].iter();
+        while let Some(byte) = ctx.next_charged(&mut digits, "catia_native_symbol_scan")? {
+            if !byte.is_ascii_digit() {
+                break;
+            }
             at += 1;
         }
         if at == ordinal_start {
@@ -9074,36 +9097,41 @@ fn consolidated_class61_records(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaConsolidatedClass61Record>, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "catia_native_class61_scratch")?;
+    let counted = scratch.with_storage(|| {
+        crate::families::b2::records::b2_counted_61_from_records(ctx, bytes, records)
+    })?;
+    let long = scratch.with_storage(|| {
+        crate::families::b2::records::b2_long_61_from_records(ctx, bytes, records)
+    })?;
     let mut class61_records = Vec::new();
-    for record in crate::families::b2::records::b2_counted_61_from_records(ctx, bytes, records)? {
-        ctx.push_vec(
-            &mut class61_records,
-            (
-                record.pos,
-                record.header_token,
-                CatiaConsolidatedClass61Payload::Counted {
-                    references: record.references,
-                    tail: record.tail,
-                },
-            ),
-            "catia_native_class61_order",
-        )?;
+    for record in ctx.admit_iter(&counted, "catia_native_counted_class61_visits")? {
+        let payload = CatiaConsolidatedClass61Payload::Counted {
+            references: ctx.copy_slice(&record.references, "catia_native_class61_references")?,
+            tail: ctx.copy_slice(&record.tail, "catia_native_class61_tail")?,
+        };
+        scratch.with_storage(|| {
+            ctx.push_vec(
+                &mut class61_records,
+                (record.pos, record.header_token, payload),
+                "catia_native_class61_order",
+            )
+        })?;
     }
-    for record in crate::families::b2::records::b2_long_61_from_records(ctx, bytes, records)? {
-        ctx.push_vec(
-            &mut class61_records,
-            (
-                record.pos,
-                record.header_token,
-                CatiaConsolidatedClass61Payload::Long {
-                    prefix: record.prefix,
-                    members: record.members,
-                    references: record.references,
-                    scalar: record.scalar,
-                },
-            ),
-            "catia_native_class61_order",
-        )?;
+    for record in ctx.admit_iter(&long, "catia_native_long_class61_visits")? {
+        let payload = CatiaConsolidatedClass61Payload::Long {
+            prefix: record.prefix,
+            members: ctx.copy_slice(&record.members, "catia_native_class61_members")?,
+            references: record.references,
+            scalar: record.scalar,
+        };
+        scratch.with_storage(|| {
+            ctx.push_vec(
+                &mut class61_records,
+                (record.pos, record.header_token, payload),
+                "catia_native_class61_order",
+            )
+        })?;
     }
     ctx.stable_sort_by(
         &mut class61_records,
@@ -9134,8 +9162,10 @@ fn consolidated_class5b5c_records(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaConsolidatedClass5b5cRecord>, CodecError> {
-    let mut control_records =
-        crate::families::b2::records::b2_class5b5c_records_from_records(ctx, bytes, records)?;
+    let (mut control_records, _storage) = ctx
+        .with_scoped_storage("catia_native_class5b5c_scratch", || {
+            crate::families::b2::records::b2_class5b5c_records_from_records(ctx, bytes, records)
+        })?;
     ctx.stable_sort_by_key(
         &mut control_records,
         |value| (value.source_index, value.source_offset),
@@ -9152,7 +9182,14 @@ fn consolidated_class5b5c_records(
                         format_args!("catia:consolidated:class5b5c-record#{index:00}"),
                         "catia_native_class5b5c_id",
                     )?,
-                    frame: record.frame.into(),
+                    frame: crate::wire::records::ConsolidatedRawFrame::new(
+                        u64_from_index(record.frame.pos),
+                        record.frame.width(),
+                        record.frame.flag,
+                        record.frame.header_token(),
+                        ctx.copy_slice(&record.frame.payload, "catia_native_class5b5c_payload")?,
+                    )
+                    .map_err(CodecError::malformed)?,
                     source_index: u64_from_index(record.source_index),
                     source_offset: u64_from_index(record.source_offset),
                     class: record.class,
@@ -9172,15 +9209,19 @@ mod consolidated_class_record_limit_tests {
         let mut bytes = crate::test_support::test_b2::b2_counted_61_stream();
         bytes.extend_from_slice(&crate::test_support::test_b2::b2_long_61_stream());
         let records = crate::wire::records::consolidated_records(&bytes);
-        for (limit, operation) in [
-            (7, "catia_native_class61_order"),
-            (13, "catia_native_class61_records"),
-        ] {
-            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-                consolidated_class61_records(ctx, &bytes, &records)
-            });
-            assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-                if error.operation == operation));
+        for operation in ["catia_native_class61_order", "catia_native_class61_records"] {
+            let limited = cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                operation,
+                |cap| {
+                    crate::test_support::with_collection_limit(cap, |ctx| {
+                        consolidated_class61_records(ctx, &bytes, &records)
+                    })
+                },
+            );
+            assert!(
+                matches!(limited, CodecError::ResourceLimit(error) if error.operation == operation)
+            );
         }
         let limited =
             crate::test_support::with_retained_refusal(&[], "catia_native_class61_id", |ctx| {
@@ -9194,27 +9235,18 @@ mod consolidated_class_record_limit_tests {
     fn native_class5b5c_output_and_id_refuse_limits() {
         let bytes = crate::test_support::test_b2::b2_class5b5c_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let payload_bytes = u64::try_from(
-            records
-                .iter()
-                .filter(|record| matches!(record.class(), 0x5b | 0x5c))
-                .map(|record| record.payload().expect("class payload").len())
-                .sum::<usize>(),
-        )
-        .expect("fixture payloads fit u64");
-        let record_count = u64::try_from(
-            records
-                .iter()
-                .filter(|record| matches!(record.class(), 0x5b | 0x5c))
-                .count(),
-        )
-        .expect("fixture records fit u64");
-        let limited =
-            crate::test_support::with_collection_limit(payload_bytes + record_count, |ctx| {
-                consolidated_class5b5c_records(ctx, &bytes, &records)
-            });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_class5b5c_records"));
+        let limited = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "catia_native_class5b5c_records",
+            |cap| {
+                crate::test_support::with_collection_limit(cap, |ctx| {
+                    consolidated_class5b5c_records(ctx, &bytes, &records)
+                })
+            },
+        );
+        assert!(
+            matches!(limited, CodecError::ResourceLimit(error) if error.operation == "catia_native_class5b5c_records")
+        );
         let limited =
             crate::test_support::with_retained_refusal(&[], "catia_native_class5b5c_id", |ctx| {
                 consolidated_class5b5c_records(ctx, &bytes, &records)
@@ -9713,11 +9745,18 @@ mod consolidated_analytic_limit_tests {
     fn native_reference_lists_refuse_output_and_id_limits() {
         let bytes = crate::test_support::test_b2::b2_reference_list_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(27, |ctx| {
-            consolidated_reference_lists(ctx, &bytes, &records)
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_reference_lists"));
+        let limited = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "catia_native_reference_lists",
+            |cap| {
+                crate::test_support::with_collection_limit(cap, |ctx| {
+                    consolidated_reference_lists(ctx, &bytes, &records)
+                })
+            },
+        );
+        assert!(
+            matches!(limited, CodecError::ResourceLimit(error) if error.operation == "catia_native_reference_lists")
+        );
         let limited = crate::test_support::with_retained_refusal(
             &[],
             "catia_native_reference_list_id",
@@ -9793,8 +9832,12 @@ fn consolidated_plane_carriers(
 ) -> Result<Vec<CatiaConsolidatedPlaneCarrier>, CodecError> {
     use crate::families::b2::records::B2PlaneCarrierPayload;
 
+    let (carriers, _storage) = ctx
+        .with_scoped_storage("catia_native_plane_carrier_scratch", || {
+            crate::families::b2::records::b2_plane_carriers_from_records(ctx, bytes, records)
+        })?;
     ctx.try_collect_vec(
-        crate::families::b2::records::b2_plane_carriers_from_records(ctx, bytes, records)?
+        carriers
             .into_iter()
             .enumerate()
             .map(|(index, carrier)| -> Result<_, CodecError> {
@@ -9829,7 +9872,10 @@ fn consolidated_plane_carriers(
                         CatiaConsolidatedPlaneCarrierPayload::PointTail { point, tail }
                     }
                     B2PlaneCarrierPayload::ScalarLane { selector, values } => {
-                        CatiaConsolidatedPlaneCarrierPayload::ScalarLane { selector, values }
+                        CatiaConsolidatedPlaneCarrierPayload::ScalarLane {
+                            selector,
+                            values: ctx.copy_slice(&values, "catia_native_plane_scalar_values")?,
+                        }
                     }
                 };
                 Ok(CatiaConsolidatedPlaneCarrier {
@@ -9854,8 +9900,12 @@ fn consolidated_reference_lists(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaConsolidatedReferenceList>, CodecError> {
+    let (lists, _storage) = ctx
+        .with_scoped_storage("catia_native_reference_list_scratch", || {
+            crate::families::b2::records::b2_reference_lists_from_records(ctx, bytes, records)
+        })?;
     ctx.try_collect_vec(
-        crate::families::b2::records::b2_reference_lists_from_records(ctx, bytes, records)?
+        lists
             .into_iter()
             .enumerate()
             .map(|(index, list)| -> Result<_, CodecError> {
@@ -9865,7 +9915,8 @@ fn consolidated_reference_lists(
                         "catia_native_reference_list_id",
                     )?,
                     byte_offset: u64_from_index(list.pos),
-                    references: list.references,
+                    references: ctx
+                        .copy_slice(&list.references, "catia_native_reference_list_values")?,
                 })
             }),
         "catia_native_reference_lists",
@@ -9877,27 +9928,34 @@ fn consolidated_pcurves(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaConsolidatedPcurve>, CodecError> {
-    let a = crate::wire::records::family_pcurves_from_records(
-        ctx,
-        bytes,
-        records,
-        crate::wire::records::ConsolidatedFamily::A,
-    )?;
-    let b = crate::wire::records::family_pcurves_from_records(
-        ctx,
-        bytes,
-        records,
-        crate::wire::records::ConsolidatedFamily::B,
-    )?;
-    let mut pcurves = ctx.collect_vec(
-        a.into_iter()
-            .map(|pcurve| (pcurve, CatiaConsolidatedFamily::A))
-            .chain(
-                b.into_iter()
-                    .map(|pcurve| (pcurve, CatiaConsolidatedFamily::B)),
-            ),
-        "catia_native_pcurve_ordering",
-    )?;
+    let mut scratch = ctx.reserve_scoped(0, "catia_native_pcurve_scratch")?;
+    let a = scratch.with_storage(|| {
+        crate::wire::records::family_pcurves_from_records(
+            ctx,
+            bytes,
+            records,
+            crate::wire::records::ConsolidatedFamily::A,
+        )
+    })?;
+    let b = scratch.with_storage(|| {
+        crate::wire::records::family_pcurves_from_records(
+            ctx,
+            bytes,
+            records,
+            crate::wire::records::ConsolidatedFamily::B,
+        )
+    })?;
+    let mut pcurves = scratch.with_storage(|| {
+        ctx.collect_vec(
+            a.into_iter()
+                .map(|pcurve| (pcurve, CatiaConsolidatedFamily::A))
+                .chain(
+                    b.into_iter()
+                        .map(|pcurve| (pcurve, CatiaConsolidatedFamily::B)),
+                ),
+            "catia_native_pcurve_ordering",
+        )
+    })?;
     ctx.stable_sort_by(
         &mut pcurves,
         |value| &value.0.pos,
@@ -9926,7 +9984,7 @@ fn consolidated_pcurves(
                     first_derivatives,
                     second_derivatives,
                     range: pcurve.range,
-                    tail: pcurve.tail,
+                    tail: ctx.copy_slice(&pcurve.tail, "catia_native_pcurve_tail")?,
                 })
             }),
         "catia_native_pcurves",
@@ -9947,12 +10005,17 @@ mod consolidated_pcurve_limit_tests {
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
             if error.operation == "catia_native_pcurve_id")
         );
-        let limited = crate::test_support::with_collection_limit(13, |ctx| {
-            super::consolidated_pcurves(ctx, &bytes, &records)
-        });
+        let limited = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "catia_native_pcurves",
+            |cap| {
+                crate::test_support::with_collection_limit(cap, |ctx| {
+                    super::consolidated_pcurves(ctx, &bytes, &records)
+                })
+            },
+        );
         assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_pcurves")
+            matches!(limited, cadmpeg_core::CodecError::ResourceLimit(error) if error.operation == "catia_native_pcurves")
         );
         let pcurves = crate::test_support::with_service_context(|ctx| {
             super::consolidated_pcurves(ctx, &bytes, &records)
