@@ -1390,44 +1390,29 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
     };
     let first = circle(367, [0.0, 0.0, 1.0], [3.5, 8.0, -6.0], [5.5, 10.0, -6.0]);
     let second = circle(368, [0.0, 0.0, -1.0], [5.5, 10.0, -4.0], [3.5, 8.0, -4.0]);
-    let frame = crate::decode::with_test_decode_ctx(|ctx| {
-        reference_cap_bound_round_frame(ctx, envelope, &[&first, &second])
-    })
-    .expect("service profile admits reference cap circles")
-    .expect("opposite Z caps");
+    let frame =
+        reference_cap_bound_round_frame(envelope, &[&first, &second]).expect("opposite Z caps");
     assert_eq!(frame.frame().origin(), [4.5, 9.0, -6.0]);
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius().get(), 1.0);
     assert_eq!(frame.length().map(PositiveLength::get), Some(2.0));
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        reference_cap_bound_round_frame(ctx, envelope, &[&first])
-    })
-    .expect("service profile admits reference cap circles")
-    .is_none());
+    assert!(reference_cap_bound_round_frame(envelope, &[&first]).is_none());
 
     let x_first = circle(371, [1.0, 0.0, 0.0], [3.5, 8.0, -6.0], [3.5, 10.0, -4.0]);
     let x_second = circle(372, [-1.0, 0.0, 0.0], [5.5, 10.0, -4.0], [5.5, 8.0, -6.0]);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        reference_cap_bound_round_frame(ctx, envelope, &[&first, &second, &x_first, &x_second])
-    })
-    .expect("service profile admits reference cap circles")
-    .is_none());
+    assert!(
+        reference_cap_bound_round_frame(envelope, &[&first, &second, &x_first, &x_second])
+            .is_none()
+    );
 
     let crossed_first = circle(369, [0.0, 0.0, -1.0], [5.5, 8.0, -6.0], [3.5, 10.0, -6.0]);
     let crossed_second = circle(370, [0.0, 0.0, 1.0], [3.5, 10.0, -4.0], [5.5, 8.0, -4.0]);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            reference_cap_bound_round_frame(ctx, envelope, &[&crossed_first, &crossed_second])
-        })
-        .expect("service profile admits reference cap circles"),
+        reference_cap_bound_round_frame(envelope, &[&crossed_first, &crossed_second]),
         Some(frame)
     );
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        reference_cap_bound_round_frame(ctx, envelope, &[&first, &crossed_second])
-    })
-    .expect("service profile admits reference cap circles")
-    .is_none());
+    assert!(reference_cap_bound_round_frame(envelope, &[&first, &crossed_second]).is_none());
 }
 
 #[test]

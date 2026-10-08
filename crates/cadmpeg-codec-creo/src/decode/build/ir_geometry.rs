@@ -91,15 +91,15 @@ fn append_owned_curve_ids(
     Ok(())
 }
 
-pub(super) fn transfer_and_record_scanned_geometry(
-    ctx: &DecodeContext<'_>,
+pub(super) fn transfer_and_record_scanned_geometry<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     coverage: &mut cadmpeg_ir::report::decode::Coverage,
     transfer_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut SourceUnitCarriers,
-) -> Result<BrepTransferDiagnostics, CodecError> {
+) -> Result<(BrepTransferDiagnostics, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
     let cross_section_plane_count =
         transfer_cross_section_planes(ctx, scan, ir, annotations, source_carriers)?;
     let first_instance_prototype_surface_count = transfer_first_instance_prototype_surfaces(
@@ -216,6 +216,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let analytic_pcurve_carriers =
         transfer_analytic_pcurve_carriers(ctx, scan, ir, annotations, source_carriers)?;
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
+    let mut curve_evidence_storage = ctx.reserve_scoped(0, "creo curve evidence workspace")?;
     let nurbs_boundary_curves = transfer_nurbs_boundary_curves(
         ctx,
         scan,
@@ -223,6 +224,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         annotations,
         transfer_losses,
         source_carriers,
+        &mut curve_evidence_storage,
     )?;
     let extrusion_plane_boundary_curve_count = nurbs_boundary_curves.extrusion_plane_count;
     let extrusion_plane_section_generator_curve_count =
@@ -236,6 +238,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
         source_carriers,
+        &mut curve_evidence_storage,
     )?;
     let mut curve_id_storage = ctx.reserve_scoped(0, "creo derived curve ID merge storage")?;
     curve_id_storage.with_storage(|| {
@@ -260,6 +263,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
         source_carriers,
+        &mut curve_evidence_storage,
     )?;
     curve_id_storage.with_storage(|| {
         append_owned_curve_ids(ctx, &mut derived_intersection_curves, topology_carriers)
@@ -271,11 +275,11 @@ pub(super) fn transfer_and_record_scanned_geometry(
             &analytic_pcurve_carriers,
         )
     })?;
-    let NativeBrepTransferSummary {
+    let (NativeBrepTransferSummary {
         topological_point_count,
         native_topological_edge_count,
         diagnostics,
-    } = transfer_native_brep(
+    }, diagnostic_storage) = transfer_native_brep(
         ctx,
         scan,
         ir,
@@ -961,7 +965,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
             )?;
         }
     }
-    Ok(brep_diagnostics)
+    Ok((brep_diagnostics, diagnostic_storage))
 }
 
 #[cfg(test)]

@@ -194,7 +194,7 @@ fn derived_intersection_curve_lookup_refuses_work_and_preserves_service_result()
         &["creo derived intersection curve lookup"],
         |ctx| {
             let mut service_ir = ir.clone();
-            let summary = transfer_native_brep(
+            let (summary, _diagnostic_storage) = transfer_native_brep(
                 ctx,
                 &scan,
                 &mut service_ir,

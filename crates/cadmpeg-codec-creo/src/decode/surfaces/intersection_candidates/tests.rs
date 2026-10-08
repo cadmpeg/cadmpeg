@@ -98,10 +98,7 @@ fn intersection_candidate_multiplicity_is_invariant_under_length_scale() {
                     < 64.0 * f64::EPSILON
             );
         }
-        let circles = crate::decode::with_test_decode_ctx(|ctx| {
-            super::coaxial_cone_torus_circle_candidates(ctx, cone(3.0 * scale), torus)
-        })
-        .expect("admitted cone torus candidates");
+        let circles = super::coaxial_cone_torus_circle_candidates(cone(3.0 * scale), torus);
         assert_eq!(circles.len(), 2);
         for (curve, _) in circles {
             let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) = curve else {
@@ -197,10 +194,7 @@ fn numerical_followup_carrier_candidates_follow_geometry_scale() {
             super::coaxial_cone_cylinder_circle_candidates(cone(r), cylinder).len(),
             2
         );
-        let cones = crate::decode::with_test_decode_ctx(|ctx| {
-            super::coaxial_cones_section_candidates(ctx, cone(r), cone(2. * r))
-        })
-        .expect("admitted coaxial cone candidates");
+        let cones = super::coaxial_cones_section_candidates(cone(r), cone(2. * r));
         assert_eq!(cones.len(), 1);
         let circle = cones[0]
             .0
@@ -211,18 +205,10 @@ fn numerical_followup_carrier_candidates_follow_geometry_scale() {
         };
         assert!((circle.radius().get() / r - 0.5).abs() < 64. * f64::EPSILON);
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| {
-                super::apex_plane_cone_generator_candidates(ctx, plane(0.), cone(r))
-            })
-            .expect("service apex cone candidates admitted")
-            .len(),
+            super::apex_plane_cone_generator_candidates(plane(0.), cone(r)).len(),
             2
         );
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
-            super::apex_plane_cone_generator_candidates(ctx, plane(r), cone(r))
-        })
-        .expect("service apex cone candidates admitted")
-        .is_empty());
+        assert!(super::apex_plane_cone_generator_candidates(plane(r), cone(r)).is_empty());
         assert_eq!(
             super::axis_containing_plane_torus_circle_candidates(plane(0.), torus(0.)).len(),
             2
@@ -232,16 +218,8 @@ fn numerical_followup_carrier_candidates_follow_geometry_scale() {
             ref_direction: reference,
             radius: 2. * r,
         });
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
-            super::coaxial_sphere_torus_circle_candidates(ctx, sphere, torus(0.))
-        })
-        .expect("service sphere torus candidates admitted")
-        .is_empty());
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
-            super::coaxial_tori_circle_candidates(ctx, torus(0.), torus(5. * r))
-        })
-        .expect("service torus candidates admitted")
-        .is_empty());
+        assert!(super::coaxial_sphere_torus_circle_candidates(sphere, torus(0.)).is_empty());
+        assert!(super::coaxial_tori_circle_candidates(torus(0.), torus(5. * r)).is_empty());
     }
 }
 
@@ -266,196 +244,13 @@ fn numerical_followup_zero_radius_cone_retains_rotated_apex_plane() {
         })
     };
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            super::apex_plane_cone_generator_candidates(ctx, plane(0.), cone)
-        })
-        .expect("service apex cone candidates admitted")
-        .len(),
+        super::apex_plane_cone_generator_candidates(plane(0.), cone).len(),
         2
     );
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        super::apex_plane_cone_generator_candidates(ctx, plane(0.001), cone)
-    })
-    .expect("service apex cone candidates admitted")
-    .is_empty());
+    assert!(super::apex_plane_cone_generator_candidates(plane(0.001), cone).is_empty());
     let far_plane = CarrierEquation::Plane(PlaneEquation {
         origin: [-1.7e308, -1.7e308, 1.7e308],
         normal: [1., 1., 1.],
     });
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        super::apex_plane_cone_generator_candidates(ctx, far_plane, cone)
-    })
-    .expect("service apex cone candidates admitted")
-    .is_empty());
-}
-
-#[test]
-fn apex_plane_cone_candidate_scan_refuses_work() {
-    use crate::decode::analytic::equations::{CarrierEquation, ConeEquation, PlaneEquation};
-    let cone = CarrierEquation::Cone(
-        ConeEquation::new(
-            [0.; 3],
-            [0., 0., 1.],
-            [1., 0., 0.],
-            0.,
-            1.,
-            std::f64::consts::FRAC_PI_4,
-        )
-        .expect("apex cone"),
-    );
-    let plane = CarrierEquation::Plane(PlaneEquation {
-        origin: [-4., 3., 0.],
-        normal: [0.6, 0.8, 0.],
-    });
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-
-    let error = super::apex_plane_cone_generator_candidates(&ctx, plane, cone)
-        .expect_err("admitting cone generator scan exceeds work limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo apex plane cone generator candidates")
-    );
-}
-
-#[test]
-fn coaxial_sphere_torus_output_scan_refuses_work() {
-    use crate::decode::analytic::equations::{CarrierEquation, SphereEquation, TorusEquation};
-    let sphere = CarrierEquation::Sphere(SphereEquation {
-        center: [0.; 3],
-        ref_direction: [1., 0., 0.],
-        radius: 5.,
-    });
-    let torus = CarrierEquation::Torus(TorusEquation {
-        center: [0.; 3],
-        axis: [0., 0., 1.],
-        ref_direction: [1., 0., 0.],
-        major_radius: 5.,
-        minor_radius: 2.,
-    });
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-
-    let error = super::coaxial_sphere_torus_circle_candidates(&ctx, sphere, torus)
-        .expect_err("admitting sphere torus candidate scan exceeds work limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo coaxial sphere torus output candidates")
-    );
-}
-
-#[test]
-fn coaxial_tori_output_scan_refuses_work() {
-    use crate::decode::analytic::equations::{CarrierEquation, TorusEquation};
-    let first = CarrierEquation::Torus(TorusEquation {
-        center: [0.; 3],
-        axis: [0., 0., 1.],
-        ref_direction: [1., 0., 0.],
-        major_radius: 9.,
-        minor_radius: 2.,
-    });
-    let second = CarrierEquation::Torus(TorusEquation {
-        center: [0.; 3],
-        axis: [0., 0., 1.],
-        ref_direction: [1., 0., 0.],
-        major_radius: 6.,
-        minor_radius: 2.,
-    });
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-
-    let error = super::coaxial_tori_circle_candidates(&ctx, first, second)
-        .expect_err("admitting torus candidate scan exceeds work limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo coaxial tori output candidates")
-    );
-}
-
-#[test]
-fn coaxial_cone_section_parameter_scan_refuses_work() {
-    use crate::decode::analytic::equations::{CarrierEquation, ConeEquation};
-    let first = CarrierEquation::Cone(
-        ConeEquation::new(
-            [0.0; 3],
-            [0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0],
-            1.0,
-            1.0,
-            std::f64::consts::FRAC_PI_4,
-        )
-        .expect("first cone"),
-    );
-    let second = CarrierEquation::Cone(
-        ConeEquation::new(
-            [0.0; 3],
-            [0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0],
-            2.0,
-            1.0,
-            0.5_f64.atan(),
-        )
-        .expect("second cone"),
-    );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-
-    let error = super::coaxial_cones_section_candidates(&ctx, first, second)
-        .expect_err("checking the second parameter exceeds work limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo coaxial cone section parameter candidates")
-    );
-}
-
-#[test]
-fn coaxial_cone_torus_parameter_scan_refuses_work() {
-    use crate::decode::analytic::equations::{CarrierEquation, ConeEquation, TorusEquation};
-    let cone = CarrierEquation::Cone(
-        ConeEquation::new(
-            [0.0; 3],
-            [0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0],
-            3.0,
-            1.0,
-            std::f64::consts::FRAC_PI_4,
-        )
-        .expect("cone"),
-    );
-    let torus = CarrierEquation::Torus(TorusEquation {
-        center: [0.0; 3],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        major_radius: 3.0,
-        minor_radius: 1.0,
-    });
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-
-    let error = super::coaxial_cone_torus_circle_candidates(&ctx, cone, torus)
-        .expect_err("checking the second parameter exceeds work limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo coaxial cone torus parameter candidates")
-    );
+    assert!(super::apex_plane_cone_generator_candidates(far_plane, cone).is_empty());
 }
