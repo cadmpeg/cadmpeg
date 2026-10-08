@@ -746,6 +746,55 @@ fn graph_variable_traversals_refuse_at_their_own_boundaries() {
 }
 
 #[test]
+fn transform_cycle_tree_lookups_refuse_before_searching() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let graph = [1, 3].into_iter().map(|source| (source, vec![ReferenceEdge {
+        origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
+        raw_pointer: i64::from(source),
+        resolution: Resolution::Resolved(source),
+        expected: ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+    }])).collect::<BTreeMap<_, _>>();
+    for operation in [
+        "iges completed transform lookup",
+        "iges active transform lookup",
+        "iges transform successor lookup",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, operation, |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                cyclic_transform_nodes(&graph, &ctx)
+            },
+        );
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(cyclic_transform_nodes(&graph, &ctx).unwrap(), [1, 3].into_iter().collect());
+}
+
+#[test]
+fn directory_graph_source_lookups_refuse_before_searching() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let mut source = directory_target(1, 124);
+    source.transform = 1;
+    let directory = [source];
+    for operation in ["iges cyclic transform source lookup", "iges structure reference source lookup"] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, operation, |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let (graph, _storage) = build(&directory, &ctx)?;
+                super::resolved_structure_sequence(&graph, 1, &ctx)
+            },
+        );
+    }
+}
+
+#[test]
 fn structure_reference_search_stops_before_unvisited_parameter_edges() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let mut edges = vec![ReferenceEdge {
@@ -761,7 +810,7 @@ fn structure_reference_search_stops_before_unvisited_parameter_edges() {
         expected: ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
     }));
     let graph = BTreeMap::from([(1, edges)]);
-    cadmpeg_test_support::refusal::resource_limit_at(
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
         "iges structure reference search",
         |cap| {
@@ -772,9 +821,12 @@ fn structure_reference_search_stops_before_unvisited_parameter_edges() {
             super::resolved_structure_sequence(&graph, 1, &ctx)
         },
     );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("structure search must refuse");
+    };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 1;
+    policy.limits.max_work_units = limit.used + limit.additional;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
         super::resolved_structure_sequence(&graph, 1, &ctx).unwrap(),
