@@ -196,7 +196,7 @@ fn a5_jet_preflight_materialization_and_projection_refuse_caller_work() {
         &[
             "catia_a5_limit_jet_projection",
             "catia_a5_jet_knot_projection",
-            "catia_a5_limit_pole_projection",
+            "catia_quintic_control_visits",
         ],
     );
 }
@@ -269,7 +269,7 @@ fn object_stream_pcurve_preflight_materialization_and_projection_refuse_caller_w
     );
     require_work_operations(|ctx| curve.knots(ctx), &["catia_a8_pcurve_knot_projection"]);
     require_work_operations(
-        |ctx| curve.bspline(ctx),
+        |ctx| curve.bspline(ctx, true),
         &["catia_a8_pcurve_jet_projection"],
     );
 }

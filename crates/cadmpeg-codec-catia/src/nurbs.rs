@@ -834,6 +834,35 @@ pub(crate) fn quintic_jet_bspline<const N: usize, T>(
     second: &[[f64; N]],
     convert: impl Fn([f64; N]) -> Option<T>,
 ) -> QuinticJetOutput<T> {
+    let (controls, controls_storage) = ctx
+        .with_scoped_storage("catia quintic jet output", || {
+            quintic_jet_controls(ctx, degree, knots, points, first, second, convert)
+        })?;
+    let Some(controls) = controls else {
+        return Ok(None);
+    };
+    let count = knots
+        .len()
+        .checked_mul(6)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet knots", u64::MAX, u64::MAX))?;
+    let mut full_knots = ctx.collection_vec(count, "catia quintic jet knots")?;
+    for knot in ctx.admit_iter(knots, "catia_quintic_knot_expansion")? {
+        full_knots.extend([*knot; 6]);
+    }
+    controls_storage.commit()?;
+    Ok(Some((full_knots, controls)))
+}
+
+/// Lower a quintic jet without allocating a full knot lane.
+pub(crate) fn quintic_jet_controls<const N: usize, T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    degree: u32,
+    knots: &[f64],
+    points: &[[f64; N]],
+    first: &[[f64; N]],
+    second: &[[f64; N]],
+    convert: impl Fn([f64; N]) -> Option<T>,
+) -> Result<Option<Vec<T>>, cadmpeg_core::CodecError> {
     if degree != 5
         || knots.len() < 2
         || points.len() != knots.len()
@@ -867,16 +896,9 @@ pub(crate) fn quintic_jet_bspline<const N: usize, T>(
         .checked_sub(1)
         .and_then(|count| count.checked_mul(6))
         .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet controls", u64::MAX, u64::MAX))?;
-    let full_knot_count = knots
-        .len()
-        .checked_mul(6)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet knots", u64::MAX, u64::MAX))?;
     let (mut controls, controls_reservation) =
         ctx.temporary_vec(control_count, "catia quintic jet controls")?;
     let mut output_storage = ctx.reserve_scoped(0, "catia quintic jet output")?;
-    let mut full_knots = output_storage
-        .with_storage(|| ctx.collection_vec(full_knot_count, "catia quintic jet knots"))?;
-    full_knots.extend([knots[0]; 6]);
     let mut spans = 0..knots.len() - 1;
     while let Some(index) = ctx.next_charged(&mut spans, "catia_quintic_span_visits")? {
         let h = knots[index + 1] - knots[index];
@@ -919,7 +941,6 @@ pub(crate) fn quintic_jet_bspline<const N: usize, T>(
             std::array::from_fn(|axis| p1[axis] - tangent(d1[axis])),
             p1,
         ]);
-        full_knots.extend([knots[index + 1]; 6]);
     }
     let mut finite_controls = output_storage
         .with_storage(|| ctx.collection_vec(controls.len(), "catia quintic jet finite controls"))?;
@@ -933,7 +954,7 @@ pub(crate) fn quintic_jet_bspline<const N: usize, T>(
     drop(controls);
     drop(controls_reservation);
     output_storage.commit()?;
-    Ok(Some((full_knots, finite_controls)))
+    Ok(Some(finite_controls))
 }
 
 pub(crate) fn pole_count(
@@ -995,6 +1016,39 @@ mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "catia quintic jet controls")
         );
+    }
+
+    #[test]
+    fn quintic_controls_only_retains_the_selected_representation() {
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::quintic_jet_controls(
+                ctx,
+                5,
+                &[0.0, 1.0],
+                &[[0.0, 0.0], [1.0, 0.0]],
+                &[[1.0, 0.0]; 2],
+                &[[0.0, 0.0]; 2],
+                cadmpeg_ir::units::FiniteVector::new,
+            )
+        };
+        let controls = crate::test_support::with_retained_limit(6 * 16, run)
+            .expect("six two-coordinate controls retain 96 bytes")
+            .expect("valid jet");
+        let (knots, full_controls) = crate::test_support::with_service_context(|ctx| {
+            super::quintic_jet_bspline(
+                ctx,
+                5,
+                &[0.0, 1.0],
+                &[[0.0, 0.0], [1.0, 0.0]],
+                &[[1.0, 0.0]; 2],
+                &[[0.0, 0.0]; 2],
+                cadmpeg_ir::units::FiniteVector::new,
+            )
+        })
+        .expect("full jet admission")
+        .expect("valid jet");
+        assert_eq!(controls, full_controls);
+        assert_eq!(knots, [vec![0.0; 6], vec![1.0; 6]].concat());
     }
 
     #[test]

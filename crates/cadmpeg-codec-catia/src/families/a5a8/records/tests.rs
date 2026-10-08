@@ -1874,11 +1874,29 @@ fn a5_rolling_ball_limit_refuses_jet_and_pole_allocations() {
 }
 
 #[test]
+fn a8_pcurve_bspline_retains_only_final_lanes() {
+    let [jet] = parsed_a8_pcurves(&a8_pcurve_stream())
+        .try_into()
+        .expect("one jet");
+    let result =
+        crate::test_support::with_retained_limit(12 * 8 + 6 * 16, |ctx| jet.bspline(ctx, true))
+            .expect("twelve knots and six UV controls fit 192 retained bytes")
+            .expect("valid jet");
+    assert_eq!(result.0.len(), 12);
+    assert_eq!(result.1.len(), 6);
+    let result = crate::test_support::with_retained_limit(6 * 16, |ctx| jet.bspline(ctx, false))
+        .expect("controls-only output retains 96 bytes")
+        .expect("valid jet");
+    assert!(result.0.is_empty());
+    assert_eq!(result.1.len(), 6);
+}
+
+#[test]
 fn a8_pcurve_bspline_refuses_nested_jet_allocations() {
     let [jet] = parsed_a8_pcurves(&a8_pcurve_stream())
         .try_into()
         .expect("one A8 pcurve jet");
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| jet.bspline(ctx);
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| jet.bspline(ctx, true);
     assert!(crate::test_support::with_service_context(run)
         .expect("service resource budget")
         .is_some());
