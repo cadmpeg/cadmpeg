@@ -509,9 +509,7 @@ impl ProteinAdmission for StandardAdmission {
     }
 
     fn format_ceiling(self, operation: &'static str, limit: u64, requested: u64) -> CodecError {
-        CodecError::malformed(format_args!(
-            "{operation} requests {requested}, above the format limit {limit}"
-        ))
+        cadmpeg_core::decode::refuse_local_limit(operation, limit, requested)
     }
 
     fn collect_indexed<T>(
