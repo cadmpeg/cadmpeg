@@ -160,3 +160,57 @@ fn live_annotation_lookup_scales_with_tree_depth() {
         .exactness()
         .contains_key("nx:model:point#absent"));
 }
+
+#[test]
+fn annotation_identity_retention_walks_ordered_keys_once() {
+    let names: Vec<_> = (0..10_000).map(|i| format!("id{i:05}")).collect();
+    let ids: std::collections::BTreeSet<_> = names.iter().map(String::as_str).collect();
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 200_000,
+        |ctx| {
+            let mut cursor = ids.iter().peekable();
+            for id in &names {
+                assert!(super::ordered_live_identity_contains(ctx, &mut cursor, id).unwrap());
+            }
+            assert!(!super::ordered_live_identity_contains(ctx, &mut cursor, "id99999").unwrap());
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
+}
+
+#[test]
+fn annotation_identity_cursor_preserves_sorted_keep_decisions() {
+    let ids: std::collections::BTreeSet<_> = ["b", "d", "f"].into_iter().collect();
+    crate::test_support::with_decode_context(|ctx| {
+        let mut cursor = ids.iter().peekable();
+        for (id, expected) in [
+            ("a", false),
+            ("b", true),
+            ("b", true),
+            ("c", false),
+            ("d", true),
+            ("e", false),
+            ("f", true),
+            ("g", false),
+        ] {
+            assert_eq!(
+                super::ordered_live_identity_contains(ctx, &mut cursor, id).unwrap(),
+                expected,
+                "{id}"
+            );
+        }
+    });
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            let mut cursor = ids.iter().peekable();
+            let error = super::ordered_live_identity_contains(ctx, &mut cursor, "b").unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "nx annotation identity lookup" && ctx.resource_refusal() == Some(limit))
+            );
+        },
+    );
+}

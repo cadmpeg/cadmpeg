@@ -1824,7 +1824,7 @@ fn retain_live_annotations(
     macro_rules! add_ids {
         ($($arena:expr),+ $(,)?) => {
             $(for entity in &$arena {
-                ctx.insert_btree_set(&mut ids, ctx.copy_retained_text(entity.id.as_str(), "nx live annotation identity text")?, "nx live annotation identities")?;
+                ctx.insert_btree_set(&mut ids, entity.id.as_str(), "nx live annotation identities")?;
             })+
         };
     }
@@ -1848,35 +1848,46 @@ fn retain_live_annotations(
     for unknown in unknowns {
         ctx.insert_btree_set(
             &mut ids,
-            ctx.copy_retained_text(unknown.id().as_str(), "nx live annotation identity text")?,
+            unknown.id().as_str(),
             "nx live annotation identities",
         )?;
     }
-    let mut keep = |id: &str| {
-        // A B-tree search compares at most the node width at each level.
-        // Twelve comparisons per binary level bounds Rust's eleven-key nodes.
-        let comparisons = 12
-            * u64::from(
-                u64::BITS - cadmpeg_core::decode::u64_from_index(ids.len()).leading_zeros(),
-            );
-        let work = comparisons
-            .checked_add(1)
-            .and_then(|count| {
-                cadmpeg_core::decode::u64_from_index(id.len())
-                    .checked_add(1)
-                    .and_then(|bytes| count.checked_mul(bytes))
-            })
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("nx annotation identity lookup", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(work, "nx annotation identity lookup")?;
-        Ok(ids.contains(id))
-    };
-    annotations.retain_provenance(ctx, &mut keep)?;
+    let mut live_ids = ids.iter().peekable();
+    annotations.retain_provenance(ctx, |id| {
+        ordered_live_identity_contains(ctx, &mut live_ids, id)
+    })?;
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-    builder.retain_exactness(ctx, keep)?;
+    let mut live_ids = ids.iter().peekable();
+    builder.retain_exactness(ctx, |id| {
+        ordered_live_identity_contains(ctx, &mut live_ids, id)
+    })?;
     *annotations = builder.build();
     Ok(())
+}
+
+/// Annotation retention visits B-tree keys in order. Advance the live identity
+/// cursor in that same order; each comparison is billed once, without copying
+/// model identities or restarting an indexed search for each annotation.
+fn ordered_live_identity_contains(
+    ctx: &DecodeContext<'_>,
+    live_ids: &mut std::iter::Peekable<std::collections::btree_set::Iter<'_, &str>>,
+    id: &str,
+) -> Result<bool, CodecError> {
+    loop {
+        let Some(&&live_id) = live_ids.peek() else {
+            ctx.charge_work(1, "nx annotation identity lookup")?;
+            return Ok(false);
+        };
+        let work = cadmpeg_core::decode::u64_from_index(live_id.len().min(id.len())) + 1;
+        ctx.charge_work(work, "nx annotation identity lookup")?;
+        match live_id.cmp(id) {
+            std::cmp::Ordering::Less => {
+                live_ids.next();
+            }
+            std::cmp::Ordering::Equal => return Ok(true),
+            std::cmp::Ordering::Greater => return Ok(false),
+        }
+    }
 }
 
 fn retain_live_unknown_links(

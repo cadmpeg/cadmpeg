@@ -1426,3 +1426,26 @@ fn topology_field_tolerances_require_finite_native_values() {
             .is_finite());
     });
 }
+
+#[test]
+fn identical_domain_selection_materializes_node_payloads_once() {
+    let mut stream = Vec::new();
+    for xmt in 100..200 {
+        let mut point = record(29, 40);
+        put_ref(&mut point, 2, xmt);
+        put_vec3(&mut point, 16, [0.01, 0.02, 0.03]);
+        stream.extend(point);
+    }
+    crate::test_support::with_decode_context_over(
+        &stream,
+        |policy| policy.limits.max_collection_items = 6000,
+        |ctx| {
+            let graph = Graph::parse(ctx, &stream).unwrap();
+            assert_eq!(graph.kind_count(NodeKind::Point), 100);
+            for xmt in 100..200 {
+                assert!(graph.get(NodeKind::Point, xmt).is_some());
+            }
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
+}

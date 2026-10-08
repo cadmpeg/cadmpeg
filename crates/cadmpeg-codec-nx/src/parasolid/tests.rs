@@ -810,3 +810,47 @@ fn structural_entity_references_do_not_own_value_records() {
         assert!(owned.contains(&value_offset));
     });
 }
+
+#[test]
+fn value_ownership_membership_uses_the_identity_index() {
+    let references = (0..10_000).collect();
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 400,
+        |ctx| {
+            assert!(super::value_is_referenced(
+                ctx,
+                &references,
+                1234,
+                "resolve NX value ownership"
+            )
+            .unwrap());
+            assert!(!super::value_is_referenced(
+                ctx,
+                &references,
+                20_000,
+                "resolve NX field-name ownership"
+            )
+            .unwrap());
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
+}
+
+#[test]
+fn value_ownership_membership_keeps_the_session_work_fuse() {
+    let references = [1234].into_iter().collect();
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            let error =
+                super::value_is_referenced(ctx, &references, 1234, "resolve NX value ownership")
+                    .unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "resolve NX value ownership" && ctx.resource_refusal() == Some(limit))
+            );
+        },
+    );
+}

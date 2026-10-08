@@ -285,6 +285,18 @@ enum ValueMultiplicity {
     HistoricalEvents,
 }
 
+fn value_is_referenced(
+    ctx: &DecodeContext<'_>,
+    references: &BTreeSet<u32>,
+    xmt: u32,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    // Twelve comparisons per binary level bound eleven-key B-tree nodes.
+    let comparisons = 12 * u64::from(usize::BITS - references.len().leading_zeros());
+    ctx.charge_work(comparisons + 1, operation)?;
+    Ok(references.contains(&xmt))
+}
+
 fn referenced_value_offsets<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
@@ -295,11 +307,7 @@ fn referenced_value_offsets<'ctx>(
     let mut offsets = Vec::new();
     let mut reservation = ctx.reserve_scoped(0, "NX value owner offsets")?;
     for (xmt, positions) in candidates {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(references.len()),
-            "resolve NX value ownership",
-        )?;
-        if !references.contains(&xmt)
+        if !value_is_referenced(ctx, &references, xmt, "resolve NX value ownership")?
             || (multiplicity == ValueMultiplicity::UniqueSnapshot && positions.len() != 1)
         {
             continue;
@@ -419,12 +427,12 @@ fn referenced_value_xmts<'ctx>(
         }
     }
     for (xmt, records) in field_names {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(referenced_lists.len()),
+        if !value_is_referenced(
+            ctx,
+            &referenced_lists,
+            xmt,
             "resolve NX field-name ownership",
-        )?;
-        if !referenced_lists.contains(&xmt)
-            || (multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1)
+        )? || (multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1)
         {
             continue;
         }

@@ -951,8 +951,16 @@ impl Graph {
 impl Graph {
     /// Parse supported fixed-record nodes from a neutral-binary stream.
     pub(crate) fn parse(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Self, CodecError> {
-        let (mut baseline, mut baseline_bytes) = Self::parse_fixed_records(ctx, stream, false)?;
-        let (full_domain, full_domain_bytes) = Self::parse_fixed_records(ctx, stream, true)?;
+        let baseline_records = Self::select_fixed_records(ctx, stream, false)?;
+        let full_records = Self::select_fixed_records(ctx, stream, true)?;
+        if full_records.matches_selection(ctx, &baseline_records)? {
+            drop(full_records);
+            let (baseline, baseline_bytes) = baseline_records.materialize(ctx, stream)?;
+            baseline_bytes.commit()?;
+            return Ok(baseline);
+        }
+        let (mut baseline, mut baseline_bytes) = baseline_records.materialize(ctx, stream)?;
+        let (full_domain, full_domain_bytes) = full_records.materialize(ctx, stream)?;
         let preserves_baseline = baseline.nodes.iter().all(|(key, node)| {
             full_domain.nodes.get(key).is_some_and(|candidate| {
                 candidate.pos() == node.pos() && candidate.bytes == node.bytes
@@ -1052,11 +1060,11 @@ impl Graph {
         Ok(())
     }
 
-    fn parse_fixed_records<'ctx>(
+    fn select_fixed_records<'ctx>(
         ctx: &'ctx DecodeContext<'_>,
         stream: &[u8],
         full_node_id_domain: bool,
-    ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
+    ) -> Result<FixedRecordSelection<'ctx>, CodecError> {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();
         let mut candidate_reservation = ctx.reserve_scoped(0, "NX topology candidates")?;
@@ -1105,7 +1113,7 @@ impl Graph {
         // node and make otherwise stable identities depend on unrelated bytes.
         let (non_overlapping, _non_overlapping_reservation) =
             Self::select_non_overlapping_candidates(ctx, stream, candidates)?;
-        let (selected, _selected_reservation) =
+        let (selected, selected_reservation) =
             Self::select_unique_candidates(ctx, non_overlapping)?;
         // BODY and REGION carry ownership identity only. Their opaque fixed
         // payloads can contain complete-looking typed tags, so they are
@@ -1117,26 +1125,14 @@ impl Graph {
             Self::select_non_overlapping_candidates(ctx, stream, ownership_candidates)?;
         let (ownership, _ownership_unique_reservation) =
             Self::select_unique_candidates(ctx, non_overlapping_ownership)?;
-        let (admitted_ownership, _admitted_reservation) =
+        let (admitted_ownership, admitted_reservation) =
             Self::admit_disjoint_ownership(ctx, ownership, &selected)?;
-        let mut graph = Self::default();
-        let mut node_reservation = ctx.reserve_scoped(0, "NX topology node bytes")?;
-        for candidate in selected.into_iter().chain(admitted_ownership) {
-            let Some(node) = candidate.materialize(ctx, &mut node_reservation, stream)? else {
-                continue;
-            };
-            let key = (node.kind, node.xmt());
-            ctx.charge_collection_items(2, "NX topology node indices")?;
-            graph.by_pos.insert(node.pos(), key);
-            graph.nodes.insert(key, node);
-        }
-        for &key in graph.by_pos.values() {
-            ctx.admit_btree_entry(&graph.by_kind, &key.0, "NX topology kind indices")?;
-            let keys = graph.by_kind.entry(key.0).or_default();
-            ctx.reserve_vec(keys, 1, "NX topology kind entries")?;
-            keys.push(key);
-        }
-        Ok((graph, node_reservation))
+        Ok(FixedRecordSelection {
+            typed: selected,
+            ownership: admitted_ownership,
+            _typed_reservation: selected_reservation,
+            _ownership_reservation: admitted_reservation,
+        })
     }
 
     fn admit_disjoint_ownership<'ctx>(
@@ -1893,7 +1889,64 @@ impl ReferenceRole {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+/// Selected spans retain their allocation admission until materialization.
+struct FixedRecordSelection<'ctx> {
+    typed: Vec<NodeCandidate>,
+    ownership: Vec<NodeCandidate>,
+    _typed_reservation: ScopedReservation<'ctx>,
+    _ownership_reservation: ScopedReservation<'ctx>,
+}
+
+impl<'ctx> FixedRecordSelection<'ctx> {
+    fn matches_selection(&self, ctx: &DecodeContext<'_>, other: &Self) -> Result<bool, CodecError> {
+        ctx.charge_work(0, "compare NX topology domain selection")?;
+        if self.typed.len() != other.typed.len() || self.ownership.len() != other.ownership.len() {
+            return Ok(false);
+        }
+        // Identity selection sorts each family by kind and XMT. Equal spans
+        // and framing shifts therefore establish equal nodes without copying
+        // payload bytes or constructing graph indices.
+        for (left, right) in self
+            .typed
+            .iter()
+            .chain(&self.ownership)
+            .zip(other.typed.iter().chain(&other.ownership))
+        {
+            ctx.charge_work(5, "compare NX topology domain selection")?;
+            if left != right {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn materialize(
+        self,
+        ctx: &'ctx DecodeContext<'_>,
+        stream: &[u8],
+    ) -> Result<(Graph, ScopedReservation<'ctx>), CodecError> {
+        let mut graph = Graph::default();
+        let mut node_reservation = ctx.reserve_scoped(0, "NX topology node bytes")?;
+        for candidate in self.typed.into_iter().chain(self.ownership) {
+            let Some(node) = candidate.materialize(ctx, &mut node_reservation, stream)? else {
+                continue;
+            };
+            let key = (node.kind, node.xmt());
+            ctx.charge_collection_items(2, "NX topology node indices")?;
+            graph.by_pos.insert(node.pos(), key);
+            graph.nodes.insert(key, node);
+        }
+        for &key in graph.by_pos.values() {
+            ctx.admit_btree_entry(&graph.by_kind, &key.0, "NX topology kind indices")?;
+            let keys = graph.by_kind.entry(key.0).or_default();
+            ctx.reserve_vec(keys, 1, "NX topology kind entries")?;
+            keys.push(key);
+        }
+        Ok((graph, node_reservation))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct NodeCandidate {
     kind: NodeKind,
     xmt: NonNullXmt,
