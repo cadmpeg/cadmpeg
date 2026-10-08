@@ -290,22 +290,33 @@ fn single_parameter_scalar<'s>(
     ctx: &DecodeContext<'_>,
     scalars: &[&'s FeatureInputScalar],
 ) -> Result<Option<&'s FeatureInputScalar>, CodecError> {
+    let candidates = ctx
+        .admit_iter(scalars, "select SLDPRT parameter scalar")?
+        .map(|scalar| (scalar.role, *scalar));
+    Ok(single_scalar_candidate(candidates))
+}
+
+/// Selects exactly one Driving candidate, or exactly one Native candidate
+/// when there are no Driving candidates. Display candidates do not participate.
+fn single_scalar_candidate<T: Copy>(
+    candidates: impl IntoIterator<Item = (FeatureInputScalarRole, T)>,
+) -> Option<T> {
     // `None` before the first scalar of a role, then the one scalar, then
     // `Some(None)` once a second appears.
-    let mut driving: Option<Option<&FeatureInputScalar>> = None;
-    let mut native: Option<Option<&FeatureInputScalar>> = None;
-    for &scalar in ctx.admit_iter(scalars, "select SLDPRT parameter scalar")? {
-        let slot = match scalar.role {
+    let mut driving: Option<Option<T>> = None;
+    let mut native: Option<Option<T>> = None;
+    for (role, candidate) in candidates {
+        let slot = match role {
             FeatureInputScalarRole::Driving => &mut driving,
             FeatureInputScalarRole::Native => &mut native,
             FeatureInputScalarRole::Display => continue,
         };
-        *slot = Some(slot.is_none().then_some(scalar));
+        *slot = Some(slot.is_none().then_some(candidate));
     }
-    Ok(match driving {
+    match driving {
         Some(single) => single,
         None => native.flatten(),
-    })
+    }
 }
 
 /// The unit each scalar's parameter class or relation declares, by scalar id.
@@ -634,10 +645,6 @@ pub(crate) fn sync_changed_feature_scalars(
                             slot.insert(indexed)
                         }
                     };
-                let mut driving = None;
-                let mut native = None;
-                let mut driving_count = 0usize;
-                let mut native_count = 0usize;
                 if !ctx.contains_btree_set(sorted_unowned, name.as_str(), OPERATION)? {
                     if let Some(unowned) =
                         ctx.get_mut_btree_map(scalar_index, &(None, name.as_str()), OPERATION)?
@@ -678,29 +685,14 @@ pub(crate) fn sync_changed_feature_scalars(
                     )?,
                     None => unowned.len(),
                 };
-                for &scalar_index in ctx
+                let candidates = ctx
                     .admit_iter(owned, OPERATION)?
-                    .chain(ctx.admit_iter(unowned.get(first..last).unwrap_or_default(), OPERATION)?)
-                {
-                    let scalar = &lane.scalars[scalar_index];
-                    match scalar.role {
-                        FeatureInputScalarRole::Driving => {
-                            driving = Some(scalar_index);
-                            driving_count += 1;
-                        }
-                        FeatureInputScalarRole::Native => {
-                            native = Some(scalar_index);
-                            native_count += 1;
-                        }
-                        FeatureInputScalarRole::Display => {}
-                    }
-                }
-                let scalar_index = match (driving_count, native_count) {
-                    (1, _) => driving,
-                    (0, 1) => native,
-                    _ => None,
-                };
-                let Some(scalar_index) = scalar_index else {
+                    .chain(ctx.admit_iter(
+                        unowned.get(first..last).unwrap_or_default(),
+                        OPERATION,
+                    )?)
+                    .map(|&scalar_index| (lane.scalars[scalar_index].role, scalar_index));
+                let Some(scalar_index) = single_scalar_candidate(candidates) else {
                     continue;
                 };
                 let value = match crate::history::parameters::parse_native_parameter_literal(
@@ -727,7 +719,10 @@ pub(crate) fn sync_changed_feature_scalars(
                     "SLDPRT scalar offset exceeds address space".into(),
                 )
             })?;
-            let bytes = if let Some(bytes) = lane.native_payload.get_mut(offset..offset + 8) {
+            let bytes = if let Some(bytes) = offset
+                .checked_add(8)
+                .and_then(|end| lane.native_payload.get_mut(offset..end))
+            {
                 bytes
             } else {
                 let message = ctx.format_retained(

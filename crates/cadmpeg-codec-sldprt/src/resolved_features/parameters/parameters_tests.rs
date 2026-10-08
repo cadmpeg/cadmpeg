@@ -100,6 +100,24 @@ fn parameter_limit_error(
 }
 
 #[test]
+fn scalar_role_selection_preserves_priority_and_ambiguity() {
+    use super::single_scalar_candidate;
+
+    use FeatureInputScalarRole::{Display, Driving, Native};
+    assert_eq!(
+        single_scalar_candidate([(Native, 1), (Driving, 2), (Display, 3)]),
+        Some(2)
+    );
+    assert_eq!(
+        single_scalar_candidate([(Native, 1), (Driving, 2), (Driving, 3)]),
+        None
+    );
+    assert_eq!(single_scalar_candidate([(Native, 1)]), Some(1));
+    assert_eq!(single_scalar_candidate([(Native, 1), (Native, 2)]), None);
+    assert_eq!(single_scalar_candidate([(Display, 1)]), None);
+}
+
+#[test]
 fn parameter_enrichment_refuses_collection_limit() {
     let error = parameter_limit_error(|limits| limits.max_collection_items = 1);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
@@ -536,4 +554,92 @@ fn scalar_synchronization_keeps_named_owners_and_strict_offset_ranges() {
     crate::test_support::work_refusal_at("sort SLDPRT unowned scalar updates", |ctx| {
         sync_changed_feature_scalars(ctx, &histories, &mut [input.clone()], &changed)
     });
+}
+
+
+#[test]
+fn scalar_update_rejects_max_addressable_offset_with_original_message() {
+    let (mut histories, mut lane) = parameter_limit_fixture();
+    let parameter = cadmpeg_core::nonblank_literal!("D1");
+    histories[0].features[0]
+        .parameters
+        .insert(parameter.clone(), "8.0".into());
+    lane.scalars[0].offset = u64::try_from(usize::MAX).unwrap();
+    lane.scalars[0].id = "forged-max-offset".into();
+    let changed = HashSet::from([("feature".into(), parameter)]);
+
+    let error = sync_changed_feature_scalars(
+        &cadmpeg_test_support::service_decode_context(),
+        &histories,
+        std::slice::from_mut(&mut lane),
+        &changed,
+    )
+    .expect_err("max-addressable scalar offset lies outside the payload");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::Malformed(message)
+            if message == "SLDPRT scalar forged-max-offset lies outside its payload"
+    ));
+}
+
+#[test]
+fn scalar_update_error_text_refusal_is_named_and_sticky() {
+    use cadmpeg_core::decode::ResourceDimension;
+    const OPERATION: &str = "format SLDPRT scalar update error";
+
+    let (mut histories, lane) = parameter_limit_fixture();
+    let parameter = cadmpeg_core::nonblank_literal!("D1");
+    histories[0].features[0]
+        .parameters
+        .insert(parameter.clone(), "8.0".into());
+    let scalar_id = "unbounded-scalar-id-".repeat(8);
+    let mut lane = lane;
+    lane.scalars[0].offset = u64::try_from(usize::MAX).unwrap();
+    lane.scalars[0].id = scalar_id.clone();
+    let changed = HashSet::from([("feature".into(), parameter)]);
+
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        OPERATION,
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &lane.native_payload,
+                &arena,
+                &policy,
+            )
+            .unwrap();
+            let mut input = lane.clone();
+            let refusal = sync_changed_feature_scalars(
+                &ctx,
+                &histories,
+                std::slice::from_mut(&mut input),
+                &changed,
+            )
+            .expect_err("formatting the out-of-range scalar identity must be admitted");
+            let cadmpeg_core::CodecError::ResourceLimit(first) = refusal else {
+                panic!("expected retained-byte refusal: {refusal:?}");
+            };
+            assert_eq!(first.operation, OPERATION);
+            let cadmpeg_core::CodecError::ResourceLimit(repeated) = ctx
+                .charge_work(0, "check sticky scalar update refusal")
+                .expect_err("the formatting refusal must fuse the session")
+            else {
+                panic!("expected sticky refusal");
+            };
+            assert_eq!(first, repeated);
+            Err::<(), _>(cadmpeg_core::CodecError::ResourceLimit(first))
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected named scalar error formatting refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, OPERATION);
+    assert_eq!(
+        limit.additional,
+        u64::try_from(format!("SLDPRT scalar {scalar_id} lies outside its payload").len()).unwrap()
+    );
 }
