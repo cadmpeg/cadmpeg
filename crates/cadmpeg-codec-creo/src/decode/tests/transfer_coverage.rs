@@ -80,40 +80,37 @@ fn curve_coverage_with_limit(
 
 #[test]
 fn curve_coverage_refuses_unique_count_node() {
-    assert_collection_refusal(&curve_coverage_with_limit(0), "creo unique-row count nodes");
+    assert_collection_refusal(&curve_coverage_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo unique-row count nodes"), curve_coverage_with_limit)), "creo unique-row count nodes");
 }
 
 #[test]
 fn curve_coverage_refuses_unique_projection() {
-    assert_collection_refusal(&curve_coverage_with_limit(2), "creo unique-row projection");
+    assert_collection_refusal(&curve_coverage_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo unique-row projection"), curve_coverage_with_limit)), "creo unique-row projection");
 }
 
 #[test]
 fn curve_coverage_refuses_transferred_id_node() {
     assert_collection_refusal(
-        &curve_coverage_with_limit(4),
-        "creo transferred curve ID nodes",
+        &curve_coverage_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo transferred curve ID nodes"), curve_coverage_with_limit)), "creo transferred curve ID nodes",
     );
 }
 
 #[test]
 fn curve_coverage_refuses_unknown_id_node() {
-    assert_collection_refusal(&curve_coverage_with_limit(5), "creo unknown curve ID nodes");
+    assert_collection_refusal(&curve_coverage_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo unknown curve ID nodes"), curve_coverage_with_limit)), "creo unknown curve ID nodes");
 }
 
 #[test]
 fn curve_coverage_refuses_type_node() {
     assert_collection_refusal(
-        &curve_coverage_with_limit(6),
-        "creo curve coverage type nodes",
+        &curve_coverage_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo curve coverage type nodes"), curve_coverage_with_limit)), "creo curve coverage type nodes",
     );
 }
 
 #[test]
 fn curve_coverage_refuses_unknown_type_node() {
     assert_collection_refusal(
-        &curve_coverage_with_limit(7),
-        "creo curve coverage unknown type nodes",
+        &curve_coverage_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo curve coverage unknown type nodes"), curve_coverage_with_limit)), "creo curve coverage unknown type nodes",
     );
 }
 
@@ -197,48 +194,42 @@ fn surface_coverage_with_limit(
 #[test]
 fn surface_coverage_refuses_unique_count_node() {
     assert_collection_refusal(
-        &surface_coverage_with_limit(0),
-        "creo unique-row count nodes",
+        &surface_coverage_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo unique-row count nodes"), surface_coverage_with_limit)), "creo unique-row count nodes",
     );
 }
 
 #[test]
 fn surface_coverage_refuses_unique_projection() {
     assert_collection_refusal(
-        &surface_coverage_with_limit(2),
-        "creo unique-row projection",
+        &surface_coverage_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo unique-row projection"), surface_coverage_with_limit)), "creo unique-row projection",
     );
 }
 
 #[test]
 fn surface_coverage_refuses_extrusion_construction_node() {
     assert_collection_refusal(
-        &surface_coverage_with_limit(4),
-        "creo extrusion construction nodes",
+        &surface_coverage_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo extrusion construction nodes"), surface_coverage_with_limit)), "creo extrusion construction nodes",
     );
 }
 
 #[test]
 fn surface_coverage_refuses_extrusion_surface_node() {
     assert_collection_refusal(
-        &surface_coverage_with_limit(5),
-        "creo extrusion surface nodes",
+        &surface_coverage_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo extrusion surface nodes"), surface_coverage_with_limit)), "creo extrusion surface nodes",
     );
 }
 
 #[test]
 fn surface_coverage_refuses_transferred_row() {
     assert_collection_refusal(
-        &surface_coverage_with_limit(6),
-        "creo transferred surface rows",
+        &surface_coverage_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo transferred surface rows"), surface_coverage_with_limit)), "creo transferred surface rows",
     );
 }
 
 #[test]
 fn surface_coverage_refuses_unknown_id_node() {
     assert_collection_refusal(
-        &surface_coverage_with_limit(7),
-        "creo unknown surface ID nodes",
+        &surface_coverage_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo unknown surface ID nodes"), surface_coverage_with_limit)), "creo unknown surface ID nodes",
     );
 }
 
@@ -287,16 +278,14 @@ fn constraint_coverage_with_limit(
 #[test]
 fn constraint_coverage_refuses_native_kind_node() {
     assert_collection_refusal(
-        &constraint_coverage_with_limit(0),
-        "creo native constraint kind nodes",
+        &constraint_coverage_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo native constraint kind nodes"), constraint_coverage_with_limit)), "creo native constraint kind nodes",
     );
 }
 
 #[test]
 fn constraint_coverage_refuses_active_native_kind_node() {
     assert_collection_refusal(
-        &constraint_coverage_with_limit(1),
-        "creo active native constraint kind nodes",
+        &constraint_coverage_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo active native constraint kind nodes"), constraint_coverage_with_limit)), "creo active native constraint kind nodes",
     );
 }
 
