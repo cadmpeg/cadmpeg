@@ -19,6 +19,9 @@ pub(super) fn feature_definition_has_sketch_design(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if definition.variables.is_some()
         || definition.segments.is_some()
         || definition.trim_entities.is_some()

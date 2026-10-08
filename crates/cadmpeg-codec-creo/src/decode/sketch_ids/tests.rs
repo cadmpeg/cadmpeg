@@ -343,6 +343,29 @@ fn trim_vertices(buckets: Vec<FeatureTrimBucket>) -> FeatureTrimVertexTable {
     }
 }
 
+#[test]
+fn sketch_design_presence_is_free_and_preserves_original_refusal() {
+    let mut definition = definition();
+    definition.body = vec![0; 64];
+    definition.trim_entities = Some(trim_entities(Vec::new()));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(super::feature_definition_has_sketch_design(&ctx, &definition)
+        .expect("present table avoids body scan"));
+    let original = ctx.charge_work_limit(1, "prior sketch presence refusal")
+        .expect_err("seed refusal");
+    assert!(matches!(super::feature_definition_has_sketch_design(&ctx, &definition),
+        Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
+    definition.trim_entities = None;
+    assert!(matches!(super::feature_definition_has_sketch_design(&ctx, &definition),
+        Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
+}
+
 fn limited_headers(
     definition: &FeatureDefinition,
     operation: &'static str,

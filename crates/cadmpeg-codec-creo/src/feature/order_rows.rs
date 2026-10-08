@@ -70,6 +70,9 @@ impl OrderRows {
         ctx: &DecodeContext<'_>,
         row: FeatureOrderRow,
     ) -> Result<bool, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         if self.by_external.contains_key(&row.external_id)
             || self.by_internal.contains_key(&row.internal_id)
         {
@@ -161,6 +164,54 @@ impl Extend<FeatureOrderRow> for OrderRows {
     fn extend<T: IntoIterator<Item = FeatureOrderRow>>(&mut self, rows: T) {
         for row in rows {
             self.push(row);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OrderRows;
+    use crate::feature::definitions::FeatureOrderRow;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn unique_order_insert_preserves_duplicates_and_original_refusal() {
+        let row = FeatureOrderRow {
+            external_id: 7,
+            internal_id: 1,
+            bitmask: 3,
+            offset: 11,
+        };
+        let mut rows = OrderRows::from(vec![row.clone()]);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        for duplicate in [
+            row.clone(),
+            FeatureOrderRow { internal_id: 2, ..row.clone() },
+            FeatureOrderRow { external_id: 8, ..row.clone() },
+        ] {
+            assert!(!rows.push_unique(&ctx, duplicate).expect("duplicate refused"));
+            assert_eq!(rows.as_slice(), std::slice::from_ref(&row));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let original = ctx.charge_work_limit(1, "prior order refusal").expect_err("seed refusal");
+        for candidate in [row.clone(), FeatureOrderRow {
+            external_id: 8,
+            internal_id: 2,
+            ..row.clone()
+        }] {
+            assert!(matches!(rows.push_unique(&ctx, candidate),
+                Err(CodecError::ResourceLimit(refusal)) if refusal == original));
+            assert_eq!(rows.as_slice(), std::slice::from_ref(&row));
+            assert_eq!(rows.by_internal(1), Some(&row));
+            assert_eq!(rows.by_external(7), Some(&row));
+            assert!(rows.by_internal(2).is_none());
+            assert!(rows.by_external(8).is_none());
         }
     }
 }
