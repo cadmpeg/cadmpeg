@@ -138,7 +138,9 @@ fn assert_empty_scan_work_refusal(operation: &str) {
     let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
     let (result, allocations) =
         crate::test_support::allocation::count_allocations(|| match operation {
-            "scan Parasolid spline arrays" => super::scan_arrays(&ctx, &body, None).map(|_| ()),
+            "scan Parasolid spline arrays" => {
+                super::scan_arrays(&ctx, &body, None, None).map(|_| ())
+            }
             "scan Parasolid curve descriptors" => {
                 super::scan_curve_descriptors(&ctx, &body).map(|_| ())
             }
