@@ -13,19 +13,19 @@ use crate::query_support::write;
 use crate::support::cadmpeg;
 
 const CHECK_REPORT: &str = r#"{
-  "ir_version": "7",
+  "ir_version": "6",
   "command": "check",
   "status": "ok",
   "refusal": null
 }"#;
 
 const SIDECAR: &str = r#"{
-  "ir_version": "7",
+  "ir_version": "6",
   "ir_sha256": "abc123"
 }"#;
 
 const BREP_DOC: &str = r#"{
-  "ir_version": "7",
+  "ir_version": "6",
   "model": {
     "bodies": [{"id": "body#1", "regions": ["region#1"]}],
     "regions": [{"id": "region#1", "shells": ["shell#1"]}],
@@ -35,7 +35,7 @@ const BREP_DOC: &str = r#"{
 }"#;
 
 const GRAPH_DOC: &str = r#"{
-  "ir_version": "7",
+  "ir_version": "6",
   "model": {
     "features": [
       {
