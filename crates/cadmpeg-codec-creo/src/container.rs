@@ -2515,8 +2515,11 @@ fn complete_feature_ids(
     mut structural: BTreeSet<u32>,
     additions: impl IntoIterator<Item = u32>,
 ) -> Result<Vec<u32>, CodecError> {
+    let mut index_storage = ctx.reserve_scoped(0, "creo complete feature index storage")?;
     for id in additions {
-        ctx.insert_btree_set(&mut structural, id, "creo complete feature ids")?;
+        index_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut structural, id, "creo complete feature ids")
+        })?;
     }
     let mut ordered = Vec::new();
     ctx.reserve_vec(&mut ordered, structural.len(), "creo ordered feature ids")?;
@@ -3905,8 +3908,10 @@ pub(crate) fn scan_bytes<'a>(
     let feature_operation_states = feature_operation_states(ctx, &sections)?;
     let feature_operations = feature_operations(ctx, &sections)?;
     let feature_reference_names = feature_reference_names(ctx, &sections)?;
-    let structural_feature_ids =
-        structural_feature_ids(ctx, &sections, &surface_rows, &curve_topology_rows)?;
+    let (structural_feature_ids, structural_feature_storage) = ctx
+        .with_scoped_storage("creo structural feature index storage", || {
+            structural_feature_ids(ctx, &sections, &surface_rows, &curve_topology_rows)
+        })?;
     let (candidate_feature_ids, candidate_feature_storage) =
         ctx.with_scoped_storage("creo candidate feature index storage", || {
             candidate_feature_ids(
@@ -3940,6 +3945,7 @@ pub(crate) fn scan_bytes<'a>(
         |row| feature_identity_index.contains(ctx, row, &structural_feature_ids),
         "creo feature identity row retention",
     )?;
+    drop(feature_identity_index);
     let feature_ids = complete_feature_ids(
         ctx,
         structural_feature_ids,
@@ -3949,6 +3955,7 @@ pub(crate) fn scan_bytes<'a>(
         )?
         .map(|row| row.feature_id),
     )?;
+    drop(structural_feature_storage);
     let feature_round_replay_scalars = feature::rows::round_replay_scalars(ctx, &feature_rows)?;
     let feature_choices = feature::rows::choices(ctx, &feature_rows)?;
     let feature_choice_fields = feature::rows::choice_fields(ctx, &feature_choices)?;

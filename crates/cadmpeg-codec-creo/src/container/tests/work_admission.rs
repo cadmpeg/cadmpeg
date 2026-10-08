@@ -316,3 +316,22 @@ fn primitive_scalar_merge_admits_the_decoded_rows() {
     );
     assert_eq!(scan.scalar_arrays.len(), 1);
 }
+
+#[test]
+fn completed_feature_ids_retain_only_the_ordered_output() {
+    let refusal = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo ordered feature ids",
+        |ctx| super::super::complete_feature_ids(ctx, std::collections::BTreeSet::new(), [4]),
+    );
+    let CodecError::ResourceLimit(resource) = refusal else {
+        panic!("ordered output refusal");
+    };
+    assert_eq!(resource.used, 0, "scratch nodes use no retained bytes");
+    let ids = crate::decode::with_test_decode_ctx(|ctx| {
+        super::super::complete_feature_ids(ctx, std::collections::BTreeSet::new(), [4])
+    })
+    .expect("one final feature ID");
+    assert_eq!(ids, [4]);
+}
