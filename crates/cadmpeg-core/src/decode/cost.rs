@@ -254,12 +254,21 @@ impl DecodeContext<'_> {
         let bytes = key.decode_cost(self, operation)?;
         self.charge_work(self.cost_product(bytes, comparisons, operation)?, operation)
     }
-    /// Bounds a B-tree lookup by eleven comparisons per node and log2(n)+1 nodes.
+    /// Bounds a B-tree lookup: at most eleven comparisons in each node on the
+    /// search path, and never more comparisons than stored keys.
     pub(crate) fn tree_comparisons(length: usize) -> u64 {
-        if length == 0 {
-            0
-        } else {
-            11 * (u64::from(length.ilog2()) + 1)
+        (11 * Self::tree_height(length)).min(u64_from_index(length))
+    }
+
+    /// The most levels a standard B-tree of `length` entries can have. Every
+    /// node but the root holds at least five keys and six children, so a tree
+    /// of h levels holds at least 2 * 6^(h-1) - 1 entries.
+    pub(crate) fn tree_height(length: usize) -> u64 {
+        // 2 * 6^(h-1) - 1 <= length exactly when 6^(h-1) <= (length + 1) / 2.
+        match u64_from_index(length).checked_add(1).map(|count| count / 2) {
+            Some(0) => 0,
+            Some(half) => u64::from(half.ilog(6)) + 1,
+            None => u64::from((u64::MAX / 2).ilog(6)) + 1,
         }
     }
 }

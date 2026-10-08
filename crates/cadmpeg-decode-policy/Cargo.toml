@@ -7,8 +7,12 @@ publish = false
 license = "Apache-2.0"
 
 [dev-dependencies]
+cadmpeg-container = { path = "../cadmpeg-container" }
+cadmpeg-core = { path = "../cadmpeg-core" }
+cadmpeg-ir = { path = "../cadmpeg-ir" }
 memchr = "=2.8.3"
 roxmltree = "=0.21.1"
+encoding_rs = "=0.8.35"
 serde_json = "=1.0.151"
 serde = { version = "=1.0.229", features = ["derive"] }
 

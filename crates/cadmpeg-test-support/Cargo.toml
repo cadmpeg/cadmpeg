@@ -11,7 +11,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-cadmpeg-core.workspace = true
+cadmpeg-core = { workspace = true, features = ["test-support"] }
 cadmpeg-ir.workspace = true
 serde.workspace = true
 serde_json.workspace = true
