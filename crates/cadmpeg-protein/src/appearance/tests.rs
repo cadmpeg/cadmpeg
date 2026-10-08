@@ -194,3 +194,33 @@ fn texture_projection_admits_work_before_searching_properties() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
+
+#[test]
+fn a_suffix_names_the_whole_property_or_an_underscore_qualified_one() {
+    for (id, matches) in [
+        ("UScale", true),
+        ("texture_UScale", true),
+        ("textureUScale", false),
+        ("UScale_x", false),
+    ] {
+        let mut record = float_record("UnifiedBitmapSchema", "UScale", 2.0);
+        let (_, property) = record.properties.pop_first().expect("float property");
+        record.properties.insert(id.into(), property);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("service root");
+        let value = super::finite_float_property(
+            &ctx,
+            &record,
+            "UScale",
+            cadmpeg_ir::scalar::FiniteReal::ONE,
+        )
+        .expect("service admission")
+        .get();
+        assert_eq!(value, if matches { 2.0 } else { 1.0 }, "{id}");
+    }
+}

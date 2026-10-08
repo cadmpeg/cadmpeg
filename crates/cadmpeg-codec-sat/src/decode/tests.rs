@@ -177,10 +177,11 @@ fn an_unverified_acis_binary_band_is_decoded_and_marked() {
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert!((sphere_radius(&result) - 25.0).abs() < 1.0e-9);
-    assert!(result.report().losses.iter().any(|loss| loss.code
-        == SatLossCode::SourceDialectUnverified
-            .kind(&cadmpeg_test_support::service_decode_context())
-            .expect("service loss code")));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::SourceDialectUnverified.kind()));
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.attributes["kernel_family"], "acis");
     assert_eq!(
@@ -195,10 +196,11 @@ fn an_unverified_acis_text_band_is_decoded_and_marked() {
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert!((sphere_radius(&result) - 25.0).abs() < 1.0e-9);
-    assert!(result.report().losses.iter().any(|loss| loss.code
-        == SatLossCode::SourceDialectUnverified
-            .kind(&cadmpeg_test_support::service_decode_context())
-            .expect("service loss code")));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::SourceDialectUnverified.kind()));
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.attributes["kernel_family"], "acis");
     assert_eq!(source.dialect().unwrap().declared()["encoding"], "text");
@@ -226,16 +228,8 @@ fn an_unverified_band_that_decodes_nothing_reports_honest_coverage() {
         .iter()
         .map(|loss| loss.code.clone())
         .collect::<Vec<_>>();
-    assert!(codes.contains(
-        &SatLossCode::SourceDialectUnverified
-            .kind(&cadmpeg_test_support::service_decode_context())
-            .expect("service loss code")
-    ));
-    assert!(codes.contains(
-        &SatLossCode::GeometryFramedWithoutCarriers
-            .kind(&cadmpeg_test_support::service_decode_context())
-            .expect("service loss code")
-    ));
+    assert!(codes.contains(&SatLossCode::SourceDialectUnverified.kind()));
+    assert!(codes.contains(&SatLossCode::GeometryFramedWithoutCarriers.kind()));
 }
 
 #[test]
@@ -343,12 +337,7 @@ fn a_geometry_less_text_stream_reports_uncovered_coverage() {
         .report()
         .losses
         .iter()
-        .find(|loss| {
-            loss.code
-                == SatLossCode::GeometryFramedWithoutCarriers
-                    .kind(&cadmpeg_test_support::service_decode_context())
-                    .expect("service loss code")
-        })
+        .find(|loss| loss.code == SatLossCode::GeometryFramedWithoutCarriers.kind())
         .expect("coverage loss");
     assert!(loss.message.contains("End-of-ACIS-data"));
 }
@@ -420,7 +409,7 @@ fn unknown_record_retention_preserves_its_resource_refusal() {
             &header,
             None,
             matched,
-            &kernel,
+            kernel,
         )
     })
     .expect_err("unknown link exceeds the remaining collection allowance");
@@ -485,7 +474,7 @@ fn sat_annotation_storage_uses_the_callers_collection_budget() {
             &header,
             None,
             matched,
-            &kernel,
+            kernel,
         )
     })
     .expect_err("annotation stream handle exceeds the preceding collection slots");

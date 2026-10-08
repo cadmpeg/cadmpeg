@@ -381,7 +381,7 @@ fn schema_connected_texture_vector_refuses_collection_limit() {
         texture_record(guid, "textures/a.png"),
         appearance_connected_to(guid),
     ];
-    let error = schema_appearance_error(&records, 4, u64::MAX);
+    let error = schema_appearance_error(&records, 3, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D connected textures")

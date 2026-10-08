@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, LayerInstance};
 use cadmpeg_core::CodecError;
 
@@ -47,31 +47,33 @@ pub fn find_schema_token<'a>(
     ctx: &DecodeContext<'_>,
     prologue: &'a [u8],
 ) -> Result<Option<SchemaToken<'a>>, CodecError> {
-    let width = std::num::NonZeroUsize::new(4)
-        .ok_or_else(|| CodecError::Malformed("Parasolid schema prefix width is zero".into()))?;
-    for (offset, bytes) in ctx
-        .admit_iter(prologue, "Parasolid schema marker search")?
-        .windows(width)
-        .enumerate()
-    {
-        if bytes != b"SCH_" {
-            continue;
-        }
-        let mut end = offset + 4;
-        loop {
-            ctx.charge_work(1, "Parasolid schema token extent")?;
-            if end == prologue.len()
-                || !(prologue[end].is_ascii_alphanumeric() || prologue[end] == b'_')
-            {
-                break;
+    ctx.find_map(
+        prologue.windows(SCHEMA_MARKER.len()).enumerate(),
+        |(offset, window)| {
+            if window != SCHEMA_MARKER {
+                return Ok(None);
             }
-            end += 1;
-        }
-        if let Some(token) = schema_token(ctx, prologue, offset, end)? {
-            return Ok(Some(token));
-        }
-    }
-    Ok(None)
+            let body = &prologue[offset + SCHEMA_MARKER.len()..];
+            let body_len = ctx
+                .position_by(
+                    body,
+                    |byte| Ok(!is_token_byte(*byte)),
+                    "Parasolid schema token extent",
+                )?
+                .unwrap_or(body.len());
+            // The extent search proved every byte a token byte, so the token
+            // is complete exactly when it has a byte after the marker.
+            if body_len == 0 {
+                return Ok(None);
+            }
+            let end = offset + SCHEMA_MARKER.len() + body_len;
+            Ok(ctx
+                .validate_utf8(&prologue[offset..end], "Parasolid schema token UTF-8")?
+                .ok()
+                .map(|value| SchemaToken { value, offset }))
+        },
+        "Parasolid schema marker search",
+    )
 }
 
 /// Find a complete schema token whose byte length immediately precedes it.
@@ -80,27 +82,26 @@ pub fn find_u8_length_prefixed_schema_token<'a>(
     ctx: &DecodeContext<'_>,
     prologue: &'a [u8],
 ) -> Result<Option<SchemaToken<'a>>, CodecError> {
-    let width = std::num::NonZeroUsize::new(4)
-        .ok_or_else(|| CodecError::Malformed("Parasolid schema prefix width is zero".into()))?;
-    for (offset, bytes) in ctx
-        .admit_iter(prologue, "Parasolid prefixed schema marker search")?
-        .windows(width)
-        .enumerate()
-    {
-        if bytes != b"SCH_" {
-            continue;
-        }
-        let Some(prefix) = offset.checked_sub(1).and_then(|index| prologue.get(index)) else {
-            continue;
-        };
-        let Some(end) = offset.checked_add(usize::from(*prefix)) else {
-            continue;
-        };
-        if let Some(token) = schema_token(ctx, prologue, offset, end)? {
-            return Ok(Some(token));
-        }
-    }
-    Ok(None)
+    ctx.find_map(
+        prologue.windows(SCHEMA_MARKER.len()).enumerate(),
+        |(offset, window)| {
+            if window != SCHEMA_MARKER {
+                return Ok(None);
+            }
+            let Some(prefix) = offset.checked_sub(1).and_then(|index| prologue.get(index)) else {
+                return Ok(None);
+            };
+            schema_token(ctx, prologue, offset, offset + usize::from(*prefix))
+        },
+        "Parasolid prefixed schema marker search",
+    )
+}
+
+/// The fixed four-byte marker that opens every schema token.
+const SCHEMA_MARKER: &[u8; 4] = b"SCH_";
+
+const fn is_token_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
 fn schema_token<'a>(
@@ -123,11 +124,13 @@ fn schema_token<'a>(
 
 /// The shared token grammar: `SCH_` and at least one more token byte.
 fn is_schema_token(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
-    Ok(bytes.len() > 4
-        && bytes.starts_with(b"SCH_")
-        && ctx
-            .admit_iter(bytes, "Parasolid schema token grammar")?
-            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_'))
+    Ok(bytes.len() > SCHEMA_MARKER.len()
+        && bytes.starts_with(SCHEMA_MARKER)
+        && ctx.all_by(
+            bytes,
+            |byte| Ok(is_token_byte(*byte)),
+            "Parasolid schema token grammar",
+        )?)
 }
 
 /// Text offered in the schema position that is not a Parasolid schema token.
@@ -344,12 +347,8 @@ pub fn extra_layers(
     } else {
         LayerInstance::Sole
     };
-    ctx.charge_work(
-        u64_from_index(streams.len()),
-        "scan Parasolid schema carriers",
-    )?;
     let mut layers = ctx.collection_vec(streams.len(), "collect Parasolid classified layers")?;
-    for (schema, carrier) in streams {
+    for (schema, carrier) in ctx.admit_iter(streams, "scan Parasolid schema carriers")? {
         layers.push(classify_layer(ctx, schema, carrier, instance, verified)?);
     }
     Ok(layers)
@@ -366,12 +365,7 @@ pub fn push_extras(
     extras: Vec<ClassifiedLayer>,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     let mut collisions = Vec::new();
-    let count = extras.len();
-    let mut extras = extras.into_iter();
-    for _ in ctx.admit_iter(&(0..count), "scan Parasolid extra layers")? {
-        let Some(layer) = extras.next() else {
-            break;
-        };
+    for layer in ctx.admit_iter(extras, "scan Parasolid extra layers")? {
         let ClassifiedLayer { matched, carrier } = layer;
         match layers.insert_for_decode(ctx, matched, "collect Parasolid dialect layers") {
             Ok(()) => {}
@@ -412,6 +406,8 @@ pub fn unverified_message(
         return Ok(None);
     }
 
+    // A Parasolid match declares exactly the schema and carrier keys
+    // `classify_layer` inserts, so each lookup compares fixed keys.
     let schema = matched
         .declared()
         .get(DECLARED_SCHEMA)
@@ -621,6 +617,33 @@ mod tests {
         .expect("the declared length bounds the token");
         assert_eq!(token.value(), "SCH_TEST");
         assert_eq!(token.end(), 16);
+    }
+
+    #[test]
+    fn schema_token_searches_pay_only_for_the_bytes_they_visit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let mut prologue = b"SCH_TEST\0".to_vec();
+        prologue.resize(1 << 20, 0);
+        let mut prefixed = b"\x08SCH_TEST".to_vec();
+        prefixed.resize(1 << 20, 0);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        assert_eq!(
+            find_schema_token(&ctx, &prologue)
+                .expect("an early token fits the budget")
+                .expect("token")
+                .value(),
+            "SCH_TEST"
+        );
+        assert_eq!(
+            find_u8_length_prefixed_schema_token(&ctx, &prefixed)
+                .expect("an early token fits the budget")
+                .expect("token")
+                .value(),
+            "SCH_TEST"
+        );
     }
 
     #[test]

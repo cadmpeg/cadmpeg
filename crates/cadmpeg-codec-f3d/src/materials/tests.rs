@@ -200,10 +200,13 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
     logical.extend_from_slice(&1_u32.to_le_bytes());
     lp_ascii(&mut logical, "");
 
-    let paged = crate::test_support::with_decode_context(|ctx| super::page_logical(ctx, &logical))
-        .expect("page catalog record");
-    let frames =
-        cadmpeg_protein::framing::record_frames_for_edit(&paged).expect("frame catalog pages");
+    let paged = super::page_logical(&logical).expect("page catalog record");
+    let frames = crate::test_support::with_decode_context(|ctx| {
+        cadmpeg_protein::framing::record_frames_admitted(ctx, &paged)
+            .expect("frame catalog pages")
+            .frames()
+            .to_vec()
+    });
     let [frame] = frames.as_slice() else {
         panic!("marker-shaped length prefix must remain inside one logical record")
     };
@@ -1781,8 +1784,7 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
     super::push_lp(&mut logical, "GenericSchema").unwrap();
     super::push_lp(&mut logical, guid).unwrap();
     logical.extend_from_slice(&u32::MAX.to_le_bytes());
-    let instance =
-        crate::test_support::with_decode_context(|ctx| super::page_logical(ctx, &logical)).unwrap();
+    let instance = super::page_logical(&logical).unwrap();
 
     let options = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
