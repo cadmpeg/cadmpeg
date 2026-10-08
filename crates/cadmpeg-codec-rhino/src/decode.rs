@@ -6555,10 +6555,10 @@ struct BrepCarrierInput<'a> {
 
 struct BrepCarrierDraft<'a> {
     staged: BrepDraft,
-    _storage: cadmpeg_core::decode::ScopedReservation<'a>,
     c3: HashMap<usize, cadmpeg_ir::ids::CurveId>,
     surfaces: HashMap<usize, StagedBrepSurface>,
     child_cause: Option<(String, cadmpeg_core::decode::ScopedReservation<'a>)>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'a>,
 }
 
 struct StagedBrepSurface {
@@ -8406,10 +8406,10 @@ fn stage_curve_tree(
 }
 
 struct DecodedPcurves<'a> {
-    _storage: cadmpeg_core::decode::ScopedReservation<'a>,
     ids: HashMap<usize, cadmpeg_ir::ids::PcurveId>,
     values: Vec<Pcurve>,
     warnings: Diagnostics,
+    _storage: cadmpeg_core::decode::ScopedReservation<'a>,
 }
 
 fn decode_pcurves<'a>(
