@@ -595,6 +595,8 @@ fn round_replay_token_end(ctx: &DecodeContext<'_>, body: &[u8], offset: usize, e
     let next = match head {
         0x19 | 0x28 | 0x32 | 0x37 | 0x41 => offset.checked_add(8),
         0x31 | 0x4f | 0x90 | 0xd5 | 0xd7 => offset.checked_add(7),
+        // The token is the head byte and one compact integer, so it ends where the
+        // compact integer ends.
         0x18 => Some(psb::compact_int(body, offset + 1).1),
         _ => match scalar::decode(body, offset) {
             Some((_, scalar_end)) => Some(scalar_end),

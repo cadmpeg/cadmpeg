@@ -6340,9 +6340,15 @@ fn surface_body_compound_close(
 }
 
 fn first_compound_close(ctx: &DecodeContext<'_>, payload: &[u8], start: usize, end: usize) -> Result<Option<usize>, CodecError> {
-    const OUTLINE_PAIR_CLOSE: &[u8] = &[0x00, 0x0c, 0x98, psb::token::COMPOUND_CLOSE];
+    const OUTLINE_PAIR_SEPARATOR: &[u8] = &[0x00, 0x0c, 0x98];
     let Some(body) = payload.get(start..end) else { return Ok(None); };
-    let separator_close = ctx.find_bytes(body, OUTLINE_PAIR_CLOSE, "creo PSB outline close scan")?.map(|offset| start + offset + OUTLINE_PAIR_CLOSE.len() - 1);
+    let separator_close = body
+        .windows(OUTLINE_PAIR_SEPARATOR.len() + 1)
+        .position(|window| {
+            window.starts_with(OUTLINE_PAIR_SEPARATOR)
+                && window.last() == Some(&psb::token::COMPOUND_CLOSE)
+        })
+        .map(|offset| start + offset + OUTLINE_PAIR_SEPARATOR.len());
     for token in psb::tokens(ctx, body) {
         let token = token?;
         match token.kind {
@@ -6353,7 +6359,6 @@ fn first_compound_close(ctx: &DecodeContext<'_>, payload: &[u8], start: usize, e
     }
     Ok(separator_close)
 }
-
 
 fn plane_local_system_compound_close(
     ctx: &DecodeContext<'_>,
