@@ -610,8 +610,7 @@ fn expanded_knots(
             })?;
         }
     }
-    storage.commit()?;
-    Ok(Some(out))
+    Ok(Some(storage.commit_value(out)?))
 }
 
 fn unique_knots(
@@ -1006,8 +1005,7 @@ fn homogeneous_poles(
             }
         }
     }
-    storage.commit()?;
-    Ok(Some(out))
+    Ok(Some(storage.commit_value(out)?))
 }
 
 fn homogeneous_grid_poles(
@@ -1075,8 +1073,7 @@ fn homogeneous_grid_poles(
             }
         }
     }
-    storage.commit()?;
-    Ok(Some(out))
+    Ok(Some(storage.commit_value(out)?))
 }
 
 /// Patch retained curve pole and knot arrays without changing their storage shape.
@@ -1413,10 +1410,7 @@ pub(crate) fn scan_curve_carriers(
         };
         drop(pole_storage);
         let nurbs = match nurbs {
-            Ok(nurbs) => {
-                carrier_storage.commit()?;
-                nurbs
-            }
+            Ok(nurbs) => carrier_storage.commit_value(nurbs)?,
             Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
                 return Err(limit.into())
             }
@@ -1869,10 +1863,7 @@ pub(crate) fn scan_surface_carriers(
         };
         drop(pole_storage);
         let nurbs = match nurbs {
-            Ok(nurbs) => {
-                carrier_storage.commit()?;
-                nurbs
-            }
+            Ok(nurbs) => carrier_storage.commit_value(nurbs)?,
             Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
                 return Err(limit.into())
             }

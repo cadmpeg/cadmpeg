@@ -533,12 +533,11 @@ fn solved_curve(
             return Ok(None);
         }
     };
-    geometry_storage.commit()?;
-    Ok(Some((
+    Ok(Some(geometry_storage.commit_value((
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
         parameters,
         reversed,
-    )))
+    ))?))
 }
 
 fn solved_support_uv(
