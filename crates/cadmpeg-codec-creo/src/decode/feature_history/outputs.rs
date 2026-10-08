@@ -104,39 +104,19 @@ fn feature_output_bodies_with_history(
             )? {
                 continue;
             }
-            let mut matching_shell = None;
-            for shell in ctx.admit_iter(&ir.model.shells, "creo generated face shell lookup")? {
-                if !ctx.equal(
+            let matching_shell = crate::decode::uniqueness::exactly_one_by(ctx, &ir.model.shells, |shell| ctx.equal(
                     &shell.id,
                     &face.shell,
                     "creo generated face shell identity comparison",
-                )? {
-                    continue;
-                }
-                if matching_shell.is_some() {
-                    matching_shell = None;
-                    break;
-                }
-                matching_shell = Some(shell);
-            }
+                ), "creo generated face shell lookup")?;
             let Some(shell) = matching_shell else {
                 continue;
             };
-            let mut matching_region = None;
-            for region in ctx.admit_iter(&ir.model.regions, "creo generated shell region lookup")? {
-                if !ctx.equal(
+            let matching_region = crate::decode::uniqueness::exactly_one_by(ctx, &ir.model.regions, |region| ctx.equal(
                     &region.id,
                     &shell.region,
                     "creo generated shell region identity comparison",
-                )? {
-                    continue;
-                }
-                if matching_region.is_some() {
-                    matching_region = None;
-                    break;
-                }
-                matching_region = Some(region);
-            }
+                ), "creo generated shell region lookup")?;
             let Some(region) = matching_region else {
                 continue;
             };
@@ -191,24 +171,12 @@ fn generated_input_output_bodies(
         format_args!("creo:model:feature#{feature_id}"),
         "creo generated input feature lookup",
     )?;
-    let mut matching_feature = None;
-    for feature in ctx.admit_iter(
-        &ir.model.features,
-        "creo generated input feature lookup traversal",
-    )? {
-        if !ctx.equal(
+    let matching_feature = crate::decode::uniqueness::exactly_one_by(ctx, 
+        &ir.model.features, |feature| ctx.equal(
             feature.id.as_str(),
             feature_id_text.as_str(),
             "creo generated input feature identity comparison",
-        )? {
-            continue;
-        }
-        if matching_feature.is_some() {
-            matching_feature = None;
-            break;
-        }
-        matching_feature = Some(feature);
-    }
+        ), "creo generated input feature lookup traversal")?;
     let Some(feature) = matching_feature else {
         return Ok(Vec::new());
     };
@@ -227,7 +195,7 @@ fn generated_input_output_bodies(
             continue;
         };
         for body in feature_output_bodies_with_history(ctx, scan, ir, producer_id, history)? {
-            if !outputs.contains(&body) {
+            if !ctx.contains(&outputs, &body, "creo outputs outputs membership")? {
                 ctx.reserve_vec(&mut outputs, 1, "creo generated input output bodies")?;
                 outputs.push(body);
             }
@@ -254,7 +222,7 @@ fn generated_edge_output_bodies(
             continue;
         };
         for body in feature_output_bodies_with_history(ctx, scan, ir, producer_id, history)? {
-            if !outputs.contains(&body) {
+            if !ctx.contains(&outputs, &body, "creo outputs outputs membership")? {
                 ctx.reserve_vec(&mut outputs, 1, "creo generated edge output bodies")?;
                 outputs.push(body);
             }
@@ -280,39 +248,19 @@ fn bodies_containing_edges(
         if !ctx.contains_btree_set(&selected, &coedge.edge, "creo selected coedge lookup")? {
             continue;
         }
-        let mut matching_loop = None;
-        for lp in ctx.admit_iter(&ir.model.loops, "creo selected edge loops")? {
-            if !ctx.equal(
+        let matching_loop = crate::decode::uniqueness::exactly_one_by(ctx, &ir.model.loops, |lp| ctx.equal(
                 &lp.id,
                 &coedge.owner_loop,
                 "creo selected edge loop identity comparison",
-            )? {
-                continue;
-            }
-            if matching_loop.is_some() {
-                matching_loop = None;
-                break;
-            }
-            matching_loop = Some(lp);
-        }
+            ), "creo selected edge loops")?;
         let Some(lp) = matching_loop else {
             continue;
         };
-        let mut matching_face = None;
-        for face in ctx.admit_iter(&ir.model.faces, "creo selected loop face lookup")? {
-            if !ctx.equal(
+        let matching_face = crate::decode::uniqueness::exactly_one_by(ctx, &ir.model.faces, |face| ctx.equal(
                 &face.id,
                 &lp.face,
                 "creo selected loop face identity comparison",
-            )? {
-                continue;
-            }
-            if matching_face.is_some() {
-                matching_face = None;
-                break;
-            }
-            matching_face = Some(face);
-        }
+            ), "creo selected loop face lookup")?;
         let Some(face) = matching_face else {
             continue;
         };
@@ -322,7 +270,8 @@ fn bodies_containing_edges(
     }
     for shell in ctx.admit_iter(&ir.model.shells, "creo selected shell lookup")? {
         let mut has_selected_wire_edge = false;
-        for edge in ctx.admit_iter(shell.wire_edges(), "creo selected shell wire edges")? {
+        let mut edge_iter = (shell.wire_edges()).into_iter();
+        while let Some(edge) = ctx.next_charged(&mut edge_iter, "creo selected shell wire edges")? {
             if ctx.contains_btree_set(&selected, edge, "creo selected shell wire edge lookup")? {
                 has_selected_wire_edge = true;
                 break;
@@ -337,62 +286,32 @@ fn bodies_containing_edges(
     }
     let mut bodies = Vec::new();
     for shell_id in shell_ids {
-        let mut matching_shell = None;
-        for shell in ctx.admit_iter(&ir.model.shells, "creo selected shell ID lookup")? {
-            if !ctx.equal(
+        let matching_shell = crate::decode::uniqueness::exactly_one_by(ctx, &ir.model.shells, |shell| ctx.equal(
                 &shell.id,
                 shell_id,
                 "creo selected shell identity comparison",
-            )? {
-                continue;
-            }
-            if matching_shell.is_some() {
-                matching_shell = None;
-                break;
-            }
-            matching_shell = Some(shell);
-        }
+            ), "creo selected shell ID lookup")?;
         let Some(shell) = matching_shell else {
             continue;
         };
-        let mut matching_region = None;
-        for region in ctx.admit_iter(&ir.model.regions, "creo selected shell region lookup")? {
-            if !ctx.equal(
+        let matching_region = crate::decode::uniqueness::exactly_one_by(ctx, &ir.model.regions, |region| ctx.equal(
                 &region.id,
                 &shell.region,
                 "creo selected shell region identity comparison",
-            )? {
-                continue;
-            }
-            if matching_region.is_some() {
-                matching_region = None;
-                break;
-            }
-            matching_region = Some(region);
-        }
+            ), "creo selected shell region lookup")?;
         let Some(region) = matching_region else {
             continue;
         };
-        let mut matching_body = None;
-        for body in ctx.admit_iter(&ir.model.bodies, "creo selected region body lookup")? {
-            if !ctx.equal(
+        let matching_body = crate::decode::uniqueness::exactly_one_by(ctx, &ir.model.bodies, |body| ctx.equal(
                 &body.id,
                 &region.body,
                 "creo selected region body identity comparison",
-            )? {
-                continue;
-            }
-            if matching_body.is_some() {
-                matching_body = None;
-                break;
-            }
-            matching_body = Some(body);
-        }
+            ), "creo selected region body lookup")?;
         if matching_body.is_none() {
             continue;
         }
         let body = copy_body_id(ctx, &region.body)?;
-        if !bodies.contains(&body) {
+        if !ctx.contains(&bodies, &body, "creo outputs bodies membership")? {
             ctx.reserve_vec(&mut bodies, 1, "creo bodies containing selected edges")?;
             bodies.push(body);
         }
@@ -419,24 +338,12 @@ pub(in super::super) fn evaluated_sweep_output_bodies(
             ),
             "creo evaluated sweep body candidate",
         )?;
-        let mut matching_body = None;
-        for body in ctx.admit_iter(
-            &ir.model.bodies,
-            "creo evaluated sweep body lookup traversal",
-        )? {
-            if !ctx.equal(
+        let matching_body = crate::decode::uniqueness::exactly_one_by(ctx, 
+            &ir.model.bodies, |body| ctx.equal(
                 body.id.as_str(),
                 candidate.as_str(),
                 "creo evaluated sweep body identity comparison",
-            )? {
-                continue;
-            }
-            if matching_body.is_some() {
-                matching_body = None;
-                break;
-            }
-            matching_body = Some(body);
-        }
+            ), "creo evaluated sweep body lookup traversal")?;
         if matching_body.is_some() {
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(candidate.len()),
@@ -1023,32 +930,22 @@ pub(in super::super) fn feature_reference_name<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
 ) -> Result<Option<&'a [u8]>, CodecError> {
-    let mut records = ctx
-        .admit_iter(
-            &scan.features.reference_names,
-            "creo feature reference names",
-        )?
-        .filter(|record| record.feature_id == feature_id);
-    let Some(record) = records.next() else {
+    let records = &scan.features.reference_names;
+    let Some(first) = ctx.position_by(records, |record| Ok(record.feature_id == feature_id), "creo feature reference names")? else {
         return Ok(None);
     };
-    for candidate in records {
-        if !ctx.equal_bytes(
-            candidate.name_bytes.as_slice(),
-            record.name_bytes.as_slice(),
-            "creo feature reference name agreement",
-        )? {
-            return Ok(None);
-        }
-    }
-    Ok(Some(record.name_bytes.as_slice()))
+    let bytes = records[first].name_bytes.as_slice();
+    Ok(ctx.all_by(&records[first + 1..], |record| {
+        if record.feature_id != feature_id { return Ok(true); }
+        ctx.equal_bytes(record.name_bytes.as_slice(), bytes, "creo feature reference name agreement")
+    }, "creo feature reference names")?.then_some(bytes))
 }
 
 pub(in super::super) fn decoded_feature_reference_name<'a>(
     ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
 ) -> Result<Cow<'a, str>, CodecError> {
-    match std::str::from_utf8(bytes) {
+    match ctx.validate_utf8(bytes, "creo feature reference name UTF-8")? {
         Ok(name) => Ok(Cow::Borrowed(name)),
         Err(_) => ctx
             .copy_retained_lossy_utf8(bytes, "creo decoded feature reference name")

@@ -322,7 +322,8 @@ pub(in super::super) fn feature_dimension_parameter_layout(
     let mut local_occurrences = BTreeMap::<(&SketchId, u32), usize>::new();
     let mut layout = Vec::new();
     ctx.reserve_vec(&mut layout, keys.len(), "creo dimension parameter layout")?;
-    for (sketch, external_id) in ctx.admit_iter(keys, "creo dimension layout entries")? {
+    let mut items = (keys).into_iter();
+    while let Some((sketch, external_id)) = ctx.next_charged(&mut items, "creo dimension layout entries")? {
         let ordinal = scratch.with_storage(|| ctx.entry_btree_map(&mut next_ordinals, sketch, "creo dimension layout ordinal nodes"))?
             .or_default();
         let assigned = *ordinal;
@@ -607,10 +608,8 @@ pub(in super::super) fn transfer_feature_dimensions(
             },
         )?;
         let mut owner_index = None;
-        for (index, feature) in ctx
-            .admit_iter(&ir.model.features, "creo dimension owner feature lookup")?
-            .enumerate()
-        {
+        let mut items = (&ir.model.features).into_iter().enumerate();
+        while let Some((index, feature)) = ctx.next_charged(&mut items, "creo dimension owner feature lookup")? {
             if !ctx.equal(
                 &feature.id,
                 &owner_id,

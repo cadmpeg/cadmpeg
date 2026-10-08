@@ -37,44 +37,42 @@ pub(in super::super) fn resolved_revolution_axis(
     else {
         return Ok(None);
     };
-    let points = resolved_section_points(ctx, definition)?;
-    let mut candidates = ctx
-        .admit_iter(
-            segments.rows.as_slice(),
-            "creo revolution axis section segment rows",
-        )?
-        .filter_map(|row| match row {
-            crate::feature::segment_rows::SegmentRow::Ordinary(segment) => Some(segment),
-            _ => None,
-        })
-        .filter(|segment| {
-            matches!(
-                segment.kind,
-                crate::feature::definitions::FeatureSegmentKind::Line(_)
-            )
-        })
-        .filter_map(|segment| {
-            let start = points.get(&segment.point_ids()[0])?;
-            let end = points.get(&segment.point_ids()[1])?;
-            if start[0] != 0.0 || end[0] != 0.0 || start == end {
-                return None;
-            }
-            let start = section_point_in_model(transform, *start);
-            let end = section_point_in_model(transform, *end);
-            let direction = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
-            Some(RevolutionAxis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::from(start))?,
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(direction))?,
-                reference: None,
-            })
-        });
-    let Some(axis) = candidates.next() else {
-        return Ok(None);
-    };
-    if candidates.next().is_some() {
-        return Ok(None);
+    let mut scratch = ctx.reserve_scoped(0, "creo revolution axis point index")?;
+    let points = scratch.with_storage(|| resolved_section_points(ctx, definition))?;
+    let mut axis = None;
+    let mut rows = segments.rows.as_slice().iter();
+    while let Some(row) = ctx.next_charged(&mut rows, "creo revolution axis section segment rows")? {
+        let crate::feature::segment_rows::SegmentRow::Ordinary(segment) = row else {
+            continue;
+        };
+        if !matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Line(_)) {
+            continue;
+        }
+        let (Some(start), Some(end)) = (
+            ctx.get_btree_map(&points, &segment.point_ids()[0], "creo revolution axis start point")?,
+            ctx.get_btree_map(&points, &segment.point_ids()[1], "creo revolution axis end point")?,
+        ) else {
+            continue;
+        };
+        if start[0] != 0.0 || end[0] != 0.0 || start == end {
+            continue;
+        }
+        let start = section_point_in_model(transform, *start);
+        let end = section_point_in_model(transform, *end);
+        let Some(direction) = normalize(std::array::from_fn(|axis| end[axis] - start[axis])) else {
+            continue;
+        };
+        let (Some(origin), Some(direction)) = (
+            cadmpeg_ir::features::FinitePoint3::new(Point3::from(start)),
+            cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(direction)),
+        ) else {
+            continue;
+        };
+        if axis.replace(RevolutionAxis { origin, direction, reference: None }).is_some() {
+            return Ok(None);
+        }
     }
-    Ok(Some(axis))
+    Ok(axis)
 }
 
 pub(in super::super) fn full_turn_revolution_carrier_axis(
@@ -97,64 +95,48 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         return Ok(None);
     }
 
-    let rows = ctx
-        .admit_iter(
-            &*scan.surfaces.rows,
-            "creo full-turn revolution surface rows",
-        )?
-        .filter(|row| row.feature_id == feature_id);
+    let mut scratch = ctx.reserve_scoped(0, "creo full-turn revolution evidence")?;
+    let mut rows = scan.surfaces.rows.iter();
     let mut axes = Vec::new();
     let mut plane_normals = Vec::new();
     let mut sphere_centers = Vec::new();
     let mut saw_row = false;
-    for row in rows {
+    while let Some(row) = ctx.next_charged(&mut rows, "creo full-turn revolution surface rows")? {
+        if row.feature_id != feature_id { continue; }
         saw_row = true;
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
             return Ok(None);
         }
-        let mut surfaces = ctx
-            .admit_iter(&ir.model.surfaces, "creo full-turn model surfaces")?
-            .filter(|surface| {
-                crate::identity::matches_numbered_identity(
-                    surface.id.as_str(),
-                    "creo:visibgeom:surface#",
-                    row.id,
-                )
-            });
-        let Some(surface) = surfaces.next().filter(|_| surfaces.next().is_none()) else {
+        let Some(surface) = crate::decode::uniqueness::exactly_one_by(
+            ctx, &ir.model.surfaces,
+            |surface| Ok(crate::identity::matches_numbered_identity(surface.id.as_str(), "creo:visibgeom:surface#", row.id)),
+            "creo full-turn model surfaces",
+        )? else {
             return Ok(None);
         };
         match source_carriers.surface_geometry(surface) {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin().get();
-                ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes")?;
+                scratch.with_storage(|| ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes"))?;
                 axes.push((origin, *cylinder_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = cone_surface.origin().get();
-                ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes")?;
+                scratch.with_storage(|| ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes"))?;
                 axes.push((origin, *cone_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let center = torus_surface.center().get();
-                ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes")?;
+                scratch.with_storage(|| ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes"))?;
                 axes.push((center, *torus_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                ctx.reserve_vec(
-                    &mut plane_normals,
-                    1,
-                    "creo full-turn revolution plane normals",
-                )?;
+                scratch.with_storage(|| ctx.reserve_vec(&mut plane_normals, 1, "creo full-turn revolution plane normals"))?;
                 plane_normals.push(*plane_surface.frame().axis());
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let center = sphere_surface.center().get();
-                ctx.reserve_vec(
-                    &mut sphere_centers,
-                    1,
-                    "creo full-turn revolution sphere centers",
-                )?;
+                scratch.with_storage(|| ctx.reserve_vec(&mut sphere_centers, 1, "creo full-turn revolution sphere centers"))?;
                 sphere_centers.push(center);
             }
             _ => return Ok(None),
@@ -177,9 +159,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     let first_origin = [first_origin.x, first_origin.y, first_origin.z];
     let axial = dot(first_origin, direction);
     let origin: [f64; 3] = std::array::from_fn(|axis| first_origin[axis] - axial * direction[axis]);
-    let scale = ctx
-        .admit_iter(&first_origin, "creo full-turn revolution axis scale origin")?
-        .copied()
+    let scale = first_origin.iter().copied()
         .chain(
             ctx.admit_iter(rest, "creo full-turn revolution axis scale rest")?
                 .flat_map(|(origin, _)| [origin.x, origin.y, origin.z]),
@@ -193,9 +173,8 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         )
         .map(f64::abs)
         .fold(1.0, f64::max);
-    for (candidate_origin, candidate_direction) in
-        ctx.admit_iter(rest, "creo full-turn revolution remaining axes")?
-    {
+    let mut items = (rest).into_iter();
+    while let Some((candidate_origin, candidate_direction)) = ctx.next_charged(&mut items, "creo full-turn revolution remaining axes")? {
         let candidate_direction = unit_length(*candidate_direction);
         if !matches!(
             ((dot(direction, candidate_direction).abs() - 1.0).abs())
@@ -217,7 +196,8 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             return Ok(None);
         }
     }
-    for normal in ctx.admit_iter(&plane_normals, "creo full-turn revolution plane normals")? {
+    let mut normal_iter = (&plane_normals).into_iter();
+    while let Some(normal) = ctx.next_charged(&mut normal_iter, "creo full-turn revolution plane normals")? {
         let normal = unit_length(*normal);
         if !matches!(
             ((dot(direction, normal).abs() - 1.0).abs()).partial_cmp(&(EPS_AXIS_ALIGNMENT)),
@@ -226,7 +206,8 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             return Ok(None);
         }
     }
-    for center in ctx.admit_iter(&sphere_centers, "creo full-turn revolution sphere centers")? {
+    let mut center_iter = (&sphere_centers).into_iter();
+    while let Some(center) = ctx.next_charged(&mut center_iter, "creo full-turn revolution sphere centers")? {
         let displacement = [
             center.x - origin[0],
             center.y - origin[1],
@@ -442,12 +423,8 @@ pub(super) fn feature_revolution_axis_for_transfer(
         &scan.features.section_transforms,
         feature_id,
     )?;
-    let mut transforms = scan
-        .features
-        .section_transforms
-        .iter()
-        .filter(|transform| transform.feature_id == Some(feature_id));
-    let transform = transforms.next().filter(|_| transforms.next().is_none());
+    let transform = crate::decode::uniqueness::exactly_one_by(ctx, &scan.features.section_transforms,
+        |transform| Ok(transform.feature_id == Some(feature_id)), "creo revolution feature transform lookup")?;
     let axis = match definition.zip(transform) {
         Some((definition, transform)) => revolution_axis_for_transfer(
             ctx,
@@ -474,7 +451,8 @@ pub(in super::super) fn section_profile_ref(
 ) -> Result<ProfileRef, CodecError> {
     let native_scope = native_ref.strip_prefix("creo:featdefs:sketch#");
     let mut matching_sketch = None;
-    for sketch in ctx.admit_iter(&ir.model.sketches, "creo section profile sketch lookup")? {
+    let mut sketch_iter = (&ir.model.sketches).into_iter();
+    while let Some(sketch) = ctx.next_charged(&mut sketch_iter, "creo section profile sketch lookup")? {
         let matches = match native_scope {
             Some(scope) => ctx.equal(
                 &sketch.id.as_str().strip_prefix("creo:model:sketch#"),
@@ -608,7 +586,7 @@ pub(in super::super) fn geometry_generator_features(
         generator.curve_ids.push(row.id);
     }
     let mut output = Vec::new();
-    for generator in generators.into_values() {
+    for (_, generator) in ctx.admit_iter(generators, "creo generator feature output rows")? {
         if ctx.contains_btree_set(&operation_feature_ids, &generator.feature_id, "creo generator exclusion lookup")?
             || ctx.contains_btree_set(&row_feature_ids, &generator.feature_id, "creo generator exclusion lookup")?
             || ctx.contains_btree_set(&datum_feature_ids, &generator.feature_id, "creo generator exclusion lookup")?
