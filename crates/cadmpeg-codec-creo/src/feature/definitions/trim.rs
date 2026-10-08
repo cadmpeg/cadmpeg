@@ -1349,3 +1349,6 @@ fn entity_intersection_cached(
     }
     Ok(first_coordinate.filter(|_| difference <= TRIM_COORDINATE_EPS * scale))
 }
+
+#[cfg(test)]
+mod tests;

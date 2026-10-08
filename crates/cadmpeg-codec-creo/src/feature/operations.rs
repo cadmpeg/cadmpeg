@@ -902,3 +902,6 @@ mod tests {
         assert_eq!(record.name(), Cow::Borrowed("Renamed"));
     }
 }
+
+#[cfg(test)]
+mod recipe_tests;

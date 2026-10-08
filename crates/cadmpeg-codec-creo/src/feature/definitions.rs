@@ -8184,8 +8184,6 @@ mod tables_tests;
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-mod numerical_range_tests;
 
 #[cfg(test)]
 mod selection_tests;
