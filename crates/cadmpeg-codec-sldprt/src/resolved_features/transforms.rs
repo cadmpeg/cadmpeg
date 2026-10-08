@@ -1055,7 +1055,7 @@ fn marker_entities_inner<'a, 'loci>(
             if ctx.equal(link.entity_ref.as_str(), marker_id, OPERATION)?
                 || (matches!(filter, MarkerEntityFilter::Lines(_))
                     && matches!(marker.kind(), SketchInputKind::Relation(_))
-                    && super::typed_relations::relation_link_identifies_owner(marker, link))
+                    && super::typed_relations::owner_link(ctx, marker, link)?)
             {
                 continue;
             }

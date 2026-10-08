@@ -122,8 +122,16 @@ fn planar_nested_axis_markers_refuse_work_limit() {
 }
 #[test]
 fn planar_nested_axis_markers_refuse_nesting_limit() {
-    assert_owned_loci_refusal(
+    project_nested_axis_markers_with_policy(&DecodePolicy::service()).unwrap();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::RecursionDepth,
-        project_nested_axis_markers_with_policy,
+        "traverse SLDPRT axis relation point loci",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_recursion_depth = cap;
+            project_nested_axis_markers_with_policy(&policy)
+        },
     );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RecursionDepth));
 }

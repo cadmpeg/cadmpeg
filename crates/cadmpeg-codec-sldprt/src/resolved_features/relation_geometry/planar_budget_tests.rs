@@ -281,22 +281,6 @@ fn solved_line_projection_refuses_collection_limit() {
 }
 
 #[test]
-fn solved_line_projection_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy SLDPRT planar sketch identity",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            project_solved_line_with_policy(policy)
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT planar sketch identity"));
-}
-
-#[test]
 fn solved_line_projection_refuses_work_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -317,19 +301,10 @@ fn relation_point_projection_refuses_collection_limit() {
 }
 
 #[test]
-fn relation_point_projection_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy SLDPRT planar sketch identity",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            project_relation_point_with_policy(policy)
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT planar sketch identity"));
+fn relation_point_projection_uses_scoped_storage() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    project_relation_point_with_policy(policy).unwrap();
 }
 
 #[test]
@@ -381,16 +356,19 @@ fn solved_line_projection_refuses_operand_vector_materialized_bytes() {
     let (_, _, lane, _) = two_solver_line_fixture();
     let operand_count = lane.relation_instances[0].operands.len();
     assert_eq!(operand_count, TWO_SOLVER_LINE_OPERANDS);
-    let requested_bytes = u64::try_from(
-        operand_count
-            .checked_mul(std::mem::size_of::<(
-                &FeatureInputOperand,
-                [&crate::records::SketchInputEntity; 2],
-                cadmpeg_ir::sketches::SketchEntity,
-            )>())
-            .expect("fixture operand vector bytes fit usize"),
-    )
-    .expect("fixture operand vector bytes fit u64");
+    let slot_bytes = std::mem::size_of::<(
+        &FeatureInputOperand,
+        [&crate::records::SketchInputEntity; 2],
+        cadmpeg_ir::sketches::SketchEntity,
+    )>();
+    // Core amortized growth starts an empty vector at its inline-size minimum.
+    let capacity = match slot_bytes {
+        1 => 8,
+        2..=1024 => 4,
+        _ => 1,
+    };
+    let requested_bytes =
+        u64::try_from(slot_bytes * capacity).expect("fixture operand vector bytes fit u64");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::MaterializedBytes,
         "collect SLDPRT relation operand lines",
@@ -411,7 +389,7 @@ fn solved_line_projection_refuses_operand_vector_collection_items() {
     let (_, _, lane, _) = two_solver_line_fixture();
     let operand_count = lane.relation_instances[0].operands.len();
     assert_eq!(operand_count, TWO_SOLVER_LINE_OPERANDS);
-    let requested_slots = u64::try_from(operand_count).expect("fixture operand slots fit u64");
+    let requested_slots = 1;
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::CollectionItems,
         "collect SLDPRT relation operand lines",
@@ -559,47 +537,27 @@ fn assert_owned_loci_refusal(
     dimension: ResourceDimension,
     project: impl Fn(&DecodePolicy) -> Result<(), CodecError>,
 ) {
-    let set_limit = |policy: &mut DecodePolicy, limit: u64| match dimension {
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-        ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
-        ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = limit,
+    project(&DecodePolicy::service()).unwrap();
+    let operation = match dimension {
+        ResourceDimension::CollectionItems | ResourceDimension::WorkUnits => {
+            "index SLDPRT planar relation sketches"
+        }
+        ResourceDimension::RetainedBytes => "copy SLDPRT planar sketch identity",
+        ResourceDimension::RecursionDepth => "resolve SLDPRT linked marker entities",
         _ => panic!("unexpected owned locus budget dimension"),
     };
-    project(&DecodePolicy::service()).unwrap();
-    let mut upper = 1u64;
-    loop {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
         let mut policy = DecodePolicy::service();
-        set_limit(&mut policy, upper);
-        match project(&policy) {
-            Ok(()) => break,
-            Err(CodecError::ResourceLimit(limit)) => assert_eq!(limit.dimension, dimension),
-            Err(error) => panic!("unexpected projection error: {error}"),
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+            _ => panic!("unexpected owned locus budget dimension"),
         }
-        upper = upper.checked_mul(2).unwrap();
-    }
-    let mut lower = 0;
-    while lower < upper {
-        let middle = lower + (upper - lower) / 2;
-        let mut policy = DecodePolicy::service();
-        set_limit(&mut policy, middle);
-        match project(&policy) {
-            Ok(()) => upper = middle,
-            Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, dimension);
-                lower = middle + 1;
-            }
-            Err(error) => panic!("unexpected projection error: {error}"),
-        }
-    }
-    assert!(upper > 0);
-    let mut policy = DecodePolicy::service();
-    set_limit(&mut policy, upper);
-    project(&policy).unwrap();
-    set_limit(&mut policy, upper - 1);
-    assert!(
-        matches!(project(&policy), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-    );
+        project(&policy)
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
 }
 
 #[test]
@@ -611,11 +569,10 @@ fn planar_relation_owned_loci_refuse_collection_limit() {
 }
 
 #[test]
-fn planar_relation_owned_loci_refuse_retained_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RetainedBytes,
-        project_owned_loci_with_policy,
-    );
+fn planar_relation_owned_loci_use_scoped_storage() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    project_owned_loci_with_policy(&policy).unwrap();
 }
 
 #[test]

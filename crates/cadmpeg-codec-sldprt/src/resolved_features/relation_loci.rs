@@ -6,7 +6,7 @@ use super::relation_geometry::relation_uses_solver_line_operand;
 use super::relation_records::{relation_uses_dynamic_operands, relation_uses_solver_points};
 use super::transforms::{
     compatible_marker_transform_candidates, locus_entity, locus_key, marker_entities,
-    marker_transforms_with_frame_fallback, sketch_entity_locus_points, sort_marker_entity_ids,
+    sketch_entity_locus_points, sketch_frame_marker_transform, sort_marker_entity_ids,
     MarkerEntityFilter, MarkerTransform, ProfileAxis, SketchLocusRole,
 };
 use super::typed_relations::{
@@ -270,17 +270,17 @@ fn unique_entity<'a>(
     operation: &'static str,
     mut matches: impl FnMut(&SketchEntity) -> Result<bool, CodecError>,
 ) -> Result<Option<&'a SketchEntity>, CodecError> {
-    let mut selected = None;
-    for entity in ctx.admit_iter(candidates, operation)?.copied() {
-        if !matches(entity)? {
-            continue;
-        }
-        if selected.is_some() {
-            return Ok(None);
-        }
-        selected = Some(entity);
+    let mut remaining = candidates.iter().copied();
+    let Some(first) = ctx.find_by(&mut remaining, |entity| matches(entity), operation)? else {
+        return Ok(None);
+    };
+    if ctx
+        .find_by(&mut remaining, |entity| matches(entity), operation)?
+        .is_some()
+    {
+        return Ok(None);
     }
-    Ok(selected)
+    Ok(Some(first))
 }
 
 fn in_sketch(
@@ -300,18 +300,26 @@ pub(super) fn linked_single_arc_entity(
 ) -> Result<Option<SketchEntityId>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT linked arc entity";
     let mut has_link = false;
-    for link in ctx.admit_iter(marker.links(), OPERATION)? {
-        if owner_link(ctx, marker, link)? {
-            continue;
-        }
-        has_link = true;
-        if !matches!(
-            ctx.get_hash_map(markers_by_id, link.entity_ref.as_str(), OPERATION)?
-                .map(|marker| marker.kind()),
-            Some(SketchInputKind::Arc)
-        ) {
-            return Ok(None);
-        }
+    if !ctx.all_by(
+        marker.links(),
+        |link| {
+            if owner_link(ctx, marker, link)? {
+                return Ok(true);
+            }
+            has_link = true;
+            if !matches!(
+                ctx.get_hash_map(markers_by_id, link.entity_ref.as_str(), OPERATION)?
+                    .map(|marker| marker.kind()),
+                Some(SketchInputKind::Arc)
+            ) {
+                return Ok(false);
+            }
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     if !has_link {
         return Ok(None);
@@ -364,15 +372,23 @@ pub(super) fn linked_midpoint_operands(
     const OPERATION: &str = "resolve SLDPRT linked midpoint operands";
     let mut operands = [None, None];
     let mut count = 0;
-    for link in ctx.admit_iter(marker.links(), OPERATION)? {
-        if owner_link(ctx, marker, link)? {
-            continue;
-        }
-        let Some(slot) = operands.get_mut(count) else {
-            return Ok(None);
-        };
-        *slot = Some(link);
-        count += 1;
+    if !ctx.all_by(
+        marker.links(),
+        |link| {
+            if owner_link(ctx, marker, link)? {
+                return Ok(true);
+            }
+            let Some(slot) = operands.get_mut(count) else {
+                return Ok(false);
+            };
+            *slot = Some(link);
+            count += 1;
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     let [Some(first), Some(second)] = operands else {
         return Ok(None);
@@ -419,7 +435,9 @@ pub(super) fn relation_operand_loci_in(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Result<Option<Vec<SketchLocus>>, CodecError> {
     const OPERATION: &str = "collect SLDPRT marker relation operand loci";
-    let owners = relation_owner_markers_in(ctx, relation, markers)?;
+    let (owners, _owners_storage) = ctx.with_scoped_storage(OPERATION, || {
+        relation_owner_markers_in(ctx, relation, markers)
+    })?;
     let mut loci = Vec::new();
     let add = |loci: &mut Vec<SketchLocus>, marker: &str| -> Result<bool, CodecError> {
         let Some(locus) = marker_point_locus(ctx, marker, markers.by_id(), loci_by_marker)? else {
@@ -430,17 +448,33 @@ pub(super) fn relation_operand_loci_in(
         }
         Ok(true)
     };
-    for link in ctx.admit_iter(relation.links(), OPERATION)? {
-        if relation_link_is_geometric_operand(ctx, relation, link, markers.by_id())?
-            && !add(&mut loci, &link.entity_ref)?
-        {
-            return Ok(None);
-        }
+    if !ctx.all_by(
+        relation.links(),
+        |link| {
+            if relation_link_is_geometric_operand(ctx, relation, link, markers.by_id())?
+                && !add(&mut loci, &link.entity_ref)?
+            {
+                return Ok(false);
+            }
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
-    for owner in ctx.admit_iter(&owners, OPERATION)? {
-        if !add(&mut loci, owner.id())? {
-            return Ok(None);
-        }
+    if !ctx.all_by(
+        &owners,
+        |owner| {
+            if !add(&mut loci, owner.id())? {
+                return Ok(false);
+            }
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     Ok((!loci.is_empty()).then_some(loci))
 }
@@ -464,26 +498,34 @@ pub(super) fn linked_single_entities(
 ) -> Result<Option<Vec<SketchEntityId>>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT single linked entities";
     let mut result: Vec<SketchEntityId> = Vec::new();
-    for link in ctx.admit_iter(marker.links(), OPERATION)? {
-        if owner_link(ctx, marker, link)? {
-            continue;
-        }
-        let entities = marker_entities(
-            ctx,
-            &link.entity_ref,
-            markers_by_id,
-            loci_by_marker,
-            MarkerEntityFilter::All,
-        )?;
-        let [entity] = entities.as_slice() else {
-            return Ok(None);
-        };
-        if ctx.contains(&result, entity, OPERATION)? {
-            continue;
-        }
-        if let Some(entity) = entities.into_iter().next() {
-            ctx.push_vec(&mut result, entity, OPERATION)?;
-        }
+    if !ctx.all_by(
+        marker.links(),
+        |link| {
+            if owner_link(ctx, marker, link)? {
+                return Ok(true);
+            }
+            let entities = marker_entities(
+                ctx,
+                &link.entity_ref,
+                markers_by_id,
+                loci_by_marker,
+                MarkerEntityFilter::All,
+            )?;
+            let [entity] = entities.as_slice() else {
+                return Ok(false);
+            };
+            if ctx.contains(&result, entity, OPERATION)? {
+                return Ok(true);
+            }
+            if let Some(entity) = entities.into_iter().next() {
+                ctx.push_vec(&mut result, entity, OPERATION)?;
+            }
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     Ok(Some(result))
 }
@@ -495,7 +537,10 @@ pub(super) fn relation_constraint_is_inactive(
     definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
 ) -> Result<bool, CodecError> {
-    let profile = ProfileEntities::new(ctx, sketch_entities)?;
+    let (profile, _profile_storage) = ctx
+        .with_scoped_storage("index SLDPRT relation sketch entities", || {
+            ProfileEntities::new(ctx, sketch_entities)
+        })?;
     relation_constraint_is_inactive_in(ctx, parameter, definition, &profile)
 }
 
@@ -629,17 +674,25 @@ pub(super) fn relation_constraint_is_inactive_in(
                 SketchConstraintDefinitionInput::RepeatedDiameter { .. }
             );
             let mut inactive = false;
-            for id in ctx.admit_iter(entities, "compare SLDPRT repeated-radius activity")? {
-                let Some(entity) = entity(id)? else {
-                    return Ok(false);
-                };
-                let radius = match *entity.geometry.definition() {
-                    SketchGeometryDefinition::Circle { radius, .. }
-                    | SketchGeometryDefinition::Arc { radius, .. } => radius.get(),
-                    _ => return Ok(false),
-                };
-                let measured = if diameter { radius * 2.0 } else { radius };
-                inactive |= !same_dimension_length(measured, expected.get());
+            if !ctx.all_by(
+                entities,
+                |id| {
+                    let Some(entity) = entity(id)? else {
+                        return Ok(false);
+                    };
+                    let radius = match *entity.geometry.definition() {
+                        SketchGeometryDefinition::Circle { radius, .. }
+                        | SketchGeometryDefinition::Arc { radius, .. } => radius.get(),
+                        _ => return Ok(false),
+                    };
+                    let measured = if diameter { radius * 2.0 } else { radius };
+                    inactive |= !same_dimension_length(measured, expected.get());
+
+                    Ok(true)
+                },
+                "compare SLDPRT repeated-radius activity",
+            )? {
+                return Ok(false);
             }
             inactive
         }
@@ -688,7 +741,10 @@ pub(super) fn typed_relation_definition_with_profile_axis(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     profile_axis: Option<ProfileAxis>,
 ) -> Result<Option<SketchConstraintDefinitionInput>, CodecError> {
-    let entities = ProfileEntities::new(ctx, profile.sketch_entities)?;
+    let (entities, _entities_storage) = ctx
+        .with_scoped_storage("index SLDPRT relation sketch entities", || {
+            ProfileEntities::new(ctx, profile.sketch_entities)
+        })?;
     let markers = RelationMarkers::from_map(ctx, markers_by_id)?;
     relation_definition(
         ctx,
@@ -1625,14 +1681,22 @@ fn solver_line_entity(
     if let Some(entity_ref) = operand.entity_ref.as_deref() {
         let candidates = entities.with_native_ref(ctx, entity_ref, OPERATION)?;
         let mut selected = None;
-        for entity in ctx.admit_iter(candidates, OPERATION)?.copied() {
-            if !sketch_line(entity)? {
-                continue;
-            }
-            if selected.is_some() {
-                return Ok(None);
-            }
-            selected = Some(entity);
+        if !ctx.all_by(
+            candidates.iter().copied(),
+            |entity| {
+                if !sketch_line(entity)? {
+                    return Ok(true);
+                }
+                if selected.is_some() {
+                    return Ok(false);
+                }
+                selected = Some(entity);
+
+                Ok(true)
+            },
+            OPERATION,
+        )? {
+            return Ok(None);
         }
         if let Some(entity) = selected {
             return entity.id().try_clone_for_decode(ctx, OPERATION).map(Some);
@@ -1667,7 +1731,7 @@ fn repeated_dimensioned_circular_entities(
         && relation.scalar_refs().len() >= 2
         && relation.operands.len() == 1
         && parameter.native_ref.is_none()
-        && super::relation_geometry::is_reference_relation_parameter(parameter)
+        && super::relation_geometry::is_reference_relation_parameter_in(ctx, parameter)?
         && match ctx.get_btree_map(
             &parameter.properties,
             super::relation_geometry::RELATION_PARAMETER_ID_PROPERTY,
@@ -1756,21 +1820,37 @@ fn unique_profile_measured_loci_pair(
     let (loci, _loci_storage) =
         ctx.with_scoped_storage(OPERATION, || canonical_profile_loci(ctx, sketch, entities))?;
     let mut selected: Option<(&SketchLocus, &SketchLocus)> = None;
-    for (first_index, (first_point, first)) in ctx.admit_iter(&loci, OPERATION)?.enumerate() {
-        let later = loci.get(first_index + 1..).unwrap_or_default();
-        for (second_point, second) in ctx.admit_iter(later, OPERATION)? {
-            if !same_dimension_length(measure(first_point, second_point), distance.get()) {
-                continue;
+    if !ctx.all_by(
+        loci.iter().enumerate(),
+        |(first_index, (first_point, first))| {
+            let later = loci.get(first_index + 1..).unwrap_or_default();
+            if !ctx.all_by(
+                later,
+                |(second_point, second)| {
+                    if !same_dimension_length(measure(first_point, second_point), distance.get()) {
+                        return Ok(true);
+                    }
+                    if let Some((selected_first, selected_second)) = selected {
+                        if !(ctx.equal(selected_first, first, OPERATION)?
+                            && ctx.equal(selected_second, second, OPERATION)?)
+                        {
+                            return Ok(false);
+                        }
+                    }
+                    selected = Some((first, second));
+
+                    Ok(true)
+                },
+                OPERATION,
+            )? {
+                return Ok(false);
             }
-            if let Some((selected_first, selected_second)) = selected {
-                if !(ctx.equal(selected_first, first, OPERATION)?
-                    && ctx.equal(selected_second, second, OPERATION)?)
-                {
-                    return Ok(None);
-                }
-            }
-            selected = Some((first, second));
-        }
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     let Some((first, second)) = selected else {
         return Ok(None);
@@ -1841,18 +1921,26 @@ fn unique_profile_measured_locus(
     let (loci, _loci_storage) =
         ctx.with_scoped_storage(OPERATION, || canonical_profile_loci(ctx, sketch, entities))?;
     let mut selected: Option<&SketchLocus> = None;
-    for (candidate_point, candidate) in ctx.admit_iter(&loci, OPERATION)? {
-        if ctx.equal(candidate, known, OPERATION)?
-            || !same_dimension_length(measure(&known_point, candidate_point), distance.get())
-        {
-            continue;
-        }
-        if let Some(selected) = selected {
-            if !ctx.equal(selected, candidate, OPERATION)? {
-                return Ok(None);
+    if !ctx.all_by(
+        &loci,
+        |(candidate_point, candidate)| {
+            if ctx.equal(candidate, known, OPERATION)?
+                || !same_dimension_length(measure(&known_point, candidate_point), distance.get())
+            {
+                return Ok(true);
             }
-        }
-        selected = Some(candidate);
+            if let Some(selected) = selected {
+                if !ctx.equal(selected, candidate, OPERATION)? {
+                    return Ok(false);
+                }
+            }
+            selected = Some(candidate);
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     selected
         .map(|locus| copy_locus(ctx, locus, OPERATION))
@@ -1867,7 +1955,10 @@ pub(super) fn unique_profile_distance_locus(
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Result<Option<SketchLocus>, CodecError> {
-    let entities = ProfileEntities::new(ctx, sketch_entities)?;
+    let (entities, _entities_storage) = ctx
+        .with_scoped_storage("index SLDPRT relation sketch entities", || {
+            ProfileEntities::new(ctx, sketch_entities)
+        })?;
     unique_profile_distance_locus_in(ctx, sketch, known, parameter, &entities)
 }
 
@@ -1898,7 +1989,10 @@ pub(super) fn doubled_profile_distance_loci(
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
 ) -> Result<Option<(SketchLocus, SketchLocus)>, CodecError> {
-    let entities = ProfileEntities::new(ctx, sketch_entities)?;
+    let (entities, _entities_storage) = ctx
+        .with_scoped_storage("index SLDPRT relation sketch entities", || {
+            ProfileEntities::new(ctx, sketch_entities)
+        })?;
     let markers = RelationMarkers::from_map(ctx, markers_by_id)?;
     let loci_by_marker = HashMap::new();
     doubled_profile_distance_loci_in(
@@ -2157,19 +2251,24 @@ fn unique_profile_matched_entity(
         return Ok(None);
     };
     let mut selected: Option<&SketchEntityId> = None;
-    for entity in ctx
-        .admit_iter(entities.in_sketch(ctx, sketch, OPERATION)?, OPERATION)?
-        .copied()
-    {
-        if ctx.equal(entity.id(), known.id(), OPERATION)? || !matches(known, entity) {
-            continue;
-        }
-        if let Some(selected) = selected {
-            if !ctx.equal(selected, entity.id(), OPERATION)? {
-                return Ok(None);
+    if !ctx.all_by(
+        entities.in_sketch(ctx, sketch, OPERATION)?.iter().copied(),
+        |entity| {
+            if ctx.equal(entity.id(), known.id(), OPERATION)? || !matches(known, entity) {
+                return Ok(true);
             }
-        }
-        selected = Some(entity.id());
+            if let Some(selected) = selected {
+                if !ctx.equal(selected, entity.id(), OPERATION)? {
+                    return Ok(false);
+                }
+            }
+            selected = Some(entity.id());
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     selected
         .map(|entity| entity.try_clone_for_decode(ctx, OPERATION))
@@ -2187,24 +2286,40 @@ fn unique_profile_matched_line_pair(
     const OPERATION: &str = "select SLDPRT matched sketch line pair";
     let roster = entities.in_sketch(ctx, sketch, OPERATION)?;
     let mut selected: Option<(&SketchEntityId, &SketchEntityId)> = None;
-    for (first_index, first) in ctx.admit_iter(roster, OPERATION)?.copied().enumerate() {
-        if !is_line(first) {
-            continue;
-        }
-        let later = roster.get(first_index + 1..).unwrap_or_default();
-        for second in ctx.admit_iter(later, OPERATION)?.copied() {
-            if !is_line(second) || !matches(first, second) {
-                continue;
+    if !ctx.all_by(
+        roster.iter().copied().enumerate(),
+        |(first_index, first)| {
+            if !is_line(first) {
+                return Ok(true);
             }
-            if let Some((selected_first, selected_second)) = selected {
-                if !(ctx.equal(selected_first, first.id(), OPERATION)?
-                    && ctx.equal(selected_second, second.id(), OPERATION)?)
-                {
-                    return Ok(None);
-                }
+            let later = roster.get(first_index + 1..).unwrap_or_default();
+            if !ctx.all_by(
+                later.iter().copied(),
+                |second| {
+                    if !is_line(second) || !matches(first, second) {
+                        return Ok(true);
+                    }
+                    if let Some((selected_first, selected_second)) = selected {
+                        if !(ctx.equal(selected_first, first.id(), OPERATION)?
+                            && ctx.equal(selected_second, second.id(), OPERATION)?)
+                        {
+                            return Ok(false);
+                        }
+                    }
+                    selected = Some((first.id(), second.id()));
+
+                    Ok(true)
+                },
+                OPERATION,
+            )? {
+                return Ok(false);
             }
-            selected = Some((first.id(), second.id()));
-        }
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     let Some((first, second)) = selected else {
         return Ok(None);
@@ -2397,39 +2512,55 @@ fn select_dynamic_line_pair(
         return Ok(None);
     }
     let mut selected: Option<(&SketchEntityId, &SketchEntityId)> = None;
-    for first in ctx.admit_iter(first_candidates, OPERATION)? {
-        let Some(first_entity) = entities.entity(ctx, first, OPERATION)? else {
-            return Ok(None);
-        };
-        for second in ctx.admit_iter(second_candidates, OPERATION)? {
-            if ctx.equal(first, second, OPERATION)? {
-                continue;
-            }
-            let Some(second_entity) = entities.entity(ctx, second, OPERATION)? else {
-                return Ok(None);
+    if !ctx.all_by(
+        first_candidates,
+        |first| {
+            let Some(first_entity) = entities.entity(ctx, first, OPERATION)? else {
+                return Ok(false);
             };
-            if !matches(first_entity, second_entity) {
-                continue;
-            }
-            let pair = match ordering {
-                LinePairOrdering::Operand => (first, second),
-                LinePairOrdering::Identity => {
-                    if ctx.compare(first, second, OPERATION)?.is_le() {
-                        (first, second)
-                    } else {
-                        (second, first)
+            if !ctx.all_by(
+                second_candidates,
+                |second| {
+                    if ctx.equal(first, second, OPERATION)? {
+                        return Ok(true);
                     }
-                }
-            };
-            if let Some((selected_first, selected_second)) = selected {
-                if !(ctx.equal(selected_first, pair.0, OPERATION)?
-                    && ctx.equal(selected_second, pair.1, OPERATION)?)
-                {
-                    return Ok(None);
-                }
+                    let Some(second_entity) = entities.entity(ctx, second, OPERATION)? else {
+                        return Ok(false);
+                    };
+                    if !matches(first_entity, second_entity) {
+                        return Ok(true);
+                    }
+                    let pair = match ordering {
+                        LinePairOrdering::Operand => (first, second),
+                        LinePairOrdering::Identity => {
+                            if ctx.compare(first, second, OPERATION)?.is_le() {
+                                (first, second)
+                            } else {
+                                (second, first)
+                            }
+                        }
+                    };
+                    if let Some((selected_first, selected_second)) = selected {
+                        if !(ctx.equal(selected_first, pair.0, OPERATION)?
+                            && ctx.equal(selected_second, pair.1, OPERATION)?)
+                        {
+                            return Ok(false);
+                        }
+                    }
+                    selected = Some(pair);
+
+                    Ok(true)
+                },
+                OPERATION,
+            )? {
+                return Ok(false);
             }
-            selected = Some(pair);
-        }
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     let Some((first, second)) = selected else {
         return Ok(None);
@@ -2591,33 +2722,49 @@ fn unique_dynamic_marker_point_pair(
         return Ok(None);
     }
     let mut selected: Option<(&SketchLocus, &SketchLocus)> = None;
-    for first in ctx.admit_iter(&first_candidates, OPERATION)? {
-        for second in ctx.admit_iter(&second_candidates, OPERATION)? {
-            if ctx.equal(first, second, OPERATION)? {
-                continue;
+    if !ctx.all_by(
+        &first_candidates,
+        |first| {
+            if !ctx.all_by(
+                &second_candidates,
+                |second| {
+                    if ctx.equal(first, second, OPERATION)? {
+                        return Ok(true);
+                    }
+                    if !measure(first, second)?
+                        .is_some_and(|value| same_relation_dimension_length(value, expected.get()))
+                    {
+                        return Ok(true);
+                    }
+                    let pair = if ctx
+                        .compare(&locus_key(first), &locus_key(second), OPERATION)?
+                        .is_le()
+                    {
+                        (first, second)
+                    } else {
+                        (second, first)
+                    };
+                    if let Some((selected_first, selected_second)) = selected {
+                        if !(ctx.equal(selected_first, pair.0, OPERATION)?
+                            && ctx.equal(selected_second, pair.1, OPERATION)?)
+                        {
+                            return Ok(false);
+                        }
+                    }
+                    selected = Some(pair);
+
+                    Ok(true)
+                },
+                OPERATION,
+            )? {
+                return Ok(false);
             }
-            if !measure(first, second)?
-                .is_some_and(|value| same_relation_dimension_length(value, expected.get()))
-            {
-                continue;
-            }
-            let pair = if ctx
-                .compare(&locus_key(first), &locus_key(second), OPERATION)?
-                .is_le()
-            {
-                (first, second)
-            } else {
-                (second, first)
-            };
-            if let Some((selected_first, selected_second)) = selected {
-                if !(ctx.equal(selected_first, pair.0, OPERATION)?
-                    && ctx.equal(selected_second, pair.1, OPERATION)?)
-                {
-                    return Ok(None);
-                }
-            }
-            selected = Some(pair);
-        }
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     let Some((first, second)) = selected else {
         return Ok(None);
@@ -2728,23 +2875,39 @@ fn unique_dynamic_direct_point_roster_pair(
         ))
     };
     let mut selected: Option<(&SketchLocus, &SketchLocus)> = None;
-    for (first_index, first) in ctx.admit_iter(&loci, OPERATION)?.enumerate() {
-        let later = loci.get(first_index + 1..).unwrap_or_default();
-        for second in ctx.admit_iter(later, OPERATION)? {
-            if !measure(first, second)?
-                .is_some_and(|value| same_relation_dimension_length(value, expected.get()))
-            {
-                continue;
+    if !ctx.all_by(
+        loci.iter().enumerate(),
+        |(first_index, first)| {
+            let later = loci.get(first_index + 1..).unwrap_or_default();
+            if !ctx.all_by(
+                later,
+                |second| {
+                    if !measure(first, second)?
+                        .is_some_and(|value| same_relation_dimension_length(value, expected.get()))
+                    {
+                        return Ok(true);
+                    }
+                    if let Some((selected_first, selected_second)) = selected {
+                        if !(ctx.equal(selected_first, first, OPERATION)?
+                            && ctx.equal(selected_second, second, OPERATION)?)
+                        {
+                            return Ok(false);
+                        }
+                    }
+                    selected = Some((first, second));
+
+                    Ok(true)
+                },
+                OPERATION,
+            )? {
+                return Ok(false);
             }
-            if let Some((selected_first, selected_second)) = selected {
-                if !(ctx.equal(selected_first, first, OPERATION)?
-                    && ctx.equal(selected_second, second, OPERATION)?)
-                {
-                    return Ok(None);
-                }
-            }
-            selected = Some((first, second));
-        }
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     let Some((first, second)) = selected else {
         return Ok(None);
@@ -2907,30 +3070,46 @@ fn unique_point_line_candidate_pair(
         return Ok(None);
     }
     let mut selected: Option<(&SketchLocus, &SketchEntityId)> = None;
-    for point in ctx.admit_iter(point_candidates, OPERATION)? {
-        let Some(point_position) =
-            profile_locus_point_charged(ctx, point, entities, "resolve SLDPRT profile locus")?
-        else {
-            return Ok(None);
-        };
-        for line in ctx.admit_iter(line_candidates, OPERATION)? {
-            let Some(line_entity) = entities.entity(ctx, line, OPERATION)? else {
-                return Ok(None);
+    if !ctx.all_by(
+        point_candidates,
+        |point| {
+            let Some(point_position) =
+                profile_locus_point_charged(ctx, point, entities, "resolve SLDPRT profile locus")?
+            else {
+                return Ok(false);
             };
-            if !point_line_distance_value(point_position, line_entity)
-                .is_some_and(|measured| same_relation_dimension_length(measured, expected.get()))
-            {
-                continue;
+            if !ctx.all_by(
+                line_candidates,
+                |line| {
+                    let Some(line_entity) = entities.entity(ctx, line, OPERATION)? else {
+                        return Ok(false);
+                    };
+                    if !point_line_distance_value(point_position, line_entity).is_some_and(
+                        |measured| same_relation_dimension_length(measured, expected.get()),
+                    ) {
+                        return Ok(true);
+                    }
+                    if let Some((selected_point, selected_line)) = selected {
+                        if !(ctx.equal(selected_point, point, OPERATION)?
+                            && ctx.equal(selected_line, line, OPERATION)?)
+                        {
+                            return Ok(false);
+                        }
+                    }
+                    selected = Some((point, line));
+
+                    Ok(true)
+                },
+                OPERATION,
+            )? {
+                return Ok(false);
             }
-            if let Some((selected_point, selected_line)) = selected {
-                if !(ctx.equal(selected_point, point, OPERATION)?
-                    && ctx.equal(selected_line, line, OPERATION)?)
-                {
-                    return Ok(None);
-                }
-            }
-            selected = Some((point, line));
-        }
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     let Some((point, line)) = selected else {
         return Ok(None);
@@ -3414,22 +3593,38 @@ fn select_profile_point_line_pairs(
 ) -> Result<Option<(SketchLocus, SketchEntityId)>, CodecError> {
     const OPERATION: &str = "select SLDPRT profile point-line pairs";
     let mut selected: Option<(&SketchLocus, &SketchEntityId)> = None;
-    for (point, locus) in ctx.admit_iter(loci, OPERATION)? {
-        for line in ctx.admit_iter(lines, OPERATION)?.copied() {
-            if !point_line_distance_value(*point, line)
-                .is_some_and(|measured| same_dimension_length(measured, distance.get()))
-            {
-                continue;
+    if !ctx.all_by(
+        loci,
+        |(point, locus)| {
+            if !ctx.all_by(
+                lines.iter().copied(),
+                |line| {
+                    if !point_line_distance_value(*point, line)
+                        .is_some_and(|measured| same_dimension_length(measured, distance.get()))
+                    {
+                        return Ok(true);
+                    }
+                    if let Some((selected_point, selected_line)) = selected {
+                        if !(ctx.equal(selected_point, locus, OPERATION)?
+                            && ctx.equal(selected_line, line.id(), OPERATION)?)
+                        {
+                            return Ok(false);
+                        }
+                    }
+                    selected = Some((locus, line.id()));
+
+                    Ok(true)
+                },
+                OPERATION,
+            )? {
+                return Ok(false);
             }
-            if let Some((selected_point, selected_line)) = selected {
-                if !(ctx.equal(selected_point, locus, OPERATION)?
-                    && ctx.equal(selected_line, line.id(), OPERATION)?)
-                {
-                    return Ok(None);
-                }
-            }
-            selected = Some((locus, line.id()));
-        }
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     let Some((point, line)) = selected else {
         return Ok(None);
@@ -3456,21 +3651,26 @@ fn unique_profile_point_line_entity(
         return Ok(None);
     };
     let mut selected: Option<&SketchEntityId> = None;
-    for line in ctx
-        .admit_iter(entities.in_sketch(ctx, sketch, OPERATION)?, OPERATION)?
-        .copied()
-    {
-        if !point_line_distance_value(point, line)
-            .is_some_and(|measured| same_dimension_length(measured, distance.get()))
-        {
-            continue;
-        }
-        if let Some(selected) = selected {
-            if !ctx.equal(selected, line.id(), OPERATION)? {
-                return Ok(None);
+    if !ctx.all_by(
+        entities.in_sketch(ctx, sketch, OPERATION)?.iter().copied(),
+        |line| {
+            if !point_line_distance_value(point, line)
+                .is_some_and(|measured| same_dimension_length(measured, distance.get()))
+            {
+                return Ok(true);
             }
-        }
-        selected = Some(line.id());
+            if let Some(selected) = selected {
+                if !ctx.equal(selected, line.id(), OPERATION)? {
+                    return Ok(false);
+                }
+            }
+            selected = Some(line.id());
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     selected
         .map(|id| id.try_clone_for_decode(ctx, OPERATION))
@@ -3495,18 +3695,26 @@ fn unique_profile_line_point_locus(
     let (loci, _loci_storage) =
         ctx.with_scoped_storage(OPERATION, || collect_profile_loci(ctx, sketch, entities))?;
     let mut selected: Option<&SketchLocus> = None;
-    for (point, locus) in ctx.admit_iter(&loci, OPERATION)? {
-        if !point_line_distance_value(*point, line)
-            .is_some_and(|measured| same_dimension_length(measured, distance.get()))
-        {
-            continue;
-        }
-        if let Some(selected) = selected {
-            if !ctx.equal(selected, locus, OPERATION)? {
-                return Ok(None);
+    if !ctx.all_by(
+        &loci,
+        |(point, locus)| {
+            if !point_line_distance_value(*point, line)
+                .is_some_and(|measured| same_dimension_length(measured, distance.get()))
+            {
+                return Ok(true);
             }
-        }
-        selected = Some(locus);
+            if let Some(selected) = selected {
+                if !ctx.equal(selected, locus, OPERATION)? {
+                    return Ok(false);
+                }
+            }
+            selected = Some(locus);
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     selected
         .map(|locus| copy_locus(ctx, locus, OPERATION))
@@ -3596,30 +3804,38 @@ fn canonicalize_physical_loci(
     let mut first_point = None;
     let mut coincident = true;
     let mut minimum = 0;
-    for (index, locus) in ctx.admit_iter(&*loci, OPERATION)?.enumerate() {
-        let Some(point) =
-            profile_locus_point_charged(ctx, locus, entities, "resolve SLDPRT profile locus")?
-        else {
-            return Ok(());
-        };
-        let point = quantize(point, quantum);
-        if let Some(first) = first_point {
-            coincident &= point == first;
-        } else {
-            first_point = Some(point);
-        }
-        if let Some(current) = loci.get(minimum) {
-            if ctx
-                .compare(&locus_key(locus), &locus_key(current), OPERATION)?
-                .is_lt()
-            {
-                minimum = index;
+    if !ctx.all_by(
+        loci.iter().enumerate(),
+        |(index, locus)| {
+            let Some(point) =
+                profile_locus_point_charged(ctx, locus, entities, "resolve SLDPRT profile locus")?
+            else {
+                return Ok(false);
+            };
+            let point = quantize(point, quantum);
+            if let Some(first) = first_point {
+                coincident &= point == first;
+            } else {
+                first_point = Some(point);
             }
-        }
+            if let Some(current) = loci.get(minimum) {
+                if ctx
+                    .compare(&locus_key(locus), &locus_key(current), OPERATION)?
+                    .is_lt()
+                {
+                    minimum = index;
+                }
+            }
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(());
     }
     if coincident {
         loci.swap(0, minimum);
-        loci.truncate(1);
+        ctx.truncate_vec(loci, 1, "select SLDPRT relation locus")?;
     }
     Ok(())
 }
@@ -3817,16 +4033,24 @@ fn unique_dynamic_marker<'a>(
 ) -> Result<Option<&'a str>, CodecError> {
     const OPERATION: &str = "select SLDPRT dynamic operand marker";
     let mut selected: Option<&'a str> = None;
-    for candidate in ctx.admit_iter(candidates, OPERATION)?.copied() {
-        if !matches(candidate) {
-            continue;
-        }
-        if let Some(selected) = selected {
-            if !ctx.equal(selected, candidate.id(), OPERATION)? {
-                return Ok(None);
+    if !ctx.all_by(
+        candidates.iter().copied(),
+        |candidate| {
+            if !matches(candidate) {
+                return Ok(true);
             }
-        }
-        selected = Some(candidate.id());
+            if let Some(selected) = selected {
+                if !ctx.equal(selected, candidate.id(), OPERATION)? {
+                    return Ok(false);
+                }
+            }
+            selected = Some(candidate.id());
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     Ok(selected)
 }
@@ -3847,26 +4071,31 @@ fn relation_line_point_marker<'a>(
         return Ok(None);
     }
     let mut selected = None;
-    for marker in ctx
-        .admit_iter(
-            markers.of_feature(ctx, &relation.feature_ref, OPERATION)?,
-            OPERATION,
-        )?
-        .copied()
-    {
-        if marker.local_id() != Some(u32::from(relation_operand.entity_index))
-            || marker.coordinates_m.is_none()
-            || !matches!(
-                marker.kind(),
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-            )
-        {
-            continue;
-        }
-        if selected.is_some() {
-            return Ok(None);
-        }
-        selected = Some(marker);
+    if !ctx.all_by(
+        markers
+            .of_feature(ctx, &relation.feature_ref, OPERATION)?
+            .iter()
+            .copied(),
+        |marker| {
+            if marker.local_id() != Some(u32::from(relation_operand.entity_index))
+                || marker.coordinates_m.is_none()
+                || !matches!(
+                    marker.kind(),
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+            {
+                return Ok(true);
+            }
+            if selected.is_some() {
+                return Ok(false);
+            }
+            selected = Some(marker);
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     Ok(selected)
 }
@@ -3986,17 +4215,25 @@ pub(super) fn profile_axis_for_relation(
     }
     let mut first = None;
     let mut disagreement = false;
-    for transform in ctx.admit_iter(transforms, "resolve SLDPRT relation profile axis")? {
-        let Some(axis) = transform.profile_axis_for_native(native_axis) else {
-            return Ok(None);
-        };
-        if let Some(first) = first {
-            if axis != first {
-                disagreement = true;
+    if !ctx.all_by(
+        transforms,
+        |transform| {
+            let Some(axis) = transform.profile_axis_for_native(native_axis) else {
+                return Ok(false);
+            };
+            if let Some(first) = first {
+                if axis != first {
+                    disagreement = true;
+                }
+            } else {
+                first = Some(axis);
             }
-        } else {
-            first = Some(axis);
-        }
+
+            Ok(true)
+        },
+        "resolve SLDPRT relation profile axis",
+    )? {
+        return Ok(None);
     }
     Ok(first.filter(|_| !disagreement))
 }
@@ -4275,7 +4512,10 @@ pub(super) fn single_marker_line_entity(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     sketch_entities: &[SketchEntity],
 ) -> Result<Option<SketchEntityId>, CodecError> {
-    let entities = ProfileEntities::new(ctx, sketch_entities)?;
+    let (entities, _entities_storage) = ctx
+        .with_scoped_storage("index SLDPRT relation sketch entities", || {
+            ProfileEntities::new(ctx, sketch_entities)
+        })?;
     single_marker_line_entity_in(ctx, marker_id, markers_by_id, loci_by_marker, &entities)
 }
 
@@ -4404,28 +4644,26 @@ fn unique_profile_line_through_points(
     points: &[Point2],
 ) -> Result<Option<SketchEntityId>, CodecError> {
     const OPERATION: &str = "select SLDPRT profile line through points";
-    let mut selected: Option<&SketchEntityId> = None;
-    for entity in ctx
-        .admit_iter(entities.in_sketch(ctx, sketch, OPERATION)?, OPERATION)?
-        .copied()
-    {
-        if !is_line(entity)
-            || !points
-                .iter()
-                .all(|point| sketch_entity_contains_point(entity, *point))
-        {
-            continue;
-        }
-        if let Some(selected) = selected {
-            if !ctx.equal(selected, entity.id(), OPERATION)? {
-                return Ok(None);
-            }
-        }
-        selected = Some(entity.id());
+    let mut remaining = entities.in_sketch(ctx, sketch, OPERATION)?.iter().copied();
+    let accepts = |entity: &SketchEntity| -> Result<bool, CodecError> {
+        Ok(is_line(entity)
+            && ctx.all_by(
+                points,
+                |point| Ok(sketch_entity_contains_point(entity, *point)),
+                OPERATION,
+            )?)
+    };
+    let Some(first) = ctx.find_by(&mut remaining, |entity| accepts(entity), OPERATION)? else {
+        return Ok(None);
+    };
+    if ctx.any_by(
+        &mut remaining,
+        |entity| Ok(accepts(entity)? && !ctx.equal(first.id(), entity.id(), OPERATION)?),
+        OPERATION,
+    )? {
+        return Ok(None);
     }
-    selected
-        .map(|identity| identity.try_clone_for_decode(ctx, OPERATION))
-        .transpose()
+    first.id().try_clone_for_decode(ctx, OPERATION).map(Some)
 }
 
 fn sort_profile_loci(
@@ -4483,8 +4721,14 @@ pub(super) fn profile_loci_by_marker(
     sketch_entities: &[SketchEntity],
     lanes: &[FeatureInputLane],
 ) -> Result<HashMap<String, Vec<SketchLocus>>, CodecError> {
-    let entities = ProfileEntities::new(ctx, sketch_entities)?;
-    let markers = RelationMarkers::new(ctx, lanes)?;
+    let (entities, _entities_storage) = ctx
+        .with_scoped_storage("index SLDPRT relation sketch entities", || {
+            ProfileEntities::new(ctx, sketch_entities)
+        })?;
+    let (markers, _markers_storage) = ctx
+        .with_scoped_storage("index SLDPRT relation markers", || {
+            RelationMarkers::new(ctx, lanes)
+        })?;
     let transforms = marker_transform_candidates_in(ctx, features, sketches, &entities, lanes)?;
     profile_loci_in(ctx, features, &entities, &markers, lanes, &transforms)
 }
@@ -4924,35 +5168,37 @@ pub(super) fn profile_loci_in(
             }
             let roster = entities.in_sketch(ctx, sketch_id, PAIR_OPERATION)?;
             let mut selected: Option<&SketchEntityId> = None;
-            let mut complete = true;
-            for (start, end) in ctx.admit_iter(&endpoint_pairs, PAIR_OPERATION)?.copied() {
-                let candidate = unique_entity(ctx, roster, PAIR_OPERATION, |entity| {
-                    let SketchGeometryDefinition::Line {
-                        start: candidate_start,
-                        end: candidate_end,
-                    } = entity.geometry.definition()
-                    else {
+            let complete = ctx.all_by(
+                endpoint_pairs.iter().copied(),
+                |(start, end)| {
+                    let candidate = unique_entity(ctx, roster, PAIR_OPERATION, |entity| {
+                        let SketchGeometryDefinition::Line {
+                            start: candidate_start,
+                            end: candidate_end,
+                        } = entity.geometry.definition()
+                        else {
+                            return Ok(false);
+                        };
+                        let candidate_start = quantize(candidate_start.get(), QUANTUM);
+                        let candidate_end = quantize(candidate_end.get(), QUANTUM);
+                        Ok((candidate_start == start && candidate_end == end)
+                            || (candidate_start == end && candidate_end == start))
+                    })?;
+                    let Some(candidate) = candidate else {
                         return Ok(false);
                     };
-                    let candidate_start = quantize(candidate_start.get(), QUANTUM);
-                    let candidate_end = quantize(candidate_end.get(), QUANTUM);
-                    Ok((candidate_start == start && candidate_end == end)
-                        || (candidate_start == end && candidate_end == start))
-                })?;
-                let Some(candidate) = candidate else {
-                    complete = false;
-                    break;
-                };
-                match selected {
-                    Some(previous) => {
-                        if !ctx.equal(previous, candidate.id(), PAIR_OPERATION)? {
-                            complete = false;
-                            break;
+                    match selected {
+                        Some(previous) => {
+                            if !ctx.equal(previous, candidate.id(), PAIR_OPERATION)? {
+                                return Ok(false);
+                            }
                         }
+                        None => selected = Some(candidate.id()),
                     }
-                    None => selected = Some(candidate.id()),
-                }
-            }
+                    Ok(true)
+                },
+                PAIR_OPERATION,
+            )?;
             let (true, Some(entity)) = (complete, selected) else {
                 continue;
             };
@@ -4970,20 +5216,30 @@ pub(super) fn profile_loci_in(
     // A point marker without coordinates resolves through its links to the one
     // endpoint they share; each pass can resolve markers the previous pass
     // made reachable.
-    loop {
-        let mut additions = Vec::new();
+    let (mut pending, _pending_storage) = ctx.with_scoped_storage(LINKED_OPERATION, || {
+        let mut pending = Vec::new();
         for lane in ctx.admit_iter(lanes, LINKED_OPERATION)? {
             for marker in ctx.admit_iter(&lane.sketch_entities, LINKED_OPERATION)? {
-                if marker.coordinates_m.is_some()
-                    || !matches!(
+                if marker.coordinates_m.is_none()
+                    && matches!(
                         marker.kind(),
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     )
-                    || !markers.is_indexed(ctx, marker)?
-                    || ctx.contains_key_hash_map(&result, marker.id(), LINKED_OPERATION)?
+                    && markers.is_indexed(ctx, marker)?
+                    && !ctx.contains_key_hash_map(&result, marker.id(), LINKED_OPERATION)?
                 {
-                    continue;
+                    ctx.push_vec(&mut pending, marker, LINKED_OPERATION)?;
                 }
+            }
+        }
+        Ok::<_, CodecError>(pending)
+    })?;
+    loop {
+        let mut additions_storage = ctx.reserve_scoped(0, LINKED_OPERATION)?;
+        let mut additions = Vec::new();
+        ctx.retain_vec(
+            &mut pending,
+            |marker| {
                 let Some(locus) = unique_linked_endpoint_locus(
                     ctx,
                     marker,
@@ -4993,13 +5249,15 @@ pub(super) fn profile_loci_in(
                     QUANTUM,
                 )?
                 else {
-                    continue;
+                    return Ok(true);
                 };
-                storage.with_storage(|| {
+                additions_storage.with_storage(|| {
                     ctx.push_vec(&mut additions, (marker.id(), locus), LINKED_OPERATION)
                 })?;
-            }
-        }
+                Ok(false)
+            },
+            LINKED_OPERATION,
+        )?;
         if additions.is_empty() {
             break;
         }
@@ -5056,69 +5314,93 @@ pub(super) fn unique_linked_endpoint_locus(
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut groups = Vec::<BTreeMap<GridPoint, Vec<(&SketchEntityId, SketchLocusRole)>>>::new();
     let mut sketch: Option<&SketchId> = None;
-    for link in ctx.admit_iter(marker.links(), OPERATION)? {
-        let identities = marker_entities(
-            ctx,
-            &link.entity_ref,
-            markers_by_id,
-            loci_by_marker,
-            MarkerEntityFilter::All,
-        )?;
-        if identities.is_empty() {
-            return Ok(None);
-        }
-        let mut endpoints = BTreeMap::new();
-        for identity in ctx.admit_iter(&identities, OPERATION)? {
-            let Some(entity) = ctx
-                .get_hash_map(entities_by_id, identity, OPERATION)?
-                .copied()
-            else {
-                return Ok(None);
-            };
-            match sketch {
-                Some(previous) => {
-                    if !ctx.equal(previous, &entity.sketch, OPERATION)? {
-                        return Ok(None);
+    if !ctx.all_by(
+        marker.links(),
+        |link| {
+            let identities = marker_entities(
+                ctx,
+                &link.entity_ref,
+                markers_by_id,
+                loci_by_marker,
+                MarkerEntityFilter::All,
+            )?;
+            if identities.is_empty() {
+                return Ok(false);
+            }
+            let mut endpoints = BTreeMap::new();
+            if !ctx.all_by(
+                &identities,
+                |identity| {
+                    let Some(entity) = ctx
+                        .get_hash_map(entities_by_id, identity, OPERATION)?
+                        .copied()
+                    else {
+                        return Ok(false);
+                    };
+                    match sketch {
+                        Some(previous) => {
+                            if !ctx.equal(previous, &entity.sketch, OPERATION)? {
+                                return Ok(false);
+                            }
+                        }
+                        None => sketch = Some(&entity.sketch),
                     }
-                }
-                None => sketch = Some(&entity.sketch),
+                    for (point, role) in sketch_entity_locus_points(entity).into_iter().flatten() {
+                        if matches!(role, SketchLocusRole::Center) {
+                            continue;
+                        }
+                        storage.with_storage(|| {
+                            ctx.push_btree_group(
+                                &mut endpoints,
+                                quantize(point, quantum),
+                                (entity.id(), role),
+                                OPERATION,
+                                OPERATION,
+                            )
+                        })?;
+                    }
+
+                    Ok(true)
+                },
+                OPERATION,
+            )? {
+                return Ok(false);
             }
-            for (point, role) in sketch_entity_locus_points(entity).into_iter().flatten() {
-                if matches!(role, SketchLocusRole::Center) {
-                    continue;
-                }
-                storage.with_storage(|| {
-                    ctx.push_btree_group(
-                        &mut endpoints,
-                        quantize(point, quantum),
-                        (entity.id(), role),
-                        OPERATION,
-                        OPERATION,
-                    )
-                })?;
+            if endpoints.is_empty() {
+                return Ok(false);
             }
-        }
-        if endpoints.is_empty() {
-            return Ok(None);
-        }
-        storage.with_storage(|| ctx.push_vec(&mut groups, endpoints, OPERATION))?;
+            storage.with_storage(|| ctx.push_vec(&mut groups, endpoints, OPERATION))?;
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     let Some((first, rest)) = groups.split_first() else {
         return Ok(None);
     };
     let mut shared = None;
-    for (point, _) in ctx.admit_iter(first, OPERATION)? {
-        if !ctx.all_by(
-            rest,
-            |group| ctx.contains_key_btree_map(group, point, OPERATION),
-            OPERATION,
-        )? {
-            continue;
-        }
-        if shared.is_some() {
-            return Ok(None);
-        }
-        shared = Some(*point);
+    if !ctx.all_by(
+        first,
+        |(point, _)| {
+            if !ctx.all_by(
+                rest,
+                |group| ctx.contains_key_btree_map(group, point, OPERATION),
+                OPERATION,
+            )? {
+                return Ok(true);
+            }
+            if shared.is_some() {
+                return Ok(false);
+            }
+            shared = Some(*point);
+
+            Ok(true)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
     }
     let Some(point) = shared else {
         return Ok(None);
@@ -5261,10 +5543,12 @@ pub(super) fn marker_transform_candidates_in<'a>(
                         continue;
                     }
                     let anchors = match *entity.geometry.definition() {
-                        SketchGeometryDefinition::Point { position } => vec![position.get()],
+                        SketchGeometryDefinition::Point { position } => {
+                            [Some(position.get()), None, None]
+                        }
                         _ => marker_geometry_anchors(marker.kind(), &entity.geometry),
                     };
-                    for anchor in anchors {
+                    for anchor in anchors.into_iter().flatten() {
                         insert_compatible_locus(
                             ctx,
                             &mut storage,
@@ -5326,10 +5610,14 @@ pub(super) fn marker_transform_candidates_in<'a>(
                 Some(records) => ctx.get_hash_map(records, *sketch, OPERATION)?.copied(),
                 None => None,
             };
-            let candidates = match record {
-                Some(record) => marker_transforms_with_frame_fallback(candidates, record, QUANTUM),
-                None => candidates,
-            };
+            let mut candidates = candidates;
+            if candidates.is_empty() {
+                if let Some(transform) =
+                    record.and_then(|record| sketch_frame_marker_transform(record, QUANTUM))
+                {
+                    ctx.push_vec(&mut candidates, transform, OPERATION)?;
+                }
+            }
             if !candidates.is_empty() {
                 ctx.insert_hash_map(&mut result, *canonical_feature, candidates, OPERATION)?;
             }
@@ -5391,7 +5679,10 @@ fn compatible_marker_loci(
                     )?;
                 }
             } else {
-                for point in marker_geometry_anchors(marker.kind(), &entity.geometry) {
+                for point in marker_geometry_anchors(marker.kind(), &entity.geometry)
+                    .into_iter()
+                    .flatten()
+                {
                     insert_compatible_locus(
                         ctx,
                         storage,
@@ -5420,38 +5711,42 @@ fn insert_compatible_locus(
     })
 }
 
-fn marker_geometry_anchors(kind: SketchInputKind, geometry: &SketchGeometry) -> Vec<Point2> {
+fn marker_geometry_anchors(
+    kind: SketchInputKind,
+    geometry: &SketchGeometry,
+) -> [Option<Point2>; 3] {
     match (kind, geometry.definition()) {
         (
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint,
             SketchGeometryDefinition::Point { position },
-        ) => vec![position.get()],
+        ) => [Some(position.get()), None, None],
         (
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint,
             SketchGeometryDefinition::Line { start, end },
-        ) => vec![start.get(), end.get()],
+        ) => [Some(start.get()), Some(end.get()), None],
         (
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint,
             SketchGeometryDefinition::Circle { center, .. }
             | SketchGeometryDefinition::Arc { center, .. }
             | SketchGeometryDefinition::Ellipse { center, .. },
-        ) => vec![center.get()],
-        (SketchInputKind::LineOrCircle, SketchGeometryDefinition::Line { start, end }) => {
-            vec![
-                start.get(),
-                end.get(),
-                Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5),
-            ]
-        }
+        ) => [Some(center.get()), None, None],
+        (SketchInputKind::LineOrCircle, SketchGeometryDefinition::Line { start, end }) => [
+            Some(start.get()),
+            Some(end.get()),
+            Some(Point2::new(
+                (start.u + end.u) * 0.5,
+                (start.v + end.v) * 0.5,
+            )),
+        ],
         (
             SketchInputKind::LineOrCircle,
             SketchGeometryDefinition::Circle { center, .. }
             | SketchGeometryDefinition::Ellipse { center, .. },
         )
         | (SketchInputKind::Arc, SketchGeometryDefinition::Arc { center, .. }) => {
-            vec![center.get()]
+            [Some(center.get()), None, None]
         }
-        _ => Vec::new(),
+        _ => [None; 3],
     }
 }
 
