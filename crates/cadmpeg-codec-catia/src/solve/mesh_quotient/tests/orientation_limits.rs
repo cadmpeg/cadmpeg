@@ -155,3 +155,47 @@ fn label_directions_refuse_collection_limit_before_declining() {
     assert_eq!(error.dimension, ResourceDimension::CollectionItems);
     assert_eq!(error.operation, "catia_label_direction_rows");
 }
+
+#[test]
+fn endpoint_configuration_generations_release_storage_after_consumption() {
+    const SCRATCH_BYTES: u64 = 16_384;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: edge,
+                end: (edge + 1) % 3,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let pairs = [vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];
+    for _ in 0..2 {
+        let (configurations, storage) = ctx
+            .with_scoped_storage("fixture endpoint results", || {
+                super::super::mesh_face_endpoint_configurations(
+                    &ctx,
+                    std::slice::from_ref(&assignment),
+                    &pairs,
+                    &[None; 3],
+                    &cadmpeg_core::decode::WorkBudget::new(64),
+                )
+            })
+            .expect("temporary endpoint configurations");
+        assert_eq!(
+            configurations,
+            Some(vec![vec![(0, [0, 1]), (1, [1, 2]), (2, [0, 2])]])
+        );
+        drop(configurations);
+        drop(storage);
+        let all_scratch = ctx
+            .reserve_scoped(SCRATCH_BYTES, "fixture released workspace")
+            .expect("all generation storage must be released");
+        drop(all_scratch);
+    }
+}
