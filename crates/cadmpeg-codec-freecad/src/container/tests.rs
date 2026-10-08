@@ -27,7 +27,7 @@ fn unsafe_entry_name_diagnostic_refuses_at_matching_retained_limit() {
 fn document_root_error_refuses_at_retained_limit() {
     let bytes = b"<UnexpectedRoot SchemaVersion=\"4\"/>";
     crate::test_support::assert_retained_refusal_at(&[], "FCStd document root error", |ctx| {
-        super::parse_document(ctx, bytes, &mut Vec::new())
+        parse_document(ctx, bytes)
     });
 }
 
@@ -35,7 +35,7 @@ fn document_root_error_refuses_at_retained_limit() {
 fn document_parse_error_refuses_at_retained_limit() {
     let bytes = b"<Document>";
     crate::test_support::assert_retained_refusal_at(&[], "FCStd document parse error", |ctx| {
-        super::parse_document(ctx, bytes, &mut Vec::new())
+        parse_document(ctx, bytes)
     });
 }
 
@@ -93,7 +93,7 @@ fn collection_context<T>(limit: u64, f: impl FnOnce(&DecodeContext<'_>) -> T) ->
     f(&ctx)
 }
 
-fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_>) -> T) -> T {
+fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_, '_>) -> T) -> T {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let bytes = archive(document);
     let arena = DecodeArena::new();
@@ -302,7 +302,7 @@ fn gui_entry_reference_identity_refuses_at_retained_limit() {
 fn document_domain_set_refuses_on_collection_limit() {
     let document = b"<Document SchemaVersion=\"4\"><Objects><Object type=\"Part::Feature\"/></Objects></Document>";
     crate::test_support::assert_collection_refusal_at(&[], "FCStd document domains", |ctx| {
-        super::parse_document(ctx, document, &mut Vec::new())
+        parse_document(ctx, document)
     });
 }
 
@@ -858,6 +858,7 @@ fn producer_version_metadata_does_not_refuse_the_document() {
             == crate::loss::FreecadLossCode::ProgramVersionNoncanonical
                 .note("")
                 .code));
+        drop(scan);
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
@@ -968,4 +969,12 @@ fn equivalent_numeric_schema_declarations_select_the_same_persistence_grammar() 
         assert_valid_document(recovered.ir());
         assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
     }
+}
+
+fn parse_document(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<(crate::native::DocumentFacts, String), cadmpeg_core::CodecError> {
+    let xml = super::admit_document(ctx, bytes)?;
+    super::parse_document(ctx, xml.document(), &mut Vec::new())
 }
