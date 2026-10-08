@@ -119,67 +119,74 @@ fn boolean_tree_is_valid(
     })? {
         return Ok(false);
     }
-    let Some(entry) = ctx.get_btree_map(
-        entries, &sequence, "iges boolean directory lookup",
-    )? else {
-        ctx.remove_btree_set(&mut validation.path, &sequence, "iges boolean path removal")?;
-        return Ok(false);
-    };
-    let Some(terms) = ctx.get_btree_map(
-        boolean_definitions, &sequence, "iges boolean definition lookup",
-    )? else {
-        ctx.remove_btree_set(&mut validation.path, &sequence, "iges boolean path removal")?;
-        return Ok(false);
-    };
-    let mut has_direct_brep = false;
-    let mut operands_valid = true;
-    let mut terms = terms.iter();
-    while let Some(term) = ctx.next_charged(&mut terms, "iges boolean term validation")? {
-        let target = match term {
-            BooleanTerm::Operand(sequence) => ctx.get_btree_map(
-                entries, sequence, "iges boolean operand directory lookup",
-            )?,
-            BooleanTerm::Operation => None,
+    let result = (|| {
+        let Some(entry) = ctx.get_btree_map(
+            entries, &sequence, "iges boolean directory lookup",
+        )? else {
+            ctx.remove_btree_set(&mut validation.path, &sequence, "iges boolean path removal")?;
+            return Ok(false);
         };
-        has_direct_brep |= target.is_some_and(|target| target.entity_type == 186);
-        let valid = match term {
-            BooleanTerm::Operation => true,
-            BooleanTerm::Operand(target_sequence) => match target {
-                Some(target)
-                    if matches!(
-                        target.entity_type,
-                        150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 430
-                    ) =>
-                {
-                    true
-                }
-                Some(target) if target.entity_type == 180 => boolean_tree_is_valid(
-                    *target_sequence,
-                    entries,
-                    boolean_definitions,
-                    validation,
-                    ctx,
+        let Some(terms) = ctx.get_btree_map(
+            boolean_definitions, &sequence, "iges boolean definition lookup",
+        )? else {
+            ctx.remove_btree_set(&mut validation.path, &sequence, "iges boolean path removal")?;
+            return Ok(false);
+        };
+        let mut has_direct_brep = false;
+        let mut operands_valid = true;
+        let mut terms = terms.iter();
+        while let Some(term) = ctx.next_charged(&mut terms, "iges boolean term validation")? {
+            let target = match term {
+                BooleanTerm::Operand(sequence) => ctx.get_btree_map(
+                    entries, sequence, "iges boolean operand directory lookup",
                 )?,
-                Some(target) => entry.form == 1 && target.entity_type == 186,
-                None => false,
-            },
-        };
-        if !valid {
-            operands_valid = false;
-            break;
+                BooleanTerm::Operation => None,
+            };
+            has_direct_brep |= target.is_some_and(|target| target.entity_type == 186);
+            let valid = match term {
+                BooleanTerm::Operation => true,
+                BooleanTerm::Operand(target_sequence) => match target {
+                    Some(target)
+                        if matches!(
+                            target.entity_type,
+                            150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 430
+                        ) =>
+                    {
+                        true
+                    }
+                    Some(target) if target.entity_type == 180 => boolean_tree_is_valid(
+                        *target_sequence,
+                        entries,
+                        boolean_definitions,
+                        validation,
+                        ctx,
+                    )?,
+                    Some(target) => entry.form == 1 && target.entity_type == 186,
+                    None => false,
+                },
+            };
+            if !valid {
+                operands_valid = false;
+                break;
+            }
         }
+        let valid = operands_valid && has_direct_brep == (entry.form == 1);
+        ctx.remove_btree_set(&mut validation.path, &sequence, "iges boolean path removal")?;
+        validation.storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut validation.memo,
+                sequence,
+                valid,
+                "iges boolean validity memo",
+            )
+        })?;
+        Ok(valid)
+    })();
+    if result.is_err() {
+        // Destroy the path before this frame's storage expires.
+        drop(std::mem::take(&mut validation.path));
     }
-    let valid = operands_valid && has_direct_brep == (entry.form == 1);
-    ctx.remove_btree_set(&mut validation.path, &sequence, "iges boolean path removal")?;
-    validation.storage.with_storage(|| {
-        ctx.insert_btree_map(
-            &mut validation.memo,
-            sequence,
-            valid,
-            "iges boolean validity memo",
-        )
-    })?;
-    Ok(valid)
+    result
 }
 
 pub(super) fn project<'ctx>(

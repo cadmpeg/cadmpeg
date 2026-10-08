@@ -992,3 +992,5 @@ fn profile_closure_proof_cache_preserves_refusal_boundaries() {
         });
     }
 }
+
+mod recursive_storage;

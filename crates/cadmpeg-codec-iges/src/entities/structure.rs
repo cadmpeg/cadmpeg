@@ -1986,21 +1986,32 @@ fn bounded_plane_curve_is_simple(
                         "iges plane boundary active curve",
                     )
                 })?;
-                let Some(geometry) = curve.geometry.solved() else {
+                let result = (|| {
+                    let Some(geometry) = curve.geometry.solved() else {
+                        context.ctx.remove_btree_set(
+                            active,
+                            &segment.curve,
+                            "iges plane boundary active removal",
+                        )?;
+                        return Ok(false);
+                    };
+                    let valid = bounded_plane_curve_is_simple(geometry, context, false, None, active);
                     context.ctx.remove_btree_set(
                         active,
                         &segment.curve,
                         "iges plane boundary active removal",
                     )?;
-                    return Ok(false);
+                    valid
+                })();
+                let valid = match result {
+                    Ok(valid) => valid,
+                    Err(error) => {
+                        // Destroy the path before this frame's storage expires.
+                        drop(std::mem::take(active));
+                        return Err(error);
+                    }
                 };
-                let valid = bounded_plane_curve_is_simple(geometry, context, false, None, active);
-                context.ctx.remove_btree_set(
-                    active,
-                    &segment.curve,
-                    "iges plane boundary active removal",
-                )?;
-                if !valid? {
+                if !valid {
                     return Ok(false);
                 }
             }
