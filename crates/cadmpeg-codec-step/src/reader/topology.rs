@@ -3205,10 +3205,9 @@ fn root_shell_steps(
         let Some(values) = named_reference_values(ctx, root, "FACE_BASED_SURFACE_MODEL", 1)? else {
             return Ok(None);
         };
-        for set_step in ctx
-            .admit_iter(values, "STEP topology reference traversal")?
-            .filter_map(ValueExt::reference)
-        {
+        let mut values = values.iter();
+        while let Some(value) = ctx.next_charged(&mut values, "STEP topology reference traversal")? {
+            let Some(set_step) = value.reference() else { continue; };
             let Some(set) =
                 ctx.get_btree_map(exchange.records(), &set_step, "STEP topology record lookup")?
             else {
