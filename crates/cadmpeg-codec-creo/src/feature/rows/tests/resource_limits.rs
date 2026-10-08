@@ -57,10 +57,9 @@ fn field_choice(payload: Vec<u8>) -> FeatureChoice {
 fn choice_hit_refuses_before_vec_growth() {
     let row = row();
     item(
-        &run(&row.body, 0, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo choice label hits", |ctx| {
             super::super::choices(ctx, std::slice::from_ref(&row))
-        })
-        .expect_err("one recognized label needs a hit item"),
+        }),
         "creo choice label hits",
     );
 }
@@ -97,7 +96,7 @@ fn choice_payload_refuses_before_retained_byte_copy() {
 fn choice_record_refuses_before_vec_growth() {
     let row = row();
     assert_eq!(
-        run(&row.body, 2, u64::MAX, |ctx| {
+        run(&row.body, u64::MAX, u64::MAX, |ctx| {
             super::super::choices(ctx, std::slice::from_ref(&row))
         })
         .expect("one choice admitted")
@@ -105,10 +104,9 @@ fn choice_record_refuses_before_vec_growth() {
         1
     );
     item(
-        &run(&row.body, 1, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo feature choices", |ctx| {
             super::super::choices(ctx, std::slice::from_ref(&row))
-        })
-        .expect_err("choice result needs another item"),
+        }),
         "creo feature choices",
     );
 }
@@ -131,10 +129,9 @@ fn raw_feature_field_refuses_before_retained_copy() {
 fn scalar_feature_field_cache_refuses_before_hashset_growth() {
     let payload = [0xf9, 0x01, 0x01, 0x46, 0, 0, 0, 0, 0, 0, 0];
     item(
-        &run(&payload, 0, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&payload, ResourceDimension::CollectionItems, "creo scalar cache unique images", |ctx| {
             super::super::field_value(ctx, &payload)
-        })
-        .expect_err("scalar image requires a cache item"),
+        }),
         "creo scalar cache unique images",
     );
 }
@@ -142,7 +139,7 @@ fn scalar_feature_field_cache_refuses_before_hashset_growth() {
 #[test]
 fn scalar_feature_values_refuse_before_vec_growth() {
     let payload = [0xf9, 0x01, 0x01, 0x0f];
-    let value = run(&payload, 1, u64::MAX, |ctx| {
+    let value = run(&payload, u64::MAX, u64::MAX, |ctx| {
         super::super::field_value(ctx, &payload)
     })
     .expect("one scalar value admitted");
@@ -150,10 +147,9 @@ fn scalar_feature_values_refuse_before_vec_growth() {
         matches!(value, FeatureFieldValue::ScalarArray { decoded_values: Some(values), .. } if values == [0.0])
     );
     item(
-        &run(&payload, 0, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&payload, ResourceDimension::CollectionItems, "creo feature scalar values", |ctx| {
             super::super::field_value(ctx, &payload)
-        })
-        .expect_err("decoded scalar needs one item"),
+        }),
         "creo feature scalar values",
     );
 }
@@ -176,10 +172,9 @@ fn scalar_feature_body_refuses_before_retained_copy() {
 fn compact_feature_integer_refuses_before_vec_growth() {
     let payload = [0xf8, 0x01, 0x07];
     item(
-        &run(&payload, 0, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&payload, ResourceDimension::CollectionItems, "creo feature compact integer values", |ctx| {
             super::super::field_value(ctx, &payload)
-        })
-        .expect_err("compact array needs one value item"),
+        }),
         "creo feature compact integer values",
     );
 }
@@ -188,10 +183,9 @@ fn compact_feature_integer_refuses_before_vec_growth() {
 fn choice_field_header_refuses_before_vec_growth() {
     let choice = field_choice(b"\xe0\x01foo\0\xf8\x01\x07".to_vec());
     item(
-        &run(&choice.payload, 0, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&choice.payload, ResourceDimension::CollectionItems, "creo choice field headers", |ctx| {
             super::super::choice_fields(ctx, std::slice::from_ref(&choice))
-        })
-        .expect_err("field header needs one item"),
+        }),
         "creo choice field headers",
     );
 }
@@ -228,7 +222,7 @@ fn choice_field_name_refuses_before_retained_text_copy() {
 fn choice_field_record_refuses_before_vec_growth() {
     let choice = field_choice(b"\xe0\x01foo\0\xf8\x01\x07".to_vec());
     assert_eq!(
-        run(&choice.payload, 3, u64::MAX, |ctx| {
+        run(&choice.payload, u64::MAX, u64::MAX, |ctx| {
             super::super::choice_fields(ctx, std::slice::from_ref(&choice))
         })
         .expect("one choice field admitted")
@@ -236,10 +230,9 @@ fn choice_field_record_refuses_before_vec_growth() {
         1
     );
     item(
-        &run(&choice.payload, 2, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&choice.payload, ResourceDimension::CollectionItems, "creo choice fields", |ctx| {
             super::super::choice_fields(ctx, std::slice::from_ref(&choice))
-        })
-        .expect_err("choice field result needs one item"),
+        }),
         "creo choice fields",
     );
 }
@@ -263,10 +256,9 @@ fn named_datum_row() -> FeatureRow {
 fn named_datum_ids_refuse_before_vec_growth() {
     let row = named_datum_row();
     item(
-        &run(&row.body, 0, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo named datum ids", |ctx| {
             super::super::geometry_tables(ctx, std::slice::from_ref(&row))
-        })
-        .expect_err("named datum id needs one item"),
+        }),
         "creo named datum ids",
     );
 }
@@ -275,10 +267,9 @@ fn named_datum_ids_refuse_before_vec_growth() {
 fn feature_geometry_table_refuses_before_vec_growth() {
     let row = named_datum_row();
     item(
-        &run(&row.body, 1, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo feature geometry tables", |ctx| {
             super::super::geometry_tables(ctx, std::slice::from_ref(&row))
-        })
-        .expect_err("geometry table needs one result item"),
+        }),
         "creo feature geometry tables",
     );
 }
@@ -295,10 +286,9 @@ fn datum_class_stream_refuses_before_btree_insertion() {
         1
     );
     item(
-        &run(&row.body, 2, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo datum class by stream", |ctx| {
             super::super::geometry_tables(ctx, std::slice::from_ref(&row))
-        })
-        .expect_err("datum stream class needs one node"),
+        }),
         "creo datum class by stream",
     );
 }
@@ -310,12 +300,10 @@ fn positional_datum_ids_refuse_before_counted_vec_reserve() {
         0xe2, 0x80, 0x92, 0xf6, 0xe3,
     ];
     item(
-        &run(&body, 1, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&body, ResourceDimension::CollectionItems, "creo positional datum ids", |ctx| {
             super::super::positional_datum_geometry_table_at(ctx, &body, 1, 87)
-                .transpose()
                 .map(|decoded| decoded.map(|(_, ids)| ids))
-        })
-        .expect_err("two positional ids need two items"),
+        }),
         "creo positional datum ids",
     );
 }
@@ -338,10 +326,9 @@ fn affected_row() -> FeatureRow {
 fn affected_ids_refuse_before_counted_vec_reserve() {
     let row = affected_row();
     item(
-        &run(&row.body, 0, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo affected ids", |ctx| {
             super::super::affected_ids(ctx, std::slice::from_ref(&row))
-        })
-        .expect_err("one affected id needs one item"),
+        }),
         "creo affected ids",
     );
 }
@@ -350,7 +337,7 @@ fn affected_ids_refuse_before_counted_vec_reserve() {
 fn affected_id_record_refuses_before_vec_growth() {
     let row = affected_row();
     assert_eq!(
-        run(&row.body, 2, u64::MAX, |ctx| {
+        run(&row.body, u64::MAX, u64::MAX, |ctx| {
             super::super::affected_ids(ctx, std::slice::from_ref(&row))
         })
         .expect("one affected-id record admitted")
@@ -358,10 +345,9 @@ fn affected_id_record_refuses_before_vec_growth() {
         1
     );
     item(
-        &run(&row.body, 1, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo affected-id records", |ctx| {
             super::super::affected_ids(ctx, std::slice::from_ref(&row))
-        })
-        .expect_err("affected-id record needs another item"),
+        }),
         "creo affected-id records",
     );
 }
@@ -378,7 +364,7 @@ fn round_replay_scalar_refuses_before_vec_growth() {
         offset: 0,
     };
     assert_eq!(
-        run(body, 1, u64::MAX, |ctx| {
+        run(body, u64::MAX, u64::MAX, |ctx| {
             super::super::round_replay_scalars(ctx, std::slice::from_ref(&row))
         })
         .expect("one round scalar admitted")
@@ -386,10 +372,9 @@ fn round_replay_scalar_refuses_before_vec_growth() {
         1
     );
     item(
-        &run(body, 0, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(body, ResourceDimension::CollectionItems, "creo round replay scalars", |ctx| {
             super::super::round_replay_scalars(ctx, std::slice::from_ref(&row))
-        })
-        .expect_err("round scalar needs one item"),
+        }),
         "creo round replay scalars",
     );
 }
@@ -406,7 +391,7 @@ fn loop_restore_direction_refuses_before_vec_growth() {
         offset: 0,
     };
     assert_eq!(
-        run(body, 1, u64::MAX, |ctx| {
+        run(body, u64::MAX, u64::MAX, |ctx| {
             super::super::loop_restore_directions(ctx, std::slice::from_ref(&row))
         })
         .expect("one restore direction admitted")
@@ -414,10 +399,9 @@ fn loop_restore_direction_refuses_before_vec_growth() {
         1
     );
     item(
-        &run(body, 0, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(body, ResourceDimension::CollectionItems, "creo loop restore directions", |ctx| {
             super::super::loop_restore_directions(ctx, std::slice::from_ref(&row))
-        })
-        .expect_err("restore direction needs one item"),
+        }),
         "creo loop restore directions",
     );
 }
@@ -435,7 +419,7 @@ fn feature_revolution_extent_refuses_before_vec_growth() {
         offset: 0,
     };
     assert_eq!(
-        run(body, 1, u64::MAX, |ctx| {
+        run(body, u64::MAX, u64::MAX, |ctx| {
             super::super::revolution_extents(ctx, std::slice::from_ref(&row))
         })
         .expect("one revolution extent admitted")
@@ -443,10 +427,9 @@ fn feature_revolution_extent_refuses_before_vec_growth() {
         1
     );
     item(
-        &run(body, 0, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(body, ResourceDimension::CollectionItems, "creo feature revolution extents", |ctx| {
             super::super::revolution_extents(ctx, std::slice::from_ref(&row))
-        })
-        .expect_err("revolution extent needs one item"),
+        }),
         "creo feature revolution extents",
     );
 }
@@ -455,66 +438,20 @@ fn feature_revolution_extent_refuses_before_vec_growth() {
 fn replay_id_array_refuses_before_nested_vec_growth() {
     let bytes = [10, 11];
     item(
-        &run(&bytes, 1, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&bytes, ResourceDimension::CollectionItems, "creo replay affected ids", |ctx| {
             super::super::replay_ids(ctx, &bytes, 2, 0)
                 .transpose()?
                 .ok_or_else(|| CodecError::malformed("replay ids"))
+                .and_then(|(ids, _)| ids.materialize(ctx))
                 .map(|_| ())
-        })
-        .expect_err("two replay IDs need two items"),
+        }),
         "creo replay affected ids",
     );
-    assert!(run(&bytes, 2, u64::MAX, |ctx| {
+    assert!(run(&bytes, u64::MAX, u64::MAX, |ctx| {
         super::super::replay_ids(ctx, &bytes, 2, 0)
             .transpose()?
             .ok_or_else(|| CodecError::malformed("replay ids"))
-    })
-    .is_ok());
-}
-
-#[test]
-fn explicit_replay_array_record_refuses_before_outer_vec_growth() {
-    let row = super::unanchored_replay_row(1, 40, None, &[0xf8, 1, 10, 0xf8, 1, 20]);
-    let suffix = row
-        .body
-        .windows(2)
-        .position(|bytes| bytes == [0xe1, 0xe1])
-        .expect("replay suffix");
-    item(
-        &run(&row.body, 1, u64::MAX, |ctx| {
-            super::super::explicit_replay_pair_before_suffix(ctx, &row, suffix)
-                .transpose()?
-                .ok_or_else(|| CodecError::malformed("replay pair"))
-                .map(|_| ())
-        })
-        .expect_err("the first explicit array needs an outer item"),
-        "creo explicit replay arrays",
-    );
-    assert!(run(&row.body, 4, u64::MAX, |ctx| {
-        super::super::explicit_replay_pair_before_suffix(ctx, &row, suffix)
-            .transpose()?
-            .ok_or_else(|| CodecError::malformed("replay pair"))
-    })
-    .is_ok());
-}
-
-#[test]
-fn unanchored_replay_candidate_refuses_before_vec_growth() {
-    let row = super::unanchored_replay_row(1, 40, None, &[0xf8, 1, 10, 0xf8, 1, 20]);
-    item(
-        &run(&row.body, 4, u64::MAX, |ctx| {
-            super::super::unique_unanchored_replay_pair(ctx, &row, [None; 2])
-                .transpose()?
-                .ok_or_else(|| CodecError::malformed("replay candidate"))
-                .map(|_| ())
-        })
-        .expect_err("one candidate needs one more item"),
-        "creo replay candidates",
-    );
-    assert!(run(&row.body, 5, u64::MAX, |ctx| {
-        super::super::unique_unanchored_replay_pair(ctx, &row, [None; 2])
-            .transpose()?
-            .ok_or_else(|| CodecError::malformed("replay candidate"))
+                .and_then(|(ids, _)| ids.materialize(ctx))
     })
     .is_ok());
 }
@@ -523,10 +460,9 @@ fn unanchored_replay_candidate_refuses_before_vec_growth() {
 fn replay_extent_state_refuses_before_btree_insertion() {
     let row = super::replay_row(1, &[0xf8, 1, 10, 0xf8, 1, 20]);
     item(
-        &run(&row.body, 0, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo replay extent states", |ctx| {
             super::super::replay_affected_ids(ctx, std::slice::from_ref(&row))
-        })
-        .expect_err("one extent state needs one item"),
+        }),
         "creo replay extent states",
     );
 }
@@ -535,14 +471,13 @@ fn replay_extent_state_refuses_before_btree_insertion() {
 fn replay_affected_record_refuses_before_vec_growth() {
     let row = super::replay_row(1, &[0xf8, 1, 10, 0xf8, 1, 20]);
     item(
-        &run(&row.body, 3, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo replay affected-id records", |ctx| {
             super::super::replay_affected_ids(ctx, std::slice::from_ref(&row))
-        })
-        .expect_err("one replay record needs a fourth item"),
+        }),
         "creo replay affected-id records",
     );
     assert_eq!(
-        run(&row.body, 4, u64::MAX, |ctx| {
+        run(&row.body, u64::MAX, u64::MAX, |ctx| {
             super::super::replay_affected_ids(ctx, std::slice::from_ref(&row))
         })
         .expect("one replay record admitted")
@@ -555,10 +490,9 @@ fn replay_affected_record_refuses_before_vec_growth() {
 fn surface_merge_extent_state_refuses_before_btree_insertion() {
     let row = super::surface_merge_row(1, 40, &[]);
     item(
-        &run(&row.body, 0, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo surface merge extent states", |ctx| {
             super::super::surface_merge_replay_affected_ids(ctx, std::slice::from_ref(&row), &[])
-        })
-        .expect_err("one surface merge state needs one item"),
+        }),
         "creo surface merge extent states",
     );
 }
@@ -572,23 +506,20 @@ fn surface_merge_nested_arrays_refuse_before_each_vec_growth() {
             0xf8, 1, 10, 0xf8, 1, 20, 0xf0, 0xf7, 0x80, 0x99, 0xf8, 1, 30,
         ],
     );
-    for admitted in 0..4 {
-        item(
-            &run(&row.body, admitted, u64::MAX, |ctx| {
-                super::super::positional_surface_merge_affected_ids(ctx, &row, [None; 3])
-                    .transpose()?
-                    .ok_or_else(|| CodecError::malformed("surface merge arrays"))
-            })
-            .expect_err("one of four nested arrays needs another item"),
-            "creo replay affected ids",
-        );
-    }
-    assert!(run(&row.body, 4, u64::MAX, |ctx| {
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &["creo replay affected ids"; 3],
+        |cap| run(&row.body, cap, u64::MAX, |ctx| {
+            super::super::positional_surface_merge_affected_ids(ctx, &row, [None; 3])
+                .transpose()?
+                .ok_or_else(|| CodecError::malformed("surface merge arrays"))
+        }),
+    );
+    assert!(run(&row.body, u64::MAX, u64::MAX, |ctx| {
         super::super::positional_surface_merge_affected_ids(ctx, &row, [None; 3])
             .transpose()?
             .ok_or_else(|| CodecError::malformed("surface merge arrays"))
-    })
-    .is_ok());
+    }).is_ok());
 }
 
 #[test]
@@ -601,14 +532,13 @@ fn surface_merge_record_refuses_before_vec_growth() {
         ],
     );
     item(
-        &run(&row.body, 5, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo surface merge affected-id records", |ctx| {
             super::super::surface_merge_replay_affected_ids(ctx, std::slice::from_ref(&row), &[])
-        })
-        .expect_err("one surface merge record needs another item"),
+        }),
         "creo surface merge affected-id records",
     );
     assert_eq!(
-        run(&row.body, 6, u64::MAX, |ctx| {
+        run(&row.body, u64::MAX, u64::MAX, |ctx| {
             super::super::surface_merge_replay_affected_ids(ctx, std::slice::from_ref(&row), &[])
         })
         .expect("one surface merge record admitted")
@@ -618,44 +548,18 @@ fn surface_merge_record_refuses_before_vec_growth() {
 }
 
 #[test]
-fn loop_history_roster_refuses_before_counted_vec_growth() {
-    let body = [42, 1, 2, 3, 4, 0xe3];
-    item(
-        &run(&body, 0, u64::MAX, |ctx| {
-            super::super::loop_history_roster(ctx, &body, 0, 1)
-                .transpose()?
-                .ok_or_else(|| CodecError::malformed("loop history roster"))
-                .map(|_| ())
-        })
-        .expect_err("one roster row needs one item"),
-        "creo loop history roster",
-    );
-    assert!(run(&body, 1, u64::MAX, |ctx| {
-        super::super::loop_history_roster(ctx, &body, 0, 1)
-            .transpose()?
-            .ok_or_else(|| CodecError::malformed("loop history roster"))
-    })
-    .is_ok());
-}
-
-#[test]
 fn loop_history_fields_refuse_before_each_retained_copy() {
     let body = [42, 1, 2, 3, 4, 0xe3];
-    let slots = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<super::super::ParsedLoopHistoryEntry>(),
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::RetainedBytes,
+        &["creo loop history field bytes"; 4],
+        |cap| run(&body, u64::MAX, cap, |ctx| {
+            super::super::loop_history_roster(ctx, &body, 0, 1)
+                .transpose()?
+                .ok_or_else(|| CodecError::malformed("loop history fields"))
+                .map(|_| ())
+        }),
     );
-    for admitted in 0..4 {
-        retained(
-            &run(&body, u64::MAX, slots + admitted, |ctx| {
-                super::super::loop_history_roster(ctx, &body, 0, 1)
-                    .transpose()?
-                    .ok_or_else(|| CodecError::malformed("loop history fields"))
-                    .map(|_| ())
-            })
-            .expect_err("the next field byte needs retained storage"),
-            "creo loop history field bytes",
-        );
-    }
 }
 
 #[test]
@@ -675,18 +579,11 @@ fn loop_history_trailing_field_refuses_before_retained_copy() {
         ),
         "creo loop history trailing bytes",
     );
-    assert!(run(
-        body,
-        1,
-        5 + cadmpeg_core::decode::u64_from_index(
-            4 * std::mem::size_of::<super::super::ParsedLoopHistoryEntry>()
-        ),
-        |ctx| {
+    assert!(run(body, u64::MAX, u64::MAX, |ctx| {
             super::super::loop_history_roster(ctx, body, 0, 1)
                 .transpose()?
                 .ok_or_else(|| CodecError::malformed("loop history trailing field"))
-        }
-    )
+        })
     .is_ok());
 }
 
@@ -710,18 +607,17 @@ fn loop_history_result_refuses_before_vec_growth() {
         offset: 1000,
     };
     item(
-        &run(body, 1, u64::MAX, |ctx| {
+        &crate::test_support::last_refusal_at(body, ResourceDimension::CollectionItems, "creo loop history entries", |ctx| {
             super::super::loop_history_entries(
                 ctx,
                 std::slice::from_ref(&row),
                 std::slice::from_ref(&table),
             )
-        })
-        .expect_err("one result row needs another item"),
+        }),
         "creo loop history entries",
     );
     assert_eq!(
-        run(body, 2, u64::MAX, |ctx| {
+        run(body, u64::MAX, u64::MAX, |ctx| {
             super::super::loop_history_entries(
                 ctx,
                 std::slice::from_ref(&row),
@@ -748,4 +644,32 @@ fn choice_field_utf8_refuses_work() {
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && resource.operation == "creo UTF-8 validation")
     );
+}
+
+#[test]
+fn replay_row_work_refuses_at_actual_id_and_candidate_steps() {
+    let row = super::unanchored_replay_row(1, 40, None, &[0xf8, 1, 10, 0xf8, 1, 20]);
+    let records = crate::test_support::assert_work_boundaries(
+        &["creo unanchored replay suffix traversal", "creo explicit replay array traversal", "creo replay ID traversal", "creo replay ID materialization"],
+        |ctx| super::super::replay_affected_ids(ctx, std::slice::from_ref(&row)),
+    );
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].geometry_ids, [10]);
+    assert_eq!(records[0].edge_ids, [20]);
+}
+
+#[test]
+fn incomplete_loop_history_keeps_fields_borrowed() {
+    let mut body = vec![42, 0xe0, 1];
+    body.extend(std::iter::repeat_n(b'x', 100));
+    body.extend_from_slice(&[0, 2, 3, 4, 0xe3]);
+    let decoded = run(&body, u64::MAX, 0, |ctx| {
+        super::super::loop_history_roster(ctx, &body, 0, 2).transpose()
+    }).expect("incomplete roster uses no retained fields");
+    assert!(decoded.is_none());
+    let complete = crate::test_support::assert_work_boundaries(
+        &["creo loop history name terminator", "creo loop history roster traversal"],
+        |ctx| super::super::loop_history_roster(ctx, &body, 0, 1).transpose(),
+    ).expect("complete roster");
+    assert_eq!(complete[0].field_bytes[0], body[1..104]);
 }

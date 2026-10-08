@@ -572,9 +572,8 @@ pub(crate) fn round_replay_scalars(
 
 fn round_replay_short_scalar(ctx: &DecodeContext<'_>, body: &[u8], start: usize, end: usize) -> Result<Option<usize>, CodecError> {
     let mut offset = start;
-    let mut steps = std::iter::repeat(());
     while offset < end {
-        ctx.next_charged(&mut steps, "creo round replay scalar traversal")?;
+        ctx.next_charged(&mut (offset..end), "creo round replay scalar traversal")?;
         if body.get(offset) == Some(&0x29) && scalar::decode(body, offset).is_some_and(|(value, after)| after == offset + 3 && after <= end && value.is_finite()) { return Ok(Some(offset)); }
         let next = if body.get(offset) == Some(&psb::token::NAMED_RECORD) {
             let Some(rest) = body.get(offset + 2..end) else { return Ok(None); };
@@ -612,26 +611,19 @@ pub(crate) fn choices(
     let mut result = Vec::new();
     for row in ctx.admit_iter(rows, "creo feature row traversal")? {
         let mut hits = Vec::new();
-        for &label in CHOICE_LABELS {
-            let mut from = 0;
-            while let Some(label_offset) =
-                ctx.find_bytes_from(&row.body, label.as_bytes(), from, "find Creo feature row")?
-            {
+        let mut storage = ctx.reserve_scoped(0, "creo choice hit scratch")?;
+        let mut next_label_offset = [0; CHOICE_LABELS.len()];
+        for label_offset in ctx.admit_iter(0..row.body.len(), "find Creo feature row")? {
+            for (index, &label) in CHOICE_LABELS.iter().enumerate() {
+                if label_offset < next_label_offset[index] { continue; }
                 let label_end = label_offset + label.len();
-                if row.body.get(label_end) != Some(&0) {
-                    from = label_offset + 1;
-                    continue;
-                }
-                let (header_offset, type_byte) = if label_offset >= 2
-                    && row.body[label_offset - 2] == psb::token::NAMED_RECORD
-                {
+                if row.body.get(label_offset..label_end) != Some(label.as_bytes())
+                    || row.body.get(label_end) != Some(&0) { continue; }
+                let (header_offset, type_byte) = if label_offset >= 2 && row.body[label_offset - 2] == psb::token::NAMED_RECORD {
                     (label_offset - 2, Some(row.body[label_offset - 1]))
-                } else {
-                    (label_offset, None)
-                };
-                ctx.reserve_vec(&mut hits, 1, "creo choice label hits")?;
-                hits.push((header_offset, label_offset, label, type_byte));
-                from = label_end + 1;
+                } else { (label_offset, None) };
+                storage.with_storage(|| ctx.push_vec(&mut hits, (header_offset, label_offset, label, type_byte), "creo choice label hits"))?;
+                next_label_offset[index] = label_end + 1;
             }
         }
         ctx.stable_sort_by(
@@ -720,20 +712,25 @@ pub(super) fn field_value(
     if payload[0] == psb::token::ARRAY_OPEN {
         let (count, mut cursor) = psb::compact_int(payload, 1);
         let mut values = Vec::new();
-        for _ in 0..count {
+        let mut storage = ctx.reserve_scoped(0, "creo feature compact integer values")?;
+        let mut items = 0..count;
+        while ctx.next_charged(&mut items, "creo compact integer field traversal")?.is_some() {
             let (value, next) = psb::compact_int(payload, cursor);
             if next == cursor {
+                drop(values);
+                drop(storage);
                 return Ok(FeatureFieldValue::Raw(
                     ctx.copy_retained(payload, "creo feature raw field")?,
                 ));
             }
-            ctx.reserve_vec(&mut values, 1, "creo feature compact integer values")?;
+            storage.with_storage(|| ctx.reserve_vec(&mut values, 1, "creo feature compact integer values"))?;
             values.push(value);
             cursor = next;
         }
         if cursor == payload.len()
             || cursor + 1 == payload.len() && payload[cursor] == psb::token::ARRAY_CLOSE
         {
+            storage.commit()?;
             return Ok(FeatureFieldValue::CompactIntArray(values));
         }
     }
@@ -834,10 +831,10 @@ pub(crate) fn geometry_tables(
                     continue;
                 }
                 from = label_end + 1;
-                let Some(decoded) = geometry_table_at(ctx, &row.body, from, kind.clone()) else {
+                let Some(decoded) = geometry_table_at(ctx, &row.body, from, kind.clone())? else {
                     continue;
                 };
-                let (count, entity_class, decoded_kind) = decoded?;
+                let (count, entity_class, decoded_kind) = decoded;
                 ctx.reserve_vec(&mut tables, 1, "creo feature geometry tables")?;
                 tables.push(FeatureGeometryTable {
                     feature_id: row.feature_id,
@@ -858,11 +855,11 @@ pub(crate) fn geometry_tables(
         };
         for cursor in ctx.admit_iter(0..row.body.len(), "creo positional geometry byte traversal")? {
             let Some(decoded) =
-                positional_datum_geometry_table_at(ctx, &row.body, cursor, entity_class)
+                positional_datum_geometry_table_at(ctx, &row.body, cursor, entity_class)?
             else {
                 continue;
             };
-            let (count, entry_ids) = decoded?;
+            let (count, entry_ids) = decoded;
             ctx.reserve_vec(&mut tables, 1, "creo feature geometry tables")?;
             tables.push(FeatureGeometryTable {
                 feature_id: row.feature_id,
@@ -887,54 +884,44 @@ fn positional_datum_geometry_table_at(
     body: &[u8],
     cursor: usize,
     entity_class: u32,
-) -> Option<Result<(u32, Vec<u32>), CodecError>> {
-    (body.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+) -> Result<Option<(u32, Vec<u32>)>, CodecError> {
+    if body.get(cursor) != Some(&psb::token::ARRAY_OPEN) { return Ok(None); }
     let (count, after_count) = psb::compact_int(body, cursor + 1);
-    (after_count > cursor + 1 && body.get(after_count) == Some(&psb::token::ENTITY_REF))
-        .then_some(())?;
-    let (stored_class, mut cursor) = psb::reference_id(body, after_count + 1).ok()?;
-    (stored_class == entity_class).then_some(())?;
-    if body.get(cursor) == Some(&psb::token::ARRAY_CLOSE) {
-        cursor += 1;
-    }
-    if body.get(cursor) == Some(&0xe2) {
-        cursor += 1;
-    }
-
-    let capacity = bounded_len(u64::from(count), 1, body.len().checked_sub(cursor)?)?;
-    let entry_class = entity_class.checked_add(1)?;
+    if after_count <= cursor + 1 || body.get(after_count) != Some(&psb::token::ENTITY_REF) { return Ok(None); }
+    let Ok((stored_class, mut cursor)) = psb::reference_id(body, after_count + 1) else { return Ok(None); };
+    if stored_class != entity_class { return Ok(None); }
+    if body.get(cursor) == Some(&psb::token::ARRAY_CLOSE) { cursor += 1; }
+    if body.get(cursor) == Some(&0xe2) { cursor += 1; }
+    let Some(remaining) = body.len().checked_sub(cursor) else { return Ok(None); };
+    if bounded_len(u64::from(count), 1, remaining).is_none() { return Ok(None); }
+    let Some(entry_class) = entity_class.checked_add(1) else { return Ok(None); };
+    let mut storage = ctx.reserve_scoped(0, "creo positional datum ids")?;
     let mut entry_ids = Vec::new();
-    if let Err(error) = ctx.reserve_vec(&mut entry_ids, capacity, "creo positional datum ids") {
-        return Some(Err(error));
-    }
-    for index in 0..count {
+    let mut items = 0..count;
+    while let Some(index) = ctx.next_charged(&mut items, "creo positional datum traversal")? {
         if index == 0 {
-            (body.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-            let (stored_entry_class, after_class) = psb::reference_id(body, cursor + 1).ok()?;
-            (stored_entry_class == entry_class).then_some(())?;
+            if body.get(cursor) != Some(&psb::token::ENTITY_REF) { return Ok(None); }
+            let Ok((stored_entry_class, after_class)) = psb::reference_id(body, cursor + 1) else { return Ok(None); };
+            if stored_entry_class != entry_class { return Ok(None); }
             cursor = after_class;
         } else {
-            (body
-                .get(cursor)
-                .is_some_and(|byte| matches!(byte, 0xf1 | 0xf2)))
-            .then_some(())?;
-            (body.get(cursor + 1) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-            let (continuation_class, after_class) = psb::reference_id(body, cursor + 2).ok()?;
-            (continuation_class == entity_class && body.get(after_class) == Some(&0xe2))
-                .then_some(())?;
+            if !body.get(cursor).is_some_and(|byte| matches!(byte, 0xf1 | 0xf2))
+                || body.get(cursor + 1) != Some(&psb::token::ENTITY_REF) { return Ok(None); }
+            let Ok((continuation_class, after_class)) = psb::reference_id(body, cursor + 2) else { return Ok(None); };
+            if continuation_class != entity_class || body.get(after_class) != Some(&0xe2) { return Ok(None); }
             cursor = after_class + 1;
         }
-        let (entry_id, after_id) = psb::reference_id(body, cursor).ok()?;
-        entry_ids.push(entry_id);
+        let Ok((entry_id, after_id)) = psb::reference_id(body, cursor) else { return Ok(None); };
+        storage.with_storage(|| ctx.push_vec(&mut entry_ids, entry_id, "creo positional datum ids"))?;
         cursor = after_id;
-        if body.get(cursor) == Some(&0xf6) {
-            cursor += 1;
-        } else {
-            let (_, after_dimension) = psb::reference_id(body, cursor).ok()?;
+        if body.get(cursor) == Some(&0xf6) { cursor += 1; }
+        else {
+            let Ok((_, after_dimension)) = psb::reference_id(body, cursor) else { return Ok(None); };
             cursor = after_dimension;
         }
     }
-    Some(Ok((count, entry_ids)))
+    storage.commit()?;
+    Ok(Some((count, entry_ids)))
 }
 
 fn geometry_table_at(
@@ -942,7 +929,7 @@ fn geometry_table_at(
     body: &[u8],
     mut cursor: usize,
     mut kind: FeatureGeometryTableKind,
-) -> Option<Result<(u32, u32, FeatureGeometryTableKind), CodecError>> {
+) -> Result<Option<(u32, u32, FeatureGeometryTableKind)>, CodecError> {
     if body
         .get(cursor)
         .is_some_and(|byte| matches!(byte, 0xf1 | 0xf2))
@@ -950,13 +937,13 @@ fn geometry_table_at(
         cursor += 1;
     }
     if body.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
-        return None;
+        return Ok(None);
     }
     let (count, after_count) = psb::compact_int(body, cursor + 1);
     if after_count == cursor + 1 || body.get(after_count) != Some(&psb::token::ENTITY_REF) {
-        return None;
+        return Ok(None);
     }
-    let (entity_class, mut after_class) = psb::reference_id(body, after_count + 1).ok()?;
+    let Ok((entity_class, mut after_class)) = psb::reference_id(body, after_count + 1) else { return Ok(None); };
     if body.get(after_class) == Some(&0xfb) {
         after_class += 1;
     }
@@ -966,7 +953,9 @@ fn geometry_table_at(
     if let FeatureGeometryTableKind::DatumIds(ids) = &mut kind {
         let mut entries = Vec::new();
         let mut entry_cursor = after_class;
-        for _ in 0..count {
+        let mut storage = ctx.reserve_scoped(0, "creo named datum ids")?;
+        let mut items = 0..count;
+        while ctx.next_charged(&mut items, "creo named datum traversal")?.is_some() {
             const ENTRY: &[u8] = b"\xe0\x01dtm_id\0";
             if body.get(entry_cursor..entry_cursor + ENTRY.len()) != Some(ENTRY) {
                 entries.clear();
@@ -977,15 +966,16 @@ fn geometry_table_at(
                 entries.clear();
                 break;
             }
-            if let Err(error) = ctx.reserve_vec(&mut entries, 1, "creo named datum ids") {
-                return Some(Err(error));
-            }
+            storage.with_storage(|| ctx.reserve_vec(&mut entries, 1, "creo named datum ids"))?;
             entries.push(entry);
             entry_cursor = next;
         }
-        *ids = (entries.len() == index_from_u32(count)).then_some(entries);
+        if entries.len() == index_from_u32(count) {
+            storage.commit()?;
+            *ids = Some(entries);
+        } else { *ids = None; }
     }
-    Some(Ok((count, entity_class, kind)))
+    Ok(Some((count, entity_class, kind)))
 }
 
 /// Decode complete named affected-ID arrays from known feature rows.
@@ -1033,17 +1023,19 @@ pub(crate) fn affected_ids(
                     continue;
                 };
                 let mut ids = Vec::new();
-                ctx.reserve_vec(&mut ids, capacity, "creo affected ids")?;
-                for _ in 0..count {
+                let mut storage = ctx.reserve_scoped(0, "creo affected ids")?;
+                let mut items = 0..count;
+                while ctx.next_charged(&mut items, "creo affected ID traversal")?.is_some() {
                     let (id, next) = psb::compact_int(&row.body, cursor);
                     if next == cursor {
                         ids.clear();
                         break;
                     }
-                    ids.push(id);
+                    storage.with_storage(|| ctx.push_vec(&mut ids, id, "creo affected ids"))?;
                     cursor = next;
                 }
                 if ids.len() == capacity {
+                    storage.commit()?;
                     ctx.reserve_vec(&mut result, 1, "creo affected-id records")?;
                     result.push(FeatureAffectedIds {
                         feature_id: row.feature_id,
@@ -1095,43 +1087,63 @@ fn skip_replay_position_reference(run: &[u8], cursor: usize) -> Option<usize> {
     (run.get(after) == Some(&psb::token::ARRAY_OPEN)).then_some(after)
 }
 
-fn replay_ids(
-    ctx: &DecodeContext<'_>,
-    run: &[u8],
+#[derive(Clone, Copy)]
+struct EncodedReplayIds<'a> {
+    bytes: &'a [u8],
     count: u32,
-    mut cursor: usize,
-) -> Option<Result<(Vec<u32>, usize), CodecError>> {
-    // Each id is a compact int of at least one byte, so the count cannot exceed
-    // the unread bytes of the run.
-    let capacity = bounded_len(u64::from(count), 1, run.len().checked_sub(cursor)?)?;
-    let mut ids = Vec::new();
-    if let Err(error) = ctx.reserve_vec(&mut ids, capacity, "creo replay affected ids") {
-        return Some(Err(error));
-    }
-    for _ in 0..count {
-        let (id, after) = psb::compact_int(run, cursor);
-        if after == cursor {
-            return None;
-        }
-        ids.push(id);
-        cursor = after;
-    }
-    Some(Ok((ids, cursor)))
 }
 
-struct ReplayAffectedPair {
-    geometry_ids: Vec<u32>,
-    edge_ids: Vec<u32>,
+impl EncodedReplayIds<'_> {
+    fn len(self) -> usize { index_from_u32(self.count) }
+
+    fn materialize(self, ctx: &DecodeContext<'_>) -> Result<Vec<u32>, CodecError> {
+        let mut ids = Vec::new();
+        ctx.reserve_vec(&mut ids, self.len(), "creo replay affected ids")?;
+        let mut cursor = 0;
+        for _ in ctx.admit_iter(0..self.count, "creo replay ID materialization")? {
+            let (id, after) = psb::compact_int(self.bytes, cursor);
+            ids.push(id);
+            cursor = after;
+        }
+        Ok(ids)
+    }
+}
+
+fn replay_ids<'a>(
+    ctx: &DecodeContext<'_>,
+    run: &'a [u8],
+    count: u32,
+    mut cursor: usize,
+) -> Option<Result<(EncodedReplayIds<'a>, usize), CodecError>> {
+    bounded_len(u64::from(count), 1, run.len().checked_sub(cursor)?)?;
+    let start = cursor;
+    let mut items = 0..count;
+    loop {
+        match ctx.next_charged(&mut items, "creo replay ID traversal") {
+            Ok(Some(_)) => {},
+            Ok(None) => break,
+            Err(error) => return Some(Err(error)),
+        }
+        let (_, after) = psb::compact_int(run, cursor);
+        if after == cursor { return None; }
+        cursor = after;
+    }
+    Some(Ok((EncodedReplayIds { bytes: &run[start..cursor], count }, cursor)))
+}
+
+struct ReplayAffectedPair<'a> {
+    geometry_ids: EncodedReplayIds<'a>,
+    edge_ids: EncodedReplayIds<'a>,
     geometry_extent: ReplayExtentSource,
     edge_extent: ReplayExtentSource,
     consumed: usize,
 }
 
-fn replay_affected_pair(
+fn replay_affected_pair<'a>(
     ctx: &DecodeContext<'_>,
-    run: &[u8],
+    run: &'a [u8],
     extents: [Option<u32>; 2],
-) -> Option<Result<ReplayAffectedPair, CodecError>> {
+) -> Option<Result<ReplayAffectedPair<'a>, CodecError>> {
     let (geometry_count, geometry_extent, cursor) =
         replay_extent(run, 0, b"geoms_affected", extents[0])?;
     let (geometry_ids, cursor) = match replay_ids(ctx, run, geometry_count, cursor)? {
@@ -1154,11 +1166,11 @@ fn replay_affected_pair(
     }))
 }
 
-fn explicit_replay_array(
+fn explicit_replay_array<'a>(
     ctx: &DecodeContext<'_>,
-    run: &[u8],
+    run: &'a [u8],
     opener: usize,
-) -> Option<Result<(Vec<u32>, usize), CodecError>> {
+) -> Option<Result<(EncodedReplayIds<'a>, usize), CodecError>> {
     (run.get(opener) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
     let (count, cursor) = psb::compact_int(run, opener + 1);
     (cursor > opener + 1).then_some(())?;
@@ -1209,62 +1221,53 @@ fn replay_array_trailer(bytes: &[u8]) -> bool {
     replay_entity_reference_end(bytes, 1) == Some(bytes.len())
 }
 
-fn explicit_replay_pair_before_suffix(
+fn explicit_replay_pair_before_suffix<'a>(
     ctx: &DecodeContext<'_>,
-    row: &FeatureRow,
+    row: &'a FeatureRow,
     suffix: usize,
-) -> Option<Result<(ReplayAffectedPair, usize), CodecError>> {
-    let mut arrays = Vec::new();
-    for (opener, &byte) in row.body[..suffix].iter().enumerate() {
-        if byte != psb::token::ARRAY_OPEN {
-            continue;
-        }
-        let Some(decoded) = explicit_replay_array(ctx, &row.body[..suffix], opener) else {
-            continue;
-        };
-        let (ids, end) = match decoded {
-            Ok(decoded) => decoded,
+) -> Option<Result<(ReplayAffectedPair<'a>, usize), CodecError>> {
+    let mut arrays = [None; 3];
+    let mut bytes = row.body[..suffix].iter().enumerate();
+    loop {
+        let (opener, &byte) = match ctx.next_charged(&mut bytes, "creo explicit replay array traversal") {
+            Ok(Some(item)) => item,
+            Ok(None) => break,
             Err(error) => return Some(Err(error)),
         };
-        if let Err(error) = ctx.reserve_vec(&mut arrays, 1, "creo explicit replay arrays") {
-            return Some(Err(error));
-        }
-        arrays.push((opener, ids, end));
+        if byte != psb::token::ARRAY_OPEN { continue; }
+        let Some(decoded) = explicit_replay_array(ctx, &row.body[..suffix], opener) else { continue; };
+        let (ids, end) = match decoded { Ok(decoded) => decoded, Err(error) => return Some(Err(error)) };
+        arrays.rotate_left(1);
+        arrays[2] = Some((opener, ids, end));
     }
-    let edges = arrays.pop()?;
-    let geometry = arrays.pop()?;
-    let pair_prefix = if let Some(preceding) = arrays.last() {
+    let edges = arrays[2]?;
+    let geometry = arrays[1]?;
+    let pair_prefix = if let Some(preceding) = arrays[0] {
         replay_array_separator(&row.body[preceding.2..geometry.0])
-    } else {
-        geometry.0 > 0 && row.body[geometry.0 - 1] == psb::token::COMPOUND_CLOSE
-    };
-    pair_prefix.then_some(())?;
-    replay_array_separator(&row.body[geometry.2..edges.0]).then_some(())?;
-    replay_array_trailer(&row.body[edges.2..suffix]).then_some(())?;
-    Some(Ok((
-        ReplayAffectedPair {
-            geometry_ids: geometry.1,
-            edge_ids: edges.1,
-            geometry_extent: ReplayExtentSource::Explicit,
-            edge_extent: ReplayExtentSource::Explicit,
-            consumed: suffix - geometry.0,
-        },
-        geometry.0,
-    )))
+    } else { geometry.0 > 0 && row.body[geometry.0 - 1] == psb::token::COMPOUND_CLOSE };
+    if !pair_prefix || !replay_array_separator(&row.body[geometry.2..edges.0])
+        || !replay_array_trailer(&row.body[edges.2..suffix]) { return None; }
+    Some(Ok((ReplayAffectedPair {
+        geometry_ids: geometry.1, edge_ids: edges.1,
+        geometry_extent: ReplayExtentSource::Explicit, edge_extent: ReplayExtentSource::Explicit,
+        consumed: suffix - geometry.0,
+    }, geometry.0)))
 }
 
-fn unique_unanchored_replay_pair(
+fn unique_unanchored_replay_pair<'a>(
     ctx: &DecodeContext<'_>,
-    row: &FeatureRow,
+    row: &'a FeatureRow,
     extents: [Option<u32>; 2],
-) -> Option<Result<(ReplayAffectedPair, usize), CodecError>> {
-    let mut candidates = Vec::new();
-    for suffix in row
-        .body
-        .windows(2)
-        .enumerate()
-        .filter_map(|(offset, window)| (window == [0xe1, 0xe1]).then_some(offset))
-    {
+) -> Option<Result<(ReplayAffectedPair<'a>, usize), CodecError>> {
+    let mut candidate = None;
+    let mut suffixes = row.body.windows(2).enumerate();
+    loop {
+        let (suffix, window) = match ctx.next_charged(&mut suffixes, "creo unanchored replay suffix traversal") {
+            Ok(Some(item)) => item,
+            Ok(None) => break,
+            Err(error) => return Some(Err(error)),
+        };
+        if window != [0xe1, 0xe1] { continue; }
         let (row_id, after_id) = psb::compact_int(&row.body, suffix + 2);
         if after_id == suffix + 2 || row.body.get(after_id) != Some(&psb::token::COMPOUND_CLOSE) {
             continue;
@@ -1299,13 +1302,17 @@ fn unique_unanchored_replay_pair(
                 Ok(pair) => pair,
                 Err(error) => return Some(Err(error)),
             };
-            if let Err(error) = ctx.reserve_vec(&mut candidates, 1, "creo replay candidates") {
-                return Some(Err(error));
-            }
-            candidates.push(pair);
+            if candidate.is_some() { return None; }
+            candidate = Some(pair);
             continue;
         }
-        for start in 1..suffix {
+        let mut starts = 1..suffix;
+        loop {
+            let start = match ctx.next_charged(&mut starts, "creo unanchored replay start traversal") {
+                Ok(Some(start)) => start,
+                Ok(None) => break,
+                Err(error) => return Some(Err(error)),
+            };
             if row.body[start - 1] != psb::token::COMPOUND_CLOSE {
                 continue;
             }
@@ -1317,15 +1324,12 @@ fn unique_unanchored_replay_pair(
                 Err(error) => return Some(Err(error)),
             };
             if pair.consumed == suffix - start {
-                if let Err(error) = ctx.reserve_vec(&mut candidates, 1, "creo replay candidates") {
-                    return Some(Err(error));
-                }
-                candidates.push((pair, start));
+                if candidate.is_some() { return None; }
+                candidate = Some((pair, start));
             }
         }
     }
-    (candidates.len() == 1).then_some(())?;
-    candidates.pop().map(Ok)
+    candidate.map(Ok)
 }
 
 /// Decode the two affected-ID array positions in class-913 and class-914 replay rows.
@@ -1397,6 +1401,8 @@ pub(crate) fn replay_affected_ids(
         };
         state[0] = Some(geometry_count);
         state[1] = Some(edge_count);
+        let geometry_ids = geometry_ids.materialize(ctx)?;
+        let edge_ids = edge_ids.materialize(ctx)?;
         ctx.reserve_vec(&mut result, 1, "creo replay affected-id records")?;
         result.push(FeatureReplayAffectedIds {
             feature_id: row.feature_id,
@@ -1454,13 +1460,15 @@ fn positional_surface_merge_affected_ids(
 ) -> Option<Result<FeatureSurfaceMergeAffectedIds, CodecError>> {
     const ANCHOR: &[u8] = &[0xf7, 0x80, 0x96];
     const QUILT_SEPARATOR: &[u8] = &[0xf0, 0xf7, 0x80, 0x99];
-    let mut anchors = row
-        .body
-        .windows(ANCHOR.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == ANCHOR).then_some(offset));
-    let anchor = anchors.next()?;
-    anchors.next().is_none().then_some(())?;
+    let mut positions = row.body.windows(ANCHOR.len()).enumerate();
+    let anchor = match ctx.find_map(&mut positions, |(offset, bytes)| Ok((bytes == ANCHOR).then_some(offset)), "creo surface merge anchor traversal") {
+        Ok(Some(anchor)) => anchor,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    match ctx.any_by(positions, |(_, bytes)| Ok(bytes == ANCHOR), "creo surface merge anchor uniqueness") {
+        Ok(false) => {}, Ok(true) => return None, Err(error) => return Some(Err(error)),
+    }
     let (_, cursor) = match explicit_replay_array(ctx, &row.body, anchor + ANCHOR.len())? {
         Ok(decoded) => decoded,
         Err(error) => return Some(Err(error)),
@@ -1493,8 +1501,11 @@ fn positional_surface_merge_affected_ids(
         Ok(decoded) => decoded,
         Err(error) => return Some(Err(error)),
     };
-    surface_merge_replay_suffix(row.body.get(cursor..)?).then_some(Ok(
-        FeatureSurfaceMergeAffectedIds {
+    if !surface_merge_replay_suffix(row.body.get(cursor..)?) { return None; }
+    let geometry_ids = match geometry_ids.materialize(ctx) { Ok(ids) => ids, Err(error) => return Some(Err(error)) };
+    let edge_ids = match edge_ids.materialize(ctx) { Ok(ids) => ids, Err(error) => return Some(Err(error)) };
+    let quilt_ids = match quilt_ids.materialize(ctx) { Ok(ids) => ids, Err(error) => return Some(Err(error)) };
+    Some(Ok(FeatureSurfaceMergeAffectedIds {
             feature_id: row.feature_id,
             geometry_ids,
             edge_ids,
@@ -1503,8 +1514,7 @@ fn positional_surface_merge_affected_ids(
             edge_extent,
             quilt_extent,
             offset: row.body_offset + anchor,
-        },
-    ))
+        }))
 }
 
 /// Decode affected geometry, edge, and quilt arrays from class-946 replay rows.
@@ -1577,6 +1587,7 @@ pub(crate) fn loop_restore_directions(
     ];
     let mut result = Vec::new();
     for row in ctx.admit_iter(rows, "creo feature row traversal")? {
+        let Some(owner) = ctx.find_bytes(&row.body, b"lo_restore\0", "find Creo loop restore owner")? else { continue; };
         for &(label, lane) in FIELDS {
             let mut from = 0;
             while let Some(label_offset) =
@@ -1591,11 +1602,7 @@ pub(crate) fn loop_restore_directions(
                 if label_offset < 2
                     || row.body[label_offset - 2] != psb::token::NAMED_RECORD
                     || row.body[label_offset - 1] != 1
-                    || !ctx.contains_bytes(
-                        &row.body[..label_offset - 2],
-                        b"lo_restore\0",
-                        "find Creo loop restore owner",
-                    )?
+                    || owner + b"lo_restore\0".len() > label_offset - 2
                 {
                     continue;
                 }
@@ -1631,20 +1638,34 @@ pub(crate) fn loop_history_entries(
     const LABEL: &[u8] = b"\xe0\x01lo_hist\0";
     const RECORD_WIDTH: u32 = 6;
     let mut result = Vec::new();
-    for table in geometry_tables
-        .iter()
-        .filter(|table| table.kind == FeatureGeometryTableKind::LoopIds)
-    {
-        let Some(row) = rows.iter().find(|row| {
-            row.feature_id == table.feature_id
-                && table.offset >= row.body_offset
-                && row
-                    .body_offset
-                    .checked_add(row.body.len())
-                    .is_some_and(|end| table.offset < end)
-        }) else {
-            continue;
-        };
+    let mut storage = ctx.reserve_scoped(0, "creo loop history indexes")?;
+    let mut keys = Vec::new();
+    for table in ctx.admit_iter(geometry_tables, "creo loop table index traversal")? {
+        if table.kind == FeatureGeometryTableKind::LoopIds {
+            storage.with_storage(|| ctx.push_vec(&mut keys, (table.feature_id, table.offset), "creo loop table keys"))?;
+        }
+    }
+    ctx.sort_unstable_by(&mut keys, |key| key, Ord::cmp, "creo loop table key ordering")?;
+    ctx.dedup_vec(&mut keys, "creo loop table key deduplication")?;
+    let mut next_tables = std::collections::HashMap::new();
+    for index in ctx.admit_iter(0..keys.len().saturating_sub(1), "creo loop table neighbor traversal")? {
+        let pair = &keys[index..index + 2];
+        if pair[0].0 == pair[1].0 {
+            storage.with_storage(|| ctx.insert_hash_map(&mut next_tables, pair[0], pair[1].1, "creo loop next table index"))?;
+        }
+    }
+    let mut table_rows = std::collections::HashMap::new();
+    for row in ctx.admit_iter(rows, "creo loop row index traversal")? {
+        let Some(end) = row.body_offset.checked_add(row.body.len()) else { continue; };
+        let first = ctx.partition_point(&keys, |key| Ok(*key < (row.feature_id, row.body_offset)), "creo loop row lower bound")?;
+        let last = ctx.partition_point(&keys, |key| Ok(*key < (row.feature_id, end)), "creo loop row upper bound")?;
+        for key in ctx.admit_iter(&keys[first..last], "creo loop row key traversal")? {
+            storage.with_storage(|| ctx.entry_hash_map(&mut table_rows, *key, "creo loop table row index"))?.or_insert(row);
+        }
+    }
+    for table in ctx.admit_iter(geometry_tables, "creo loop table output traversal")?.filter(|table| table.kind == FeatureGeometryTableKind::LoopIds) {
+        let key = (table.feature_id, table.offset);
+        let Some(&row) = table_rows.get(&key) else { continue; };
         let table_offset = table.offset - row.body_offset;
         let Some(label_offset) =
             ctx.find_bytes_from(&row.body, LABEL, table_offset, "find Creo feature row")?
@@ -1652,14 +1673,7 @@ pub(crate) fn loop_history_entries(
             continue;
         };
         let label_stream_offset = row.body_offset + label_offset;
-        if geometry_tables.iter().any(|other| {
-            other.kind == FeatureGeometryTableKind::LoopIds
-                && other.feature_id == table.feature_id
-                && other.offset > table.offset
-                && other.offset < label_stream_offset
-        }) {
-            continue;
-        }
+        if next_tables.get(&key).is_some_and(|&next| next < label_stream_offset) { continue; }
         let array_offset = label_offset + LABEL.len();
         if row.body.get(array_offset) != Some(&psb::token::ARRAY_OPEN) {
             continue;
@@ -1671,13 +1685,14 @@ pub(crate) fn loop_history_entries(
         let Ok(count) = usize::try_from(table.count) else {
             continue;
         };
-        let Some(decoded) = loop_history_roster(ctx, &row.body, roster_offset, count) else {
+        let Some(decoded) = loop_history_prototypes(ctx, &row.body, roster_offset, count) else {
             continue;
         };
-        let entries = decoded?;
+        let (entries, _prototype_storage) = decoded?;
         ctx.reserve_vec(&mut result, entries.len(), "creo loop history entries")?;
-        result.extend((0..table.count).zip(entries).map(|(ordinal, entry)| {
-            FeatureLoopHistoryEntry {
+        for (ordinal, prototype) in (0..table.count).zip(ctx.admit_iter(entries, "creo loop history materialization")?) {
+            let entry = prototype.materialize(ctx)?;
+            result.push(FeatureLoopHistoryEntry {
                 feature_id: row.feature_id,
                 ordinal,
                 loop_id: entry.loop_id,
@@ -1685,8 +1700,8 @@ pub(crate) fn loop_history_entries(
                 boundary: entry.boundary,
                 offset: row.body_offset + entry.offset,
                 end_offset: row.body_offset + entry.end_offset,
-            }
-        }));
+            });
+        }
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
@@ -1697,40 +1712,42 @@ pub(crate) fn loop_history_entries(
     Ok(result)
 }
 
-fn loop_history_roster(
-    ctx: &DecodeContext<'_>,
-    body: &[u8],
+fn loop_history_prototypes<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    body: &'a [u8],
     mut cursor: usize,
     count: usize,
-) -> Option<Result<Vec<ParsedLoopHistoryEntry>, CodecError>> {
+) -> Option<Result<(Vec<BorrowedHistoryEntry<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError>> {
     (count > 0 && count <= body.len().checked_sub(cursor)? / 2).then_some(())?;
     let mut entries = Vec::new();
-    if let Err(error) = ctx.reserve_vec(&mut entries, count, "creo loop history roster") {
-        return Some(Err(error));
-    }
-    for index in 0..count {
+    let mut storage = match ctx.reserve_scoped(0, "creo loop history prototypes") { Ok(storage) => storage, Err(error) => return Some(Err(error)) };
+    if let Err(error) = storage.with_storage(|| ctx.reserve_vec(&mut entries, count, "creo loop history prototypes")) { return Some(Err(error)); }
+    let mut items = 0..count;
+    loop {
+        let index = match ctx.next_charged(&mut items, "creo loop history roster traversal") {
+            Ok(Some(index)) => index, Ok(None) => break, Err(error) => return Some(Err(error)),
+        };
         let offset = cursor;
         let (loop_id, after_id) = psb::compact_int(body, cursor);
         (after_id > cursor && body[cursor] <= 0xbf).then_some(())?;
         cursor = after_id;
-        let mut field_bytes = std::array::from_fn(|_| Vec::new());
+        let mut field_bytes = [&[][..]; 4];
         for field in &mut field_bytes {
-            let token = psb::token_at(body, cursor)?;
+            let token = match loop_history_token(ctx, body, cursor) {
+                Ok(Some(token)) => token, Ok(None) => return None, Err(error) => return Some(Err(error)),
+            };
             (!matches!(
                 token.kind,
                 psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
             ))
             .then_some(())?;
             let bytes = body.get(cursor..cursor.checked_add(token.length)?)?;
-            *field = match ctx.copy_retained(bytes, "creo loop history field bytes") {
-                Ok(bytes) => bytes,
-                Err(error) => return Some(Err(error)),
-            };
+            *field = bytes;
             cursor = cursor.checked_add(token.length)?;
         }
         let boundary = if body.get(cursor) == Some(&0xe3) {
             cursor += 1;
-            FeatureLoopHistoryBoundary::CompoundClose
+            BorrowedHistoryBoundary::CompoundClose
         } else if body
             .get(cursor)
             .is_some_and(|byte| matches!(byte, 0xf1 | 0xf2))
@@ -1741,13 +1758,15 @@ fn loop_history_roster(
             (body.get(after_reference) == Some(&0xe3)).then_some(())?;
             cursor = after_reference + 1;
             if marker == 0xf1 {
-                FeatureLoopHistoryBoundary::ReferenceContinue(reference)
+                BorrowedHistoryBoundary::ReferenceContinue(reference)
             } else {
-                FeatureLoopHistoryBoundary::ReferenceFinal(reference)
+                BorrowedHistoryBoundary::ReferenceFinal(reference)
             }
         } else {
             (index + 1 == count).then_some(())?;
-            let token = psb::token_at(body, cursor)?;
+            let token = match loop_history_token(ctx, body, cursor) {
+                Ok(Some(token)) => token, Ok(None) => return None, Err(error) => return Some(Err(error)),
+            };
             let trailing = if token.kind == psb::TokenKind::NamedRecord {
                 None
             } else {
@@ -1757,27 +1776,76 @@ fn loop_history_roster(
                 ))
                 .then_some(())?;
                 let bytes = body.get(cursor..cursor.checked_add(token.length)?)?;
-                let bytes = match ctx.copy_retained(bytes, "creo loop history trailing bytes") {
-                    Ok(bytes) => bytes,
-                    Err(error) => return Some(Err(error)),
-                };
                 cursor = cursor.checked_add(token.length)?;
-                matches!(
-                    psb::token_at(body, cursor).map(|token| token.kind),
-                    Some(psb::TokenKind::NamedRecord)
-                )
-                .then_some(())?;
+                let following = match loop_history_token(ctx, body, cursor) {
+                    Ok(token) => token, Err(error) => return Some(Err(error)),
+                };
+                following.is_some_and(|token| token.kind == psb::TokenKind::NamedRecord).then_some(())?;
                 Some(bytes)
             };
-            FeatureLoopHistoryBoundary::NamedRecord { trailing }
+            BorrowedHistoryBoundary::NamedRecord { trailing }
         };
-        entries.push(ParsedLoopHistoryEntry {
+        entries.push(BorrowedHistoryEntry {
             loop_id,
             field_bytes,
             boundary,
             offset,
             end_offset: cursor,
         });
+    }
+    Some(Ok((entries, storage)))
+}
+
+struct BorrowedHistoryEntry<'a> {
+    loop_id: u32,
+    field_bytes: [&'a [u8]; 4],
+    boundary: BorrowedHistoryBoundary<'a>,
+    offset: usize,
+    end_offset: usize,
+}
+
+enum BorrowedHistoryBoundary<'a> {
+    CompoundClose,
+    ReferenceContinue(u32),
+    ReferenceFinal(u32),
+    NamedRecord { trailing: Option<&'a [u8]> },
+}
+
+impl BorrowedHistoryEntry<'_> {
+    fn materialize(self, ctx: &DecodeContext<'_>) -> Result<ParsedLoopHistoryEntry, CodecError> {
+        let mut field_bytes = std::array::from_fn(|_| Vec::new());
+        for (field, bytes) in field_bytes.iter_mut().zip(self.field_bytes) {
+            *field = ctx.copy_retained(bytes, "creo loop history field bytes")?;
+        }
+        let boundary = match self.boundary {
+            BorrowedHistoryBoundary::CompoundClose => FeatureLoopHistoryBoundary::CompoundClose,
+            BorrowedHistoryBoundary::ReferenceContinue(reference) => FeatureLoopHistoryBoundary::ReferenceContinue(reference),
+            BorrowedHistoryBoundary::ReferenceFinal(reference) => FeatureLoopHistoryBoundary::ReferenceFinal(reference),
+            BorrowedHistoryBoundary::NamedRecord { trailing } => FeatureLoopHistoryBoundary::NamedRecord {
+                trailing: trailing.map(|bytes| ctx.copy_retained(bytes, "creo loop history trailing bytes")).transpose()?,
+            },
+        };
+        Ok(ParsedLoopHistoryEntry { loop_id: self.loop_id, field_bytes, boundary, offset: self.offset, end_offset: self.end_offset })
+    }
+}
+
+fn loop_history_token(ctx: &DecodeContext<'_>, body: &[u8], cursor: usize) -> Result<Option<psb::Token>, CodecError> {
+    if body.get(cursor) != Some(&psb::token::NAMED_RECORD) { return Ok(psb::token_at(body, cursor)); }
+    let terminator = match body.get(cursor + 2..) {
+        Some(bytes) => ctx.position_by(bytes, |byte| Ok(*byte == 0), "creo loop history name terminator")?,
+        None => None,
+    };
+    Ok(Some(psb::Token { offset: cursor, length: terminator.map_or(body.len() - cursor, |length| length + 3), kind: if terminator.is_some() { psb::TokenKind::NamedRecord } else { psb::TokenKind::Truncated(psb::token::NAMED_RECORD) } }))
+}
+
+#[cfg(test)]
+fn loop_history_roster(ctx: &DecodeContext<'_>, body: &[u8], cursor: usize, count: usize) -> Option<Result<Vec<ParsedLoopHistoryEntry>, CodecError>> {
+    let (prototypes, _storage) = match loop_history_prototypes(ctx, body, cursor, count)? { Ok(parsed) => parsed, Err(error) => return Some(Err(error)) };
+    let mut entries = Vec::new();
+    if let Err(error) = ctx.reserve_vec(&mut entries, prototypes.len(), "creo loop history roster") { return Some(Err(error)); }
+    let prototypes = match ctx.admit_iter(prototypes, "creo loop history materialization") { Ok(prototypes) => prototypes, Err(error) => return Some(Err(error.into())) };
+    for prototype in prototypes {
+        match prototype.materialize(ctx) { Ok(entry) => entries.push(entry), Err(error) => return Some(Err(error)) }
     }
     Some(Ok(entries))
 }
