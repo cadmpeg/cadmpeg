@@ -277,3 +277,31 @@ fn sole_surface_merge_anchor_has_no_uniqueness_remainder_scan() {
         Ok(())
     });
 }
+
+#[test]
+fn revolution_fixed_prefix_search_keeps_the_64_byte_boundary_and_one_row_visit() {
+    const FULL_TURN: &[u8] = &[0, 0, 0xea, 0x44, 0, 0, 0xf6, 0xf6, 0xf6, 0, 0, 0, 0];
+    // A four-byte prefix can end at byte64. Starting at61 crosses that bound.
+    for prefix_offset in [6usize, 60, 61] {
+        let mut bytes = vec![0xff; prefix_offset];
+        bytes[..6].copy_from_slice(&[0xe3, 0xf6, 0x83, 0x95, 0xe1, 2]);
+        bytes.extend_from_slice(&[0x83, 0xdf, 0xf6, 0xe3]);
+        bytes.extend_from_slice(FULL_TURN);
+        let row = FeatureRow {
+            root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
+            body: bytes.try_into().expect("bounded revolution row"),
+            ..empty_candidate_row(2)
+        };
+        check_visits(1, |_| "creo feature row traversal", |ctx| {
+            let extents = super::super::revolution_extents(ctx, std::slice::from_ref(&row))?;
+            if prefix_offset <= 60 {
+                assert_eq!(extents, [super::super::FeatureRevolutionExtent {
+                    feature_id: 7, offset: row.body_offset + prefix_offset + 4 + 2,
+                }]);
+            } else {
+                assert!(extents.is_empty());
+            }
+            Ok(())
+        });
+    }
+}
