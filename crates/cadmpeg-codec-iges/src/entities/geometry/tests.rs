@@ -1997,3 +1997,5 @@ mod affine_progression;
 mod wire_outcome_storage;
 
 mod parameter_index;
+
+mod entry_refusal;

@@ -38,6 +38,9 @@ pub(super) fn planar_polyline_has_self_intersection(
     points: &[[f64; 2]],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if points.len() < 3 {
         return Ok(false);
     }
@@ -129,6 +132,9 @@ pub(super) fn plane_coordinates(
     plane: (Point3, Vector3),
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(normal) = plane.1.unit() else {
         return Ok(None);
     };
@@ -166,6 +172,9 @@ pub(super) fn linear_nurbs_parameters<'ctx>(
     range: [f64; 2],
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<Option<ScopedValues<'ctx, f64>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some((degree, expected_knot_count)) = usize::try_from(degree).ok().and_then(|degree| {
         control_count
             .checked_add(degree)?
@@ -296,6 +305,9 @@ fn point_display_symbol_valid(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     Ok(match record.value(4) {
         None | Some(crate::parameter::TokenValue::Omitted) => true,
         Some(crate::parameter::TokenValue::Integer(0)) => true,
@@ -371,6 +383,9 @@ fn classify_control_point_plane(
     tolerance: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<ControlPointPlane, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(origin) = points.first().map(|point| point.get()) else {
         return Ok(ControlPointPlane::NoUniquePlane);
     };
@@ -422,6 +437,9 @@ fn control_points_fit_plane(
     tolerance: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(origin) = points.first().map(|point| point.get()) else {
         return Ok(false);
     };
@@ -534,6 +552,9 @@ pub(super) fn type126_declared_control_points(
     precision: RealPrecision,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some((control_count, pole_start)) = (|| {
         let control_count = record.count(1)?.checked_add(1)?;
         let degree = usize::try_from(record.integer(2)?).ok()?;
@@ -586,6 +607,9 @@ pub(super) fn declared_affine_progression(
     uncertainties: &[f64],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if values.len() < 2
         || values.len() != uncertainties.len()
         || ctx.any_by(
@@ -843,6 +867,9 @@ pub(crate) fn resolve_transform(
     path: &mut BTreeSet<u32>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Transform, TransformResolutionError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal).into());
+    }
     if sequence == 0 {
         return Ok(Transform::identity());
     }
@@ -1721,6 +1748,9 @@ impl<'ctx> SourceSequences<'ctx> {
         stem: &crate::ids::Stem,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         if let Some(sequence) = stem.origin() {
             Self::insert(
                 &mut self.storage,
