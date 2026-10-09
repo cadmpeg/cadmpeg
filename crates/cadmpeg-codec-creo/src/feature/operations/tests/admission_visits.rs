@@ -85,3 +85,43 @@ fn operation_fixed_returns_are_free_and_preserve_original_refusal() {
     check(true);
     assert_eq!(ctx.resource_refusal(), Some(original));
 }
+
+#[test]
+fn derived_operation_materialization_is_free_and_preserves_original_refusal() {
+    use super::super::{OperationKind, OperationName, ParsedKind, ParsedOperation};
+
+    for (kind, expected) in [
+        (ParsedKind::Native, OperationKind::Native),
+        (ParsedKind::Recipe(FeatureRecipe::ProtrudeExtrude), OperationKind::Extrude),
+        (ParsedKind::Recipe(FeatureRecipe::CutExtrude), OperationKind::Extrude),
+        (ParsedKind::Recipe(FeatureRecipe::ProtrudeRevolve), OperationKind::Revolve),
+        (ParsedKind::Recipe(FeatureRecipe::CutRevolve), OperationKind::Revolve),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let run = || ParsedOperation {
+            feature_id: 7, kind, name: None, recipe: RecipeState::None,
+            display_state_conflict: false, depdb: None, offset: 11, state_offset: 11,
+        }.materialize(&ctx);
+        let operation = run().expect("fixed derived projection needs no resources");
+        assert_eq!(operation.kind, expected);
+        assert_eq!(operation.name, OperationName::Derived);
+        assert_eq!(operation.feature_id, 7);
+        assert_eq!(operation.recipe, RecipeState::None);
+        assert!(!operation.display_state_conflict);
+        assert_eq!(operation.depdb, None);
+        assert_eq!((operation.offset, operation.state_offset), (11, 11));
+        assert_eq!(ctx.resource_refusal(), None);
+        let original = ctx.charge_work_limit(1, "after derived materialization")
+            .expect_err("zero Work cap");
+        assert_eq!((original.dimension, original.used, original.additional),
+            (ResourceDimension::WorkUnits, 0, 1));
+        assert!(matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert_eq!(ctx.resource_refusal(), Some(original));
+    }
+}
