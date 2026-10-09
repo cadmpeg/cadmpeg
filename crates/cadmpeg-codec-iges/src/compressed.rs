@@ -8,7 +8,7 @@
 //! fields, then delegates all semantic work to the existing parser.
 
 use crate::directory::DirectoryFieldSlot;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use std::num::NonZeroUsize;
 use std::rc::Rc;
@@ -154,7 +154,10 @@ fn split_lines<'a>(source: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Vec<&'a 
     Ok(lines)
 }
 
-fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
+fn logical_global_stream<'ctx>(
+    cards: &[&[u8]],
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<(Vec<u8>, ScopedReservation<'ctx>), CodecError> {
     let length = ctx.fold(
         cards,
         0_usize,
@@ -170,10 +173,10 @@ fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec
         },
         "iges compressed Global card widths",
     )?;
-    let _stream_storage;
+    let stream_storage;
     let (mut stream, result_stream_storage) =
         ctx.scoped_vector_storage(length, "iges_compressed_global_stream")?;
-    _stream_storage = result_stream_storage;
+    stream_storage = result_stream_storage;
     let _digits_storage;
     let (mut pending_digits, result_digits_storage) =
         ctx.scoped_vector_storage(length, "iges_compressed_global_digits")?;
@@ -214,7 +217,7 @@ fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec
     if hollerith_remaining != 0 {
         return Err(malformed("Global Hollerith payload is truncated"));
     }
-    Ok(stream)
+    Ok((stream, stream_storage))
 }
 
 fn hollerith_at(
@@ -255,7 +258,9 @@ fn hollerith_at(
 }
 
 fn compressed_delimiters(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<(u8, u8), CodecError> {
-    let bytes = logical_global_stream(cards, ctx)?;
+    let _global_storage;
+    let (bytes, result_global_storage) = logical_global_stream(cards, ctx)?;
+    _global_storage = result_global_storage;
     let (parameter_delimiter, cursor) = if bytes.first() == Some(&b',') {
         (b',', 1)
     } else {
