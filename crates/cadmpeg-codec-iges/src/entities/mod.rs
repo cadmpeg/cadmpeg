@@ -173,6 +173,9 @@ fn admit_with_scoped_loss_slots<T>(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<T>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     match result {
         Ok(value) => Ok(Some(value)),
         Err(message) => {
@@ -183,6 +186,9 @@ fn admit_with_scoped_loss_slots<T>(
 }
 
 fn non_resource_error(error: CodecError, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     match error {
         CodecError::ResourceLimit(_) => Err(error),
         other => ctx.format_retained(format_args!("{other}"), "iges diagnostic error text"),

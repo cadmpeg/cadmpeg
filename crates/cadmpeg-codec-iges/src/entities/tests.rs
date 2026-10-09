@@ -335,3 +335,5 @@ fn cached_property_text_identity_refuses_lookup_work() {
         },
     );
 }
+
+mod entry_refusal;
