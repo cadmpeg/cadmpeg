@@ -612,12 +612,12 @@ fn source_path_node_bytes() -> u64 {
         + 2 * align_of::<CurveId>().max(align_of::<usize>()))
 }
 
-fn source_intervals(
+fn source_intervals<'ctx>(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     id: &CurveId,
     active: &mut std::collections::BTreeSet<CurveId>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<Option<super::super::SourceCurveControls<'ctx>>, CodecError> {
     super::super::source_curve_control_intervals(
         index, id, (&[], &[]),
         crate::global::RealPrecision { single_significance: 7, double_significance: 15 },
@@ -818,7 +818,10 @@ fn source_curve_removal_refusal_destroys_path_before_its_receipt() {
             policy.limits.max_retained_bytes = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut active = std::collections::BTreeSet::new();
-            let result = source_intervals(&index, &id, &mut active, &ctx);
+            let result = source_intervals(&index, &id, &mut active, &ctx).map(|controls| {
+                assert!(controls.is_none());
+                None::<()>
+            });
             assert!(active.is_empty());
             if let Err(CodecError::ResourceLimit(first)) = &result {
                 assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == *first));
@@ -932,4 +935,248 @@ fn invalid_last_native_composite_pointer_releases_earlier_ids_and_slots() {
 #[test]
 fn native_composite_child_allocation_refusals_preserve_original_error() {
     assert_native_composite_child_storage(3, true);
+}
+
+fn source_control_fixture() -> (CadIr, CurveId, Vec<crate::directory::DirectoryEntry>, Vec<crate::parameter::ParameterRecord>) {
+    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+    let (mut ir, root, entries, records) = native_composite_source_fixture(3);
+    let nurbs = crate::test_support::with_service_context(&[], |setup| {
+        NurbsCurve::new(setup, 1, vec![0.0, 0.0, 1.0, 1.0],
+            NurbsPoles3::Polynomial {
+                points: [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
+                    .map(|point| FinitePoint3::new(point).unwrap()).to_vec(),
+            }, false).unwrap().unwrap()
+    });
+    ir.model.curves.push(Curve {
+        id: CurveId::mint("iges:model:curve#D3").unwrap(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+        source_object: None,
+    });
+    (ir, root, entries, records)
+}
+
+fn assert_composite_control_output_custody(native: bool) {
+    use cadmpeg_ir::geometry::{CompositeCurveSegment, CompositeCurveTransition};
+    const CAP: u64 = 65536;
+    const CHILDREN: usize = 64;
+    let (mut ir, mut root, entries, records) = source_control_fixture();
+    if !native {
+        root = CurveId::mint("test:model:curve#root").unwrap();
+        ir.model.curves[0].id = root.clone();
+        ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+            segments: (0..CHILDREN).map(|_| CompositeCurveSegment {
+                curve: ir.model.curves[1].id.clone(), same_sense: true,
+                transition: CompositeCurveTransition::Continuous,
+            }).collect::<Vec<_>>().try_into().unwrap(),
+            self_intersect: None,
+        });
+    }
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let live = u64_from_index(2 * CHILDREN * size_of::<[DeclaredInterval; 3]>());
+    for refuse_extra in [false, true] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = CAP;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut outer = ctx.reserve_scoped(0, "test surviving source controls ambient scope").unwrap();
+        let mut active = std::collections::BTreeSet::new();
+        let controls = outer.with_storage(|| super::super::source_curve_control_intervals(
+            &index, &root, (&entries, &records),
+            crate::global::RealPrecision { single_significance: 7, double_significance: 15 },
+            1.0, &mut active, &ctx,
+        )).unwrap().unwrap();
+        assert!(active.is_empty());
+        assert_eq!(controls.values.len(), 2 * CHILDREN);
+        for pair in controls.values.chunks_exact(2) {
+            let actual: Vec<_> = pair.iter().map(|point| point.map(|value| {
+                [value.lower_bound(), value.upper_bound()]
+            })).collect();
+            assert_eq!(actual, [[[0.0, 0.0]; 3], [[1.0, 1.0], [0.0, 0.0], [0.0, 0.0]]]);
+        }
+        let free = ctx.reserve_scoped(CAP - live, "test exact live source controls").unwrap();
+        drop(free);
+        if refuse_extra {
+            let first = match ctx.reserve_scoped(CAP - live + 1, "test source controls still live").err().unwrap() {
+                CodecError::ResourceLimit(first) => first,
+                _ => panic!("expected exact live source control refusal"),
+            };
+            assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!((first.limit, first.used, first.additional), (CAP, live, CAP - live + 1));
+            assert_eq!(first.operation, "test source controls still live");
+            drop(controls);
+            drop(active);
+            drop(outer);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        } else {
+            drop(controls);
+            let free = ctx.reserve_scoped(CAP, "test source controls backing destroyed").unwrap();
+            drop(free);
+            drop(active);
+            drop(outer);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn native_composite_controls_keep_only_surviving_aggregate_storage() {
+    assert_composite_control_output_custody(true);
+}
+
+#[test]
+fn solved_composite_controls_release_consumed_children_before_return() {
+    assert_composite_control_output_custody(false);
+}
+
+#[test]
+fn exact_source_control_allocation_refusal_keeps_original_error() {
+    let (ir, _, entries, records) = source_control_fixture();
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let id = &ir.model.curves[1].id;
+    let prior = source_path_node_bytes() + u64_from_index(id.as_str().len());
+    let allocation = u64_from_index(2 * size_of::<[DeclaredInterval; 3]>());
+    let cap = prior + allocation - 1;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = cap;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut active = std::collections::BTreeSet::new();
+    let first = match super::super::source_curve_control_intervals(
+        &index, id, (&entries, &records),
+        crate::global::RealPrecision { single_significance: 7, double_significance: 15 },
+        1.0, &mut active, &ctx,
+    ).err().expect("expected actual exact control allocation refusal") {
+        CodecError::ResourceLimit(first) => first,
+        _ => panic!("expected original resource refusal"),
+    };
+    assert!(active.is_empty());
+    assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(first.operation, "iges source exact controls");
+    assert_eq!((first.limit, first.used, first.additional), (cap, prior, allocation));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+fn declared_source_control_record(invalid: bool) -> crate::parameter::ParameterRecord {
+    use crate::parameter::{ParameterRecord, Token, TokenValue};
+    // Degree one, two poles, four knots, two weights and the [0, 1] domain.
+    let values = [126, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1];
+    let tokens = values.into_iter().enumerate().map(|(index, value)| Token {
+        value: if invalid && index == 18 { TokenValue::Omitted } else { TokenValue::Integer(value) },
+        span: 0..0,
+    }).collect();
+    ParameterRecord::from_test_tokens(3, 0..0, Vec::new(), values.len(), tokens, Vec::new())
+}
+
+#[test]
+fn declared_source_controls_keep_scaled_values_and_exact_output_storage() {
+    const CAP: u64 = 65536;
+    let (ir, _, mut entries, _) = source_control_fixture();
+    entries[1].entity_type = 126;
+    let records = [declared_source_control_record(false)];
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let id = &ir.model.curves[1].id;
+    let live = u64_from_index(2 * size_of::<[DeclaredInterval; 3]>());
+    for refuse_extra in [false, true] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = CAP;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut active = std::collections::BTreeSet::new();
+        let controls = super::super::source_curve_control_intervals(
+            &index, id, (&entries, &records),
+            crate::global::RealPrecision { single_significance: 7, double_significance: 15 },
+            2.0, &mut active, &ctx,
+        ).unwrap().unwrap();
+        assert!(active.is_empty());
+        let actual: Vec<_> = controls.values.iter().map(|point| point.map(|value| {
+            [value.lower_bound(), value.upper_bound()]
+        })).collect();
+        // Multiplication encloses each exact product with its adjacent floats.
+        let zero = [0.0_f64.next_down(), 0.0_f64.next_up()];
+        let two = [2.0_f64.next_down(), 2.0_f64.next_up()];
+        assert_eq!(actual, [[zero; 3], [two, zero, zero]]);
+        let free = ctx.reserve_scoped(CAP - live, "test exact declared source controls").unwrap();
+        drop(free);
+        if refuse_extra {
+            let first = match ctx.reserve_scoped(CAP - live + 1, "test declared controls remain live").err().unwrap() {
+                CodecError::ResourceLimit(first) => first,
+                _ => panic!("expected live declared control refusal"),
+            };
+            assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(first.operation, "test declared controls remain live");
+            assert_eq!((first.limit, first.used, first.additional), (CAP, live, CAP - live + 1));
+            drop(controls);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        } else {
+            drop(controls);
+            let free = ctx.reserve_scoped(CAP, "test declared control backing destroyed").unwrap();
+            drop(free);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn partial_declared_source_controls_release_before_the_next_attempt() {
+    let (ir, _, mut entries, _) = source_control_fixture();
+    entries[1].entity_type = 126;
+    let records = [declared_source_control_record(true)];
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let id = &ir.model.curves[1].id;
+    let cap = source_path_node_bytes() + u64_from_index(id.as_str().len())
+        + u64_from_index(2 * size_of::<[DeclaredInterval; 3]>());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = cap;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut outer = ctx.reserve_scoped(0, "test partial declared source scope").unwrap();
+    let mut active = std::collections::BTreeSet::new();
+    for _ in 0..16 {
+        assert!(outer.with_storage(|| super::super::source_curve_control_intervals(
+            &index, id, (&entries, &records),
+            crate::global::RealPrecision { single_significance: 7, double_significance: 15 },
+            2.0, &mut active, &ctx,
+        )).unwrap().is_none());
+        assert!(active.is_empty());
+        let free = ctx.reserve_scoped(cap, "test partial declared controls destroyed").unwrap();
+        drop(free);
+    }
+    drop(active);
+    drop(outer);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn declared_source_control_allocation_refusal_keeps_original_error() {
+    let (ir, _, mut entries, _) = source_control_fixture();
+    entries[1].entity_type = 126;
+    let records = [declared_source_control_record(false)];
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let id = &ir.model.curves[1].id;
+    let prior = source_path_node_bytes() + u64_from_index(id.as_str().len());
+    let allocation = u64_from_index(2 * size_of::<[DeclaredInterval; 3]>());
+    let cap = prior + allocation - 1;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = cap;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut active = std::collections::BTreeSet::new();
+    let first = match super::super::source_curve_control_intervals(
+        &index, id, (&entries, &records),
+        crate::global::RealPrecision { single_significance: 7, double_significance: 15 },
+        2.0, &mut active, &ctx,
+    ).err().expect("expected declared control allocation refusal") {
+        CodecError::ResourceLimit(first) => first,
+        _ => panic!("expected original resource refusal"),
+    };
+    assert!(active.is_empty());
+    assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(first.operation, "iges Type126 declared control intervals");
+    assert_eq!((first.limit, first.used, first.additional), (cap, prior, allocation));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
 }

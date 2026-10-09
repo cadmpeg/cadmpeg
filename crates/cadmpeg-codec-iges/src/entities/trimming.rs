@@ -841,15 +841,20 @@ fn surface_parameter_bound_intervals(
     Ok(Some(intervals))
 }
 
-fn source_curve_control_intervals(
+struct SourceCurveControls<'ctx> {
+    values: Vec<[DeclaredInterval; 3]>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+fn source_curve_control_intervals<'ctx>(
     index: &ModelIndex<'_>,
     curve_id: &CurveId,
     tables: (&[DirectoryEntry], &[ParameterRecord]),
     precision: RealPrecision,
     factor: f64,
     active: &mut BTreeSet<CurveId>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<Option<SourceCurveControls<'ctx>>, CodecError> {
     let (entries, records) = tables;
     let _nested = ctx.enter_nested("iges source curve intervals")?;
     if ctx.contains_btree_set(active, curve_id, "iges source active curve lookup")? {
@@ -860,7 +865,7 @@ fn source_curve_control_intervals(
         let active_id = curve_id.try_clone_for_decode(ctx, "iges source active curve ID")?;
         ctx.insert_btree_set(active, active_id, "iges source active curve nodes")
     })?;
-    let result = (|| -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
+    let result = (|| -> Result<Option<SourceCurveControls<'ctx>>, CodecError> {
         let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
             return Ok(None);
         };
@@ -908,6 +913,8 @@ fn source_curve_control_intervals(
                     // Tuple fields destroy the actual identity before its receipt.
                     child_ids.push((child_id, child_storage));
                 }
+                let mut controls_storage =
+                    ctx.reserve_scoped(0, "iges source composite control storage")?;
                 let mut controls = Vec::new();
                 let mut child_ids = child_ids.into_iter();
                 while let Some(child_id) =
@@ -919,15 +926,22 @@ fn source_curve_control_intervals(
                     else {
                         return Ok(None);
                     };
-                    ctx.extend_vec(&mut controls, child, "iges source composite controls")?;
+                    controls_storage.with_storage(|| {
+                        ctx.extend_vec(&mut controls, child.values, "iges source composite controls")
+                    })?;
                 }
                 drop(child_ids);
                 drop(child_slots_storage);
-                return Ok((!controls.is_empty()).then_some(controls));
+                return Ok((!controls.is_empty()).then_some(SourceCurveControls {
+                    values: controls,
+                    _storage: controls_storage,
+                }));
             }
         }
         match curve.geometry.solved() {
             Some(SolvedCurveGeometry::Composite { segments, .. }) => {
+                let mut controls_storage =
+                    ctx.reserve_scoped(0, "iges source solved composite control storage")?;
                 let mut controls = Vec::new();
                 let mut segments = segments.iter();
                 while let Some(segment) = ctx
@@ -945,13 +959,18 @@ fn source_curve_control_intervals(
                     else {
                         return Ok(None);
                     };
-                    ctx.extend_vec(
-                        &mut controls,
-                        child,
-                        "iges source solved composite controls",
-                    )?;
+                    controls_storage.with_storage(|| {
+                        ctx.extend_vec(
+                            &mut controls,
+                            child.values,
+                            "iges source solved composite controls",
+                        )
+                    })?;
                 }
-                Ok((!controls.is_empty()).then_some(controls))
+                Ok((!controls.is_empty()).then_some(SourceCurveControls {
+                    values: controls,
+                    _storage: controls_storage,
+                }))
             }
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 if matches!(nurbs.pole_rows(), NurbsPoles3::Rational { .. })
@@ -968,9 +987,12 @@ fn source_curve_control_intervals(
                 {
                     return Ok(None);
                 }
-                let exact = || -> Result<Vec<[DeclaredInterval; 3]>, CodecError> {
-                    let mut controls =
-                        ctx.collection_vec(nurbs.pole_count(), "iges source exact controls")?;
+                let exact = || -> Result<SourceCurveControls<'ctx>, CodecError> {
+                    let mut controls_storage =
+                        ctx.reserve_scoped(0, "iges source exact control storage")?;
+                    let mut controls = controls_storage.with_storage(|| {
+                        ctx.collection_vec(nurbs.pole_count(), "iges source exact controls")
+                    })?;
                     let mut indices = 0..nurbs.pole_count();
                     while let Some(index) = ctx
                         .next_charged(&mut indices, "iges source exact control traversal")?
@@ -985,7 +1007,10 @@ fn source_curve_control_intervals(
                                 .map(|value| DeclaredInterval::around(value, 0.0)),
                         );
                     }
-                    Ok(controls)
+                    Ok(SourceCurveControls {
+                        values: controls,
+                        _storage: controls_storage,
+                    })
                 };
                 let Some((sequence, entry)) = native else {
                     return Ok(Some(exact()?));
@@ -999,8 +1024,11 @@ fn source_curve_control_intervals(
                 let Some(record) = record_by_sequence(records, sequence, ctx)? else {
                     return Ok(None);
                 };
-                let Some(mut raw_controls) =
-                    super::geometry::type126_declared_control_points(record, precision, ctx)?
+                let mut controls_storage =
+                    ctx.reserve_scoped(0, "iges source declared control storage")?;
+                let Some(mut raw_controls) = controls_storage.with_storage(|| {
+                    super::geometry::type126_declared_control_points(record, precision, ctx)
+                })?
                 else {
                     return Ok(None);
                 };
@@ -1012,7 +1040,10 @@ fn source_curve_control_intervals(
                 {
                     *control = control.map(|value| value.scale(factor));
                 }
-                Ok(Some(raw_controls))
+                Ok(Some(SourceCurveControls {
+                    values: raw_controls,
+                    _storage: controls_storage,
+                }))
             }
             _ => Ok(None),
         }
@@ -1088,9 +1119,9 @@ fn source_curve_control_polygon_within_bounds(
         else {
             return Ok(false);
         };
-        Ok(!controls.is_empty()
+        Ok(!controls.values.is_empty()
             && ctx.all_by(
-                controls,
+                controls.values,
                 |[u, v, _]| {
                     let Some(u) = affine_parameter_interval(u, u_factor, u_offset) else {
                         return Ok(false);
