@@ -39,7 +39,27 @@ fn resolved_profile_lookups_scale_and_closure_refuse_work() {
 
 #[test]
 fn connected_profile_lookups_connectivity_and_projection_refuse_work() {
-    let (ir, sketch_id) = fixture();
+    let (mut ir, sketch_id) = fixture();
+    let disconnected_id =
+        SketchEntityId::mint("creo:featdefs:sketch_entity#73:2").expect("entity ID");
+    let disconnected_geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+        center: Point2::new(10.0, 0.0),
+        radius: cadmpeg_ir::scalar::Length::new(2.0).expect("radius"),
+    }).expect("circle");
+    ir.model.sketch_entities.push(SketchEntity::new(
+        disconnected_id.clone(), sketch_id.clone(), disconnected_geometry,
+    ));
+    // Preserve the one-circle profile and its output. The second profile has
+    // one adjacent-use comparison and is withheld because its seams differ.
+    let mut profiles = ir.model.sketches[0].profiles.as_slice().to_vec();
+    profiles.push(vec![
+        profiles[0][0].clone(),
+        cadmpeg_ir::sketches::SketchEntityUse {
+            entity: disconnected_id, reversed: false,
+        },
+    ]);
+    ir.model.sketches[0].profiles =
+        cadmpeg_ir::sketches::SketchProfiles::try_from(profiles).expect("profile structure");
     let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
     let profiles = crate::test_support::assert_work_boundaries(
         &[

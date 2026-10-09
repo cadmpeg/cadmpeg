@@ -31,6 +31,9 @@ fn sketch_geometry_endpoints(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &SketchGeometry,
 ) -> Result<Option<[[f64; 2]; 2]>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let endpoints = match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => Some([[start.u, start.v], [end.u, end.v]]),
         SketchGeometryDefinition::Arc {
@@ -140,8 +143,8 @@ pub(in super::super) fn connected_sketch_profile_vertices(
     let Some(sketch) = unique_profile_sketch(ctx, ir, sketch_id)? else {
         return Ok(Vec::new());
     };
-    let mut entity_index = None;
     let mut index_storage = ctx.reserve_scoped(0, "creo profile entity index scratch")?;
+    let mut entity_index = None;
     let mut profiles = Vec::new();
     for (profile_index, profile) in ctx
         .admit_iter(
@@ -153,12 +156,15 @@ pub(in super::super) fn connected_sketch_profile_vertices(
         if profile.is_empty() {
             continue;
         }
-        let (mut uses, mut uses_storage) = ctx.temporary_vec(0, "creo connected profile uses")?;
+        let uses_owned_storage = ctx.temporary_vec(0, "creo connected profile uses")?;
+        let mut uses_storage = uses_owned_storage.1;
+        let mut uses = uses_owned_storage.0;
         let mut valid = true;
         let mut entity_uses = profile.iter();
-        while let Some(entity_use) =
-            ctx.next_charged(&mut entity_uses, "creo profile entity use scan")?
-        {
+        while !entity_uses.as_slice().is_empty() {
+            let Some(entity_use) = ctx.next_charged(&mut entity_uses, "creo profile entity use scan")? else {
+                break;
+            };
             if entity_index.is_none() {
                 entity_index =
                     Some(index_storage.with_storage(|| profile_entity_index(ctx, ir, sketch_id))?);
@@ -203,15 +209,21 @@ pub(in super::super) fn connected_sketch_profile_vertices(
             .flat_map(|(start, end)| start.iter().chain(end))
             .map(|coordinate| coordinate.abs())
             .fold(1.0, f64::max);
-        if !ctx.all_by(
-            uses.windows(2),
-            |adjacent| {
-                let end = adjacent[0].1;
-                let next = adjacent[1].0;
-                Ok((end[0] - next[0]).hypot(end[1] - next[1]) <= EPS_ENDPOINT_AGREEMENT * scale)
-            },
-            "creo connected profile closure",
-        )? {
+        let mut adjacent_uses = uses.windows(2);
+        let mut connected = true;
+        while adjacent_uses.len() > 0 {
+            let Some(adjacent) = ctx.next_charged(&mut adjacent_uses, "creo connected profile closure")? else {
+                break;
+            };
+            let end = adjacent[0].1;
+            let next = adjacent[1].0;
+            if (end[0] - next[0]).hypot(end[1] - next[1]) <= EPS_ENDPOINT_AGREEMENT * scale {
+                continue;
+            }
+            connected = false;
+            break;
+        }
+        if !connected {
             continue;
         }
         let Some(first) = uses.first().map(|use_row| use_row.0) else {
@@ -344,9 +356,10 @@ pub(in super::super) fn circular_pcurve(
         ctx.reserve_vec(&mut weights, pole_count, "creo circular pcurve weights")
     })?;
     let mut segments = 0..segment_count;
-    while let Some(segment) =
-        ctx.next_charged(&mut segments, "creo circular pcurve pole projection")?
-    {
+    while segments.start < segments.end {
+        let Some(segment) = ctx.next_charged(&mut segments, "creo circular pcurve pole projection")? else {
+            break;
+        };
         let first = start_angle
             + cadmpeg_core::convert::f64_from_index(segment).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed(
@@ -378,9 +391,10 @@ pub(in super::super) fn circular_pcurve(
     ctx.reserve_vec(&mut knots, knot_count, "creo circular pcurve knots")?;
     knots.extend([0.0; 3]);
     let mut boundaries = 1..segment_count;
-    while let Some(boundary) =
-        ctx.next_charged(&mut boundaries, "creo circular pcurve knot projection")?
-    {
+    while boundaries.start < boundaries.end {
+        let Some(boundary) = ctx.next_charged(&mut boundaries, "creo circular pcurve knot projection")? else {
+            break;
+        };
         knots.extend(
             [cadmpeg_core::convert::f64_from_index(boundary).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed(
@@ -407,9 +421,10 @@ pub(in super::super) fn circular_pcurve(
         use cadmpeg_ir::units::FinitePoint2;
 
         let mut weight_rows = weights.iter().enumerate();
-        while let Some((index, &weight)) =
-            ctx.next_charged(&mut weight_rows, "creo circular pcurve weight scan")?
-        {
+        while weight_rows.len() > 0 {
+            let Some((index, &weight)) = ctx.next_charged(&mut weight_rows, "creo circular pcurve weight scan")? else {
+                break;
+            };
             if NonZeroReal::new(weight).is_none() {
                 return Ok(Err(
                     cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
@@ -424,10 +439,10 @@ pub(in super::super) fn circular_pcurve(
             }
         }
         let mut pole_rows = control_points.into_iter().zip(weights).enumerate();
-        while let Some((index, (point, weight))) = ctx.next_charged(
-            &mut pole_rows,
-            "creo circular pcurve weighted pole projection",
-        )? {
+        while pole_rows.len() > 0 {
+            let Some((index, (point, weight))) = ctx.next_charged(&mut pole_rows, "creo circular pcurve weighted pole projection")? else {
+                break;
+            };
             let Some(point) = FinitePoint2::new(point) else {
                 return Ok(Err(cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                     ctx.copy_retained_text(
@@ -488,6 +503,9 @@ pub(in super::super) fn extrusion_cap_pcurve(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     match geometry.definition() {
         SketchGeometryDefinition::Arc {
             center,
@@ -587,9 +605,15 @@ pub(in super::super) fn extrusion_profile_signed_area(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     profile: &[ProfileEntity],
 ) -> Result<Option<FiniteReal>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut area_twice = 0.0;
     let mut entities = profile.iter();
-    while let Some(entity) = ctx.next_charged(&mut entities, "creo profile area entity scan")? {
+    while !entities.as_slice().is_empty() {
+        let Some(entity) = ctx.next_charged(&mut entities, "creo profile area entity scan")? else {
+            break;
+        };
         let geometry = &entity.geometry;
         let reversed = &entity.reversed;
         let start = entity.start();
@@ -702,6 +726,9 @@ impl ProfileGeometry {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         Ok(SketchGeometry::try_from(match self {
             Self::Line { start, end } => SketchGeometryDefinition::Line {
                 start: *start,
@@ -797,9 +824,10 @@ impl ValidatedProfile {
         entities: ExtrusionProfile,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         let mut candidates = entities.iter();
-        while let Some(entity) =
-            ctx.next_charged(&mut candidates, "creo profile validation entity scan")?
-        {
+        while !candidates.as_slice().is_empty() {
+            let Some(entity) = ctx.next_charged(&mut candidates, "creo profile validation entity scan")? else {
+                break;
+            };
             if matches!(entity.geometry, ProfileGeometry::Nurbs { .. }) {
                 let scale = entity
                     .start()
@@ -812,7 +840,7 @@ impl ValidatedProfile {
                     return Ok(None);
                 };
                 let segments = polyline.points.windows(2);
-                let (mut ordered, _storage) =
+                let ordered_owned_storage =
                     ctx.with_scoped_storage("creo NURBS carrier segment bounds", || {
                         ctx.collect_vec(
                             segments.clone().enumerate().map(|(index, segment)| {
@@ -826,6 +854,8 @@ impl ValidatedProfile {
                             "creo NURBS carrier segment bounds",
                         )
                     })?;
+                let _storage = ordered_owned_storage.1;
+                let mut ordered = ordered_owned_storage.0;
                 ctx.stable_sort_by(
                     &mut ordered,
                     |value| &value.2,
@@ -833,15 +863,15 @@ impl ValidatedProfile {
                     "creo NURBS carrier bound ordering",
                 )?;
                 let mut ordered_sources = ordered.iter().enumerate();
-                while let Some((position, first)) = ctx.next_charged(
-                    &mut ordered_sources,
-                    "creo NURBS carrier self intersection source scan",
-                )? {
+                while ordered_sources.len() > 0 {
+                    let Some((position, first)) = ctx.next_charged(&mut ordered_sources, "creo NURBS carrier self intersection source scan")? else {
+                        break;
+                    };
                     let mut ordered_targets = ordered[position + 1..].iter();
-                    while let Some(second) = ctx.next_charged(
-                        &mut ordered_targets,
-                        "creo NURBS carrier self intersection pairs",
-                    )? {
+                    while !ordered_targets.as_slice().is_empty() {
+                        let Some(second) = ctx.next_charged(&mut ordered_targets, "creo NURBS carrier self intersection pairs")? else {
+                            break;
+                        };
                         if second.2 > first.3 + tolerance {
                             break;
                         }
@@ -897,18 +927,20 @@ pub(in super::super) fn resolved_sketch_profiles(
     if sketch.profiles.is_empty() {
         return Ok(None);
     }
-    let mut entity_index = None;
     let mut index_storage = ctx.reserve_scoped(0, "creo profile entity index scratch")?;
+    let mut entity_index = None;
     let mut profiles = Vec::new();
     let mut profile_rows = sketch.profiles.iter();
-    while let Some(profile) =
-        ctx.next_charged(&mut profile_rows, "creo resolved profile row scan")?
-    {
+    while !profile_rows.as_slice().is_empty() {
+        let Some(profile) = ctx.next_charged(&mut profile_rows, "creo resolved profile row scan")? else {
+            break;
+        };
         let mut geometries = Vec::new();
         let mut entity_uses = profile.iter();
-        while let Some(entity_use) =
-            ctx.next_charged(&mut entity_uses, "creo profile entity use scan")?
-        {
+        while !entity_uses.as_slice().is_empty() {
+            let Some(entity_use) = ctx.next_charged(&mut entity_uses, "creo profile entity use scan")? else {
+                break;
+            };
             if entity_index.is_none() {
                 entity_index =
                     Some(index_storage.with_storage(|| profile_entity_index(ctx, ir, sketch_id))?);
@@ -953,15 +985,16 @@ pub(in super::super) fn resolved_sketch_profiles(
             .flat_map(|entity| entity.start().into_iter().chain(entity.end()))
             .map(f64::abs)
             .fold(1.0, f64::max);
-        if !ctx.all_by(
-            geometries.iter().enumerate(),
-            |(index, entity)| {
-                let end = entity.end();
-                let next = geometries[(index + 1) % geometries.len()].start();
-                Ok((end[0] - next[0]).hypot(end[1] - next[1]) <= EPS_ENDPOINT_AGREEMENT * scale)
-            },
-            "creo resolved profile closure",
-        )? {
+        let mut closure_entities = geometries.iter().enumerate();
+        while closure_entities.len() > 0 {
+            let Some((index, entity)) = ctx.next_charged(&mut closure_entities, "creo resolved profile closure")? else {
+                break;
+            };
+            let end = entity.end();
+            let next = geometries[(index + 1) % geometries.len()].start();
+            if (end[0] - next[0]).hypot(end[1] - next[1]) <= EPS_ENDPOINT_AGREEMENT * scale {
+                continue;
+            }
             return Ok(None);
         }
         ctx.reserve_vec(&mut profiles, 1, "creo resolved profile rows")?;
@@ -1247,6 +1280,9 @@ fn nurbs_profile_point(
     nurbs: &NurbsCurve,
     parameter: f64,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let parameter = require_some!(cadmpeg_ir::eval::map_nurbs_curve_parameter(
         nurbs,
         require_some!(cadmpeg_ir::scalar::FiniteReal::new(parameter)),
@@ -1382,6 +1418,9 @@ fn nurbs_profile_polyline<'ctx>(
     nurbs: &NurbsCurve,
     tolerance: f64,
 ) -> Result<Option<ProfilePolyline<'ctx>>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(range) = nurbs_intrinsic_parameter_range(nurbs) else {
         return Ok(None);
     };
@@ -1390,11 +1429,14 @@ fn nurbs_profile_polyline<'ctx>(
     let Some(first) = nurbs_profile_point(ctx, &mut evaluator, nurbs, lower)? else {
         return Ok(None);
     };
-    let mut points = Vec::new();
     let mut storage = ctx.reserve_scoped(0, "creo NURBS profile polyline points")?;
+    let mut points = Vec::new();
     append_nurbs_profile_point(ctx, &mut storage, &mut points, first)?;
     let mut spans = nurbs.knots().windows(2);
-    while let Some(pair) = ctx.next_charged(&mut spans, "creo NURBS profile knot scan")? {
+    while spans.len() > 0 {
+        let Some(pair) = ctx.next_charged(&mut spans, "creo NURBS profile knot scan")? else {
+            break;
+        };
         let start = pair[0].max(lower);
         let end = pair[1].min(upper);
         if start >= end {
@@ -1479,7 +1521,10 @@ fn nurbs_profile_signed_area_twice(
     };
     let mut area_twice = 0.0;
     let mut spans = nurbs.knots().windows(2);
-    while let Some(pair) = ctx.next_charged(&mut spans, "creo NURBS profile knot scan")? {
+    while spans.len() > 0 {
+        let Some(pair) = ctx.next_charged(&mut spans, "creo NURBS profile knot scan")? else {
+            break;
+        };
         let start = pair[0].max(lower);
         let end = pair[1].min(upper);
         if start >= end {
@@ -1525,16 +1570,19 @@ fn polylines_intersect(
     tolerance: f64,
     contacts: [Option<[f64; 2]>; 2],
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut first_segments = first.windows(2);
-    while let Some(first_segment) = ctx.next_charged(
-        &mut first_segments,
-        "creo profile polyline intersection source scan",
-    )? {
+    while first_segments.len() > 0 {
+        let Some(first_segment) = ctx.next_charged(&mut first_segments, "creo profile polyline intersection source scan")? else {
+            break;
+        };
         let mut second_segments = second.windows(2);
-        while let Some(second_segment) = ctx.next_charged(
-            &mut second_segments,
-            "creo profile polyline intersection pairs",
-        )? {
+        while second_segments.len() > 0 {
+            let Some(second_segment) = ctx.next_charged(&mut second_segments, "creo profile polyline intersection pairs")? else {
+                break;
+            };
             if segments_intersect(
                 [first_segment[0], first_segment[1]],
                 [second_segment[0], second_segment[1]],
@@ -1555,6 +1603,9 @@ pub(in super::super) fn profile_segments_intersect(
     tolerance: f64,
     contacts: [Option<[f64; 2]>; 2],
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let first_nurbs = matches!(first.geometry, ProfileGeometry::Nurbs { .. });
     let second_nurbs = matches!(second.geometry, ProfileGeometry::Nurbs { .. });
     if first_nurbs || second_nurbs {
@@ -1564,10 +1615,10 @@ pub(in super::super) fn profile_segments_intersect(
                     return Ok(false);
                 };
                 let mut arc_segments = polyline.points.windows(2);
-                while let Some(segment) = ctx.next_charged(
-                    &mut arc_segments,
-                    "creo profile NURBS arc intersection segments",
-                )? {
+                while arc_segments.len() > 0 {
+                    let Some(segment) = ctx.next_charged(&mut arc_segments, "creo profile NURBS arc intersection segments")? else {
+                        break;
+                    };
                     if line_arc_intersect([segment[0], segment[1]], arc, tolerance, contacts) {
                         return Ok(true);
                     }
@@ -1581,10 +1632,10 @@ pub(in super::super) fn profile_segments_intersect(
                     return Ok(false);
                 };
                 let mut arc_segments = polyline.points.windows(2);
-                while let Some(segment) = ctx.next_charged(
-                    &mut arc_segments,
-                    "creo profile NURBS arc intersection segments",
-                )? {
+                while arc_segments.len() > 0 {
+                    let Some(segment) = ctx.next_charged(&mut arc_segments, "creo profile NURBS arc intersection segments")? else {
+                        break;
+                    };
                     if line_arc_intersect([segment[0], segment[1]], arc, tolerance, contacts) {
                         return Ok(true);
                     }
@@ -1652,7 +1703,10 @@ pub(in super::super) fn profile_strictly_contains(
     let tolerance = EPS_GEOMETRY_AGREEMENT * scale;
     let mut winding = 0.0;
     let mut segments = profile.iter();
-    while let Some(segment) = ctx.next_charged(&mut segments, "creo profile winding entity scan")? {
+    while !segments.as_slice().is_empty() {
+        let Some(segment) = ctx.next_charged(&mut segments, "creo profile winding entity scan")? else {
+            break;
+        };
         let mut accumulate = |first: [f64; 2], second: [f64; 2]| {
             let first = [first[0] - point[0], first[1] - point[1]];
             let second = [second[0] - point[0], second[1] - point[1]];
@@ -1665,9 +1719,10 @@ pub(in super::super) fn profile_strictly_contains(
                 return Ok(false);
             };
             let mut winding_segments = polyline.points.windows(2);
-            while let Some(pair) =
-                ctx.next_charged(&mut winding_segments, "creo profile NURBS winding segments")?
-            {
+            while winding_segments.len() > 0 {
+                let Some(pair) = ctx.next_charged(&mut winding_segments, "creo profile NURBS winding segments")? else {
+                    break;
+                };
                 accumulate(pair[0], pair[1]);
             }
         } else if let Some((center, radius, start, delta)) = profile_arc(segment) {
@@ -1708,14 +1763,20 @@ pub(in super::super) fn ordered_extrusion_profiles(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     profiles: Vec<ExtrusionProfile>,
 ) -> Result<Option<Vec<ValidatedProfile>>, cadmpeg_core::CodecError> {
-    if profiles.is_empty()
-        || ctx.any_by(
-            &profiles,
-            |profile| Ok(profile.is_empty()),
-            "creo profile empty scan",
-        )?
-    {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    if profiles.is_empty() {
         return Ok(None);
+    }
+    let mut empty_candidates = profiles.iter();
+    while !empty_candidates.as_slice().is_empty() {
+        let Some(profile) = ctx.next_charged(&mut empty_candidates, "creo profile empty scan")? else {
+            break;
+        };
+        if profile.is_empty() {
+            return Ok(None);
+        }
     }
     let mut scale = 1.0_f64;
     for profile in ctx.admit_iter(&profiles, "creo profile coordinate scale")? {
@@ -1727,17 +1788,20 @@ pub(in super::super) fn ordered_extrusion_profiles(
     }
     let tolerance = EPS_GEOMETRY_AGREEMENT * scale;
     let mut profile_rows = profiles.iter();
-    while let Some(profile) =
-        ctx.next_charged(&mut profile_rows, "creo profile intersection scan")?
-    {
+    while !profile_rows.as_slice().is_empty() {
+        let Some(profile) = ctx.next_charged(&mut profile_rows, "creo profile intersection scan")? else {
+            break;
+        };
         let mut first_rows = 0..profile.len();
-        while let Some(first) =
-            ctx.next_charged(&mut first_rows, "creo profile self intersection row scan")?
-        {
+        while first_rows.start < first_rows.end {
+            let Some(first) = ctx.next_charged(&mut first_rows, "creo profile self intersection row scan")? else {
+                break;
+            };
             let mut second_rows = first + 1..profile.len();
-            while let Some(second) =
-                ctx.next_charged(&mut second_rows, "creo profile self intersection pairs")?
-            {
+            while second_rows.start < second_rows.end {
+                let Some(second) = ctx.next_charged(&mut second_rows, "creo profile self intersection pairs")? else {
+                    break;
+                };
                 let contacts = [
                     (second == first + 1).then_some(profile[first].end()),
                     (first == 0 && second + 1 == profile.len()).then_some(profile[first].start()),
@@ -1755,21 +1819,25 @@ pub(in super::super) fn ordered_extrusion_profiles(
         }
     }
     let mut first_rows = 0..profiles.len();
-    while let Some(first) = ctx.next_charged(&mut first_rows, "creo profile pair source scan")? {
+    while first_rows.start < first_rows.end {
+        let Some(first) = ctx.next_charged(&mut first_rows, "creo profile pair source scan")? else {
+            break;
+        };
         let mut second_rows = first + 1..profiles.len();
-        while let Some(second) =
-            ctx.next_charged(&mut second_rows, "creo profile pair target scan")?
-        {
+        while second_rows.start < second_rows.end {
+            let Some(second) = ctx.next_charged(&mut second_rows, "creo profile pair target scan")? else {
+                break;
+            };
             let mut first_segments = profiles[first].iter();
-            while let Some(first_segment) = ctx.next_charged(
-                &mut first_segments,
-                "creo profile cross intersection source scan",
-            )? {
+            while !first_segments.as_slice().is_empty() {
+                let Some(first_segment) = ctx.next_charged(&mut first_segments, "creo profile cross intersection source scan")? else {
+                    break;
+                };
                 let mut second_segments = profiles[second].iter();
-                while let Some(second_segment) = ctx.next_charged(
-                    &mut second_segments,
-                    "creo profile cross intersection pairs",
-                )? {
+                while !second_segments.as_slice().is_empty() {
+                    let Some(second_segment) = ctx.next_charged(&mut second_segments, "creo profile cross intersection pairs")? else {
+                        break;
+                    };
                     if profile_segments_intersect(
                         ctx,
                         first_segment,
@@ -1783,17 +1851,21 @@ pub(in super::super) fn ordered_extrusion_profiles(
             }
         }
     }
-    let (mut outer, mut outer_storage) =
+    let outer_owned_storage =
         ctx.temporary_vec(0, "creo outer extrusion profile candidates")?;
+    let mut outer_storage = outer_owned_storage.1;
+    let mut outer = outer_owned_storage.0;
     let mut candidate_profiles = profiles.iter().enumerate();
-    while let Some((candidate, profile)) =
-        ctx.next_charged(&mut candidate_profiles, "creo outer profile candidate scan")?
-    {
+    while candidate_profiles.len() > 0 {
+        let Some((candidate, profile)) = ctx.next_charged(&mut candidate_profiles, "creo outer profile candidate scan")? else {
+            break;
+        };
         let mut contains_all = true;
         let mut inner_profiles = profiles.iter().enumerate();
-        while let Some((index, inner)) =
-            ctx.next_charged(&mut inner_profiles, "creo outer profile containment pairs")?
-        {
+        while inner_profiles.len() > 0 {
+            let Some((index, inner)) = ctx.next_charged(&mut inner_profiles, "creo outer profile containment pairs")? else {
+                break;
+            };
             if index == candidate {
                 continue;
             }
@@ -1816,16 +1888,18 @@ pub(in super::super) fn ordered_extrusion_profiles(
         return Ok(None);
     };
     let mut first_rows = 0..profiles.len();
-    while let Some(first) =
-        ctx.next_charged(&mut first_rows, "creo hole profile containment source scan")?
-    {
+    while first_rows.start < first_rows.end {
+        let Some(first) = ctx.next_charged(&mut first_rows, "creo hole profile containment source scan")? else {
+            break;
+        };
         if first == *outer {
             continue;
         }
         let mut second_rows = first + 1..profiles.len();
-        while let Some(second) =
-            ctx.next_charged(&mut second_rows, "creo hole profile containment pairs")?
-        {
+        while second_rows.start < second_rows.end {
+            let Some(second) = ctx.next_charged(&mut second_rows, "creo hole profile containment pairs")? else {
+                break;
+            };
             if second == *outer {
                 continue;
             }
@@ -1838,9 +1912,10 @@ pub(in super::super) fn ordered_extrusion_profiles(
     }
     let mut validated = Vec::new();
     let mut validation_profiles = profiles.into_iter();
-    while let Some(profile) =
-        ctx.next_charged(&mut validation_profiles, "creo profile validation scan")?
-    {
+    while !validation_profiles.as_slice().is_empty() {
+        let Some(profile) = ctx.next_charged(&mut validation_profiles, "creo profile validation scan")? else {
+            break;
+        };
         let Some(profile) = ValidatedProfile::new(ctx, profile)? else {
             return Ok(None);
         };
@@ -1849,15 +1924,15 @@ pub(in super::super) fn ordered_extrusion_profiles(
     }
     let mut profiles = validated;
     let outer_area = profiles[*outer].area();
-    if ctx.any_by(
-        profiles.iter().enumerate(),
-        |(index, profile)| {
-            Ok(index != *outer
-                && profile.area().is_sign_positive() == outer_area.is_sign_positive())
-        },
-        "creo profile area sign scan",
-    )? {
-        return Ok(None);
+    let mut area_profiles = profiles.iter().enumerate();
+    while area_profiles.len() > 0 {
+        let Some((index, profile)) = ctx.next_charged(&mut area_profiles, "creo profile area sign scan")? else {
+            break;
+        };
+        if index != *outer
+            && profile.area().is_sign_positive() == outer_area.is_sign_positive() {
+            return Ok(None);
+        }
     }
     profiles.swap(0, *outer);
     Ok(Some(profiles))
