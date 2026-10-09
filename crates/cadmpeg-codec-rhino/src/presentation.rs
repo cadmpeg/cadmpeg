@@ -1916,30 +1916,50 @@ fn classify_rdk_material_payload(
             "legacy RDK XML root is not xml",
         ));
     }
-    let render_data = ctx
-        .find_by(
-            root.children(),
-            |node| Ok(node.is_element() && node.tag_name().name() == "render-content-manager-data"),
-            "Rhino RDK render data search",
-        )?
-        .ok_or_else(|| {
-            FramingError::structural(
-                payload_range.start,
-                "legacy RDK XML has no render-content-manager-data element",
-            )
-        })?;
-    let material = ctx
-        .find_by(
-            render_data.children(),
-            |node| Ok(node.is_element() && node.tag_name().name() == "material"),
-            "Rhino RDK material search",
-        )?
-        .ok_or_else(|| {
-            FramingError::structural(
-                payload_range.start,
-                "legacy RDK XML has no material element",
-            )
-        })?;
+    let mut render_data = None;
+    ctx.charge_work(0, "Rhino RDK render data search")?;
+    if let Some(last_child) = root.last_child() {
+        let mut source = root.children();
+        loop {
+            let node = ctx.next_charged(&mut source, "Rhino RDK render data search")?
+                .ok_or_else(|| CodecError::malformed("Rhino XML child source ended before its last child"))?;
+            if node.is_element() && node.tag_name().name() == "render-content-manager-data" {
+                render_data = Some(node);
+                break;
+            }
+            if node == last_child {
+                break;
+            }
+        }
+    }
+    let render_data = render_data.ok_or_else(|| {
+        FramingError::structural(
+            payload_range.start,
+            "legacy RDK XML has no render-content-manager-data element",
+        )
+    })?;
+    let mut material = None;
+    ctx.charge_work(0, "Rhino RDK material search")?;
+    if let Some(last_child) = render_data.last_child() {
+        let mut source = render_data.children();
+        loop {
+            let node = ctx.next_charged(&mut source, "Rhino RDK material search")?
+                .ok_or_else(|| CodecError::malformed("Rhino XML child source ended before its last child"))?;
+            if node.is_element() && node.tag_name().name() == "material" {
+                material = Some(node);
+                break;
+            }
+            if node == last_child {
+                break;
+            }
+        }
+    }
+    let material = material.ok_or_else(|| {
+        FramingError::structural(
+            payload_range.start,
+            "legacy RDK XML has no material element",
+        )
+    })?;
     let mut instance_id = None;
     ctx.charge_work(0, "Rhino RDK instance attribute search")?;
     let mut source = material.attributes();
