@@ -62,11 +62,15 @@ fn native_surface_namespace(
     scan: &ContainerScan,
     surface_id: u32,
 ) -> Result<(cadmpeg_ir::ids::IdentityNamespace, &'static str), cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let visible_present = scan.surfaces.rows.contains_id(surface_id);
     let nonvisible_present =
         !visible_present && scan.surfaces.nonvisible_rows.contains_id(surface_id);
     let active_datum_present = !visible_present
         && !nonvisible_present
+        && !scan.planes.datum_cylinders.is_empty()
         && ctx.any_by(
             &scan.planes.datum_cylinders,
             |cylinder| Ok(cylinder.id == surface_id),
@@ -490,6 +494,9 @@ pub(super) fn transfer_part_product(
     annotations: &mut AnnotationBuilder,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(model_name) = scan.framing.model_name.as_ref() else {
         return Ok(false);
     };
@@ -638,6 +645,9 @@ impl Fc05CapPairFrame {
         pair: &crate::curve::Fc05CylinderCapPair,
         outlines: &native_ids::UniqueRows<'_, '_, crate::surface::OutlinePlane>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         if pair.cap_edges.len() < 2 {
             return Ok(None);
         }
@@ -678,9 +688,10 @@ impl Fc05CapPairFrame {
             ]
         };
         let mut disagreement = offsets(last_cap, last_ordinate);
-        while let Some(edge) =
-            ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")?
-        {
+        while !placed_caps.as_slice().is_empty() {
+            let Some(edge) = ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")? else {
+                break;
+            };
             let Some(plane) = outlines.unique(edge.cap_plane_id) else {
                 return Ok(None);
             };
@@ -744,6 +755,9 @@ pub(super) fn fc05_cap_pair_model_frame(
     scan: &ContainerScan,
     pair: &crate::curve::Fc05CylinderCapPair,
 ) -> Result<Option<Fc05CapPairFrame>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if pair.cap_edges.len() < 2 {
         return Ok(None);
     }
@@ -1020,3 +1034,6 @@ pub(super) fn transfer_fc05_cap_circles(
 
 #[cfg(test)]
 mod fc05_tests;
+
+#[cfg(test)]
+mod admission_visits;
