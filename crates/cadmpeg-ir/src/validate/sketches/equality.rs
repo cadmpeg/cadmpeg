@@ -4,7 +4,7 @@
 use super::super::scans::all;
 use crate::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
 use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 pub(super) fn text_equal(
@@ -13,11 +13,7 @@ pub(super) fn text_equal(
     right: &str,
     operation: &'static str,
 ) -> Result<bool, CodecError> {
-    if left.len() != right.len() {
-        return Ok(false);
-    }
-    ctx.charge_work(u64_from_index(left.len()), operation)?;
-    Ok(left == right)
+    ctx.equal_bytes(left.as_bytes(), right.as_bytes(), operation)
 }
 
 fn nurbs_equal(
@@ -64,6 +60,7 @@ pub(super) fn geometry_equal(
     left: &SketchGeometry,
     right: &SketchGeometry,
 ) -> Result<bool, CodecError> {
+    ctx.charge_work(0, "compare sketch geometry")?;
     match (left.definition(), right.definition()) {
         (
             SketchGeometryDefinition::Nurbs { curve: left },
@@ -155,11 +152,7 @@ pub(super) fn geometry_equal(
             SketchGeometryDefinition::Point {
                 position: right_position,
             },
-        ) => ctx.equal(
-            &left_position.get(),
-            &right_position.get(),
-            "compare sketch geometry analytic fields",
-        ),
+        ) => Ok(left_position.get() == right_position.get()),
         (
             SketchGeometryDefinition::Line {
                 start: left_start,
@@ -169,11 +162,7 @@ pub(super) fn geometry_equal(
                 start: right_start,
                 end: right_end,
             },
-        ) => ctx.equal(
-            &(left_start.get(), left_end.get()),
-            &(right_start.get(), right_end.get()),
-            "compare sketch geometry analytic fields",
-        ),
+        ) => Ok((left_start.get(), left_end.get()) == (right_start.get(), right_end.get())),
         (
             SketchGeometryDefinition::ReferenceLine {
                 origin: left_origin,
@@ -183,11 +172,7 @@ pub(super) fn geometry_equal(
                 origin: right_origin,
                 direction: right_direction,
             },
-        ) => ctx.equal(
-            &(left_origin.get(), left_direction.get()),
-            &(right_origin.get(), right_direction.get()),
-            "compare sketch geometry analytic fields",
-        ),
+        ) => Ok((left_origin.get(), left_direction.get()) == (right_origin.get(), right_direction.get())),
         (
             SketchGeometryDefinition::Circle {
                 center: left_center,
@@ -197,11 +182,7 @@ pub(super) fn geometry_equal(
                 center: right_center,
                 radius: right_radius,
             },
-        ) => ctx.equal(
-            &(left_center.get(), left_radius.get()),
-            &(right_center.get(), right_radius.get()),
-            "compare sketch geometry analytic fields",
-        ),
+        ) => Ok((left_center.get(), left_radius.get()) == (right_center.get(), right_radius.get())),
         (
             SketchGeometryDefinition::Arc {
                 center: left_center,
@@ -215,21 +196,17 @@ pub(super) fn geometry_equal(
                 start_angle: right_start_angle,
                 end_angle: right_end_angle,
             },
-        ) => ctx.equal(
-            &(
+        ) => Ok((
                 left_center.get(),
                 left_radius.get(),
                 left_start_angle.get(),
                 left_end_angle.get(),
-            ),
-            &(
+            ) == (
                 right_center.get(),
                 right_radius.get(),
                 right_start_angle.get(),
                 right_end_angle.get(),
-            ),
-            "compare sketch geometry analytic fields",
-        ),
+            )),
         (
             SketchGeometryDefinition::Ellipse {
                 center: left_center,
@@ -243,23 +220,19 @@ pub(super) fn geometry_equal(
                 radii: right_radii,
                 bounds: right_bounds,
             },
-        ) => ctx.equal(
-            &(
+        ) => Ok((
                 left_center.get(),
                 left_major_angle.get(),
                 left_radii.major().get(),
                 left_radii.minor().get(),
                 (*left_bounds).map(|[start, end]| [start.get(), end.get()]),
-            ),
-            &(
+            ) == (
                 right_center.get(),
                 right_major_angle.get(),
                 right_radii.major().get(),
                 right_radii.minor().get(),
                 (*right_bounds).map(|[start, end]| [start.get(), end.get()]),
-            ),
-            "compare sketch geometry analytic fields",
-        ),
+            )),
         (
             SketchGeometryDefinition::Hyperbola {
                 center: left_center,
@@ -275,23 +248,19 @@ pub(super) fn geometry_equal(
                 minor_radius: right_minor_radius,
                 bounds: right_bounds,
             },
-        ) => ctx.equal(
-            &(
+        ) => Ok((
                 left_center.get(),
                 left_major_angle.get(),
                 left_major_radius.get(),
                 left_minor_radius.get(),
                 (*left_bounds).map(|[start, end]| [start.get(), end.get()]),
-            ),
-            &(
+            ) == (
                 right_center.get(),
                 right_major_angle.get(),
                 right_major_radius.get(),
                 right_minor_radius.get(),
                 (*right_bounds).map(|[start, end]| [start.get(), end.get()]),
-            ),
-            "compare sketch geometry analytic fields",
-        ),
+            )),
         (
             SketchGeometryDefinition::Parabola {
                 vertex: left_vertex,
@@ -305,21 +274,17 @@ pub(super) fn geometry_equal(
                 focal_length: right_focal_length,
                 bounds: right_bounds,
             },
-        ) => ctx.equal(
-            &(
+        ) => Ok((
                 left_vertex.get(),
                 left_axis_angle.get(),
                 left_focal_length.get(),
                 (*left_bounds).map(|[start, end]| [start.get(), end.get()]),
-            ),
-            &(
+            ) == (
                 right_vertex.get(),
                 right_axis_angle.get(),
                 right_focal_length.get(),
                 (*right_bounds).map(|[start, end]| [start.get(), end.get()]),
-            ),
-            "compare sketch geometry analytic fields",
-        ),
+            )),
         _ => Ok(false),
     }
 }
@@ -729,10 +694,54 @@ mod tests {
         let right = reference(None, "object", &["other", "later"]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Six object bytes, one selector visit and five bytes for the first selector.
+        // Six object bytes, one selector visit and the first differing selector byte.
         policy.limits.max_work_units = 12;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(!geometry_equal(&ctx, &left, &right).unwrap());
         ctx.finish_session().unwrap();
     }
+
+    #[test]
+    fn sketch_text_equality_admits_only_the_visited_prefix() {
+        for (left, right, cap, expected) in [
+            ("same", "longer", 0, false),
+            ("alpha", "other", 1, false),
+            ("a", "a", 1, true),
+            ("", "", 0, true),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert_eq!(super::text_equal(&ctx, left, right, "sketch prefix").unwrap(), expected);
+            ctx.finish_session().unwrap();
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = super::text_equal(&ctx, "aa", "ab", "sketch prefix") else {
+            panic!("second compared byte must refuse");
+        };
+        assert_eq!((limit.used, limit.additional), (1, 1));
+        assert_eq!(limit.operation, "sketch prefix");
+        assert!(matches!(super::text_equal(&ctx, "", "", "sketch reentry"), Err(CodecError::ResourceLimit(original)) if original == limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    }
+
+    #[test]
+    fn sketch_analytic_equality_needs_no_variable_work() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let point = |position| analytic_geometry(SketchGeometryDefinition::Point { position });
+        let left = point(Point2::new(0.0, -0.0));
+        let same = point(Point2::new(-0.0, 0.0));
+        let other = point(Point2::new(0.0, 1.0));
+        assert!(geometry_equal(&ctx, &left, &same).unwrap());
+        assert!(!geometry_equal(&ctx, &left, &other).unwrap());
+        ctx.finish_session().unwrap();
+    }
+
 }
