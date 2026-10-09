@@ -848,3 +848,5 @@ fn model_feature_index_accepts_only_the_composed_numeric_identity() {
         assert_eq!(super::model_feature_number(identity), number);
     }
 }
+
+mod id_storage;

@@ -277,7 +277,9 @@ pub(super) fn emit_model_features(
         if model_features.contains_key(&datum.feature_id) {
             continue;
         }
-        let (id, id_bytes) = compose_feature_id(ctx, datum.feature_id)?;
+        let id_parts = compose_feature_id(ctx, datum.feature_id)?;
+        let id_bytes = id_parts.1;
+        let id = id_parts.0;
         annotate(
             ctx,
             annotations,
@@ -288,7 +290,7 @@ pub(super) fn emit_model_features(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model features")?;
-        id_bytes.commit()?;
+        let id = id_bytes.commit_value(id)?;
         let feature = Feature {
             id,
             ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
@@ -330,7 +332,9 @@ pub(super) fn emit_model_features(
         if model_features.contains_key(&feature_id) {
             continue;
         }
-        let (id, id_bytes) = compose_feature_id(ctx, feature_id)?;
+        let id_parts = compose_feature_id(ctx, feature_id)?;
+        let id_bytes = id_parts.1;
+        let id = id_parts.0;
         annotate(
             ctx,
             annotations,
@@ -341,7 +345,7 @@ pub(super) fn emit_model_features(
             Exactness::ByteExact,
         )?;
         ctx.charge_entities(1, "admit Creo model features")?;
-        id_bytes.commit()?;
+        let id = id_bytes.commit_value(id)?;
         let feature = Feature {
             id,
             ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
@@ -658,7 +662,9 @@ pub(super) fn emit_model_features(
             refresh_feature_outputs(ctx, scan, ir)?;
             continue;
         }
-        let (id, id_bytes) = compose_feature_id(ctx, operation.feature_id)?;
+        let id_parts = compose_feature_id(ctx, operation.feature_id)?;
+        let id_bytes = id_parts.1;
+        let id = id_parts.0;
         if let Some(parent_index) = parent_index {
             lookup_storage.with_storage(|| {
                 append_regeneration_edge(
@@ -685,7 +691,7 @@ pub(super) fn emit_model_features(
             operation_annotation_kind,
             operation_exactness,
         )?;
-        id_bytes.commit()?;
+        let id = id_bytes.commit_value(id)?;
         let feature = Feature {
             id,
             ordinal: cadmpeg_core::decode::u64_from_index(operation_ordinal_base + operation_index),
@@ -731,7 +737,9 @@ pub(super) fn emit_model_features(
         if model_features.contains_key(&feature_id) {
             continue;
         }
-        let (id, id_bytes) = compose_feature_id(ctx, feature_id)?;
+        let id_parts = compose_feature_id(ctx, feature_id)?;
+        let id_bytes = id_parts.1;
+        let id = id_parts.0;
         let schema_class = feature_schema_class(ctx, scan, feature_id)?;
         let Some(&offset) = row_feature_ids.offsets.get(&feature_id) else {
             continue;
@@ -843,7 +851,7 @@ pub(super) fn emit_model_features(
         drop(parameters);
         drop(parameter_node_storage.take());
         drop(parameter_text_storage.take());
-        id_bytes.commit()?;
+        let id = id_bytes.commit_value(id)?;
         let feature = Feature {
             id,
             ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
