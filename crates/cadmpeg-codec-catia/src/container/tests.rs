@@ -189,8 +189,7 @@ fn descriptor_name_service(dirbuf: &[u8], ds: usize) -> String {
 fn reconstruct_service(data: &[u8], descriptor: &Descriptor, inner: usize) -> Vec<u8> {
     crate::test_support::with_service_context(|ctx| {
         let (stream, storage) = reconstruct_logical_stream(ctx, data, descriptor, inner)?;
-        storage.commit()?;
-        Ok::<_, cadmpeg_core::CodecError>(stream)
+        storage.commit_value(stream)
     })
     .expect("service budget admits logical stream")
 }
@@ -230,8 +229,7 @@ fn logical_stream_bytes_refuse_retained_limit() {
     let descriptor = test_descriptor("MainDataStream", 1, 3);
     let limited = crate::test_support::with_retained_limit(2, |ctx| {
         let (stream, storage) = reconstruct_logical_stream(ctx, b"01234", &descriptor, 0)?;
-        storage.commit()?;
-        Ok::<_, cadmpeg_core::CodecError>(stream)
+        storage.commit_value(stream)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
