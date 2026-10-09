@@ -1215,9 +1215,8 @@ impl Serialize for LayerHierarchySlot {
         record.serialize_field(
             "parent_uuid",
             &hierarchy
-                .map(|value| value.parent_id)
-                .filter(|id| !id.is_nil())
-                .map(|id| id.to_string()),
+                .filter(|value| !value.parent_id.is_nil())
+                .map(|value| DisplayRef(&value.parent_id)),
         )?;
         record.serialize_field("expanded", &hierarchy.map(|value| value.expanded))?;
         record.end()
