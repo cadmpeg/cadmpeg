@@ -1943,3 +1943,5 @@ mod intervals;
 mod loci;
 
 mod stream_runs;
+
+mod lazy_loci;

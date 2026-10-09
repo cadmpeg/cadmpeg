@@ -1867,11 +1867,11 @@ pub(crate) fn decode_dimension_locus_pairs<'a>(
     if dimension_companions.is_empty() {
         return Ok(Vec::new());
     }
-    let governing = GoverningCompanions::build(ctx, owners, parameters)?;
-    let mut intervals = CompanionIntervals::of_inputs(ctx, inputs)?;
-    let _geometry_storage;
-    let (geometry, held_storage) = dimension_geometry_runs(ctx, points, curves)?;
-    _geometry_storage = held_storage;
+    let mut governing = None;
+    let mut intervals = None;
+    // The geometry and its reservation remain one owner. Tuple fields drop
+    // in order, so the actual backing drops before its reservation.
+    let mut geometry = None;
     let mut out = Vec::new();
     for companion in ctx.admit_iter(companions, "scan F3D dimension locus companions")? {
         let Some(scope) = record_stream(ctx, companion.id())? else {
@@ -1891,8 +1891,16 @@ pub(crate) fn decode_dimension_locus_pairs<'a>(
             continue;
         };
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
+        let intervals = match &mut intervals {
+            Some(index) => index,
+            vacant => vacant.insert(CompanionIntervals::of_inputs(ctx, inputs)?),
+        };
         let Some((start, end)) = intervals.interval(ctx, scope, companion, bytes.len())? else {
             continue;
+        };
+        let (geometry, _) = match &mut geometry {
+            Some(index) => index,
+            vacant => vacant.insert(dimension_geometry_runs(ctx, points, curves)?),
         };
         let geometry_indices = geometry.of(ctx, scope)?;
         let stream_records = records.get(ctx, &entry.name, bytes)?;
@@ -1910,6 +1918,10 @@ pub(crate) fn decode_dimension_locus_pairs<'a>(
         };
         let pair_storage = parsed_pair.1;
         let pair = parsed_pair.0;
+        let governing = match &mut governing {
+            Some(index) => index,
+            vacant => vacant.insert(GoverningCompanions::build(ctx, owners, parameters)?),
+        };
         let Some(governing_companion_record_index) =
             governing.governing_in(ctx, scope, pair.paired_byte_offset())?
         else {
@@ -2150,11 +2162,11 @@ pub(crate) fn decode_dimension_null_locus_pairs<'a>(
             Ok::<_, CodecError>(typed_companions)
         })?;
     _typed_storage = held_storage;
-    let governing = GoverningCompanions::build(ctx, owners, parameters)?;
-    let mut intervals = CompanionIntervals::of_inputs(ctx, inputs)?;
-    let _geometry_storage;
-    let (geometry, held_storage) = dimension_geometry_runs(ctx, points, curves)?;
-    _geometry_storage = held_storage;
+    let mut governing = None;
+    let mut intervals = None;
+    // The geometry and its reservation remain one owner. Tuple fields drop
+    // in order, so the actual backing drops before its reservation.
+    let mut geometry = None;
     let mut out = Vec::new();
     for companion in ctx.admit_iter(companions, "scan F3D null-locus companions")? {
         let Some(scope) = record_stream(ctx, companion.id())? else {
@@ -2176,8 +2188,16 @@ pub(crate) fn decode_dimension_null_locus_pairs<'a>(
             continue;
         };
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
+        let intervals = match &mut intervals {
+            Some(index) => index,
+            vacant => vacant.insert(CompanionIntervals::of_inputs(ctx, inputs)?),
+        };
         let Some((start, end)) = intervals.interval(ctx, scope, companion, bytes.len())? else {
             continue;
+        };
+        let (geometry, _) = match &mut geometry {
+            Some(index) => index,
+            vacant => vacant.insert(dimension_geometry_runs(ctx, points, curves)?),
         };
         let geometry_indices = geometry.of(ctx, scope)?;
         let stream_records = records.get(ctx, &entry.name, bytes)?;
@@ -2195,6 +2215,10 @@ pub(crate) fn decode_dimension_null_locus_pairs<'a>(
         };
         let pair_storage = parsed_pair.1;
         let pair = parsed_pair.0;
+        let governing = match &mut governing {
+            Some(index) => index,
+            vacant => vacant.insert(GoverningCompanions::build(ctx, owners, parameters)?),
+        };
         let Some(governing_companion_record_index) =
             governing.governing_in(ctx, scope, pair.paired_byte_offset())?
         else {
@@ -2350,24 +2374,10 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
     if dimension_companions.is_empty() {
         return Ok(Vec::new());
     }
-    let mut intervals_by_stream = CompanionIntervals::of_inputs(ctx, inputs)?;
-    let _companions_storage;
-    let (companions_by_stream, held_storage) =
-        ctx.with_scoped_storage("f3d dimension annotation companions", || {
-            Grouped::build(
-                ctx,
-                companions,
-                |companion| record_stream(ctx, companion.id()),
-                "f3d dimension annotation companions",
-            )
-        })?;
-    _companions_storage = held_storage;
-    let _geometry_storage;
-    let (geometry, held_storage) = dimension_geometry_runs(ctx, points, curves)?;
-    _geometry_storage = held_storage;
-    let _sketch_entity_storage;
-    let (sketch_entities, held_storage) = dimension_sketch_entity_runs(ctx, entities)?;
-    _sketch_entity_storage = held_storage;
+    let mut intervals_by_stream = None;
+    let mut companions_by_stream = None;
+    let mut geometry = None;
+    let mut sketch_entities = None;
     let mut out = Vec::new();
     // Each stream is decoded once, in the order of its first companion.
     let _streams_storage;
@@ -2391,13 +2401,29 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
             continue;
         };
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
+        let intervals_by_stream = match &mut intervals_by_stream {
+            Some(index) => index,
+            vacant => vacant.insert(CompanionIntervals::of_inputs(ctx, inputs)?),
+        };
+        let (companions_by_stream, _) = match &mut companions_by_stream {
+            Some(index) => index,
+            vacant => vacant.insert(ctx.with_scoped_storage(
+                "f3d dimension annotation companions",
+                || Grouped::build(
+                    ctx,
+                    companions,
+                    |companion| record_stream(ctx, companion.id()),
+                    "f3d dimension annotation companions",
+                ),
+            )?),
+        };
         let _interval_storage;
         let (intervals, held_storage) = annotation_intervals(
             ctx,
             stream,
             bytes.len(),
-            &companions_by_stream,
-            &mut intervals_by_stream,
+            companions_by_stream,
+            intervals_by_stream,
         )?;
         _interval_storage = held_storage;
         if intervals.is_empty() {
@@ -2429,6 +2455,14 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
                 Ok::<_, CodecError>(governed_owners)
             })?;
         _governed_storage = held_storage;
+        let (geometry, _) = match &mut geometry {
+            Some(index) => index,
+            vacant => vacant.insert(dimension_geometry_runs(ctx, points, curves)?),
+        };
+        let (sketch_entities, _) = match &mut sketch_entities {
+            Some(index) => index,
+            vacant => vacant.insert(dimension_sketch_entity_runs(ctx, entities)?),
+        };
         let stream_records = records.get(ctx, &entry.name, bytes)?;
         let frame_inputs = AnnotationFrameInputs {
             governed_owners: &governed_owners,
@@ -3554,13 +3588,9 @@ pub(crate) fn decode_dimension_locus_groups<'a>(
     if dimension_companions.is_empty() {
         return Ok(Vec::new());
     }
-    let mut intervals = CompanionIntervals::of_inputs(ctx, inputs)?;
-    let _geometry_storage;
-    let (geometry, held_storage) = dimension_geometry_runs(ctx, points, curves)?;
-    _geometry_storage = held_storage;
-    let _sketch_entity_storage;
-    let (sketch_entities, held_storage) = dimension_sketch_entity_runs(ctx, entities)?;
-    _sketch_entity_storage = held_storage;
+    let mut intervals = None;
+    let mut geometry = None;
+    let mut sketch_entities = None;
     let mut out = Vec::new();
     for companion in ctx.admit_iter(companions, "scan F3D dimension locus-group companions")? {
         let Some(scope) = record_stream(ctx, companion.id())? else {
@@ -3580,8 +3610,20 @@ pub(crate) fn decode_dimension_locus_groups<'a>(
             continue;
         };
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
+        let intervals = match &mut intervals {
+            Some(index) => index,
+            vacant => vacant.insert(CompanionIntervals::of_inputs(ctx, inputs)?),
+        };
         let Some((start, end)) = intervals.interval(ctx, scope, companion, bytes.len())? else {
             continue;
+        };
+        let (geometry, _) = match &mut geometry {
+            Some(index) => index,
+            vacant => vacant.insert(dimension_geometry_runs(ctx, points, curves)?),
+        };
+        let (sketch_entities, _) = match &mut sketch_entities {
+            Some(index) => index,
+            vacant => vacant.insert(dimension_sketch_entity_runs(ctx, entities)?),
         };
         let geometry_indices = geometry.of(ctx, scope)?;
         let stream_sketch_entities = sketch_entities.of(ctx, scope)?;
