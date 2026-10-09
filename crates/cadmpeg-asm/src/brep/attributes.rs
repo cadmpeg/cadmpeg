@@ -24,6 +24,9 @@ pub fn collect_attributes(
     out: &mut Vec<SourceAttribute>,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (emitted, emitted_storage) = emitted;
     let mut current = entity.ref_at(0);
     let mut chain_storage = ctx.reserve_scoped(0, "ASM attribute chain")?;
@@ -199,6 +202,9 @@ fn attribute_value(
     token: &Token,
     format: IdFormat,
 ) -> Result<Option<AttributeValue>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     Ok(Some(match token {
         Token::Char(value) => AttributeValue::Integer(i64::from(*value)),
         Token::Short(value) => AttributeValue::Integer(i64::from(*value)),
@@ -227,14 +233,22 @@ fn attribute_value(
         Token::SubtypeClose => AttributeValue::String(
             ctx.copy_retained_text("subtype_close", "ASM attribute subtype marker")?,
         ),
-        Token::Position(value) | Token::Vector3(value) => match AttributeValue::vector(*value) {
-            Some(value) => value,
-            None => return Ok(None),
-        },
-        Token::Vector2(value) => match AttributeValue::vector(*value) {
-            Some(value) => value,
-            None => return Ok(None),
-        },
+        Token::Position(value) | Token::Vector3(value) => {
+            let [Some(x), Some(y), Some(z)] = value.map(cadmpeg_ir::scalar::FiniteReal::new) else {
+                return Ok(None);
+            };
+            let mut values = ctx.collection_vec(3, "ASM attribute vector values")?;
+            values.extend([x, y, z]);
+            AttributeValue::Vector(values)
+        }
+        Token::Vector2(value) => {
+            let [Some(u), Some(v)] = value.map(cadmpeg_ir::scalar::FiniteReal::new) else {
+                return Ok(None);
+            };
+            let mut values = ctx.collection_vec(2, "ASM attribute vector values")?;
+            values.extend([u, v]);
+            AttributeValue::Vector(values)
+        }
         Token::Ident(value) | Token::SubIdent(value) => {
             AttributeValue::String(ctx.copy_retained_text(value, "ASM attribute identifier")?)
         }
@@ -328,6 +342,9 @@ fn direct_attribute_color(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &Record,
 ) -> Result<Option<DirectAttributeColor>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(payload) = attribute_base(record).map(AttributeBase::payload) else {
         return Ok(None);
     };
@@ -465,6 +482,9 @@ pub fn attribute_chain_color_carrier<'a>(
     max_steps: usize,
     mut by_index: impl FnMut(i64) -> Option<&'a Record>,
 ) -> Result<Option<(&'a Record, DirectAttributeColor)>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(mut current) = entity.ref_at(0) else {
         return Ok(None);
     };
@@ -511,6 +531,9 @@ pub fn attribute_chain_name(
     entity: &Record,
     by_index: &HashMap<i64, &Record, RandomState>,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(mut current) = entity.ref_at(0) else {
         return Ok(None);
     };
@@ -772,4 +795,6 @@ mod tests {
             .is_none());
     }
     mod limits;
+    mod entry_refusal;
+    mod owned_values;
 }
