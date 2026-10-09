@@ -5652,11 +5652,14 @@ fn variable_fillet_law(
         },
         "f3d variable Fillet radius point",
     )?;
-    Ok(
-        cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)?
-            .ok()
-            .map(|points| (points, tangency_weight)),
-    )
+    let mut candidate_storage = ctx.provisional_retained("F3D variable fillet typed radius candidate")?;
+    let converted = candidate_storage.with_storage(|| {
+        cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)
+    })?;
+    match converted {
+        Ok(points) => candidate_storage.commit_value(Some((points, tangency_weight))),
+        Err(_) => Ok(None),
+    }
 }
 
 fn fillet_law_parameter_records(law: &DesignFilletRadiusLaw) -> impl Iterator<Item = u32> + '_ {

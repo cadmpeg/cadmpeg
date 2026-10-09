@@ -3302,7 +3302,12 @@ pub(super) fn project_fixed_fillet_with_corners(
                     parameter: 1.0,
                     radius: end_radius,
                 }, "f3d fixed fillet radius point")?;
-                let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)?.ok() else { return Ok(None); };
+                let mut candidate_storage = ctx.provisional_retained("F3D fixed fillet typed radius candidate")?;
+                let converted = candidate_storage.with_storage(|| {
+                    cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)
+                })?;
+                let Ok(points) = converted else { return Ok(None); };
+                let points = candidate_storage.commit_value(points)?;
                 Some(RadiusSpec::Variable {
                     points,
                 })
