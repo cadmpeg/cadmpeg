@@ -238,22 +238,35 @@ fn surface_patch_grouped_recipe_edges(
     }
     let mut edges = Vec::new();
     let mut has_absent_member = false;
-    for operand in operands {
-        let mut exact = operand
-            .recipe_references
-            .iter()
-            .filter(|reference| !reference.candidate_edges.is_empty());
-        let Some(first) = exact.next() else {
+    let mut remaining_operands = operands.iter();
+    while !remaining_operands.as_slice().is_empty() {
+        let Some(operand) = ctx.next_charged(&mut remaining_operands, "scan F3D surface patch recipe operands")? else {
+            break;
+        };
+        let mut edge: Option<&cadmpeg_ir::ids::EdgeId> = None;
+        let mut references = operand.recipe_references.iter();
+        while !references.as_slice().is_empty() {
+            let Some(reference) = ctx.next_charged(&mut references, "scan F3D surface patch recipe references")? else {
+                break;
+            };
+            if reference.candidate_edges.is_empty() {
+                continue;
+            }
+            let [candidate] = reference.candidate_edges.as_slice() else {
+                return Ok(SurfacePatchRecipeEdges::Inconclusive);
+            };
+            if let Some(first) = edge {
+                if !ctx.equal_bytes(first.as_str().as_bytes(), candidate.as_str().as_bytes(), "compare F3D surface patch recipe edge identity")? {
+                    return Ok(SurfacePatchRecipeEdges::Inconclusive);
+                }
+            } else {
+                edge = Some(candidate);
+            }
+        }
+        let Some(edge) = edge else {
             has_absent_member = true;
             continue;
         };
-        let [edge] = first.candidate_edges.as_slice() else {
-            return Ok(SurfacePatchRecipeEdges::Inconclusive);
-        };
-        if exact.any(|reference| reference.candidate_edges.as_slice() != std::slice::from_ref(edge))
-        {
-            return Ok(SurfacePatchRecipeEdges::Inconclusive);
-        }
         let copied = (edge).try_clone_for_decode(ctx, "f3d surface patch recipe edge id")?;
         ctx.push_vec(&mut edges, copied, "f3d surface patch recipe edge")?;
     }
@@ -1235,7 +1248,11 @@ fn resolved_edge_group_with_transition_chain(
                     edge_slot,
                     "f3d historical edge identifier",
                 )?;
-                if !edges.contains(&edge) {
+                if edges.is_empty() || !ctx.any_by(
+                    edges.as_slice(),
+                    |candidate: &cadmpeg_ir::ids::HistoricalEdgeId| ctx.equal_bytes(candidate.as_str().as_bytes(), edge.as_str().as_bytes(), "compare F3D combined historical edge identity"),
+                    "scan F3D combined historical edge identities",
+                )? {
                     ctx.push_vec(&mut edges, edge, "f3d combined historical edge")?;
                 }
             }
@@ -1279,7 +1296,11 @@ fn resolved_edge_group_with_transition_chain(
             edge_slot,
             "f3d historical edge identifier",
         )?;
-        if !edges.contains(&edge) {
+        if edges.is_empty() || !ctx.any_by(
+                    edges.as_slice(),
+                    |candidate: &cadmpeg_ir::ids::HistoricalEdgeId| ctx.equal_bytes(candidate.as_str().as_bytes(), edge.as_str().as_bytes(), "compare F3D resolved historical edge identity"),
+                    "scan F3D resolved historical edge identities",
+                )? {
             ctx.push_vec(&mut edges, edge, "f3d resolved edge group historical edge")?;
         }
     }
@@ -2101,22 +2122,25 @@ fn scope_partition_edge_group_candidates<'a>(
     };
     let mut scope_groups = Vec::new();
     let mut target_ordinal = None;
-    for group in groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream)
-            && group.scope_record_index == target.scope_record_index
-            && group.lost_edge_references.is_empty()
-            && !(if group.id == target.id {
-                target_members
-            } else {
-                group.members()
-            })
-            .is_empty()
-    }) {
-        let group_members = if group.id == target.id {
+    let mut remaining_groups = groups.iter();
+    while !remaining_groups.as_slice().is_empty() {
+        let Some(group) = ctx.next_charged(&mut remaining_groups, "scan F3D partition scope groups")? else {
+            break;
+        };
+        if native_stream(&group.id) != Some(stream)
+            || group.scope_record_index != target.scope_record_index
+            || !group.lost_edge_references.is_empty() {
+            continue;
+        }
+        let is_target = ctx.equal_bytes(group.id.as_bytes(), target.id.as_bytes(), "compare F3D partition group identity")?;
+        let group_members = if is_target {
             target_members
         } else {
             group.members()
         };
+        if group_members.is_empty() {
+            continue;
+        }
         let mut members = Vec::new();
         let mut complete = true;
         for member in group_members.iter().map(|member| &member.value) {
@@ -2142,7 +2166,7 @@ fn scope_partition_edge_group_candidates<'a>(
         if !complete {
             continue;
         }
-        if group.id == target.id {
+        if is_target {
             target_ordinal = Some(scope_groups.len());
         }
         ctx.push_vec(&mut scope_groups, members, "f3d edge partition group")?;
