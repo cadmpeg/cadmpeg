@@ -188,7 +188,7 @@ fn actual_stored_placement_maps_third_and_fourth_without_repeating_source() {
 
 #[test]
 fn actual_quartic_offset_third_follows_polynomial_normal_law() {
-    let surface = crate::eval::surface_nurbs_higher::tests::quartic();
+    let surface = crate::eval::surface_nurbs::tests::quartic();
     let mut ir = CadIr::empty();
     let base = stored(&mut ir, "quartic", SolvedSurfaceGeometry::Nurbs(surface));
     let shifted = offset(&mut ir, "quartic-offset", base, 1.0);
