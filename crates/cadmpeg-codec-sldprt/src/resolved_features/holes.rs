@@ -2516,7 +2516,9 @@ pub(crate) fn project_hole_position_sketches(
     let mut markers = HashMap::new();
     let mut source_items = features.iter_mut();
     while let Some(feature) = ctx.next_charged(&mut source_items, OPERATION)? {
-        let (projection, _projection_storage) =
+        let _projection_storage;
+        let projection;
+        (projection, _projection_storage) =
             ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
                 let mut projection = None;
                 'feature_edit: {
@@ -3318,7 +3320,9 @@ pub(crate) fn project_spatial_hole_position_sketches(
         else {
             continue;
         };
-        let (solution, _solution_storage) =
+        let _solution_storage;
+        let solution;
+        (solution, _solution_storage) =
             ctx.with_scoped_storage(INDEX_OPERATION, || -> Result<_, CodecError> {
                 let mut authored_markers = Vec::new();
                 for (lane_index, lane) in ctx
@@ -3381,7 +3385,9 @@ pub(crate) fn project_spatial_hole_position_sketches(
                         }
                         None => continue,
                     };
-                    let (axes, _axes_storage) = ctx.with_scoped_storage(
+                    let _axes_storage;
+                    let axes;
+                    (axes, _axes_storage) = ctx.with_scoped_storage(
                         "SLDPRT spatial marker workspace",
                         || -> Result<_, CodecError> {
                             let mut axes = Vec::new();
@@ -4029,7 +4035,9 @@ pub(crate) fn project_hole_topology_axes(
 
         let diameter = diameter.get();
 
-        let (solution, _solution_storage) =
+        let _solution_storage;
+        let solution;
+        (solution, _solution_storage) =
             ctx.with_scoped_storage(CANDIDATE_KEYS, || -> Result<_, CodecError> {
                 let Some(candidates) = counterbore_topology_candidates(
                     ctx,
@@ -4503,7 +4511,9 @@ fn expand_seeded_drilled_hole_topology_axes(
         {
             continue;
         }
-        let (candidates, _candidate_storage) = ctx.with_scoped_storage(
+        let _candidate_storage;
+        let candidates;
+        (candidates, _candidate_storage) = ctx.with_scoped_storage(
             "SLDPRT seeded hole candidate workspace",
             || -> Result<_, CodecError> {
                 let primary = drilled_hole_topology_candidates(
@@ -4805,7 +4815,9 @@ fn counterbore_topology_candidates(
     let diameter = diameter.get();
     let counterbore_diameter = counterbore_diameter.get();
 
-    let (solution, _solution_storage) =
+    let _solution_storage;
+    let solution;
+    (solution, _solution_storage) =
         ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
             let Some(primary) =
                 cylindrical_surface_placements(ctx, diameter * 0.5, topology.surfaces)?
@@ -5381,7 +5393,9 @@ pub(crate) fn project_hole_axes(
         else {
             continue;
         };
-        let (solution, _solution_storage) = ctx.with_scoped_storage(
+        let _solution_storage;
+        let solution;
+        (solution, _solution_storage) = ctx.with_scoped_storage(
             "SLDPRT hole axis candidate workspace",
             || -> Result<Option<Vec<HolePlacement>>, CodecError> {
                 if ctx.get_hash_map(
@@ -6471,7 +6485,9 @@ fn marker_pattern_bore_axes(
     direction: Option<Vector3>,
 ) -> Result<Option<Vec<HolePlacement>>, CodecError> {
     const OPERATION: &str = "collect SLDPRT marker bore patterns";
-    let (solution, _storage) =
+    let _storage;
+    let solution;
+    (solution, _storage) =
         ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
             let mut paired_marker_ids = HashSet::new();
             let mut reduced_marker_ids = HashSet::new();
