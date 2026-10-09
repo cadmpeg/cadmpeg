@@ -3496,7 +3496,7 @@ fn write_nurbs_curve(
             nurbs.degree()
         ))
     })?;
-    let control_count = u32::try_from(nurbs.control_points().len()).map_err(|_| {
+    let control_count = u32::try_from(nurbs.pole_count()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS curve {entity} pole count exceeds the native u32 field"
         ))
@@ -3509,7 +3509,7 @@ fn write_nurbs_curve(
     be16(out, descriptor);
     be16(out, degree);
     be32(out, control_count);
-    be16(out, if nurbs.weights().is_some() { 4 } else { 3 });
+    be16(out, if matches!(nurbs.pole_rows(), NurbsPoles3::Rational { .. }) { 4 } else { 3 });
     be32(out, 2);
     out.push(0);
     be32(out, 0);
@@ -3576,7 +3576,8 @@ fn write_nurbs_surface(
     let u_unique = unique_knots(nurbs.u_knots(), entity)?;
     let v_unique = unique_knots(nurbs.v_knots(), entity)?;
     let poles = homogeneous_grid_poles(nurbs.pole_grid(), length_scale)?;
-    let dimension = if nurbs.weights().is_some() { 4 } else { 3 };
+    let rational = matches!(nurbs.pole_grid(), NurbsPoleGrid::Rational { .. });
+    let dimension = if rational { 4 } else { 3 };
     let u_knot_count = u32::try_from(u_unique.len()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS surface {entity} u distinct knot count exceeds the native u32 field"
@@ -3610,7 +3611,7 @@ fn write_nurbs_surface(
     out.extend_from_slice(&[1, 1]);
     be32(out, u_knot_count);
     be32(out, v_knot_count);
-    out.push(u8::from(nurbs.weights().is_some()));
+    out.push(u8::from(rational));
     out.extend_from_slice(&[0, 0]);
     out.push(0x0c);
     be16(out, dimension);
