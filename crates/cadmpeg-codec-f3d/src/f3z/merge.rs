@@ -37,10 +37,8 @@ pub(super) fn merge_archive(
         ctx,
         scan,
         archive,
-        stack_storage,
-        stack,
     }
-    .merge(ir, report, fidelity, &table)
+    .merge(&mut stack, &mut stack_storage, ir, report, fidelity, &table)
 }
 
 /// Reassigns only repeated sibling ordinals after independent document graphs
@@ -131,14 +129,27 @@ struct MergeSession<'r, 'a> {
     ctx: &'r DecodeContext<'a>,
     scan: &'r ContainerScan<'a>,
     archive: &'r ArchiveSession<'a, 'r>,
-    stack: Vec<String>,
-    stack_storage: cadmpeg_core::decode::ScopedReservation<'r>,
+}
+
+/// Holds one pushed path until recursive traversal returns or unwinds.
+struct MergeStackFrame<'stack, 'ctx> {
+    stack: &'stack mut Vec<String>,
+    _path_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl Drop for MergeStackFrame<'_, '_> {
+    fn drop(&mut self) {
+        // Destroy the path before its actual backing reservation is released.
+        drop(self.stack.pop());
+    }
 }
 
 impl MergeSession<'_, '_> {
     /// Resolves outgoing references and merges each usable component graph.
     fn merge(
-        &mut self,
+        &self,
+        stack: &mut Vec<String>,
+        stack_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
         parent_ir: &mut cadmpeg_ir::CadIr,
         parent_report: &mut cadmpeg_ir::codec::DecodeBody,
         parent_fidelity: &mut cadmpeg_ir::SourceFidelity,
@@ -161,7 +172,7 @@ impl MergeSession<'_, '_> {
                     design.display_name.as_str()
                 });
             let cycle = self.ctx.any_by(
-                &self.stack,
+                &*stack,
                 |path| {
                     self.ctx.equal(
                         path.as_str(),
@@ -259,18 +270,25 @@ impl MergeSession<'_, '_> {
                     })?;
             _path_storage = held_storage;
             self.ctx.push_scoped_vec(
-                &mut self.stack_storage,
-                &mut self.stack,
+                stack_storage,
+                stack,
                 path,
                 "grow F3Z merge stack",
             )?;
-            let descendants = self.merge(
-                &mut component_ir,
-                &mut component_report,
-                &mut component_fidelity,
-                &child_table,
-            )?;
-            self.stack.pop();
+            let descendants = {
+                let frame = MergeStackFrame {
+                    stack,
+                    _path_storage,
+                };
+                self.merge(
+                    &mut *frame.stack,
+                    stack_storage,
+                    &mut component_ir,
+                    &mut component_report,
+                    &mut component_fidelity,
+                    &child_table,
+                )?
+            };
             if let Some(transform) = reference.transform {
                 apply_occurrence_transform(self.ctx, &mut component_ir.model, transform)?;
             }
@@ -876,6 +894,7 @@ fn scope_named_values(
 mod tests {
     mod fidelity;
     mod occurrence;
+    mod stack;
 
     use super::{
         apply_occurrence_transform, compose_transforms, make_sibling_ordinals_unique,
