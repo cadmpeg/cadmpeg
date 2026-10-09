@@ -119,3 +119,5 @@ fn direct_procedural_normal_preserves_the_original_prefused_context() {
 mod axis_linear;
 
 mod zero_offset;
+
+mod cache;

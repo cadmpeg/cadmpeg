@@ -48,7 +48,7 @@ use crate::scalar::FiniteReal;
 use crate::transform::Transform;
 use crate::CadIr;
 
-fn variable_blend_eval_fixture(
+pub(in crate::eval) fn variable_blend_eval_fixture(
     second_origin: Point3,
     pcurves: [(Point2, Point2); 2],
     radii: [f64; 2],
@@ -601,7 +601,7 @@ fn cacheless_circular_variable_blend_rejects_an_undetermined_center_tangent() {
 
 /// The constant rolling ball of radius 3 between the planes `z = 0` and
 /// `x = 0`, with `slice` as its section-center curve.
-fn constant_rolling_ball_fixture(slice: CurveGeometry) -> (CadIr, SurfaceId) {
+pub(in crate::eval) fn constant_rolling_ball_fixture(slice: CurveGeometry) -> (CadIr, SurfaceId) {
     let (mut ir, blend_surface) = variable_blend_eval_fixture(
         Point3::new(0.0, 0.0, 0.0),
         [
