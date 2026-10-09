@@ -264,3 +264,5 @@ fn polynomial_third_reports_missing_extended_coefficients_without_fabricating_ze
     assert_eq!(third(&scratch, &geometry, 0.0), Err(EvaluationFailure::NoValue));
     assert!(crate::eval::decode::curve_point_solved(EvaluationAdmission::Standard, &geometry, 0.0).is_ok());
 }
+
+mod fourth;
