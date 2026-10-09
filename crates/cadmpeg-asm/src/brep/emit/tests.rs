@@ -47,6 +47,7 @@ fn body_source_stream_copy_refuses_retained_limit() {
         &mut AsmBrep::default(),
         ContainerInputs {
             records: &records,
+            bytes: &[],
             by_index: &by_index,
             reach: &Reachable::default(),
             wire: &WireShellTopology::default(),

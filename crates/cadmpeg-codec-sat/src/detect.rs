@@ -46,6 +46,7 @@ pub(crate) fn classify(
 /// words, with integers in the save-format, reference-index and flags slots.
 /// The unused record-count word is descriptive metadata.
 fn looks_like_text_stream(prefix: &[u8]) -> bool {
+    let prefix = &prefix[sat::text_header_start(prefix)..];
     if !sat::has_text_magic(prefix) {
         return false;
     }

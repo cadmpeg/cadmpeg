@@ -4961,6 +4961,25 @@ pub(super) fn emit_points(
     Ok(())
 }
 
+/// The evaluated tolerant-vertex slot, in the normalized record grammar.
+fn evaluated_vertex_tolerance(record: &Record) -> Option<f64> {
+    if record.head() != "tvertex" {
+        return None;
+    }
+    let slot = if matches!(record.chunk(4), Some(Token::Long(_))) {
+        8
+    } else {
+        5
+    };
+    double_at(record, slot)
+}
+
+fn invalid_vertex_tolerance(record: &Record) -> bool {
+    evaluated_vertex_tolerance(record).is_some_and(|value| {
+        value != -1.0 && cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM).is_none()
+    })
+}
+
 /// Emit reachable vertices with their tolerant tails and ownership records.
 pub(super) fn emit_vertices(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -4994,39 +5013,16 @@ pub(super) fn emit_vertices(
                             id: <VertexId>::from(id(format, i)),
                             point: <PointId>::from(id(format, pi)),
                             // The last of the three f64 tolerance slots is the
-                            // evaluated tolerance. A negative value is the unset
+                            // evaluated tolerance. The -1 value is the unset
                             // sentinel, a marker rather than a length: the
                             // neutral vertex carries no tolerance and the native
                             // tail keeps the unset fact.
-                            tolerance: matches!(r.head(), "tvertex")
-                                .then(|| -> Result<_, cadmpeg_core::CodecError> {
-                                    // The save-format 700 layout stores one
-                                    // tolerance directly after the point.
-                                    let slot = if matches!(r.chunk(4), Some(Token::Long(_))) {
-                                        8
-                                    } else {
-                                        5
-                                    };
-                                    Ok(match r.chunk(slot) {
-                                        Some(Token::Double(value)) if *value < 0.0 => None,
-                                        Some(Token::Double(value)) => Some(
-                                            cadmpeg_ir::scalar::PositiveReal::new(
-                                                *value * LEN_TO_MM,
-                                            )
-                                            .ok_or_else(|| {
-                                                cadmpeg_core::CodecError::malformed(
-                                                    "vertex tolerance must be positive and finite",
-                                                )
-                                            })?,
-                                        ),
-                                        _ => None,
-                                    })
-                                })
-                                .transpose()?
-                                .flatten(),
+                            tolerance: evaluated_vertex_tolerance(r).and_then(|value| {
+                                cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM)
+                            }),
                         }
                     );
-                    if r.head() == "tvertex" {
+                    if r.head() == "tvertex" && !invalid_vertex_tolerance(r) {
                         if let (Some(Token::Double(first)), Some(Token::Double(second))) =
                             (r.chunk(6), r.chunk(7))
                         {
@@ -5635,12 +5631,11 @@ pub(super) fn emit_faces(
     Ok(())
 }
 
-/// Emit shells, regions, and bodies for every record so back-references
-/// resolve, filtering child lists to reachable entities.
 /// Source records and decode settings for emitting shell containers.
 #[derive(Clone, Copy)]
 pub(super) struct ContainerInputs<'a, 'record> {
     pub(super) records: &'record [Record],
+    pub(super) bytes: &'a [u8],
     pub(super) by_index: &'a HashMap<i64, &'record Record>,
     pub(super) reach: &'a Reachable,
     pub(super) wire: &'a WireShellTopology,
@@ -5656,6 +5651,7 @@ pub(super) fn emit_containers(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let ContainerInputs {
         records,
+        bytes,
         by_index,
         reach,
         wire,
@@ -5673,7 +5669,56 @@ pub(super) fn emit_containers(
     } = wire;
     let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(ctx, entity, by_index);
-    for r in records {
+    let mut emitted_shells = HashSet::new();
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(records.len()),
+        "ASM shell admission pass",
+    )?;
+    for r in records.iter().filter(|record| record.head() == "shell") {
+        let i = i64::try_from(r.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(r.index),
+            )
+        })?;
+        let Some(owner) = r.ref_at(7) else {
+            retain_record(ctx, out, r, bytes, format)?;
+            continue;
+        };
+        let faces = shell_faces(ctx, r, by_index, kept_faces, format)?;
+        let wire_edges = ctx.collect_vec(
+            wire_edges_by_shell
+                .get(&i)
+                .into_iter()
+                .flatten()
+                .map(|edge| EdgeId::from(id(format, *edge))),
+            "ASM shell wire edges",
+        )?;
+        let free_vertices = ctx.collect_vec(
+            free_vertices_by_shell
+                .get(&i)
+                .into_iter()
+                .flatten()
+                .map(|vertex| VertexId::from(id(format, *vertex))),
+            "ASM shell free vertices",
+        )?;
+        if faces.is_empty() && wire_edges.is_empty() && free_vertices.is_empty() {
+            retain_record(ctx, out, r, bytes, format)?;
+            continue;
+        }
+        let shell = Shell::new(
+            ShellId::from(id(format, i)),
+            RegionId::from(id(format, owner)),
+            faces,
+            wire_edges,
+            free_vertices,
+        )
+        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?;
+        charged_push!(ctx, out.shells, shell);
+        ctx.insert_hash_set(&mut emitted_shells, i, "ASM emitted shells")?;
+    }
+    for r in records.iter().filter(|record| record.head() != "shell") {
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5682,41 +5727,11 @@ pub(super) fn emit_containers(
             )
         })?;
         match r.head() {
-            "shell" => {
-                let Some(owner) = r.ref_at(7) else { continue };
-                let faces = shell_faces(ctx, r, by_index, kept_faces, format)?;
-                charged_push!(
-                    ctx,
-                    out.shells,
-                    Shell::new(
-                        <ShellId>::from(id(format, i)),
-                        <RegionId>::from(id(format, owner)),
-                        faces,
-                        ctx.collect_vec(
-                            wire_edges_by_shell
-                                .get(&i)
-                                .into_iter()
-                                .flatten()
-                                .map(|edge| EdgeId::from(id(format, *edge))),
-                            "ASM shell wire edges"
-                        )?,
-                        ctx.collect_vec(
-                            free_vertices_by_shell
-                                .get(&i)
-                                .into_iter()
-                                .flatten()
-                                .map(|vertex| VertexId::from(id(format, *vertex))),
-                            "ASM shell free vertices"
-                        )?,
-                    )
-                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-                );
-            }
             // Save-format 231 names this record `region`; format-227 streams
             // carry the original ACIS head `lump`. Same layout in both.
             "region" | "lump" => {
                 let Some(owner) = r.ref_at(5) else { continue };
-                let shells = shell_chain(ctx, r, by_index, format)?;
+                let shells = shell_chain(ctx, r, by_index, &emitted_shells, format)?;
                 charged_push!(
                     ctx,
                     out.regions,
@@ -5968,6 +5983,39 @@ pub(super) fn emit_attributes(
     Ok(emitted_attributes)
 }
 
+fn retain_record(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    out: &mut AsmBrep,
+    r: &Record,
+    bytes: &[u8],
+    format: IdFormat,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let end = r.offset.checked_add(r.len).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "record {} at byte {} declares a length of {} bytes, which leaves the address space",
+            r.index, r.offset, r.len
+        ))
+    })?;
+    let retained = bytes.get(r.offset..end).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "record {} declares bytes {}..{end}, but the stream holds {} bytes",
+            r.index,
+            r.offset,
+            bytes.len()
+        ))
+    })?;
+    let retained = ctx.copy_retained(retained, "retain ASM unknown record")?;
+
+    ctx.reserve_vec(&mut out.unknowns, 1, "retain ASM unknown record")?;
+    out.unknowns.push(UnknownRecord::retained(
+        unknown_record_id(ctx, r, format)?,
+        cadmpeg_core::decode::u64_from_index(r.offset),
+        retained,
+        Vec::new(),
+    ));
+    Ok(())
+}
+
 /// Preserve undecoded carriers and opaque cached procedural surfaces referenced
 /// by real topology as passthrough unknown records.
 pub(super) fn emit_passthrough_unknowns(
@@ -5991,30 +6039,13 @@ pub(super) fn emit_passthrough_unknowns(
                 cadmpeg_core::decode::u64_from_index(r.index),
             )
         })?;
-        if undecoded_carriers.contains(&i) || cached_unknown_procedural_surfaces.contains(&i) {
-            let end = r.offset.checked_add(r.len).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "record {} at byte {} declares a length of {} bytes, which leaves the address space",
-                    r.index, r.offset, r.len
-                ))
-            })?;
-            let retained = bytes.get(r.offset..end).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "record {} declares bytes {}..{end}, but the stream holds {} bytes",
-                    r.index,
-                    r.offset,
-                    bytes.len()
-                ))
-            })?;
-            let retained = ctx.copy_retained(retained, "retain ASM unknown record")?;
-
-            ctx.reserve_vec(&mut out.unknowns, 1, "retain ASM unknown record")?;
-            out.unknowns.push(UnknownRecord::retained(
-                unknown_record_id(ctx, r, format)?,
-                cadmpeg_core::decode::u64_from_index(r.offset),
-                retained,
-                Vec::new(),
-            ));
+        if undecoded_carriers.contains(&i)
+            || cached_unknown_procedural_surfaces.contains(&i)
+            || invalid_vertex_tolerance(r)
+            || r.head().is_empty()
+            || (r.head() == "face" && r.ref_at(5).is_none())
+        {
+            retain_record(ctx, out, r, bytes, format)?;
         }
     }
     Ok(())

@@ -248,6 +248,40 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         header: &header,
     }));
     let (matched, kernel) = layers(&evidence);
+    let mut body_wire = false;
+    let record_list = records.as_deref().unwrap_or_default();
+    for record in record_list {
+        ctx.charge_work(1, "scan SAT wire ownership")?;
+        if record.head() == "wire"
+            && record
+                .ref_at(5)
+                .and_then(|owner| usize::try_from(owner).ok())
+                .and_then(|owner| record_list.get(owner))
+                .is_some_and(|owner| owner.head() == "body")
+        {
+            body_wire = true;
+        }
+    }
+    let mut legacy_context = false;
+    if text_header.save_format_version < 700 {
+        for record in records.as_deref().unwrap_or_default() {
+            if !matches!(record.head(), "spline" | "intcurve") {
+                continue;
+            }
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(record.tokens.len()),
+                "scan SAT legacy construction context",
+            )?;
+            legacy_context |= record.tokens.windows(3).any(|tokens| {
+                matches!(tokens,
+                [sab::Token::SubtypeOpen,
+                 sab::Token::Ident(name),
+                 sab::Token::Ident(block)]
+                if matches!(name.as_str(), "exactcur" | "surfintcur" | "exactsur")
+                && matches!(block.as_str(), "nubs" | "nurbs"))
+            });
+        }
+    }
     let payload = match records {
         Some(records) => Some(decode_with_header(
             ctx,
@@ -274,6 +308,32 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         text_header.diagnostics.iter().chain(&framing),
         &mut result.body.losses,
     )?;
+    let extensions =
+        !ctx.container_only() && (1100..10_000).contains(&text_header.save_format_version);
+    if extensions {
+        ctx.push_vec(&mut result.body.losses,
+            SatLossCode::SourceRecordExtensionsUnprojected.note(
+                "ACIS base extension integers and class-specific tails have no neutral projection; shared entity fields decoded; complete stream retained"),
+            "SAT record extension losses")?;
+    }
+    let extension_span = extensions.then_some(("sat:source:record-extensions#0", 0..bytes.len()));
+    if legacy_context {
+        ctx.push_vec(&mut result.body.losses,
+            SatLossCode::SourceRecordExtensionsUnprojected.note(
+                "Legacy spline construction context has no complete native projection; solved B-spline blocks decoded; complete stream retained"),
+            "SAT legacy construction losses")?;
+    }
+    let legacy_span = legacy_context.then_some(("sat:source:legacy-context#0", 0..bytes.len()));
+    if body_wire {
+        ctx.push_vec(
+            &mut result.body.losses,
+            SatLossCode::TopologyWireOwnerUnprojected.note(
+                "Body-owned wires have no neutral ownership representation; complete stream retained",
+            ),
+            "SAT wire ownership losses",
+        )?;
+    }
+    let wire_span = body_wire.then_some(("sat:source:body-wire#0", 0..bytes.len()));
     let header_span = (!text_header.diagnostics.is_empty())
         .then_some(("sat:source:header#0", text_header.source_span));
     let unread_span = unread.map(|span| ("sat:source:unread#0", span));
@@ -281,7 +341,12 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         ctx,
         &mut result,
         bytes,
-        header_span.into_iter().chain(unread_span),
+        header_span
+            .into_iter()
+            .chain(unread_span)
+            .chain(extension_span)
+            .chain(legacy_span)
+            .chain(wire_span),
     )?;
     Ok(result)
 }
@@ -395,6 +460,31 @@ fn build_result(
             source_fidelity: cadmpeg_ir::SourceFidelity::default(),
         });
     };
+
+    for record in &brep.unknowns {
+        let code = if record.id().as_str().contains(":brep:tvertex#") {
+            Some((SatLossCode::VertexToleranceUnresolved,
+                "evaluated vertex tolerance is not positive and finite; tolerance left unset; source record retained"))
+        } else if record.id().as_str().contains(":brep:shell#") {
+            Some((SatLossCode::TopologyShellUnprojected,
+                "shell has no admissible members or owner; shell omitted from region references; source record retained"))
+        } else if record.id().as_str().contains(":brep:face#") {
+            Some((SatLossCode::TopologyFaceOwnerUnprojected,
+                "standalone source face has no shell owner required by the IR; face omitted; source record retained"))
+        } else if record.id().as_str().contains(":brep:untyped-record#") {
+            Some((SatLossCode::SourceRecordNameUnresolved,
+                "record name has no leading component; identity uses its record-table index; source record retained"))
+        } else {
+            None
+        };
+        if let Some((code, message)) = code {
+            ctx.push_vec(
+                &mut losses,
+                code.note(message),
+                "SAT record recovery losses",
+            )?;
+        }
+    }
 
     let (
         _,

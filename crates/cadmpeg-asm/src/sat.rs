@@ -202,9 +202,31 @@ pub struct TextStream {
     pub unread: Option<std::ops::Range<usize>>,
 }
 
+/// Start of the SAT header after an optional Sun attachment header block.
+/// Each transport line starts with `X-Sun-`; a blank line ends the block.
+/// An incomplete or foreign preamble does not select this grammar.
+pub fn text_header_start(bytes: &[u8]) -> usize {
+    if !bytes.starts_with(b"X-Sun-") {
+        return 0;
+    }
+    let mut offset = 0;
+    for line in bytes.split_inclusive(|byte| *byte == b'\n') {
+        let trimmed = line.trim_ascii();
+        offset += line.len();
+        if trimmed.is_empty() {
+            return offset;
+        }
+        if !trimmed.starts_with(b"X-Sun-") || !trimmed.contains(&b':') {
+            return 0;
+        }
+    }
+    0
+}
+
 /// Whether `bytes` begins like a text ASM stream: an ASCII digit run (the
 /// save-format word) followed by a space.
 pub fn has_text_magic(bytes: &[u8]) -> bool {
+    let bytes = &bytes[text_header_start(bytes)..];
     let digits = bytes.iter().take_while(|b| b.is_ascii_digit()).count();
     digits >= 3 && bytes.get(digits) == Some(&b' ')
 }
@@ -250,9 +272,8 @@ impl FieldReader<'_> {
         }
     }
 
-    /// Read one raw whitespace-delimited field. Returns `None` at end of
-    /// input. An `@N` field consumes one separator byte and exactly `N` raw
-    /// bytes, which may include whitespace and newlines.
+    /// Read one raw field bounded by whitespace or a SAT delimiter. Counted
+    /// payloads are read separately and can contain either kind of boundary.
     fn next_field(
         &mut self,
         ctx: &DecodeContext<'_>,
@@ -264,8 +285,15 @@ impl FieldReader<'_> {
             return Ok(None);
         }
         let start = self.pos;
-        while self.pos < self.bytes.len() && !is_ws(self.bytes[self.pos]) {
+        if matches!(self.bytes[self.pos], b'#' | b'{' | b'}') {
             self.pos += 1;
+        } else {
+            while self.pos < self.bytes.len()
+                && !is_ws(self.bytes[self.pos])
+                && !matches!(self.bytes[self.pos], b'#' | b'{' | b'}')
+            {
+                self.pos += 1;
+            }
         }
         let word = self.text(start, self.pos);
         let word = if retained {
@@ -301,6 +329,14 @@ impl FieldReader<'_> {
         at: usize,
         scratch: &mut ScopedReservation<'_>,
     ) -> Result<String, StreamFailure> {
+        if !self.bytes.get(self.pos).is_some_and(|byte| is_ws(*byte)) {
+            return Err(StreamError {
+                format: StreamFormat::Text,
+                offset: at,
+                reason: "counted string has no whitespace separator".to_string(),
+            }
+            .into());
+        }
         self.pos += 1; // one separator byte after the length field
         let end = self
             .pos
@@ -439,6 +475,7 @@ fn parse_header(
     pos: &mut usize,
 ) -> Result<TextHeader, StreamFailure> {
     let header_start = *pos;
+    *pos += text_header_start(&bytes[*pos..]);
     let at = *pos;
     let line1 = header_line(bytes, pos, "save-format")?;
     let mut fields = line1.split(|b| is_ws(*b)).filter(|field| !field.is_empty());
@@ -455,6 +492,22 @@ fn parse_header(
     let entity_count = header_int(line1[2], at, "entity count")?;
     let flags = header_int(line1[3], at, "flags")?;
     let mut diagnostics = Vec::new();
+    if at != header_start {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(at - header_start),
+            "SAT transport header scan",
+        )
+        .map_err(StreamFailure::from_operation)?;
+        push_diagnostic(
+            ctx,
+            &mut diagnostics,
+            StreamDiagnosticKind::Metadata,
+            header_start,
+            format_args!(
+                "Sun attachment headers precede the SAT header; record grammar starts at byte {at}"
+            ),
+        )?;
+    }
     if let Err(error) = header_int::<u32>(line1[1], at, "record count") {
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(error.reason.len()),
@@ -839,20 +892,22 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
         scratch
             .grow(cadmpeg_core::decode::u64_from_index(token_bytes))
             .map_err(StreamFailure::from_operation)?;
-        let tokens = type_record(ctx, head, &prims, scale).map_err(|failure| match failure {
-            TypedRecordFailure::Resource(error) => StreamFailure::from_operation(error),
-            TypedRecordFailure::Type(failure) => {
-                let error = StreamError {
-                    format: StreamFormat::Text,
-                    offset: rec_start,
-                    reason: failure.reason().to_string(),
-                };
-                match failure {
-                    TypeFailure::UnrepresentableLength => StreamFailure::NotImplemented(error),
-                    TypeFailure::InvalidSplineCount => StreamFailure::Malformed(error),
+        let tokens = type_record(ctx, head, &prims, scale, header.save_format_version).map_err(
+            |failure| match failure {
+                TypedRecordFailure::Resource(error) => StreamFailure::from_operation(error),
+                TypedRecordFailure::Type(failure) => {
+                    let error = StreamError {
+                        format: StreamFormat::Text,
+                        offset: rec_start,
+                        reason: failure.reason().to_string(),
+                    };
+                    match failure {
+                        TypeFailure::UnrepresentableLength => StreamFailure::NotImplemented(error),
+                        TypeFailure::InvalidSplineCount => StreamFailure::Malformed(error),
+                    }
                 }
-            }
-        })?;
+            },
+        )?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(tokens.len() * std::mem::size_of::<Token>()),
             "retain SAT typed tokens",
@@ -1095,6 +1150,7 @@ struct Cur<'a, 'c, 'p> {
     pos: usize,
     /// Millimetres per stream length unit.
     scale: f64,
+    save_format: u32,
     failure: Option<TypeFailure>,
     resource: Option<cadmpeg_core::CodecError>,
     ctx: &'c DecodeContext<'p>,
@@ -1269,6 +1325,14 @@ impl<'a> Cur<'a, '_, '_> {
     }
 
     fn enum_word(&mut self, vocab: &[(&str, i64)], out: &mut Vec<Token>) -> Option<()> {
+        if self.save_format < 200 {
+            if let Some(Prim::Integer(value)) = self.peek() {
+                let value = *value;
+                self.bump();
+                push_token!(self, out, Token::Enum(value));
+                return Some(());
+            }
+        }
         let word = self.word()?;
         let (_, value) = vocab.iter().find(|(name, _)| *name == word)?;
         push_token!(self, out, Token::Enum(*value));
@@ -1352,9 +1416,26 @@ impl<'a> Cur<'a, '_, '_> {
 
 /// Run one fixed slot against the cursor.
 fn take_slot(cur: &mut Cur<'_, '_, '_>, slot: Slot, out: &mut Vec<Token>) -> Option<()> {
+    if cur.save_format < 200 && matches!(slot, Slot::Sense | Slot::Sides | Slot::UvSense | Slot::B)
+    {
+        if let Some(Prim::Integer(value)) = cur.peek() {
+            let token = match value {
+                0 => Token::False,
+                1 => Token::True,
+                _ => return None,
+            };
+            cur.bump();
+            push_token!(cur, out, token);
+            return Some(());
+        }
+    }
     match slot {
         Slot::R => match cur.bump()? {
             Prim::Ref(index) => {
+                push_token!(cur, out, Token::Ref(*index));
+                Some(())
+            }
+            Prim::Integer(index) if cur.save_format < 103 => {
                 push_token!(cur, out, Token::Ref(*index));
                 Some(())
             }
@@ -1387,6 +1468,19 @@ fn take_slot(cur: &mut Cur<'_, '_, '_>, slot: Slot, out: &mut Vec<Token>) -> Opt
         }
         Slot::S => match cur.bump()? {
             Prim::Str(value) => {
+                cur.push_text_token(out, value, true);
+                Some(())
+            }
+            Prim::Integer(0) if cur.save_format < 700 => {
+                cur.push_text_token(out, "", true);
+                Some(())
+            }
+            Prim::Integer(count) if cur.save_format < 700 => {
+                let count = usize::try_from(*count).ok()?;
+                let value = cur.word()?;
+                if value.len() != count {
+                    return None;
+                }
                 cur.push_text_token(out, value, true);
                 Some(())
             }
@@ -1463,11 +1557,13 @@ fn try_shape(
     prims: &[Prim],
     scale: f64,
     slots: &[Slot],
+    save_format: u32,
 ) -> Result<Option<Vec<Token>>, TypedRecordFailure> {
     let mut cur = Cur {
         prims,
         pos: 0,
         scale,
+        save_format,
         failure: None,
         resource: None,
         ctx,
@@ -1728,12 +1824,7 @@ fn exact_spl_sur_tail(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option
 
 /// A sense word: `forward` is `FALSE`, `reversed` is `TRUE`.
 fn sense_word(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
-    match cur.word()? {
-        "forward" => push_token!(cur, out, Token::False),
-        "reversed" => push_token!(cur, out, Token::True),
-        _ => return None,
-    }
-    Some(())
+    take_slot(cur, Slot::Sense, out)
 }
 
 /// One nullable support-surface slot: the `null_surface` sentinel, a `spline`
@@ -1968,38 +2059,45 @@ fn type_subtype_tabled(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Optio
         return None;
     };
     cur.push_text_token(out, name, false);
-    let matched = match name {
-        "ref" => cur
-            .long()
-            .map(|index| push_token!(cur, out, Token::Long(index))),
-        "exp_par_cur" | "exppc" => exp_par_cur_tail(cur, out),
-        "exact_int_cur" | "exactcur" => exact_int_cur_tail(cur, out),
-        "exact_spl_sur" | "exactsur" => {
-            let mark = (cur.pos, out.len());
-            exact_spl_sur_tail(cur, out).or_else(|| {
-                cur.pos = mark.0;
-                out.truncate(mark.1);
-                exact_spl_sur_revision_tail(cur, out)
-            })
-        }
-        "int_int_cur" => cache_first_curve_context(cur, out),
-        "par_int_cur" => cache_first_curve_context(cur, out).and_then(|()| {
-            for _ in 0..2 {
+    let matched = if cur.save_format < 700
+        && matches!(cur.peek(), Some(Prim::Word(word)) if matches!(word.as_str(), "nubs" | "nurbs"))
+        && matches!(name, "exactcur" | "surfintcur" | "exactsur")
+    {
+        legacy::cache_tail(cur, out, name == "exactsur")
+    } else {
+        match name {
+            "ref" => cur
+                .long()
+                .map(|index| push_token!(cur, out, Token::Long(index))),
+            "exp_par_cur" | "exppc" => exp_par_cur_tail(cur, out),
+            "exact_int_cur" | "exactcur" => exact_int_cur_tail(cur, out),
+            "exact_spl_sur" | "exactsur" => {
+                let mark = (cur.pos, out.len());
+                exact_spl_sur_tail(cur, out).or_else(|| {
+                    cur.pos = mark.0;
+                    out.truncate(mark.1);
+                    exact_spl_sur_revision_tail(cur, out)
+                })
+            }
+            "int_int_cur" => cache_first_curve_context(cur, out),
+            "par_int_cur" => cache_first_curve_context(cur, out).and_then(|()| {
+                for _ in 0..2 {
+                    let flag = logical_word(cur.word()?)?;
+                    push_token!(cur, out, flag);
+                }
+                Some(())
+            }),
+            "blend_int_cur" => cache_first_curve_context(cur, out).and_then(|()| {
                 let flag = logical_word(cur.word()?)?;
                 push_token!(cur, out, flag);
+                Some(())
+            }),
+            "spring_int_cur" => {
+                cache_first_curve_context(cur, out).and_then(|()| cur.enum_word(CURV_DIR, out))
             }
-            Some(())
-        }),
-        "blend_int_cur" => cache_first_curve_context(cur, out).and_then(|()| {
-            let flag = logical_word(cur.word()?)?;
-            push_token!(cur, out, flag);
-            Some(())
-        }),
-        "spring_int_cur" => {
-            cache_first_curve_context(cur, out).and_then(|()| cur.enum_word(CURV_DIR, out))
+            "cyl_spl_sur" => cyl_spl_sur_tail(cur, out),
+            _ => None,
         }
-        "cyl_spl_sur" => cyl_spl_sur_tail(cur, out),
-        _ => None,
     };
     let closed = matched.and_then(|()| match cur.peek() {
         Some(Prim::Close) => {
@@ -2043,6 +2141,8 @@ fn fallback_scope(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()>
 // Head shape tables
 // ---------------------------------------------------------------------------
 
+mod legacy;
+
 use Slot::{DLen, DLenSentinel, OptB, Sense, Sides, Sub, UvSense, VLen, VUnit, B, D, L, P, R, S};
 
 // Every entity record opens with the base fields the `shape!` macro
@@ -2072,7 +2172,10 @@ fn head_shapes(head: &str) -> &'static [&'static [Slot]] {
             shape![R, R, R, R, R, Sense, Sides, B],
         ],
         "loop" => &[shape![R, R, R]],
-        "coedge" => &[shape![R, R, R, R, Sense, R, L, R]],
+        "coedge" => &[
+            shape![R, R, R, R, Sense, R, L, R],
+            shape![R, R, R, R, Sense, R, R],
+        ],
         "tcoedge" => &[
             shape![R, R, R, R, Sense, R, L, R, D, D, R, L, L],
             shape![R, R, R, R, Sense, R, L, R, D, D, R],
@@ -2094,7 +2197,7 @@ fn head_shapes(head: &str) -> &'static [&'static [Slot]] {
             shape![R, L, R, DLenSentinel, DLenSentinel, DLenSentinel, L],
             shape![R, L, R, DLenSentinel, DLenSentinel, DLenSentinel],
             // Save format 700 stores one tolerance and no endpoint index.
-            shape![R, R, DLen],
+            shape![R, R, DLenSentinel],
         ],
         "point" => &[shape![P]],
         // A transform has a two-field base: the attribute head and one
@@ -2139,9 +2242,20 @@ fn type_record(
     head: &str,
     prims: &[Prim],
     scale: f64,
+    save_format: u32,
 ) -> Result<Vec<Token>, TypedRecordFailure> {
+    if save_format < 700 {
+        if let Some(tokens) = legacy::type_record(ctx, head, prims, scale, save_format)? {
+            return Ok(tokens);
+        }
+    }
+    if (1100..10_000).contains(&save_format) {
+        if let Some(tokens) = legacy::type_extended_record(ctx, head, prims, scale, save_format)? {
+            return Ok(tokens);
+        }
+    }
     for slots in head_shapes(head) {
-        if let Some(tokens) = try_shape(ctx, prims, scale, slots)? {
+        if let Some(tokens) = try_shape(ctx, prims, scale, slots, save_format)? {
             return Ok(tokens);
         }
     }
@@ -2149,6 +2263,7 @@ fn type_record(
         prims,
         pos: 0,
         scale,
+        save_format,
         failure: None,
         resource: None,
         ctx,
@@ -2232,6 +2347,7 @@ mod tests {
             prims: &prims,
             pos: 0,
             scale: 10.0,
+            save_format: 23_200,
             failure: None,
             resource: None,
             ctx: &ctx,
@@ -2254,8 +2370,8 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let prims = [Prim::Integer(4)];
-        let error =
-            super::type_record(&ctx, "unknown", &prims, 10.0).expect_err("resource refusal");
+        let error = super::type_record(&ctx, "unknown", &prims, 10.0, 23_200)
+            .expect_err("resource refusal");
         let super::TypedRecordFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
             panic!("expected resource refusal")
         };
@@ -2295,6 +2411,7 @@ mod tests {
                 prims: &prims,
                 pos: 0,
                 scale: 10.0,
+                save_format: 23_200,
                 failure: None,
                 resource: None,
                 ctx,
@@ -3218,6 +3335,7 @@ mod tests {
                 prims: &prims,
                 pos: 0,
                 scale: 10.0,
+                save_format: 23_200,
                 failure: None,
                 resource: None,
                 ctx,
@@ -3265,6 +3383,7 @@ mod tests {
                 prims: &prims,
                 pos: 0,
                 scale: 10.0,
+                save_format: 23_200,
                 failure: None,
                 resource: None,
                 ctx,

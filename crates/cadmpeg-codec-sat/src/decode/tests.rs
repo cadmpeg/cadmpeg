@@ -706,3 +706,216 @@ fn sat_unusable_header_values_keep_independent_records() {
         }
     }
 }
+
+#[test]
+fn zero_vertex_tolerance_keeps_topology_and_retains_its_source_record() {
+    let source = b"700 0 1 0\n1 T 4 ACIS 1 D\n1 0.01 0.001\n\
+body $-1 -1 $-1 $1 $-1 $-1 #\n\
+lump $-1 -1 $-1 $-1 $2 $0 #\n\
+shell $-1 -1 $-1 $-1 $-1 $3 $-1 $1 #\n\
+face $-1 -1 $-1 $-1 $4 $2 $-1 $5 forward single #\n\
+loop $-1 -1 $-1 $-1 $6 $3 #\n\
+plane-surface $-1 -1 $-1 0 0 0 0 0 1 1 0 0 forward_v I I I I #\n\
+coedge $-1 -1 $-1 $6 $6 $-1 $7 forward $4 $-1 #\n\
+edge $-1 -1 $-1 $8 0 $8 6.283185307179586 $6 $9 forward @7 unknown #\n\
+tvertex $-1 -1 $-1 $7 $10 0 #\n\
+ellipse-curve $-1 -1 $-1 0 0 0 0 0 1 10 0 0 1 I I #\n\
+point $-1 -1 $-1 10 0 0 #\nEnd-of-ACIS-data\n";
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
+    assert_eq!(result.ir().model.vertices.len(), 1);
+    assert!(result.ir().model.vertices[0].tolerance.is_none());
+    assert_eq!(result.ir().model.edges.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::VertexToleranceUnresolved.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:brep:tvertex#8")
+            .unwrap()
+            .data(),
+        Some(b"tvertex $-1 -1 $-1 $7 $10 0 #".as_slice())
+    );
+}
+
+#[test]
+fn attachment_headers_keep_record_offsets_and_source_bytes() {
+    let prefix = b"X-Sun-Data-Type: default\nX-Sun-Charset: us-ascii\n\n";
+    let mut source = prefix.to_vec();
+    source.extend(text_sphere_stream(1.0));
+    let expected = decode_bytes(&text_sphere_stream(1.0));
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&source));
+    assert_eq!(result.ir().model, expected.ir().model);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::HeaderMetadataNoncanonical.kind()));
+    let retained = result
+        .source_fidelity()
+        .retained_record("sat:source:header#0")
+        .unwrap()
+        .data()
+        .unwrap();
+    assert!(retained.starts_with(prefix));
+}
+
+#[test]
+fn empty_leading_record_name_uses_its_table_index_and_keeps_the_source() {
+    let source = String::from_utf8(text_sphere_stream(1.0))
+        .unwrap()
+        .replace("End-of-ASM-data", "-opaque $-1 #\nEnd-of-ASM-data");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::SourceRecordNameUnresolved.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:brep:untyped-record#6")
+            .unwrap()
+            .data(),
+        Some(b"-opaque $-1 #".as_slice())
+    );
+}
+
+#[test]
+fn acis_base_extensions_do_not_shift_shared_entity_fields() {
+    let source = String::from_utf8(text_sphere_stream(1.0))
+        .unwrap()
+        .replacen("23200", "2200", 1)
+        .replace(" $-1 -1 $-1 ", " $-1 -1 -1 $-1 ")
+        .replace("forward single #", "forward single F T 0 0 0 0 #")
+        .replace("End-of-ASM-data", "End-of-ACIS-data");
+    let expected = decode_bytes(&text_sphere_stream(1.0));
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+    assert_eq!(result.ir().model, expected.ir().model);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::SourceRecordExtensionsUnprojected.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:source:record-extensions#0")
+            .unwrap()
+            .data(),
+        Some(source.as_bytes())
+    );
+}
+
+#[test]
+fn legacy_spline_context_is_reported_and_retained_with_its_solved_surface() {
+    let source = b"105 0 1 0\n\
+body $-1 $1 $-1 $-1 #\n\
+lump $-1 $-1 $2 $0 #\n\
+shell $-1 $-1 $-1 $3 $1 #\n\
+face $-1 $-1 $-1 $2 $-1 $4 0 0 #\n\
+spline-surface $-1 0 { exactsur nubs 1 1 open open none none 2 2 0 1 1 1 0 1 1 1 0 0 0 10 0 0 0 10 0 10 10 0 0 } #\n\
+End-of-ACIS-data\n";
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert!(matches!(
+        result.ir().model.surfaces[0].geometry.solved(),
+        Some(SolvedSurfaceGeometry::Nurbs(_))
+    ));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::SourceRecordExtensionsUnprojected.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:source:legacy-context#0")
+            .unwrap()
+            .data(),
+        Some(source.as_slice())
+    );
+}
+
+#[test]
+fn standalone_face_is_retained_when_the_ir_requires_a_shell_owner() {
+    let source = b"201 0 1 0\n1 T 4 ACIS 1 D\n1 0.01 0.001\n\
+face $-1 $-1 $-1 $-1 $-1 $1 forward single #\n\
+plane-surface $-1 0 0 0 0 0 1 1 0 0 forward_v I I I I #\nEnd-of-ACIS-data\n";
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
+    assert!(result.ir().model.faces.is_empty());
+    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::TopologyFaceOwnerUnprojected.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:brep:face#0")
+            .unwrap()
+            .data(),
+        Some(b"face $-1 $-1 $-1 $-1 $-1 $1 forward single #".as_slice())
+    );
+}
+
+#[test]
+fn empty_shell_is_retained_without_dangling_region_references() {
+    let source = b"105 0 1 0\n\
+body $-1 $1 $-1 $-1 #\n\
+lump $-1 $-1 $2 $0 #\n\
+shell $-1 $3 $-1 $-1 $1 #\n\
+shell $-1 $-1 $-1 $4 $1 #\n\
+face $-1 $-1 $-1 $3 $-1 $5 0 0 #\n\
+plane-surface $-1 0 0 0 0 0 1 1 0 0 0 #\nEnd-of-ACIS-data\n";
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
+    let model = &result.ir().model;
+    assert_eq!(model.faces.len(), 1);
+    assert_eq!(model.shells.len(), 1);
+    assert_eq!(model.shells[0].id.as_str(), "sat:brep:entity#3");
+    assert_eq!(model.regions[0].shells, [model.shells[0].id.clone()]);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::TopologyShellUnprojected.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:brep:shell#2")
+            .unwrap()
+            .data(),
+        Some(b"shell $-1 $3 $-1 $-1 $1 #".as_slice())
+    );
+}
+
+#[test]
+fn body_owned_wire_reports_the_missing_ir_ownership_and_retains_its_source() {
+    let source = b"105 0 1 0\n\
+body $-1 $-1 $1 $-1#\n\
+wire $-1 $-1 $2 $0 $-1 0#\n\
+coedge $-1 $2 $2 $-1 $3 0 $1 $-1#\n\
+edge $-1 $4 $5 $2 $6 0#\n\
+vertex $-1 $3 $7#\nvertex $-1 $3 $8#\n\
+straight-curve $-1 0 0 0 1 0 0#\n\
+point $-1 0 0 0#\npoint $-1 5 0 0#\nEnd-of-ACIS-data\n";
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::TopologyWireOwnerUnprojected.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:source:body-wire#0")
+            .unwrap()
+            .data(),
+        Some(source.as_slice())
+    );
+}

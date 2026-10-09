@@ -1242,6 +1242,7 @@ pub(super) fn shell_chain(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     region_rec: &Record,
     by_index: &HashMap<i64, &Record>,
+    emitted_shells: &HashSet<i64>,
     format: IdFormat,
 ) -> Result<Vec<ShellId>, cadmpeg_core::CodecError> {
     let id = |i: i64| ShellId::from(super::id(format, i));
@@ -1255,7 +1256,9 @@ pub(super) fn shell_chain(
         let Some(s) = owned_child(by_index, si, &["shell"], 7, region_rec) else {
             break;
         };
-        ctx.push_vec(&mut out, id(si), "ASM region shells")?;
+        if emitted_shells.contains(&si) {
+            ctx.push_vec(&mut out, id(si), "ASM region shells")?;
+        }
         cur = s.ref_at(3);
     }
     Ok(out)

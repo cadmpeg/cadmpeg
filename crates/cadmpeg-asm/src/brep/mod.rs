@@ -732,6 +732,7 @@ pub fn decode_with_header(
         &mut out,
         ContainerInputs {
             records,
+            bytes,
             by_index: &by_index,
             reach: &reach,
             wire: &wire,
