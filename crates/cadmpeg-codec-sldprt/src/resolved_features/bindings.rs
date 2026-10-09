@@ -2300,7 +2300,12 @@ fn bind_detached_spatial_relation_objects(
     const DISAMBIGUATE: &str = "disambiguate SLDPRT spatial sketch ranges";
     const OWNERS: &str = "scan SLDPRT spatial sketch owners";
     const MATCH: &str = "match SLDPRT spatial sketch names";
-    let ranges = spatial_relation_manager_ranges_charged(ctx, lane)?;
+    let _ranges_storage;
+    let ranges;
+    (ranges, _ranges_storage) =
+        ctx.with_scoped_storage("SLDPRT detached spatial range workspace", || {
+            spatial_relation_manager_ranges_charged(ctx, lane)
+        })?;
     if ranges.is_empty() {
         return Ok(Vec::new());
     }
