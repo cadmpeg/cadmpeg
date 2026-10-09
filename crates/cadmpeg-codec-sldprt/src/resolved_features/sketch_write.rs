@@ -504,9 +504,15 @@ fn generated_sketch_curve(
                     "source-less SLDPRT sketch writing requires a non-periodic NURBS with at least two poles".into(),
                 ));
             }
-            let control_points = curve.control_points();
-            let start = control_points[0];
-            let end = control_points[control_points.len() - 1];
+            let poles = curve.pole_rows();
+            let count = poles.count();
+            let Some((start, end)) = count.checked_sub(1).and_then(|last| {
+                poles.point_at(0).zip(poles.point_at(last))
+            }) else {
+                return Err(cadmpeg_core::CodecError::NotImplemented(
+                    "source-less SLDPRT sketch writing requires a non-periodic NURBS with at least two poles".into(),
+                ));
+            };
             let knots = curve.knots();
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.lift(lift).map_err(|error| {
@@ -516,7 +522,7 @@ fn generated_sketch_curve(
                 })?)),
                 start: start.get(),
                 end: end.get(),
-                param_range: [knots[cadmpeg_core::decode::index_from_u32(curve.degree())], knots[control_points.len()]],
+                param_range: [knots[cadmpeg_core::decode::index_from_u32(curve.degree())], knots[count]],
             })
         }
         SketchGeometryDefinition::Point { .. }
@@ -745,11 +751,9 @@ fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
             Some([point(start.get()), point(end.get())])
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.control_points();
-            Some([
-                control_points[0].get(),
-                control_points[control_points.len() - 1].get(),
-            ])
+            let poles = curve.pole_rows();
+            let last = poles.count().checked_sub(1)?;
+            Some([poles.point_at(0)?.get(), poles.point_at(last)?.get()])
         }
         _ => None,
     }

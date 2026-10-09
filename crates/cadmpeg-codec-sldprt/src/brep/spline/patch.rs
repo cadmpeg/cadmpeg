@@ -477,8 +477,8 @@ pub(crate) fn patch_nurbs_curve(
     scale: f64,
 ) -> Result<Option<()>, cadmpeg_core::CodecError> {
     if old.degree() != new.degree()
-        || old.control_points().len() != new.control_points().len()
-        || old.weights().is_some() != new.weights().is_some()
+        || old.pole_count() != new.pole_count()
+        || matches!(old.pole_rows(), NurbsPoles3::Rational { .. }) != matches!(new.pole_rows(), NurbsPoles3::Rational { .. })
         || old.periodic() != new.periodic()
     {
         return Ok(None);
@@ -499,8 +499,8 @@ pub(crate) fn patch_nurbs_curve(
         return Ok(None);
     };
     if descriptor.degree != old.degree()
-        || descriptor.control_count != old.control_points().len()
-        || descriptor.dimension != if old.weights().is_some() { 4 } else { 3 }
+        || descriptor.control_count != old.pole_count()
+        || descriptor.dimension != if matches!(old.pole_rows(), NurbsPoles3::Rational { .. }) { 4 } else { 3 }
     {
         return Ok(None);
     }
@@ -526,8 +526,7 @@ pub(crate) fn patch_nurbs_surface(
         || old.v_degree() != new.v_degree()
         || old.u_count() != new.u_count()
         || old.v_count() != new.v_count()
-        || old.poles().len() != new.poles().len()
-        || old.weights().is_some() != new.weights().is_some()
+        || matches!(old.pole_grid(), NurbsPoleGrid::Rational { .. }) != matches!(new.pole_grid(), NurbsPoleGrid::Rational { .. })
         || old.u_periodic() != new.u_periodic()
         || old.v_periodic() != new.v_periodic()
     {
@@ -566,7 +565,7 @@ pub(crate) fn patch_nurbs_surface(
         return Ok(None);
     };
     let [control_attr, _, _, u_knot_attr, v_knot_attr] = descriptor.refs;
-    let dimension = if old.weights().is_some() { 4 } else { 3 };
+    let dimension = if matches!(old.pole_grid(), NurbsPoleGrid::Rational { .. }) { 4 } else { 3 };
     if descriptor.u_degree != old.u_degree()
         || descriptor.v_degree != old.v_degree()
         || descriptor.u_count != old.u_count()
