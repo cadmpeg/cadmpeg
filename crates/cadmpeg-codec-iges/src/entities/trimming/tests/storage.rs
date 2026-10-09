@@ -606,3 +606,227 @@ fn separate_boundary_vertex_output_releases_each_cluster_identity() {
         &["iges:model:vertex#D9:0:0", "iges:model:vertex#D9:0:1"],
     );
 }
+
+fn source_path_node_bytes() -> u64 {
+    u64_from_index(11 * size_of::<CurveId>() + 16 * size_of::<usize>()
+        + 2 * align_of::<CurveId>().max(align_of::<usize>()))
+}
+
+fn source_intervals(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    id: &CurveId,
+    active: &mut std::collections::BTreeSet<CurveId>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
+    super::super::source_curve_control_intervals(
+        index, id, (&[], &[]),
+        crate::global::RealPrecision { single_significance: 7, double_significance: 15 },
+        1.0, active, ctx,
+    )
+}
+
+#[test]
+fn repeated_absent_source_curves_release_each_actual_path_root() {
+    const ATTEMPTS: u64 = 16;
+    let ir = CadIr::empty();
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let id = CurveId::mint("test:model:curve#absent").unwrap();
+    let key = u64_from_index(id.as_str().len());
+    let node = source_path_node_bytes();
+    for cap in [node + key - 1, node + key] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = ATTEMPTS;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut outer = ctx.reserve_scoped(0, "test repeated source scratch").unwrap();
+        let mut active = std::collections::BTreeSet::new();
+        if cap < node + key {
+            let first = match outer.with_storage(|| source_intervals(&index, &id, &mut active, &ctx)).err().expect("expected original resource refusal") {
+                CodecError::ResourceLimit(first) => first,
+                _ => panic!("expected first active node refusal"),
+            };
+            assert!(active.is_empty());
+            assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(first.operation, "iges source active curve nodes");
+            assert_eq!((first.limit, first.used, first.additional), (cap, key, node));
+            drop(active);
+            drop(outer);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        } else {
+            for _ in 0..ATTEMPTS {
+                assert!(outer.with_storage(|| source_intervals(&index, &id, &mut active, &ctx)).unwrap().is_none());
+                assert!(active.is_empty());
+                let free = ctx.reserve_scoped(cap, "test destroyed source path root").unwrap();
+                drop(free);
+            }
+            drop(active);
+            drop(outer);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn source_curve_removal_preserves_seeded_ancestor_storage() {
+    let ir = CadIr::empty();
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let seed = CurveId::mint("test:model:curve#ancestor").unwrap();
+    let child = CurveId::mint("test:model:curve#absent").unwrap();
+    let node = source_path_node_bytes();
+    let seed_bytes = u64_from_index(seed.as_str().len());
+    let child_bytes = u64_from_index(child.as_str().len());
+    let cap = node + seed_bytes + child_bytes;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = cap;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut seed_storage = ctx.reserve_scoped(0, "test source ancestor storage").unwrap();
+    let mut active = std::collections::BTreeSet::new();
+    seed_storage.with_storage(|| {
+        let seed = seed.try_clone_for_decode(&ctx, "test source ancestor ID")?;
+        ctx.insert_btree_set(&mut active, seed, "test source ancestor node")
+    }).unwrap();
+    assert!(source_intervals(&index, &child, &mut active, &ctx).unwrap().is_none());
+    assert_eq!(active.iter().collect::<Vec<_>>(), [&seed]);
+    let free = ctx.reserve_scoped(child_bytes, "test source child identity destroyed").unwrap();
+    drop(free);
+    drop(active);
+    drop(seed_storage);
+    let free = ctx.reserve_scoped(cap, "test source ancestor backing destroyed").unwrap();
+    drop(free);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn source_curve_node_growth_refund_preserves_nonempty_ancestor_bound() {
+    let ir = CadIr::empty();
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let child = CurveId::mint("test:model:curve#absent").unwrap();
+    let child_bytes = u64_from_index(child.as_str().len());
+    let node = source_path_node_bytes();
+    for count in [5_usize, 10, 15, 55] {
+        let seeds: Vec<_> = (0..count).map(|i| {
+            CurveId::mint(format!("test:model:curve#ancestor{i:03}")).unwrap()
+        }).collect();
+        // Non-root nodes have at least five keys. Existing frame receipts
+        // sum to ceil(count / 5) nodes; this insertion adds one node bound.
+        let seed_bytes = u64_from_index(seeds.iter().map(|id| id.as_str().len()).sum::<usize>());
+        let seed_live = seed_bytes + u64_from_index((count - 1) / 5 + 1) * node;
+        let peak = seed_live + child_bytes + node;
+        for cap in [peak - 1, peak] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut seed_storage = ctx.reserve_scoped(0, "test multiple ancestor storage").unwrap();
+            let mut active = std::collections::BTreeSet::new();
+            seed_storage.with_storage(|| {
+                for seed in &seeds {
+                    let seed = seed.try_clone_for_decode(&ctx, "test multiple ancestor ID")?;
+                    ctx.insert_btree_set(&mut active, seed, "test multiple ancestor node")?;
+                }
+                Ok::<_, CodecError>(())
+            }).unwrap();
+            let result = source_intervals(&index, &child, &mut active, &ctx);
+            assert_eq!(active.len(), seeds.len());
+            assert!(seeds.iter().all(|seed| active.contains(seed)));
+            if cap < peak {
+                let first = match result.err().expect("expected source node growth refusal") {
+                    CodecError::ResourceLimit(first) => first,
+                    _ => panic!("expected original resource refusal"),
+                };
+                assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+                assert_eq!(first.operation, "iges source active curve nodes");
+                assert_eq!((first.limit, first.used, first.additional), (cap, seed_live + child_bytes, node));
+                drop(active);
+                drop(seed_storage);
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            } else {
+                assert!(result.unwrap().is_none());
+                let free = ctx.reserve_scoped(child_bytes + node, "test multiple ancestor bound remains live").unwrap();
+                drop(free);
+                drop(active);
+                drop(seed_storage);
+                let free = ctx.reserve_scoped(cap, "test multiple ancestor backing destroyed").unwrap();
+                drop(free);
+                ctx.finish_session().unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn source_curve_depth_refusal_destroys_path_and_cycle_keeps_original_absence() {
+    use cadmpeg_ir::geometry::{CompositeCurveSegment, CompositeCurveTransition};
+    let id = CurveId::mint("test:model:curve#cycle").unwrap();
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: id.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+            segments: vec![CompositeCurveSegment {
+                curve: id.clone(), same_sense: true,
+                transition: CompositeCurveTransition::Continuous,
+            }].try_into().unwrap(),
+            self_intersect: None,
+        }),
+        source_object: None,
+    });
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let cap = source_path_node_bytes() + u64_from_index(id.as_str().len());
+    for depth in [1, 2] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = depth;
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut active = std::collections::BTreeSet::new();
+        let result = source_intervals(&index, &id, &mut active, &ctx);
+        assert!(active.is_empty());
+        if depth == 1 {
+            let first = match result.err().expect("expected original resource refusal") {
+                CodecError::ResourceLimit(first) => first,
+                _ => panic!("expected original child depth refusal"),
+            };
+            assert_eq!(first.dimension, ResourceDimension::RecursionDepth);
+            assert_eq!(first.operation, "iges source curve intervals");
+            assert_eq!((first.limit, first.used, first.additional), (1, 1, 1));
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        } else {
+            assert!(result.unwrap().is_none());
+            let free = ctx.reserve_scoped(cap, "test source cycle root destroyed").unwrap();
+            drop(free);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn source_curve_removal_refusal_destroys_path_before_its_receipt() {
+    let ir = CadIr::empty();
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let id = CurveId::mint("test:model:curve#absent").unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits, "iges source active curve removal", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut active = std::collections::BTreeSet::new();
+            let result = source_intervals(&index, &id, &mut active, &ctx);
+            assert!(active.is_empty());
+            if let Err(CodecError::ResourceLimit(first)) = &result {
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == *first));
+            } else {
+                assert!(result.as_ref().unwrap().is_none());
+                ctx.finish_session().unwrap();
+            }
+            result
+        },
+    );
+}
