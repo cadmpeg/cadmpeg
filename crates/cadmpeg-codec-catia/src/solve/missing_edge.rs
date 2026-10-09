@@ -1647,7 +1647,7 @@ struct FaceOptions {
     /// The smallest admitted face.
     first: usize,
     /// The remaining admitted faces, ascending and all greater than `first`.
-    rest: Vec<usize>,
+    rest: std::vec::IntoIter<usize>,
 }
 
 impl FaceOptions {
@@ -1671,9 +1671,12 @@ impl FaceOptions {
             "catia_duplicate_face_options_sort",
         )?;
         ctx.dedup_vec(&mut faces, OPERATION)?;
-        let rest = ctx.split_off_vec(&mut faces, 1, OPERATION)?;
+        let first = faces[0];
+        let mut rest = faces.into_iter();
+        // discarded-value: first holds this face; advance the remaining run
+        let _ = rest.next();
         Ok(Self {
-            first: faces[0],
+            first,
             rest,
         })
     }
@@ -1685,7 +1688,7 @@ impl FaceOptions {
 
     /// The admitted faces, ascending.
     fn iter(&self) -> impl Iterator<Item = usize> + '_ {
-        std::iter::once(self.first).chain(self.rest.iter().copied())
+        std::iter::once(self.first).chain(self.rest.as_slice().iter().copied())
     }
 }
 
@@ -1720,13 +1723,16 @@ where
 {
     const MAX_STATES: usize = 4_096;
 
-    fn search<F>(
-        ctx: &DecodeContext<'_>,
+    fn search<'storage, F>(
+        ctx: &'storage DecodeContext<'_>,
         branches: &[(usize, FaceOptions)],
         at: usize,
         assignment: &mut [[usize; 2]],
         states: &WorkBudget<'_>,
-        outcome: &mut SearchOutcome<Vec<[usize; 2]>>,
+        outcome: &mut SearchOutcome<(
+            Vec<[usize; 2]>,
+            cadmpeg_core::decode::ScopedReservation<'storage>,
+        )>,
         valid: &mut F,
     ) -> Result<(), CodecError>
     where
@@ -1740,13 +1746,14 @@ where
             if valid(assignment)? {
                 match outcome {
                     SearchOutcome::Open => {
-                        *outcome = SearchOutcome::Solved(
-                            ctx.copy_slice(assignment, "catia_duplicate_face_solution")?,
-                        );
+                        *outcome = SearchOutcome::Solved(ctx.with_scoped_storage(
+                            "catia_duplicate_face_solution",
+                            || ctx.copy_slice(assignment, "catia_duplicate_face_solution"),
+                        )?);
                     }
                     SearchOutcome::Solved(previous) => {
                         if !ctx.equal(
-                            previous.as_slice(),
+                            previous.0.as_slice(),
                             &*assignment,
                             "catia_duplicate_face_solution",
                         )? {
@@ -1805,7 +1812,7 @@ where
         let options = scratch.with_storage(|| {
             FaceOptions::from_admitted(ctx, retained, allowed_faces[edge].iter().copied())
         })?;
-        if options.rest.is_empty() {
+        if options.rest.as_slice().is_empty() {
             assignment[edge][1] = options.first;
         } else {
             scratch.with_storage(|| {
@@ -1827,27 +1834,18 @@ where
         "catia missing edge duplicate face branches sort",
     )?;
     let states = ctx.work_budget(cadmpeg_core::decode::u64_from_index(MAX_STATES));
-    let (outcome, outcome_storage) = ctx.with_scoped_storage(
-        "catia_duplicate_face_solution",
-        || -> Result<_, CodecError> {
-            let mut outcome = SearchOutcome::Open;
-            search(
-                ctx,
-                &branches,
-                0,
-                &mut assignment,
-                &states,
-                &mut outcome,
-                &mut valid,
-            )?;
-            Ok(outcome)
-        },
+    let mut outcome = SearchOutcome::Open;
+    search(
+        ctx,
+        &branches,
+        0,
+        &mut assignment,
+        &states,
+        &mut outcome,
+        &mut valid,
     )?;
     match outcome {
-        SearchOutcome::Solved(solution) => {
-            outcome_storage.commit()?;
-            Ok(Some(solution))
-        }
+        SearchOutcome::Solved((solution, storage)) => storage.commit_value(solution).map(Some),
         SearchOutcome::Open | SearchOutcome::Ambiguous | SearchOutcome::Exhausted => Ok(None),
     }
 }
@@ -2006,14 +2004,18 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
     let face_count = face_run.face_count();
     let context = StandardMeshBoundaryContext::parse(ctx, bytes, serialized)?;
     unique_duplicate_face_assignment(ctx, serialized, allowed_faces, face_count, |assignment| {
-        if let Some((base, _base_storage)) = context.as_ref() {
-            let Some((context, _context_storage)) = base.with_edge_faces(ctx, assignment)? else {
-                return Ok(false);
-            };
-            Ok(standard_mesh_boundary_assignments_from_context(ctx, &context, None)?.is_some())
-        } else {
-            Ok(standard_mesh_boundary_assignments(ctx, bytes, assignment, None)?.is_some())
-        }
+        let mut scratch = ctx.reserve_scoped(0, "catia_duplicate_face_validation_scratch")?;
+        scratch.with_storage(|| {
+            if let Some((base, _base_storage)) = context.as_ref() {
+                let candidate = base.with_edge_faces(ctx, assignment)?;
+                let Some((context, _context_storage)) = candidate.as_ref() else {
+                    return Ok(false);
+                };
+                Ok(standard_mesh_boundary_assignments_from_context(ctx, context, None)?.is_some())
+            } else {
+                Ok(standard_mesh_boundary_assignments(ctx, bytes, assignment, None)?.is_some())
+            }
+        })
     })
 }
 
@@ -2575,8 +2577,8 @@ pub(crate) fn bounded_oriented_trail_orders(
         ctx.reserve_capacity(&mut edges, edge_count, "catia_oriented_trail_scratch")?;
         Ok::<_, CodecError>(edges)
     })?;
-    let mut orders = Vec::new();
     let mut order_storage = ctx.reserve_scoped(0, "catia_oriented_trail_orders")?;
+    let mut orders = Vec::new();
     if !visit(
         ctx,
         trails,
@@ -2588,8 +2590,7 @@ pub(crate) fn bounded_oriented_trail_orders(
     )? {
         return Ok(None);
     }
-    order_storage.commit()?;
-    Ok(Some(orders))
+    order_storage.commit_value(orders).map(Some)
 }
 
 pub(crate) fn bounded_endpoint_cycle_orders(
@@ -3024,13 +3025,14 @@ fn standard_mesh_missing_edge_assignment_domains(
                                 .then_some(PointSet::Corner(corner)),
                             None => None,
                         };
-                        let (saved, _saved_storage) =
-                            ctx.with_scoped_storage("catia_gap_saved_placements", || {
-                                ctx.copy_slice(
-                                    &placed[gap_placed_start..],
-                                    "catia_gap_saved_placements",
-                                )
-                            })?;
+                        let mut saved_storage =
+                            ctx.reserve_scoped(0, "catia_gap_saved_placements")?;
+                        let saved = saved_storage.with_storage(|| {
+                            ctx.copy_slice(
+                                &placed[gap_placed_start..],
+                                "catia_gap_saved_placements",
+                            )
+                        })?;
                         if offset < target {
                             let slack = target - offset;
                             let Some(flexible) = placed.get_mut(gap_placed_start) else {
@@ -3255,7 +3257,7 @@ fn standard_mesh_missing_edge_assignment_domains(
             canonical_spans: canonicalize_spans,
             canonical_gap_partitions: canonicalize_spans,
             dead_states: HashMap::new(),
-            storage,
+            storage: ctx.reserve_scoped(0, "catia_gap_dead_states")?,
             remaining_states,
             states: 0,
             assignments: 0,
@@ -3279,8 +3281,12 @@ fn standard_mesh_missing_edge_assignment_domains(
         if search.assignments == 0 || search.assignments > MAX_ASSIGNMENTS_PER_FACE {
             return Ok(None);
         }
-        search.complete_storage.commit()?;
-        Ok(Some(search.complete))
+        let Search {
+            complete,
+            complete_storage,
+            ..
+        } = search;
+        complete_storage.commit_value(complete).map(Some)
     }
 
     /// Placements built from oriented trails of edges with single endpoint
@@ -3532,8 +3538,9 @@ fn standard_mesh_missing_edge_assignment_domains(
                 "catia_trail_order_input_rows",
             )
         })?;
-        let Some(orders) =
-            bounded_oriented_trail_orders(ctx, &trail_edges, MAX_ASSIGNMENTS_PER_FACE)?
+        let Some(orders) = scratch.with_storage(|| {
+            bounded_oriented_trail_orders(ctx, &trail_edges, MAX_ASSIGNMENTS_PER_FACE)
+        })?
         else {
             return Ok(None);
         };
