@@ -3006,13 +3006,10 @@ pub(super) fn project<'ctx>(
             };
             let source_interval =
                 source_parameter_interval(directrix_geometry, carrier_interval, ctx)?;
-            let mut procedural_directrix =
-                generatrix_id.try_clone_for_decode(ctx, "iges surface identity copy")?;
-            let mut procedural_axis = admitted_axis;
             let placed_solved = (entry.transform != 0)
                 .then(|| directrix_solved.try_clone_for_decode(ctx, "iges solved curve copy"))
                 .transpose()?;
-            if let Some(placed_solved) = placed_solved {
+            let (procedural_directrix, procedural_axis) = if let Some(placed_solved) = placed_solved {
                 ctx.charge_collection_items(1, "iges exact placed curve box")?;
                 let Some(orientation) = similarity_orientation(transform) else {
                     super::push_entity_loss_with_scoped_slots(
@@ -3027,7 +3024,7 @@ pub(super) fn project<'ctx>(
                     )?;
                     continue;
                 };
-                procedural_directrix = crate::ids::curve_admitted(
+                let procedural_directrix = crate::ids::curve_admitted(
                     &crate::ids::Stem::directory(entry.sequence)
                         .tail(crate::ids::Word::PlacedGeneratrix),
                     ctx,
@@ -3073,8 +3070,10 @@ pub(super) fn project<'ctx>(
                     )?;
                     continue;
                 };
-                procedural_axis = (placed_origin, placed_direction);
-            }
+                (procedural_directrix, (placed_origin, placed_direction))
+            } else {
+                (generatrix_id, admitted_axis)
+            };
             let surface_id =
                 crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
             let procedural_id = crate::ids::procedural_surface_admitted(
@@ -3329,11 +3328,11 @@ pub(super) fn project<'ctx>(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry, ctx)?),
         });
-        let mut procedural_directrix =
-            crate::ids::curve_admitted(&crate::ids::Stem::directory(generatrix_sequence), ctx)?;
-        let mut procedural_axis = admitted_axis;
-        let procedural_is_exact = if entry.transform == 0 {
-            true
+        let procedural_carrier = if entry.transform == 0 {
+            Some((
+                crate::ids::curve_admitted(&crate::ids::Stem::directory(generatrix_sequence), ctx)?,
+                admitted_axis,
+            ))
         } else if let Some(orientation) = similarity_orientation(transform) {
             // This arm is the transformed route, so the generatrix is placed
             // here rather than carried past the untransformed one.
@@ -3353,7 +3352,7 @@ pub(super) fn project<'ctx>(
                 )?;
                 continue;
             };
-            procedural_directrix = crate::ids::curve_admitted(
+            let procedural_directrix = crate::ids::curve_admitted(
                 &crate::ids::Stem::directory(entry.sequence)
                     .tail(crate::ids::Word::PlacedGeneratrix),
                 ctx,
@@ -3389,12 +3388,11 @@ pub(super) fn project<'ctx>(
                 )?;
                 continue;
             };
-            procedural_axis = (placed_origin, placed_direction);
-            true
+            Some((procedural_directrix, (placed_origin, placed_direction)))
         } else {
-            false
+            None
         };
-        if procedural_is_exact {
+        if let Some((procedural_directrix, procedural_axis)) = procedural_carrier {
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
             let (admitted_payload, bounds) =
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
