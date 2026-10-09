@@ -45,7 +45,7 @@ impl<'a> Utf16View<'a> {
     /// Whether this is a 36-character hyphenated hexadecimal GUID. The check
     /// reads at most 36 characters.
     pub(crate) fn is_guid_hyphenated(self) -> bool {
-        self.len() == 36 && self.guid_prefix()
+        self.len() == 36 && self.is_guid_prefix()
     }
     /// UTF-8 length of the decoded text.
     pub(crate) fn len(self) -> usize {
@@ -68,6 +68,7 @@ impl<'a> Utf16View<'a> {
         self,
         ctx: &DecodeContext<'_>,
         other: Self,
+        operation: &'static str,
     ) -> Result<bool, CodecError> {
         if self.len() != other.len() {
             return Ok(false);
@@ -75,7 +76,7 @@ impl<'a> Utf16View<'a> {
         ctx.all_by(
             self.chars().zip(other.chars()),
             |(left, right)| Ok(left.eq_ignore_ascii_case(&right)),
-            "compare F3D UTF-16 text",
+            operation,
         )
     }
     /// Whether this is a 36- to 38-character GUID-like token. The check reads
@@ -87,7 +88,7 @@ impl<'a> Utf16View<'a> {
             })
     }
     /// Whether the first 36 characters form a hyphenated hexadecimal GUID.
-    fn guid_prefix(self) -> bool {
+    pub(crate) fn is_guid_prefix(self) -> bool {
         self.len() >= 36
             && self.chars().take(36).enumerate().all(|(index, character)| {
                 if matches!(index, 8 | 13 | 18 | 23) {
@@ -100,7 +101,7 @@ impl<'a> Utf16View<'a> {
     /// Whether this is a GUID followed by `_urn:`. The check reads at most 41
     /// characters.
     pub(crate) fn is_guid_urn_role(self) -> bool {
-        self.guid_prefix() && self.chars().skip(36).take(5).eq("_urn:".chars())
+        self.is_guid_prefix() && self.chars().skip(36).take(5).eq("_urn:".chars())
     }
     pub(crate) fn to_retained(
         self,
@@ -178,7 +179,7 @@ mod tests {
                 let view = Utf16View::new(ctx, &raw)?.unwrap();
                 let longer = Utf16View::new(ctx, &longer)?.unwrap();
                 assert!(!view.eq_str(ctx, "Abc").unwrap());
-                assert!(!view.eq_ignore_ascii_case(ctx, longer).unwrap());
+                assert!(!view.eq_ignore_ascii_case(ctx, longer, "compare F3D UTF-16 text").unwrap());
                 view.eq_str(ctx, "Ab")
             },
         );
@@ -247,6 +248,31 @@ mod tests {
                 assert_eq!(result.unwrap(), "ࠀ");
                 assert!(ctx.charge_retained(1, "after F3D text").is_err());
             }
+        }
+    }
+
+    #[test]
+    fn borrowed_guid_prefix_matches_original_byte_grammar() {
+        const GUID: &str = "01234567-89AB-CDEF-0123-456789ABCDEF";
+        for text in [
+            GUID.to_owned(),
+            format!("{GUID}_urn:example:component"),
+            format!("{GUID}😀"),
+            format!("{GUID}{}", "a".repeat(4096)),
+            "short".to_owned(),
+            format!("é{}", &GUID[1..]),
+        ] {
+            let raw = units(&text);
+            let expected = crate::bytes::is_guid_prefix(&text);
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                let view = Utf16View::new(ctx, &raw).unwrap().unwrap();
+                assert_eq!(view.is_guid_prefix(), expected);
+                assert_eq!(ctx.resource_refusal(), None);
+            });
         }
     }
 }

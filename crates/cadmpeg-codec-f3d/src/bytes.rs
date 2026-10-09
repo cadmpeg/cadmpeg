@@ -9,6 +9,7 @@
 //! through the `bounds` and `allowed` parameters rather than sharing one
 //! unified policy.
 
+#[cfg(test)]
 use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_asm::kernel_header::RefWidth;
@@ -86,13 +87,14 @@ pub(crate) fn lp_ascii_strict(
     Some((std::str::from_utf8(raw).ok()?, end))
 }
 
-/// Read a bounded strict-UTF-8 string after admitting its retained bytes.
-pub(crate) fn lp_ascii_strict_charged(
+/// Validate a bounded strict-UTF-8 field without copying its contents.
+pub(crate) fn lp_ascii_strict_view<'bytes>(
     ctx: &DecodeContext<'_>,
-    bytes: &[u8],
+    bytes: &'bytes [u8],
     at: usize,
     bounds: RangeInclusive<usize>,
-) -> Result<Option<(String, usize)>, CodecError> {
+) -> Result<Option<(&'bytes str, usize)>, CodecError> {
+    ctx.charge_work(0, "decode F3D ASCII string")?;
     let Some(length_u32) = View::u32_le_at(bytes, at) else {
         return Ok(None);
     };
@@ -109,6 +111,19 @@ pub(crate) fn lp_ascii_strict_charged(
         return Ok(None);
     };
 
+    Ok(Some((value, end)))
+}
+
+/// Read a bounded strict-UTF-8 string into admitted retained storage.
+pub(crate) fn lp_ascii_strict_charged(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+) -> Result<Option<(String, usize)>, CodecError> {
+    let Some((value, end)) = lp_ascii_strict_view(ctx, bytes, at, bounds)? else {
+        return Ok(None);
+    };
     let mut owned = String::new();
     ctx.append_retained(&mut owned, value, "retain F3D ASCII string")?;
     Ok(Some((owned, end)))
@@ -377,6 +392,7 @@ impl<G: AsRef<str>, L> Reference<G, L> {
     }
 }
 
+#[cfg(test)]
 impl Reference<String, String> {
     /// The link name of a cross-document reference.
     pub(crate) fn link_name(&self) -> Option<&str> {
@@ -402,7 +418,8 @@ pub(crate) fn take_reference<'a>(
     parse_reference(ctx, bytes, at)
 }
 
-/// Parse one reference under caller work admission and retain only its kept text.
+/// Retain the reference text required by the owned-reference test fixtures.
+#[cfg(test)]
 pub(crate) fn take_reference_charged(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -412,11 +429,8 @@ pub(crate) fn take_reference_charged(
         return Ok(None);
     };
     let copy_guid = |guid: Option<&str>| -> Result<Option<String>, CodecError> {
-        guid.map(|guid| {
-            ctx.charge_work(u64_from_index(guid.len()), "retain F3D reference type GUID")?;
-            ctx.copy_retained_text(guid, "retain F3D ASCII string")
-        })
-        .transpose()
+        guid.map(|guid| ctx.copy_retained_text(guid, "retain F3D ASCII string"))
+            .transpose()
     };
     Ok(Some(match reference {
         Reference::Null => Reference::Null,
@@ -455,6 +469,7 @@ fn parse_reference<'a>(
     bytes: &'a [u8],
     at: &mut usize,
 ) -> Result<Option<Reference<&'a str, Utf16View<'a>>>, CodecError> {
+    ctx.charge_work(0, "parse F3D reference")?;
     macro_rules! some {
         ($value:expr) => {
             match $value {
@@ -828,6 +843,125 @@ mod tests {
             };
             assert_eq!(limit.operation, "decode F3D reference ASCII");
             assert_eq!(Some(limit), ctx.resource_refusal());
+            assert_eq!(at, 0);
+        });
+    }
+
+    #[test]
+    fn strict_ascii_view_borrows_without_decode_storage() {
+        let bytes = [3, 0, 0, 0, b'A', b'B', b'C'];
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 3;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let (value, end) = super::lp_ascii_strict_view(ctx, &bytes, 0, 3..=3)
+                .unwrap().unwrap();
+            assert_eq!(value, "ABC");
+            assert_eq!(value.as_ptr(), bytes[4..].as_ptr());
+            assert_eq!(end, bytes.len());
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+        policy.limits.max_work_units = 2;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                super::lp_ascii_strict_view(ctx, &bytes, 0, 3..=3).unwrap_err()
+            else { panic!("UTF-8 validation must refuse before reading the payload"); };
+            assert_eq!(limit.operation, "decode F3D ASCII string");
+            assert_eq!(limit.used, 0);
+            assert_eq!(limit.additional, 3);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
+
+    #[test]
+    fn strict_ascii_view_empty_bounds_and_original_refusal() {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert_eq!(super::lp_ascii_strict_view(ctx, &[0; 4], 0, 0..=0).unwrap(), Some(("", 4)));
+            assert_eq!(super::lp_ascii_strict_view(ctx, &[1, 0, 0, 0, 0xff], 0, 0..=0).unwrap(), None);
+            assert_eq!(super::lp_ascii_strict_view(ctx, &[], usize::MAX, 0..=0).unwrap(), None);
+            assert_eq!(ctx.resource_refusal(), None);
+            let cadmpeg_core::CodecError::ResourceLimit(original) =
+                ctx.charge_work(1, "prior borrowed ASCII refusal").unwrap_err()
+            else { panic!("zero work ceiling must refuse"); };
+            let error = super::lp_ascii_strict_view(ctx, &[], usize::MAX, 0..=0).unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == original));
+            assert_eq!(ctx.resource_refusal(), Some(original));
+        });
+    }
+
+    #[test]
+    fn strict_ascii_view_preserves_invalid_utf8_and_truncated_spans() {
+        crate::test_support::with_decode_context(|ctx| {
+            assert_eq!(super::lp_ascii_strict_view(ctx, &[1, 0, 0, 0, 0xff], 0, 1..=1).unwrap(), None);
+            assert_eq!(super::lp_ascii_strict_view(ctx, &[2, 0, 0, 0, b'A'], 0, 0..=2).unwrap(), None);
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+    }
+
+    #[test]
+    fn charged_reference_copies_inline_guid_once() {
+        const GUID: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+        let mut bytes = vec![1];
+        bytes.extend_from_slice(&7_u64.to_le_bytes());
+        bytes.extend_from_slice(&36_u32.to_le_bytes());
+        bytes.extend_from_slice(GUID.as_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+        // One strict UTF-8 validation and one actual retained copy.
+        let required = 2 * u64::try_from(GUID.len()).unwrap();
+        for cap in [required, required - 1] {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_retained_bytes = u64::try_from(GUID.len()).unwrap();
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                let mut at = 0;
+                let result = super::take_reference_charged(ctx, &bytes, &mut at);
+                assert_eq!(at, bytes.len());
+                if cap == required {
+                    let reference = result.unwrap().unwrap();
+                    assert_eq!(reference.local(), Some((7, Some(GUID))));
+                    assert_eq!(ctx.resource_refusal(), None);
+                } else {
+                    let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err()
+                    else { panic!("the single actual copy must refuse"); };
+                    assert_eq!(limit.operation, "retain F3D ASCII string");
+                    assert_eq!(limit.used, u64::try_from(GUID.len()).unwrap());
+                    assert_eq!(limit.additional, u64::try_from(GUID.len()).unwrap());
+                    assert_eq!(ctx.resource_refusal(), Some(limit));
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn borrowed_reference_fixed_forms_are_free_and_preserve_original_refusal() {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let mut at = 0;
+            assert_eq!(super::take_reference(ctx, &[], &mut at).unwrap(), None);
+            assert_eq!(at, 0);
+            assert_eq!(super::take_reference(ctx, &[0], &mut at).unwrap(), Some(super::Reference::Null));
+            assert_eq!(at, 1);
+            assert_eq!(ctx.resource_refusal(), None);
+            let cadmpeg_core::CodecError::ResourceLimit(original) =
+                ctx.charge_work(1, "prior reference refusal").unwrap_err()
+            else { panic!("zero work ceiling must refuse"); };
+            let mut at = 0;
+            let error = super::take_reference(ctx, &[0], &mut at).unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == original));
+            assert_eq!(ctx.resource_refusal(), Some(original));
             assert_eq!(at, 0);
         });
     }
