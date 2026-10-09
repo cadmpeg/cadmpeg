@@ -3720,7 +3720,10 @@ fn tessellated_line_strips(
     }
     let mut decoded = Vec::new();
     let mut strips = strips.iter();
-    while let Some(strip) = ctx.next_charged(&mut strips, "STEP curve strip traversal")? {
+    ctx.charge_work(0, "STEP curve strip traversal")?;
+    for _ in 0..strips.len() {
+        let strip = ctx.next_charged(&mut strips, "STEP curve strip traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
         let Some(values) = strip.list() else {
             return Ok(None);
         };
@@ -3729,7 +3732,10 @@ fn tessellated_line_strips(
         }
         let mut indices = Vec::new();
         let mut values = values.iter();
-        while let Some(value) = ctx.next_charged(&mut values, "STEP curve strip index traversal")? {
+        ctx.charge_work(0, "STEP curve strip index traversal")?;
+        for _ in 0..values.len() {
+            let value = ctx.next_charged(&mut values, "STEP curve strip index traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
             let Some(index) = value
                 .integer()
                 .and_then(|value| usize::try_from(value).ok())
@@ -5541,9 +5547,10 @@ fn document_unit_scale(
             has_context_unit = true;
             let mut scales = Vec::new();
             let mut unit_ids = unit_ids.into_iter();
-            while let Some(id) =
-                ctx.next_charged(&mut unit_ids, "STEP document unit id traversal")?
-            {
+            ctx.charge_work(0, "STEP document unit id traversal")?;
+            for _ in 0..unit_ids.len() {
+                let id = ctx.next_charged(&mut unit_ids, "STEP document unit id traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
                 let Some(scale) = kind.resolve(id, exchange, &mut BTreeSet::new(), ctx)? else {
                     return Ok(None);
                 };
@@ -6442,9 +6449,10 @@ fn composite_curve<'ctx>(
     let mut storage = ctx.reserve_scoped(0, "step composite segment storage")?;
     let mut segments = Vec::new();
     let mut values = values.iter();
-    while let Some(value) =
-        ctx.next_charged(&mut values, "STEP composite curve segment traversal")?
-    {
+    ctx.charge_work(0, "STEP composite curve segment traversal")?;
+    for _ in 0..values.len() {
+        let value = ctx.next_charged(&mut values, "STEP composite curve segment traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
         let Some(id) = value.reference() else {
             return Ok(None);
         };
@@ -6935,7 +6943,10 @@ fn default_nurbs_knots(
     match kind {
         DefaultNurbsKnotKind::Uniform => {
             let mut indices = 0..expected;
-            while let Some(index) = ctx.next_charged(&mut indices, "STEP default knot traversal")? {
+            ctx.charge_work(0, "STEP default knot traversal")?;
+            for _ in 0..indices.len() {
+                let index = ctx.next_charged(&mut indices, "STEP default knot traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
                 let index = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
                 let degree = geometry_or_none!(cadmpeg_core::convert::f64_from_index(degree));
                 let knot = geometry_or_none!(FiniteReal::new(index - degree));
@@ -6947,9 +6958,10 @@ fn default_nurbs_knots(
                 .checked_sub(degree)
                 .and_then(|count| count.checked_add(1)));
             let mut indices = 0..distinct_count;
-            while let Some(index) =
-                ctx.next_charged(&mut indices, "STEP distinct knot traversal")?
-            {
+            ctx.charge_work(0, "STEP distinct knot traversal")?;
+            for _ in 0..indices.len() {
+                let index = ctx.next_charged(&mut indices, "STEP distinct knot traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
                 let multiplicity = if index == 0 || index + 1 == distinct_count {
                     geometry_or_none!(degree.checked_add(1))
                 } else {
@@ -6983,9 +6995,10 @@ fn default_nurbs_knots(
             let segment_count = segment_count / degree;
             let distinct_count = geometry_or_none!(segment_count.checked_add(1));
             let mut indices = 0..distinct_count;
-            while let Some(index) =
-                ctx.next_charged(&mut indices, "STEP distinct knot traversal")?
-            {
+            ctx.charge_work(0, "STEP distinct knot traversal")?;
+            for _ in 0..indices.len() {
+                let index = ctx.next_charged(&mut indices, "STEP distinct knot traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
                 let multiplicity = if index == 0 || index + 1 == distinct_count {
                     geometry_or_none!(degree.checked_add(1))
                 } else {
@@ -7034,7 +7047,10 @@ fn nurbs_curve(
     )?);
     let mut control_points = Vec::new();
     let mut ids = definition.control_points.iter();
-    while let Some(value) = ctx.next_charged(&mut ids, "STEP nurbs pole traversal")? {
+    ctx.charge_work(0, "STEP nurbs pole traversal")?;
+    for _ in 0..ids.len() {
+        let value = ctx.next_charged(&mut ids, "STEP nurbs pole traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
         let id = geometry_or_none!(value.reference());
         let point = geometry_or_none!(ctx
             .get_btree_map(points, &id, "step_geometry_lookup")?
@@ -7100,7 +7116,10 @@ fn nurbs_pcurve(
     let mut raw_pole_storage = ctx.reserve_scoped(0, "step raw pcurve poles")?;
     let mut control_points = Vec::new();
     let mut ids = definition.control_points.iter();
-    while let Some(value) = ctx.next_charged(&mut ids, "STEP nurbs pole traversal")? {
+    ctx.charge_work(0, "STEP nurbs pole traversal")?;
+    for _ in 0..ids.len() {
+        let value = ctx.next_charged(&mut ids, "STEP nurbs pole traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
         let id = geometry_or_none!(value.reference());
         let point = geometry_or_none!(ctx
             .get_btree_map(points, &id, "step_geometry_lookup")?
@@ -8236,7 +8255,10 @@ fn polyline_pcurve(
     let mut raw_pole_storage = ctx.reserve_scoped(0, "step raw pcurve poles")?;
     let mut control_points = Vec::new();
     let mut values = values.iter();
-    while let Some(value) = ctx.next_charged(&mut values, "STEP polyline pcurve value traversal")? {
+    ctx.charge_work(0, "STEP polyline pcurve value traversal")?;
+    for _ in 0..values.len() {
+        let value = ctx.next_charged(&mut values, "STEP polyline pcurve value traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
         let point = geometry_or_none!(value
             .reference()
             .map(|id| Ok::<_, CodecError>(
@@ -8261,7 +8283,10 @@ fn polyline_pcurve(
     let mut knots = Vec::new();
     storage.with_storage(|| ctx.push_vec(&mut knots, 0.0, "step_polyline_pcurve_knots"))?;
     let mut indices = 0..control_points.len();
-    while let Some(index) = ctx.next_charged(&mut indices, "STEP polyline knot traversal")? {
+    ctx.charge_work(0, "STEP polyline knot traversal")?;
+    for _ in 0..indices.len() {
+        let index = ctx.next_charged(&mut indices, "STEP polyline knot traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
         let knot = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
         storage.with_storage(|| ctx.push_vec(&mut knots, knot, "step_polyline_pcurve_knots"))?;
     }
@@ -8295,7 +8320,10 @@ fn polyline(
     let values = geometry_or_none!(record.parameter(1).and_then(Value::list));
     let mut control_points = Vec::new();
     let mut values = values.iter();
-    while let Some(value) = ctx.next_charged(&mut values, "STEP polyline value traversal")? {
+    ctx.charge_work(0, "STEP polyline value traversal")?;
+    for _ in 0..values.len() {
+        let value = ctx.next_charged(&mut values, "STEP polyline value traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
         let point = geometry_or_none!(value
             .reference()
             .map(|id| Ok::<_, CodecError>(
@@ -8315,7 +8343,10 @@ fn polyline(
     let mut knots = Vec::new();
     ctx.push_vec(&mut knots, 0.0, "step_polyline_knots")?;
     let mut indices = 0..control_points.len();
-    while let Some(index) = ctx.next_charged(&mut indices, "STEP polyline knot traversal")? {
+    ctx.charge_work(0, "STEP polyline knot traversal")?;
+    for _ in 0..indices.len() {
+        let index = ctx.next_charged(&mut indices, "STEP polyline knot traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
         let knot = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
         ctx.push_vec(&mut knots, knot, "step_polyline_knots")?;
     }
@@ -8410,14 +8441,16 @@ fn nurbs_surface(
     let mut staging = ctx.reserve_scoped(0, "step rational surface lanes")?;
     let mut control_points = Vec::new();
     let mut source_rows = rows.iter();
-    while let Some(row) =
-        ctx.next_charged(&mut source_rows, "STEP nurbs surface borrowed traversal")?
-    {
+    ctx.charge_work(0, "STEP nurbs surface borrowed traversal")?;
+    for _ in 0..source_rows.len() {
+        let row = ctx.next_charged(&mut source_rows, "STEP nurbs surface borrowed traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
         let mut decoded_row = Vec::new();
         let mut source_values = geometry_or_none!(row.list()).iter();
-        while let Some(value) =
-            ctx.next_charged(&mut source_values, "STEP nurbs surface borrowed traversal")?
-        {
+        ctx.charge_work(0, "STEP nurbs surface borrowed traversal")?;
+        for _ in 0..source_values.len() {
+            let value = ctx.next_charged(&mut source_values, "STEP nurbs surface borrowed traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
             let point = geometry_or_none!(value
                 .reference()
                 .map(|id| Ok::<_, CodecError>(
@@ -8544,14 +8577,16 @@ fn nurbs_surface(
         let rows = geometry_or_none!(leaf.parameters.first().and_then(Value::list));
         let mut values = Vec::new();
         let mut source_rows = rows.iter();
-        while let Some(row) =
-            ctx.next_charged(&mut source_rows, "STEP nurbs surface borrowed traversal")?
-        {
+        ctx.charge_work(0, "STEP nurbs surface borrowed traversal")?;
+        for _ in 0..source_rows.len() {
+            let row = ctx.next_charged(&mut source_rows, "STEP nurbs surface borrowed traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
             let mut decoded_row = Vec::new();
             let mut source_values = geometry_or_none!(row.list()).iter();
-            while let Some(value) =
-                ctx.next_charged(&mut source_values, "STEP nurbs surface borrowed traversal")?
-            {
+            ctx.charge_work(0, "STEP nurbs surface borrowed traversal")?;
+            for _ in 0..source_values.len() {
+                let value = ctx.next_charged(&mut source_values, "STEP nurbs surface borrowed traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
                 let number = geometry_or_none!(value.number());
                 ctx.push_scoped_vec(
                     &mut staging,
@@ -8609,9 +8644,10 @@ fn expand_knots(
     let mut staging = ctx.reserve_scoped(0, "step finite knot staging")?;
     let mut knots = Vec::new();
     let mut pairs = multiplicities.iter().zip(distinct);
-    while let Some((multiplicity, knot)) =
-        ctx.next_charged(&mut pairs, "STEP expand knots traversal")?
-    {
+    ctx.charge_work(0, "STEP expand knots traversal")?;
+    for _ in 0..pairs.len() {
+        let (multiplicity, knot) = ctx.next_charged(&mut pairs, "STEP expand knots traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
         let count = geometry_or_none!(multiplicity
             .integer()
             .and_then(|count| usize::try_from(count).ok()));
