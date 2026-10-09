@@ -1054,10 +1054,11 @@ fn displacement_record(
         displacement.sub_items.len(),
         "Rhino projected displacement sub-items",
     )?;
-    for item in ctx.admit_iter(
-        &(displacement.sub_items)[..],
-        "Rhino displacement record traversal",
-    )? {
+    ctx.charge_work(0, "Rhino displacement record traversal")?;
+    let mut projection_source = displacement.sub_items.iter();
+    for _ in 0..projection_source.len() {
+        let item = ctx.next_charged(&mut projection_source, "Rhino displacement record traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         sub_items.push(DisplacementSubItemRecord {
             face_index: item.face_index,
             on: item.on,
@@ -1148,10 +1149,11 @@ fn shut_lining_record(
         shut_lining.curves.len(),
         "Rhino projected shut-lining curves",
     )?;
-    for curve in ctx.admit_iter(
-        &(shut_lining.curves)[..],
-        "Rhino shut lining record traversal",
-    )? {
+    ctx.charge_work(0, "Rhino shut lining record traversal")?;
+    let mut projection_source = shut_lining.curves.iter();
+    for _ in 0..projection_source.len() {
+        let curve = ctx.next_charged(&mut projection_source, "Rhino shut lining record traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         curves.push(ShutLiningCurveRecord {
             uuid: curve
                 .uuid
@@ -1409,21 +1411,20 @@ fn first_user_string_records(
     source_offset: usize,
     losses: &mut impl AdmittedVec<LossNote>,
 ) -> Result<(Vec<UserStringRecord>, Vec<UserStringRecord>), CodecError> {
-    let geometry_range = ctx
-        .find_map(
-            class_userdata,
-            |raw| {
-                let Some(value) = UserdataDescriptor::known(raw) else {
-                    return Ok(None);
-                };
-                Ok(
-                    (value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
-                        .then_some(value),
-                )
-            },
-            "Rhino first user string records traversal",
-        )?
-        .map(|value| value.payload_range.clone());
+    let mut geometry_range = None;
+    ctx.charge_work(0, "Rhino first user string records traversal")?;
+    let mut source = class_userdata.iter();
+    for _ in 0..source.len() {
+        let raw = ctx.next_charged(&mut source, "Rhino first user string records traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let Some(value) = UserdataDescriptor::known(raw) else {
+            continue;
+        };
+        if value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST {
+            geometry_range = Some(value.payload_range.clone());
+            break;
+        }
+    }
     let geometry = read_user_string_records(
         ctx,
         data,
@@ -1433,21 +1434,20 @@ fn first_user_string_records(
         UserStringSource::Object,
         losses,
     )?;
-    let attributes_range = ctx
-        .find_map(
-            attribute_userdata,
-            |raw| {
-                let Some(value) = AttributeUserdataDescriptor::known(raw) else {
-                    return Ok(None);
-                };
-                Ok(
-                    (value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
-                        .then_some(value),
-                )
-            },
-            "Rhino first user string records traversal",
-        )?
-        .map(|value| value.payload_range.clone());
+    let mut attributes_range = None;
+    ctx.charge_work(0, "Rhino first user string records traversal")?;
+    let mut source = attribute_userdata.iter();
+    for _ in 0..source.len() {
+        let raw = ctx.next_charged(&mut source, "Rhino first user string records traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let Some(value) = AttributeUserdataDescriptor::known(raw) else {
+            continue;
+        };
+        if value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST {
+            attributes_range = Some(value.payload_range.clone());
+            break;
+        }
+    }
     let attributes = read_user_string_records(
         ctx,
         data,
@@ -1518,10 +1518,11 @@ fn object_attributes_presentation(
         attributes.display_materials.len(),
         "Rhino projected display materials",
     )?;
-    for (viewport, material) in ctx.admit_iter(
-        &(attributes.display_materials)[..],
-        "Rhino object attributes presentation traversal",
-    )? {
+    ctx.charge_work(0, "Rhino object attributes presentation traversal")?;
+    let mut projection_source = attributes.display_materials.iter();
+    for _ in 0..projection_source.len() {
+        let (viewport, material) = ctx.next_charged(&mut projection_source, "Rhino object attributes presentation traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         display_materials.push([
             ctx.format_retained(
                 format_args!("{viewport}"),
@@ -1545,10 +1546,11 @@ fn object_attributes_presentation(
         attributes.clipping_plane_ids.len(),
         "Rhino projected clipping plane UUIDs",
     )?;
-    for id in ctx.admit_iter(
-        &(attributes.clipping_plane_ids)[..],
-        "Rhino object attributes presentation traversal",
-    )? {
+    ctx.charge_work(0, "Rhino object attributes presentation traversal")?;
+    let mut projection_source = attributes.clipping_plane_ids.iter();
+    for _ in 0..projection_source.len() {
+        let id = ctx.next_charged(&mut projection_source, "Rhino object attributes presentation traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         clipping_plane_uuids.push(ctx.format_retained(
             format_args!("{id}"),
             "Rhino projected clipping plane UUID text",
@@ -1810,7 +1812,10 @@ fn parse_uuid_text(
     let mut nibble = None;
     let mut index = 0;
     let mut source = value.bytes();
-    while let Some(byte) = ctx.next_charged(&mut source, "Rhino UUID text traversal")? {
+    ctx.charge_work(0, "Rhino UUID text traversal")?;
+    for _ in 0..source.len() {
+        let byte = ctx.next_charged(&mut source, "Rhino UUID text traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino UUID text source ended early"))?;
         if byte == b'-' {
             continue;
         }
@@ -3055,7 +3060,11 @@ fn disambiguate_group_ids<'ctx>(
 ) -> Result<usize, CodecError> {
     let mut counts = HashMap::<GroupIdentity, usize>::new();
     let mut workspace = ctx.reserve_scoped(0, "Rhino group identity workspace")?;
-    for group in ctx.admit_iter(&groups[..], "Rhino disambiguate group ids traversal")? {
+    ctx.charge_work(0, "Rhino disambiguate group ids traversal")?;
+    let mut projection_source = groups[..].iter();
+    for _ in 0..projection_source.len() {
+        let group = ctx.next_charged(&mut projection_source, "Rhino disambiguate group ids traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         let count = workspace
             .with_storage(|| {
                 ctx.entry_hash_map(
@@ -3069,10 +3078,11 @@ fn disambiguate_group_ids<'ctx>(
     }
     let mut duplicate_indices = Vec::new();
     let mut index_workspace = ctx.reserve_scoped(0, "Rhino duplicate group workspace")?;
-    for (order, group) in ctx
-        .admit_iter(&groups[..], "Rhino disambiguate group ids traversal")?
-        .enumerate()
-    {
+    ctx.charge_work(0, "Rhino disambiguate group ids traversal")?;
+    let mut projection_source = groups[..].iter();
+    for order in 0..projection_source.len() {
+        let group = ctx.next_charged(&mut projection_source, "Rhino disambiguate group ids traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         if ctx
             .get_hash_map(&counts, &group.identity, "Rhino group identity lookup")?
             .copied()
@@ -3087,7 +3097,11 @@ fn disambiguate_group_ids<'ctx>(
     drop(counts);
     drop(workspace);
     let changed = duplicate_indices.len();
-    for order in ctx.admit_iter(duplicate_indices, "Rhino duplicate group traversal")? {
+    ctx.charge_work(0, "Rhino duplicate group traversal")?;
+    let mut projection_source = duplicate_indices.into_iter();
+    for _ in 0..projection_source.len() {
+        let order = ctx.next_charged(&mut projection_source, "Rhino duplicate group traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         let group = &mut groups[order];
         let identity = group.identity;
         let source_offset = group.source_offset;
@@ -3102,10 +3116,11 @@ fn disambiguate_group_ids<'ctx>(
             "Rhino disambiguated group ID",
         )?;
     }
-    for (order, group) in ctx
-        .admit_iter(&mut groups[..], "Rhino group identity assignment")?
-        .enumerate()
-    {
+    ctx.charge_work(0, "Rhino group identity assignment")?;
+    let mut projection_source = groups[..].iter_mut();
+    for order in 0..projection_source.len() {
+        let group = ctx.next_charged(&mut projection_source, "Rhino group identity assignment")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         if !group.id.is_empty() {
             continue;
         }
@@ -3376,11 +3391,11 @@ fn parse_linetype(
     let mut segments = ctx
         .collection_vec(values.len(), "Rhino projected linetype segments")
         .map_err(crate::chunks::FramingError::from)?;
-    for segment in ctx
-        .admit_iter(values, "Rhino linetype projection traversal")
-        .map_err(CodecError::from)
-        .map_err(FramingError::from)?
-    {
+    ctx.charge_work(0, "Rhino linetype projection traversal")?;
+    let mut projection_source = values.into_iter();
+    for _ in 0..projection_source.len() {
+        let segment = ctx.next_charged(&mut projection_source, "Rhino linetype projection traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         let length_millimeters = if always {
             let scale = pattern_document_scale(binding)?;
             scaled_coordinate(segment.length.get(), scale).ok_or_else(|| {
@@ -3497,13 +3512,16 @@ impl SourceHatchLine {
         scale: MillimeterScale,
         source_offset: usize,
     ) -> Result<HatchLineRecord, FramingError> {
-        for value in self.base.iter_mut().chain(self.offset.iter_mut()).chain(
-            ctx.admit_iter(
-                &mut self.dashes[..],
-                "Rhino hatch dash projection traversal",
-            )
-            .map_err(CodecError::from)?,
-        ) {
+        ctx.charge_work(0, "Rhino hatch dash projection traversal")?;
+        for value in self.base.iter_mut().chain(self.offset.iter_mut()) {
+            *value = scaled_coordinate(value.get(), scale).ok_or_else(|| {
+                FramingError::structural(source_offset, "scaled hatch line is invalid")
+            })?;
+        }
+        let mut dashes = self.dashes.iter_mut();
+        for _ in 0..dashes.len() {
+            let value = ctx.next_charged(&mut dashes, "Rhino hatch dash projection traversal")?
+                .ok_or_else(|| CodecError::malformed("Rhino hatch dash source ended early"))?;
             *value = scaled_coordinate(value.get(), scale).ok_or_else(|| {
                 FramingError::structural(source_offset, "scaled hatch line is invalid")
             })?;
@@ -3647,11 +3665,11 @@ fn parse_hatch_pattern(
         let mut projected = ctx
             .collection_vec(lines.len(), "Rhino projected hatch lines")
             .map_err(crate::chunks::FramingError::from)?;
-        for line in ctx
-            .admit_iter(lines, "Rhino hatch pattern projection traversal")
-            .map_err(CodecError::from)
-            .map_err(FramingError::from)?
-        {
+        ctx.charge_work(0, "Rhino hatch pattern projection traversal")?;
+        let mut projection_source = lines.into_iter();
+        for _ in 0..projection_source.len() {
+            let line = ctx.next_charged(&mut projection_source, "Rhino hatch pattern projection traversal")?
+                .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
             projected.push(line.into_millimeters(ctx, scale, source_offset)?);
         }
         projected
@@ -5349,7 +5367,11 @@ pub(crate) fn install<'ctx>(
     let mut losses = ScratchVec::new(ctx, "Rhino presentation loss Vec")?;
     let mut opaque_records = ScratchVec::new(ctx, "Rhino presentation source Vec")?;
     let mut apple_runtime = None;
-    for object in ctx.admit_iter(&scan.objects[..], "Rhino install traversal")? {
+    ctx.charge_work(0, "Rhino install traversal")?;
+    let mut projection_source = scan.objects[..].iter();
+    for _ in 0..projection_source.len() {
+        let object = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         if let Some(identity) = object.identity() {
             let count = object_count_workspace
                 .with_storage(|| {
@@ -5363,9 +5385,17 @@ pub(crate) fn install<'ctx>(
             *count += 1;
         }
     }
-    for table in ctx.admit_iter(&scan.tables[..], "Rhino install traversal")? {
+    ctx.charge_work(0, "Rhino install traversal")?;
+    let mut projection_source = scan.tables[..].iter();
+    for _ in 0..projection_source.len() {
+        let table = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         let table_type = table.typecode & !0x0000_8000;
-        for record in ctx.admit_iter(&table.records[..], "Rhino install traversal")? {
+        ctx.charge_work(0, "Rhino install traversal")?;
+        let mut projection_source = table.records[..].iter();
+        for _ in 0..projection_source.len() {
+            let record = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
+                .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
             let recognized = matches!(
                 table_type,
                 GROUP_TABLE
@@ -6100,15 +6130,20 @@ record_losses.append_admitted(
     )?;
     let mut group_members = HashMap::<i32, Vec<String>>::new();
     let mut group_member_workspace = ctx.reserve_scoped(0, "Rhino group member workspace")?;
-    for (source_order, object) in ctx
-        .admit_iter(&scan.objects[..], "Rhino install traversal")?
-        .enumerate()
-    {
+    ctx.charge_work(0, "Rhino install traversal")?;
+    let mut projection_source = scan.objects[..].iter();
+    for source_order in 0..projection_source.len() {
+        let object = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         let Some(object) = object.framed() else {
             continue;
         };
         if let Some(attributes) = object.attributes.parsed() {
-            for group in ctx.admit_iter(&attributes.groups[..], "Rhino install traversal")? {
+            ctx.charge_work(0, "Rhino install traversal")?;
+            let mut projection_source = attributes.groups[..].iter();
+            for _ in 0..projection_source.len() {
+                let group = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
+                    .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
                 let unique = ctx
                     .binary_search_by(
                         &group_index_counts,
@@ -6263,7 +6298,11 @@ record_losses.append_admitted(
     }
     let mut layer_id_counts = HashMap::<Uuid, usize>::new();
     let mut layer_count_workspace = ctx.reserve_scoped(0, "Rhino layer identity workspace")?;
-    for layer in ctx.admit_iter(&scan.metadata.layers[..], "Rhino install traversal")? {
+    ctx.charge_work(0, "Rhino install traversal")?;
+    let mut projection_source = scan.metadata.layers[..].iter();
+    for _ in 0..projection_source.len() {
+        let layer = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         if let Some(id) = layer.id {
             let count = layer_count_workspace
                 .with_storage(|| {
@@ -6273,7 +6312,11 @@ record_losses.append_admitted(
             *count += 1;
         }
     }
-    for layer in ctx.admit_iter(&scan.metadata.layers[..], "Rhino install traversal")? {
+    ctx.charge_work(0, "Rhino install traversal")?;
+    let mut projection_source = scan.metadata.layers[..].iter();
+    for _ in 0..projection_source.len() {
+        let layer = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         let (rendering_result, rendering_storage) = ctx.with_scoped_storage(
             "Rhino layer rendering staging",
             || {
@@ -6404,7 +6447,11 @@ record_losses.append_admitted(
             )?;
         }
     }
-    for (index, count) in ctx.admit_iter(&group_index_counts[..], "Rhino install traversal")? {
+    ctx.charge_work(0, "Rhino install traversal")?;
+    let mut projection_source = group_index_counts[..].iter();
+    for _ in 0..projection_source.len() {
+        let (index, count) = ctx.next_charged(&mut projection_source, "Rhino install traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         if *count > 1 {
             push_presentation_loss(
                 ctx,
@@ -6425,7 +6472,11 @@ record_losses.append_admitted(
             "{disambiguated_group_count} group source identities were disambiguated by source offset"
         ))?;
     }
-    for group in ctx.admit_iter(&mut groups[..], "Rhino group link traversal")? {
+    ctx.charge_work(0, "Rhino group link traversal")?;
+    let mut projection_source = groups[..].iter_mut();
+    for _ in 0..projection_source.len() {
+        let group = ctx.next_charged(&mut projection_source, "Rhino group link traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         group.links = ctx
             .remove_hash_map(
                 &mut group_members,

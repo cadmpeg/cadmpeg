@@ -1122,3 +1122,5 @@ fn modern_hatch_pattern_reads_nested_line_chunks() {
         Some(true)
     );
 }
+
+mod fallible_prefix;
