@@ -1940,18 +1940,23 @@ fn classify_rdk_material_payload(
                 "legacy RDK XML has no material element",
             )
         })?;
-    let instance_id = ctx
-        .find_map(
-            material.attributes(),
-            |attribute| Ok((attribute.name() == "instance-id").then_some(attribute.value())),
-            "Rhino RDK instance attribute search",
-        )?
-        .ok_or_else(|| {
-            FramingError::structural(
-                payload_range.start,
-                "legacy RDK material has no instance-id attribute",
-            )
-        })?;
+    let mut instance_id = None;
+    ctx.charge_work(0, "Rhino RDK instance attribute search")?;
+    let mut source = material.attributes();
+    for _ in 0..source.len() {
+        let attribute = ctx.next_charged(&mut source, "Rhino RDK instance attribute search")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        if attribute.name() == "instance-id" {
+            instance_id = Some(attribute.value());
+            break;
+        }
+    }
+    let instance_id = instance_id.ok_or_else(|| {
+        FramingError::structural(
+            payload_range.start,
+            "legacy RDK material has no instance-id attribute",
+        )
+    })?;
     let instance_id = parse_uuid_text(ctx, instance_id)?.ok_or_else(|| {
         FramingError::structural(
             payload_range.start,
@@ -1968,27 +1973,28 @@ fn legacy_rdk_material_instance_id(
     data: &[u8],
     userdata: &[UserdataDescriptor],
 ) -> Result<Option<Uuid>, CodecError> {
-    ctx.find_map(
-        userdata.iter().rev(),
-        |raw| {
-            let Some(value) = raw.known() else {
-                return Ok(None);
-            };
-            if value.class_uuid != RDK_CLASS
-                || value.item_uuid != RDK_USERDATA
-                || (value.application_uuid.is_some()
-                    && value.application_uuid != Some(RDK_APPLICATION))
-            {
-                return Ok(None);
-            }
-            match parse_legacy_rdk_material_instance_id(ctx, data, value.payload_range.clone()) {
-                Ok(value) => Ok(value),
-                Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
-                Err(_) => Ok(None),
-            }
-        },
-        "Rhino legacy rdk material instance id traversal",
-    )
+    ctx.charge_work(0, "Rhino legacy rdk material instance id traversal")?;
+    let mut source = userdata.iter().rev();
+    for _ in 0..source.len() {
+        let raw = ctx.next_charged(&mut source, "Rhino legacy rdk material instance id traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let Some(value) = raw.known() else {
+            continue;
+        };
+        if value.class_uuid != RDK_CLASS
+            || value.item_uuid != RDK_USERDATA
+            || (value.application_uuid.is_some()
+                && value.application_uuid != Some(RDK_APPLICATION))
+        {
+            continue;
+        }
+        match parse_legacy_rdk_material_instance_id(ctx, data, value.payload_range.clone()) {
+            Ok(Some(value)) => return Ok(Some(value)),
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
+            Ok(None) | Err(_) => {}
+        }
+    }
+    Ok(None)
 }
 
 fn rdk_material_userdata_requires_opaque(
@@ -1996,27 +2002,28 @@ fn rdk_material_userdata_requires_opaque(
     data: &[u8],
     userdata: &[UserdataDescriptor],
 ) -> Result<bool, CodecError> {
-    ctx.any_by(
-        userdata,
-        |raw| {
-            let Some(value) = raw.known() else {
-                return Ok(false);
-            };
-            if value.class_uuid != RDK_CLASS
-                || value.item_uuid != RDK_USERDATA
-                || (value.application_uuid.is_some()
-                    && value.application_uuid != Some(RDK_APPLICATION))
-            {
-                return Ok(false);
-            }
-            match classify_rdk_material_payload(ctx, data, value.payload_range.clone()) {
-                Ok(RdkMaterialPayload::Compatibility(_)) => Ok(false),
-                Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
-                Ok(RdkMaterialPayload::CallbackOwned) | Err(_) => Ok(true),
-            }
-        },
-        "Rhino rdk material userdata requires opaque traversal",
-    )
+    ctx.charge_work(0, "Rhino rdk material userdata requires opaque traversal")?;
+    let mut source = userdata.iter();
+    for _ in 0..source.len() {
+        let raw = ctx.next_charged(&mut source, "Rhino rdk material userdata requires opaque traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+        let Some(value) = raw.known() else {
+            continue;
+        };
+        if value.class_uuid != RDK_CLASS
+            || value.item_uuid != RDK_USERDATA
+            || (value.application_uuid.is_some()
+                && value.application_uuid != Some(RDK_APPLICATION))
+        {
+            continue;
+        }
+        match classify_rdk_material_payload(ctx, data, value.payload_range.clone()) {
+            Ok(RdkMaterialPayload::Compatibility(_)) => {}
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
+            Ok(RdkMaterialPayload::CallbackOwned) | Err(_) => return Ok(true),
+        }
+    }
+    Ok(false)
 }
 
 fn wide_string(
@@ -2191,35 +2198,31 @@ fn parse_light_record_attributes(
             .map(|range| parse_attribute_userdata(ctx, data, range.clone(), archive, &mut warnings))
             .transpose()?
             .unwrap_or_default();
-        let userdata_requires_opaque = ctx
-            .find_map(
-                &attributes_userdata,
-                |raw| {
-                    let Some(descriptor) = raw.known() else {
-                        return Ok(Some(true));
-                    };
-                    let is_user_string = descriptor.class_uuid == USER_STRING_LIST
-                        && descriptor.item_uuid == USER_STRING_LIST;
-                    if !is_user_string {
-                        return Ok(None);
-                    }
-                    match parse_user_string_list(
-                        ctx,
-                        data,
-                        descriptor.payload_range.clone(),
-                        archive,
-                        crate::objects::UserStringSelection::ValidateOnly,
-                    ) {
-                        Ok(_) => Ok(None),
-                        Err(FramingError::Resource(limit)) => {
-                            Err(CodecError::ResourceLimit(limit))
-                        }
-                        Err(_) => Ok(Some(true)),
-                    }
-                },
-                "Rhino parse light record attributes traversal",
-            )?
-            .unwrap_or(false);
+        let mut userdata_requires_opaque = false;
+        ctx.charge_work(0, "Rhino parse light record attributes traversal")?;
+        let mut source = attributes_userdata.iter();
+        for _ in 0..source.len() {
+            let raw = ctx.next_charged(&mut source, "Rhino parse light record attributes traversal")?
+                .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+            let Some(descriptor) = raw.known() else {
+                userdata_requires_opaque = true;
+                break;
+            };
+            if descriptor.class_uuid != USER_STRING_LIST || descriptor.item_uuid != USER_STRING_LIST {
+                continue;
+            }
+            match parse_user_string_list(
+                ctx, data, descriptor.payload_range.clone(), archive,
+                crate::objects::UserStringSelection::ValidateOnly,
+            ) {
+                Ok(_) => {}
+                Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
+                Err(_) => {
+                    userdata_requires_opaque = true;
+                    break;
+                }
+            }
+        }
         if attributes.is_none() && !attributes_userdata.is_empty() {
             return Err(FramingError::structural(
                 record.range.start,
@@ -4709,18 +4712,22 @@ fn parse_texture_mapping(
         let mut warnings = Diagnostics::new();
         let (value, userdata) =
             parse_class_wrapper_with_userdata(ctx, data, object.range(), archive, &mut warnings)?;
-        let cache_requires_opaque = ctx.any_by(
-            &userdata,
-            |raw| {
-                let Some(value) = UserdataDescriptor::known(raw) else {
-                    return Ok(false);
-                };
-                Ok(value.class_uuid == MAPPING_CRC_CACHE
-                    && value.item_uuid == MAPPING_CRC_CACHE
-                    && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err())
-            },
-            "Rhino parse texture mapping traversal",
-        )?;
+        let mut cache_requires_opaque = false;
+        ctx.charge_work(0, "Rhino parse texture mapping traversal")?;
+        let mut source = userdata.iter();
+        for _ in 0..source.len() {
+            let raw = ctx.next_charged(&mut source, "Rhino parse texture mapping traversal")?
+                .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+            let Some(value) = UserdataDescriptor::known(raw) else {
+                continue;
+            };
+            if value.class_uuid == MAPPING_CRC_CACHE && value.item_uuid == MAPPING_CRC_CACHE
+                && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
+            {
+                cache_requires_opaque = true;
+                break;
+            }
+        }
         (
             Some(ctx.format_retained(
                 format_args!("{}", value.class_uuid),
@@ -5459,18 +5466,23 @@ pub(crate) fn install<'ctx>(
                             record.range.start
                         ))?;
                     }
-                    let physically_based = if let Some(value) = ctx.find_map(
-                        &userdata,
-                        |raw| {
-                            Ok(raw.known().filter(|value| {
-                                value.class_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
-                                    && value.item_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
-                                    && (value.application_uuid.is_none()
-                                        || value.application_uuid == Some(OPENNURBS6_APPLICATION))
-                            }))
-                        },
-                        "Rhino PBR userdata search",
-                    )? {
+                    let mut physically_based_userdata = None;
+                    ctx.charge_work(0, "Rhino PBR userdata search")?;
+                    let mut source = userdata.iter();
+                    for _ in 0..source.len() {
+                        let raw = ctx.next_charged(&mut source, "Rhino PBR userdata search")?
+                            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+                        if let Some(value) = raw.known().filter(|value| {
+                            value.class_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
+                                && value.item_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
+                                && (value.application_uuid.is_none()
+                                    || value.application_uuid == Some(OPENNURBS6_APPLICATION))
+                        }) {
+                            physically_based_userdata = Some(value);
+                            break;
+                        }
+                    }
+                    let physically_based = if let Some(value) = physically_based_userdata {
                         match parse_physically_based_material(
                             ctx,
                             scan.data,
@@ -5797,16 +5809,19 @@ attribute_losses.append_admitted(
                         scan.archive,
                         V5_DIMSTYLE,
                     ))? {
-                        let extra = ctx.find_map(
-                            &userdata,
-                            |raw| {
-                                Ok(raw.known().filter(|value| {
-                                    value.class_uuid == DIMSTYLE_EXTRA
-                                        && value.item_uuid == DIMSTYLE_EXTRA
-                                }))
-                            },
-                            "Rhino dimension style userdata search",
-                        )?;
+                        let mut extra = None;
+                        ctx.charge_work(0, "Rhino dimension style userdata search")?;
+                        let mut source = userdata.iter();
+                        for _ in 0..source.len() {
+                            let raw = ctx.next_charged(&mut source, "Rhino dimension style userdata search")?
+                                .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+                            if let Some(value) = raw.known().filter(|value| {
+                                value.class_uuid == DIMSTYLE_EXTRA && value.item_uuid == DIMSTYLE_EXTRA
+                            }) {
+                                extra = Some(value);
+                                break;
+                            }
+                        }
                         let mut extra_storage = None;
                         let extra = match extra {
                             Some(value) => {
@@ -6057,11 +6072,20 @@ attribute_losses.append_admitted(
                                         Some(value) => value,
                                         None => {
                                             let value = match &scan.metadata.properties.application {
-                                                Some(application) => ctx.any_by(
-                                                    application.name.as_bytes().windows(3),
-                                                    |part| Ok(part.eq_ignore_ascii_case(b"mac")),
-                                                    "Rhino font application search",
-                                                )?,
+                                                Some(application) => {
+                                                    let mut is_apple = false;
+                                                    ctx.charge_work(0, "Rhino font application search")?;
+                                                    let mut source = application.name.as_bytes().windows(3);
+                                                    for _ in 0..source.len() {
+                                                        let part = ctx.next_charged(&mut source, "Rhino font application search")?
+                                                            .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+                                                        if part.eq_ignore_ascii_case(b"mac") {
+                                                            is_apple = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                    is_apple
+                                                }
                                                 None => false,
                                             };
                                             apple_runtime = Some(value);
