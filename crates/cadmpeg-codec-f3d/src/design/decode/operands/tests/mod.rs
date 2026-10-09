@@ -23,3 +23,5 @@ mod candidate_faces;
 mod construction_paths;
 
 mod index_session;
+
+mod recipe_session;
