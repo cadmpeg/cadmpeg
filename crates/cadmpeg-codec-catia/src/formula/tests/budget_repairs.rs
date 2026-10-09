@@ -5,6 +5,89 @@ use crate::test_support::{with_materialized_limit, with_retained_limit, with_wor
 use cadmpeg_core::CodecError;
 
 #[test]
+fn formula_transfer_moves_the_surviving_candidate_without_copying() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let bytes = crate::test_support::test_formula::standard_catpart_with_definition_chain_type(
+        "Boolean",
+        &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let entity = native
+        .entity_records
+        .iter()
+        .find(|entity| entity.definition_chain_value().is_some())
+        .expect("definition chain");
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "catia_formula_parameter_copy",
+        None,
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let transfer = super::super::transfer_parameters(
+        &ctx,
+        &mut ir,
+        &native,
+        &mut cadmpeg_ir::Annotations::default(),
+        &crate::decode::ModelingGraphScope::Unscoped,
+    )
+    .expect("transfer does not copy the surviving candidate");
+    assert_eq!(transfer.definition_chain_parameter_count, 1);
+    let [parameter] = ir.model.parameters.as_slice() else {
+        panic!("one definition-chain parameter");
+    };
+    assert_eq!(
+        parameter.name,
+        entity.definition_chain_value().expect("definition chain").selector.value
+    );
+    assert_eq!(parameter.expression, "true");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Boolean(true))
+    );
+    assert_eq!(parameter.native_ref.as_deref(), Some(entity.id.as_str()));
+    assert_eq!(parameter.ordinal, 0);
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn formula_transfer_preserves_the_candidate_promotion_refusal() {
+    let bytes = crate::test_support::test_formula::standard_catpart_with_definition_chain_type(
+        "Boolean",
+        &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let refused = crate::test_support::with_retained_refusal(
+        &bytes,
+        "catia_formula_candidate_scratch",
+        |ctx| {
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            let result = super::super::transfer_parameters(
+                ctx,
+                &mut ir,
+                &native,
+                &mut cadmpeg_ir::Annotations::default(),
+                &crate::decode::ModelingGraphScope::Unscoped,
+            );
+            let Err(CodecError::ResourceLimit(limit)) = result else {
+                panic!("candidate promotion must refuse");
+            };
+            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            assert!(ir.model.parameters.is_empty());
+            assert!(matches!(ctx.charge_work(0, "after candidate promotion"),
+                Err(CodecError::ResourceLimit(original)) if original == limit));
+            Err::<(), _>(CodecError::ResourceLimit(limit))
+        },
+    );
+    assert!(matches!(refused, Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_formula_candidate_scratch"));
+}
+
+#[test]
 fn formula_conflicting_input_admits_its_surviving_index_key() {
     let native = crate::native::CatiaNative::decode(
         &crate::test_support::test_formula::standard_catpart_with_formula_relation(4, false),
