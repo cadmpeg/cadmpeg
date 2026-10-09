@@ -322,6 +322,9 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
     }
 
     fn one(&mut self, format: u8) -> Result<BinaryValue, CodecError> {
+        if let Some(refusal) = self.ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         match format {
             0 => Ok(BinaryValue::Default),
             1 => self
@@ -385,6 +388,9 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
     }
 
     fn clone_value(&self, value: &BinaryValue) -> Result<BinaryValue, CodecError> {
+        if let Some(refusal) = self.ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         match value {
             BinaryValue::Default => Ok(BinaryValue::Default),
             BinaryValue::Integer(value) => Ok(BinaryValue::Integer(*value)),
@@ -431,6 +437,9 @@ fn padding_is_zero(
     range: std::ops::Range<usize>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let padding = bytes
         .get(range.clone())
         .ok_or_else(|| malformed("Binary section padding is truncated"))?;
@@ -777,6 +786,9 @@ fn render_parameter_value(
     language: bool,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u8>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     match value {
         BinaryValue::Default => Ok(Vec::new()),
         BinaryValue::Integer(value) | BinaryValue::Pointer(value) => {
@@ -901,6 +913,9 @@ fn render_card(
     sequence: &mut u32,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if data.len() > CARD_DATA_WIDTH {
         return Err(malformed(
             "normalized Fixed ASCII card payload exceeds 72 bytes",
@@ -952,6 +967,9 @@ fn render_terminate(
     parameter_count: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let counts = [
         (b'S', start_count),
         (b'G', global_count),
@@ -1046,6 +1064,9 @@ fn normalize_global(
     values: &[BinaryValue],
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u8>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if values.len() != 24 {
         return Err(malformed(
             "Binary Global section does not contain 24 fields",
@@ -1417,6 +1438,9 @@ fn render_directory_card(
     sequence: u32,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if sequence == 0 || sequence > MAX_SEQUENCE {
         return Err(malformed(
             "normalized Directory sequence exceeds seven digits",
@@ -1437,6 +1461,9 @@ fn render_parameter_line(
     sequence: u32,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if data.len() > PARAMETER_DATA_WIDTH
         || directory_sequence == 0
         || directory_sequence > MAX_SEQUENCE
@@ -1517,6 +1544,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 
 #[cfg(test)]
 mod tests {
+    mod entry_refusal;
     mod parameter_primitives;
     mod source_visits;
     mod start_primitives;

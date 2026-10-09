@@ -543,3 +543,5 @@ fn terminate_integer_parse_refusal_reaches_the_caller() {
         && limit.operation == "iges terminate count integer")
     );
 }
+
+mod entry_refusal;
