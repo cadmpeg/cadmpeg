@@ -27,6 +27,41 @@ pub(in super::super) fn copy_body_id(
     body.try_clone_for_decode(ctx, "creo feature output body IDs")
 }
 
+struct FeatureOutputCandidates<'ir, 'ctx> {
+    bodies: Vec<&'ir BodyId>,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'ir, 'ctx> FeatureOutputCandidates<'ir, 'ctx> {
+    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            bodies: Vec::new(),
+            storage: ctx.reserve_scoped(0, "creo feature output candidate rows")?,
+        })
+    }
+
+    fn push(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        body: &'ir BodyId,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.storage
+            .with_storage(|| ctx.reserve_vec(&mut self.bodies, 1, operation))?;
+        self.bodies.push(body);
+        Ok(())
+    }
+
+    fn contains(
+        &self,
+        ctx: &DecodeContext<'_>,
+        body: &BodyId,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        ctx.contains(&self.bodies, &body, operation)
+    }
+}
+
 pub(super) struct FeatureOutputHistory<'ir, 'ctx> {
     visiting: BTreeSet<u32>,
     surface_outputs: super::output_rows::SurfaceOutputs<'ir, 'ctx>,
@@ -65,13 +100,34 @@ pub(super) fn feature_output_bodies_with_history<'ir, 'ctx>(
     feature_id: u32,
     history: &mut FeatureOutputHistory<'ir, 'ctx>,
 ) -> Result<Vec<BodyId>, CodecError> {
+    let candidates =
+        feature_output_body_candidates_with_history(ctx, scan, ir, feature_id, history)?;
+    let mut outputs = Vec::new();
+    for candidate in ctx.admit_iter(
+        &candidates.bodies,
+        "creo feature output candidate references",
+    )? {
+        let body = *candidate;
+        ctx.reserve_vec(&mut outputs, 1, "creo feature output bodies")?;
+        outputs.push(copy_body_id(ctx, body)?);
+    }
+    Ok(outputs)
+}
+
+fn feature_output_body_candidates_with_history<'ir, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &ContainerScan,
+    ir: &'ir CadIr,
+    feature_id: u32,
+    history: &mut FeatureOutputHistory<'ir, 'ctx>,
+) -> Result<FeatureOutputCandidates<'ir, 'ctx>, CodecError> {
     let _depth = ctx.enter_nested("creo feature output history")?;
     if ctx.contains_btree_set(
         &history.visiting,
         &feature_id,
         "creo feature output visiting lookup",
     )? {
-        return Ok(Vec::new());
+        return FeatureOutputCandidates::new(ctx);
     }
     history.storage.with_storage(|| {
         ctx.insert_btree_set(
@@ -86,13 +142,14 @@ pub(super) fn feature_output_bodies_with_history<'ir, 'ctx>(
         &scan.features.replay_affected_ids,
         feature_id,
     )?;
-    let mut outputs = evaluated_sweep_output_bodies(ctx, ir, feature_id)?;
+    let mut outputs = FeatureOutputCandidates::new(ctx)?;
+    append_evaluated_sweep_output_body_candidates(ctx, ir, feature_id, &mut outputs)?;
     let edge_outputs = match feature_edge_selection(ctx, scan, ir, feature_id)? {
         Some(EdgeSelection::Resolved { edges, .. }) => bodies_containing_edges(ctx, ir, &edges)?,
         Some(EdgeSelection::Generated { edges, .. }) => {
             generated_edge_output_bodies(ctx, scan, ir, &edges, history)?
         }
-        _ => Vec::new(),
+        _ => FeatureOutputCandidates::new(ctx)?,
     };
     let generated_input_outputs =
         generated_input_output_bodies(ctx, scan, ir, feature_id, history)?;
@@ -106,10 +163,8 @@ pub(super) fn feature_output_bodies_with_history<'ir, 'ctx>(
             .bodies(ctx, &surface)?
             .unwrap_or(&[]);
         for body in ctx.admit_iter(bodies, "creo generated surface body references")? {
-            if !ctx.contains(&outputs, *body, "creo feature output body lookup")? {
-                let body = copy_body_id(ctx, body)?;
-                ctx.reserve_vec(&mut outputs, 1, "creo feature output bodies")?;
-                outputs.push(body);
+            if !outputs.contains(ctx, body, "creo feature output body lookup")? {
+                outputs.push(ctx, body, "creo feature output bodies")?;
             }
         }
         Ok(())
@@ -136,16 +191,22 @@ pub(super) fn feature_output_bodies_with_history<'ir, 'ctx>(
             add_surface_outputs(*surface_id)?;
         }
     }
-    for body in ctx
-        .admit_iter(edge_outputs, "creo feature edge output body moves")?
-        .chain(ctx.admit_iter(
-            generated_input_outputs,
-            "creo feature input output body moves",
-        )?)
-    {
-        if !ctx.contains(&outputs, &body, "creo feature output body lookup")? {
-            ctx.reserve_vec(&mut outputs, 1, "creo feature output bodies")?;
-            outputs.push(body);
+    for candidate in ctx.admit_iter(
+        &edge_outputs.bodies,
+        "creo feature edge output body candidates",
+    )? {
+        let body = *candidate;
+        if !outputs.contains(ctx, body, "creo feature output body lookup")? {
+            outputs.push(ctx, body, "creo feature output bodies")?;
+        }
+    }
+    for candidate in ctx.admit_iter(
+        &generated_input_outputs.bodies,
+        "creo feature input output body candidates",
+    )? {
+        let body = *candidate;
+        if !outputs.contains(ctx, body, "creo feature output body lookup")? {
+            outputs.push(ctx, body, "creo feature output bodies")?;
         }
     }
     ctx.remove_btree_set(
@@ -162,7 +223,7 @@ fn generated_input_output_bodies<'ir, 'ctx>(
     ir: &'ir CadIr,
     feature_id: u32,
     history: &mut FeatureOutputHistory<'ir, 'ctx>,
-) -> Result<Vec<BodyId>, CodecError> {
+) -> Result<FeatureOutputCandidates<'ir, 'ctx>, CodecError> {
     let (feature_id_text, reservation) = ctx.format_scoped(
         format_args!("creo:model:feature#{feature_id}"),
         "creo generated input feature lookup",
@@ -180,11 +241,11 @@ fn generated_input_output_bodies<'ir, 'ctx>(
         "creo generated input feature lookup traversal",
     )?;
     let Some(feature) = matching_feature else {
-        return Ok(Vec::new());
+        return FeatureOutputCandidates::new(ctx);
     };
     drop(feature_id_text);
     drop(reservation);
-    let mut outputs = Vec::new();
+    let mut outputs = FeatureOutputCandidates::new(ctx)?;
     let mut dependency_storage = ctx.reserve_scoped(0, "Creo generated producer lookup")?;
     let producers = dependency_storage
         .with_storage(|| feature_generated_dependencies(ctx, feature.evaluation.definition()))?;
@@ -202,13 +263,15 @@ fn generated_input_output_bodies<'ir, 'ctx>(
         else {
             continue;
         };
-        for body in ctx.admit_iter(
-            feature_output_bodies_with_history(ctx, scan, ir, producer_id, history)?,
-            "creo generated producer body moves",
+        let producer_outputs =
+            feature_output_body_candidates_with_history(ctx, scan, ir, producer_id, history)?;
+        for candidate in ctx.admit_iter(
+            &producer_outputs.bodies,
+            "creo generated producer body candidates",
         )? {
-            if !ctx.contains(&outputs, &body, "creo output body membership")? {
-                ctx.reserve_vec(&mut outputs, 1, "creo generated input output bodies")?;
-                outputs.push(body);
+            let body = *candidate;
+            if !outputs.contains(ctx, body, "creo output body membership")? {
+                outputs.push(ctx, body, "creo generated input output bodies")?;
             }
         }
     }
@@ -221,8 +284,8 @@ fn generated_edge_output_bodies<'ir, 'ctx>(
     ir: &'ir CadIr,
     edges: &[GeneratedEdgeRef],
     history: &mut FeatureOutputHistory<'ir, 'ctx>,
-) -> Result<Vec<BodyId>, CodecError> {
-    let mut outputs = Vec::new();
+) -> Result<FeatureOutputCandidates<'ir, 'ctx>, CodecError> {
+    let mut outputs = FeatureOutputCandidates::new(ctx)?;
     for edge in ctx.admit_iter(edges, "creo generated edge references")? {
         let Some(suffix) = ctx.strip_prefix(
             edge.feature.as_str(),
@@ -237,24 +300,26 @@ fn generated_edge_output_bodies<'ir, 'ctx>(
         else {
             continue;
         };
-        for body in ctx.admit_iter(
-            feature_output_bodies_with_history(ctx, scan, ir, producer_id, history)?,
-            "creo generated producer body moves",
+        let producer_outputs =
+            feature_output_body_candidates_with_history(ctx, scan, ir, producer_id, history)?;
+        for candidate in ctx.admit_iter(
+            &producer_outputs.bodies,
+            "creo generated producer body candidates",
         )? {
-            if !ctx.contains(&outputs, &body, "creo output body membership")? {
-                ctx.reserve_vec(&mut outputs, 1, "creo generated edge output bodies")?;
-                outputs.push(body);
+            let body = *candidate;
+            if !outputs.contains(ctx, body, "creo output body membership")? {
+                outputs.push(ctx, body, "creo generated edge output bodies")?;
             }
         }
     }
     Ok(outputs)
 }
 
-fn bodies_containing_edges(
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
+fn bodies_containing_edges<'ir, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    ir: &'ir CadIr,
     edges: &[EdgeId],
-) -> Result<Vec<BodyId>, CodecError> {
+) -> Result<FeatureOutputCandidates<'ir, 'ctx>, CodecError> {
     let mut lookup_storage = ctx.reserve_scoped(0, "Creo selected topology lookup")?;
     let mut selected = BTreeSet::new();
     for edge in ctx.admit_iter(edges, "creo selected edge references")? {
@@ -263,7 +328,7 @@ fn bodies_containing_edges(
         })?;
     }
     if selected.is_empty() {
-        return Ok(Vec::new());
+        return FeatureOutputCandidates::new(ctx);
     }
     let mut selected_coedges = Vec::new();
     for coedge in ctx.admit_iter(&ir.model.coedges, "creo selected edge coedges")? {
@@ -305,7 +370,7 @@ fn bodies_containing_edges(
             ctx.insert_btree_set(&mut shell_ids, &shell.id, "creo selected shell nodes")
         })?;
     }
-    let mut bodies = Vec::new();
+    let mut bodies = FeatureOutputCandidates::new(ctx)?;
     if shell_ids.is_empty() {
         return Ok(bodies);
     }
@@ -339,21 +404,19 @@ fn bodies_containing_edges(
         {
             continue;
         }
-        if !ctx.contains(&bodies, body, "creo selected body membership")? {
-            let body = copy_body_id(ctx, body)?;
-            ctx.reserve_vec(&mut bodies, 1, "creo bodies containing selected edges")?;
-            bodies.push(body);
+        if !bodies.contains(ctx, body, "creo selected body membership")? {
+            bodies.push(ctx, body, "creo bodies containing selected edges")?;
         }
     }
     Ok(bodies)
 }
 
-pub(in super::super) fn evaluated_sweep_output_bodies(
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
+fn append_evaluated_sweep_output_body_candidates<'ir, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    ir: &'ir CadIr,
     feature_id: u32,
-) -> Result<Vec<BodyId>, CodecError> {
-    let mut outputs = Vec::new();
+    outputs: &mut FeatureOutputCandidates<'ir, 'ctx>,
+) -> Result<(), CodecError> {
     for namespace in [
         &crate::identity::FEATURE_EXTRUSION,
         &crate::identity::FEATURE_REVOLUTION,
@@ -379,21 +442,11 @@ pub(in super::super) fn evaluated_sweep_output_bodies(
             },
             "creo evaluated sweep body lookup traversal",
         )?;
-        if matching_body.is_some() {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(candidate.len()),
-                "creo evaluated sweep body IDs",
-            )?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(candidate.len()),
-                "creo evaluated sweep body identity validation",
-            )?;
-            let body = BodyId::mint(candidate).map_err(CodecError::malformed)?;
-            ctx.reserve_vec(&mut outputs, 1, "creo evaluated sweep output bodies")?;
-            outputs.push(body);
+        if let Some(body) = matching_body {
+            outputs.push(ctx, &body.id, "creo evaluated sweep output bodies")?;
         }
     }
-    Ok(outputs)
+    Ok(())
 }
 
 pub(in super::super) fn evaluated_sweep_body_kind(

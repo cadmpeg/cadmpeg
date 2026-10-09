@@ -26,6 +26,7 @@ fn selected_edge_refuses_before_btree_node() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let edge = EdgeId::mint("creo:test:edge#1").expect("identity grammar");
     let error = bodies_containing_edges(&ctx, &CadIr::empty(), &[edge])
+        .map(|_| ())
         .expect_err("one selected edge needs a BTreeSet node");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -117,6 +118,7 @@ fn selected_shell_refuses_before_btree_node() {
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = bodies_containing_edges(&ctx, &ir, &[edge])
+        .map(|_| ())
         .expect_err("selected edge and shell need separate nodes");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -128,12 +130,12 @@ fn selected_shell_refuses_before_btree_node() {
 #[test]
 fn selected_coedge_membership_refuses_work_and_preserves_body() {
     let (ir, edge) = selected_edge_ir();
-    let body = ir.model.bodies[0].id.clone();
-    let bodies =
-        crate::test_support::assert_work_boundaries(&["creo selected coedge lookup"], |ctx| {
-            bodies_containing_edges(ctx, &ir, std::slice::from_ref(&edge))
-        });
-    assert_eq!(bodies, vec![body]);
+    let body = &ir.model.bodies[0].id;
+    crate::test_support::assert_work_boundaries(&["creo selected coedge lookup"], |ctx| {
+        let bodies = bodies_containing_edges(ctx, &ir, std::slice::from_ref(&edge))?;
+        assert_eq!(bodies.bodies, vec![body]);
+        Ok(())
+    });
 }
 
 #[test]
@@ -145,7 +147,7 @@ fn unmatched_selected_coedge_refuses_work_and_skips_empty_shell_scan() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo selected coedge lookup",
-        |ctx| bodies_containing_edges(ctx, &ir, std::slice::from_ref(&unmatched)),
+        |ctx| bodies_containing_edges(ctx, &ir, std::slice::from_ref(&unmatched)).map(|_| ()),
     );
     let limit = match refusal {
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -162,16 +164,15 @@ fn unmatched_selected_coedge_refuses_work_and_skips_empty_shell_scan() {
     policy.limits.max_work_units = cap;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    assert!(
-        bodies_containing_edges(&ctx, &ir, std::slice::from_ref(&unmatched))
-            .expect("an unmatched coedge skips loop joins and the empty shell scan")
-            .is_empty()
-    );
+    assert!(bodies_containing_edges(&ctx, &ir, std::slice::from_ref(&unmatched))
+        .expect("an unmatched coedge skips loop joins and the empty shell scan")
+        .bodies
+        .is_empty());
     assert!(crate::decode::with_test_decode_ctx(|ctx| {
         bodies_containing_edges(ctx, &ir, std::slice::from_ref(&unmatched))
+            .map(|bodies| bodies.bodies.is_empty())
     })
-    .expect("service profile preserves an unmatched edge result")
-    .is_empty());
+    .expect("service profile preserves an unmatched edge result"));
 }
 
 #[test]
@@ -196,7 +197,7 @@ fn selected_wire_shell_membership_short_circuits_after_first_match() {
     );
     let body = ir.model.bodies[0].id.clone();
     let named_needs = std::cell::RefCell::new(std::collections::BTreeSet::new());
-    let bounded_result = crate::test_support::assert_work_boundaries(
+    crate::test_support::assert_work_boundaries(
         &["creo selected shell wire edge lookup"],
         |ctx| {
             let result = bodies_containing_edges(ctx, &ir, std::slice::from_ref(&selected));
@@ -210,7 +211,9 @@ fn selected_wire_shell_membership_short_circuits_after_first_match() {
                     );
                 }
             }
-            result
+            result.map(|bodies| {
+                assert_eq!(bodies.bodies, vec![&body]);
+            })
         },
     );
     let named_refusals = named_needs.borrow().len();
@@ -219,14 +222,12 @@ fn selected_wire_shell_membership_short_circuits_after_first_match() {
         named_refusals, 1,
         "work route reaches one wire membership query"
     );
-    assert_eq!(bounded_result, vec![body.clone()]);
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            bodies_containing_edges(ctx, &ir, std::slice::from_ref(&selected))
-        })
-        .expect("service profile admits wire shell output"),
-        vec![body]
-    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let bodies = bodies_containing_edges(ctx, &ir, std::slice::from_ref(&selected))?;
+        assert_eq!(bodies.bodies, vec![&body]);
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .expect("service profile admits wire shell output");
 }
 
 #[test]
@@ -249,6 +250,7 @@ fn selected_body_refuses_before_output_row() {
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = bodies_containing_edges(&ctx, &ir, &[edge])
+        .map(|_| ())
         .expect_err("body row exceeds the two node allowance");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -326,15 +328,12 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         pcurves: Vec::new(),
         use_curve: None,
     });
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| bodies_containing_edges(
-            ctx,
-            &ir,
-            std::slice::from_ref(&edge_id)
-        ))
-        .expect("service profile admits output bodies"),
-        vec![body_id.clone()]
-    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let bodies = bodies_containing_edges(ctx, &ir, std::slice::from_ref(&edge_id))?;
+        assert_eq!(bodies.bodies, vec![&body_id]);
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .expect("service profile admits output bodies");
 
     let mut duplicate_loop = ir.clone();
     duplicate_loop.model.loops.push(IrLoop {
@@ -351,15 +350,11 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
             .expect("valid loop ring"),
         ),
     });
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| bodies_containing_edges(
-            ctx,
-            &duplicate_loop,
-            std::slice::from_ref(&edge_id)
-        ))
-        .expect("service profile admits output bodies")
-        .is_empty()
-    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        bodies_containing_edges(ctx, &duplicate_loop, std::slice::from_ref(&edge_id))
+            .map(|bodies| bodies.bodies.is_empty())
+    })
+    .expect("service profile admits output bodies"));
 
     let mut duplicate_face = ir.clone();
     duplicate_face.model.faces.push(Face {
@@ -374,15 +369,11 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         color: None,
         tolerance: None,
     });
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| bodies_containing_edges(
-            ctx,
-            &duplicate_face,
-            std::slice::from_ref(&edge_id)
-        ))
-        .expect("service profile admits output bodies")
-        .is_empty()
-    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        bodies_containing_edges(ctx, &duplicate_face, std::slice::from_ref(&edge_id))
+            .map(|bodies| bodies.bodies.is_empty())
+    })
+    .expect("service profile admits output bodies"));
 
     let mut duplicate_shell = ir.clone();
     duplicate_shell.model.shells.push(
@@ -396,15 +387,11 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         )
         .expect("valid test fixture"),
     );
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| bodies_containing_edges(
-            ctx,
-            &duplicate_shell,
-            std::slice::from_ref(&edge_id)
-        ))
-        .expect("service profile admits output bodies")
-        .is_empty()
-    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        bodies_containing_edges(ctx, &duplicate_shell, std::slice::from_ref(&edge_id))
+            .map(|bodies| bodies.bodies.is_empty())
+    })
+    .expect("service profile admits output bodies"));
 
     let mut duplicate_region = ir.clone();
     duplicate_region.model.regions.push(Region {
@@ -413,15 +400,11 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
             .expect("identity grammar"),
         shells: Vec::new(),
     });
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| bodies_containing_edges(
-            ctx,
-            &duplicate_region,
-            std::slice::from_ref(&edge_id)
-        ))
-        .expect("service profile admits output bodies")
-        .is_empty()
-    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        bodies_containing_edges(ctx, &duplicate_region, std::slice::from_ref(&edge_id))
+            .map(|bodies| bodies.bodies.is_empty())
+    })
+    .expect("service profile admits output bodies"));
 
     let mut duplicate_body = ir;
     duplicate_body.model.bodies.push(Body {
@@ -433,13 +416,9 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         color: None,
         visible: None,
     });
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| bodies_containing_edges(
-            ctx,
-            &duplicate_body,
-            std::slice::from_ref(&edge_id)
-        ))
-        .expect("service profile admits output bodies")
-        .is_empty()
-    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        bodies_containing_edges(ctx, &duplicate_body, std::slice::from_ref(&edge_id))
+            .map(|bodies| bodies.bodies.is_empty())
+    })
+    .expect("service profile admits output bodies"));
 }
