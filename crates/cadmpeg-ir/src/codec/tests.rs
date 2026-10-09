@@ -540,3 +540,60 @@ fn strict_loss_search_charges_only_the_first_rejecting_loss() {
     run(limit.used + limit.additional, 0).unwrap();
     run(limit.used + limit.additional, 4096).unwrap();
 }
+
+#[test]
+fn sealed_inspect_admits_the_reached_wrong_format_diagnostic() {
+    use cadmpeg_core::decode::ResourceDimension;
+    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            dimension, "inspect format refusal", |cap| {
+                let mut options = InspectOptions::default();
+                match dimension {
+                    ResourceDimension::WorkUnits => options.limits.max_work_units = cap,
+                    ResourceDimension::RetainedBytes => options.limits.max_retained_bytes = cap,
+                    _ => unreachable!("the test selects diagnostic work and backing"),
+                }
+                ForeignIdentityCodec.inspect(&mut Cursor::new([1u8, 2, 3, 4]), &options)
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else { panic!("the reached diagnostic must refuse"); };
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.operation, "inspect format refusal");
+    }
+}
+
+#[test]
+fn sealed_inspect_preserves_a_swallowed_backend_refusal_before_format_or_backend_errors() {
+    struct RefusingInspectCodec {
+        backend_error: bool,
+        first: std::cell::Cell<Option<cadmpeg_core::decode::ResourceLimit>>,
+    }
+    impl CodecBackend for RefusingInspectCodec {
+        const FORMAT: FormatId = FormatId::new("selected");
+        fn detect_impl(&self, _: &DecodeContext<'_>, _: View<'_>) -> Result<Confidence, CodecError> {
+            unreachable!("the fixture only inspects")
+        }
+        fn decode_impl(&self, _: &DecodeContext<'_>, _: View<'_>) -> Result<Decoded, CodecError> {
+            unreachable!("the fixture only inspects")
+        }
+        fn inspect_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<ContainerSummary, CodecError> {
+            let CodecError::ResourceLimit(first) = ctx.refuse_codec_limit("test swallowed inspect refusal", 0, 1) else {
+                unreachable!("a codec resource refusal has its original resource identity");
+            };
+            self.first.set(Some(first));
+            if self.backend_error {
+                Err(CodecError::Malformed("synthetic backend error".into()))
+            } else {
+                ForeignIdentityCodec.inspect_impl(ctx, root)
+            }
+        }
+    }
+    for backend_error in [false, true] {
+        let codec = RefusingInspectCodec { backend_error, first: std::cell::Cell::new(None) };
+        let Err(CodecError::ResourceLimit(returned)) = codec.inspect(
+            &mut Cursor::new([1u8, 2, 3, 4]), &InspectOptions::default(),
+        ) else { panic!("the original session refusal must win"); };
+        assert_eq!(Some(returned), codec.first.get());
+        assert_eq!(returned.operation, "test swallowed inspect refusal");
+    }
+}

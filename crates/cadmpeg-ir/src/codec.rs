@@ -449,17 +449,22 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             limits: options.limits,
         };
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, false)?;
-        let result = self.inspect_impl(&ctx, root);
+        let result = (|| {
+            let result = self.inspect_impl(&ctx, root)?;
+            if result.format() != C::FORMAT.as_str() {
+                return Err(CodecError::WrongFormat(ctx.format_retained(
+                    format_args!(
+                        "codec {:?} inspected a {:?} container",
+                        C::FORMAT.as_str(),
+                        result.format()
+                    ),
+                    "inspect format refusal",
+                )?));
+            }
+            Ok(result)
+        })();
         ctx.finish_session()?;
-        let result = result?;
-        if result.format() != C::FORMAT.as_str() {
-            return Err(CodecError::WrongFormat(format!(
-                "codec {:?} inspected a {:?} container",
-                C::FORMAT.as_str(),
-                result.format()
-            )));
-        }
-        Ok(result)
+        result
     }
 
     fn decode(
