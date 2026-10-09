@@ -1046,11 +1046,11 @@ fn ruled_surface_carrier(
         }
     }
     let lanes = ruled_surface_span_lanes(first, second, ctx)?;
-    let _lane_storage;
-    let Some(((degree, u_knots, control_points, weights), result_lane_storage)) = lanes else {
+    let control_storage;
+    let Some((degree, u_knots, (control_points, result_control_storage), weights)) = lanes else {
         return Ok(None);
     };
-    _lane_storage = result_lane_storage;
+    control_storage = result_control_storage;
     let mut row_storage = ctx.reserve_scoped(0, "iges ruled span row scratch")?;
     let pole_rows = if weights.is_some() {
         row_storage.with_storage(|| {
@@ -1069,8 +1069,13 @@ fn ruled_surface_carrier(
             "iges ruled span pole row controls",
         )?
     };
-    let weight_rows = if let Some(weights) = weights {
-        Some(row_storage.with_storage(|| {
+    drop(control_points);
+    drop(control_storage);
+    let weight_rows = if let Some(scoped_weights) = weights {
+        let weight_storage;
+        let (weights, result_weight_storage) = scoped_weights;
+        weight_storage = result_weight_storage;
+        let rows = row_storage.with_storage(|| {
             let mut rows =
                 ctx.collection_vec(weights.len().div_ceil(2), "iges ruled span weight rows")?;
             for weights in ctx
@@ -1090,7 +1095,10 @@ fn ruled_surface_carrier(
                 rows.push(row);
             }
             Ok::<_, CodecError>(rows)
-        })?)
+        })?;
+        drop(weights);
+        drop(weight_storage);
+        Some(rows)
     } else {
         None
     };
@@ -1102,8 +1110,9 @@ fn ruled_surface_carrier(
         weight_rows,
         "iges ruled span weighted rows",
         "iges ruled span weighted row controls",
-    )?
-    .map_err(CodecError::malformed)?;
+    )?;
+    drop(row_storage);
+    let poles = poles.map_err(CodecError::malformed)?;
     Ok(Some(
         NurbsSurface::new(
             ctx,
@@ -1116,7 +1125,12 @@ fn ruled_surface_carrier(
     ))
 }
 
-type RuledSpanLanes = (u32, Vec<f64>, Vec<FinitePoint3>, Option<Vec<PositiveReal>>);
+type RuledSpanLanes<'ctx> = (
+    u32,
+    Vec<f64>,
+    (Vec<FinitePoint3>, ScopedReservation<'ctx>),
+    Option<(Vec<PositiveReal>, ScopedReservation<'ctx>)>,
+);
 
 /// The span lanes of a ruled carrier, or `None` when the rails state none.
 ///
@@ -1126,7 +1140,7 @@ fn ruled_surface_span_lanes<'ctx>(
     first: &NurbsCurve,
     second: &NurbsCurve,
     ctx: &'ctx DecodeContext<'_>,
-) -> Result<Option<(RuledSpanLanes, ScopedReservation<'ctx>)>, CodecError> {
+) -> Result<Option<RuledSpanLanes<'ctx>>, CodecError> {
     let (Ok(first_degree), Ok(second_degree)) = (
         usize::try_from(first.degree()),
         usize::try_from(second.degree()),
@@ -1228,7 +1242,8 @@ fn ruled_surface_span_lanes<'ctx>(
     let mut lane_storage = ctx.reserve_scoped(0, "iges ruled surface lane scratch")?;
     let mut control_points = lane_storage
         .with_storage(|| ctx.collection_vec(pole_count, "iges ruled surface controls"))?;
-    let mut weights = lane_storage
+    let mut weight_storage = ctx.reserve_scoped(0, "iges ruled surface weight scratch")?;
+    let mut weights = weight_storage
         .with_storage(|| ctx.collection_vec(pole_count, "iges ruled surface weights"))?;
     let mut homogeneous = homogeneous.into_iter();
     while let Some(control) =
@@ -1254,16 +1269,20 @@ fn ruled_surface_span_lanes<'ctx>(
         |weight| Ok(weight.get() == 1.0),
         "iges ruled unit weights",
     )? {
+        drop(weights);
+        drop(weight_storage);
         None
     } else {
-        Some(weights)
+        Some((weights, weight_storage))
     };
     let Ok(degree) = u32::try_from(degree) else {
         return Ok(None);
     };
     Ok(Some((
-        (degree, u_knots, control_points, weights),
-        lane_storage,
+        degree,
+        u_knots,
+        (control_points, lane_storage),
+        weights,
     )))
 }
 
