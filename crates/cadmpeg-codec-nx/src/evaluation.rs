@@ -251,6 +251,11 @@ pub(crate) fn evaluate_saved_body_census(
         match replay_storage.with_storage(|| rederived_body_census(ctx, &features, &saved)) {
             Ok(bodies) => bodies,
             Err(CensusError::Unsupported(feature, reason)) => {
+                drop(replay_storage);
+                drop(features);
+                drop(feature_storage);
+                drop(saved);
+                drop(saved_storage);
                 return Ok(BodyCensusEvaluation::Unsupported {
                     feature: feature_boundary(ctx, feature)?,
                     reason,
@@ -267,36 +272,37 @@ pub(crate) fn evaluate_saved_body_census(
             "NX body census comparison traversal",
         )?;
     if !same {
+        let rederived = CanonicalBodyCensus(ctx.try_collect_vec(
+            rederived.into_iter().map(|body| {
+                body.try_clone_for_decode(ctx, "NX rederived census body identity")
+            }),
+            "NX rederived body census",
+        )?);
+        drop(replay_storage);
+        let saved = CanonicalBodyCensus(ctx.try_collect_vec(
+            saved.into_iter().map(|body| {
+                body.try_clone_for_decode(ctx, "NX saved census body identity")
+            }),
+            "NX saved body census",
+        )?);
+        drop(saved_storage);
         return Ok(BodyCensusEvaluation::Mismatch {
-            evidence: BodyCensusDifference {
-                rederived: CanonicalBodyCensus(ctx.try_collect_vec(
-                    rederived.into_iter().map(|body| {
-                        body.try_clone_for_decode(ctx, "NX rederived census body identity")
-                    }),
-                    "NX rederived body census",
-                )?),
-                saved: CanonicalBodyCensus(ctx.try_collect_vec(
-                    saved.into_iter().map(|body| {
-                        body.try_clone_for_decode(ctx, "NX saved census body identity")
-                    }),
-                    "NX saved body census",
-                )?),
-            },
+            evidence: BodyCensusDifference { rederived, saved },
         });
     }
     if !active_configuration_is_admitted(ctx, ir, &saved)? {
         return Ok(BodyCensusEvaluation::ConfigurationEvaluation);
     }
-    Ok(BodyCensusEvaluation::Verified {
-        bodies: CanonicalBodyCensus(
-            ctx.try_collect_vec(
-                rederived
-                    .into_iter()
-                    .map(|body| body.try_clone_for_decode(ctx, "NX verified census body identity")),
-                "NX verified body census",
-            )?,
-        ),
-    })
+    drop(saved);
+    drop(saved_storage);
+    let bodies = CanonicalBodyCensus(ctx.try_collect_vec(
+        rederived
+            .into_iter()
+            .map(|body| body.try_clone_for_decode(ctx, "NX verified census body identity")),
+        "NX verified body census",
+    )?);
+    drop(replay_storage);
+    Ok(BodyCensusEvaluation::Verified { bodies })
 }
 
 fn feature_boundary(
