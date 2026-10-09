@@ -2873,14 +2873,7 @@ fn feature_entity_tables(
         |bytes| feature::entity::entity_tables(ctx, bytes, &feature_ids_set, &surface_ids),
         |table, base| {
             table.offset += base;
-            let mut offsets = table.entries.offsets_mut();
-            while let Some((offset, end_offset)) =
-                ctx.next_charged(&mut offsets, "creo record child relocation traversal")?
-            {
-                *offset += base;
-                *end_offset += base;
-            }
-            Ok(())
+            table.entries.relocate_offsets(ctx, base)
         },
         |table| table.offset,
     )
