@@ -32,8 +32,13 @@ struct CachedAnnotationText<'ctx> {
     _storage: ScopedReservation<'ctx>,
 }
 
+struct AnnotationReach<'ctx> {
+    nodes: BTreeSet<u64>,
+    _storage: ScopedReservation<'ctx>,
+}
+
 pub(super) struct AnnotationDiscoveryIndex<'ctx> {
-    independent_reach: BTreeMap<(u64, usize), BTreeSet<u64>>,
+    independent_reach: BTreeMap<(u64, usize), AnnotationReach<'ctx>>,
     graphs: BTreeMap<(u64, usize), IndexedAnnotationGraph<'ctx>>,
     texts: BTreeMap<u64, CachedAnnotationText<'ctx>>,
     storage: ScopedReservation<'ctx>,
@@ -214,7 +219,7 @@ fn index_annotation_graph<'ctx>(
 fn annotation_graph_reusable(
     graph: Option<&AnnotationGraph>,
     active: &BTreeSet<u64>,
-    reach: &BTreeMap<(u64, usize), BTreeSet<u64>>,
+    reach: &BTreeMap<(u64, usize), AnnotationReach<'_>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let Some(graph) = graph else {
@@ -235,7 +240,7 @@ fn annotation_graph_reusable(
                 active,
                 |ancestor| {
                     Ok(!ctx.contains_btree_set(
-                        nodes,
+                        &nodes.nodes,
                         ancestor,
                         "STEP annotation cyclic ancestor lookup",
                     )?)
@@ -255,6 +260,7 @@ fn independent_annotation_graph<'ctx>(
     index: &mut AnnotationDiscoveryIndex<'ctx>,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<IndexedAnnotationGraph<'ctx>, CodecError> {
+    let mut reach_storage = ctx.reserve_scoped(0, "STEP independent annotation reach scratch")?;
     let (graph_reach_buffer, storage) =
         ctx.with_scoped_storage("STEP independent annotation graph scratch", || {
             let mut reach = BTreeSet::new();
@@ -264,7 +270,7 @@ fn independent_annotation_graph<'ctx>(
                 id,
                 depth,
                 exchange,
-                &mut reach,
+                (&mut reach, &mut reach_storage),
                 &mut carriers,
                 &mut complete,
                 ctx,
@@ -299,18 +305,23 @@ fn independent_annotation_graph<'ctx>(
         })?;
     let (graph, reach) = graph_reach_buffer;
     if graph.is_some() {
-        // This reach set and its owning query reservation both live in the
-        // stage index. Parent summaries retain only its fixed query key.
+        // Reach nodes have their own owner. A later graph admission can fail
+        // after this reach set is already in the stage index.
         index.storage.with_storage(|| {
             ctx.insert_btree_map(
                 &mut index.independent_reach,
                 (id, depth),
-                reach,
+                AnnotationReach {
+                    nodes: reach,
+                    _storage: reach_storage,
+                },
                 "step_independent_annotation_reach",
             )
         })?;
         Ok((graph, storage))
     } else {
+        drop(reach);
+        drop(reach_storage);
         drop(storage);
         Ok((
             None,
@@ -323,7 +334,7 @@ fn annotation_graph_text_carriers(
     id: u64,
     depth: usize,
     exchange: &Exchange,
-    visited: &mut BTreeSet<u64>,
+    (visited, visited_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
     carriers: &mut Vec<u64>,
     complete: &mut bool,
     ctx: &DecodeContext<'_>,
@@ -343,7 +354,9 @@ fn annotation_graph_text_carriers(
             *complete = false;
             continue;
         }
-        if !ctx.insert_btree_set(visited, id, "step_pmi_annotation_text_visited")? {
+        if !visited_storage.with_storage(|| {
+            ctx.insert_btree_set(visited, id, "step_pmi_annotation_text_visited")
+        })? {
             continue;
         }
         let Some(record) = ctx.get_btree_map(exchange.records(), &id, "STEP pmi record get")?
