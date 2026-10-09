@@ -129,6 +129,64 @@ fn topology_graph_promotes_only_selected_backing_and_keeps_identity() {
 }
 
 #[test]
+fn topology_candidates_release_each_completed_selection_phase() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let (bytes, node_bytes, index_bytes) = one_point_graph_storage();
+    let candidate_slots = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<NodeCandidate>(),
+    );
+    // Both scanned domains, one current selected candidate vector, and both
+    // materialized graphs coexist at the final full-domain index growth.
+    // Later, both graphs and the referenced-node root coexist. Select the
+    // larger bound: their relative sizes depend on pointer width.
+    let reference_alignment = std::mem::align_of::<(super::ReferenceRole, u32)>()
+        .max(std::mem::align_of::<Option<&Node>>())
+        .max(std::mem::align_of::<usize>());
+    let reference_root = cadmpeg_core::decode::u64_from_index(
+        11 * (std::mem::size_of::<(super::ReferenceRole, u32)>()
+            + std::mem::size_of::<Option<&Node>>())
+            + 16 * std::mem::size_of::<usize>() + 2 * reference_alignment,
+    );
+    let graph_bytes = node_bytes + index_bytes;
+    let selection_peak = 3 * candidate_slots + 2 * graph_bytes;
+    let reference_peak = reference_root + 2 * graph_bytes;
+    let peak = selection_peak.max(reference_peak);
+    crate::test_support::with_decode_context_over(&bytes, |policy| {
+        policy.limits.max_materialized_bytes = peak;
+        policy.limits.max_retained_bytes = node_bytes + index_bytes;
+    }, |ctx| {
+        let graph = Graph::parse(ctx, &bytes).unwrap();
+        let [point] = graph.of_kind(NodeKind::Point) else {
+            panic!("selection must keep the original complete point");
+        };
+        assert_eq!(point.xmt(), 11);
+        assert_eq!(point.pos(), 0);
+        assert_eq!(point.bytes, bytes);
+        assert!(ctx.resource_refusal().is_none());
+    });
+    crate::test_support::with_decode_context_over(&bytes, |policy| {
+        policy.limits.max_materialized_bytes = peak - 1;
+    }, |ctx| {
+        let error = Graph::parse(ctx, &bytes).unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("the peak topology workspace must require its final byte");
+        };
+        let (operation, additional) = if selection_peak >= reference_peak {
+            ("NX topology node index",
+                cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<Node>()))
+        } else {
+            ("NX topology full-domain references", reference_root)
+        };
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(limit.operation, operation);
+        assert_eq!((limit.used, limit.additional), (peak - additional, additional));
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.reserve_scoped(0, "after topology selection refusal"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+    });
+}
+
+#[test]
 fn topology_graph_parse_refuses_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;
     let bytes = topology_partition_stream();
