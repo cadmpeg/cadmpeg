@@ -786,7 +786,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         if identity_present {
             continue;
         }
-        geometry_storage.commit()?;
+        let geometry = geometry_storage.commit_value(geometry)?;
         let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
@@ -1002,7 +1002,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
         if identity_present {
             continue;
         }
-        geometry_storage.commit()?;
+        let nurbs = geometry_storage.commit_value(nurbs)?;
         let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
@@ -1214,7 +1214,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
         if identity_present {
             continue;
         }
-        geometry_storage.commit()?;
+        let geometry = geometry_storage.commit_value(geometry)?;
         let id = id_storage.commit_value(id)?;
         annotate(
             ctx,

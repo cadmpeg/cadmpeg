@@ -781,7 +781,8 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             )?;
         let procedural_id_storage = procedural_id_parts.1;
         let procedural_id = procedural_id_parts.0;
-        geometry_storage.commit()?;
+        let (directrix, sweep, surface) =
+            geometry_storage.commit_value((directrix, sweep, surface))?;
         let curve_id = curve_id_storage.commit_value(curve_id)?;
         let procedural_id = procedural_id_storage.commit_value(procedural_id)?;
         let surface_id = surface_id_storage.commit_value(surface_id)?;
