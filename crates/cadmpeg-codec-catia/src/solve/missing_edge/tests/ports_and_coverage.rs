@@ -245,29 +245,28 @@ fn mesh_boundary_domain_limit_operation(max_collection_items: u64) -> Option<&'s
     use cadmpeg_core::CodecError;
 
     let bytes = standard_quad_topology_stream();
-    let context = crate::test_support::with_service_context(|ctx| {
-        crate::solve::missing_edge::StandardMeshBoundaryContext::parse(ctx, &bytes, &[[0, 0]; 4])
-            .expect("service resource budget")
-            .expect("quad boundary context")
-            .0
-    });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_collection_items;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let result = crate::solve::missing_edge::standard_mesh_boundary_domains_from_context(
-        &ctx, &context, None, false,
-    );
-    match result {
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems =>
-        {
-            Some(limit.operation)
+    crate::test_support::with_service_context(|preparation_ctx| {
+        let context = crate::solve::missing_edge::StandardMeshBoundaryContext::parse(
+            preparation_ctx, &bytes, &[[0, 0]; 4],
+        ).expect("service resource budget").expect("quad boundary context");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_collection_items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let result = crate::solve::missing_edge::standard_mesh_boundary_domains_from_context(
+            &ctx, &context.0, None, false,
+        );
+        match result {
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems =>
+            {
+                Some(limit.operation)
+            }
+            Ok(_) => None,
+            other => panic!("expected collection resource limit, got {other:?}"),
         }
-        Ok(_) => None,
-        other => panic!("expected collection resource limit, got {other:?}"),
-    }
+    })
 }
 
 fn mesh_boundary_domain_limit_operations() -> &'static std::collections::HashSet<&'static str> {
@@ -831,14 +830,14 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     )
     .expect("service resource budget")
     .expect("complete ordered boundary assignments");
-    let (boundary_context, _boundary_context_storage) =
+    let boundary_context =
         crate::solve::missing_edge::StandardMeshBoundaryContext::parse(&ctx, &bytes, &[[0, 0]; 4])
             .expect("service resource budget")
             .expect("parsed boundary context");
     assert_eq!(
         crate::solve::missing_edge::standard_mesh_boundary_assignments_from_context(
             &ctx,
-            &boundary_context,
+            &boundary_context.0,
             None,
         )
         .expect("service resource budget")
@@ -849,7 +848,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     assert_eq!(
         crate::solve::missing_edge::standard_mesh_boundary_assignments_from_context(
             &ctx,
-            &boundary_context,
+            &boundary_context.0,
             Some(&singleton_endpoints),
         )
         .expect("service resource budget"),
