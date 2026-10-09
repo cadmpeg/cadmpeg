@@ -29,10 +29,11 @@ fn copious_tuple_ceiling_preserves_the_original_caller_session_refusal() {
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut sequences = super::super::super::geometry::SourceSequences::default();
         let result = super::super::project(&mut ir, &directory, &entries, &records, &global, &ctx, &mut sequences);
-        let first = match result {
-            Err(CodecError::ResourceLimit(first)) => first,
+        let first = match result.as_ref() {
+            Err(CodecError::ResourceLimit(first)) => *first,
             _ => panic!("expected the declared tuple ceiling before allocating positions"),
         };
+        drop(result);
         assert_eq!(first.dimension, ResourceDimension::Codec("iges_copious_tuples"));
         assert_eq!(first.operation, "iges_copious_tuples");
         assert_eq!((first.limit, first.used, first.additional), (1_000_000, 1_000_000, u64::try_from(count).unwrap() - 1_000_000));

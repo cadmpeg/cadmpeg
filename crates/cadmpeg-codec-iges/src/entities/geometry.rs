@@ -3336,6 +3336,7 @@ pub(crate) fn project_geometry<'ctx>(
     )?
     .merge_into(
         &mut decoded,
+        &mut decoded_storage,
         &mut losses,
         &mut wire_edges,
         &mut free_vertices,

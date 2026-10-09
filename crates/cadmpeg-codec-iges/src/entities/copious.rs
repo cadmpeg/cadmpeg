@@ -2,12 +2,12 @@
 //! Copious point, linear-path, and presentation tuple projection.
 
 use super::geometry::{resolve_transform, source_object};
-use super::push_attributed_loss;
+use super::{push_attributed_loss_with_scoped_slots, push_entity_loss_with_scoped_slots};
 
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     nurbs::{KnotVector, NurbsCurve},
@@ -20,39 +20,25 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt;
 
 const MAX_COPIOUS_TUPLES: usize = 1_000_000;
 
-fn push_copious_loss(
-    ctx: &DecodeContext<'_>,
-    losses: &mut Vec<LossNote>,
-    entry: &DirectoryEntry,
-    reason: fmt::Arguments<'_>,
-) -> Result<(), CodecError> {
-    push_attributed_loss(
-        ctx,
-        losses,
-        entry,
-        crate::loss::IgesLossCode::EntityNotProjected,
-        format_args!(
-            "IGES entity type {} form {} was not projected: {reason}",
-            entry.entity_type, entry.form
-        ),
-    )
-}
-
-pub(super) struct CopiousProjectionOutcome {
+pub(super) struct CopiousProjectionOutcome<'ctx> {
     decoded: BTreeSet<u32>,
+    decoded_storage: ScopedReservation<'ctx>,
     losses: Vec<LossNote>,
+    loss_slots_storage: ScopedReservation<'ctx>,
     wire_edges: Vec<EdgeId>,
+    wire_slots_storage: ScopedReservation<'ctx>,
     free_vertices: Vec<VertexId>,
+    free_vertex_slots_storage: ScopedReservation<'ctx>,
 }
 
-impl CopiousProjectionOutcome {
+impl CopiousProjectionOutcome<'_> {
     pub(super) fn merge_into(
         self,
         decoded: &mut BTreeSet<u32>,
+        decoded_storage: &mut ScopedReservation<'_>,
         losses: &mut Vec<LossNote>,
         wire_edges: &mut Vec<EdgeId>,
         free_vertices: &mut Vec<VertexId>,
@@ -66,22 +52,33 @@ impl CopiousProjectionOutcome {
             let Some(sequence) = ctx.next_charged(&mut source_values, "iges copious merged sequences")? else {
                 break;
             };
-            ctx.insert_btree_set(decoded, sequence, "iges merged decoded sequences")?;
+            ctx.insert_scoped_btree_set(
+                decoded_storage,
+                decoded,
+                sequence,
+                "iges merged decoded sequences",
+                "iges merged decoded sequences",
+            )?;
         }
+        drop(source_values);
+        drop(self.decoded_storage);
         ctx.reserve_vec(losses, self.losses.len(), "iges merged loss slots")?;
         losses.extend(ctx.admit_iter(self.losses, "iges copious merged losses")?);
+        drop(self.loss_slots_storage);
         ctx.reserve_vec(
             wire_edges,
             self.wire_edges.len(),
             "iges merged wire edge slots",
         )?;
         wire_edges.extend(ctx.admit_iter(self.wire_edges, "iges copious merged edges")?);
+        drop(self.wire_slots_storage);
         ctx.reserve_vec(
             free_vertices,
             self.free_vertices.len(),
             "iges merged free vertex slots",
         )?;
         free_vertices.extend(ctx.admit_iter(self.free_vertices, "iges copious merged vertices")?);
+        drop(self.free_vertex_slots_storage);
         Ok(())
     }
 }
@@ -222,21 +219,25 @@ fn has_form_63_self_intersection(
     super::geometry::planar_polyline_has_self_intersection(&planar_points, ctx)
 }
 
-pub(super) fn project(
+pub(super) fn project<'ctx>(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
-    ctx: &DecodeContext<'_>,
+    ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
-) -> Result<CopiousProjectionOutcome, CodecError> {
+) -> Result<CopiousProjectionOutcome<'ctx>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(CodecError::ResourceLimit(refusal));
     }
+    let mut decoded_storage = ctx.reserve_scoped(0, "iges copious decoded sequences")?;
     let mut decoded = BTreeSet::new();
+    let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
+    let mut wire_slots_storage = ctx.reserve_scoped(0, "iges copious wire edges")?;
     let mut wire_edges = Vec::new();
+    let mut free_vertex_slots_storage = ctx.reserve_scoped(0, "iges copious free vertices")?;
     let mut free_vertices = Vec::new();
 
     let mut directory_entries = directory.iter();
@@ -250,8 +251,9 @@ pub(super) fn project(
             continue;
         }
         if !presentation_use_flag_valid(entry.form, entry.status.use_flag(global.global_table())) {
-            push_copious_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("Type 106 presentation forms require Entity Use Flag 01"),
@@ -261,8 +263,9 @@ pub(super) fn project(
         let factor = global.length_factor_mm();
         let Some(record) = ctx.get_btree_map(records, &entry.sequence,
             "iges copious parameter lookup")?.copied() else {
-            push_copious_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -270,8 +273,9 @@ pub(super) fn project(
             continue;
         };
         let Some(interpretation) = record.integer(1) else {
-            push_copious_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("interpretation is invalid"),
@@ -279,8 +283,9 @@ pub(super) fn project(
             continue;
         };
         let Some(raw_tuple_count) = record.integer(2) else {
-            push_copious_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("tuple count is invalid"),
@@ -298,8 +303,9 @@ pub(super) fn project(
             ));
         }
         let Some(tuple_count) = usize::try_from(raw_tuple_count).ok() else {
-            push_copious_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("tuple count is invalid"),
@@ -307,8 +313,9 @@ pub(super) fn project(
             continue;
         };
         if Some(interpretation) != expected_interpretation(entry.form) {
-            push_copious_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("interpretation flag disagrees with the entity form"),
@@ -316,8 +323,9 @@ pub(super) fn project(
             continue;
         }
         if tuple_count == 0 {
-            push_copious_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("tuple count is outside 1..={MAX_COPIOUS_TUPLES}"),
@@ -331,15 +339,16 @@ pub(super) fn project(
                 2
             };
             if tuple_count < minimum_tuple_count {
-                push_copious_loss(ctx, &mut losses, entry, format_args!(
+                push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!(
                     "linear paths require at least {minimum_tuple_count} tuple(s) under the effective specification family"
                 ))?;
                 continue;
             }
         }
         if entry.form == 63 && tuple_count < 2 {
-            push_copious_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("simple closed paths require at least two tuples"),
@@ -347,8 +356,9 @@ pub(super) fn project(
             continue;
         }
         if matches!(entry.form, 20 | 21 | 31..=38) && tuple_count % 2 != 0 {
-            push_copious_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("paired presentation form has an odd tuple count"),
@@ -356,8 +366,9 @@ pub(super) fn project(
             continue;
         }
         if entry.form == 40 && (tuple_count < 3 || tuple_count % 2 == 0) {
-            push_copious_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("witness lines require an odd tuple count of at least three"),
@@ -376,15 +387,16 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_copious_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
         let (tuple_start, tuple_width, common_z) = match interpretation {
             1 => {
                 let Some(z) = record.number(3).and_then(FiniteReal::new) else {
-                    push_copious_loss(
+                    push_entity_loss_with_scoped_slots(
                         ctx,
+                        &mut loss_slots_storage,
                         &mut losses,
                         entry,
                         format_args!("common z coordinate is invalid"),
@@ -396,8 +408,9 @@ pub(super) fn project(
             2 => (3, 3, None),
             3 => (3, 6, None),
             _ => {
-                push_copious_loss(
+                push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("copious-data interpretation is invalid"),
@@ -406,8 +419,9 @@ pub(super) fn project(
             }
         };
         let Some(value_count) = tuple_count.checked_mul(tuple_width) else {
-            push_copious_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("tuple value count overflows"),
@@ -415,8 +429,9 @@ pub(super) fn project(
             continue;
         };
         let Some(tuple_end) = tuple_start.checked_add(value_count) else {
-            push_copious_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("tuple end offset overflows"),
@@ -473,8 +488,9 @@ pub(super) fn project(
             })?;
         }
         if !tuples_valid {
-            push_copious_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("tuple array is truncated or non-finite"),
@@ -482,8 +498,9 @@ pub(super) fn project(
             continue;
         }
         if !positions_valid {
-            push_copious_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("placement produces non-finite copious points"),
@@ -491,8 +508,9 @@ pub(super) fn project(
             continue;
         }
         if presentation_form(entry.form) {
-            push_attributed_loss(
+            push_attributed_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 crate::loss::IgesLossCode::DisplayDataNotProjected,
@@ -539,12 +557,14 @@ pub(super) fn project(
                     point,
                     tolerance: None,
                 });
-                ctx.reserve_vec(&mut free_vertices, 1, "iges copious free vertices")?;
+                ctx.reserve_scoped_vec(&mut free_vertex_slots_storage, &mut free_vertices, 1, "iges copious free vertices")?;
                 free_vertices.push(vertex);
             }
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
+                "iges copious decoded sequences",
                 "iges copious decoded sequences",
             )?;
             continue;
@@ -559,8 +579,9 @@ pub(super) fn project(
                     })
                 })?;
                 if !points_coincident(points[0], points[points.len() - 1], resolution) {
-                    push_copious_loss(
+                    push_entity_loss_with_scoped_slots(
                         ctx,
+                        &mut loss_slots_storage,
                         &mut losses,
                         entry,
                         format_args!(
@@ -575,13 +596,14 @@ pub(super) fn project(
                     } else {
                         "simple closed path has coincident non-endpoint points"
                     };
-                    push_copious_loss(ctx, &mut losses, entry, format_args!("{reason}"))?;
+                    push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{reason}"))?;
                     continue;
                 }
             }
             if has_form_63_self_intersection(&definition_points, ctx)? {
-                push_copious_loss(
+                push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("simple closed path intersects itself away from shared endpoints"),
@@ -593,8 +615,9 @@ pub(super) fn project(
         drop(tuple_storage);
         let topology_tolerance = if entry.form == 63 && resolution > 0.0 {
             let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(resolution) else {
-                push_copious_loss(
+                push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("topology tolerance must be finite"),
@@ -692,20 +715,26 @@ pub(super) fn project(
             end: end_vertex,
             tolerance: topology_tolerance,
         });
-        ctx.reserve_vec(&mut wire_edges, 1, "iges copious wire edges")?;
+        ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges copious wire edges")?;
         wire_edges.push(edge);
-        ctx.insert_btree_set(
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
             &mut decoded,
             entry.sequence,
+            "iges copious decoded sequences",
             "iges copious decoded sequences",
         )?;
     }
 
     Ok(CopiousProjectionOutcome {
         decoded,
+        decoded_storage,
         losses,
+        loss_slots_storage,
         wire_edges,
+        wire_slots_storage,
         free_vertices,
+        free_vertex_slots_storage,
     })
 }
 

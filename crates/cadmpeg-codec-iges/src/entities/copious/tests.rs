@@ -35,14 +35,24 @@ fn copious_merge_refuses_free_vertex_growth() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let vertex = crate::ids::vertex(&crate::ids::Stem::directory(1_u32));
+    let mut decoded_storage = ctx.reserve_scoped(0, "test merged decoded storage").unwrap();
+    let free_vertex_slots_storage = ctx.reserve_scoped(
+        u64::try_from(std::mem::size_of::<cadmpeg_ir::ids::VertexId>()).unwrap(),
+        "test copious free-vertex input backing",
+    ).unwrap();
     let outcome = CopiousProjectionOutcome {
         decoded: BTreeSet::default(),
+        decoded_storage: ctx.reserve_scoped(0, "test copious decoded input backing").unwrap(),
         losses: Vec::new(),
+        loss_slots_storage: ctx.reserve_scoped(0, "test copious loss input backing").unwrap(),
         wire_edges: Vec::new(),
+        wire_slots_storage: ctx.reserve_scoped(0, "test copious wire input backing").unwrap(),
         free_vertices: vec![vertex],
+        free_vertex_slots_storage,
     };
     let result = outcome.merge_into(
         &mut BTreeSet::default(),
+        &mut decoded_storage,
         &mut Vec::new(),
         &mut Vec::new(),
         &mut Vec::new(),
@@ -791,3 +801,5 @@ mod directory_visits;
 mod local_limits;
 
 mod source_visits;
+
+mod outcome_storage;
