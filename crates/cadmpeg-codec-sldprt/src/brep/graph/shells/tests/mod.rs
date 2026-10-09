@@ -183,3 +183,5 @@ fn empty_shell_routes_preserve_original_refusal_before_any_allocation() {
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
 }
+
+mod admission;

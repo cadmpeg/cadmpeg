@@ -1954,3 +1954,6 @@ fn emit_curve(
     });
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

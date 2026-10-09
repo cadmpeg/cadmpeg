@@ -997,3 +997,6 @@ pub(super) fn derive_nurbs_edge_pcurve(
         }
     })
 }
+
+#[cfg(test)]
+mod tests;

@@ -134,3 +134,6 @@ pub(super) fn solve_face_orientation(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
