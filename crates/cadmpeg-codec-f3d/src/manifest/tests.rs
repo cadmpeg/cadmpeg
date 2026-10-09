@@ -424,6 +424,43 @@ fn revision_ten_design_asset_carries_linked_document_triples() {
 }
 
 #[test]
+fn revision_ten_design_asset_accepts_the_unlinked_root_tail() {
+    for revision in [3, 11] {
+        let mut bytes = encode_asset_header(
+            "Root Design",
+            DESIGN_GUID,
+            SECONDARY_GUID,
+            DESIGN_ASSET_TYPE,
+        )
+        .unwrap();
+        push_u32(&mut bytes, 10);
+        push_u32(&mut bytes, 0);
+        push_ascii(&mut bytes, "Neutron3DAssetType").unwrap();
+        bytes.push(0);
+        for word in [0, revision, 1, 0] {
+            push_u32(&mut bytes, word);
+        }
+        push_ascii(&mut bytes, "Design").unwrap();
+        push_ascii(&mut bytes, "Design").unwrap();
+
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let header = parse_asset_header(&ctx, &bytes).unwrap();
+        assert!(header.base_name.eq_str("Root Design"));
+        assert_eq!(
+            header.kind,
+            AssetKind::Design {
+                fusion_subtype: None
+            }
+        );
+
+        // A root entry still requires both role tokens and exact consumption.
+        assert!(parse_asset_header(&ctx, &bytes[..bytes.len() - 1]).is_err());
+        bytes.push(0);
+        assert!(parse_asset_header(&ctx, &bytes).is_err());
+    }
+}
+
+#[test]
 fn revision_fourteen_uses_the_ascii_subtype_header() {
     let mut bytes =
         encode_asset_header("Design 14", DESIGN_GUID, SECONDARY_GUID, DESIGN_ASSET_TYPE).unwrap();

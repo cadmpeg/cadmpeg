@@ -11,7 +11,10 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+mod recipe_index;
 pub(crate) mod selection;
+
+use recipe_index::RecipeTopologyCache;
 
 use crate::bytes::int_at;
 use crate::history_records::{
@@ -1199,6 +1202,7 @@ pub(crate) fn bind_feature_outputs(
     active_bodies: &[cadmpeg_ir::topology::Body],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut state_outputs = HashMap::<i64, Option<Vec<i64>>>::new();
+    let mut body_closures = HistoricalBodyClosureCache::default();
     for history in histories {
         let mut by_node = HashMap::new();
         for state in &history.states {
@@ -1218,7 +1222,8 @@ pub(crate) fn bind_feature_outputs(
                 },
                 None => None,
             };
-            let Some(outputs) = affected_body_refs(ctx, state, previous)? else {
+            let Some(outputs) = affected_body_refs(ctx, state, previous, &mut body_closures)?
+            else {
                 continue;
             };
             if !state_outputs.contains_key(&state.state_id) {
@@ -3975,6 +3980,7 @@ pub(crate) fn bind_edge_treatment_vertex_history(
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut recipe_topologies = RecipeTopologyCache::default();
     for operand in operands {
         operand.recipe.resolution = None;
         let stream = crate::ids::native_stream(&operand.id);
@@ -4007,7 +4013,12 @@ pub(crate) fn bind_edge_treatment_vertex_history(
             continue;
         };
         for reference in &mut operand.recipe.recipe_references {
-            bind_historical_recipe_reference_candidates(decode, reference, topology)?;
+            bind_historical_recipe_reference_candidates(
+                decode,
+                reference,
+                topology,
+                &mut recipe_topologies,
+            )?;
         }
         let Some(vertex) = recipe_reference_common_vertex(decode, &operand.recipe, topology)?
         else {
@@ -4879,28 +4890,22 @@ fn exact_face_selection_group<'a>(
 
 /// Bind one recipe reference to every live face or edge fragment carrying its
 /// token and Design reference in the recipe-state topology.
-fn bind_historical_recipe_reference_candidates(
+fn bind_historical_recipe_reference_candidates<'a>(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
     reference: &mut crate::records::dimensions::DesignRecipeReference,
-    topology: &AsmHistoricalTopology,
+    topology: &'a AsmHistoricalTopology,
+    recipe_topologies: &mut RecipeTopologyCache<'a>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     reference.candidate_faces.clear();
     reference.candidate_edges.clear();
     reference.alternate_selector_faces.clear();
     reference.alternate_selector_edges.clear();
-    let mut live_faces = HashSet::new();
-    for face in &topology.faces {
-        decode.insert_hash_set(&mut live_faces, *face, "index F3D live recipe faces")?;
-    }
-    let mut live_edges = HashSet::new();
-    for edge in &topology.edges {
-        decode.insert_hash_set(&mut live_edges, *edge, "index F3D live recipe edges")?;
-    }
-    for tag in topology.persistent_subentity_tags.iter().filter(|tag| {
-        tag.token == reference.token && tag.design_references.contains(&reference.design_reference)
-    }) {
+    let index = recipe_topologies.get(decode, topology)?;
+    for tag_index in index.matching_tags(decode, &reference.token, reference.design_reference)? {
+        decode.charge_work(1, "walk F3D matching recipe tags")?;
+        let tag = &index.topology.persistent_subentity_tags[*tag_index];
         match tag.entity_kind {
-            AsmHistoricalEntityKind::Face if live_faces.contains(&tag.entity_ref) => {
+            AsmHistoricalEntityKind::Face => {
                 decode.reserve_vec(
                     &mut reference.candidate_faces,
                     1,
@@ -4910,7 +4915,7 @@ fn bind_historical_recipe_reference_candidates(
                     .candidate_faces
                     .push(historical_face_id(decode, tag.entity_ref)?);
             }
-            AsmHistoricalEntityKind::Edge if live_edges.contains(&tag.entity_ref) => {
+            AsmHistoricalEntityKind::Edge => {
                 decode.reserve_vec(
                     &mut reference.candidate_edges,
                     1,
@@ -4940,24 +4945,19 @@ fn bind_historical_recipe_reference_candidates(
     Ok(())
 }
 
-fn historical_recipe_faces(
+fn historical_recipe_faces<'a>(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
     design_reference: i64,
-    topology: &AsmHistoricalTopology,
+    topology: &'a AsmHistoricalTopology,
+    recipe_topologies: &mut RecipeTopologyCache<'a>,
 ) -> Result<Vec<cadmpeg_ir::ids::FaceId>, cadmpeg_core::CodecError> {
-    let mut live_faces = HashSet::new();
-    for face in &topology.faces {
-        decode.insert_hash_set(&mut live_faces, *face, "index F3D historical recipe faces")?;
-    }
+    let index = recipe_topologies.get(decode, topology)?;
     let mut faces = Vec::new();
-    for tag in &topology.persistent_subentity_tags {
-        if tag.entity_kind == AsmHistoricalEntityKind::Face
-            && live_faces.contains(&tag.entity_ref)
-            && tag.design_references.contains(&design_reference)
-        {
-            decode.reserve_vec(&mut faces, 1, "collect F3D historical recipe faces")?;
-            faces.push(historical_face_id(decode, tag.entity_ref)?);
-        }
+    for tag_index in index.face_tags(decode, design_reference)? {
+        decode.charge_work(1, "walk F3D matching recipe faces")?;
+        let tag = &index.topology.persistent_subentity_tags[*tag_index];
+        decode.reserve_vec(&mut faces, 1, "collect F3D historical recipe faces")?;
+        faces.push(historical_face_id(decode, tag.entity_ref)?);
     }
     decode.stable_sort_by(
         &mut faces,
@@ -5030,6 +5030,7 @@ pub(crate) fn bind_face_operand_history_candidates(
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut recipe_topologies = RecipeTopologyCache::default();
     if projection_was_finalized(histories) {
         return Ok(());
     }
@@ -5091,11 +5092,20 @@ pub(crate) fn bind_face_operand_history_candidates(
             continue;
         };
         for reference in &mut operand.recipe_references {
-            bind_historical_recipe_reference_candidates(decode, reference, topology)?;
+            bind_historical_recipe_reference_candidates(
+                decode,
+                reference,
+                topology,
+                &mut recipe_topologies,
+            )?;
         }
         if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
-            operand.candidate_faces =
-                historical_recipe_faces(decode, i64::from(*recipe_record_index), topology)?;
+            operand.candidate_faces = historical_recipe_faces(
+                decode,
+                i64::from(*recipe_record_index),
+                topology,
+                &mut recipe_topologies,
+            )?;
             operand.unreferenced_candidate_faces = decode.try_collect_vec(
                 (operand.candidate_faces.iter().filter(|face| {
                     !operand
@@ -6024,6 +6034,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
     if projection_was_finalized(histories) {
         return Ok(());
     }
+    let mut body_closures = HistoricalBodyClosureCache::default();
     for operand in operands.iter_mut() {
         for reference in operand.reference_bindings_mut() {
             reference.preceding_candidate_faces.clear();
@@ -6067,7 +6078,8 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                     .insert_btree_set(&mut face_slots, face, "index F3D body recipe face slots")
                     .map(|_| ())?;
             }
-            let Some(body_slots) = bodies_intersecting(decode, topology, &face_slots)? else {
+            let Some(body_slots) = body_closures.intersecting(decode, topology, &face_slots)?
+            else {
                 continue;
             };
             *reference.preceding_body_slots =
@@ -7360,6 +7372,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut recipe_topologies = RecipeTopologyCache::default();
     if projection_was_finalized(histories) {
         return Ok(());
     }
@@ -7456,11 +7469,20 @@ pub(crate) fn bind_edge_operand_history_candidates(
             continue;
         };
         for reference in &mut operand.recipe_references {
-            bind_historical_recipe_reference_candidates(decode, reference, topology)?;
+            bind_historical_recipe_reference_candidates(
+                decode,
+                reference,
+                topology,
+                &mut recipe_topologies,
+            )?;
         }
         if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
-            operand.candidate_faces =
-                historical_recipe_faces(decode, i64::from(*recipe_record_index), topology)?;
+            operand.candidate_faces = historical_recipe_faces(
+                decode,
+                i64::from(*recipe_record_index),
+                topology,
+                &mut recipe_topologies,
+            )?;
         }
         let states = history_state_index(decode, history)?;
         let Some(changed_faces) =
@@ -8367,10 +8389,11 @@ pub(crate) fn same_axis_line(
     distance.is_finite() && distance <= EPS_HISTORY_SAME_AXIS_LINE_E8
 }
 
-fn affected_body_refs(
+fn affected_body_refs<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    current: &AsmDeltaState,
-    previous: Option<&AsmDeltaState>,
+    current: &'a AsmDeltaState,
+    previous: Option<&'a AsmDeltaState>,
+    body_closures: &mut HistoricalBodyClosureCache<'a>,
 ) -> Result<Option<Vec<i64>>, cadmpeg_core::CodecError> {
     let Some(transition) = current.transition.as_ref() else {
         return Ok(None);
@@ -8382,7 +8405,8 @@ fn affected_body_refs(
         return Ok(None);
     };
     let current_changes = changed_family_refs(ctx, &transition.topology, false)?;
-    let Some(mut affected) = bodies_intersecting(ctx, current_topology, &current_changes)? else {
+    let Some(mut affected) = body_closures.intersecting(ctx, current_topology, &current_changes)?
+    else {
         return Ok(None);
     };
     if let Some(previous) = previous {
@@ -8390,7 +8414,9 @@ fn affected_body_refs(
             return Ok(None);
         };
         let deleted = changed_family_refs(ctx, &transition.topology, true)?;
-        let Some(previous_affected) = bodies_intersecting(ctx, previous_topology, &deleted)? else {
+        let Some(previous_affected) =
+            body_closures.intersecting(ctx, previous_topology, &deleted)?
+        else {
             return Ok(None);
         };
         for body in previous_affected {
@@ -8436,11 +8462,62 @@ fn changed_family_refs(
     Ok(changed)
 }
 
+type HistoricalBodyClosures = Vec<(i64, HashSet<i64>)>;
+
+/// Reuse body incidence for queries over immutable historical snapshots.
+#[derive(Default)]
+struct HistoricalBodyClosureCache<'a> {
+    entries: HashMap<*const AsmHistoricalTopology, Option<HistoricalBodyClosures>>,
+    snapshots: std::marker::PhantomData<&'a AsmHistoricalTopology>,
+}
+
+impl<'a> HistoricalBodyClosureCache<'a> {
+    fn intersecting(
+        &mut self,
+        decode: &cadmpeg_core::decode::DecodeContext<'_>,
+        topology: &'a AsmHistoricalTopology,
+        changed: &BTreeSet<i64>,
+    ) -> Result<Option<BTreeSet<i64>>, cadmpeg_core::CodecError> {
+        let key = std::ptr::from_ref(topology);
+        if !self.entries.contains_key(&key) {
+            let closures = historical_body_closures(decode, topology)?;
+            decode.reserve_map(&mut self.entries, 1, "cache F3D historical body closures")?;
+            self.entries.insert(key, closures);
+        }
+        let Some(closures) = self.entries.get(&key).and_then(Option::as_ref) else {
+            return Ok(None);
+        };
+        let mut affected = BTreeSet::new();
+        for (body, closure) in closures {
+            decode.charge_work(
+                u64_from_index(changed.len()),
+                "query F3D historical body closure",
+            )?;
+            if changed.iter().any(|entity| closure.contains(entity)) {
+                decode.insert_btree_set(
+                    &mut affected,
+                    *body,
+                    "collect F3D affected topology bodies",
+                )?;
+            }
+        }
+        Ok(Some(affected))
+    }
+}
+
+#[cfg(test)]
 fn bodies_intersecting(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
     topology: &AsmHistoricalTopology,
     changed: &BTreeSet<i64>,
 ) -> Result<Option<BTreeSet<i64>>, cadmpeg_core::CodecError> {
+    HistoricalBodyClosureCache::default().intersecting(decode, topology, changed)
+}
+
+fn historical_body_closures(
+    decode: &cadmpeg_core::decode::DecodeContext<'_>,
+    topology: &AsmHistoricalTopology,
+) -> Result<Option<HistoricalBodyClosures>, cadmpeg_core::CodecError> {
     macro_rules! history_some {
         ($value:expr) => {
             match $value {
@@ -8487,25 +8564,25 @@ fn bodies_intersecting(
     let edge_curves = optional_carrier(&topology.edge_curves)?;
     let coedge_pcurves = optional_carrier(&topology.coedge_pcurves)?;
     let vertex_points = carrier(&topology.vertex_points)?;
-    let mut affected = BTreeSet::new();
+    let mut closures = Vec::new();
     for &body in &topology.bodies {
-        let mut closure = BTreeSet::new();
+        let mut closure = HashSet::new();
         decode
-            .insert_btree_set(&mut closure, body, "collect F3D historical body closure")
+            .insert_hash_set(&mut closure, body, "collect F3D historical body closure")
             .map(|_| ())?;
         for &region in *history_some!(body_regions.get(&body)) {
             decode
-                .insert_btree_set(&mut closure, region, "collect F3D historical body closure")
+                .insert_hash_set(&mut closure, region, "collect F3D historical body closure")
                 .map(|_| ())?;
             for &shell in *history_some!(region_shells.get(&region)) {
                 decode
-                    .insert_btree_set(&mut closure, shell, "collect F3D historical body closure")
+                    .insert_hash_set(&mut closure, shell, "collect F3D historical body closure")
                     .map(|_| ())?;
-                let mut shell_edges = decode.collect_vec(
+                let mut shell_edges = decode.collect_hash_set(
                     history_some!(shell_wire_edges.get(&shell)).iter().copied(),
                     "copy F3D historical shell edges",
                 )?;
-                let mut shell_vertices = decode.collect_vec(
+                let mut shell_vertices = decode.collect_hash_set(
                     history_some!(shell_free_vertices.get(&shell))
                         .iter()
                         .copied(),
@@ -8513,10 +8590,10 @@ fn bodies_intersecting(
                 )?;
                 for &face in *history_some!(shell_faces.get(&shell)) {
                     decode
-                        .insert_btree_set(&mut closure, face, "collect F3D historical body closure")
+                        .insert_hash_set(&mut closure, face, "collect F3D historical body closure")
                         .map(|_| ())?;
                     decode
-                        .insert_btree_set(
+                        .insert_hash_set(
                             &mut closure,
                             *history_some!(face_surfaces.get(&face)),
                             "collect F3D historical body closure",
@@ -8524,7 +8601,7 @@ fn bodies_intersecting(
                         .map(|_| ())?;
                     for &loop_ in *history_some!(face_loops.get(&face)) {
                         decode
-                            .insert_btree_set(
+                            .insert_hash_set(
                                 &mut closure,
                                 loop_,
                                 "collect F3D historical body closure",
@@ -8532,7 +8609,7 @@ fn bodies_intersecting(
                             .map(|_| ())?;
                         for &coedge in *history_some!(loop_coedges.get(&loop_)) {
                             decode
-                                .insert_btree_set(
+                                .insert_hash_set(
                                     &mut closure,
                                     coedge,
                                     "collect F3D historical body closure",
@@ -8540,15 +8617,14 @@ fn bodies_intersecting(
                                 .map(|_| ())?;
                             let coedge_topology = history_some!(coedges.get(&coedge));
 
-                            decode.reserve_vec(
+                            decode.insert_hash_set(
                                 &mut shell_edges,
-                                1,
+                                coedge_topology.edge,
                                 "collect F3D historical shell edges",
                             )?;
-                            shell_edges.push(coedge_topology.edge);
                             if let Some(pcurve) = coedge_pcurves.get(&coedge).copied().flatten() {
                                 decode
-                                    .insert_btree_set(
+                                    .insert_hash_set(
                                         &mut closure,
                                         pcurve,
                                         "collect F3D historical body closure",
@@ -8560,20 +8636,19 @@ fn bodies_intersecting(
                 }
                 for edge in shell_edges {
                     decode
-                        .insert_btree_set(&mut closure, edge, "collect F3D historical body closure")
+                        .insert_hash_set(&mut closure, edge, "collect F3D historical body closure")
                         .map(|_| ())?;
                     let edge_topology = history_some!(edges.get(&edge));
                     for vertex in [edge_topology.start_vertex, edge_topology.end_vertex] {
-                        decode.reserve_vec(
+                        decode.insert_hash_set(
                             &mut shell_vertices,
-                            1,
+                            vertex,
                             "collect F3D historical shell vertices",
                         )?;
-                        shell_vertices.push(vertex);
                     }
                     if let Some(curve) = edge_curves.get(&edge).copied().flatten() {
                         decode
-                            .insert_btree_set(
+                            .insert_hash_set(
                                 &mut closure,
                                 curve,
                                 "collect F3D historical body closure",
@@ -8583,14 +8658,14 @@ fn bodies_intersecting(
                 }
                 for vertex in shell_vertices {
                     decode
-                        .insert_btree_set(
+                        .insert_hash_set(
                             &mut closure,
                             vertex,
                             "collect F3D historical body closure",
                         )
                         .map(|_| ())?;
                     decode
-                        .insert_btree_set(
+                        .insert_hash_set(
                             &mut closure,
                             *history_some!(vertex_points.get(&vertex)),
                             "collect F3D historical body closure",
@@ -8599,13 +8674,13 @@ fn bodies_intersecting(
                 }
             }
         }
-        if !closure.is_disjoint(changed) {
-            decode
-                .insert_btree_set(&mut affected, body, "collect F3D affected topology bodies")
-                .map(|_| ())?;
-        }
+        decode.push_vec(
+            &mut closures,
+            (body, closure),
+            "cache F3D historical body closure",
+        )?;
     }
-    Ok(Some(affected))
+    Ok(Some(closures))
 }
 
 fn relation_map<'a>(

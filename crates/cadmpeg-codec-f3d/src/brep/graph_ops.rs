@@ -5,86 +5,48 @@ use super::Brep;
 use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 pub(super) mod ordered;
 
 use cadmpeg_ir::ids::comparison::{compare, equal};
-use ordered::position;
+use ordered::{admit_hash_key, contains_graph_id, insert_graph_id, select_links, select_rows};
 
-pub(in crate::brep) struct AdjacencyRow {
-    pub(in crate::brep) source: String,
-    pub(in crate::brep) targets: Vec<String>,
-}
-
-fn contains(
-    ctx: &DecodeContext<'_>,
-    values: &[String],
-    value: &str,
-    operation: &'static str,
-) -> Result<bool, CodecError> {
-    ctx.charge_work(0, operation)?;
-    Ok(position(ctx, values, value, String::as_str)?.is_ok())
-}
-
-fn insert_id(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<String>,
-    value: String,
-    operation: &'static str,
-) -> Result<bool, CodecError> {
-    ctx.charge_work(0, operation)?;
-    let Err(index) = position(ctx, values, &value, String::as_str)? else {
-        return Ok(false);
-    };
-    ctx.reserve_vec(values, 1, operation)?;
-    ctx.charge_work(
-        u64_from_index(values.len() - index),
-        "move F3D BREP graph IDs",
-    )?;
-    values.insert(index, value);
-    Ok(true)
-}
+type BrepAdjacency = HashMap<String, HashSet<String>>;
 
 pub(super) fn insert_brep_adjacency(
     ctx: &DecodeContext<'_>,
-    adjacency: &mut Vec<AdjacencyRow>,
+    adjacency: &mut BrepAdjacency,
     source: &str,
     target: &str,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(0, "index F3D BREP adjacency")?;
-    let source_index = match position(ctx, adjacency, source, |row| row.source.as_str())? {
-        Ok(index) => index,
-        Err(index) => {
-            let source = ctx.copy_retained_text(source, "copy F3D BREP adjacency source")?;
-            ctx.reserve_vec(adjacency, 1, "index F3D BREP adjacency")?;
-            ctx.charge_work(
-                u64_from_index(adjacency.len() - index),
-                "move F3D BREP adjacency rows",
-            )?;
-            adjacency.insert(
-                index,
-                AdjacencyRow {
-                    source,
-                    targets: Vec::new(),
-                },
-            );
-            index
+    admit_hash_key(ctx, source, "index F3D BREP adjacency")?;
+    if let Some(targets) = adjacency.get_mut(source) {
+        if !contains_graph_id(ctx, targets, target, "find F3D BREP adjacent ID")? {
+            let target = ctx.copy_retained_text(target, "copy F3D BREP adjacency target")?;
+            insert_graph_id(ctx, targets, target, "collect F3D BREP adjacent IDs")?;
         }
-    };
-    let targets = &mut adjacency[source_index].targets;
-    if !contains(ctx, targets, target, "find F3D BREP adjacent ID")? {
-        let target = ctx.copy_retained_text(target, "copy F3D BREP adjacency target")?;
-        insert_id(ctx, targets, target, "collect F3D BREP adjacent IDs")?;
+        return Ok(());
     }
+    let source = ctx.copy_retained_text(source, "copy F3D BREP adjacency source")?;
+    if adjacency.len() == adjacency.capacity() {
+        for key in adjacency.keys() {
+            admit_hash_key(ctx, key, "rehash F3D BREP adjacency")?;
+        }
+    }
+    ctx.reserve_map(adjacency, 1, "index F3D BREP adjacency")?;
+    let mut targets = HashSet::new();
+    let target = ctx.copy_retained_text(target, "copy F3D BREP adjacency target")?;
+    insert_graph_id(ctx, &mut targets, target, "collect F3D BREP adjacent IDs")?;
+    admit_hash_key(ctx, &source, "index F3D BREP adjacency")?;
+    adjacency.insert(source, targets);
     Ok(())
 }
 
 fn add_dependencies<T: RewriteIdentities>(
     ctx: &DecodeContext<'_>,
-    adjacency: &mut Vec<AdjacencyRow>,
+    adjacency: &mut BrepAdjacency,
     owner: &str,
     row: &T,
 ) -> Result<(), CodecError> {
@@ -96,58 +58,6 @@ fn add_dependencies<T: RewriteIdentities>(
     })
 }
 
-fn select_rows<T>(
-    ctx: &DecodeContext<'_>,
-    rows: Vec<T>,
-    reachable: &[String],
-    owner: impl Fn(&T) -> &str,
-) -> Result<Vec<T>, CodecError> {
-    let mut retained = Vec::new();
-    for row in rows {
-        ctx.charge_work(1, "select F3D retained BREP rows")?;
-        if contains(ctx, reachable, owner(&row), "select F3D retained BREP rows")? {
-            ctx.push_vec(&mut retained, row, "collect F3D retained BREP rows")?;
-        }
-    }
-    Ok(retained)
-}
-
-fn target_selected(
-    ctx: &DecodeContext<'_>,
-    target: &AttributeTarget,
-    reachable: &[String],
-) -> Result<bool, CodecError> {
-    let id = match target {
-        AttributeTarget::Document => return Ok(true),
-        AttributeTarget::Body(id) => id.as_str(),
-        AttributeTarget::Face(id) => id.as_str(),
-        AttributeTarget::Shell(id) => id.as_str(),
-        AttributeTarget::Loop(id) => id.as_str(),
-        AttributeTarget::Coedge(id) => id.as_str(),
-        AttributeTarget::Edge(id) => id.as_str(),
-        AttributeTarget::Vertex(id) => id.as_str(),
-    };
-    contains(ctx, reachable, id, "select F3D retained attribute target")
-}
-
-fn select_links<T>(
-    ctx: &DecodeContext<'_>,
-    rows: Vec<T>,
-    reachable: &[String],
-    target: impl Fn(&T) -> &AttributeTarget,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let mut retained = Vec::new();
-    for row in rows {
-        ctx.charge_work(1, operation)?;
-        if target_selected(ctx, target(&row), reachable)? {
-            ctx.charge_work(u64_from_index(std::mem::size_of::<T>()), operation)?;
-            ctx.push_vec(&mut retained, row, operation)?;
-        }
-    }
-    Ok(retained)
-}
-
 impl Brep {
     /// Retain the dependencies rooted at the selected native body selectors.
     pub(crate) fn retain_body_keys(
@@ -156,22 +66,22 @@ impl Brep {
         selected_keys: &HashSet<u64>,
     ) -> Result<(), CodecError> {
         let reachable = ctx.with_scoped_storage("index F3D retained BREP graph", || {
-            let mut native_bodies = Vec::new();
+            let mut native_bodies = HashSet::new();
             for native in &self.asm.body_native_keys {
                 ctx.charge_work(1, "walk F3D native BREP bodies")?;
                 let body =
                     ctx.copy_retained_text(native.body.as_str(), "copy F3D native BREP body")?;
-                insert_id(
+                insert_graph_id(
                     ctx,
                     &mut native_bodies,
                     body,
                     "index F3D native BREP bodies",
                 )?;
             }
-            let mut reachable = Vec::new();
+            let mut reachable = HashSet::new();
             for body in self.body_selectors_for(ctx, selected_keys)?.into_keys() {
                 ctx.charge_work(1, "walk F3D selected BREP roots")?;
-                insert_id(
+                insert_graph_id(
                     ctx,
                     &mut reachable,
                     body.into_string(),
@@ -180,7 +90,7 @@ impl Brep {
             }
             for body in &self.asm.bodies {
                 ctx.charge_work(1, "walk F3D neutral BREP roots")?;
-                if !contains(
+                if !contains_graph_id(
                     ctx,
                     &native_bodies,
                     body.id.as_str(),
@@ -188,10 +98,10 @@ impl Brep {
                 )? {
                     let id =
                         ctx.copy_retained_text(body.id.as_str(), "copy F3D neutral BREP root")?;
-                    insert_id(ctx, &mut reachable, id, "collect F3D neutral BREP roots")?;
+                    insert_graph_id(ctx, &mut reachable, id, "collect F3D neutral BREP roots")?;
                 }
             }
-            let mut adjacency = Vec::new();
+            let mut adjacency = HashMap::new();
             macro_rules! dependencies {
                 ($($field:ident),*) => {$(
                     for row in &self.asm.$field {
@@ -237,15 +147,14 @@ impl Brep {
             }
             while let Some(id) = pending.pop() {
                 ctx.charge_work(1, "walk F3D BREP pending IDs")?;
-                let adjacent_ids = position(ctx, &adjacency, &id, |row| row.source.as_str())?
-                    .ok()
-                    .map(|index| &adjacency[index].targets);
-                ctx.charge_work(0, "find F3D BREP adjacent IDs")?;
+                admit_hash_key(ctx, &id, "find F3D BREP adjacent IDs")?;
+                let adjacent_ids = adjacency.get(&id);
                 for adjacent in adjacent_ids.into_iter().flatten() {
                     ctx.charge_work(1, "walk F3D BREP adjacent IDs")?;
                     let adjacent = adjacent.as_ref();
-                    if !contains(ctx, &reachable, adjacent, "find F3D reachable BREP ID")? {
-                        insert_id(
+                    if !contains_graph_id(ctx, &reachable, adjacent, "find F3D reachable BREP ID")?
+                    {
+                        insert_graph_id(
                             ctx,
                             &mut reachable,
                             ctx.copy_retained_text(adjacent, "copy F3D reachable BREP ID")?,
@@ -303,7 +212,7 @@ impl Brep {
         let mut annotations = Vec::new();
         for row in std::mem::take(&mut self.asm.annotation_records) {
             ctx.charge_work(1, "walk F3D retained annotations")?;
-            if contains(
+            if contains_graph_id(
                 ctx,
                 &reachable.0,
                 &row.id,
@@ -455,6 +364,41 @@ mod tests {
             },
             ..Brep::default()
         }
+    }
+
+    #[test]
+    fn reverse_order_graph_insertion_uses_bounded_index_work() {
+        use super::insert_brep_adjacency;
+        use super::ordered::insert_graph_id;
+        use std::collections::HashMap;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Two thousand sorted-vector insertions shift 1,999,000 prior entries.
+        // Indexed insertion admits key reads and geometric table growth instead.
+        policy.limits.max_work_units = 300_000;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut adjacency = HashMap::new();
+        let mut reachable = HashSet::new();
+        for index in (0..2_000).rev() {
+            let source = format!("s{index:04}");
+            let target = format!("t{index:04}");
+            insert_brep_adjacency(&ctx, &mut adjacency, &source, &target).unwrap();
+            let source = ctx
+                .copy_retained_text(&source, "copy synthetic graph ID")
+                .unwrap();
+            assert!(
+                insert_graph_id(&ctx, &mut reachable, source, "index synthetic graph IDs").unwrap()
+            );
+        }
+        assert_eq!(adjacency.len(), 2_000);
+        assert_eq!(reachable.len(), 2_000);
+        for index in 0..2_000 {
+            let source = format!("s{index:04}");
+            let target = format!("t{index:04}");
+            assert_eq!(adjacency[&source], HashSet::from([target]));
+            assert!(reachable.contains(&source));
+        }
+        ctx.finish_session().unwrap();
     }
 
     #[test]

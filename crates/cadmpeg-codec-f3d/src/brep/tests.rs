@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::graph_ops::insert_brep_adjacency;
-use super::graph_ops::AdjacencyRow;
 use super::{persistent_design_links, persistent_subentity_tags, Brep};
 use crate::records::recipes::CreationTimestamp;
 use crate::records::sketch_links::{PersistentDesignLink, PersistentSubentityTag, SketchCurveLink};
@@ -370,7 +369,7 @@ fn brep_qualification_projection_refuses_materialized_limit() {
 #[test]
 fn brep_adjacency_index_refuses_collection_limit() {
     let error = with_limits(0, u64::MAX, |ctx| {
-        insert_brep_adjacency(ctx, &mut Vec::new(), "source", "target").unwrap_err()
+        insert_brep_adjacency(ctx, &mut HashMap::new(), "source", "target").unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -381,10 +380,7 @@ fn brep_adjacency_index_refuses_collection_limit() {
 #[test]
 fn brep_adjacent_ids_refuse_collection_limit() {
     let error = with_limits(0, u64::MAX, |ctx| {
-        let mut adjacency = vec![AdjacencyRow {
-            source: "source".to_owned(),
-            targets: Vec::new(),
-        }];
+        let mut adjacency = HashMap::from([("source".to_owned(), HashSet::new())]);
         insert_brep_adjacency(ctx, &mut adjacency, "source", "target").unwrap_err()
     });
     assert!(

@@ -2579,27 +2579,21 @@ pub(super) fn parse_construction_operand_group(
     {
         return NotAGroup;
     }
-    let mut members = Vec::new();
-
-    if let Err(error) = ctx.reserve_vec(
-        &mut members,
-        index_from_u32(member_count),
-        "f3d construction operand members",
-    ) {
-        return Refused(error);
-    }
+    let members_at = cursor;
     for _ in 0..member_count {
-        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+        if let Err(error) = ctx.charge_work(1, "probe F3D construction operand reference") {
+            return Refused(error);
+        }
+        if take_record_reference(bytes, &mut cursor).is_none() {
             return NotAGroup;
-        };
-        members.push(crate::records::identity::Located {
-            value: record_index,
-            offset,
-        });
+        }
     }
-    let mut auxiliary_records = Vec::new();
+    let mut auxiliary_slots = [None; 2];
     let mut auxiliary_reference_slots = [false; 2];
-    for present in &mut auxiliary_reference_slots {
+    for (present, slot) in auxiliary_reference_slots
+        .iter_mut()
+        .zip(&mut auxiliary_slots)
+    {
         if bytes.get(cursor) == Some(&0) {
             cursor += 1;
             continue;
@@ -2609,14 +2603,7 @@ pub(super) fn parse_construction_operand_group(
             return NotAGroup;
         };
 
-        if let Err(error) = ctx.reserve_vec(
-            &mut auxiliary_records,
-            1,
-            "f3d construction operand auxiliary record",
-        ) {
-            return Refused(error);
-        }
-        auxiliary_records.push(crate::records::identity::Located {
+        *slot = Some(crate::records::identity::Located {
             value: record_index,
             offset,
         });
@@ -2632,30 +2619,21 @@ pub(super) fn parse_construction_operand_group(
     {
         return NotAGroup;
     }
-    let mut trailing_records = Vec::new();
-
-    if let Err(error) = ctx.reserve_vec(
-        &mut trailing_records,
-        index_from_u32(trailing_count),
-        "f3d construction operand trailing records",
-    ) {
-        return Refused(error);
-    }
+    let trailing_at = cursor;
     for _ in 0..trailing_count {
-        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+        if let Err(error) = ctx.charge_work(1, "probe F3D construction operand reference") {
+            return Refused(error);
+        }
+        if take_record_reference(bytes, &mut cursor).is_none() {
             return NotAGroup;
-        };
-        trailing_records.push(crate::records::identity::Located {
-            value: record_index,
-            offset,
-        });
+        }
     }
     let legacy_move_class_328 = scope.kind()
         == crate::records::feature::scope::DesignFeatureKind::Move
         && header.class_tag.as_str() == "328"
         && auxiliary_reference_slots == [false, true]
         && header.record_index.checked_add(13).is_some_and(|expected| {
-            auxiliary_records.len() == 1 && auxiliary_records[0].value == expected
+            auxiliary_slots[1].is_some_and(|record| record.value == expected)
         })
         && trailing_count == 0;
     if legacy_move_class_328 {
@@ -2786,6 +2764,54 @@ pub(super) fn parse_construction_operand_group(
     let Ok(opaque_scalar) = cadmpeg_ir::scalar::NonNegativeReal::try_from(opaque_scalar) else {
         return Unclosed;
     };
+    // Candidate records share this prologue. Allocate the counted references
+    // only after the role and paired frame establish the complete group grammar.
+    if trailing_count > 1 {
+        return Unclosed;
+    }
+    let mut members = Vec::new();
+    if let Err(error) = ctx.reserve_vec(
+        &mut members,
+        index_from_u32(member_count),
+        "f3d construction operand members",
+    ) {
+        return Refused(error);
+    }
+    let mut cursor = members_at;
+    for _ in 0..member_count {
+        if let Err(error) = ctx.charge_work(1, "read F3D construction operand reference") {
+            return Refused(error);
+        }
+        let Some((value, offset)) = take_record_reference(bytes, &mut cursor) else {
+            return NotAGroup;
+        };
+        members.push(crate::records::identity::Located { value, offset });
+    }
+    let auxiliary_records = match ctx.collect_vec(
+        auxiliary_slots.into_iter().flatten(),
+        "f3d construction operand auxiliary record",
+    ) {
+        Ok(records) => records,
+        Err(error) => return Refused(error),
+    };
+    let mut trailing_records = Vec::new();
+    if let Err(error) = ctx.reserve_vec(
+        &mut trailing_records,
+        index_from_u32(trailing_count),
+        "f3d construction operand trailing records",
+    ) {
+        return Refused(error);
+    }
+    let mut cursor = trailing_at;
+    for _ in 0..trailing_count {
+        if let Err(error) = ctx.charge_work(1, "read F3D construction operand reference") {
+            return Refused(error);
+        }
+        let Some((value, offset)) = take_record_reference(bytes, &mut cursor) else {
+            return NotAGroup;
+        };
+        trailing_records.push(crate::records::identity::Located { value, offset });
+    }
     let Ok(frame) = DesignConstructionOperandGroupFrame::from_parts(
         crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
             member_count_offset,
