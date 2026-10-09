@@ -1257,40 +1257,31 @@ impl Graph {
         mut candidates: Vec<NodeCandidate>,
     ) -> Result<Vec<NodeCandidate>, CodecError> {
         ctx.charge_work(0, "NX topology unique candidate boundary")?;
-        ctx.sort_unstable_by(
-            &mut candidates,
-            |first, second| (first.kind, first.xmt()).cmp(&(second.kind, second.xmt())),
-            |_| 0,
-            "sort NX topology unique candidate keys",
-        )?;
-        let work = u64_from_index(candidates.len())
-            .checked_mul(4)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "select NX topology unique candidates",
-                    u64::MAX - 1,
-                    u64::MAX,
+        let mut by_key = BTreeMap::<(NodeKind, u32), Option<NodeCandidate>>::new();
+        let mut reservation = ctx.reserve_scoped(0, "NX topology unique candidate keys")?;
+        for &node in &candidates {
+            reservation.with_storage(|| {
+                ctx.admit_btree_entry(
+                    &by_key,
+                    &(node.kind, node.xmt()),
+                    "NX topology unique candidate keys",
                 )
             })?;
-        // Each row needs at most two key comparisons, a read, and a move.
-        ctx.charge_work(work, "select NX topology unique candidates")?;
+            match by_key.entry((node.kind, node.xmt())) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(node));
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    entry.insert(None);
+                }
+            }
+        }
+        // Reuse the admitted input storage. The tree already supplies key order
+        // and invalidates every ambiguous identity, including identical rows.
         let mut selected = 0;
-        let mut start = 0;
-        while let Some(first) = candidates.get(start).copied() {
-            let mut end = start + 1;
-            while candidates
-                .get(end)
-                .is_some_and(|next| next.kind == first.kind && next.xmt() == first.xmt())
-            {
-                end += 1;
-            }
-            // Reject every row of an ambiguous identity, including identical
-            // interpretations. The retained rows keep the former key order.
-            if end == start + 1 {
-                candidates[selected] = first;
-                selected += 1;
-            }
-            start = end;
+        for candidate in by_key.into_values().flatten() {
+            candidates[selected] = candidate;
+            selected += 1;
         }
         candidates.truncate(selected);
         Ok(candidates)

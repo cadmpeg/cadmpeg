@@ -27,7 +27,7 @@ use crate::NxCodec;
 use cadmpeg_core::decode::View;
 
 #[test]
-fn unique_candidate_filter_reuses_input_storage_without_collection_admission() {
+fn unique_candidate_filter_reuses_input_storage_with_only_key_admission() {
     let candidates = [9, 7, 2, 7, 4, 7]
         .into_iter()
         .enumerate()
@@ -44,8 +44,7 @@ fn unique_candidate_filter_reuses_input_storage_without_collection_admission() {
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            policy.limits.max_collection_items = 0;
-            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_collection_items = 4;
             policy.limits.max_retained_bytes = 0;
         },
         |ctx| {
