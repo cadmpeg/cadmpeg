@@ -232,9 +232,19 @@ fn with_mapping<R>(
             | ProceduralSurfaceDefinition::Sum(_))) => consume(Mapping {
                 source: Source::Procedural(definition, interval, u, v), distance: Ok(0.0), reversed: [false, false], orientation: Ok(1.0),
             }),
-        _ => consume(Mapping {
-            source: Source::Stored(&carrier.geometry, u, v), distance: Ok(0.0), reversed: [false, false], orientation: Ok(1.0),
-        }),
+        _ => {
+            // Match the directly stored point owner's oriented normal. The
+            // flag changes offset direction, not the chart derivatives.
+            let reversed = matches!(
+                &carrier.geometry,
+                SurfaceGeometry::Solved(crate::geometry::SolvedSurfaceGeometry::Nurbs(nurbs))
+                    if nurbs.normal_reversed()
+            );
+            consume(Mapping {
+                source: Source::Stored(&carrier.geometry, u, v), distance: Ok(0.0),
+                reversed: [false, false], orientation: Ok(if reversed { -1.0 } else { 1.0 }),
+            })
+        },
     }
 }
 
