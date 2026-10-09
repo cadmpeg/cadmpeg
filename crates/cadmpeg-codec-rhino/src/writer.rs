@@ -115,6 +115,11 @@ const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
 const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 const DEFAULT_RELATIVE_TOLERANCE: f64 = 0.01;
 
+fn is_support(source: Option<&cadmpeg_ir::SourceObjectAssociation>) -> bool {
+    source
+        .is_some_and(|source| source.geometry_role == Some(cadmpeg_ir::SourceGeometryRole::Support))
+}
+
 fn write(
     ir: &CadIr,
     version: RhinoArchiveVersion,
@@ -141,12 +146,10 @@ fn write_seekable(
 
     plan.brep_records.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut plan.brep_records, output)?;
-    for point in ir
-        .model
-        .points
-        .iter()
-        .filter(|point| !plan.topology_points.contains(point.id.as_str()))
-    {
+    for point in ir.model.points.iter().filter(|point| {
+        !plan.topology_points.contains(point.id.as_str())
+            && !is_support(point.source_object.as_ref())
+    }) {
         let position = point.position().get();
         let mut payload = vec![0x10];
         payload.extend(position.x.to_le_bytes());
@@ -653,7 +656,10 @@ fn prepare_write(
     let curves = model
         .curves
         .iter()
-        .filter(|curve| !topology_curves.contains(curve.id.as_str()))
+        .filter(|curve| {
+            !topology_curves.contains(curve.id.as_str())
+                && !is_support(curve.source_object.as_ref())
+        })
         .map(|curve| {
             Ok((
                 curve.id.as_str(),
@@ -1809,6 +1815,12 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                 return Err(CodecError::NotImplemented(format!(
                     "point {} is shared by multiple free vertices",
                     point.id.as_str()
+                )));
+            }
+            if is_support(point.source_object.as_ref()) {
+                return Err(CodecError::NotImplemented(format!(
+                    "Rhino cannot write support point {} as a standalone free-vertex object",
+                    point.id
                 )));
             }
             group.push(point.position().get());

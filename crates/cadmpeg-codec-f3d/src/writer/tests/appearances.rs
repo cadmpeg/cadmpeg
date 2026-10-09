@@ -347,3 +347,82 @@ fn generated_f3d_rewrites_prism_scalar_properties() {
                 == Some(2.25)
     }));
 }
+
+#[test]
+fn synthesized_appearance_properties_report_each_unwritten_key() {
+    use cadmpeg_ir::{appearance::Appearance, scalar::FiniteReal};
+    for (schema, supported) in [
+        (
+            "GenericSchema",
+            vec!["reflectivity_at_0deg", "refraction_index"],
+        ),
+        ("PrismOpaqueSchema", vec!["surface_roughness"]),
+        ("PrismMetalSchema", vec!["surface_roughness"]),
+        ("PrismTransparentSchema", vec!["refraction_index"]),
+        ("PhysMatSchema", Vec::new()),
+    ] {
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let properties = [
+            "reflectivity_at_0deg",
+            "refraction_index",
+            "surface_roughness",
+            "extra_property",
+        ]
+        .into_iter()
+        .map(|key| {
+            (
+                cadmpeg_core::text::NonBlankString::new(key).unwrap(),
+                FiniteReal::ONE,
+            )
+        })
+        .collect();
+        ir.model.appearances.push(Appearance {
+            id: "test:model:appearance#properties".try_into().unwrap(),
+            name: Some("test".into()),
+            asset_guid: Some("11111111-2222-3333-4444-555555555555".into()),
+            visual_guid: None,
+            physical_token: None,
+            library_id: None,
+            schema: Some(schema.into()),
+            category: None,
+            base_color: Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap()),
+            properties,
+            textures: Vec::new(),
+        });
+        let plan = F3dCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let loss = plan
+            .report()
+            .losses
+            .iter()
+            .find(|loss| {
+                loss.code == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()
+            })
+            .unwrap();
+        assert!(loss.message.starts_with(&format!(
+            "{} appearance property record(s)",
+            4 - supported.len()
+        )));
+        for key in [
+            "reflectivity_at_0deg",
+            "refraction_index",
+            "surface_roughness",
+            "extra_property",
+        ] {
+            assert_eq!(loss.message.contains(key), !supported.contains(&key));
+        }
+        ir.model.appearances[0]
+            .properties
+            .retain(|key, _| supported.contains(&key.as_str()));
+        let plan = F3dCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        assert!(!plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()));
+    }
+}

@@ -62,7 +62,7 @@
           "scope": "namespaced",
           "strict_floor": "warning"
         },
-        "message": "Support geometry iges:model:surface#D1 has no exported owner and was withheld",
+        "message": "1 support geometry record (iges:model:surface#D1) has no exported owner and was withheld",
         "severity": "warning"
       },
       {

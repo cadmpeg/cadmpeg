@@ -451,6 +451,41 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             );
         }
     }
+    if has_brep_topology(ir) || has_trimmed_sheet_topology(ir) {
+        let ignored = ignored_carrier_geometry(ir)?;
+        let used_edges = ir
+            .model
+            .coedges
+            .iter()
+            .map(|coedge| &coedge.edge)
+            .collect::<BTreeSet<_>>();
+        let owned = ir
+            .model
+            .edges
+            .iter()
+            .filter(|edge| used_edges.contains(&edge.id))
+            .flat_map(|edge| [&edge.start, &edge.end])
+            .chain(
+                ir.model
+                    .loops
+                    .iter()
+                    .flat_map(cadmpeg_ir::topology::Loop::vertices),
+            )
+            .collect::<BTreeSet<_>>();
+        let count = ir
+            .model
+            .vertices
+            .iter()
+            .filter(|vertex| {
+                ignored.vertices.contains(vertex.id.as_str()) && !owned.contains(&vertex.id)
+            })
+            .count();
+        if count != 0 {
+            losses.push(IgesLossCode::WriterFreeGeometryOmitted.note(format!(
+                "{count} free vertex record(s) were not written on the topology path"
+            )));
+        }
+    }
     let mut body_presentations = BTreeMap::new();
 
     let mut entities = if has_brep_topology(ir) {
@@ -546,6 +581,15 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                         edge.id, curve_id
                     ))
                 })?;
+            if ownership
+                .status(curve.source_object.as_ref())
+                .is_physically_dependent()
+            {
+                losses.push(IgesLossCode::WriterSupportEdgeNotRepresented.note(format!(
+                    "1 standalone edge record ({}) was withheld because its curve {} is support geometry", edge.id, curve.id
+                )));
+                continue;
+            }
             let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
                 CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
             })?)?;
@@ -1776,7 +1820,7 @@ fn brep_entities(
                 geometry: &geometry,
                 span: Some(&span),
                 sense: Sense::Forward,
-                status: EntityStatus::Independent,
+                status: ownership.status(curve.source_object.as_ref()),
                 reference_offset: 0,
             },
         )?;
@@ -2321,9 +2365,14 @@ fn brep_entities(
         "iges points sort",
     )?;
     for point in points {
-        if topology_point_ids.contains(point.id.as_str())
-            || ignored_carriers.points.contains(point.id.as_str())
-        {
+        if topology_point_ids.contains(point.id.as_str()) {
+            continue;
+        }
+        if ignored_carriers.points.contains(point.id.as_str()) {
+            losses.push(IgesLossCode::WriterFreeGeometryOmitted.note(format!(
+                "1 free point record ({}) was not written on the B-rep path",
+                point.id
+            )));
             continue;
         }
         append_free_point_entity(ctx, &mut entities, point, &ownership, losses)?;
@@ -2853,9 +2902,14 @@ fn topology_entities(
         "iges points sort",
     )?;
     for point in points {
-        if consumed_points.contains(point.id.as_str())
-            || ignored_carriers.points.contains(point.id.as_str())
-        {
+        if consumed_points.contains(point.id.as_str()) {
+            continue;
+        }
+        if ignored_carriers.points.contains(point.id.as_str()) {
+            losses.push(IgesLossCode::WriterFreeGeometryOmitted.note(format!(
+                "1 free point record ({}) was not written on the trimmed-sheet path",
+                point.id
+            )));
             continue;
         }
         append_free_point_entity(ctx, &mut entities, point, &ownership, losses)?;
@@ -5197,7 +5251,7 @@ fn report_unowned_support(
 ) -> Result<(), CodecError> {
     let code = IgesLossCode::WriterSupportGeometryNotRepresented;
     let message = ctx.format_retained(
-        format_args!("Support geometry {id} has no exported owner and was withheld"),
+        format_args!("1 support geometry record ({id}) has no exported owner and was withheld"),
         "iges orphan support diagnostic",
     )?;
     ctx.charge_retained(

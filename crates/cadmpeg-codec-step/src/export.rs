@@ -88,6 +88,20 @@ pub(crate) fn write_step_outcome(
     schema: StepSchema,
     opts: &StepWriteOptions,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
+    let definitions = ir
+        .model
+        .product_definitions
+        .iter()
+        .map(|product| &product.id)
+        .collect::<BTreeSet<_>>();
+    let missing_definitions = ir.model.occurrences.iter().filter(|occurrence| {
+        matches!(&occurrence.prototype, PrototypeReference::Local { definition } if !definitions.contains(definition))
+    }).count();
+    if missing_definitions != 0 {
+        return Err(cadmpeg_core::CodecError::malformed(format_args!(
+            "STEP cannot write {missing_definitions} occurrence record(s) whose local product definition is missing"
+        )));
+    }
     for surface in &ir.model.surfaces {
         if let Some(half_angle) = surface
             .geometry
@@ -469,6 +483,49 @@ impl<'a> Builder<'a> {
     }
 
     pub(crate) fn build(&mut self) {
+        if !self.ir.model.product_definitions.is_empty() {
+            let owned = self
+                .ir
+                .model
+                .product_definitions
+                .iter()
+                .flat_map(|product| &product.bodies)
+                .collect::<BTreeSet<_>>();
+            let count = self
+                .ir
+                .model
+                .bodies
+                .iter()
+                .filter(|body| !owned.contains(&body.id))
+                .count();
+            if count != 0 {
+                self.loss(StepLossCode::BodyWithoutProductRepresentation, format!(
+                    "{count} body record(s) have no product representation; their shape items are not attached to a representation"
+                ));
+            }
+        }
+        let surface_regions = self
+            .ir
+            .model
+            .bodies
+            .iter()
+            .filter(|body| matches!(body.kind, BodyKind::Solid | BodyKind::Sheet))
+            .flat_map(|body| &body.regions)
+            .collect::<BTreeSet<_>>();
+        let mut wire_edges = BTreeSet::new();
+        let mut free_vertices = BTreeSet::new();
+        for shell in &self.ir.model.shells {
+            if surface_regions.contains(&shell.region) {
+                wire_edges.extend(shell.wire_edges());
+                free_vertices.extend(shell.free_vertices());
+            }
+        }
+        if !wire_edges.is_empty() || !free_vertices.is_empty() {
+            self.loss(StepLossCode::SurfaceShellWireTopologyOmitted, format!(
+                "{} wire edge record(s) and {} free vertex record(s) in solid or sheet shells are not written",
+                wire_edges.len(), free_vertices.len()
+            ));
+        }
         let context = self.emit_context();
 
         let shape_items = self.emit_shape_items(context);
