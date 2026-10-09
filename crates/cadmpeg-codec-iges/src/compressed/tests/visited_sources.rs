@@ -278,3 +278,156 @@ fn compressed_hollerith_empty_routes_preserve_each_original_refusal() {
             Err(CodecError::ResourceLimit(last)) if last == first));
     }
 }
+
+#[test]
+fn manual_compressed_sequence_digits_do_not_probe_eof() {
+    for count in [1_usize, 64] {
+        let mut bytes = vec![b'0'; count];
+        bytes[count - 1] = b'1';
+        let n = u64::try_from(count).unwrap();
+        for cap in [0, n - 1, 3 * n] {
+            let arena = DecodeArena::new();
+            let policy = hollerith_policy(cap);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = parse_sequence(&bytes, 0, "test", &ctx);
+            if cap == 3 * n {
+                // n probes, n UTF-8 bytes and n integer-parse bytes.
+                assert_eq!(result.unwrap(), (1, count));
+                ctx.finish_session().unwrap();
+            } else {
+                let Err(CodecError::ResourceLimit(first)) = result else { panic!("actual sequence-digit refusal"); };
+                assert_eq!(first.operation, "iges compressed sequence digits");
+                assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                assert!(matches!(parse_sequence(&[], 0, "test", &ctx),
+                    Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            }
+        }
+    }
+    let arena = DecodeArena::new();
+    let policy = hollerith_policy(0);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(parse_sequence(&[], 0, "test", &ctx), Err(CodecError::Malformed(_))));
+    assert!(parse_field_specs(&[], &ctx).unwrap().iter().all(Option::is_none));
+    assert!(matches!(split_lines(&[], &ctx), Err(CodecError::Malformed(_))));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn manual_compressed_specifier_digits_stop_before_an_absent_underscore() {
+    for count in [1_usize, 64] {
+        let mut bytes = vec![b'1'; count + 1];
+        bytes[0] = b'@';
+        let required = u64::try_from(1 + count).unwrap();
+        for cap in [1, required - 1, required] {
+            let arena = DecodeArena::new();
+            let policy = hollerith_policy(cap);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = parse_field_specs(&bytes, &ctx);
+            if cap == required {
+                assert!(matches!(result, Err(CodecError::Malformed(message))
+                    if message == "IGES Compressed ASCII: Directory field specifier lacks an underscore"));
+                ctx.finish_session().unwrap();
+            } else {
+                let Err(CodecError::ResourceLimit(first)) = result else { panic!("actual field-digit refusal"); };
+                assert_eq!(first.operation, "iges compressed Directory field digits");
+                assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                assert!(matches!(parse_field_specs(&[], &ctx), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            }
+        }
+    }
+}
+
+#[test]
+fn manual_compressed_field_values_advance_to_the_actual_validation_visit() {
+    for count in [1_usize, 64] {
+        let mut bytes = b"@1_".to_vec();
+        bytes.extend(vec![b'x'; count]);
+        // Specifier step, digit and underscore probes, UTF-8 and parse: 5.
+        let required = u64::try_from(5 + count).unwrap();
+        for cap in [5, required - 1, required] {
+            let arena = DecodeArena::new();
+            let policy = hollerith_policy(cap);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let Err(CodecError::ResourceLimit(first)) = parse_field_specs(&bytes, &ctx)
+            else { panic!("actual field or validation visit refusal"); };
+            let expected = if cap == required { "iges compressed Directory field bytes" }
+                else { "iges compressed Directory field value" };
+            assert_eq!(first.operation, expected);
+            assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+            assert!(matches!(parse_field_specs(&[], &ctx), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+}
+
+fn section_only_source(start_count: usize, global_count: usize) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for marker in std::iter::once(b'C').chain(std::iter::repeat_n(b'S', start_count))
+        .chain(std::iter::repeat_n(b'G', global_count)) {
+        let mut card = [b' '; 80];
+        card[72] = marker;
+        bytes.extend(card);
+        bytes.push(b'\n');
+    }
+    bytes
+}
+
+fn line_index_work(line_count: usize) -> u64 {
+    // The line index grows at 4, 8, 16, 32 and 64 live entries in these inputs.
+    let moved: usize = [4, 8, 16, 32, 64].into_iter().filter(|count| *count < line_count).sum();
+    u64::try_from(line_count + moved * std::mem::size_of::<&[u8]>()).unwrap()
+}
+
+#[test]
+fn manual_compressed_start_sections_do_not_probe_missing_lines() {
+    for count in [0_usize, 1, 64] {
+        let bytes = section_only_source(count, 0);
+        let prelude = u64::try_from(bytes.len()).unwrap() + line_index_work(1 + count);
+        let required = prelude + u64::try_from(count).unwrap();
+        for cap in [prelude, required.saturating_sub(1).max(prelude), required] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = normalize(&bytes, &ctx);
+            if cap == required {
+                let missing = if count == 0 { "Start section is missing after the flag record" }
+                    else { "Global section is missing" };
+                assert!(matches!(result, Err(CodecError::Malformed(message))
+                    if message == format!("IGES Compressed ASCII: {missing}")));
+                ctx.finish_session().unwrap();
+            } else {
+                let Err(CodecError::ResourceLimit(first)) = result else { panic!("actual Start line refusal"); };
+                assert_eq!(first.operation, "iges compressed Start section lines");
+                assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                assert!(matches!(normalize(&[], &ctx), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            }
+        }
+    }
+}
+
+#[test]
+fn manual_compressed_global_sections_advance_after_the_last_actual_line() {
+    for count in [1_usize, 64] {
+        let bytes = section_only_source(1, count);
+        let prelude = u64::try_from(bytes.len()).unwrap() + line_index_work(2 + count) + 2;
+        let required = prelude + u64::try_from(count).unwrap();
+        for cap in [prelude, required - 1, required] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let Err(CodecError::ResourceLimit(first)) = normalize(&bytes, &ctx)
+            else { panic!("actual Global line or following shared search refusal"); };
+            let expected = if cap == required { "iges compressed Terminate search" }
+                else { "iges compressed Global section lines" };
+            assert_eq!(first.operation, expected);
+            assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+            assert!(matches!(normalize(&[], &ctx), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+}

@@ -68,3 +68,34 @@ fn empty_subtype_table_executes_no_source_steps() {
     assert!(SubtypeTable::from_records(&ctx, &[]).unwrap().defs.is_empty());
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn manual_subtype_reference_walk_does_not_scan_exhausted_stack_frames() {
+    let table = SubtypeTable::from_records(&cadmpeg_test_support::service_decode_context(), &[]).unwrap();
+    for count in [0_usize, 1, 64] {
+        let record = Record { index: 0, name: "x".into(), tokens: vec![Token::False; count].into(), offset: 0, len: 0 };
+        let required = u64::try_from(1 + count).unwrap();
+        for cap in [1, required - 1, required] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::super::admit_subtype_references(&ctx, std::slice::from_ref(&record), &table);
+            if cap == required {
+                result.unwrap();
+                assert_eq!(record.tokens.len(), count);
+                assert!(record.tokens.iter().all(|token| *token == Token::False));
+                ctx.finish_session().unwrap();
+            } else {
+                let Err(CodecError::ResourceLimit(first)) = result else { panic!("actual record or token refusal"); };
+                assert_eq!(first.operation, if cap == 0 { "walk ASM subtype records" } else { "scan ASM subtype references" });
+                assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                for records in [std::slice::from_ref(&record), &[]] {
+                    assert!(matches!(super::super::admit_subtype_references(&ctx, records, &table),
+                        Err(CodecError::ResourceLimit(last)) if last == first));
+                }
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            }
+        }
+    }
+}

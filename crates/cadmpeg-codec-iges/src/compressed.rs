@@ -120,6 +120,9 @@ fn malformed(message: impl Into<String>) -> CodecError {
 }
 
 fn split_lines<'a>(source: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Vec<&'a [u8]>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
     if source.is_empty() {
         return Err(malformed("source is empty"));
     }
@@ -309,8 +312,11 @@ fn parse_sequence(
     label: &str,
     ctx: &DecodeContext<'_>,
 ) -> Result<(u32, usize), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
     let mut end = start;
-    loop {
+    while end < bytes.len() {
         ctx.charge_work(1, "iges compressed sequence digits")?;
         if !bytes.get(end).is_some_and(u8::is_ascii_digit) {
             break;
@@ -340,6 +346,9 @@ fn parse_field_specs(
     bytes: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<[Option<Rc<Vec<u8>>>; 16], CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
     let mut specs = std::array::from_fn(|_| None);
     let mut cursor = 0_usize;
     while cursor < bytes.len() {
@@ -351,7 +360,7 @@ fn parse_field_specs(
         }
         cursor += 1;
         let field_start = cursor;
-        loop {
+        while cursor < bytes.len() {
             ctx.charge_work(1, "iges compressed Directory field digits")?;
             if !bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
                 break;
@@ -391,7 +400,7 @@ fn parse_field_specs(
         }
         cursor += 1;
         let value_start = cursor;
-        loop {
+        while cursor < bytes.len() {
             ctx.charge_work(1, "iges compressed Directory field value")?;
             if bytes.get(cursor).is_none_or(|byte| *byte == b'@') {
                 break;
@@ -913,7 +922,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 
     let mut cursor = 1_usize;
     let start_begin = cursor;
-    loop {
+    while cursor < lines.len() {
         ctx.charge_work(1, "iges compressed Start section lines")?;
         if !lines
             .get(cursor)
@@ -928,7 +937,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     }
     let global_begin = cursor;
     let start_count = global_begin - start_begin;
-    loop {
+    while cursor < lines.len() {
         ctx.charge_work(1, "iges compressed Global section lines")?;
         if !lines
             .get(cursor)

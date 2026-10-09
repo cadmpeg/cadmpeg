@@ -207,6 +207,9 @@ fn walk_owned_markers(
     b: &[u8],
     int_width: RefWidth,
 ) -> Result<(Vec<usize>, bool), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut out = Vec::new();
     let mut depth = 0usize;
     // The scope's own leading `0x0f` is skipped, so the close that matches it
@@ -640,6 +643,29 @@ pub(super) fn take_native_vec3(bytes: &[u8], position: &mut usize, tag: u8) -> O
 
 #[cfg(test)]
 mod marker_ownership_tests {
+
+    #[test]
+    fn manual_owned_byte_markers_are_free_when_empty_and_keep_original_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        for _ in 0..64 {
+            let (markers, balanced) = walk_owned_markers(&ctx, &[], RefWidth::Four).unwrap();
+            assert!(markers.is_empty());
+            assert!(balanced);
+        }
+        let Err(CodecError::ResourceLimit(first)) = ctx.charge_work(1, "test original byte-marker refusal")
+        else { panic!("original refusal"); };
+        for input in [b"".as_slice(), b"\x0b".as_slice()] {
+            assert!(matches!(walk_owned_markers(&ctx, input, RefWidth::Four),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+    }
     use super::{walk_owned_markers, NUBS_MARKER};
     use crate::kernel_header::RefWidth;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

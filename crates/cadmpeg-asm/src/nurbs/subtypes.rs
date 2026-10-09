@@ -39,6 +39,9 @@ pub(super) fn owned_subtype_defs<'bytes>(
     bytes: &'bytes [u8],
     int_width: RefWidth,
 ) -> Result<Option<OwnedSubtypeDefinitions<'bytes>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut owned = Vec::new();
     let mut depth = 0usize;
     let mut pos = 0usize;
@@ -241,6 +244,9 @@ pub fn subtype_span<'bytes>(
     start: usize,
     int_width: RefWidth,
 ) -> Result<Option<SubtypeScope<'bytes>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if bytes.get(start) != Some(&0x0f) {
         return Ok(None);
     }
@@ -298,6 +304,34 @@ pub(super) fn next_token(bytes: &[u8], pos: usize, int_width: RefWidth) -> Optio
 
 #[cfg(test)]
 mod ownership_tests {
+
+    #[test]
+    fn manual_owned_byte_subtypes_keep_empty_and_invalid_entry_fuses() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        for _ in 0..64 {
+            assert!(owned_subtype_defs(&ctx, &[], RefWidth::Four).unwrap().unwrap().is_empty());
+            for (input, start) in [(b"".as_slice(), 0), (b"\x0b".as_slice(), 0), (b"\x0f".as_slice(), 1)] {
+                assert!(subtype_span(&ctx, input, start, RefWidth::Four).unwrap().is_none());
+            }
+        }
+        let Err(CodecError::ResourceLimit(first)) = ctx.charge_work(1, "test original byte-subtype refusal")
+        else { panic!("original refusal"); };
+        for input in [b"".as_slice(), b"\x0f\x10".as_slice()] {
+            assert!(matches!(owned_subtype_defs(&ctx, input, RefWidth::Four),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+            for start in [0, usize::MAX] {
+                assert!(matches!(subtype_span(&ctx, input, start, RefWidth::Four),
+                    Err(CodecError::ResourceLimit(last)) if last == first));
+            }
+        }
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+    }
     use super::{find_owned_intcurve_subtype, owned_subtype_defs, subtype_span};
     use crate::kernel_header::RefWidth;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
