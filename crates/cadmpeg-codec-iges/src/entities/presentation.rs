@@ -178,6 +178,9 @@ fn appearance(
         &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ),
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if identities.is_none() {
         let mut index = BTreeSet::new();
         let mut source_index_entries = ir.model.appearances.iter();
