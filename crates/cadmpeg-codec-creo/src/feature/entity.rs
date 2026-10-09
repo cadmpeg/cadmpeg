@@ -450,6 +450,9 @@ pub(super) fn read_entries(
     let mut cursor = body_start;
     let mut indices = 0..count;
     while !indices.is_empty() {
+        if cursor >= payload.len() {
+            return Ok(None);
+        }
         let Some(index) = ctx.next_charged(&mut indices, "creo feature entry traversal")? else {
             break;
         };
@@ -999,5 +1002,55 @@ mod tests {
         let original = ctx.charge_work_limit(1, "after fixed entity recovery").expect_err("zero cap");
         check(true);
         assert_eq!(ctx.resource_refusal(), Some(original));
+    }
+
+    #[test]
+    fn entry_candidates_admit_present_prefixes_after_variable_width_entries() {
+        use std::mem::size_of;
+
+        // A first entry can consume all bytes despite the initial count bound.
+        // A partial second prefix still exists and must be visited.
+        for (payload, declared, terminator_visits, second_present) in [
+            ([7, 1, 0, 0, 0, 0xe3], 2, 4u64, false),
+            ([7, 1, 0, 0, 0, 0xe3], 3, 4u64, false),
+            ([7, 1, 0, 0, 0xe3, 0xf7], 2, 3u64, true),
+        ] {
+            let total = 1 + terminator_visits + u64::from(second_present);
+            let backing = (4 * size_of::<super::FeatureEntityTableEntry>()) as u64;
+            for cap in 0..=total {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                policy.limits.max_materialized_bytes = backing;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_collection_items = 1;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let result = read_entries(&ctx, &payload, 0, declared);
+                if cap == total {
+                    assert_eq!(result.expect("only present input work"), None);
+                    assert!(ctx.resource_refusal().is_none());
+                    // The rejected first candidate dropped its entire Vec.
+                    let storage = ctx.reserve_scoped(backing, "after rejected entry backing")
+                        .expect("all candidate storage was released");
+                    drop(storage);
+                    let original = ctx.charge_work_limit(1, "after variable-width entry")
+                        .expect_err("exact input work used");
+                    assert_eq!((original.used, original.additional), (total, 1));
+                    assert!(matches!(read_entries(&ctx, &payload, 0, declared),
+                        Err(CodecError::ResourceLimit(actual)) if actual == original));
+                    assert_eq!(ctx.resource_refusal(), Some(original));
+                } else {
+                    let original = ctx.resource_refusal().expect("present operation refuses");
+                    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+                    let at_entry = cap == 0 || (second_present && cap == 1 + terminator_visits);
+                    assert_eq!((original.dimension, original.used, original.additional, original.operation),
+                        (ResourceDimension::WorkUnits, cap, 1,
+                         if at_entry { "creo feature entry traversal" } else { "creo feature entry terminator" }));
+                    assert!(matches!(read_entries(&ctx, &payload, 0, declared),
+                        Err(CodecError::ResourceLimit(actual)) if actual == original));
+                    assert_eq!(ctx.resource_refusal(), Some(original));
+                }
+            }
+        }
     }
 }
