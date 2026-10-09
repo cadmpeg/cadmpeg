@@ -8,6 +8,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::CadIr;
 
 mod ownership;
+mod original_context;
 
 fn exchange(records: &str) -> crate::parse::Exchange {
     let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;");
@@ -50,6 +51,7 @@ fn shared_annotations(cyclic: bool) {
             graphs: BTreeMap::new(),
             texts: BTreeMap::new(),
             independent_reach: BTreeMap::new(),
+            ctx,
             storage: ctx.reserve_scoped(0, "index fixture").expect("scope"),
         };
         let reports =
@@ -63,7 +65,6 @@ fn shared_annotations(cyclic: bool) {
                 &geometry.value,
                 &mut BTreeSet::new(),
                 &mut index,
-                ctx
             )
             .expect("shared query"));
             let mut claims = BTreeSet::new();
@@ -74,7 +75,6 @@ fn shared_annotations(cyclic: bool) {
                 &mut index,
                 (&mut claims, &mut claim_storage),
                 (&mut losses, &reports),
-                ctx,
             )
             .expect("selected text");
             assert_eq!(text.as_deref(), Some("shared"));
@@ -113,6 +113,7 @@ fn indexed_annotation_text_replays_invalid_warnings_in_dfs_order() {
         graphs: BTreeMap::new(),
         texts: BTreeMap::new(),
         independent_reach: BTreeMap::new(),
+        ctx: &ctx,
         storage: ctx.reserve_scoped(0, "index fixture").expect("scope"),
     };
     assert!(super::index_annotation_graph(
@@ -122,7 +123,6 @@ fn indexed_annotation_text_replays_invalid_warnings_in_dfs_order() {
         &geometry.value,
         &mut BTreeSet::new(),
         &mut index,
-        &ctx
     )
     .expect("index"));
     let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
@@ -151,7 +151,6 @@ fn indexed_annotation_text_replays_invalid_warnings_in_dfs_order() {
             &mut index,
             (&mut BTreeSet::new(), &mut claims),
             (&mut actual, &reports),
-            &ctx
         )
         .expect("indexed text query")
         .is_none());
@@ -173,6 +172,7 @@ fn annotation_index_preserves_cyclic_discovery_results() {
         graphs: BTreeMap::new(),
         texts: BTreeMap::new(),
         independent_reach: BTreeMap::new(),
+        ctx: &ctx,
         storage: ctx.reserve_scoped(0, "index fixture").expect("scope"),
     };
     assert!(super::index_annotation_graph(
@@ -182,7 +182,6 @@ fn annotation_index_preserves_cyclic_discovery_results() {
         &geometry.value,
         &mut BTreeSet::new(),
         &mut index,
-        &ctx
     )
     .expect("cyclic graph is indexed"));
     let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
@@ -208,7 +207,6 @@ fn annotation_index_preserves_cyclic_discovery_results() {
             &mut index,
             (&mut BTreeSet::new(), &mut claims),
             (&mut Vec::new(), &reports),
-            &ctx
         )
         .expect("indexed cyclic text query")
         .as_deref(),
@@ -226,6 +224,7 @@ fn annotation_index_does_not_reuse_a_cycle_under_a_reachable_ancestor() {
             graphs: BTreeMap::new(),
             texts: BTreeMap::new(),
             independent_reach: BTreeMap::new(),
+            ctx,
             storage: ctx.reserve_scoped(0, "index fixture").expect("scope"),
         };
         assert!(super::index_annotation_graph(
@@ -235,7 +234,6 @@ fn annotation_index_does_not_reuse_a_cycle_under_a_reachable_ancestor() {
             &geometry.value,
             &mut BTreeSet::new(),
             &mut index,
-            ctx
         )
         .expect("independent query"));
         assert!(!super::index_annotation_graph(
@@ -245,7 +243,6 @@ fn annotation_index_does_not_reuse_a_cycle_under_a_reachable_ancestor() {
             &geometry.value,
             &mut BTreeSet::from([1]),
             &mut index,
-            ctx
         )
         .expect("ancestor-sensitive query"));
     });

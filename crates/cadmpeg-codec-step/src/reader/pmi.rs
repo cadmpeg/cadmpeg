@@ -945,7 +945,6 @@ pub(super) fn decode<'ctx>(
             geometry,
             (&mut text_records, &mut text_record_storage),
             (&mut losses, &slot_storage),
-            ctx,
         )?;
         // Placement identity is the carrier key; the transform value cannot
         // make two source carriers one semantic carrier.
@@ -970,7 +969,6 @@ pub(super) fn decode<'ctx>(
                         geometry,
                         &mut placement_visited,
                         (&mut placement_candidates, &mut placement_storage),
-                        ctx,
                     )?;
                 }
             }

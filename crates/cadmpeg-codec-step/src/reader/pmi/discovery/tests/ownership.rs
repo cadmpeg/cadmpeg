@@ -19,12 +19,12 @@ fn reach_remains_charged_after_graph_discard(replace: bool) {
     crate::test_support::with_service_context(b"", |_, ctx| {
         let mut index = AnnotationDiscoveryIndex::new(ctx).expect("index");
         let result = super::super::independent_annotation_graph(
-            1, 0, &exchange, &geometry.value, &mut index, ctx,
+            1, 0, &exchange, &geometry.value, &mut index,
         ).expect("independent graph");
         drop(result);
         if replace {
             let replacement = super::super::independent_annotation_graph(
-                1, 0, &exchange, &geometry.value, &mut index, ctx,
+                1, 0, &exchange, &geometry.value, &mut index,
             ).expect("replacement graph");
             drop(replacement);
         }
@@ -78,7 +78,7 @@ fn independent_annotation_reach_survives_graph_entry_refusal() {
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut index = AnnotationDiscoveryIndex::new(ctx).expect("index");
         let result = super::super::independent_annotation_graph(
-            1, 0, &exchange, &geometry.value, &mut index, ctx,
+            1, 0, &exchange, &geometry.value, &mut index,
         ).expect("independent graph");
         let CodecError::ResourceLimit(refusal) = index.storage.with_storage(|| {
             ctx.insert_btree_map(
