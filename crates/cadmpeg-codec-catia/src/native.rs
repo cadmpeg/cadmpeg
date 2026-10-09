@@ -6916,9 +6916,11 @@ fn semantic_entity_indices<'a>(
     Ok(indices)
 }
 
-/// Builds the class and semantic indexes of decoded records under a service context.
+/// Builds the class and semantic indexes of decoded records under the caller's live reservation.
 #[cfg(test)]
-fn service_semantic_indices<'a>(
+fn semantic_indices_for_test<'a>(
+    ctx: &DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     graphs: &'a [CatiaObjectGraph],
     records: &'a [CatiaEntityRecord],
 ) -> Result<
@@ -6928,12 +6930,9 @@ fn service_semantic_indices<'a>(
     ),
     CodecError,
 > {
-    crate::test_support::with_service_context(|ctx| {
-        let mut storage = ctx.reserve_scoped(0, "test semantic indices")?;
-        let classes = entity_class_index(ctx, &mut storage, graphs)?;
-        let indices = semantic_entity_indices(ctx, &mut storage, records, &classes)?;
-        Ok((classes, indices))
-    })
+    let classes = entity_class_index(ctx, storage, graphs)?;
+    let indices = semantic_entity_indices(ctx, storage, records, &classes)?;
+    Ok((classes, indices))
 }
 
 fn relation_parameter_dependencies(
