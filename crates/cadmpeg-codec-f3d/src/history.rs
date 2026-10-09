@@ -4949,7 +4949,7 @@ pub(crate) fn hem_geometry_semantics(
     }
     let edge_direction = topology::historical_edge_axis(decode, edge_slot, previous_topology)?
         .map(|(_, direction)| direction);
-    let Some(_) = decode.find_by(
+    let Some(first_cylinder) = decode.find_by(
         &current_topology.surface_cylinders,
         |cylinder| {
             hem_cylinder_matches(
@@ -4969,7 +4969,7 @@ pub(crate) fn hem_geometry_semantics(
         direction: hem_direction_from_transition(
             decode,
             edge_slot,
-            &current_topology.surface_cylinders,
+            (&current_topology.surface_cylinders, first_cylinder),
             inserted_surfaces,
             edge_direction,
             previous_topology,
@@ -5054,32 +5054,16 @@ fn hem_gap_length_form(
 fn hem_direction_from_transition(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
     edge_slot: i64,
-    cylinders: &[AsmHistoricalCylinder],
+    (cylinders, first_cylinder): (&[AsmHistoricalCylinder], &AsmHistoricalCylinder),
     inserted_surfaces: &[i64],
     edge_direction: Option<cadmpeg_ir::math::Vector3>,
     previous: &AsmHistoricalTopology,
     transition: &AsmHistoricalTransition,
 ) -> Result<Option<cadmpeg_ir::features::SheetMetalHemDirection>, cadmpeg_core::CodecError> {
-    if decode
-        .find_by(
-            cylinders,
-            |cylinder| {
-                hem_cylinder_matches(
-                    decode,
-                    cylinder,
-                    inserted_surfaces,
-                    edge_direction,
-                    "match F3D inserted Hem cylinder surface",
-                )
-            },
-            "find F3D Hem direction cylinder",
-        )?
-        .is_none()
-    {
-        return Ok(None);
-    }
+    decode.charge_work(0, "resolve F3D Hem direction")?;
     let edge_context = selection::historical_edge_context(decode, edge_slot, previous)?;
     let mut candidate = None;
+    let mut direction_scale = None;
     let mut history_source = IntoIterator::into_iter(&edge_context.incident_loops).enumerate();
     while let Some((ordinal, incident)) =
         decode.next_charged(&mut history_source, "scan F3D Hem incident loops")?
@@ -5123,46 +5107,37 @@ fn hem_direction_from_transition(
             continue;
         }
         let normal = plane.normal.scale(1.0 / length);
-        let Some(first_cylinder) = decode.find_by(
-            cylinders,
-            |cylinder| {
-                hem_cylinder_matches(
-                    decode,
-                    cylinder,
-                    inserted_surfaces,
-                    edge_direction,
-                    "match F3D inserted Hem cylinder surface",
-                )
-            },
-            "find F3D Hem direction cylinder",
-        )?
-        else {
-            continue;
-        };
         let first = normal.dot(first_cylinder.origin.vector_from(plane.origin));
         if !first.is_finite() {
             continue;
         }
-        let scale = decode.fold(
-            cylinders,
-            0.0_f64,
-            |scale, cylinder| {
-                if !hem_cylinder_matches(
-                    decode,
-                    cylinder,
-                    inserted_surfaces,
-                    edge_direction,
-                    "match F3D inserted Hem cylinder surface",
-                )? {
-                    return Ok(scale);
-                }
-                Ok(scale
-                    .max(cylinder.origin.x.abs())
-                    .max(cylinder.origin.y.abs())
-                    .max(cylinder.origin.z.abs()))
-            },
-            "scan F3D Hem cylinder direction scale",
-        )?;
+        let scale = match direction_scale {
+            Some(scale) => scale,
+            None => {
+                let scale = decode.fold(
+                    cylinders,
+                    0.0_f64,
+                    |scale, cylinder| {
+                        if !hem_cylinder_matches(
+                            decode,
+                            cylinder,
+                            inserted_surfaces,
+                            edge_direction,
+                            "match F3D inserted Hem cylinder surface",
+                        )? {
+                            return Ok(scale);
+                        }
+                        Ok(scale
+                            .max(cylinder.origin.x.abs())
+                            .max(cylinder.origin.y.abs())
+                            .max(cylinder.origin.z.abs()))
+                    },
+                    "scan F3D Hem cylinder direction scale",
+                )?;
+                direction_scale = Some(scale);
+                scale
+            }
+        };
         let sign_tolerance = EPS_HISTORY_HEM_DIRECTION_FROM_TRANSITION_E7
             * (1.0 + plane.origin.x.abs() + plane.origin.y.abs() + plane.origin.z.abs() + scale);
         if first.abs() <= sign_tolerance
