@@ -906,3 +906,5 @@ fn datum_outline_constructor_requires_one_plane() {
         ]
     );
 }
+
+mod visit_boundaries;
