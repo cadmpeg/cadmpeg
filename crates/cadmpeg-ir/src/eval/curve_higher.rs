@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Requested third derivatives of analytic and placed model curve carriers.
+//! Requested higher derivatives of analytic and placed model curve carriers.
 
 use super::decode::Scratch;
 use super::{admit_derivative, vector_sum, EvaluationFailure};
@@ -8,57 +8,91 @@ use crate::geometry::{ProceduralCurveDefinition, SolvedCurveGeometry};
 use crate::math::sum::ExactSignedSum;
 use crate::scalar::FiniteReal;
 
-// Analytic tangent laws already refer to the final placed frame. The NURBS
-// analytic law starts in its own frame and must cross each stored placement.
-enum ThirdFrame {
-    Final(FiniteVector3),
-    Local(FiniteVector3),
+/// Independently completed third and requested fourth curve derivatives.
+#[derive(Clone, Copy)]
+pub(super) struct CurveHigher {
+    pub(super) third: Result<FiniteVector3, EvaluationFailure<()>>,
+    pub(super) fourth: Result<FiniteVector3, EvaluationFailure<()>>,
 }
 
-/// The final placed tangent is already evaluated by this curve's owner.
-/// Affine placement preserves C'''=-C' for circles/ellipses and C'''=C'
-/// for hyperbolas. Follow each stored placement once to establish that law;
-/// do not re-evaluate or re-place the tangent. Polynomial lines/parabolas
-/// have identically zero third derivatives. A polyline needs its actual
-/// tangent outcome to establish a differentiable segment.
+// Analytic laws read the completed final frame; NURBS starts in a local frame.
+enum HigherFrame {
+    Final(CurveHigher),
+    Local(CurveHigher),
+}
+
+#[cfg(test)]
 pub(super) fn stored_third(
     scratch: &Scratch<'_, '_>,
     geometry: &SolvedCurveGeometry,
     parameter: FiniteReal,
     tangent: Result<FiniteVector3, EvaluationFailure<()>>,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    stored_third_frame(scratch, geometry, parameter, tangent).map(|frame| match frame {
-        ThirdFrame::Final(value) | ThirdFrame::Local(value) => value,
-    })
+    stored_higher(scratch, geometry, parameter, tangent,
+        Err(EvaluationFailure::NoValue), super::ModelCurveRequest::Third)?.third
 }
 
-fn stored_third_frame(
+/// Classify each actual source once. Final analytic derivatives have already
+/// crossed every stored placement. Only local derivatives need placement here.
+pub(super) fn stored_higher(
     scratch: &Scratch<'_, '_>,
     geometry: &SolvedCurveGeometry,
     parameter: FiniteReal,
     tangent: Result<FiniteVector3, EvaluationFailure<()>>,
-) -> Result<ThirdFrame, EvaluationFailure<()>> {
+    acceleration: Result<FiniteVector3, EvaluationFailure<()>>,
+    request: super::ModelCurveRequest,
+) -> Result<CurveHigher, EvaluationFailure<()>> {
+    stored_higher_frame(scratch, geometry, parameter, tangent, acceleration, request)
+        .map(|frame| match frame { HigherFrame::Final(value) | HigherFrame::Local(value) => value })
+}
+
+fn stored_higher_frame(
+    scratch: &Scratch<'_, '_>,
+    geometry: &SolvedCurveGeometry,
+    parameter: FiniteReal,
+    tangent: Result<FiniteVector3, EvaluationFailure<()>>,
+    acceleration: Result<FiniteVector3, EvaluationFailure<()>>,
+    request: super::ModelCurveRequest,
+) -> Result<HigherFrame, EvaluationFailure<()>> {
     scratch.unless_refused()?;
     let _depth = scratch.enter().ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
+    let fourth = request == super::ModelCurveRequest::Fourth;
     let result = match geometry {
-        SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Parabola(_) => Ok(ThirdFrame::Final(FiniteVector3::ZERO)),
-        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => tangent.map(FiniteVector3::negated).map(ThirdFrame::Final),
-        SolvedCurveGeometry::Hyperbola(_) => tangent.map(ThirdFrame::Final),
-        SolvedCurveGeometry::Polyline(_) => tangent.map(|_| ThirdFrame::Final(FiniteVector3::ZERO)),
+        SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Parabola(_) => Ok(HigherFrame::Final(CurveHigher {
+            third: Ok(FiniteVector3::ZERO),
+            fourth: if fourth { Ok(FiniteVector3::ZERO) } else { Err(EvaluationFailure::NoValue) },
+        })),
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => Ok(HigherFrame::Final(CurveHigher {
+            third: tangent.map(FiniteVector3::negated),
+            fourth: if fourth { acceleration.map(FiniteVector3::negated) } else { Err(EvaluationFailure::NoValue) },
+        })),
+        SolvedCurveGeometry::Hyperbola(_) => Ok(HigherFrame::Final(CurveHigher {
+            third: tangent,
+            fourth: if fourth { acceleration } else { Err(EvaluationFailure::NoValue) },
+        })),
+        SolvedCurveGeometry::Polyline(_) => Ok(HigherFrame::Final(CurveHigher {
+            third: tangent.map(|_| FiniteVector3::ZERO),
+            fourth: if fourth { tangent.map(|_| FiniteVector3::ZERO) } else { Err(EvaluationFailure::NoValue) },
+        })),
         SolvedCurveGeometry::Transformed(placed) => {
             scratch.admission.independent_cost(Some(1))?;
             scratch.work(1, "IR curve higher source traversal")
                 .ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
-            stored_third_frame(scratch, placed.basis(), parameter, tangent).and_then(|frame| match frame {
-                ThirdFrame::Final(value) => Ok(ThirdFrame::Final(value)),
-                ThirdFrame::Local(value) => super::placed_derivative(*placed.transform(), Ok(value)).map(ThirdFrame::Local),
+            stored_higher_frame(scratch, placed.basis(), parameter, tangent, acceleration, request).map(|frame| match frame {
+                HigherFrame::Final(value) => HigherFrame::Final(value),
+                HigherFrame::Local(value) => HigherFrame::Local(CurveHigher {
+                    third: super::placed_derivative(*placed.transform(), value.third),
+                    fourth: super::placed_derivative(*placed.transform(), value.fourth),
+                }),
             })
         }
-        SolvedCurveGeometry::Nurbs(curve) => match curve.pole_rows() {
-            crate::geometry::nurbs::NurbsPoles3::Polynomial { .. } => super::curve_nurbs::polynomial_third(scratch, curve, parameter),
-            crate::geometry::nurbs::NurbsPoles3::Rational { .. } => super::curve_nurbs::rational_third(scratch, curve, parameter),
-        }.map(ThirdFrame::Local),
-        // Other carrier families still need their own higher-order owner.
+        SolvedCurveGeometry::Nurbs(curve) => {
+            let third = match curve.pole_rows() {
+                crate::geometry::nurbs::NurbsPoles3::Polynomial { .. } => super::curve_nurbs::polynomial_third(scratch, curve, parameter),
+                crate::geometry::nurbs::NurbsPoles3::Rational { .. } => super::curve_nurbs::rational_third(scratch, curve, parameter),
+            };
+            Ok(HigherFrame::Local(CurveHigher { third, fourth: Err(EvaluationFailure::NoValue) }))
+        }
         SolvedCurveGeometry::Degenerate(_)
         | SolvedCurveGeometry::Composite { .. }
         | SolvedCurveGeometry::Unknown { .. } => Err(EvaluationFailure::NoValue),
@@ -88,6 +122,45 @@ pub(super) fn helix_third(
     let radial = vector_sum(&[(cosine, major), (sine, minor)]);
     let radial_first = vector_sum(&[(-sine, major), (cosine, minor)]);
     admit_derivative(vector_sum(&[(-scale, radial_first), (-3.0 * scale_first, radial)]))
+}
+
+/// The fourth derivative of C=a(t)r(t)+q(t)pitch is a*r+4a'*r'.
+/// The point owner has already checked the native domain.
+pub(super) fn helix_fourth(
+    definition: &ProceduralCurveDefinition,
+    parameter: f64,
+) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    let ProceduralCurveDefinition::Helix(helix) = definition else {
+        return Err(EvaluationFailure::NoValue);
+    };
+    let parameter = FiniteReal::new(parameter).ok_or(EvaluationFailure::NoValue)?;
+    let fraction = parameter.turns_from(helix.angle_range().finite_components()[0]).get();
+    let scale = 1.0 + helix.apex_factor().get() * fraction;
+    let scale_first = helix.apex_factor().get() * (1.0 / std::f64::consts::TAU);
+    let (sine, cosine) = parameter.get().sin_cos();
+    let radial = vector_sum(&[(cosine, helix.major().get()), (sine, helix.minor().get())]);
+    let radial_first = vector_sum(&[(-sine, helix.major().get()), (cosine, helix.minor().get())]);
+    admit_derivative(vector_sum(&[(scale, radial), (4.0 * scale_first, radial_first)]))
+}
+
+/// Keep four chain factors and a coordinate in the normalized exponent frame.
+/// Zero is exact; only the final binary64 scaling can overflow.
+pub(super) fn scale_fourth(
+    vector: FiniteVector3,
+    factors: [FiniteReal; 4],
+) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    let component = |coordinate: FiniteReal| {
+        let [a, b, c, d] = factors;
+        let nonzero = [coordinate, a, b, c, d].map(|value| crate::scalar::NonZeroReal::new(value.get()));
+        let [Some(coordinate), Some(a), Some(b), Some(c), Some(d)] = nonzero else {
+            return Ok(FiniteReal::ZERO);
+        };
+        crate::math::sum::ScaledValue::product_quotient(
+            [coordinate, a, b, c, d].map(crate::math::sum::ScaledValue::of_nonzero), [],
+        ).map_err(|_| EvaluationFailure::NonFinite(()))
+    };
+    let [x, y, z] = vector.components();
+    Ok(FiniteVector3::from_components(component(x)?, component(y)?, component(z)?))
 }
 
 /// Multiply a vector by three finite chain factors without rounding or

@@ -191,3 +191,19 @@ fn factored_quotients_preserve_finite_ranges_signs_and_true_final_overflow() {
             .map(FiniteReal::get), Ok(sign * f64::from_bits(2)));
     }
 }
+
+#[test]
+fn five_factor_quotients_keep_normalized_range_with_seven_denominators() {
+    let scaled = |value| scaled_finite(value).unwrap();
+    for sign in [-1.0, 1.0] {
+        // Five powers400 divided by seven powers200 = power600.
+        let numerator = scaled(2.0_f64.powi(400));
+        let denominator = scaled(2.0_f64.powi(200));
+        assert_eq!(ScaledValue::product_quotient(
+            [scaled(sign * 2.0_f64.powi(400)), numerator, numerator, numerator, numerator],
+            [denominator; 7]).map(FiniteReal::get), Ok(sign * 2.0_f64.powi(600)));
+        // All normalized mantissas0.5 attain the smallest numerator product.
+        assert_eq!(ScaledValue::product_quotient([scaled(sign * 1.0), scaled(1.0), scaled(1.0), scaled(1.0), scaled(1.0)],
+            [scaled(1.0); 7]).map(FiniteReal::get), Ok(sign));
+    }
+}
