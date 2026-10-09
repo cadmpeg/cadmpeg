@@ -1,9 +1,9 @@
-//! Tests for the `sketch_projection` module.
+//! Marker arc and slot projection tests.
 
 const EPS_REFUSAL_GEOMETRY: f64 = 1.0e-9;
 
-use super::super::curves::{resolve_connected_marker_arcs, resolve_slot_marker_arcs};
-use super::super::LEGACY_EXTENDED_SKETCH_MARKER;
+use super::super::{resolve_connected_marker_arcs, resolve_slot_marker_arcs};
+use super::super::super::LEGACY_EXTENDED_SKETCH_MARKER;
 use crate::records::{SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -219,7 +219,7 @@ fn slot_cycle_refuses_collection_limit() {
             policy.limits.max_collection_items = cap;
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-            let slots = super::super::curves::SlotReferences::new(&ctx, &payload)?;
+            let slots = super::super::SlotReferences::new(&ctx, &payload)?;
             resolve_slot_marker_arcs(&ctx, &slots, &markers, &mut entities, EPS_REFUSAL_GEOMETRY)
         },
     );
@@ -234,7 +234,7 @@ fn slot_cycle_refuses_work_limit() {
     let markers = inputs.iter().collect::<Vec<_>>();
     crate::test_support::work_refusal_at("sort SLDPRT slot curves", |ctx| {
         let mut entities = entities.clone();
-        let slots = super::super::curves::SlotReferences::new(ctx, &payload)?;
+        let slots = super::super::SlotReferences::new(ctx, &payload)?;
         resolve_slot_marker_arcs(ctx, &slots, &markers, &mut entities, EPS_REFUSAL_GEOMETRY)
     });
 }
@@ -252,7 +252,7 @@ fn slot_cycle_refuses_retained_limit() {
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
             let mut entities = entities.clone();
-            let slots = super::super::curves::SlotReferences::new(&ctx, &payload)?;
+            let slots = super::super::SlotReferences::new(&ctx, &payload)?;
             resolve_slot_marker_arcs(&ctx, &slots, &markers, &mut entities, EPS_REFUSAL_GEOMETRY)
         },
     );
@@ -269,7 +269,7 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
-    let slots = super::super::curves::SlotReferences::new(&ctx, &payload).unwrap();
+    let slots = super::super::SlotReferences::new(&ctx, &payload).unwrap();
     resolve_slot_marker_arcs(&ctx, &slots, &markers, &mut entities, EPS_REFUSAL_GEOMETRY).unwrap();
 
     assert_eq!(

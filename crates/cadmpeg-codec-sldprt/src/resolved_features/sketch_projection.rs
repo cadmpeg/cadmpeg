@@ -817,7 +817,4 @@ mod projected_brep_output_tests {
 }
 
 #[cfg(test)]
-mod sketch_projection_tests;
-
-#[cfg(test)]
 mod storage_tests;
