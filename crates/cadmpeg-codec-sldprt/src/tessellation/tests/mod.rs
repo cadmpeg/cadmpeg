@@ -1974,3 +1974,5 @@ mod arc_trims;
 mod radial_trim_admission;
 
 mod workspace_lifetimes;
+
+mod planar_circle_workspaces;
