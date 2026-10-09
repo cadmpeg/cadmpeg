@@ -899,6 +899,8 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
 
     /// Admit an independent candidate against reusable facts. Shared references,
     /// arbitrary document mutation and native additions use combined validation.
+    /// Native additions leave admission facts empty. A later neutral candidate
+    /// can establish a new reusable state.
     /// The callback runs before the append is accepted, so transfer refusal rolls
     /// back the model and the identity cache together. Local reports contain
     /// candidate counts and findings; fallback reports describe the combined model.
@@ -921,7 +923,8 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             .unknown_namespace
             .ok_or_else(|| CodecError::malformed("candidate admission needs a source namespace"))?;
         let annotations = changes.base();
-        let reuse = allowed == crate::validate::admit::RHINO_DRAFT_CHECKS;
+        let reuse =
+            allowed == crate::validate::admit::RHINO_DRAFT_CHECKS && candidate.native.0.is_empty();
         let mut state = self
             .state
             .admission

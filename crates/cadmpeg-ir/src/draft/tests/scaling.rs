@@ -53,3 +53,63 @@ fn sparse_draft_commits_admit_thousands_without_copying_prior_annotations() {
     drop(session);
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn native_candidate_admission_does_not_build_an_unread_prefix_index() {
+    use crate::assets::{Asset, AssetContent, AssetData};
+    use crate::native::{NativeNamespace, NativeRecord};
+    const COUNT: usize = 16384;
+    let mut ir = CadIr::empty();
+    for index in 0..COUNT {
+        ir.model.assets.push(Asset {
+            id: format!(
+                "test:model:asset#existing-native-candidate-owner-with-a-long-prefix-{index:08}"
+            )
+            .try_into()
+            .unwrap(),
+            name: None,
+            media_type: None,
+            content: AssetContent::Embedded {
+                data: AssetData::new(vec![1]).unwrap(),
+            },
+            native_ref: None,
+        });
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 256_000_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut session = CommitSession::new(ir, &ctx, Some("test")).unwrap();
+    let mut candidate = CadIr::empty();
+    let mut native = NativeNamespace::default();
+    native.arenas_mut().insert(
+        "records".into(),
+        vec![NativeRecord::from_identity(
+            crate::ids::Identity::new("test:native:record#last".to_owned()).unwrap(),
+            None,
+        )],
+    );
+    candidate.native.0.insert("fixture".into(), native);
+    let annotations = Annotations::default();
+    session
+        .try_admit_append(
+            candidate,
+            annotations
+                .sparse_transaction(&ctx, "native candidate annotations")
+                .unwrap(),
+            crate::RHINO_DRAFT_CHECKS,
+            |report, _| {
+                assert!(report.unwrap().is_ok());
+                Ok(Ok::<_, ()>(()))
+            },
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(session.document().model.assets.len(), COUNT);
+    assert_eq!(
+        session.document().native.0["fixture"].arenas()["records"][0].id(),
+        "test:native:record#last"
+    );
+    drop(session);
+    ctx.finish_session().unwrap();
+}
