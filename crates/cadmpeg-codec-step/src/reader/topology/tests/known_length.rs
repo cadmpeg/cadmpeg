@@ -103,3 +103,92 @@ fn unparameterized_polyline_domain_does_not_synthesize_sample_index_parameters()
     assert_eq!(ctx.resource_refusal(), None);
     ctx.finish_session().expect("no scratch remains");
 }
+
+fn knot_break_fixture(polar: bool) -> cadmpeg_ir::geometry::pcurve::PcurveGeometry {
+    use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs, PolarNurbsPole, PolarPcurveNurbs};
+    use cadmpeg_ir::math::Point2;
+    let setup = cadmpeg_test_support::service_decode_context();
+    let knots = vec![0.0, 0.0, 1.0, 1.0];
+    if polar {
+        PcurveGeometry::PolarNurbs {
+            nurbs: PolarPcurveNurbs::from_lanes(&setup, 1, knots, vec![
+                PolarNurbsPole { radial: Point2::new(1.0, 0.0), axial: 0.0 },
+                PolarNurbsPole { radial: Point2::new(0.0, 1.0), axial: 1.0 },
+            ], None, false).expect("fixture resources").expect("valid polar knots and poles"),
+        }
+    } else {
+        PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::from_lanes(&setup, 1, knots,
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)], None, false)
+                .expect("fixture resources").expect("valid knots and poles"),
+        }
+    }
+}
+
+fn first_interior_knot_refuses_output_before_unvisited_suffix(polar: bool) {
+    use cadmpeg_core::decode::ResourceDimension;
+    let geometry = knot_break_fixture(polar);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // One existing geometry-node unit and the first three actual knot visits.
+    policy.limits.max_work_units = 4;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut fractions = Vec::new();
+    let CodecError::ResourceLimit(refusal) = super::super::pcurve_parameter_break_fractions(
+        &geometry, [0.0, 2.0], &mut fractions, &ctx
+    ).expect_err("first interior knot requires an output slot") else { panic!("resource refusal"); };
+    assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(refusal.operation, "step_pcurve_break_fractions");
+    assert_eq!((refusal.used, refusal.additional), (0, 1));
+    assert!(fractions.is_empty());
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == refusal));
+}
+
+#[test]
+fn nurbs_knot_break_refuses_first_output_before_unvisited_suffix() {
+    first_interior_knot_refuses_output_before_unvisited_suffix(false);
+}
+
+#[test]
+fn polar_nurbs_knot_break_refuses_first_output_before_unvisited_suffix() {
+    first_interior_knot_refuses_output_before_unvisited_suffix(true);
+}
+
+#[test]
+fn knot_breaks_admit_each_visited_knot_without_a_terminal_step() {
+    for polar in [false, true] {
+        let geometry = knot_break_fixture(polar);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One existing geometry-node unit plus all four knots; first push moves no old values.
+        policy.limits.max_work_units = 5;
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let (fractions, storage) = ctx.with_scoped_storage("test knot output", || {
+            let mut fractions = Vec::new();
+            super::super::pcurve_parameter_break_fractions(&geometry, [0.0, 2.0], &mut fractions, &ctx)?;
+            Ok::<_, CodecError>(fractions)
+        }).expect("all four knots fit the actual work and two output slots");
+        assert_eq!(fractions, vec![0.5, 0.5]);
+        drop(fractions);
+        drop(storage);
+        ctx.finish_session().expect("output scratch released");
+    }
+}
+
+#[test]
+fn empty_connected_faces_require_no_traversal_or_storage() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(super::super::connected_face_components(&[], &[], &[], &BTreeMap::new(), &ctx)
+        .expect("empty topology has no steps or storage").is_empty());
+    assert_eq!(ctx.resource_refusal(), None);
+    ctx.finish_session().expect("empty scratch released");
+}
