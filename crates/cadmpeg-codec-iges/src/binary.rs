@@ -476,6 +476,9 @@ fn parse_header(
     source: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<(PrimitiveLengths, SectionDisplacements), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if source.len() < BINARY_FLAG_WIDTH || source.first() != Some(&b'B') {
         return Err(malformed("Binary Flag Section is truncated"));
     }
@@ -927,6 +930,9 @@ fn render_cards(
     sequence: &mut u32,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if data.is_empty() {
         return Ok(());
     }

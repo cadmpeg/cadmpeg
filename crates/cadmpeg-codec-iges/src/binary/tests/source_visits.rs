@@ -287,3 +287,31 @@ fn manual_binary_negative_string_count_does_not_admit_an_absent_continuation() {
     assert!(reader.is_empty());
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn entry_binary_header_malformed_preserves_original_refusal() {
+    crate::test_support::with_entry_context(|ctx, original| {
+
+        let result = super::super::parse_header(&[], ctx);
+        if let Some(first) = original {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
+
+        } else {
+            assert!(matches!(result, Err(CodecError::Malformed(_))));
+        }
+    });
+}
+
+#[test]
+fn entry_binary_empty_cards_preserves_original_refusal_and_output() {
+    crate::test_support::with_entry_context(|ctx, original| {
+        let mut output = vec![7]; let mut sequence = 9;
+        let result = super::super::render_cards(&mut output, &[], b'S', &mut sequence, ctx);
+        if let Some(first) = original {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
+            assert_eq!(output, [7]); assert_eq!(sequence, 9);
+        } else {
+            result.unwrap(); assert_eq!(output, [7]); assert_eq!(sequence, 9);
+        }
+    });
+}

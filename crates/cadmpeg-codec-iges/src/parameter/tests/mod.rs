@@ -16,6 +16,7 @@ mod curve_surface_boundaries;
 mod curve_surface_segment_boundaries;
 mod drawing_associativity;
 mod drawing_property_boundaries;
+mod entry_refusal;
 mod entity_table_boundaries;
 mod entity_table_forms;
 mod entity_table_text_and_names;

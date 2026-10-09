@@ -3,6 +3,7 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::super::{tokenize, ParameterDefect, Token, TokenValue, TokenizeFailure};
@@ -946,4 +947,32 @@ fn manual_parameter_empty_scanners_replay_each_original_refusal() {
         }
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
     }
+}
+
+#[test]
+fn entry_macro_integer_invalid_span_preserves_original_refusal() {
+    crate::test_support::with_entry_context(|ctx, original| {
+
+        let result = super::super::macro_integer(&[], &(1..2), ctx);
+        if let Some(first) = original {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
+
+        } else {
+            assert!(result.unwrap().is_none());
+        }
+    });
+}
+
+#[test]
+fn entry_macro_keyword_invalid_span_preserves_original_refusal() {
+    crate::test_support::with_entry_context(|ctx, original| {
+
+        let result = super::super::macro_keyword(&[], &(1..2), b"ENDM", ctx);
+        if let Some(first) = original {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
+
+        } else {
+            assert!(!result.unwrap());
+        }
+    });
 }

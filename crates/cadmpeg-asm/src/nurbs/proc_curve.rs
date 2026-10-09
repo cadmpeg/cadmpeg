@@ -221,6 +221,9 @@ fn normalize_support_pcurve(
     chart: NativeSupportChart,
     pcurve: &mut PcurveNurbs,
 ) -> Option<Result<(), cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     match chart {
         NativeSupportChart::Canonical => {}
         NativeSupportChart::PlaneLengths => {
@@ -1331,6 +1334,9 @@ fn nullable_law_surface(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<Nullable<SurfaceGeometry>, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let saved = cur.pos();
     if cur.take_ident() == Some("null_surface") {
         return Some(Ok(Nullable::Null));
@@ -2627,6 +2633,9 @@ fn cache_first_curve_context(
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
 ) -> Option<Result<CacheFirstCurveContext, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let revision = PositiveI64::new(cur.take_long()?)?;
     // The leading enum selects the approximation-cache form. `0` stores the
     // solved curve cache and its fit tolerance; `2` stores neither and instead
@@ -3164,6 +3173,9 @@ fn cache_first_intersection(
     solved: &NurbsCurve,
     table: &SubtypeTable,
 ) -> Option<Result<(EmbeddedIntersection, bool), cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let mut cur = Cur::at(toks, position);
     (cur.take_long()? > 0).then_some(())?;
     (cur.take_enum()? == 0).then_some(())?;
@@ -3338,6 +3350,9 @@ fn optional_embedded_surface(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<Nullable<SurfaceGeometry>, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let start = cur.pos();
     if cur.take_ident()? == "null_surface" {
         return Some(Ok(Nullable::Null));
@@ -3350,6 +3365,9 @@ fn optional_pcurve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<Nullable<PcurveNurbs>, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let start = cur.pos();
     if cur.take_ident()? == "nullbs" {
         return Some(Ok(Nullable::Null));
@@ -3583,6 +3601,9 @@ fn embedded_surface_fields(
     cur: &mut Cur<'_>,
     preserve_ranges: bool,
 ) -> Option<Result<EmbeddedSurfaceWithRanges, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let no_ranges = [[None, None], [None, None]];
     let kind = cur.take_ident()?;
     if kind == "spline" {
@@ -3880,6 +3901,9 @@ pub(super) fn optional_embedded_surface_with_bounds(
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
 ) -> Option<Result<EmbeddedSurfaceWithBounds, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let toks = cur.toks();
     let saved = cur.pos();
     let kind = cur.take_ident();

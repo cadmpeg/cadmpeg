@@ -547,6 +547,9 @@ pub(super) fn take_native_ident<'ctx>(
     bytes: &[u8],
     position: &mut usize,
 ) -> Option<Result<(String, ScopedReservation<'ctx>), CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     if !matches!(bytes.get(*position), Some(0x0d | 0x0e)) {
         return None;
     }
@@ -574,6 +577,9 @@ pub(super) fn take_native_string<'ctx>(
     position: &mut usize,
     int_width: RefWidth,
 ) -> Option<Result<(String, ScopedReservation<'ctx>), CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let (length, header) = match *bytes.get(*position)? {
         0x07 => (usize::from(*bytes.get(*position + 1)?), 2),
         0x08 => (usize::from(View::u16_le_at(bytes, *position + 1)?), 3),
@@ -783,6 +789,34 @@ mod marker_ownership_tests {
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "scan ASM owned marker token");
     }
+
+#[test]
+fn entry_native_identifier_invalid_payload_preserves_original_refusal_and_cursor() {
+    crate::test_support::with_entry_context(|ctx, original| {
+        for bytes in [&[][..], &[0x0b][..], &[0x0d][..], &[0x0d, 2, b'x'][..]] {
+            let mut position = 0;
+            let result = super::take_native_ident(ctx, bytes, &mut position);
+            if let Some(first) = &original {
+                assert!(matches!(result, Some(Err(CodecError::ResourceLimit(last))) if &last == first));
+            } else { assert!(result.is_none()); }
+            assert_eq!(position, 0);
+        }
+    });
+}
+
+#[test]
+fn entry_native_string_invalid_payload_preserves_original_refusal_and_cursor() {
+    crate::test_support::with_entry_context(|ctx, original| {
+        for bytes in [&[][..], &[0x0b][..], &[0x07][..], &[0x07, 2, b'x'][..]] {
+            let mut position = 0;
+            let result = super::take_native_string(ctx, bytes, &mut position, RefWidth::Four);
+            if let Some(first) = &original {
+                assert!(matches!(result, Some(Err(CodecError::ResourceLimit(last))) if &last == first));
+            } else { assert!(result.is_none()); }
+            assert_eq!(position, 0);
+        }
+    });
+}
 }
 
 #[cfg(test)]

@@ -118,6 +118,9 @@ pub(super) fn find_owned_intcurve_subtype(
     modern: &[u8],
     int_width: RefWidth,
 ) -> Result<Option<(usize, usize)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if modern.is_empty() {
         return Ok(None);
     }
@@ -138,6 +141,9 @@ pub(super) fn next_subtype_reference(
     tokens: &[crate::sab::Token],
     position: &mut usize,
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     use crate::sab::Token;
     let start = *position;
     let Some(remaining) = tokens.get(start..) else {
@@ -530,4 +536,32 @@ mod ownership_tests {
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "scan ASM subtype scope token");
     }
+
+#[test]
+fn entry_byte_intcurve_empty_name_preserves_original_refusal() {
+    crate::test_support::with_entry_context(|ctx, original| {
+
+        let result = super::find_owned_intcurve_subtype(ctx, &[], &[], RefWidth::Four);
+        if let Some(first) = original {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
+
+        } else {
+            assert!(result.unwrap().is_none());
+        }
+    });
+}
+
+#[test]
+fn entry_invalid_subtype_reference_preserves_original_refusal_and_cursor() {
+    crate::test_support::with_entry_context(|ctx, original| {
+        let mut position = usize::MAX;
+        let result = super::next_subtype_reference(ctx, &[], &mut position);
+        if let Some(first) = original {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
+            assert_eq!(position, usize::MAX);
+        } else {
+            assert!(result.unwrap().is_none()); assert_eq!(position, usize::MAX);
+        }
+    });
+}
 }

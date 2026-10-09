@@ -115,3 +115,26 @@ fn manual_sab_empty_and_invalid_routes_preserve_original_refusal() {
         }
     }
 }
+
+#[test]
+fn entry_sab_fixed_primitive_and_eof_preserve_original_refusal() {
+    crate::test_support::with_entry_context(|ctx, original| {
+        for bytes in [&[][..], &[0x0b][..], &[0x04, 7, 0, 0, 0][..]] {
+            let result = super::super::lex(ctx, bytes, 0, RefWidth::Four);
+            if let Some(first) = &original {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if &last == first));
+            } else if bytes.is_empty() {
+                let Err(error) = result.unwrap() else { panic!("strict EOF defect"); };
+                assert_eq!(error.offset, 0); assert_eq!(error.reason, "end of stream");
+            } else {
+                let (token, next) = result.unwrap().unwrap();
+                assert_eq!(next, bytes.len());
+                match token {
+                    super::super::Lexed::Value(crate::sab::Token::False) if bytes.len() == 1 => {}
+                    super::super::Lexed::Value(crate::sab::Token::Long(7)) if bytes.len() == 5 => {}
+                    _ => panic!("unchanged fixed primitive"),
+                }
+            }
+        }
+    });
+}

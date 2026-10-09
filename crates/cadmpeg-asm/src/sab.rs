@@ -404,6 +404,9 @@ pub(crate) fn lex<'bytes>(
     pos: usize,
     ref_width: RefWidth,
 ) -> Result<Result<(Lexed<'bytes>, usize), StreamError>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let parsed = (|| -> Result<(Lexed<'bytes>, usize), StreamFailure> {
         let err = |reason: &str| StreamError {
             format: StreamFormat::Binary,

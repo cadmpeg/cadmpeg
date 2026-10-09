@@ -1179,6 +1179,9 @@ fn entity_primary_end_for_entry(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     Ok(match (entry.entity_type, entry.form) {
         (102, 0) | (402, 1 | 7 | 14 | 15) => Some(counted_primary_end(record)),
         (402, 5) => Some(label_display_primary_end(record)),
@@ -1365,6 +1368,9 @@ fn entity_primary_end_with_records_for_entry(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if entry.entity_type == 422 && matches!(entry.form, 0 | 1) {
         return Ok(Some(attribute_table_instance_primary_end(
             record, entry, directory, records, ctx,
@@ -1483,6 +1489,9 @@ fn fem_result_primary_end(
     entity_type: i64,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (value_count_index, item_count_index, item_start): (usize, usize, usize) =
         if entity_type == 146 {
             (4, 5, 6)
@@ -1566,6 +1575,9 @@ fn text_font_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(character_count) = record
         .integer(5)
         .and_then(|value| usize::try_from(value).ok())
@@ -1650,6 +1662,9 @@ fn tabular_data_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(dependent_count) = record
         .integer(3)
         .and_then(|value| usize::try_from(value).ok())
@@ -2036,6 +2051,9 @@ fn associativity_definition_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(class_count) = record
         .integer(1)
         .and_then(|value| usize::try_from(value).ok())
@@ -2120,6 +2138,9 @@ fn attribute_table_definition_primary_end(
     form: i64,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(attribute_count) = record
         .integer(3)
         .and_then(|value| usize::try_from(value).ok())
@@ -2163,6 +2184,9 @@ fn attribute_table_definition_values_per_row(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(attribute_count) = record
         .integer(3)
         .and_then(|value| usize::try_from(value).ok())
@@ -2206,6 +2230,9 @@ fn attribute_table_instance_primary_end(
     records: &BTreeMap<u32, &ParameterRecord>,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(definition_sequence) = entry
         .structure
         .checked_neg()
@@ -2381,6 +2408,9 @@ fn loop_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(use_count) = record
         .integer(1)
         .and_then(|value| usize::try_from(value).ok())
@@ -2567,6 +2597,9 @@ fn boundary_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(segment_count) = record
         .integer(4)
         .and_then(|value| usize::try_from(value).ok())
@@ -3428,6 +3461,9 @@ fn macro_integer(
     span: &Range<usize>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(bytes) = bytes.get(span.clone()) else {
         return Ok(None);
     };
@@ -3447,6 +3483,9 @@ fn macro_keyword(
     keyword: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(value) = bytes.get(span.clone()) else {
         return Ok(false);
     };
