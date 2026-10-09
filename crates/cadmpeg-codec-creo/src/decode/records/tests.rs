@@ -697,6 +697,7 @@ mod feature_entity_table_record_tests;
 mod feature_projection_limit_tests;
 mod pcurve_endpoint_projection_limit_tests;
 mod sketch_projection_limit_tests;
+mod sketch_point_storage;
 mod surface_parameter_projection_limit_tests;
 mod surface_projection_limit_tests;
 mod topology_projection_limit_tests;

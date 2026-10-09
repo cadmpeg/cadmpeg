@@ -4068,12 +4068,15 @@ pub(super) fn sketch_section_point_records(
     definition: &crate::feature::definitions::FeatureDefinition,
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Vec<CreoSketchSectionPoint>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(variables) = &definition.variables else {
         return Ok(Vec::new());
     };
     let mut point_storage = ctx.reserve_scoped(0, "creo sketch point index storage")?;
     let crate::feature::definitions::ReconciledPoints { points, ambiguous } =
-        variables.reconciled_points(ctx)?;
+        point_storage.with_storage(|| variables.reconciled_points(ctx))?;
     let mut point_ids = BTreeSet::new();
     point_storage.with_storage(|| {
         for point_id in ctx
