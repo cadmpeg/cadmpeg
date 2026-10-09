@@ -916,3 +916,4 @@ fn geometry_section_record_refuses_retained_identity_limit() {
 }
 
 mod predicates;
+mod admission_visits;
