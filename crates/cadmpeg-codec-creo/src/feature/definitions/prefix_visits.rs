@@ -440,3 +440,151 @@ fn saved_spline_complete_point_count_has_no_end_probe() {
         });
     }
 }
+
+#[test]
+fn outline_empty_and_named_boundary_routes_preserve_original_refusal() {
+    for payload in [b"".as_slice(), b"\xe0"] {
+        check_work(&[], (), false, |ctx| {
+            let fields = super::outline_scalars(ctx, payload, &crate::scalar::ScalarCache::default())?;
+            assert!(fields.iter().all(|field| field.value.is_none() && field.body.is_empty()));
+            Ok(())
+        });
+    }
+}
+
+#[test]
+fn trim_bucket_count_mismatch_preserves_original_refusal() {
+    check_work(&[], false, false, |ctx| super::complete_bucket_frame(ctx, Some(1), &[]));
+}
+
+#[test]
+fn dimension_value_fixed_routes_preserve_original_refusal() {
+    for (value, expected) in [(Some(1.0), super::DimensionValue::Resolved(1.0)),
+        (None, super::DimensionValue::Undefined)] {
+        check_work(&[], expected, false, |ctx| super::DimensionValue::decoded(ctx, value, &[]));
+    }
+}
+
+#[test]
+fn solver_offset_refusal_preserves_header_and_rows_before_mutation() {
+    let row = super::FeatureRelationTriple {
+        relation_id: Some(1), equation_id: Some(2), skamp_id: Some(3), offset: 11,
+    };
+    for mut table in [
+        super::SolverSubtable::Declared {
+            header: super::FeatureSolverTableHeader { declared_count: 0, entity_ref: 7, offset: 5 },
+            rows: Vec::new(),
+        },
+        super::SolverSubtable::Declared {
+            header: super::FeatureSolverTableHeader { declared_count: 1, entity_ref: 7, offset: 5 },
+            rows: vec![row.clone()],
+        },
+        super::SolverSubtable::Unframed(super::NonEmptySolverRows(vec![row])),
+    ] {
+        let original_table = table.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let original = ctx.charge_work_limit(1, "original solver refusal").expect_err("fused");
+        assert!(matches!(table.shift_offsets(&ctx, 3),
+            Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert_eq!(table, original_table);
+        assert_eq!(ctx.resource_refusal(), Some(original));
+    }
+}
+
+#[test]
+fn variable_scalar_fixed_and_absent_routes_preserve_original_refusal() {
+    for (payload, expected) in [(b"".as_slice(), (super::ScalarLane::Undefined, 0)),
+        (b"\x0f".as_slice(), (super::ScalarLane::Value(0.0), 1)),
+        (b"\x90\0\0\0\0\0\0".as_slice(), (super::ScalarLane::Value(2.625), 7))] {
+        check_work(&[], expected, false, |ctx| super::decode_variable_scalar(ctx, payload, 0,
+            payload.len(), &crate::scalar::ScalarCache::default()));
+    }
+}
+
+#[test]
+fn coordinate_scalar_fixed_routes_preserve_original_refusal() {
+    for (payload, expected) in [(b"\0\0\0".as_slice(), (super::ScalarLane::Undefined, 3)),
+        (b"\x01\0\0\0".as_slice(), (super::ScalarLane::Undefined, 4)),
+        (b"\x2d\0\0\0\0\0\0\0".as_slice(), (super::ScalarLane::Value(2.0), 8))] {
+        check_work(&[], expected, false, |ctx| super::decode_section_coordinate_scalar(ctx,
+            payload, 0, payload.len(), &crate::scalar::ScalarCache::default()));
+    }
+}
+
+#[test]
+fn variable_guess_fixed_suffix_preserves_original_refusal() {
+    let payload = b"\x18\x01\x02\x03";
+    check_work(&[], (super::ScalarLane::Value(0.0), 1), false, |ctx|
+        super::decode_variable_guess(ctx, payload, 0, payload.len(), &crate::scalar::ScalarCache::default()));
+}
+
+#[test]
+fn equation_invalid_range_preserves_original_refusal() {
+    for (start, end) in [(1, 0), (0, 1)] {
+        check_work(&[], None, false, |ctx| super::equation_table(ctx, &[], start, end));
+    }
+}
+
+#[test]
+fn placement_absent_table_preserves_original_refusal() {
+    check_work(&[], None, false, |ctx| {
+        let mut instructions = super::PlacementInstructions {
+            payload: &[], definition_offset: 0, table_class: None, markers: 0..0,
+        };
+        instructions.next(ctx)
+    });
+}
+
+#[test]
+fn segment_absent_array_preserves_original_refusal() {
+    for prototype in [super::PrototypeRow::Present, super::PrototypeRow::Elided] {
+        check_work(&[], None, false, |ctx|
+            super::segment_table_body(ctx, &[], 0, 0, 0, prototype));
+    }
+}
+
+#[test]
+fn positional_dimension_absent_type_preserves_original_refusal() {
+    check_work(&[], None, false, |ctx| super::positional_dimension(ctx, &[], 0, 0,
+        &crate::scalar::ScalarCache::default()));
+}
+
+#[test]
+fn class_close_invalid_window_and_short_extent_preserve_original_refusal() {
+    for (start, end) in [(1, 0), (0, 1), (0, 0)] {
+        check_work(&[], None, false, |ctx| super::find_class_close(ctx, &[], start, end, 0xf3, &[]));
+    }
+}
+
+#[test]
+fn saved_scalar_invalid_window_preserves_original_refusal() {
+    for (start, end) in [(1, 0), (0, 1)] {
+        check_work(&[], None, false, |ctx| super::saved_named_scalars::<3>(ctx, &[], b"center",
+            start, end, &crate::scalar::ScalarCache::default()));
+    }
+}
+
+#[test]
+fn saved_generated_absent_topology_preserves_original_refusal() {
+    check_work(&[], (), false, |ctx| {
+        let mut entities = Vec::new();
+        super::saved_positional_generated_entities(ctx, &[], 0, 0,
+            &crate::scalar::ScalarCache::default(), None, &mut entities)?;
+        assert!(entities.is_empty());
+        Ok(())
+    });
+}
+
+#[test]
+fn trimmed_ids_absent_table_preserves_original_refusal() {
+    let definition = super::FeatureDefinition {
+        identity: super::DefinitionIdentity::Parsed { schema_id: None, owner_feature_id: None },
+        body: Vec::new(), parameter_frames: Vec::new(), outlines: Vec::new(), variables: None,
+        segments: None, trim_entities: None, trim_vertices: None, order_table: None,
+        section_3d: None, dimensions: None, relations: None, saved_section: None, offset: 0,
+    };
+    check_work(&[], &[] as &[u32], false, |ctx| super::unique_trimmed_external_ids(ctx, &definition));
+}
