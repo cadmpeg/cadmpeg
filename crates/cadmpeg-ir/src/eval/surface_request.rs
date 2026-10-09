@@ -110,7 +110,7 @@ impl Mapping<'_> {
                 scratch.settle(result)
             }
             Source::Procedural(definition, interval, u, v) => {
-                let jet = match definition {
+                match definition {
                     ProceduralSurfaceDefinition::AxisRevolution(payload) => super::model_axis_revolution_jet(
                         admission, index, payload.directrix(), payload.axis_origin().get(), payload.axis_direction(), *u, *v,
                         source_order,
@@ -121,8 +121,7 @@ impl Mapping<'_> {
                     ProceduralSurfaceDefinition::Ruled { first, second, .. } => super::model_ruled_surface_jet(admission, index, first, second, *u, *v, source_order),
                     ProceduralSurfaceDefinition::Sum(payload) => super::model_sum_surface_jet(admission, index, payload, *u, *v, source_order),
                     _ => Err(EvaluationFailure::NoValue),
-                }?;
-                Ok(RequestedJet { jet, higher: HigherPartials::Third(Err(EvaluationFailure::NoValue)) })
+                }
             }
             Source::Replica(source, transform, orientation) => {
                 // The borrowed recipe follows one actual placement node here.
