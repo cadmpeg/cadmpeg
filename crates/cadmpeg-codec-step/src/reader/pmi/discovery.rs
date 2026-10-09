@@ -33,9 +33,9 @@ struct CachedAnnotationText<'ctx> {
 }
 
 pub(super) struct AnnotationDiscoveryIndex<'ctx> {
+    independent_reach: BTreeMap<(u64, usize), BTreeSet<u64>>,
     graphs: BTreeMap<(u64, usize), IndexedAnnotationGraph<'ctx>>,
     texts: BTreeMap<u64, CachedAnnotationText<'ctx>>,
-    independent_reach: BTreeMap<(u64, usize), BTreeSet<u64>>,
     storage: ScopedReservation<'ctx>,
 }
 
@@ -68,7 +68,7 @@ fn index_annotation_graph<'ctx>(
         .with_scoped_storage("STEP annotation graph active scratch", || {
             ctx.insert_btree_set(active, id, "step_annotation_graph_active")
         })?;
-    let (graph, storage) =
+    let (graph_buffer, storage) =
         ctx.with_scoped_storage("STEP annotation graph result scratch", || {
             let mut graph = AnnotationGraph {
                 text_carriers: Vec::new(),
@@ -76,9 +76,9 @@ fn index_annotation_graph<'ctx>(
                 cyclic_queries: BTreeSet::new(),
             };
             let mut reusable = true;
-            let mut text_seen = BTreeSet::new();
             let mut seen_storage =
                 ctx.reserve_scoped(0, "STEP annotation carrier dedup scratch")?;
+            let mut text_seen = BTreeSet::new();
             if let Some(record) =
                 ctx.get_btree_map(exchange.records(), &id, "STEP pmi record get")?
             {
@@ -182,8 +182,9 @@ fn index_annotation_graph<'ctx>(
             }
             Ok::<_, CodecError>(reusable.then_some(graph))
         })?;
+    let graph = graph_buffer;
     ctx.remove_btree_set(active, &id, "STEP annotation graph active remove")?;
-    let (graph, storage) = if graph.is_some() {
+    let (selected_graph, selected_storage) = if graph.is_some() {
         (graph, storage)
     } else if active.len() <= 1 {
         drop(storage);
@@ -195,6 +196,8 @@ fn index_annotation_graph<'ctx>(
             ctx.reserve_scoped(0, "STEP incomplete annotation graph")?,
         )
     };
+    let storage = selected_storage;
+    let graph = selected_graph;
     let reusable =
         annotation_graph_reusable(graph.as_ref(), active, &index.independent_reach, ctx)?;
     index.storage.with_storage(|| {
@@ -252,7 +255,7 @@ fn independent_annotation_graph<'ctx>(
     index: &mut AnnotationDiscoveryIndex<'ctx>,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<IndexedAnnotationGraph<'ctx>, CodecError> {
-    let ((graph, reach), storage) =
+    let (graph_reach_buffer, storage) =
         ctx.with_scoped_storage("STEP independent annotation graph scratch", || {
             let mut reach = BTreeSet::new();
             let mut carriers = Vec::new();
@@ -294,6 +297,7 @@ fn independent_annotation_graph<'ctx>(
                 reach,
             ))
         })?;
+    let (graph, reach) = graph_reach_buffer;
     if graph.is_some() {
         // This reach set and its owning query reservation both live in the
         // stage index. Parent summaries retain only its fixed query key.
@@ -324,8 +328,9 @@ fn annotation_graph_text_carriers(
     complete: &mut bool,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let (mut pending, mut pending_storage) =
+    let (pending_buffer, mut pending_storage) =
         ctx.temporary_vec(0, "STEP independent annotation worklist")?;
+    let mut pending = pending_buffer;
     ctx.push_scoped_vec(
         &mut pending_storage,
         &mut pending,
@@ -359,8 +364,9 @@ fn annotation_graph_text_carriers(
         if text.is_some() {
             ctx.push_vec(carriers, id, "step_annotation_graph_text_carriers")?;
         }
-        let (mut children, mut child_storage) =
+        let (children_buffer, mut child_storage) =
             ctx.temporary_vec(0, "STEP independent annotation children")?;
+        let mut children = children_buffer;
         for partial in ctx.admit_iter(
             &record.partials[..],
             "STEP independent annotation partial traversal",
@@ -419,7 +425,7 @@ fn cache_annotation_text<'ctx>(
             |value| Ok(Some(value)),
         )?
         .ok_or_else(|| CodecError::malformed("STEP annotation text value is missing"))?;
-    let ((text, losses), text_storage) =
+    let (text_losses_buffer, text_storage) =
         ctx.with_scoped_storage("STEP cached annotation text scratch", || {
             let mut losses = Vec::new();
             let text = super::super::decode_text_charged(
@@ -433,6 +439,7 @@ fn cache_annotation_text<'ctx>(
             )?;
             Ok::<_, CodecError>((text, losses))
         })?;
+    let (text, losses) = text_losses_buffer;
     storage.with_storage(|| {
         ctx.insert_btree_map(
             texts,

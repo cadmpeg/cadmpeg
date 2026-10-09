@@ -7,6 +7,8 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
+use crate::reader::RecordExt;
+
 fn source(records: &str) -> String {
     format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;")
 }
@@ -331,4 +333,43 @@ fn characteristic_value_map_refuses_collection_limit() {
         refused,
         "no collection limit refused the characteristic map entry"
     );
+}
+
+#[test]
+fn datum_target_form_direct_caller_preserves_materialized_refusal() {
+    let source = source("#1=DATUM_TARGET('','rectangle',#2,.F.,'');#2=ITEM();");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid datum target exchange");
+    let record = exchange.records().get(&1).expect("datum target");
+    let form = record.parameters().get(1).expect("target form");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
+    let mut storage = ctx.reserve_scoped(0, "form fixture").expect("scope");
+    let mut losses = Vec::new();
+    let CodecError::ResourceLimit(refusal) = super::super::super::decode_text_scoped(
+        &exchange,
+        form,
+        (&mut losses, &reports),
+        1,
+        ("datum target form", crate::loss::StepLossCode::MetadataStringInvalid),
+        &ctx,
+        &mut storage,
+    ).expect_err("decoded form requires materialized storage") else {
+        panic!("datum form resource refusal");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(refusal.operation, "step_string_text");
+    assert_eq!(refusal.used, 0);
+    assert_eq!(refusal.additional, u64::try_from("rectangle".len()).expect("form size"));
+    assert!(losses.is_empty());
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    drop(losses);
+    drop(storage);
+    drop(reports);
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
 }
