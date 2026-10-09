@@ -2825,10 +2825,11 @@ fn fillet_parameters<'a, 'c>(
     stream: &str,
 ) -> Result<FilletParameters<'a, 'c>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "f3d Fillet owned parameters")?;
+    let mut owned_storage = ctx.reserve_scoped(0, "f3d Fillet owned parameters")?;
     let mut owned = Vec::new();
     for owner in ctx.admit_iter(owners, "scan F3D Fillet owners")? {
         if let Some(parameter) = parameters.get(ctx, stream, owner.parameter_record_index())? {
-            storage.with_storage(|| {
+            owned_storage.with_storage(|| {
                 ctx.push_vec(
                     &mut owned,
                     (owner.local_ordinal(), parameter),
