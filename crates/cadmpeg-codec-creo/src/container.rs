@@ -1494,7 +1494,6 @@ fn legacy_scope_ranges(
 /// ASCII object remains unknown.
 fn identify_layout(
     ctx: &DecodeContext<'_>,
-    _data: &[u8],
     sections: &[ScannedSection<'_>],
     legacy_ascii: Option<LegacyAsciiFraming>,
 ) -> Result<Layout, CodecError> {
@@ -3752,7 +3751,7 @@ pub(crate) fn scan_bytes<'a>(
     let expanded_sections = expanded_sections(ctx, &data, &sections)?;
     let primitives = scan_primitives(ctx, &expanded_sections)?;
     let references = reference_scan(ctx, &sections)?;
-    let layout = identify_layout(ctx, &data, &sections, legacy_ascii)?;
+    let layout = identify_layout(ctx, &sections, legacy_ascii)?;
     if model_name.is_none() && !matches!(layout, Layout::LegacyAscii(_)) {
         if let Some((name, offset)) = native_model_name(ctx, &sections)? {
             model_name = Some(ModelName { name, offset });
