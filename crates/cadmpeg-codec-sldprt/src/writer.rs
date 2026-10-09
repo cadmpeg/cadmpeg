@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::num::NonZeroU16;
 
+mod accounting;
 pub(crate) mod target;
 
 use crate::native::SldprtNative;
@@ -37,6 +38,21 @@ pub(crate) const SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE: &str =
 pub(crate) const SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE: &str =
     "sldprt_swobjects_metadata_identity_local_sha256";
 pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
+
+/// Opaque solved carriers require a retained native partition.
+pub(crate) fn requires_native_partition(ir: &CadIr) -> bool {
+    ir.model.curves.iter().any(|curve| {
+        matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+        )
+    }) || ir.model.surfaces.iter().any(|surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+        )
+    })
+}
 
 /// What one semantic write produced.
 pub(crate) struct SemanticOutput {
@@ -142,6 +158,11 @@ pub(crate) fn write_semantic_with_records(
     };
     let coverage = semantic_coverage(!retained_records.is_empty(), retained_partition.is_some());
     let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
+    if !retain_native_brep && requires_native_partition(ir) {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT cannot regenerate opaque curve or surface records without a retained native partition".into(),
+        ));
+    }
     let partition_sections = if let Some(retained) = retained_partition {
         vec![retained]
     } else if let Some(patched) = patched_partition {
@@ -2660,6 +2681,17 @@ pub(crate) fn brep_body(
     length_scale: f64,
     schema_32001: bool,
 ) -> Result<Vec<u8>, CodecError> {
+    if let Some(body) = ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| matches!(body.kind, BodyKind::Wire | BodyKind::General))
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "SLDPRT cannot write {:?} body {} as a solid lump",
+            body.kind, body.id
+        )));
+    }
     let mut next = 2u16;
     let derived_sphere_seam_curves = ir
         .model
@@ -3331,7 +3363,9 @@ fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
     Ok(refs)
 }
 
-fn face_colors(ir: &CadIr) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, CodecError> {
+pub(crate) fn face_colors(
+    ir: &CadIr,
+) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, CodecError> {
     let appearances = ir
         .model
         .appearances

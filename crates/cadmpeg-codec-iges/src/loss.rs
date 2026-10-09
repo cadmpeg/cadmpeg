@@ -121,6 +121,10 @@ loss_codes! {
     PassthroughRecordOmitted => "writer.passthrough-omitted",
     /// The emitted Global minimum resolution exceeds the neutral declaration.
     WriterMinimumResolutionAdjusted => "writer.minimum-resolution-adjusted",
+    /// An unowned dependent edge was withheld.
+    WriterSupportEdgeNotRepresented => "writer.support-edge-not-represented",
+    /// Free-geometry points or vertices have no topology output.
+    WriterFreeGeometryOmitted => "writer.free-geometry-omitted",
     /// Unowned support geometry was withheld to avoid standalone transfer.
     WriterSupportGeometryNotRepresented => "writer.support-geometry-not-represented",
     /// A body name cannot be encoded as a Type 406 Form 15 name.
@@ -178,6 +182,8 @@ impl IgesLossCode {
             | Self::PassthroughRecordOmitted
             | Self::WriterMinimumResolutionAdjusted
             | Self::WriterSupportGeometryNotRepresented
+            | Self::WriterSupportEdgeNotRepresented
+            | Self::WriterFreeGeometryOmitted
             | Self::WriterBodyNameNotRepresented
             | Self::WriterBodyColorNotRepresented
             | Self::WriterBodyOpacityNotRepresented
@@ -188,6 +194,7 @@ impl IgesLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::WriterSupportEdgeNotRepresented => LossTaxonomy::TopologyNotTransferred,
             Self::OccurrenceRootInferenceBlocked | Self::OccurrencePlacementMalformed => {
                 LossTaxonomy::DecodeDiagnostic
             }
@@ -209,7 +216,8 @@ impl IgesLossCode {
             | Self::GlobalLengthUnitUnresolved
             | Self::NurbsTransformNonFinite
             | Self::GeometryNotProjected
-            | Self::WriterSupportGeometryNotRepresented => LossTaxonomy::GeometryNotTransferred,
+            | Self::WriterSupportGeometryNotRepresented
+            | Self::WriterFreeGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::SplineClaimRecovered
             | Self::RuledDevelopabilityRecovered
             | Self::GlobalSemanticContextSubstituted
@@ -314,6 +322,8 @@ mod tests {
                 "geometry.procedural-reduced",
                 "writer.passthrough-omitted",
                 "writer.minimum-resolution-adjusted",
+                "writer.support-edge-not-represented",
+                "writer.free-geometry-omitted",
                 "writer.support-geometry-not-represented",
                 "writer.body-name-not-represented",
                 "writer.body-color-not-represented",

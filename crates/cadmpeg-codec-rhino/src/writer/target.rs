@@ -59,6 +59,43 @@ pub(crate) fn plan(
                 || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
         });
     let mut losses = Vec::new();
+    let owned_points = input
+        .ir
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| &vertex.point)
+        .collect::<std::collections::BTreeSet<_>>();
+    let owned_curves = input
+        .ir
+        .model
+        .edges
+        .iter()
+        .filter_map(cadmpeg_ir::topology::Edge::curve)
+        .collect::<std::collections::BTreeSet<_>>();
+    let points = input
+        .ir
+        .model
+        .points
+        .iter()
+        .filter(|point| {
+            !owned_points.contains(&point.id) && super::is_support(point.source_object.as_ref())
+        })
+        .count();
+    let curves = input
+        .ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| {
+            !owned_curves.contains(&curve.id) && super::is_support(curve.source_object.as_ref())
+        })
+        .count();
+    if points != 0 || curves != 0 {
+        losses.push(RhinoLossCode::WriterSupportGeometryWithheld.note(format!(
+            "{points} support point record(s) and {curves} support curve record(s) were withheld; Rhino cannot encode dependent standalone geometry"
+        )));
+    }
     if let Some(message) = target.displacement_message() {
         losses.push(RhinoLossCode::SourceDialectDisplaced.note(message));
     }

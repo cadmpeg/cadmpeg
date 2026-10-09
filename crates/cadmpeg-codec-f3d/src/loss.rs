@@ -169,6 +169,8 @@ pub(crate) enum F3dLossCode {
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
     /// The selected write target differs from the same-format source dialect.
+    /// Export omits records named by the counted loss message.
+    WriterAppearancePropertiesOmitted,
     SourceDialectDisplaced,
     /// An embedded kernel carrier was read with an unverified ACIS grammar.
     KernelDialectUnverified,
@@ -264,6 +266,7 @@ impl F3dLossCode {
         Self::TsplineCageUndecoded,
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
+        Self::WriterAppearancePropertiesOmitted,
         Self::SourceDialectDisplaced,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
@@ -357,6 +360,7 @@ impl F3dLossCode {
             Self::TsplineCageUndecoded => "tspline.cage-undecoded",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::WriterAppearancePropertiesOmitted => "writer.appearance-properties-omitted",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
@@ -373,6 +377,7 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::WriterAppearancePropertiesOmitted => Severity::Warning,
             Self::BodylessDesignCarrier
             | Self::AssemblyComponentsExternal
             | Self::NurbsSurfaceCarrier
@@ -460,6 +465,7 @@ impl F3dLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
             | Self::HistoryRecordFramingFailed
             | Self::SolvedRecordUntyped
@@ -652,6 +658,7 @@ mod tests {
                 "tspline.cage-undecoded",
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
+                "writer.appearance-properties-omitted",
                 "target.source-dialect-displaced",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",

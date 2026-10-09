@@ -160,7 +160,32 @@ fn synthesized_body(
     let mut bytes = Vec::new();
     let coverage = super::generate::write_new(input.ir, &mut bytes)?;
     let (consumption, loss) = cause.into_fidelity();
-    let losses = loss.into_iter().collect();
+    let mut losses: Vec<_> = loss.into_iter().collect();
+    for appearance in &input.ir.model.appearances {
+        let written: &[&str] = match appearance.schema.as_deref().unwrap_or("GenericSchema") {
+            "GenericSchema" => &["reflectivity_at_0deg", "refraction_index"],
+            "PrismOpaqueSchema" | "PrismMetalSchema" => &["surface_roughness"],
+            "PrismTransparentSchema" => &["refraction_index"],
+            _ => &[],
+        };
+        let omitted = appearance
+            .properties
+            .keys()
+            .filter(|key| !written.contains(&key.as_str()))
+            .collect::<Vec<_>>();
+        if !omitted.is_empty() {
+            losses.push(F3dLossCode::WriterAppearancePropertiesOmitted.note(format!(
+                    "{} appearance property record(s) of {} were not written: {}",
+                    omitted.len(),
+                    appearance.id,
+                    omitted
+                        .iter()
+                        .map(|key| key.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
+        }
+    }
     Ok(body(
         input.ir,
         WritePath::Synthesized { consumption },

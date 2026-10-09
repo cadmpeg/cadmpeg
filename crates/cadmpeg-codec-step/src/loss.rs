@@ -173,6 +173,10 @@ pub(crate) enum StepLossCode {
     HiddenPmiVisibilityUnsupported,
     /// A wire shell has free vertices without an edge-based STEP carrier.
     WireShellFreeVertices,
+    /// Bodies have no owning product representation.
+    BodyWithoutProductRepresentation,
+    /// Solid and sheet shells omit wire edges and free vertices.
+    SurfaceShellWireTopologyOmitted,
     /// Tessellations require an AP242 target.
     TessellationRequiresAp242,
     /// Tessellation feature-edge classification is not represented.
@@ -399,6 +403,8 @@ impl StepLossCode {
         Self::HiddenPresentationLayerVisibilityUnsupported,
         Self::HiddenPmiVisibilityUnsupported,
         Self::WireShellFreeVertices,
+        Self::BodyWithoutProductRepresentation,
+        Self::SurfaceShellWireTopologyOmitted,
         Self::TessellationRequiresAp242,
         Self::TessellationFeatureEdges,
         Self::TessellationCornerNormals,
@@ -568,6 +574,8 @@ impl StepLossCode {
                 "presentation.hidden-layer-visibility-unsupported"
             }
             Self::HiddenPmiVisibilityUnsupported => "pmi.hidden-visibility-unsupported",
+            Self::BodyWithoutProductRepresentation => "product.body-without-representation",
+            Self::SurfaceShellWireTopologyOmitted => "topology.surface-shell-wire-omitted",
             Self::WireShellFreeVertices => "topology.wire-shell-free-vertices",
             Self::TessellationRequiresAp242 => "tessellation.requires-ap242",
             Self::TessellationFeatureEdges => "tessellation.feature-edges",
@@ -773,6 +781,8 @@ impl StepLossCode {
             | Self::OccurrenceUnresolvedParent
             | Self::OccurrenceNoLocalProduct
             | Self::WireShellFreeVertices
+            | Self::BodyWithoutProductRepresentation
+            | Self::SurfaceShellWireTopologyOmitted
             | Self::TessellationBodyLinkUnwritable
             | Self::TopologyUnreachableFromRegion
             | Self::RegionNoShellList
@@ -961,6 +971,8 @@ mod tests {
                 "presentation.hidden-layer-visibility-unsupported",
                 "pmi.hidden-visibility-unsupported",
                 "topology.wire-shell-free-vertices",
+                "product.body-without-representation",
+                "topology.surface-shell-wire-omitted",
                 "tessellation.requires-ap242",
                 "tessellation.feature-edges",
                 "tessellation.corner-normals",

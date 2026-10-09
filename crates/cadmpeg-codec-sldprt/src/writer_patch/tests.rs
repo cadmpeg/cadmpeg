@@ -959,3 +959,104 @@ fn retained_point_patch_preserves_topology_resource_refusal() {
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert_eq!(edited, payload);
 }
+
+#[test]
+fn partition_graph_comparison_includes_pcurve_geometry_and_face_colours() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let pcurve = cadmpeg_ir::geometry::pcurve::Pcurve {
+        id: "test:model:pcurve#patch".try_into().unwrap(),
+        geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+    };
+    ir.model.pcurves.push(pcurve);
+    let native = crate::brep::graph::Brep {
+        bodies: ir.model.bodies.clone(),
+        regions: ir.model.regions.clone(),
+        shells: ir.model.shells.clone(),
+        faces: ir.model.faces.clone(),
+        loops: ir.model.loops.clone(),
+        coedges: ir.model.coedges.clone(),
+        edges: ir.model.edges.clone(),
+        vertices: ir.model.vertices.clone(),
+        points: ir.model.points.clone(),
+        surfaces: ir.model.surfaces.clone(),
+        curves: ir.model.curves.clone(),
+        pcurves: ir.model.pcurves.clone(),
+        ..crate::brep::graph::Brep::default()
+    };
+    assert!(super::same_graph(&ir, &native));
+    let baseline = ir.clone();
+    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            cadmpeg_ir::math::Point2::new(2.0, 0.0),
+            cadmpeg_ir::math::Point2::new(1.0, 0.0),
+        )
+        .unwrap(),
+    );
+    assert!(!super::same_graph(&ir, &native));
+    ir = baseline;
+    ir.model.faces[0].color = Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
+    assert!(!super::same_graph(&ir, &native));
+}
+
+#[test]
+fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
+    let mut body = triangle_body();
+    body.extend(edge_use(40, 999));
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let decoded = EditableDecodeResult::from(decoded);
+    let records = crate::source_records(decoded.ir(), decoded.source_fidelity()).unwrap();
+    let annotations = &decoded.source_fidelity().annotations;
+    assert!(
+        super::patch_partition(decoded.ir(), annotations, &records, 0.001)
+            .unwrap()
+            .is_some()
+    );
+    let mut changed = decoded.ir().clone();
+    changed.model.faces[0].color =
+        Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
+    let error = super::patch_partition(&changed, annotations, &records, 0.001).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("cannot write changed face colours"));
+    changed = decoded.ir().clone();
+    if let Some(pcurve) = changed.model.pcurves.first_mut() {
+        pcurve.geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                cadmpeg_ir::math::Point2::new(2.0, 0.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            )
+            .unwrap(),
+        );
+    } else {
+        changed
+            .model
+            .pcurves
+            .push(cadmpeg_ir::geometry::pcurve::Pcurve {
+                id: "test:model:pcurve#patch".try_into().unwrap(),
+                geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                        cadmpeg_ir::math::Point2::new(2.0, 0.0),
+                        cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                    )
+                    .unwrap(),
+                ),
+                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+            });
+    }
+    let error = super::patch_partition(&changed, annotations, &records, 0.001).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("cannot write changed pcurve geometry or metadata"));
+}

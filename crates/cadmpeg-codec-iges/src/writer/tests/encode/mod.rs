@@ -688,13 +688,23 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
         report.losses
     );
     assert!(
-        report
-            .losses
-            .iter()
-            .all(|loss| accepts_procedural_reduction_loss(loss.code.taxonomy())),
+        report.losses.iter().all(
+            |loss| accepts_procedural_reduction_loss(loss.code.taxonomy())
+                || loss.code == IgesLossCode::WriterSupportEdgeNotRepresented.kind()
+        ),
         "{:#?}",
         report.losses
     );
+
+    let support_edge_losses = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::WriterSupportEdgeNotRepresented.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(support_edge_losses.len(), 2);
+    assert!(support_edge_losses
+        .iter()
+        .all(|loss| loss.message.starts_with("1 standalone edge record")));
 
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())

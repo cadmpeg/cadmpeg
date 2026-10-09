@@ -112,6 +112,14 @@ fn finish(
         })
         .into_iter()
         .collect();
+    if let Written::Semantic { coverage, .. } = written {
+        // An unknown carrier cannot be generated. A successful semantic write
+        // with one therefore retained or patched its native partition.
+        let regenerated_brep = coverage.pcurves
+            != cadmpeg_ir::codec::write::ArenaDisposition::Written
+            && !super::requires_native_partition(input.ir);
+        losses.extend(super::accounting::losses(input.ir, regenerated_brep));
+    }
     if let Some(message) = displacement {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
     }

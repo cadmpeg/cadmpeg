@@ -139,6 +139,12 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
             .count(),
         2
     );
+    assert!(generated
+        .losses
+        .iter()
+        .filter(|loss| loss.code
+            == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind())
+        .all(|loss| loss.message.starts_with("1 support geometry record")));
     let result = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .unwrap();
@@ -214,4 +220,218 @@ fn face_owned_support_surface_remains_available_to_its_owner() {
     assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .unwrap()
         .is_ok());
+}
+
+#[test]
+fn support_curve_without_topology_keeps_physical_dependency() {
+    let mut ir = rectangle();
+    let fixture = IgesCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_curves_and_surfaces::line_file(0)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut curve = fixture.ir().model.curves[0].clone();
+    assert!(curve.parameter_range.is_some());
+    curve.source_object = Some(support_association());
+    ir.model.curves.push(curve);
+    let result = round_trip(&ir);
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert!(result.ir().model.edges.is_empty());
+    assert_eq!(
+        result.ir().model.curves[0]
+            .source_object
+            .as_ref()
+            .unwrap()
+            .geometry_role,
+        Some(SourceGeometryRole::Support)
+    );
+}
+
+#[test]
+fn dependent_iges_curve_cannot_round_trip_as_an_independent_edge() {
+    let mut file = crate::test_support::test_curves_and_surfaces::line_file(0);
+    let directory = file
+        .chunks_exact_mut(81)
+        .find(|card| card[72] == b'D')
+        .unwrap();
+    directory[64..72].copy_from_slice(b"00010000");
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.curves.len(), 1);
+    assert!(decoded.ir().model.edges.is_empty());
+    let result = round_trip(decoded.ir());
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert!(result.ir().model.edges.is_empty());
+    assert_eq!(
+        result.ir().model.curves[0]
+            .source_object
+            .as_ref()
+            .unwrap()
+            .geometry_role,
+        Some(SourceGeometryRole::Support)
+    );
+}
+
+#[test]
+fn standalone_edge_with_support_curve_is_withheld_with_counted_export_loss() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_curves_and_surfaces::line_file(0)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert_eq!(ir.model.edges.len(), 1);
+    ir.model.curves[0]
+        .source_object
+        .as_mut()
+        .unwrap()
+        .geometry_role = Some(SourceGeometryRole::Support);
+    let plan = IgesCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == crate::loss::IgesLossCode::WriterSupportEdgeNotRepresented.kind()
+        && loss.message.starts_with("1 standalone edge record")));
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let result = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert!(result.ir().model.edges.is_empty());
+    assert_eq!(
+        result.ir().model.curves[0]
+            .source_object
+            .as_ref()
+            .unwrap()
+            .geometry_role,
+        Some(SourceGeometryRole::Support)
+    );
+}
+
+#[test]
+fn topology_owned_curve_preserves_support_and_independent_roles() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    for role in [SourceGeometryRole::Support, SourceGeometryRole::Independent] {
+        let mut ir = decoded.ir().clone();
+        ir.native = cadmpeg_ir::native::Native::default();
+        for curve in &mut ir.model.curves {
+            let mut source = support_association();
+            source.geometry_role = Some(role);
+            curve.source_object = Some(source);
+        }
+        let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+        let expected_status = match role {
+            SourceGeometryRole::Support => b"00010000",
+            SourceGeometryRole::Independent => b"00000000",
+        };
+        let curve_entries: Vec<_> = generated
+            .bytes
+            .chunks_exact(81)
+            .filter(|card| card[72] == b'D' && card[..8].trim_ascii() == b"110")
+            .collect();
+        assert_eq!(curve_entries.len(), ir.model.curves.len() * 2);
+        assert!(curve_entries
+            .chunks_exact(2)
+            .all(|entry| &entry[0][64..72] == expected_status));
+        let result = IgesCodec
+            .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(result.ir().model.curves.len(), ir.model.curves.len());
+        assert!(result.ir().model.curves.iter().all(|curve| curve
+            .source_object
+            .as_ref()
+            .unwrap()
+            .geometry_role
+            == Some(SourceGeometryRole::Support)));
+    }
+}
+
+#[test]
+fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses() {
+    for file in [
+        crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_file(),
+        crate::test_support::test_surface_fixtures::trimmed_plane_file(),
+    ] {
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        ir.native = cadmpeg_ir::native::Native::default();
+        let free = IgesCodec
+            .decode(
+                &mut Cursor::new(crate::test_support::test_curves_and_surfaces::point_file()),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let mut point = free.ir().model.points[0].clone();
+        point.id = "test:model:point#free".try_into().unwrap();
+        let mut vertex = free.ir().model.vertices[0].clone();
+        vertex.id = "test:model:vertex#free".try_into().unwrap();
+        vertex.point = point.id.clone();
+        ir.model.points.push(point);
+        ir.model.vertices.push(vertex.clone());
+        if let Some(body) = ir
+            .model
+            .bodies
+            .iter()
+            .find(|body| super::super::is_decoder_free_geometry_body(body))
+        {
+            let region = ir
+                .model
+                .regions
+                .iter()
+                .find(|region| region.id == body.regions[0])
+                .unwrap();
+            let shell = ir
+                .model
+                .shells
+                .iter_mut()
+                .find(|shell| shell.id == region.shells[0])
+                .unwrap();
+            let mut vertices = shell.free_vertices().to_vec();
+            vertices.push(vertex.id);
+            *shell = cadmpeg_ir::topology::Shell::new(
+                shell.id.clone(),
+                shell.region.clone(),
+                shell.faces().to_vec(),
+                shell.wire_edges().to_vec(),
+                vertices,
+            )
+            .unwrap();
+        } else {
+            ir.model.bodies.extend(free.ir().model.bodies.clone());
+            ir.model.regions.extend(free.ir().model.regions.clone());
+            let shell = &free.ir().model.shells[0];
+            ir.model.shells.push(
+                cadmpeg_ir::topology::Shell::new(
+                    shell.id.clone(),
+                    shell.region.clone(),
+                    Vec::new(),
+                    Vec::new(),
+                    vec![vertex.id],
+                )
+                .unwrap(),
+            );
+        }
+        let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+        assert!(generated.losses.iter().any(|loss| loss.code
+            == crate::loss::IgesLossCode::WriterFreeGeometryOmitted.kind()
+            && loss.message.contains("free vertex record(s)")));
+        assert!(generated.losses.iter().any(|loss| loss.code
+            == crate::loss::IgesLossCode::WriterFreeGeometryOmitted.kind()
+            && loss
+                .message
+                .starts_with("1 free point record (test:model:point#free)")));
+    }
 }
