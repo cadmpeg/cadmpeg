@@ -1152,12 +1152,14 @@ fn native_circle_loop_geometry(
     if first.curve_id == second.curve_id {
         return Ok(None);
     }
-    let (first_id, _first_storage) = crate::identity::compose_scoped::<CurveId>(
+    let first_id_parts = crate::identity::compose_scoped::<CurveId>(
         ctx,
         &crate::identity::VISIBGEOM_CURVE,
         first.curve_id,
         "creo native circle curve query",
     )?;
+    let _first_storage = first_id_parts.1;
+    let first_id = first_id_parts.0;
     let Some(first_position) = index
         .lookup(
             ctx,
@@ -1169,12 +1171,14 @@ fn native_circle_loop_geometry(
     else {
         return Ok(None);
     };
-    let (second_id, _second_storage) = crate::identity::compose_scoped::<CurveId>(
+    let second_id_parts = crate::identity::compose_scoped::<CurveId>(
         ctx,
         &crate::identity::VISIBGEOM_CURVE,
         second.curve_id,
         "creo native circle curve query",
     )?;
+    let _second_storage = second_id_parts.1;
+    let second_id = second_id_parts.0;
     let Some(second_position) = index
         .lookup(
             ctx,
@@ -1686,12 +1690,14 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
             &candidate_face_ids,
             "creo from scan candidate face ids traversal",
         )? {
-            let (key, _key_storage) = crate::identity::compose_scoped::<SurfaceId>(
+            let key_parts = crate::identity::compose_scoped::<SurfaceId>(
                 ctx,
                 &native_surface_namespace(ctx, scan, *face_id)?.0,
                 *face_id,
                 "creo B-rep surface count query",
             )?;
+            let _key_storage = key_parts.1;
+            let key = key_parts.0;
             let count = identities.count(
                 ctx,
                 &ir.model.surfaces,
@@ -1744,7 +1750,9 @@ impl BrepEdgeIndexes {
         ir: &CadIr,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut edge_vertices = BTreeMap::new();
-        let (unique_rows, _unique_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+        let unique_rows_parts = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+        let _unique_rows_storage = unique_rows_parts.1;
+        let unique_rows = unique_rows_parts.0;
         for row in ctx
             .admit_iter(&unique_rows, "creo B-rep unique edge row traversal")?
             .copied()
@@ -1783,12 +1791,14 @@ impl BrepEdgeIndexes {
         for (curve_id, _) in
             ctx.admit_iter(&edge_vertices, "creo B-rep edge vertex map traversal")?
         {
-            let (key, _key_storage) = crate::identity::compose_scoped::<CurveId>(
+            let key_parts = crate::identity::compose_scoped::<CurveId>(
                 ctx,
                 &crate::identity::VISIBGEOM_CURVE,
                 *curve_id,
                 "creo B-rep curve count query",
             )?;
+            let _key_storage = key_parts.1;
+            let key = key_parts.0;
             let count = identities.count(
                 ctx,
                 &ir.model.curves,
@@ -1890,8 +1900,10 @@ impl BrepEligibleFaceIndexes {
             )?;
         }
         let mut curve_faces = BTreeMap::new();
-        let (unique_rows, _unique_rows_storage) =
+        let unique_rows_parts =
             crate::identity::uniquely_identified_rows_checked(ctx, topology_rows, |row| row.id)?;
+        let _unique_rows_storage = unique_rows_parts.1;
+        let unique_rows = unique_rows_parts.0;
         for row in ctx
             .admit_iter(&unique_rows, "creo B-rep unique topology row traversal")?
             .copied()
@@ -2354,12 +2366,14 @@ fn unique_native_model_surface<'a>(
     face_id: u32,
     index: &mut super::model_ids::ModelIdentityIndex<'_>,
 ) -> Result<Option<&'a Surface>, cadmpeg_core::CodecError> {
-    let (key, _key_storage) = crate::identity::compose_scoped::<SurfaceId>(
+    let key_parts = crate::identity::compose_scoped::<SurfaceId>(
         ctx,
         &native_surface_namespace(ctx, scan, face_id)?.0,
         face_id,
         "creo B-rep surface query",
     )?;
+    let _key_storage = key_parts.1;
+    let key = key_parts.0;
     Ok(index
         .lookup(ctx, surfaces, |surface| surface.id.as_str(), key.as_str())?
         .unique_position()
@@ -2910,12 +2924,14 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
     for (vertex_id, position) in
         ctx.admit_iter(solved_vertices, "creo B-rep solved vertex traversal")?
     {
-        let (query_id, _query_storage) = crate::identity::compose_scoped::<PointId>(
+        let query_id_parts = crate::identity::compose_scoped::<PointId>(
             ctx,
             &crate::identity::VISIBGEOM_POINT,
             *vertex_id,
             "creo B-rep point query",
         )?;
+        let _query_storage = query_id_parts.1;
+        let query_id = query_id_parts.0;
         if points_index
             .lookup(
                 ctx,
@@ -3002,12 +3018,14 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
         .admit_iter(&used_vertices, "creo B-rep used vertex traversal")?
         .copied()
     {
-        let (query_id, _query_storage) = crate::identity::compose_scoped::<VertexId>(
+        let query_id_parts = crate::identity::compose_scoped::<VertexId>(
             ctx,
             &crate::identity::VISIBGEOM_VERTEX,
             vertex_id,
             "creo B-rep vertex query",
         )?;
+        let _query_storage = query_id_parts.1;
+        let query_id = query_id_parts.0;
         if vertices_index
             .lookup(
                 ctx,
@@ -3058,12 +3076,14 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
         let [start, end] = *ctx
             .get_btree_map(&edge_vertices, curve_id, "creo edge vertices lookup")?
             .ok_or_else(|| cadmpeg_core::CodecError::malformed("edge vertices indexed record"))?;
-        let (curve, curve_storage) = crate::identity::compose_scoped::<CurveId>(
+        let curve_parts = crate::identity::compose_scoped::<CurveId>(
             ctx,
             &crate::identity::VISIBGEOM_CURVE,
             *curve_id,
             "creo B-rep edge curve identities",
         )?;
+        let curve_storage = curve_parts.1;
+        let curve = curve_parts.0;
         let points = [
             *ctx.get_btree_map(solved_vertices, &start, "creo solved vertices lookup")?
                 .ok_or_else(|| {
@@ -3233,7 +3253,7 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                 .get_btree_map(&row_offsets, curve_id, "creo row offsets lookup")?
                 .copied()
                 .unwrap_or(0);
-            curve_storage.commit()?;
+            let curve = curve_storage.commit_value(curve)?;
             annotate(
                 ctx,
                 annotations,
@@ -3751,13 +3771,15 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                             else {
                                 break 'projected None;
                             };
-                            let (curve_id, _curve_storage) =
+                            let curve_id_parts =
                                 crate::identity::compose_scoped::<CurveId>(
                                     ctx,
                                     &crate::identity::VISIBGEOM_CURVE,
                                     half_edge.curve_id,
                                     "creo B-rep planar curve query",
                                 )?;
+                            let _curve_storage = curve_id_parts.1;
+                            let curve_id = curve_id_parts.0;
                             let Some(curve_position) = curves_index
                                 .lookup(
                                     ctx,
@@ -3770,12 +3792,14 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                                 break 'projected None;
                             };
                             let curve = &ir.model.curves[curve_position];
-                            let (edge_id, _edge_storage) = crate::identity::compose_scoped::<EdgeId>(
+                            let edge_id_parts = crate::identity::compose_scoped::<EdgeId>(
                                 ctx,
                                 &crate::identity::VISIBGEOM_EDGE,
                                 half_edge.curve_id,
                                 "creo B-rep planar edge query",
                             )?;
+                            let _edge_storage = edge_id_parts.1;
+                            let edge_id = edge_id_parts.0;
                             let Some(edge_position) = edges_index
                                 .lookup(
                                     ctx,
@@ -3990,12 +4014,14 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         let Some(frame) = Fc05CapPairFrame::from_outlines(ctx, pair, &outlines)? else {
             continue;
         };
-        let (id, id_storage) = crate::identity::compose_scoped::<SurfaceId>(
+        let id_parts = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             pair.surface_id,
             "creo decoded model identity",
         )?;
+        let id_storage = id_parts.1;
+        let id = id_parts.0;
         let identity_present = surfaces_index
             .lookup(
                 ctx,
@@ -4015,7 +4041,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         ) else {
             continue;
         };
-        id_storage.commit()?;
+        let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
             annotations,
@@ -4066,12 +4092,14 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 pair.reference_direction_row_frame,
                 frame.axis_sign,
             );
-            let (id, id_storage) = crate::identity::compose_scoped::<CurveId>(
+            let id_parts = crate::identity::compose_scoped::<CurveId>(
                 ctx,
                 &crate::identity::VISIBGEOM_CURVE,
                 curve_id,
                 "creo decoded model identity",
             )?;
+            let id_storage = id_parts.1;
+            let id = id_parts.0;
             let identity_present = curves_index
                 .lookup(
                     ctx,
@@ -4091,7 +4119,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             ) else {
                 continue;
             };
-            id_storage.commit()?;
+            let id = id_storage.commit_value(id)?;
             annotate(
                 ctx,
                 annotations,

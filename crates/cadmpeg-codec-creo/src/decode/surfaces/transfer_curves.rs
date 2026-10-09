@@ -127,9 +127,11 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     let edge_vertices = workspace.with_storage(|| {
         crate::topology::edge_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)
     })?;
-    let (unique_rows, _unique_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
+    let unique_rows_parts = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
             row.id
         })?;
+    let _unique_rows_storage = unique_rows_parts.1;
+    let unique_rows = unique_rows_parts.0;
     for row in ctx
         .admit_iter(&unique_rows, "creo boundary unique topology row traversal")?
         .copied()
@@ -166,12 +168,14 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
         } else {
             None
         };
-        let (curve_id, curve_id_storage) = crate::identity::compose_scoped::<CurveId>(
+        let curve_id_parts = crate::identity::compose_scoped::<CurveId>(
             ctx,
             &crate::identity::VISIBGEOM_CURVE,
             row.id,
             "creo carrier intersection curve identity",
         )?;
+        let curve_id_storage = curve_id_parts.1;
+        let curve_id = curve_id_parts.0;
         let allow_unresolved_endpoint_witness = ctx
             .get_btree_map(&endpoint_evidence, &row.id, "creo endpoint evidence lookup")?
             .is_some_and(|evidence| !evidence.complete)
@@ -214,7 +218,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
         if identity_present {
             continue;
         }
-        curve_id_storage.commit()?;
+        let id = curve_id_storage.commit_value(id)?;
         annotate(
             ctx,
             annotations,
@@ -365,9 +369,11 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         extrusion_plane_section_generator_count: 0,
         shared_extrusion_generator_count: 0,
     };
-    let (unique_rows, _unique_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
+    let unique_rows_parts = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
             row.id
         })?;
+    let _unique_rows_storage = unique_rows_parts.1;
+    let unique_rows = unique_rows_parts.0;
     for row in ctx
         .admit_iter(&unique_rows, "creo boundary unique topology row traversal")?
         .copied()
@@ -385,12 +391,14 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             continue;
         };
         let mut geometry = |surface_id: u32| -> Result<Option<&SurfaceGeometry>, CodecError> {
-            let (id, _id_storage) = crate::identity::compose_scoped::<cadmpeg_ir::ids::SurfaceId>(
+            let id_parts = crate::identity::compose_scoped::<cadmpeg_ir::ids::SurfaceId>(
                 ctx,
                 &crate::identity::VISIBGEOM_SURFACE,
                 surface_id,
                 "creo boundary surface query identity",
             )?;
+            let _id_storage = id_parts.1;
+            let id = id_parts.0;
             surfaces_index
                 .lookup(
                     ctx,
@@ -462,12 +470,14 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             note_refused_boundary_lanes(ctx, row.id, refusal, losses)?;
             continue;
         };
-        let (id, id_storage) = crate::identity::compose_scoped::<CurveId>(
+        let id_parts = crate::identity::compose_scoped::<CurveId>(
             ctx,
             &crate::identity::VISIBGEOM_CURVE,
             row.id,
             "creo NURBS boundary curve identity",
         )?;
+        let id_storage = id_parts.1;
+        let id = id_parts.0;
         let identity_present = curves_index
             .lookup(
                 ctx,
@@ -480,7 +490,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             continue;
         }
         let geometry = geometry.into_geometry()?;
-        id_storage.commit()?;
+        let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
             annotations,
