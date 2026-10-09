@@ -33,6 +33,10 @@ impl SurfaceRequest {
         }
     }
 
+    pub(super) fn needs_second(self) -> bool {
+        !matches!(self, Self::First)
+    }
+
     pub(super) fn needs_third(self) -> bool {
         matches!(self, Self::Third | Self::Fourth)
     }
@@ -109,12 +113,13 @@ impl Mapping<'_> {
                 let jet = match definition {
                     ProceduralSurfaceDefinition::AxisRevolution(payload) => super::model_axis_revolution_jet(
                         admission, index, payload.directrix(), payload.axis_origin().get(), payload.axis_direction(), *u, *v,
+                        source_order,
                     ),
-                    ProceduralSurfaceDefinition::Extrusion(payload) => super::model_native_extrusion_jet(admission, index, payload, *interval, *u, *v),
-                    ProceduralSurfaceDefinition::LinearSweep(payload) => super::model_linear_sweep_jet(admission, index, payload, *u, *v),
-                    ProceduralSurfaceDefinition::Revolution(payload) => super::model_native_revolution_jet(admission, index, payload, *interval, *u, *v),
-                    ProceduralSurfaceDefinition::Ruled { first, second, .. } => super::model_ruled_surface_jet(admission, index, first, second, *u, *v),
-                    ProceduralSurfaceDefinition::Sum(payload) => super::model_sum_surface_jet(admission, index, payload, *u, *v),
+                    ProceduralSurfaceDefinition::Extrusion(payload) => super::model_native_extrusion_jet(admission, index, payload, *interval, *u, *v, source_order),
+                    ProceduralSurfaceDefinition::LinearSweep(payload) => super::model_linear_sweep_jet(admission, index, payload, *u, *v, source_order),
+                    ProceduralSurfaceDefinition::Revolution(payload) => super::model_native_revolution_jet(admission, index, payload, *interval, *u, *v, source_order),
+                    ProceduralSurfaceDefinition::Ruled { first, second, .. } => super::model_ruled_surface_jet(admission, index, first, second, *u, *v, source_order),
+                    ProceduralSurfaceDefinition::Sum(payload) => super::model_sum_surface_jet(admission, index, payload, *u, *v, source_order),
                     _ => Err(EvaluationFailure::NoValue),
                 }?;
                 Ok(RequestedJet { jet, higher: HigherPartials::Third(Err(EvaluationFailure::NoValue)) })

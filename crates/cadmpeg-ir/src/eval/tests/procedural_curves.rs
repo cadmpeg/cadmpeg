@@ -72,6 +72,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
             &index,
             &subset,
             1.0,
+            crate::eval::ModelCurveRequest::Second,
         )
         .unwrap();
         assert_eq!(differential.point, expected);
