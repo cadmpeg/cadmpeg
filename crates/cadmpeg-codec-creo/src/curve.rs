@@ -1240,8 +1240,8 @@ pub(crate) fn expression_records_with_model_name(
             cursor = line_end + 1;
         }
         if lines.len() == index_from_u32(count) {
-            line_storage.commit()?;
-            line_vector_storage.commit()?;
+            let lines = line_storage.commit_value(lines)?;
+            let lines = line_vector_storage.commit_value(lines)?;
             let local_system = expression_local_system(ctx, payload, after_id, end, &cache)?;
             let prohibited_constructs = curve_equation_prohibited_constructs(ctx, &lines)?;
             let mut program_index_storage =
@@ -2063,7 +2063,7 @@ fn curve_expression_solve_program(
                             dependencies,
                             storage,
                         } => {
-                            storage.commit()?;
+                            let dependencies = storage.commit_value(dependencies)?;
                             equations.push(CurveExpressionEquation {
                                 left: ctx.copy_retained_text(
                                     statement.left,
@@ -2082,7 +2082,7 @@ fn curve_expression_solve_program(
                             storage,
                             line_index,
                         } => {
-                            storage.commit()?;
+                            let assignment = storage.commit_value(assignment)?;
                             index_storage.with_storage(|| {
                                 ctx.insert_btree_set(
                                     &mut program.executable_line_indices,
@@ -2094,7 +2094,7 @@ fn curve_expression_solve_program(
                         }
                     }
                 }
-                unknown_storage.commit()?;
+                let unknowns = unknown_storage.commit_value(unknowns)?;
                 ctx.push_vec(
                     &mut program.blocks,
                     CurveExpressionSolveBlock {
@@ -2212,8 +2212,8 @@ fn curve_expression_solve_unknowns(
     if unknowns.is_empty() {
         return Ok(None);
     }
-    name_storage.commit()?;
-    row_storage.commit()?;
+    let unknowns = name_storage.commit_value(unknowns)?;
+    let unknowns = row_storage.commit_value(unknowns)?;
     Ok(Some(unknowns))
 }
 
@@ -7904,8 +7904,8 @@ pub(crate) fn depdb_cross_section_rows(
     ) else {
         return Ok(Vec::new());
     };
-    let mut rows = Vec::new();
     let mut row_storage = ctx.reserve_scoped(0, "creo cross-section curve rows")?;
+    let mut rows = Vec::new();
     row_storage
         .with_storage(|| ctx.reserve_vec(&mut rows, capacity, "creo cross-section curve rows"))?;
     let mut boundaries = Vec::new();
@@ -7958,8 +7958,7 @@ pub(crate) fn depdb_cross_section_rows(
         cursor = terminator + length;
     }
     if rows.len() == positional_count {
-        row_storage.commit()?;
-        Ok(rows)
+        row_storage.commit_value(rows)
     } else {
         Ok(Vec::new())
     }
@@ -8855,11 +8854,15 @@ pub(crate) fn two_chart_pcurve_samples(
         *count += 1;
     }
     let mut result = Vec::new();
-    for (record, storage) in ctx.admit_iter(candidates, "creo two-chart selected row traversal")? {
+    for record_owned_storage in
+        ctx.admit_iter(candidates, "creo two-chart selected row traversal")?
+    {
+        let storage = record_owned_storage.1;
+        let record = record_owned_storage.0;
         if counts.get(&record.curve_id) != Some(&1) {
             continue;
         }
-        storage.commit()?;
+        let record = storage.commit_value(record)?;
         ctx.push_vec(&mut result, record, "creo two-chart sample rows")?;
     }
     ctx.stable_sort_by(
@@ -9016,7 +9019,7 @@ pub(crate) fn fc_coordinates(
             cursor += 1;
         }
         if tokens.len() >= 4 {
-            token_storage.commit()?;
+            let tokens = token_storage.commit_value(tokens)?;
             let mut opaque_spans = Vec::new();
             let mut unclaimed = 0;
             for token in ctx.admit_iter(&tokens, "creo fc coordinate opaque span traversal")? {
@@ -9405,7 +9408,7 @@ pub(crate) fn fc05_cylinder_cap_pairs(
         if ordinates.len() < 2 {
             continue;
         }
-        ordinate_storage.commit()?;
+        let ordinates = ordinate_storage.commit_value(ordinates)?;
         let mut cap_edges = Vec::new();
         ctx.reserve_vec(&mut cap_edges, group.len(), "creo fc05 cap edges")?;
         cap_edges.extend(ctx.admit_iter(&group, "creo fc05 cap edge traversal")?.map(
