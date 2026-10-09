@@ -4908,6 +4908,7 @@ pub(crate) fn hem_geometry_semantics(
     edge_slot: i64,
     histories: &[AsmHistory],
 ) -> Result<HemGeometrySemantics, cadmpeg_core::CodecError> {
+    decode.charge_work(0, "resolve F3D Hem geometry semantics")?;
     let unresolved = HemGeometrySemantics {
         direction: None,
         gap_length_form: None,
@@ -5003,12 +5004,14 @@ fn hem_gap_length_form(
     inserted_surfaces: &[i64],
     edge_direction: Option<cadmpeg_ir::math::Vector3>,
 ) -> Result<Option<HemGapLengthForm>, cadmpeg_core::CodecError> {
+    decode.charge_work(0, "resolve F3D Hem gap-length form")?;
     let mut first = None;
     let mut second = None;
-    let mut history_source = IntoIterator::into_iter(cylinders);
-    while let Some(cylinder) =
-        decode.next_charged(&mut history_source, "scan F3D Hem gap-length carriers")?
-    {
+    let mut history_source = cylinders.iter();
+    while !history_source.as_slice().is_empty() {
+        let Some(cylinder) = decode.next_charged(
+            &mut history_source, "scan F3D Hem gap-length carriers",
+        )? else { break; };
         if !hem_cylinder_matches(
             decode,
             cylinder,

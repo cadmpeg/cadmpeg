@@ -119,6 +119,7 @@ pub(super) fn resolved_surface_patch_edge_group(
     feature_id: &cadmpeg_ir::features::FeatureId,
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
+    ctx.charge_work(0, "resolve F3D resolved surface patch edge group")?;
     let fallback = || {
         resolved_edge_group(
             group,
@@ -231,6 +232,7 @@ fn surface_patch_grouped_recipe_edges(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<SurfacePatchRecipeEdges, CodecError> {
+    ctx.charge_work(0, "resolve F3D surface patch grouped recipe edges")?;
     if operands.is_empty() {
         return Ok(SurfacePatchRecipeEdges::Absent);
     }
@@ -453,6 +455,8 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     use cadmpeg_ir::features::EdgeSelection;
+
+    ctx.charge_work(0, "resolve F3D resolved edge treatment group with corners")?;
     let EdgeTreatmentInputs {
         groups,
         operands,
@@ -1359,6 +1363,7 @@ pub(super) fn resolved_hem_edge_slot(
     previous_state_id: Option<i64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
+    ctx.charge_work(0, "resolve F3D resolved hem edge slot")?;
     if let Some(edge) = operand.resolved_edge_slot {
         return Ok(Some(edge));
     }
@@ -1434,6 +1439,7 @@ fn hem_transition_edge_slot(
     operand: &DesignEdgeOperand,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
+    ctx.charge_work(0, "resolve F3D hem transition edge slot")?;
     let reference_contexts = operand.recipe_reference_contexts.as_slice();
     let mut empty_contexts = reference_contexts
         .iter()
@@ -1616,6 +1622,7 @@ fn unique_edge_group_assignment(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D unique edge group assignment")?;
     if operands.is_empty() {
         return Ok(None);
     }
@@ -1908,6 +1915,7 @@ fn unique_edge_assignment_with_context(
     candidate_sets: &[EdgeAssignmentCandidates],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D unique edge assignment with context")?;
     let mut edge_candidate_sets = Vec::new();
     for candidates in candidate_sets {
         let EdgeAssignmentCandidates::Edges(edges) = candidates else {
@@ -1935,6 +1943,7 @@ fn edge_assignment_candidates<'a>(
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D edge assignment candidates")?;
     let slots = if !selector_contexts.is_empty()
         && ctx.all_by(selector_contexts, |selector| Ok(!selector.incidence_matching_edge_slots.is_empty()), "select F3D edge assignment evidence")?
     {
@@ -2086,6 +2095,7 @@ fn scope_partition_edge_group_candidates<'a>(
     target_members: &[crate::records::identity::Located<u32>],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D scope partition edge group candidates")?;
     let Some(stream) = native_stream(&target.id) else {
         return Ok(None);
     };
@@ -2579,6 +2589,7 @@ fn primary_terminal_reference_shared_edge(
     operand: &DesignEdgeOperand,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
+    ctx.charge_work(0, "resolve F3D primary terminal reference shared edge")?;
     if !operand.recipe_reference_contexts.is_empty() {
         return Ok(None);
     }
@@ -2846,6 +2857,7 @@ fn unique_edge_set_intersection(
     ctx: &DecodeContext<'_>,
     edge_sets: &[&[i64]],
 ) -> Result<EdgeSetIntersection, CodecError> {
+    ctx.charge_work(0, "resolve F3D unique edge set intersection")?;
     let Some(first) = edge_sets.first() else { return Ok(EdgeSetIntersection::Disjoint); };
     let mut candidate = None;
     let mut edges = first.iter();
@@ -2867,6 +2879,7 @@ fn corroborated_edge_intersection(
     shared_edge_sets: &[&[i64]],
     slots: SelectorSlots,
 ) -> Result<Option<i64>, CodecError> {
+    ctx.charge_work(0, "resolve F3D corroborated edge intersection")?;
     let Some(first) = selector_contexts.first() else { return Ok(None); };
     let mut candidate = None;
     let mut edges = selector_candidate_edges(first, slots).iter();
@@ -2887,6 +2900,7 @@ fn corroborated_edge_candidates<'a>(
     slots: SelectorSlots,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D corroborated edge candidates")?;
     let Some(first_selector) = selector_contexts.first() else {
         return Ok(None);
     };
@@ -2971,6 +2985,7 @@ pub(super) fn project_fixed_fillet_with_corners(
     };
     use cadmpeg_ir::scalar::Length;
 
+    ctx.charge_work(0, "resolve F3D project fixed fillet with corners")?;
     let fixed = or_none!(scope.fixed_fillet_parameters());
     let stream = or_none!(native_stream(&scope.id));
     let radius_spec =
