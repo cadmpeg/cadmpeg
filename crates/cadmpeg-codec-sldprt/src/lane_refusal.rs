@@ -4,6 +4,8 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
+pub(crate) mod scoped;
+
 /// Every carrier record a reader refused, each named by the record that stated
 /// it.
 ///
@@ -34,10 +36,7 @@ impl LaneRefusals {
         if let cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit) = error {
             return Err((*limit).into());
         }
-        let message = ctx.format_retained(
-            format_args!("{record}: {error}"),
-            "record SLDPRT lane refusal",
-        )?;
+        let message = format_refusal_message(ctx, record, error)?;
         ctx.reserve_vec(&mut self.records, 1, "collect SLDPRT lane refusals")?;
         self.records.push(message);
         Ok(())
@@ -48,6 +47,14 @@ impl LaneRefusals {
     pub(crate) fn take_records(&mut self) -> Vec<String> {
         std::mem::take(&mut self.records)
     }
+}
+
+fn format_refusal_message(
+    ctx: &DecodeContext<'_>,
+    record: impl std::fmt::Display,
+    error: &cadmpeg_ir::geometry::nurbs::NurbsError,
+) -> Result<String, CodecError> {
+    ctx.format_retained(format_args!("{record}: {error}"), "record SLDPRT lane refusal")
 }
 
 #[cfg(test)]

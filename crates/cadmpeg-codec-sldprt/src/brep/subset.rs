@@ -7,7 +7,10 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+#[cfg(test)]
 use super::index::CarrierIndex;
+use super::index::view::CarrierView;
+use super::index::stream::StreamCurve;
 use super::{CurveCarrier, LEN_TO_MM};
 
 const TAG: u8 = 0x85;
@@ -85,12 +88,97 @@ fn close(left: Point3, right: Point3) -> bool {
 }
 
 /// Decode `00 85` wrappers whose stored bounds agree with their source curve.
+#[cfg(test)]
 pub(super) fn scan(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     carriers: &CarrierIndex,
 ) -> Result<Vec<CurveCarrier>, CodecError> {
-    let mut out = Vec::new();
+    let mut values = Vec::new();
+    scan_into(ctx, bytes, CarrierView::Retained(carriers), &mut SubsetSink::Retained(&mut values))?;
+    Ok(values)
+}
+
+/// The complete subset run is constructed against the preceding carrier
+/// snapshot. Each decoded occurrence remains ordered until publication.
+pub(in crate::brep) struct SubsetCandidates<'ctx> {
+    pub(in crate::brep) values: Vec<StreamCurve<'ctx>>,
+    pub(in crate::brep) shell: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx> SubsetCandidates<'ctx> {
+    pub(in crate::brep) fn into_entries(self) -> SubsetEntries<'ctx> {
+        SubsetEntries { values: self.values.into_iter(), _shell: self.shell }
+    }
+}
+
+pub(in crate::brep) struct SubsetEntries<'ctx> {
+    values: std::vec::IntoIter<StreamCurve<'ctx>>,
+    _shell: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx> SubsetEntries<'ctx> {
+    pub(in crate::brep) fn next(
+        &mut self, ctx: &DecodeContext<'_>, operation: &'static str,
+    ) -> Result<Option<StreamCurve<'ctx>>, CodecError> {
+        if let Some(limit) = ctx.resource_refusal() {
+            return Err(CodecError::ResourceLimit(limit));
+        }
+        if self.values.len() == 0 {
+            return Ok(None);
+        }
+        ctx.next_charged(&mut self.values, operation)
+    }
+}
+
+pub(in crate::brep) fn scan_scoped<'ctx>(
+    ctx: &'ctx DecodeContext<'_>, bytes: &[u8], carriers: CarrierView<'_, 'ctx>,
+) -> Result<SubsetCandidates<'ctx>, CodecError> {
+    let mut output = SubsetCandidates {
+        values: Vec::new(), shell: ctx.reserve_scoped(0, "hold Parasolid subset candidates")?,
+    };
+    scan_into(ctx, bytes, carriers, &mut SubsetSink::Stream(&mut output))?;
+    Ok(output)
+}
+
+enum SubsetSink<'out, 'ctx> {
+    #[cfg(test)]
+    Retained(&'out mut Vec<CurveCarrier>),
+    Stream(&'out mut SubsetCandidates<'ctx>),
+}
+
+impl<'ctx> SubsetSink<'_, 'ctx> {
+    fn publish(
+        &mut self, ctx: &'ctx DecodeContext<'_>, geometry: &CurveGeometry,
+        attr: u16, offset: usize, end: usize,
+        parameter_range: cadmpeg_ir::units::FiniteVector<2>,
+    ) -> Result<(), CodecError> {
+        const COPY: &str = "copy Parasolid subset curve lanes";
+        const COLLECT: &str = "collect Parasolid subset curves";
+        match self {
+            #[cfg(test)]
+            Self::Retained(output) => {
+                let geometry = geometry.try_clone_for_decode(ctx, COPY)?;
+                ctx.push_vec(output, CurveCarrier {
+                    attr, offset, end, geometry, parameter_range: Some(parameter_range),
+                }, COLLECT)
+            }
+            Self::Stream(output) => {
+                let mut storage = ctx.reserve_scoped(0, "hold Parasolid subset geometry")?;
+                let geometry = storage.with_storage(|| geometry.try_clone_for_decode(ctx, COPY))?;
+                let value = StreamCurve::exact(CurveCarrier {
+                    attr, offset, end, geometry, parameter_range: Some(parameter_range),
+                }, storage);
+                output.shell.with_storage(|| ctx.push_vec(&mut output.values, value, COLLECT))
+            }
+        }
+    }
+}
+
+fn scan_into<'ctx>(
+    ctx: &'ctx DecodeContext<'_>, bytes: &[u8], carriers: CarrierView<'_, 'ctx>,
+    output: &mut SubsetSink<'_, 'ctx>,
+) -> Result<(), CodecError> {
     let starts = 0..bytes.len().checked_sub(2).map_or(0, |end| end);
     for off in ctx.admit_iter(starts, "scan Parasolid subset curves")? {
         if bytes.get(off..off + 2) != Some(&[0x00, TAG]) {
@@ -146,23 +234,10 @@ pub(super) fn scan(
         if !close(start, evaluated_start) || !close(end, evaluated_end) {
             continue;
         }
-        let copied_geometry =
-            geometry.try_clone_for_decode(ctx, "copy Parasolid subset curve lanes")?;
-        ctx.push_vec(
-            &mut out,
-            CurveCarrier {
-                attr,
-                offset: off,
-                end: marker_at + 1 + PAYLOAD_LEN,
-                geometry: copied_geometry,
-                parameter_range: Some(cadmpeg_ir::units::FiniteVector::from([
-                    values[6], values[7],
-                ])),
-            },
-            "collect Parasolid subset curves",
-        )?;
+        output.publish(ctx, geometry, attr, off, marker_at + 1 + PAYLOAD_LEN,
+            cadmpeg_ir::units::FiniteVector::from([values[6], values[7]]))?;
     }
-    Ok(out)
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Compact Parasolid offset-surface carriers.
 
+#[cfg(test)]
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::View;
@@ -84,18 +85,27 @@ fn parse_at(body: &[u8], offset: usize) -> Option<(u16, OffsetCarrier)> {
 }
 
 /// Scan all structurally valid type-60 offset-surface records.
+#[cfg(test)]
 pub(super) fn scan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body: &[u8],
 ) -> Result<BTreeMap<u16, OffsetCarrier>, cadmpeg_core::CodecError> {
-    let mut out = BTreeMap::new();
+    let mut values = BTreeMap::new();
+    scan_into(ctx, body, &mut super::index::publication::FixedSink::Retained(&mut values))?;
+    Ok(values)
+}
+
+pub(in crate::brep) fn scan_into(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, body: &[u8],
+    out: &mut super::index::publication::FixedSink<'_, '_, OffsetCarrier>,
+) -> Result<(), cadmpeg_core::CodecError> {
     let starts = 0..body.len().checked_sub(1).map_or(0, |end| end);
     for offset in ctx.admit_iter(starts, "scan SLDPRT offset carriers")? {
         if let Some((attr, carrier)) = parse_at(body, offset) {
-            ctx.insert_btree_map(&mut out, attr, carrier, "index SLDPRT offset carriers")?;
+            out.replace(ctx, attr, carrier, "index SLDPRT offset carriers")?;
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 #[cfg(test)]

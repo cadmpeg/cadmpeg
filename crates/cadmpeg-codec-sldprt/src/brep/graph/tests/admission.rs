@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::brep::index::scan_carriers;
+
 const TINY_PARAMETER_DOMAIN: f64 = 1e-12;
 
 #[test]
@@ -33,7 +35,7 @@ fn incomplete_brep_marker_does_not_consume_collection_slots() {
     let body = [0x00, 0x1e, 0x00];
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-    let carriers = super::super::scan_carriers(&ctx, &body).unwrap();
+    let carriers = scan_carriers(&ctx, &body).unwrap();
     assert!(carriers.curve_attrs(&ctx).unwrap().is_empty());
     let tables = super::super::topology::scan(&ctx, &body).unwrap();
     assert!(tables.points().is_empty());

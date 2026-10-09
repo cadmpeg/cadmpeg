@@ -5,6 +5,7 @@
 //! magnitudes define a circular rolling-ball envelope; their signs and two unit
 //! scalars select the support-normal sides.
 
+#[cfg(test)]
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::View;
@@ -146,39 +147,49 @@ fn blend_from_raw(raw: &RawCarrier, offset: usize) -> Option<BlendCarrier> {
     })
 }
 
+#[cfg(test)]
 pub(super) struct BlendCarriers {
     pub blends: BTreeMap<u16, BlendCarrier>,
     pub pairs: BTreeMap<u16, SupportPairCarrier>,
 }
 
 /// Scan rolling-ball carriers and their zero-offset support-pair records.
+#[cfg(test)]
 pub(super) fn scan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<BlendCarriers, cadmpeg_core::CodecError> {
+    use super::index::publication::FixedSink;
     let mut blends = BTreeMap::new();
     let mut pairs = BTreeMap::new();
+    scan_into(ctx, bytes, &mut FixedSink::Retained(&mut blends), &mut FixedSink::Retained(&mut pairs))?;
+    Ok(BlendCarriers { blends, pairs })
+}
+
+pub(in crate::brep) fn scan_into(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8],
+    blends: &mut super::index::publication::FixedSink<'_, '_, BlendCarrier>,
+    pairs: &mut super::index::publication::FixedSink<'_, '_, SupportPairCarrier>,
+) -> Result<(), cadmpeg_core::CodecError> {
     let starts = 0..bytes.len().checked_sub(57).map_or(0, |end| end);
     for offset in ctx.admit_iter(starts, "scan SLDPRT blend carriers")? {
         let Some(raw) = parse_raw(bytes, offset) else {
             continue;
         };
         if let Some(carrier) = blend_from_raw(&raw, offset) {
-            ctx.entry_btree_map(&mut blends, carrier.attr, "index SLDPRT blend carriers")?
-                .or_insert(carrier);
+            blends.keep_first(ctx, carrier.attr, carrier, "index SLDPRT blend carriers")?;
         }
         if raw.selector == SupportSelector::TwoSurfaces
             && raw.values[0].abs() <= f64::EPSILON
             && raw.values[1].abs() <= f64::EPSILON
         {
-            ctx.entry_btree_map(&mut pairs, raw.attr, "index SLDPRT blend support pairs")?
-                .or_insert(SupportPairCarrier {
-                    supports: [raw.references[0], raw.references[1]],
-                    intersection: raw.references[2],
-                });
+            pairs.keep_first(ctx, raw.attr, SupportPairCarrier {
+                supports: [raw.references[0], raw.references[1]],
+                intersection: raw.references[2],
+            }, "index SLDPRT blend support pairs")?;
         }
     }
-    Ok(BlendCarriers { blends, pairs })
+    Ok(())
 }
 
 #[cfg(test)]

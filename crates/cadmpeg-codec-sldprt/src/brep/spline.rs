@@ -602,8 +602,21 @@ pub(crate) fn scan_curve_carriers(
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<u16, CurveCarrier>, cadmpeg_core::CodecError> {
-    let mut sources = demand::Sources::new(ctx, bytes, false)?;
+    use super::index::publication::{CurveSink, LossSink};
     let mut out = BTreeMap::new();
+    let mut output = CurveSink::Retained(&mut out);
+    let mut losses = LossSink::Retained(refusals);
+    scan_curve_carriers_into(ctx, bytes, &mut losses, &mut output)?;
+    Ok(out)
+}
+
+pub(in crate::brep) fn scan_curve_carriers_into<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &[u8],
+    refusals: &mut super::index::publication::LossSink<'_, 'ctx>,
+    out: &mut super::index::publication::CurveSink<'_, 'ctx>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut sources = demand::Sources::new(ctx, bytes, false)?;
     let mut starts = 0..bytes.len().checked_sub(6).map_or(0, |end| end);
     while starts.len() != 0 {
         let Some(off) = ctx.next_charged(&mut starts, "scan Parasolid curve wrappers")? else { break; };
@@ -611,7 +624,7 @@ pub(crate) fn scan_curve_carriers(
         let mut p = off + 2;
         if bytes.get(p) == Some(&0xff) { p += 1; }
         let Some(attr) = View::u16_be_at(bytes, p) else { continue; };
-        if ctx.contains_key_btree_map(&out, &attr, "collect Parasolid curve carriers")? { continue; }
+        if out.contains(ctx, attr)? { continue; }
         let Some(descriptor) = sources.curve_for_wrapper(p)? else { continue; };
         for reference in [descriptor.control_attr, descriptor.multiplicity_attr, descriptor.knot_attr] {
             sources.array(reference)?;
@@ -727,31 +740,30 @@ pub(crate) fn scan_curve_carriers(
         };
         drop(pole_storage);
         let nurbs = match nurbs {
-            Ok(nurbs) => carrier_storage.commit_value(nurbs)?,
+            Ok(nurbs) => nurbs,
             Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
                 return Err(limit.into())
             }
             Err(error) => {
-                let note = crate::loss::spline_lane_refusal(
+                let note = refusals.note(
                     ctx,
                     format_args!("curve carrier attribute {attr}: {error}"),
                 )?;
                 drop(error);
                 drop(carrier_storage);
-                ctx.push_vec(refusals, note, "collect Parasolid spline refusals")?;
+                note.publish(ctx)?;
                 continue;
             }
         };
-        ctx.entry_btree_map(&mut out, attr, "collect Parasolid curve carriers")?
-            .or_insert(CurveCarrier {
+        out.publish(ctx, CurveCarrier {
                 attr,
                 offset: off,
                 end: off + 2,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
                 parameter_range: None,
-            });
+            }, carrier_storage)?;
     }
-    Ok(out)
+    Ok(())
 }
 
 fn scan_surface_descriptors(
@@ -905,8 +917,21 @@ pub(crate) fn scan_surface_carriers(
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<u16, SurfaceCarrier>, cadmpeg_core::CodecError> {
-    let mut sources = demand::Sources::new(ctx, bytes, true)?;
+    use super::index::publication::{SurfaceSink, LossSink};
     let mut out = BTreeMap::new();
+    let mut output = SurfaceSink::Retained(&mut out);
+    let mut losses = LossSink::Retained(refusals);
+    scan_surface_carriers_into(ctx, bytes, &mut losses, &mut output)?;
+    Ok(out)
+}
+
+pub(in crate::brep) fn scan_surface_carriers_into<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &[u8],
+    refusals: &mut super::index::publication::LossSink<'_, 'ctx>,
+    out: &mut super::index::publication::SurfaceSink<'_, 'ctx>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut sources = demand::Sources::new(ctx, bytes, true)?;
     let mut starts = 0..bytes.len().checked_sub(1).map_or(0, |end| end);
     while starts.len() != 0 {
         let Some(off) = ctx.next_charged(&mut starts, "scan Parasolid surface wrappers")? else { break; };
@@ -914,7 +939,7 @@ pub(crate) fn scan_surface_carriers(
         let mut p = off + 2;
         if bytes.get(p) == Some(&0xff) { p += 1; }
         let Some(attr) = View::u16_be_at(bytes, p) else { continue; };
-        if ctx.contains_key_btree_map(&out, &attr, "collect Parasolid surface carriers")? { continue; }
+        if out.contains(ctx, attr)? { continue; }
         let Some(descriptor_at) = p.checked_add(17) else { continue; };
         let Some(descriptor_attr) = View::u16_be_at(bytes, descriptor_at) else { continue; };
         let Some(descriptor) = sources.surface(descriptor_attr)? else { continue; };
@@ -1091,31 +1116,30 @@ pub(crate) fn scan_surface_carriers(
         };
         drop(pole_storage);
         let nurbs = match nurbs {
-            Ok(nurbs) => carrier_storage.commit_value(nurbs)?,
+            Ok(nurbs) => nurbs,
             Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
                 return Err(limit.into())
             }
             Err(error) => {
-                let note = crate::loss::spline_lane_refusal(
+                let note = refusals.note(
                     ctx,
                     format_args!("surface carrier attribute {attr}: {error}"),
                 )?;
                 drop(error);
                 drop(carrier_storage);
-                ctx.push_vec(refusals, note, "collect Parasolid spline refusals")?;
+                note.publish(ctx)?;
                 continue;
             }
         };
-        ctx.entry_btree_map(&mut out, attr, "collect Parasolid surface carriers")?
-            .or_insert(SurfaceCarrier {
+        out.publish(ctx, SurfaceCarrier {
                 attr,
                 offset: off,
                 end: off + 2,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
                 orientation_reversed: false,
-            });
+            }, carrier_storage)?;
     }
-    Ok(out)
+    Ok(())
 }
 
 #[cfg(test)]

@@ -4,6 +4,8 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
+use crate::brep::index::scan_carriers;
+
 #[test]
 fn native_brep_nurbs_subset_evaluation_refuses_scoped_limit() {
     let mut body = crate::test_support::parasolid::triangle_body();
@@ -23,7 +25,7 @@ fn native_brep_nurbs_subset_evaluation_refuses_scoped_limit() {
     }
     body.extend(crate::test_support::parasolid::edge_use(40, 90));
     let service = cadmpeg_test_support::service_decode_context();
-    let mut carriers = super::scan_carriers(&service, &body).unwrap();
+    let mut carriers = scan_carriers(&service, &body).unwrap();
     let quadratic = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         &service,
         2,
