@@ -350,6 +350,7 @@ pub(super) fn isocurve_endpoint_parameters(
     pcurve: &B5Pcurve,
     endpoint_parameters: [f64; 2],
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+    ctx.charge_work(0, "catia_b5_isocurve_parameter_scan")?;
     let varying_dimension = if constant_coordinate(ctx, &pcurve.control_points, 0)?.is_some() {
         1
     } else if constant_coordinate(ctx, &pcurve.control_points, 1)?.is_some() {
@@ -364,14 +365,19 @@ pub(super) fn isocurve_endpoint_parameters(
     {
         return Ok(None);
     }
-    if !ctx.all_by(
-        pcurve.control_points.windows(2),
-        |pair| Ok(pair[0][varying_dimension] <= pair[1][varying_dimension]),
-        "catia_b5_isocurve_increasing_parameter_scan",
-    )? && !ctx.all_by(
-        pcurve.control_points.windows(2),
-        |pair| Ok(pair[0][varying_dimension] >= pair[1][varying_dimension]),
-        "catia_b5_isocurve_decreasing_parameter_scan",
+    // The constant-coordinate result establishes a first pole.
+    let mut previous = pcurve.control_points[0][varying_dimension];
+    let (mut increasing, mut decreasing) = (true, true);
+    if !ctx.all_by_limit(
+        &pcurve.control_points[1..],
+        |point| {
+            let value = point[varying_dimension];
+            increasing &= previous <= value;
+            decreasing &= previous >= value;
+            previous = value;
+            Ok(increasing || decreasing)
+        },
+        "catia_b5_isocurve_parameter_scan",
     )? {
         return Ok(None);
     }

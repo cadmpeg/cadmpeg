@@ -1854,3 +1854,4 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
 }
 
 mod knot_admission;
+mod order_admission;
