@@ -968,3 +968,5 @@ fn plane_carrier_index_borrows_rows_and_keeps_unrelated_ambiguity() {
     .expect("complete plane");
     assert_eq!(planes, [(7, [0.0, 0.0, 2.0], [0.0, 0.0, 1.0])]);
 }
+
+mod admission_visits;
