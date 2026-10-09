@@ -1675,3 +1675,5 @@ fn repeated_body_name_properties_do_not_rescan_shared_text() {
 }
 
 mod source_visits;
+
+mod appearance_index;
