@@ -1279,7 +1279,7 @@ fn canonicalize_native_curve_knots(
     let order = usize::try_from(curve.degree())
         .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?
         + 1;
-    let count = curve.control_points().len();
+    let count = curve.pole_count();
     let stored = curve.knots()[1..curve.knots().len() - 1].to_vec();
     let reconstructed = crate::surfaces::reconstruct_knots(&writer_ctx, &stored, order, count)
         .map_err(|error| match error {
@@ -1949,7 +1949,7 @@ fn check_nurbs_curve(
     let order = usize::try_from(curve.degree())
         .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?
         + 1;
-    let count = curve.control_points().len();
+    let count = curve.pole_count();
     let count_error = || format!("curve {id} cannot be represented by Rhino NURBS counts");
     if order < 2 {
         return Err(CodecError::NotImplemented(count_error()));
@@ -2161,7 +2161,8 @@ fn nurbs_curve_payload_dimension(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     dimension: i32,
 ) -> Result<Vec<u8>, CodecError> {
-    let rational = i32::from(curve.weights().is_some());
+    let weights = curve.weights();
+    let rational = i32::from(weights.is_some());
     let order = i32::try_from(curve.degree() + 1).map_err(|_| {
         cadmpeg_core::decode::refuse_local_limit(
             "Rhino writer native count",
@@ -2169,29 +2170,24 @@ fn nurbs_curve_payload_dimension(
             u64::from(curve.degree() + 1),
         )
     })?;
-    let count = i32::try_from(curve.control_points().len()).map_err(|_| {
+    let points = curve.control_points();
+    let count = i32::try_from(points.len()).map_err(|_| {
         cadmpeg_core::decode::refuse_local_limit(
             "Rhino writer native count",
             2_147_483_647,
-            cadmpeg_core::decode::u64_from_index(curve.control_points().len()),
+            cadmpeg_core::decode::u64_from_index(points.len()),
         )
     })?;
     let mut payload = vec![0x10];
     for value in [dimension, rational, order, count, 0, 0] {
         payload.extend(value.to_le_bytes());
     }
-    let min = curve
-        .control_points()
-        .iter()
-        .fold([f64::INFINITY; 3], |a, p| {
-            [a[0].min(p.x), a[1].min(p.y), a[2].min(p.z)]
-        });
-    let max = curve
-        .control_points()
-        .iter()
-        .fold([f64::NEG_INFINITY; 3], |a, p| {
-            [a[0].max(p.x), a[1].max(p.y), a[2].max(p.z)]
-        });
+    let min = points.iter().fold([f64::INFINITY; 3], |a, p| {
+        [a[0].min(p.x), a[1].min(p.y), a[2].min(p.z)]
+    });
+    let max = points.iter().fold([f64::NEG_INFINITY; 3], |a, p| {
+        [a[0].max(p.x), a[1].max(p.y), a[2].max(p.z)]
+    });
     for value in min.into_iter().chain(max) {
         payload.extend(value.to_le_bytes());
     }
@@ -2210,8 +2206,8 @@ fn nurbs_curve_payload_dimension(
     }
     payload.extend(count.to_le_bytes());
     let homogeneous = |value: f64| computed(value, "NURBS curve homogeneous pole coordinate");
-    for (index, point) in curve.control_points().iter().enumerate() {
-        let weight = curve.weights().map_or(1.0, |weights| weights[index].get());
+    for (index, point) in points.iter().enumerate() {
+        let weight = weights.as_ref().map_or(1.0, |weights| weights[index].get());
         payload.extend(homogeneous(point.x * weight)?.get().to_le_bytes());
         payload.extend(homogeneous(point.y * weight)?.get().to_le_bytes());
         if dimension == 3 {
@@ -2270,7 +2266,10 @@ fn nurbs_surface_payload(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     pole_count: i32,
 ) -> Result<Vec<u8>, CodecError> {
-    let rational = i32::from(surface.weights().is_some());
+    let rational = i32::from(matches!(
+        surface.pole_grid(),
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { .. }
+    ));
     let mut payload = vec![0x10];
     for value in [
         3,

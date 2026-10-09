@@ -475,7 +475,7 @@ impl<'a> WritableModel<'a> {
                 }
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                     check_nurbs_curve(curve.id.as_str(), nurbs)?;
-                    let count = nurbs.control_points().len();
+                    let count = nurbs.pole_count();
                     if nurbs.periodic()
                         || [
                             nurbs.knots()[usize::try_from(nurbs.degree()).map_err(|_| {
