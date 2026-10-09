@@ -780,8 +780,12 @@ pub(crate) fn parse_records<'ctx>(
         _record_storage: Vec::new(),
         _record_guards_storage: ctx.reserve_scoped(0, "Rhino history record storage guards")?,
     };
-    let mut records = records.iter();
-    while let Some(record) = ctx.next_charged(&mut records, "Rhino parse records traversal")? {
+    ctx.charge_work(0, "Rhino parse records traversal")?;
+    let mut record_source = records.iter();
+    for _ in 0..record_source.len() {
+        let Some(record) = ctx.next_charged(&mut record_source, "Rhino parse records traversal")? else {
+            break;
+        };
         let mut record_storage = ctx.reserve_scoped(0, "Rhino history record fields")?;
         let mut record_warnings =
             ScratchDiagnostics::new(ctx, "Rhino history record diagnostics")?;
@@ -1011,10 +1015,11 @@ fn object_reference_properties(
         format_args!("{prefix}.osnap_mode"),
         value.osnap_mode,
     )?;
-    let (evaluation_prefix, _evaluation_workspace) = ctx.format_scoped(
+    let (evaluation_prefix_buffer, _evaluation_workspace) = ctx.format_scoped(
         format_args!("{prefix}.evaluation"),
         "Rhino history evaluation prefix",
     )?;
+    let evaluation_prefix = evaluation_prefix_buffer;
     evaluation_properties(ctx, &evaluation_prefix, &value.evaluation, properties)?;
     insert_property(
         ctx,
@@ -1022,17 +1027,17 @@ fn object_reference_properties(
         format_args!("{prefix}.instance_count"),
         value.instance_path.len(),
     )?;
-    for (index, instance) in ctx
-        .admit_iter(
-            &(value.instance_path)[..],
-            "Rhino object reference properties traversal",
-        )?
-        .enumerate()
-    {
-        let (path, _path_workspace) = ctx.format_scoped(
+    ctx.charge_work(0, "Rhino object reference properties traversal")?;
+    let mut instance_source = value.instance_path.iter().enumerate();
+    for _ in 0..instance_source.len() {
+        let Some((index, instance)) = ctx.next_charged(&mut instance_source, "Rhino object reference properties traversal")? else {
+            break;
+        };
+        let (path_buffer, _path_workspace) = ctx.format_scoped(
             format_args!("{prefix}.instance_{index}"),
             "Rhino history instance prefix",
         )?;
+        let path = path_buffer;
         insert_property(
             ctx,
             properties,
@@ -1064,10 +1069,11 @@ fn object_reference_properties(
                 format_args!("{path}.component"),
                 Joined(&evaluation.component, ","),
             )?;
-            let (evaluation_prefix, _evaluation_workspace) = ctx.format_scoped(
+            let (evaluation_prefix_buffer, _evaluation_workspace) = ctx.format_scoped(
                 format_args!("{path}.evaluation"),
                 "Rhino history evaluation prefix",
             )?;
+            let evaluation_prefix = evaluation_prefix_buffer;
             evaluation_properties(ctx, &evaluation_prefix, &evaluation.parameter, properties)?;
         }
     }
@@ -2040,23 +2046,28 @@ fn structured_value_properties(
     match value {
         Value::ObjectReferences(values) => {
             insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
-            for (index, value) in ctx
-                .admit_iter(&values[..], "Rhino structured value properties traversal")?
-                .enumerate()
-            {
-                let (prefix, _prefix_workspace) = ctx.format_scoped(
+            ctx.charge_work(0, "Rhino structured value properties traversal")?;
+            let mut object_reference_source = values.iter().enumerate();
+            for _ in 0..object_reference_source.len() {
+                let Some((index, value)) = ctx.next_charged(&mut object_reference_source, "Rhino structured value properties traversal")? else {
+                    break;
+                };
+                let (prefix_buffer, _prefix_workspace) = ctx.format_scoped(
                     format_args!("{key}.{index}"),
                     "Rhino history reference prefix",
                 )?;
+                let prefix = prefix_buffer;
                 object_reference_properties(ctx, &prefix, value, properties)?;
             }
         }
         Value::Geometries(values) => {
             insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
-            for (index, value) in ctx
-                .admit_iter(&values[..], "Rhino structured value properties traversal")?
-                .enumerate()
-            {
+            ctx.charge_work(0, "Rhino structured value properties traversal")?;
+            let mut geometry_source = values.iter().enumerate();
+            for _ in 0..geometry_source.len() {
+                let Some((index, value)) = ctx.next_charged(&mut geometry_source, "Rhino structured value properties traversal")? else {
+                    break;
+                };
                 insert_property(
                     ctx,
                     properties,
@@ -2192,14 +2203,17 @@ fn structured_value_properties(
         }
         Value::PolyEdges(values) => {
             insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
-            for (edge_index, edge) in ctx
-                .admit_iter(&values[..], "Rhino structured value properties traversal")?
-                .enumerate()
-            {
-                let (edge_key, _edge_key_workspace) = ctx.format_scoped(
+            ctx.charge_work(0, "Rhino structured value properties traversal")?;
+            let mut polyedge_source = values.iter().enumerate();
+            for _ in 0..polyedge_source.len() {
+                let Some((edge_index, edge)) = ctx.next_charged(&mut polyedge_source, "Rhino structured value properties traversal")? else {
+                    break;
+                };
+                let (edge_key_buffer, _edge_key_workspace) = ctx.format_scoped(
                     format_args!("{key}.{edge_index}"),
                     "Rhino history edge prefix",
                 )?;
+                let edge_key = edge_key_buffer;
                 insert_property_text(
                     ctx,
                     properties,
@@ -2222,21 +2236,22 @@ fn structured_value_properties(
                     format_args!("{edge_key}.segment_count"),
                     edge.polyedge.segments.len(),
                 )?;
-                for (segment_index, segment) in ctx
-                    .admit_iter(
-                        &(edge.polyedge.segments)[..],
-                        "Rhino structured value properties traversal",
-                    )?
-                    .enumerate()
-                {
-                    let (segment_key, _segment_key_workspace) = ctx.format_scoped(
+                ctx.charge_work(0, "Rhino structured value properties traversal")?;
+                let mut segment_source = edge.polyedge.segments.iter().enumerate();
+                for _ in 0..segment_source.len() {
+                    let Some((segment_index, segment)) = ctx.next_charged(&mut segment_source, "Rhino structured value properties traversal")? else {
+                        break;
+                    };
+                    let (segment_key_buffer, _segment_key_workspace) = ctx.format_scoped(
                         format_args!("{edge_key}.segment_{segment_index}"),
                         "Rhino history segment prefix",
                     )?;
-                    let (curve_key, _curve_key_workspace) = ctx.format_scoped(
+                    let segment_key = segment_key_buffer;
+                    let (curve_key_buffer, _curve_key_workspace) = ctx.format_scoped(
                         format_args!("{segment_key}.curve"),
                         "Rhino history curve prefix",
                     )?;
+                    let curve_key = curve_key_buffer;
                     object_reference_properties(
                         ctx,
                         &curve_key,
@@ -2286,12 +2301,14 @@ fn structured_value_properties(
         }
         Value::SubdEdgeChains(values) => {
             insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
-            for (index, chain) in ctx
-                .admit_iter(&values[..], "Rhino structured value properties traversal")?
-                .enumerate()
-            {
-                let (chain_key, _chain_workspace) =
-                    ctx.format_scoped(format_args!("{key}.{index}"), "Rhino history chain prefix")?;
+            ctx.charge_work(0, "Rhino structured value properties traversal")?;
+            let mut chain_source = values.iter().enumerate();
+            for _ in 0..chain_source.len() {
+                let Some((index, chain)) = ctx.next_charged(&mut chain_source, "Rhino structured value properties traversal")? else {
+                    break;
+                };
+                let (chain_key_buffer, _chain_workspace) = ctx.format_scoped(format_args!("{key}.{index}"), "Rhino history chain prefix")?;
+                let chain_key = chain_key_buffer;
                 insert_property(
                     ctx,
                     properties,
@@ -2351,20 +2368,24 @@ pub(crate) fn project(
         redundant_repairs: 0,
         refusal: None,
     };
-    let (mut ids, mut id_workspace) = ctx
+    let (ids_buffer, mut id_workspace) = ctx
         .temporary_vec(records.len(), "Rhino history feature ids")
         .map_err(crate::chunks::FramingError::from)
         .or_else(|error| Err(history_resource_error(ctx, error)?))?;
-    let (mut native_ids, mut native_workspace) = ctx
+    let mut ids = ids_buffer;
+    let (native_ids_buffer, mut native_workspace) = ctx
         .temporary_vec(records.len(), "Rhino history native ids")
         .map_err(crate::chunks::FramingError::from)
         .or_else(|error| Err(history_resource_error(ctx, error)?))?;
-    let mut seen_record_ids = HashSet::new();
+    let mut native_ids = native_ids_buffer;
     let mut identity_workspace = ctx.reserve_scoped(0, "Rhino history identity workspace")?;
-    for record in ctx
-        .admit_iter(records, "Rhino project traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut seen_record_ids = HashSet::new();
+    ctx.charge_work(0, "Rhino project traversal")?;
+    let mut identity_record_source = records.iter();
+    for _ in 0..identity_record_source.len() {
+        let Some(record) = ctx.next_charged(&mut identity_record_source, "Rhino project traversal")? else {
+            break;
+        };
         let unique = !record.id.is_nil()
             && identity_workspace.with_storage(|| {
                 ctx.insert_hash_set(
@@ -2373,7 +2394,7 @@ pub(crate) fn project(
                     "Rhino history record identities",
                 )
             })?;
-        let (key, _key_workspace) = if unique {
+        let (key_buffer, _key_workspace) = if unique {
             ctx.format_scoped(format_args!("{}", record.id), "Rhino history identity key")
         } else {
             ctx.format_scoped(
@@ -2382,6 +2403,7 @@ pub(crate) fn project(
             )
         }
         .map_err(ProjectionError::Codec)?;
+        let key = key_buffer;
         let feature_id = id_workspace.with_storage(|| {
             ctx.format_retained(
                 format_args!("rhino:history:feature#{key}"),
@@ -2405,17 +2427,20 @@ pub(crate) fn project(
                 .map_err(ProjectionError::Codec)?,
         );
     }
-    let mut producers = HashMap::<Uuid, Option<usize>>::new();
     let mut producer_workspace = ctx.reserve_scoped(0, "Rhino history producer workspace")?;
-    for (index, record) in ctx
-        .admit_iter(records, "Rhino project traversal")
-        .map_err(CodecError::from)?
-        .enumerate()
-    {
-        for descendant in ctx
-            .admit_iter(&record.descendants[..], "Rhino project traversal")
-            .map_err(CodecError::from)?
-        {
+    let mut producers = HashMap::<Uuid, Option<usize>>::new();
+    ctx.charge_work(0, "Rhino project traversal")?;
+    let mut producer_record_source = records.iter().enumerate();
+    for _ in 0..producer_record_source.len() {
+        let Some((index, record)) = ctx.next_charged(&mut producer_record_source, "Rhino project traversal")? else {
+            break;
+        };
+        ctx.charge_work(0, "Rhino project traversal")?;
+        let mut descendant_source = record.descendants.iter();
+        for _ in 0..descendant_source.len() {
+            let Some(descendant) = ctx.next_charged(&mut descendant_source, "Rhino project traversal")? else {
+                break;
+            };
             if descendant.is_nil() {
                 continue;
             }
@@ -2436,19 +2461,22 @@ pub(crate) fn project(
         }
     }
     let mut dropped_dependencies = 0;
-    for (index, record) in ctx
-        .admit_iter(records, "Rhino project traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .enumerate()
-    {
-        let mut dependency_seen = HashSet::new();
+    ctx.charge_work(0, "Rhino project traversal")?;
+    let mut projection_record_source = records.iter().enumerate();
+    for _ in 0..projection_record_source.len() {
+        let Some((index, record)) = ctx.next_charged(&mut projection_record_source, "Rhino project traversal")? else {
+            break;
+        };
         let mut dependency_workspace =
             ctx.reserve_scoped(0, "Rhino history dependency workspace")?;
+        let mut dependency_seen = HashSet::new();
         let mut dependencies = Vec::new();
-        for antecedent in ctx
-            .admit_iter(&record.antecedents[..], "Rhino project traversal")
-            .map_err(CodecError::from)?
-        {
+        ctx.charge_work(0, "Rhino project traversal")?;
+        let mut antecedent_source = record.antecedents.iter();
+        for _ in 0..antecedent_source.len() {
+            let Some(antecedent) = ctx.next_charged(&mut antecedent_source, "Rhino project traversal")? else {
+                break;
+            };
             let producer_index =
                 match ctx.get_hash_map(&producers, antecedent, "Rhino history producer lookup")? {
                     Some(None) => {
@@ -2479,12 +2507,14 @@ pub(crate) fn project(
         }
         let mut parameters = BTreeMap::new();
         let mut properties = BTreeMap::new();
-        let mut value_occurrences = HashMap::<i32, usize>::new();
         let mut value_workspace = ctx.reserve_scoped(0, "Rhino history value workspace")?;
-        for value in ctx
-            .admit_iter(&record.values[..], "Rhino project traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        let mut value_occurrences = HashMap::<i32, usize>::new();
+        ctx.charge_work(0, "Rhino project traversal")?;
+        let mut value_source = record.values.iter();
+        for _ in 0..value_source.len() {
+            let Some(value) = ctx.next_charged(&mut value_source, "Rhino project traversal")? else {
+                break;
+            };
             let occurrence = value_workspace
                 .with_storage(|| {
                     ctx.entry_hash_map(
