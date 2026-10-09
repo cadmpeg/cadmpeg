@@ -3275,9 +3275,9 @@ fn equation_arguments<'ctx>(
 ) -> Result<Option<EquationArguments<'ctx>>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "creo equation argument candidates")?;
     let mut arguments = Vec::new();
-    while match explicit_count {
+    while *offset < end.min(payload.len()) && match explicit_count {
         Some(count) => arguments.len() < count,
-        None => *offset < end && payload.get(*offset) != Some(&0xf6),
+        None => payload.get(*offset) != Some(&0xf6),
     } {
         ctx.next_charged(&mut (*offset..=end), "creo equation argument traversal")?;
         let before = *offset;
@@ -3295,7 +3295,9 @@ fn equation_arguments<'ctx>(
         })?;
         arguments.extend_from_slice(&slots[..slot_count]);
     }
-    if explicit_count.is_some_and(|count| arguments.len() != count) {
+    if explicit_count.is_some_and(|count| arguments.len() != count)
+        || (explicit_count.is_none() && *offset < end && *offset >= payload.len())
+    {
         return Ok(None);
     }
     Ok(Some((arguments, storage)))
@@ -4479,7 +4481,7 @@ fn section_3d(
             cursor = next;
             let mut counted_items = 0..count;
 
-            while ctx
+            while !counted_items.is_empty() && cursor < payload.len() && ctx
                 .next_charged(&mut counted_items, "creo section 3d traversal")?
                 .is_some()
             {
@@ -4552,7 +4554,7 @@ fn section_3d(
             cursor = next;
             let mut counted_items = 0..count;
 
-            while ctx
+            while !counted_items.is_empty() && cursor < payload.len() && ctx
                 .next_charged(&mut counted_items, "creo section 3d traversal")?
                 .is_some()
             {
@@ -4667,9 +4669,12 @@ fn positional_section_3d(
     let mut reference_plane_rows = Vec::new();
     let mut counted_items = 0..row_count;
 
-    while let Some(row) =
-        ctx.next_charged(&mut counted_items, "creo positional section 3d traversal")?
-    {
+    while !counted_items.is_empty() && cursor < payload.len() {
+        let Some(row) =
+            ctx.next_charged(&mut counted_items, "creo positional section 3d traversal")?
+        else {
+            break;
+        };
         let (Some(plane_id), next) = segment_int(payload, cursor) else {
             break;
         };
@@ -5245,11 +5250,17 @@ fn self_described_positional_dimension_table(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<FeatureDimensionTable>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut candidate = None;
     let mut offsets = start..end;
-    while let Some(table) =
-        ctx.next_charged(&mut offsets, "creo self described dimension traversal")?
-    {
+    while !offsets.is_empty() {
+        let Some(table) =
+            ctx.next_charged(&mut offsets, "creo self described dimension traversal")?
+        else {
+            break;
+        };
         if payload.get(table) != Some(&psb::token::ARRAY_OPEN) {
             continue;
         }
@@ -5436,7 +5447,7 @@ fn feature_skamps(
     ctx.reserve_vec(&mut rows, 1, "creo skamp rows")?;
     rows.push(prototype);
     cursor = prototype_end + class_encoding.len() + 2;
-    'rows: while rows.len() < index_from_u32(declared_count) {
+    'rows: while rows.len() < index_from_u32(declared_count) && cursor < payload.len() {
         ctx.next_charged(
             &mut (cursor..=payload.len()),
             "creo feature skamps cursor traversal",
@@ -5470,6 +5481,9 @@ fn feature_skamps(
         let mut item_storage = ctx.reserve_scoped(0, "creo skamp items")?;
         let mut items = Vec::new();
         while items.len() < index_from_u32(item_count) {
+            if cursor >= payload.len() {
+                break 'rows;
+            }
             ctx.next_charged(
                 &mut (items.len()..index_from_u32(item_count)),
                 "creo feature skamps cursor traversal",
@@ -5742,7 +5756,7 @@ fn positional_feature_skamps(
     cursor = after_row_class;
     let mut rows = Vec::new();
     let mut item_classes = None::<(&[u8], &[u8])>;
-    'rows: while rows.len() < index_from_u32(count) {
+    'rows: while rows.len() < index_from_u32(count) && cursor < payload.len() {
         ctx.next_charged(
             &mut (cursor..=payload.len()),
             "creo positional feature skamps cursor traversal",
@@ -5779,6 +5793,9 @@ fn positional_feature_skamps(
         let mut item_storage = ctx.reserve_scoped(0, "creo skamp items")?;
         let mut items = Vec::new();
         while items.len() < index_from_u32(item_count) {
+            if cursor >= payload.len() {
+                break 'rows;
+            }
             ctx.next_charged(
                 &mut (items.len()..index_from_u32(item_count)),
                 "creo positional feature skamps cursor traversal",
@@ -5924,8 +5941,17 @@ fn positional_skamp_item_array_body_end(
     item_table_class: &[u8],
     end: usize,
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut items = 0..item_count;
-    while let Some(index) = ctx.next_charged(&mut items, "creo skamp item boundary traversal")? {
+    while !items.is_empty() {
+        if cursor >= payload.len() {
+            return Ok(None);
+        }
+        let Some(index) = ctx.next_charged(&mut items, "creo skamp item boundary traversal")? else {
+            break;
+        };
         if next_solver_int(payload, &mut cursor).is_none()
             || next_solver_int(payload, &mut cursor).is_none()
         {
@@ -6073,7 +6099,7 @@ fn feature_relation_triples(
     let mut rows = Vec::new();
     ctx.reserve_vec(&mut rows, 1, "creo relation triples")?;
     rows.push(prototype);
-    while rows.len() < index_from_u32(declared_count) {
+    while rows.len() < index_from_u32(declared_count) && cursor < payload.len() {
         ctx.next_charged(
             &mut (cursor..=payload.len()),
             "creo feature relation triples cursor traversal",
@@ -6132,7 +6158,7 @@ fn positional_relation_triples(
     };
     cursor = after_row_class;
     let mut rows = Vec::new();
-    while rows.len() < index_from_u32(count) {
+    while rows.len() < index_from_u32(count) && cursor < payload.len() {
         ctx.next_charged(
             &mut (cursor..=payload.len()),
             "creo positional relation triples cursor traversal",
@@ -6558,6 +6584,9 @@ fn saved_line_block(
     cache: &scalar::ScalarCache,
     entities: &mut Vec<FeatureSavedEntity>,
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if payload.get(cursor) == Some(&0xf1) {
         cursor = ctx
             .position_by(
@@ -6605,9 +6634,9 @@ fn saved_line_block(
         let mut storage = ctx.reserve_scoped(0, "creo saved line record scratch")?;
         let mut references = Vec::new();
         let mut attributes = Vec::new();
-        loop {
+        while cursor < payload.len() {
             ctx.next_charged(
-                &mut (cursor..=payload.len()),
+                &mut (cursor..payload.len()),
                 "creo saved line block cursor traversal",
             )?;
             if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
@@ -6723,9 +6752,9 @@ fn saved_line_block(
             filled += 1;
             cursor = next;
         }
-        loop {
+        while cursor < payload.len() {
             ctx.next_charged(
-                &mut (cursor..=payload.len()),
+                &mut (cursor..payload.len()),
                 "creo saved line block cursor traversal",
             )?;
             if payload
@@ -7494,7 +7523,7 @@ fn saved_spline_entities(
                     ctx.reserve_vec(&mut points, point_count, "creo saved spline points")?;
                     let mut counted_items = 0..point_count;
 
-                    while ctx
+                    while !counted_items.is_empty() && cursor < body_end && ctx
                         .next_charged(&mut counted_items, "creo saved spline entities traversal")?
                         .is_some()
                     {
@@ -7617,10 +7646,11 @@ fn saved_spline_parameters(
     })?;
     let mut counted_items = 0..count;
 
-    while ctx
-        .next_charged(&mut counted_items, "creo saved spline parameters traversal")?
-        .is_some()
-    {
+    while !counted_items.is_empty() {
+        if cursor >= payload.len() {
+            return Ok(None);
+        }
+        ctx.next_charged(&mut counted_items, "creo saved spline parameters traversal")?;
         let Some((value, next)) = saved_spline_parameter(payload, cursor, cache) else {
             return Ok(None);
         };
