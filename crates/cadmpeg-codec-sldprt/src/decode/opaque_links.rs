@@ -50,13 +50,17 @@ impl<'source, 'ctx> OpaqueGeometryLinks<'source, 'ctx> {
         if self.groups.is_empty() {
             return Ok(());
         }
-        let (unknown_positions, unknown_position_storage) = self.ctx.collect_scoped_string_map(
+        let unknown_position_storage;
+        let unknown_positions;
+        (unknown_positions, unknown_position_storage) = self.ctx.collect_scoped_string_map(
             unknowns.len(),
             unknowns.iter().enumerate().rev()
                 .map(|(position, record)| (record.id().as_str(), position)),
             "index SLDPRT opaque geometry records",
         )?;
-        let (mut linked_positions, mut position_storage) = self.ctx.scoped_vector_storage(
+        let mut position_storage;
+        let mut linked_positions;
+        (linked_positions, position_storage) = self.ctx.scoped_vector_storage(
             0, "SLDPRT opaque geometry link positions",
         )?;
         for (record_id, group) in self.ctx.admit_iter(self.groups, OPERATION)? {
