@@ -1729,16 +1729,30 @@ fn deleted_reference_edge_group_candidates(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
     ctx.charge_work(0, "resolve F3D deleted reference edge group candidates")?;
+    let mut storage = ctx.reserve_scoped(0, "hold F3D deleted reference candidates")?;
     let mut reference_candidates = Vec::new();
     let mut deleted_candidates = Vec::new();
-    for operand in operands {
+    let mut operands = operands.iter();
+    while !operands.as_slice().is_empty() {
+        let Some(operand) = ctx.next_charged(&mut operands, "scan F3D deleted reference operands")? else {
+            break;
+        };
+        if operand.recipe_reference_contexts.is_empty() || operand.deleted_boundary_edge_slots.is_empty() {
+            return Ok(None);
+        }
         let mut candidates = Vec::new();
-        for edge in operand
-            .recipe_reference_contexts
-            .iter()
-            .flat_map(|context| context.changed_reference_edge_slots.iter().copied())
-        {
-            ctx.push_vec(&mut candidates, edge, "f3d deleted reference candidate")?;
+        let mut contexts = operand.recipe_reference_contexts.iter();
+        while !contexts.as_slice().is_empty() {
+            let Some(context) = ctx.next_charged(&mut contexts, "scan F3D deleted reference contexts")? else {
+                break;
+            };
+            let mut edges = context.changed_reference_edge_slots.iter();
+            while !edges.as_slice().is_empty() {
+                let Some(&edge) = ctx.next_charged(&mut edges, "scan F3D deleted reference edges")? else {
+                    break;
+                };
+                ctx.push_scoped_vec(&mut storage, &mut candidates, edge, "f3d deleted reference candidate")?;
+            }
         }
         ctx.sort_unstable_by(
             &mut candidates,
@@ -1747,16 +1761,25 @@ fn deleted_reference_edge_group_candidates(
             "f3d deleted reference candidate sort",
         )?;
         ctx.dedup_vec(&mut candidates, "deduplicate F3D deleted reference edges")?;
-        ctx.push_vec(
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+        ctx.push_scoped_vec(
+            &mut storage,
             &mut reference_candidates,
             candidates,
             "f3d deleted reference candidate set",
         )?;
         let mut deleted = Vec::new();
-        for edge in &operand.deleted_boundary_edge_slots {
-            ctx.push_vec(&mut deleted, *edge, "f3d deleted reference boundary edge")?;
+        let mut edges = operand.deleted_boundary_edge_slots.iter();
+        while !edges.as_slice().is_empty() {
+            let Some(&edge) = ctx.next_charged(&mut edges, "scan F3D deleted reference boundary edges")? else {
+                break;
+            };
+            ctx.push_scoped_vec(&mut storage, &mut deleted, edge, "f3d deleted reference boundary edge")?;
         }
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut storage,
             &mut deleted_candidates,
             deleted,
             "f3d deleted reference boundary set",
@@ -1774,12 +1797,21 @@ fn unique_deleted_reference_assignment(
     if reference_candidates.len() != deleted_candidates.len() {
         return Ok(None);
     }
+    let mut storage = ctx.reserve_scoped(0, "hold F3D shared deleted reference candidates")?;
     let mut candidate_sets = Vec::new();
-    for (references, deleted) in reference_candidates.iter().zip(deleted_candidates) {
+    let mut pairs = reference_candidates.iter().zip(deleted_candidates);
+    while pairs.len() != 0 {
+        let Some((references, deleted)) = ctx.next_charged(&mut pairs, "scan F3D deleted reference pairs")? else {
+            break;
+        };
         let mut candidates = Vec::new();
-        for &edge in references {
+        let mut references = references.iter();
+        while !references.as_slice().is_empty() {
+            let Some(&edge) = ctx.next_charged(&mut references, "scan F3D shared deleted reference edges")? else {
+                break;
+            };
             if ctx.contains(deleted, &edge, "find F3D deleted reference shared edge")? {
-                ctx.push_vec(&mut candidates, edge, "f3d deleted reference shared edge")?;
+                ctx.push_scoped_vec(&mut storage, &mut candidates, edge, "f3d deleted reference shared edge")?;
             }
         }
         ctx.sort_unstable_by(
@@ -1792,7 +1824,8 @@ fn unique_deleted_reference_assignment(
         if candidates.is_empty() {
             return Ok(None);
         }
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut storage,
             &mut candidate_sets,
             candidates,
             "f3d deleted reference shared set",
