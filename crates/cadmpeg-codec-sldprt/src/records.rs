@@ -1917,25 +1917,33 @@ impl SketchInputEntity {
         kind: SketchInputKind,
         payload: &[u8],
     ) -> Result<Self, &'static str> {
-        let position = usize::try_from(offset).map_err(|_| "sketch entity offset exceeds usize")?;
-        if position >= payload.len()
-            || !crate::resolved_features::markers::sketch_marker_at(payload, position)
-        {
-            return Err("sketch entity offset is not a marker in native_payload");
-        }
+        let (object_index, local_id) = Self::payload_identity(offset, payload)?;
         Ok(Self {
             id,
             parent,
             feature_ref: None,
             ordinal,
             offset,
-            object_index: crate::resolved_features::markers::marker_object_index(payload, position),
-            local_id: crate::resolved_features::markers::marker_local_id(payload, position),
+            object_index,
+            local_id,
             kind,
             state_value: None,
             coordinates_m: None,
             links: None,
         })
+    }
+
+    fn payload_identity(offset: u64, payload: &[u8]) -> Result<(Option<u32>, Option<u32>), &'static str> {
+        let position = usize::try_from(offset).map_err(|_| "sketch entity offset exceeds usize")?;
+        if position >= payload.len()
+            || !crate::resolved_features::markers::sketch_marker_at(payload, position)
+        {
+            return Err("sketch entity offset is not a marker in native_payload");
+        }
+        Ok((
+            crate::resolved_features::markers::marker_object_index(payload, position),
+            crate::resolved_features::markers::marker_local_id(payload, position),
+        ))
     }
 
     /// Re-admit this record against the payload it references.
@@ -1945,18 +1953,11 @@ impl SketchInputEntity {
     /// Keep the payload-derived marker identity tied to the record at every
     /// outbound boundary.
     pub(crate) fn validate_against_payload(&self, payload: &[u8]) -> Result<(), &'static str> {
-        let expected = Self::try_new(
-            self.id.clone(),
-            self.parent.clone(),
-            self.ordinal,
-            self.offset,
-            self.kind,
-            payload,
-        )?;
-        if self.object_index != expected.object_index {
+        let (object_index, local_id) = Self::payload_identity(self.offset, payload)?;
+        if self.object_index != object_index {
             return Err("SolidWorks feature-input object index does not match its native payload");
         }
-        if self.local_id != expected.local_id {
+        if self.local_id != local_id {
             return Err(
                 "SolidWorks feature-input local object id does not match its native payload",
             );
@@ -2957,6 +2958,36 @@ mod tests {
         let error = serde_json::from_value::<FeatureInputLane>(renamed).unwrap_err();
         assert!(error.to_string().contains("local object id does not match"));
         assert!(SketchInputLinks::new(3, Vec::new()).is_none());
+    }
+
+    #[test]
+    fn retained_marker_validation_borrows_identity_and_preserves_error_order() {
+        let mut payload = vec![0u8; 43];
+        payload[..4].copy_from_slice(&41u32.to_le_bytes());
+        payload[4..9].copy_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
+        payload[9..17].fill(0xff);
+        payload[17..21].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        let mut entity = super::SketchInputEntity::try_new(
+            "test:marker:retained-identity".into(), "test:lane:retained-identity".into(),
+            0, 4, super::SketchInputKind::Point, &payload,
+        ).unwrap();
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| entity.validate_against_payload(&payload));
+        assert_eq!(result, Ok(()));
+        assert_eq!(allocations, 0);
+
+        entity.object_index = Some(99);
+        entity.local_id = Some(99);
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| entity.validate_against_payload(&payload));
+        assert_eq!(result, Err("SolidWorks feature-input object index does not match its native payload"));
+        assert_eq!(allocations, 0);
+        entity.object_index = Some(41);
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| entity.validate_against_payload(&payload));
+        assert_eq!(result, Err("SolidWorks feature-input local object id does not match its native payload"));
+        assert_eq!(allocations, 0);
+        entity.offset = u64::try_from(payload.len()).unwrap();
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| entity.validate_against_payload(&payload));
+        assert_eq!(result, Err("sketch entity offset is not a marker in native_payload"));
+        assert_eq!(allocations, 0);
     }
 
     #[test]
