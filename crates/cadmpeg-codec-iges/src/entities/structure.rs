@@ -2033,6 +2033,10 @@ fn bounded_plane_curve_is_simple(
                         return Err(error);
                     }
                 };
+                if active.is_empty() {
+                    // Destroy the empty root before this segment's storage expires.
+                    drop(std::mem::take(active));
+                }
                 if !valid {
                     return Ok(false);
                 }
