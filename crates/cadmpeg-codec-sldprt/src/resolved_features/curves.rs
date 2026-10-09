@@ -401,14 +401,18 @@ pub(super) fn resolve_two_center_semicircle_profile(
         }
         Ok(Some((geometry, endpoint_refs)))
     };
-    let (first_result, first_storage) = ctx
+    let first_storage;
+    let first_result;
+    (first_result, first_storage) = ctx
         .with_scoped_storage("collect SLDPRT semicircle endpoints", || {
             arc(first.2, first.5, &first_refs, first_endpoints, false)
         })?;
     let Some((first_geometry, first_endpoint_refs)) = first_result else {
         return Ok(());
     };
-    let (second_result, second_storage) = ctx
+    let second_storage;
+    let second_result;
+    (second_result, second_storage) = ctx
         .with_scoped_storage("collect SLDPRT semicircle endpoints", || {
             arc(second.2, second.5, &second_refs, second_endpoints, true)
         })?;
@@ -1753,8 +1757,9 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
             curve = next_curve;
         }
         if profile.len() >= 2 {
-            ctx.push_vec(&mut profiles, profile, "collect SLDPRT closed profiles")?;
-            profile_storage.commit()?;
+            ctx.reserve_vec(&mut profiles, 1, "collect SLDPRT closed profiles")?;
+            let profile = profile_storage.commit_value(profile)?;
+            profiles.push(profile);
         }
     }
     Ok(profiles)
@@ -3010,7 +3015,9 @@ fn ordered_compact_line_profile(
         Point2,
     )],
 ) -> Result<Option<Vec<SketchEntityUse>>, CodecError> {
-    let (result, profile_storage) = ctx.with_scoped_storage(
+    let profile_storage;
+    let result;
+    (result, profile_storage) = ctx.with_scoped_storage(
         "SLDPRT compact line profile",
         || -> Result<_, CodecError> {
             const OPERATION: &str = "scan SLDPRT compact line profile adjacency";

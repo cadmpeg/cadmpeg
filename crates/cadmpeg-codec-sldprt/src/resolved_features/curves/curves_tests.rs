@@ -1849,3 +1849,5 @@ mod frame_deduplication;
 mod lane_candidate_storage;
 
 mod marker_projection;
+
+mod profile_storage;
