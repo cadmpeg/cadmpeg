@@ -1734,6 +1734,9 @@ fn split_homogeneous_pcurve(
     parameter: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<HomogeneousPcurveSplit>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if controls.is_empty() || !parameter.is_finite() || !(0.0..=1.0).contains(&parameter) {
         return Ok(None);
     }
@@ -1745,9 +1748,6 @@ fn split_homogeneous_pcurve(
     let mut right = ctx.collection_vec(controls.len(), "iges pcurve split right controls")?;
     left.push(current[0]);
     right.push(current[current.len() - 1]);
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(1..controls.len());
     while source_values.len() != 0 {
         let Some(_) = ctx.next_charged(&mut source_values, "iges pcurve split traversal")? else {
