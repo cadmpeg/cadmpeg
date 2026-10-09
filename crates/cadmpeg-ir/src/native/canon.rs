@@ -591,16 +591,16 @@ impl ser::SerializeSeq for CanonSeq<'_> {
 
     fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         self.ctx.charge_work(1, WORK)?;
+        if self.unfilled == 0 {
+            self.ctx.reserve_vec(&mut self.out, 1, STORAGE)?;
+            self.unfilled = 1;
+        }
         let index = self.out.len();
         let element = value
             .serialize(CanonValue::within(self.ctx, self.depth))
             .map_err(|error| error.within(self.ctx, || Ok(Step::Index(index))))?
             .into_value();
-        if let Some(unfilled) = self.unfilled.checked_sub(1) {
-            self.unfilled = unfilled;
-        } else {
-            self.ctx.reserve_vec(&mut self.out, 1, STORAGE)?;
-        }
+        self.unfilled -= 1;
         self.out.push(element);
         Ok(())
     }
