@@ -322,3 +322,60 @@ fn a_cadir_document_cannot_carry_a_surface_chain_past_the_bound() {
         "{error}"
     );
 }
+
+// The serde conversion owns an already allocated box of the retained type.
+#[test]
+fn boxed_parameter_curve_conversion_reuses_its_owned_pointee_and_wire() {
+    let curve = Box::new(TextCurve2d::Line {
+        origin: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(0.0, 0.0)).unwrap(),
+        direction: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(1.0, 0.0)).unwrap(),
+    });
+    let pointer = std::ptr::from_ref(curve.as_ref());
+    let expected = serde_json::to_vec(&curve).unwrap();
+    let nested = super::super::NestedCurve2d::try_from(curve).unwrap();
+    assert!(std::ptr::eq(pointer, nested.curve()));
+    assert_eq!(serde_json::to_vec(&nested).unwrap(), expected);
+}
+
+#[test]
+fn boxed_curve_conversion_reuses_its_owned_pointee_at_nesting_bound() {
+    let curve = Box::new(nested_trimmed_curve(super::super::MAX_GEOMETRY_NESTING_DEPTH - 1).unwrap());
+    let pointer = std::ptr::from_ref(curve.as_ref());
+    let expected = serde_json::to_vec(&curve).unwrap();
+    let nested = super::super::NestedCurve::try_from(curve).unwrap();
+    assert!(std::ptr::eq(pointer, nested.curve()));
+    assert_eq!(serde_json::to_vec(&nested).unwrap(), expected);
+    let curve = Box::new(nested_trimmed_curve(super::super::MAX_GEOMETRY_NESTING_DEPTH).unwrap());
+    assert_eq!(super::super::NestedCurve::try_from(curve).unwrap_err(), "3D curve nesting exceeds 64");
+}
+
+#[test]
+fn boxed_surface_conversion_reuses_its_owned_pointee_at_nesting_bound() {
+    let surface = Box::new(nested_offset_surface(super::super::MAX_GEOMETRY_NESTING_DEPTH - 1).unwrap());
+    let pointer = std::ptr::from_ref(surface.as_ref());
+    let expected = serde_json::to_vec(&surface).unwrap();
+    let nested = super::super::NestedSurface::try_from(surface).unwrap();
+    assert!(std::ptr::eq(pointer, nested.surface()));
+    assert_eq!(serde_json::to_vec(&nested).unwrap(), expected);
+    let surface = Box::new(nested_offset_surface(super::super::MAX_GEOMETRY_NESTING_DEPTH).unwrap());
+    assert_eq!(super::super::NestedSurface::try_from(surface).unwrap_err(), "surface nesting exceeds 64");
+}
+
+#[test]
+fn boxed_parameter_curve_conversion_preserves_its_nesting_bound() {
+    let mut curve = TextCurve2d::Line {
+        origin: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(0.0, 0.0)).unwrap(),
+        direction: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(1.0, 0.0)).unwrap(),
+    };
+    for _ in 0..super::super::MAX_GEOMETRY_NESTING_DEPTH - 1 {
+        curve = TextCurve2d::Offset { distance: FiniteReal::ONE,
+            basis: super::super::NestedCurve2d::try_new(curve).unwrap() };
+    }
+    let curve = Box::new(curve);
+    let pointer = std::ptr::from_ref(curve.as_ref());
+    let nested = super::super::NestedCurve2d::try_from(curve).unwrap();
+    assert!(std::ptr::eq(pointer, nested.curve()));
+    let curve = TextCurve2d::Offset { distance: FiniteReal::ONE, basis: nested };
+    assert_eq!(super::super::NestedCurve2d::try_from(Box::new(curve)).unwrap_err(),
+        "parameter-curve nesting exceeds 64");
+}

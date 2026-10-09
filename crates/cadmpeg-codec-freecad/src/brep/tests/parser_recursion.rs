@@ -193,3 +193,47 @@ fn binary_surface_and_directrix_share_the_original_caller_depth() {
     assert_depth(Parser::BinaryDirectrix, "FreeCAD binary surface parse nesting",
         "FreeCAD binary curve parse nesting");
 }
+
+#[test]
+fn native_geometry_parser_semantic_errors_retire_the_original_depth_guard() {
+    for parser in [
+        Parser::TextCurve2d,
+        Parser::TextCurve,
+        Parser::TextSurface,
+        Parser::BinaryCurve2d,
+        Parser::BinaryCurve,
+        Parser::BinarySurface,
+        Parser::TextDirectrix,
+        Parser::BinaryDirectrix,
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let result = match parser {
+            Parser::TextCurve2d | Parser::TextCurve | Parser::TextSurface | Parser::TextDirectrix => {
+                let mut cursor = TokenCursor::new(&ctx, &[]);
+                match parser {
+                    Parser::TextCurve2d => parse_curve2d(&mut cursor, 0, 1).map(drop),
+                    Parser::TextCurve => parse_curve(&mut cursor, 0, 1).map(drop),
+                    _ => parse_surface(&mut cursor, 0, 1).map(drop),
+                }
+            }
+            _ => {
+                let mut cursor = BinaryCursor::new(&ctx, &[]);
+                match parser {
+                    Parser::BinaryCurve2d => parse_binary_curve2d(&mut cursor, 0).map(drop),
+                    Parser::BinaryCurve => parse_binary_curve(&mut cursor, 0).map(drop),
+                    _ => parse_binary_surface(&mut cursor, 0).map(drop),
+                }
+            }
+        };
+        assert!(matches!(result, Err(CodecError::Malformed(_))));
+        assert_eq!(ctx.resource_refusal(), None);
+        let depth = ctx.enter_nested("reuse semantically failed parser depth")
+            .expect("failed actual parser frame retired");
+        drop(depth);
+        parse(&ctx, parser, false).expect("same original context still accepts a valid leaf");
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+}
