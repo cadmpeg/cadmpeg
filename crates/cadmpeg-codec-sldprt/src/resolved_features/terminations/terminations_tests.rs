@@ -776,7 +776,7 @@ fn termination_consensus_uses_stable_reference_identity_across_lanes() {
     .unwrap();
     let vote = |reference: &str, identity: &str| super::TerminationVote::Face {
         condition: super::FaceCondition::ToFace,
-        reference: super::FaceReference::Lane {
+        reference: super::FaceReference {
             reference: reference.into(),
             canonical: Some("components:1,2,3".into()),
         },
@@ -784,14 +784,16 @@ fn termination_consensus_uses_stable_reference_identity_across_lanes() {
     };
     let first = vote("lane-0:100", "components:1,2,3");
     let second = vote("lane-1:200", "components:1,2,3");
-    let consensus = super::consensus_termination_vote(&ctx, &[Some(first.clone()), Some(second)])
+    let votes = [Some(first.clone()), Some(second)];
+    let consensus = super::consensus_termination_vote(&ctx, &votes)
         .unwrap()
         .unwrap();
-    assert_eq!(consensus.reference(), Some("components:1,2,3"));
-    let exact = super::consensus_termination_vote(&ctx, &[Some(first.clone())])
+    assert_eq!(consensus.reference, Some("components:1,2,3"));
+    let votes = [Some(first.clone())];
+    let exact = super::consensus_termination_vote(&ctx, &votes)
         .unwrap()
         .unwrap();
-    assert_eq!(exact.reference(), first.reference());
+    assert_eq!(exact.reference, first.reference());
     assert!(super::consensus_termination_vote(
         &ctx,
         &[Some(first), Some(vote("lane-1:200", "components:1,2,4")),]
@@ -1885,5 +1887,6 @@ fn combine_selection_enrichment_refuses_work_limit() {
 
 mod combine_projection_limits;
 mod component_text;
+mod consensus_limits;
 mod route_limits;
 mod surface_sweep_limits;
