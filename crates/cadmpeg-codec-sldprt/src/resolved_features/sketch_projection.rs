@@ -59,7 +59,9 @@ pub(crate) fn sketches(
             continue;
         }
         let source_stream = source.source_stream();
-        let (native_ref, _reference_storage) =
+        let _reference_storage;
+        let native_ref;
+        (native_ref, _reference_storage) =
             ctx.with_scoped_storage("hold SLDPRT sketch native reference", || {
                 ctx.format_retained(
                     format_args!(
@@ -75,7 +77,9 @@ pub(crate) fn sketches(
         {
             let brep =
                 crate::brep::graph::decode(ctx, &stream.payload, &stream.header, source_stream)?;
-            let (configuration, _configuration_storage) = ctx
+            let _configuration_storage;
+            let configuration_name;
+            (configuration_name, _configuration_storage) = ctx
                 .with_scoped_storage("hold SLDPRT sketch configuration", || {
                     configuration(ctx, section)
                 })?;
@@ -88,7 +92,7 @@ pub(crate) fn sketches(
                     stream_offset: stream.offset,
                     source_stream,
                     sketch_name: &stream.header.description,
-                    configuration: configuration.as_deref(),
+                    configuration: configuration_name.as_deref(),
                     native_ref: &native_ref,
                 },
                 annotations,
@@ -175,7 +179,9 @@ fn project_brep(
         let origin = plane_surface.origin().get();
         let normal = plane_surface.frame().axis().as_raw();
         let u_axis = plane_surface.frame().reference().as_raw();
-        let (sketch_id, sketch_id_storage) =
+        let sketch_id_storage;
+        let sketch_id;
+        (sketch_id, sketch_id_storage) =
             ctx.with_scoped_storage("build SLDPRT projected sketch identity", || {
                 mint_formatted::<SketchId>(
                     ctx,
@@ -238,7 +244,9 @@ fn project_brep(
                         )
                     })?;
                 }
-                let (entity_id, entity_id_storage) = if let Some(id) = ctx.get_hash_map(
+                let entity_id_storage;
+                let entity_id;
+                (entity_id, entity_id_storage) = if let Some(id) = ctx.get_hash_map(
                     &edge_entities,
                     &edge.id,
                     "resolve SLDPRT sketch_projection keys",
@@ -247,7 +255,9 @@ fn project_brep(
                         id.try_clone_for_decode(ctx, "retain SLDPRT sketch entity ID")
                     })?
                 } else {
-                    let (id, id_storage) = ctx.with_scoped_storage("hold SLDPRT profile entity identity", || mint_formatted::<SketchEntityId>(
+                    let id_storage;
+                    let id;
+                    (id, id_storage) = ctx.with_scoped_storage("hold SLDPRT profile entity identity", || mint_formatted::<SketchEntityId>(
                         ctx,
                         format_args!(
                             "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
@@ -374,11 +384,11 @@ fn project_brep(
                     )?
                 {
                     ctx.reserve_vec(&mut profile, 1, "collect SLDPRT sketch profile uses")?;
+                    let entity_id = entity_id_storage.commit_value(entity_id)?;
                     profile.push(SketchEntityUse {
                         entity: entity_id,
                         reversed: coedge.sense == Sense::Reversed,
                     });
-                    entity_id_storage.commit()?;
                 }
             }
             if !profile.is_empty() {
@@ -496,7 +506,7 @@ fn project_brep(
         let native_ref =
             ctx.copy_retained_text(native_ref, "retain SLDPRT sketch native reference")?;
         ctx.reserve_vec(sketches, 1, "collect SLDPRT projected sketches")?;
-        sketch_id_storage.commit()?;
+        let sketch_id = sketch_id_storage.commit_value(sketch_id)?;
         sketches.push(Sketch {
             id: sketch_id,
             name,

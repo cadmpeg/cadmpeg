@@ -236,9 +236,13 @@ pub(super) fn project_edge(
     };
     if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) = curve {
         let operation = "project SLDPRT sketch NURBS edge";
-        let (projected, geometry_storage) = ctx.with_scoped_storage(operation, || {
+        let geometry_storage;
+        let projected;
+        (projected, geometry_storage) = ctx.with_scoped_storage(operation, || {
             let knots = nurbs.knots().try_clone_for_decode(ctx, operation)?;
-            let ((projected, weights), _lanes_storage) =
+            let _lanes_storage;
+            let (projected, weights);
+            ((projected, weights), _lanes_storage) =
                 ctx.with_scoped_storage(operation, || {
                     let projected = match nurbs.pole_rows() {
                         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => ctx
@@ -278,8 +282,8 @@ pub(super) fn project_edge(
         })?;
         return match projected {
             Ok(nurbs) => {
-                geometry_storage.commit()?;
-                Ok(Some(SketchGeometry::nurbs(nurbs)))
+                let geometry = SketchGeometry::nurbs(nurbs);
+                Ok(Some(geometry_storage.commit_value(geometry)?))
             }
             Err(error) => {
                 refusal.note(
@@ -493,3 +497,6 @@ pub(super) fn project_point(
 
 #[cfg(test)]
 mod sketch_edges_tests;
+
+#[cfg(test)]
+mod storage_tests;
