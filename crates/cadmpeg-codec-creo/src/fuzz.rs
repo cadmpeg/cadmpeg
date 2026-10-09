@@ -43,7 +43,11 @@ pub fn scalar(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let cache = ScalarCache::from_section_checked(ctx, data)?;
+    let scratch = ctx.with_scoped_storage("creo fuzz scalar cache scratch", || {
+        ScalarCache::from_section_checked(ctx, data)
+    })?;
+    let _scratch_storage = scratch.1;
+    let cache = scratch.0;
     let mut offsets = 0usize..data.len();
     while !offsets.is_empty() {
         let Some(offset) = ctx.next_charged(&mut offsets, "creo fuzz scalar traversal")? else {
@@ -216,5 +220,44 @@ mod tests {
             Err(CodecError::ResourceLimit(actual)) if actual == original
         ));
         assert_eq!(ctx.resource_refusal(), Some(original));
+    }
+    #[test]
+    fn scalar_probe_releases_cache_backing_before_return() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        const CAP: u64 = 16 * 1024;
+        let data = [0x46, 0, 0, 0, 0, 0, 0, 0];
+        for scoped in [false, true] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = CAP;
+            policy.limits.max_materialized_bytes = CAP;
+            let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).expect("root");
+            let output_storage = if scoped {
+                Some(ctx.with_scoped_storage("scalar probe parent", || super::scalar(&ctx, &data))
+                    .expect("scoped probe").1)
+            } else {
+                super::scalar(&ctx, &data).expect("probe");
+                None
+            };
+            let refusal = if scoped {
+                ctx.reserve_scoped_limit(CAP + 1, "after scalar probe")
+                    .expect_err("empty live output")
+            } else {
+                ctx.charge_retained_limit(CAP + 1, "after scalar probe")
+                    .expect_err("empty retained output")
+            };
+            assert_eq!(refusal.dimension, if scoped {
+                ResourceDimension::MaterializedBytes
+            } else {
+                ResourceDimension::RetainedBytes
+            });
+            assert_eq!((refusal.used, refusal.additional), (0, CAP + 1));
+            assert!(matches!(super::scalar(&ctx, &data),
+                Err(CodecError::ResourceLimit(actual)) if actual == refusal));
+            assert_eq!(ctx.resource_refusal(), Some(refusal));
+            drop(output_storage);
+        }
     }
 }
