@@ -513,7 +513,11 @@ fn append_points<T>(
     values: &[T],
     point: impl Fn(&T) -> cadmpeg_ir::math::Point3,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for value in ctx.admit_iter(values, "Rhino morph point projection")? {
+    ctx.charge_work(0, "Rhino morph point projection")?;
+    let mut values = values.iter();
+    for _ in 0..values.len() {
+        let value = ctx.next_charged(&mut values, "Rhino morph point projection")?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino morph point source ended early"))?;
         if !text.is_empty() {
             ctx.append_retained(text, ";", "Rhino morph property value")?;
         }
@@ -663,12 +667,18 @@ fn surface_properties(
     let mut points_text = String::new();
     match surface.pole_grid() {
         NurbsPoleGrid::Polynomial { rows } => {
-            for row in ctx.admit_iter(&rows[..], "Rhino morph surface rows")? {
+            let mut rows = rows.iter();
+            for _ in 0..rows.len() {
+                let row = ctx.next_charged(&mut rows, "Rhino morph surface rows")?
+                    .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino morph row source ended early"))?;
                 append_points(ctx, &mut points_text, row, |point| point.get())?;
             }
         }
         NurbsPoleGrid::Rational { rows } => {
-            for row in ctx.admit_iter(&rows[..], "Rhino morph surface rows")? {
+            let mut rows = rows.iter();
+            for _ in 0..rows.len() {
+                let row = ctx.next_charged(&mut rows, "Rhino morph surface rows")?
+                    .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino morph row source ended early"))?;
                 append_points(ctx, &mut points_text, row, |pole| pole.point.get())?;
             }
         }
@@ -693,8 +703,14 @@ fn surface_properties(
     )?;
     if let NurbsPoleGrid::Rational { rows } = surface.pole_grid() {
         let mut weights_text = String::new();
-        for row in ctx.admit_iter(&rows[..], "Rhino morph surface weight rows")? {
-            for pole in ctx.admit_iter(&row[..], "Rhino morph surface weights")? {
+        let mut rows = rows.iter();
+        for _ in 0..rows.len() {
+            let row = ctx.next_charged(&mut rows, "Rhino morph surface weight rows")?
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino morph weight row source ended early"))?;
+            let mut poles = row.iter();
+            for _ in 0..poles.len() {
+                let pole = ctx.next_charged(&mut poles, "Rhino morph surface weights")?
+                    .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino morph weight source ended early"))?;
                 if !weights_text.is_empty() {
                     ctx.append_retained(&mut weights_text, ",", "Rhino morph property value")?;
                 }
@@ -758,17 +774,17 @@ fn cage_properties(
         )?;
     }
     let mut points_text = String::new();
-    for (index, point) in ctx
-        .admit_iter(&cage.control_points[..], "Rhino morph cage points")?
-        .enumerate()
-    {
+    let mut points = cage.control_points.iter();
+    for index in 0..points.len() {
+        let point = ctx.next_charged(&mut points, "Rhino morph cage points")?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino morph cage point source ended early"))?;
         if index != 0 {
             ctx.append_retained(&mut points_text, ";", "Rhino morph property value")?;
         }
-        for (coordinate, value) in ctx
-            .admit_iter(&point[..], "Rhino morph cage coordinates")?
-            .enumerate()
-        {
+        let mut coordinates = point.iter();
+        for coordinate in 0..coordinates.len() {
+            let value = ctx.next_charged(&mut coordinates, "Rhino morph cage coordinates")?
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino morph coordinate source ended early"))?;
             if coordinate != 0 {
                 ctx.append_retained(&mut points_text, ",", "Rhino morph property value")?;
             }
@@ -843,10 +859,10 @@ pub(crate) fn project(
             ("cage", properties)
         }
     };
-    for (index, localizer) in ctx
-        .admit_iter(&morph.localizers[..], "Rhino project traversal")?
-        .enumerate()
-    {
+    let mut localizers = morph.localizers.iter();
+    for index in 0..localizers.len() {
+        let localizer = ctx.next_charged(&mut localizers, "Rhino project traversal")?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino localizer source ended early"))?;
         let (prefix_buffer, _prefix_storage) = ctx.format_scoped(
             format_args!("localizer_{index}"),
             "Rhino morph localizer prefix",
@@ -940,10 +956,10 @@ pub(crate) fn project(
         format_args!("preserve_structure"),
         format_args!("{}", morph.preserve_structure),
     )?;
-    for (index, id) in ctx
-        .admit_iter(&morph.captive_ids[..], "Rhino project traversal")?
-        .enumerate()
-    {
+    let mut captive_ids = morph.captive_ids.iter();
+    for index in 0..captive_ids.len() {
+        let id = ctx.next_charged(&mut captive_ids, "Rhino project traversal")?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino captive source ended early"))?;
         if let Some(record) = resolve_captive(*id)? {
             let key = ctx.format_retained(
                 format_args!("captive_{index}_object"),
@@ -980,6 +996,7 @@ pub(crate) fn project(
 
 #[cfg(test)]
 mod tests {
+    mod fallible_prefix;
     use super::{
         captive_ids, decode, localizer, localizers, project, Control, LocalizerKind, ANONYMOUS,
     };

@@ -283,3 +283,26 @@ fn direct_record_partial_text_preserves_original_scratch_refusal() {
         },
     );
 }
+
+#[test]
+fn v1_curve_evaluation_refuses_first_blends_before_unused_degree_levels() {
+    let parse_ctx = cadmpeg_test_support::service_decode_context();
+    let curve = NurbsCurve::from_checked_lanes(
+        &parse_ctx, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        None, false,
+    ).unwrap().unwrap();
+    // Three pole initializations and one executed degree level precede
+    // admission of its two infallible blends. The later level is unvisited.
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::evaluate_nurbs(&ctx, &curve, 1.0).unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else { panic!("first blend refusal"); };
+    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(refusal.operation, "Rhino V1 curve evaluation");
+    assert_eq!((refusal.used, refusal.additional), (4, 2));
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == refusal));
+}

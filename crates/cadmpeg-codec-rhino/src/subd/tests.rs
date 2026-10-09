@@ -1336,3 +1336,5 @@ fn mesh_proxy_candidate_refuses_speculative_and_retained_boundaries() {
         });
     }
 }
+
+mod fallible_prefix;

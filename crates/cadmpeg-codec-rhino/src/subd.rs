@@ -1046,17 +1046,17 @@ fn validate_level(
         ..vertex_partition.end + cadmpeg_core::decode::u64_from_index(level.edges.len());
     let face_partition = edge_partition.end
         ..edge_partition.end + cadmpeg_core::decode::u64_from_index(level.faces.len());
-    for vertex in ctx
-        .admit_iter(&level.vertices[..], "Rhino validate level traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut vertex_source = level.vertices.iter();
+    for _ in 0..vertex_source.len() {
+        let vertex = ctx.next_charged(&mut vertex_source, "Rhino validate level traversal")?
+            .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         resolve_all(ctx, &vertex.edges, &edge_partition)?;
         resolve_all(ctx, &vertex.faces, &face_partition)?;
     }
-    for edge in ctx
-        .admit_iter(&level.edges[..], "Rhino validate level traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut edge_source = level.edges.iter();
+    for _ in 0..edge_source.len() {
+        let edge = ctx.next_charged(&mut edge_source, "Rhino validate level traversal")?
+            .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         if edge
             .vertices
             .iter()
@@ -1074,10 +1074,10 @@ fn validate_level(
             ));
         }
     }
-    for face in ctx
-        .admit_iter(&level.faces[..], "Rhino validate level traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut face_source = level.faces.iter();
+    for _ in 0..face_source.len() {
+        let face = ctx.next_charged(&mut face_source, "Rhino validate level traversal")?
+            .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         resolve_all(ctx, &face.edges, &edge_partition)?;
         if face.edges.len() < 3 {
             return Err(malformed(
@@ -1093,10 +1093,10 @@ fn validate_level(
     let vertex_faces = vertex_faces_buffer;
     let (edge_faces_buffer, _edge_faces_storage) = edge_face_incidence(ctx, level)?;
     let edge_faces = edge_faces_buffer;
-    for vertex in ctx
-        .admit_iter(&level.vertices[..], "Rhino validate level traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut vertex_source = level.vertices.iter();
+    for _ in 0..vertex_source.len() {
+        let vertex = ctx.next_charged(&mut vertex_source, "Rhino validate level traversal")?
+            .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         compare_incidence(
             ctx,
             &vertex.edges,
@@ -1118,10 +1118,10 @@ fn validate_level(
             "vertex-face",
         )?;
     }
-    for edge in ctx
-        .admit_iter(&level.edges[..], "Rhino validate level traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut edge_source = level.edges.iter();
+    for _ in 0..edge_source.len() {
+        let edge = ctx.next_charged(&mut edge_source, "Rhino validate level traversal")?
+            .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         compare_incidence(
             ctx,
             &edge.faces,
@@ -1167,10 +1167,10 @@ fn incidence_from_edges<'ctx>(
             Ok(BTreeSet::new())
         })
     })?;
-    for edge in ctx
-        .admit_iter(&level.edges[..], "Rhino incidence from edges traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut edge_source = level.edges.iter();
+    for _ in 0..edge_source.len() {
+        let edge = ctx.next_charged(&mut edge_source, "Rhino incidence from edges traversal")?
+            .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         for vertex in edge.vertices {
             storage.with_storage(|| {
                 ctx.insert_btree_set(
@@ -1197,16 +1197,16 @@ fn incidence_from_faces<'ctx>(
             Ok(BTreeSet::new())
         })
     })?;
-    for face in ctx
-        .admit_iter(&level.faces[..], "Rhino incidence from faces traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut face_source = level.faces.iter();
+    for _ in 0..face_source.len() {
+        let face = ctx.next_charged(&mut face_source, "Rhino incidence from faces traversal")?
+            .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         let mut first = None;
         let mut previous_end = None;
-        for edge_use in ctx
-            .admit_iter(&face.edges[..], "Rhino incidence from faces traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        let mut edge_use_source = face.edges.iter();
+        for _ in 0..edge_use_source.len() {
+            let edge_use = ctx.next_charged(&mut edge_use_source, "Rhino incidence from faces traversal")?
+                .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
             let edge_start = 1 + level.vertices.len();
             let edge_index = usize::try_from(edge_use.archive_id)
                 .ok()
@@ -1271,14 +1271,14 @@ fn edge_face_incidence<'ctx>(
             Ok(BTreeSet::new())
         })
     })?;
-    for face in ctx
-        .admit_iter(&level.faces[..], "Rhino edge face incidence traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
-        for edge in ctx
-            .admit_iter(&face.edges[..], "Rhino edge face incidence traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+    let mut face_source = level.faces.iter();
+    for _ in 0..face_source.len() {
+        let face = ctx.next_charged(&mut face_source, "Rhino edge face incidence traversal")?
+            .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
+        let mut edge_source = face.edges.iter();
+        for _ in 0..edge_source.len() {
+            let edge = ctx.next_charged(&mut edge_source, "Rhino edge face incidence traversal")?
+                .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
             let edge_index = usize::try_from(edge.archive_id)
                 .map_err(|_| malformed(face.base.source_offset, "SubD edge index overflow"))?
                 - 1
@@ -1308,10 +1308,10 @@ fn compare_incidence(
 ) -> Result<(), SubdError> {
     let mut storage = ctx.reserve_scoped(0, "Rhino SubD serialized incidence")?;
     let mut serialized_ids = BTreeSet::new();
-    for pointer in ctx
-        .admit_iter(serialized, "Rhino compare incidence traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut pointer_source = serialized.iter();
+    for _ in 0..pointer_source.len() {
+        let pointer = ctx.next_charged(&mut pointer_source, "Rhino compare incidence traversal")?
+            .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         storage.with_storage(|| {
             ctx.insert_btree_set(
                 &mut serialized_ids,
@@ -1366,10 +1366,10 @@ fn materialize(
     let mut vertices = ctx
         .collection_vec(level.vertices.len(), "Rhino SubD vertices")
         .map_err(SubdError::from)?;
-    for vertex in ctx
-        .admit_iter(level.vertices, "Rhino materialize traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut vertex_source = level.vertices.into_iter();
+    for _ in 0..vertex_source.len() {
+        let vertex = ctx.next_charged(&mut vertex_source, "Rhino materialize traversal")?
+            .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         let tag = vertex.tag.ok_or_else(|| {
             malformed(
                 vertex.base.source_offset,
@@ -1396,10 +1396,10 @@ fn materialize(
     let mut edges = ctx
         .collection_vec(level.edges.len(), "Rhino SubD edges")
         .map_err(SubdError::from)?;
-    for edge in ctx
-        .admit_iter(level.edges, "Rhino materialize traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut edge_source = level.edges.into_iter();
+    for _ in 0..edge_source.len() {
+        let edge = ctx.next_charged(&mut edge_source, "Rhino materialize traversal")?
+            .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         let tag = edge.tag.ok_or_else(|| {
             malformed(
                 edge.base.source_offset,
@@ -1430,10 +1430,10 @@ fn materialize(
     let mut faces = ctx
         .collection_vec(level.faces.len(), "Rhino SubD faces")
         .map_err(SubdError::from)?;
-    for face in ctx
-        .admit_iter(level.faces, "Rhino materialize traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut face_source = level.faces.into_iter();
+    for _ in 0..face_source.len() {
+        let face = ctx.next_charged(&mut face_source, "Rhino materialize traversal")?
+            .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         let mut face_edges = ctx
             .collection_vec(face.edges.len(), "Rhino SubD face edges")
             .map_err(SubdError::from)?;
