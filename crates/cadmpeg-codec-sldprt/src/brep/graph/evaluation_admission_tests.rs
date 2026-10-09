@@ -230,8 +230,8 @@ fn nurbs_isocurve_size_mismatch_needs_no_knot_comparison_work() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        super::nurbs_strict_isocurve_pcurve(&ctx, &surface, &curve).unwrap(),
-        super::InverseResolution::NoMatch
+        crate::brep::graph::nurbs_pcurves::nurbs_strict_isocurve_pcurve(&ctx, &surface, &curve).unwrap(),
+        crate::brep::graph::inverse::InverseResolution::NoMatch
     ));
     ctx.finish_session().unwrap();
 }

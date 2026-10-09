@@ -7,7 +7,7 @@ const EPS_INTERSECTION_FIT_MM: f64 = 1.0e-9;
 const EPS_EXPECTED_INTERSECTION_PARAMETER: f64 = 1.0e-10;
 const EPS_EXPECTED_BILINEAR_PARAMETER: f64 = 1.0e-8;
 
-use super::sphere_latitude;
+use crate::brep::graph::pcurves::sphere_latitude;
 use super::unique_face_colors;
 use crate::brep::entity;
 use crate::brep::topology::{Bridge, Coedge, EdgeReferences, EdgeUse, Loop, Tables};
@@ -33,9 +33,9 @@ fn intersection_support_pcurve(
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<
     Option<(
-        super::PcurveGeometry,
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry,
         [f64; 2],
-        super::IntersectionPcurveSource,
+        crate::brep::graph::pcurves::IntersectionPcurveSource,
     )>,
     cadmpeg_core::CodecError,
 > {
@@ -46,7 +46,7 @@ fn intersection_support_pcurve(
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("empty test root fits service policy");
-    super::intersection_support_pcurve(
+    crate::brep::graph::pcurves::intersection_support_pcurve(
         &ctx,
         support_data,
         chart,
@@ -428,7 +428,7 @@ fn intersection_uv_converts_length_parameters_and_exact_endpoints() {
         cadmpeg_ir::math::Point2::new(0.5, 2.0)
     );
     assert_eq!(range, [0.0, 1.0]);
-    assert_eq!(source, super::IntersectionPcurveSource::StoredCache);
+    assert_eq!(source, crate::brep::graph::pcurves::IntersectionPcurveSource::StoredCache);
 
     let ambiguous = super::super::intersection::IntersectionSupportData {
         supports: [10, 10],
@@ -510,7 +510,7 @@ fn intersection_support_pcurve_refuses_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root fits policy");
-    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = super::intersection_support_pcurve(
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = crate::brep::graph::pcurves::intersection_support_pcurve(
         &ctx,
         &support_data,
         &chart,
@@ -589,7 +589,7 @@ fn analytic_intersection_chart_derives_continuous_uv_without_cache() {
         assert!((point.u - expected.0).abs() < EPS_EXPECTED_PARAMETER);
         assert!((point.v - expected.1).abs() < EPS_EXPECTED_PARAMETER);
     }
-    assert_eq!(source, super::IntersectionPcurveSource::AnalyticInverse);
+    assert_eq!(source, crate::brep::graph::pcurves::IntersectionPcurveSource::AnalyticInverse);
 
     let under_toleranced = super::super::intersection::IntersectionSupportData {
         fit_tolerance_mm: 0.009,
@@ -716,7 +716,7 @@ fn nurbs_intersection_chart_inverts_with_continuation_seeds() {
         assert!((point.u - expected.0).abs() < EPS_EXPECTED_INTERSECTION_PARAMETER);
         assert!((point.v - expected.1).abs() < EPS_EXPECTED_INTERSECTION_PARAMETER);
     }
-    assert_eq!(source, super::IntersectionPcurveSource::NurbsInverse);
+    assert_eq!(source, crate::brep::graph::pcurves::IntersectionPcurveSource::NurbsInverse);
 }
 
 #[test]
@@ -919,14 +919,14 @@ fn shared_edge_coedge_parity_orients_connected_faces() {
         ..Default::default()
     };
 
-    with_test_context(|ctx| super::solve_face_orientation(ctx, &mut brep))
+    with_test_context(|ctx| crate::brep::graph::orientation::solve_face_orientation(ctx, &mut brep))
         .expect("orient first face pair");
     assert_eq!(brep.faces[0].sense, Sense::Forward);
     assert_eq!(brep.faces[1].sense, Sense::Reversed);
 
     brep.faces[1].sense = Sense::Reversed;
     brep.coedges[1].sense = Sense::Reversed;
-    with_test_context(|ctx| super::solve_face_orientation(ctx, &mut brep))
+    with_test_context(|ctx| crate::brep::graph::orientation::solve_face_orientation(ctx, &mut brep))
         .expect("orient reversed face pair");
     assert_eq!(brep.faces[0].sense, Sense::Forward);
     assert_eq!(brep.faces[1].sense, Sense::Forward);
@@ -1090,21 +1090,21 @@ fn ambiguous_face_owner_stats_survive_when_all_uses_are_withheld() {
         owner: Some(700),
         offset,
     };
-    let mut tables = super::topology::Tables::default();
+    let mut tables = crate::brep::topology::Tables::default();
     tables
         .insert_bridge(&ctx, bridge(10, 100, 20))
         .expect("bridge");
     tables
         .insert_bridge(&ctx, bridge(11, 200, 10))
         .expect("bridge");
-    let mut entity_facts = super::entity::FactsSource::empty(&ctx).expect("entity facts");
+    let mut entity_facts = crate::brep::entity::FactsSource::empty(&ctx).expect("entity facts");
     entity_facts.entity_count = 1;
-    let decoded = super::decode_graph(
+    let decoded = crate::brep::graph::emission::decode_graph(
         &ctx,
         &crate::brep::index::view::CarrierView::Retained(&crate::brep::index::CarrierIndex::default()),
         &tables,
         entity_facts,
-        &super::typed::Facts::default(),
+        &crate::brep::typed::Facts::default(),
         &cadmpeg_ir::stream_name!("empty"),
     )
     .expect("valid exactness fields");
@@ -1158,7 +1158,7 @@ fn topology_pruning_retains_a_procedural_blend_spine() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("test context");
-    super::prune_rejected_topology(&ctx, &mut brep).expect("prune topology");
+    crate::brep::graph::emission::prune_rejected_topology(&ctx, &mut brep).expect("prune topology");
     assert_eq!(brep.curves.first().map(|curve| &curve.id), Some(&spine));
 }
 
@@ -1173,7 +1173,7 @@ fn homogeneous_quadratic_identity_proves_constant_radius() {
     ];
     let weights = [1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0];
     let knots = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
-    assert!(super::quadratic_nurbs_has_constant_radius(
+    assert!(crate::brep::graph::pcurves::quadratic_nurbs_has_constant_radius(
         &cadmpeg_test_support::service_decode_context(),
         &controls,
         Some(&weights),
@@ -1184,7 +1184,7 @@ fn homogeneous_quadratic_identity_proves_constant_radius() {
 
     let mut invalid = controls;
     invalid[1].u += 0.01;
-    assert!(!super::quadratic_nurbs_has_constant_radius(
+    assert!(!crate::brep::graph::pcurves::quadratic_nurbs_has_constant_radius(
         &cadmpeg_test_support::service_decode_context(),
         &invalid,
         Some(&weights),
@@ -1212,7 +1212,7 @@ fn interior_ruled_surface_line_has_affine_isoparametric_inverse() {
         None,
     );
     let geometry = match with_test_context(|ctx| {
-        super::ruled_surface_line_pcurve(
+        crate::brep::graph::inverse::ruled_surface_line_pcurve(
             ctx,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
@@ -1222,9 +1222,9 @@ fn interior_ruled_surface_line_has_affine_isoparametric_inverse() {
     })
     .expect("ruling evaluation")
     {
-        super::InverseResolution::Unique(geometry) => geometry,
-        super::InverseResolution::NoMatch => panic!("interior ruling did not match"),
-        super::InverseResolution::Ambiguous => panic!("interior ruling was ambiguous"),
+        crate::brep::graph::inverse::InverseResolution::Unique(geometry) => geometry,
+        crate::brep::graph::inverse::InverseResolution::NoMatch => panic!("interior ruling did not match"),
+        crate::brep::graph::inverse::InverseResolution::Ambiguous => panic!("interior ruling was ambiguous"),
     };
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected affine line pcurve");
@@ -1274,10 +1274,10 @@ fn interior_linear_axis_rational_nurbs_isocurve_has_exact_pcurve() {
         Some(vec![1.0, 2.0, 1.0]),
     );
     let geometry =
-        match super::nurbs_isocurve_pcurve(&ctx, &surface, &curve).expect("isocurve lanes pair") {
-            super::InverseResolution::Unique(geometry) => geometry,
-            super::InverseResolution::NoMatch => panic!("interior isocurve did not match"),
-            super::InverseResolution::Ambiguous => panic!("interior isocurve was ambiguous"),
+        match crate::brep::graph::nurbs_pcurves::nurbs_isocurve_pcurve(&ctx, &surface, &curve).expect("isocurve lanes pair") {
+            crate::brep::graph::inverse::InverseResolution::Unique(geometry) => geometry,
+            crate::brep::graph::inverse::InverseResolution::NoMatch => panic!("interior isocurve did not match"),
+            crate::brep::graph::inverse::InverseResolution::Ambiguous => panic!("interior isocurve was ambiguous"),
         };
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected isoparametric line pcurve");
@@ -1323,9 +1323,9 @@ fn extended_nurbs_isocurve_clamps_the_carrier_before_matching() {
         ],
         None,
     );
-    let resolution = super::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.2, 0.8])
+    let resolution = crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.2, 0.8])
         .expect("isocurve lanes pair");
-    let super::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+    let crate::brep::graph::nurbs_pcurves::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
         line_pcurve,
     )) = resolution
     else {
@@ -1337,7 +1337,7 @@ fn extended_nurbs_isocurve_clamps_the_carrier_before_matching() {
     assert!(origin.v.abs() < EPS_EXPECTED_PARAMETER);
     assert!(direction.u.abs() < EPS_EXPECTED_PARAMETER);
     assert!((direction.v - 1.0).abs() < EPS_EXPECTED_PARAMETER);
-    let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
+    let clamped = crate::brep::graph::clamp::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
         .expect("the clamped lanes are a curve")
         .expect("clamped segment");
     let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
@@ -1348,7 +1348,7 @@ fn extended_nurbs_isocurve_clamps_the_carrier_before_matching() {
     )
     .expect("resource allocation did not fail")
     .expect("surface isocurve");
-    assert!(super::nurbs_representation_matches(&ctx, &expected, &clamped).unwrap());
+    assert!(crate::brep::graph::nurbs_pcurves::nurbs_representation_matches(&ctx, &expected, &clamped).unwrap());
 }
 
 #[test]
@@ -1387,10 +1387,10 @@ fn extended_quadratic_isocurve_preserves_the_inserted_homogeneous_segment() {
         ],
         None,
     );
-    let resolution = super::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.1, 0.9])
+    let resolution = crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.1, 0.9])
         .expect("isocurve lanes pair");
     assert!(
-        matches!(resolution, super::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+        matches!(resolution, crate::brep::graph::nurbs_pcurves::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
                         line_pcurve,
                     )) if {
                         let origin = line_pcurve.origin().as_raw();
@@ -1401,7 +1401,7 @@ fn extended_quadratic_isocurve_preserves_the_inserted_homogeneous_segment() {
                             && (direction.v - 1.0).abs() <= f64::EPSILON * 64.0
                     })
     );
-    let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
+    let clamped = crate::brep::graph::clamp::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
         .expect("the clamped lanes are a curve")
         .expect("clamped quadratic segment");
     let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
@@ -1412,7 +1412,7 @@ fn extended_quadratic_isocurve_preserves_the_inserted_homogeneous_segment() {
     )
     .expect("resource allocation did not fail")
     .expect("quadratic surface isocurve");
-    assert!(super::nurbs_representation_matches(&ctx, &expected, &clamped).unwrap());
+    assert!(crate::brep::graph::nurbs_pcurves::nurbs_representation_matches(&ctx, &expected, &clamped).unwrap());
 }
 
 #[test]
@@ -1448,10 +1448,10 @@ fn extended_rational_isocurve_compares_weights_after_homogeneous_clamping() {
         ],
         Some(vec![0.8, 1.4]),
     );
-    let resolution = super::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.2, 0.8])
+    let resolution = crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.2, 0.8])
         .expect("isocurve lanes pair");
     assert!(
-        matches!(resolution, super::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+        matches!(resolution, crate::brep::graph::nurbs_pcurves::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
                         line_pcurve,
                     )) if {
                         let origin = line_pcurve.origin().as_raw();
@@ -1462,7 +1462,7 @@ fn extended_rational_isocurve_compares_weights_after_homogeneous_clamping() {
                             && (direction.v - 1.0).abs() <= f64::EPSILON * 64.0
                     })
     );
-    let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
+    let clamped = crate::brep::graph::clamp::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
         .expect("the clamped lanes are a curve")
         .expect("clamped rational segment");
     let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
@@ -1473,7 +1473,7 @@ fn extended_rational_isocurve_compares_weights_after_homogeneous_clamping() {
     )
     .expect("resource allocation did not fail")
     .expect("rational surface isocurve");
-    assert!(super::nurbs_representation_matches(&ctx, &expected, &clamped).unwrap());
+    assert!(crate::brep::graph::nurbs_pcurves::nurbs_representation_matches(&ctx, &expected, &clamped).unwrap());
 }
 
 #[test]
@@ -1511,9 +1511,9 @@ fn degree_one_nurbs_cache_pcurve_keeps_measured_chordal_error() {
         ],
         None,
     );
-    let resolution = super::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.0, 1.0])
+    let resolution = crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.0, 1.0])
         .expect("isocurve lanes pair");
-    let super::NurbsPcurveResolution::Cache {
+    let crate::brep::graph::nurbs_pcurves::NurbsPcurveResolution::Cache {
         geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs },
         fit_tolerance,
     } = resolution
@@ -1563,9 +1563,9 @@ fn off_surface_nurbs_edge_is_classified_before_cache_inversion() {
         None,
     );
     assert!(matches!(
-        super::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.0, 1.0])
+        crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.0, 1.0])
             .expect("isocurve lanes pair"),
-        super::NurbsPcurveResolution::OffSurface
+        crate::brep::graph::nurbs_pcurves::NurbsPcurveResolution::OffSurface
     ));
 }
 
@@ -1589,7 +1589,7 @@ fn v_linear_surface_line_has_axis_symmetric_inverse() {
         None,
     );
     let geometry = match with_test_context(|ctx| {
-        super::ruled_surface_line_pcurve(
+        crate::brep::graph::inverse::ruled_surface_line_pcurve(
             ctx,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
@@ -1599,9 +1599,9 @@ fn v_linear_surface_line_has_axis_symmetric_inverse() {
     })
     .expect("ruling evaluation")
     {
-        super::InverseResolution::Unique(geometry) => geometry,
-        super::InverseResolution::NoMatch => panic!("transposed ruling did not match"),
-        super::InverseResolution::Ambiguous => panic!("transposed ruling was ambiguous"),
+        crate::brep::graph::inverse::InverseResolution::Unique(geometry) => geometry,
+        crate::brep::graph::inverse::InverseResolution::NoMatch => panic!("transposed ruling did not match"),
+        crate::brep::graph::inverse::InverseResolution::Ambiguous => panic!("transposed ruling was ambiguous"),
     };
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected affine line pcurve");
@@ -1634,7 +1634,7 @@ fn repeated_ruled_surface_line_candidates_are_ambiguous() {
         None,
     );
     assert!(matches!(
-        with_test_context(|ctx| super::ruled_surface_line_pcurve(
+        with_test_context(|ctx| crate::brep::graph::inverse::ruled_surface_line_pcurve(
             ctx,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
@@ -1642,7 +1642,7 @@ fn repeated_ruled_surface_line_candidates_are_ambiguous() {
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
         ))
         .expect("ruling evaluation"),
-        super::InverseResolution::Ambiguous
+        crate::brep::graph::inverse::InverseResolution::Ambiguous
     ));
 }
 
@@ -1659,13 +1659,13 @@ fn repeated_nurbs_endpoint_candidates_are_ambiguous() {
         None,
     );
     assert!(matches!(
-        with_test_context(|ctx| super::nurbs_parameter_at_point(
+        with_test_context(|ctx| crate::brep::graph::inverse::nurbs_parameter_at_point(
             ctx,
             &curve,
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
         ))
         .expect("inverse evaluation"),
-        super::InverseResolution::Ambiguous
+        crate::brep::graph::inverse::InverseResolution::Ambiguous
     ));
 }
 
@@ -1806,7 +1806,7 @@ fn ambiguous_cylindrical_endpoint_withholds_the_derived_pcurve() {
         "fixture stream handle",
     )
     .unwrap();
-    super::derive_pcurves(&ctx, &mut brep, &mut annotations, &source_stream)
+    crate::brep::graph::pcurves::derive_pcurves(&ctx, &mut brep, &mut annotations, &source_stream)
         .expect("cylindrical pcurve derivation");
 
     assert!(brep.pcurves.is_empty());
