@@ -1294,27 +1294,33 @@ enum BoundarySurfaceKind {
     Trimmed,
 }
 
-#[derive(Clone)]
 enum LinearBoundaryGeometry {
     Parameter(Vec<[f64; 2]>),
     Model(Vec<[f64; 2]>),
 }
 
-fn linear_boundary_geometry(
+struct LinearBoundaryCandidate<'ctx> {
+    geometry: LinearBoundaryGeometry,
+    _storage: ScopedReservation<'ctx>,
+}
+
+fn linear_boundary_geometry<'ctx>(
     items: &[BoundaryItem],
     index: &ModelIndex<'_>,
     support: &SurfaceGeometry,
     resolution: f64,
     closure_tolerance: f64,
     surface_kind: BoundarySurfaceKind,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<LinearBoundaryGeometry>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<Option<LinearBoundaryCandidate<'ctx>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() { return Err(refusal.into()); }
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = support else {
         return Ok(None);
     };
     let origin = plane_surface.origin().get();
     let normal = plane_surface.frame().axis().as_raw();
     let model_plane = (origin, *normal);
+    let mut model_storage = ctx.reserve_scoped(0, "iges linear model boundary storage")?;
     let mut model_points = Vec::new();
     let mut model_items = items.iter();
     while let Some(item) = ctx.next_charged(&mut model_items, "iges linear boundary items")? {
@@ -1335,12 +1341,13 @@ fn linear_boundary_geometry(
         )? {
             return Ok(None);
         }
-        let mut curve_points = match geometry {
+        let mut curve_storage = ctx.reserve_scoped(0, "iges linear curve point storage")?;
+        let Some(mut curve_points) = curve_storage.with_storage(|| -> Result<Option<Vec<Point3>>, CodecError> { match geometry {
             SolvedCurveGeometry::Line(_) => {
                 let mut line = ctx.collection_vec(2, "iges linear model boundary line")?;
                 line.push(item.start.get());
                 line.push(item.end.get());
-                line
+                Ok(Some(line))
             }
             SolvedCurveGeometry::Nurbs(nurbs) => {
                 let Some(range) = item.source_edge.param_range() else {
@@ -1349,10 +1356,10 @@ fn linear_boundary_geometry(
                 let Some(points) = linear_model_nurbs_points(nurbs, range.get(), ctx)? else {
                     return Ok(None);
                 };
-                points
+                Ok(Some(points))
             }
-            _ => return Ok(None),
-        };
+            _ => Ok(None),
+        } })? else { return Ok(None); };
         if curve_points.first().copied() != Some(item.start.get())
             || curve_points.last().copied() != Some(item.end.get())
         {
@@ -1361,14 +1368,19 @@ fn linear_boundary_geometry(
         if item.segment.sense == Sense::Reversed {
             ctx.reverse(&mut curve_points, "iges model ring reversal")?;
         }
-        if !append_path(&mut model_points, &curve_points, ctx)? {
+        if !model_storage.with_storage(|| append_path(&mut model_points, &curve_points, ctx))? {
             return Ok(None);
         }
     }
     normalize_model_ring_endpoints(&mut model_points, closure_tolerance);
-    let Some(model_coordinates) = plane_coordinates(&model_points, model_plane, ctx)? else {
+    let mut coordinate_storage = ctx.reserve_scoped(0, "iges linear model coordinate storage")?;
+    let Some(model_coordinates) = coordinate_storage.with_storage(|| {
+        plane_coordinates(&model_points, model_plane, ctx)
+    })? else {
         return Ok(None);
     };
+    drop(model_points);
+    drop(model_storage);
     if surface_kind == BoundarySurfaceKind::Trimmed
         && ctx.any_by(
             items,
@@ -1383,6 +1395,9 @@ fn linear_boundary_geometry(
         )? {
             return Ok(None);
         }
+        drop(model_coordinates);
+        drop(coordinate_storage);
+        let mut parameter_storage = ctx.reserve_scoped(0, "iges linear parameter boundary storage")?;
         let mut parameter_points = Vec::new();
         let mut items = items.iter();
         while let Some(item) = ctx.next_charged(&mut items, "iges linear boundary items")? {
@@ -1393,18 +1408,27 @@ fn linear_boundary_geometry(
             while let Some((geometry, range)) =
                 ctx.next_charged(&mut pcurves, "iges linear boundary pcurves")?
             {
-                let Some(points) = linear_pcurve_points(geometry, *range, ctx)? else {
+                let mut point_storage = ctx.reserve_scoped(0, "iges linear pcurve point storage")?;
+                let Some(points) = point_storage.with_storage(|| {
+                    linear_pcurve_points(geometry, *range, ctx)
+                })? else {
                     return Ok(None);
                 };
-                if !append_path(&mut parameter_points, &points, ctx)? {
+                if !parameter_storage.with_storage(|| append_path(&mut parameter_points, &points, ctx))? {
                     return Ok(None);
                 }
             }
         }
         normalize_parameter_ring_endpoints(&mut parameter_points, closure_tolerance);
-        Ok(Some(LinearBoundaryGeometry::Parameter(parameter_points)))
+        Ok(Some(LinearBoundaryCandidate {
+            geometry: LinearBoundaryGeometry::Parameter(parameter_points),
+            _storage: parameter_storage,
+        }))
     } else {
-        Ok(Some(LinearBoundaryGeometry::Model(model_coordinates)))
+        Ok(Some(LinearBoundaryCandidate {
+            geometry: LinearBoundaryGeometry::Model(model_coordinates),
+            _storage: coordinate_storage,
+        }))
     }
 }
 
@@ -1494,22 +1518,22 @@ fn planar_point_is_strictly_inside(
     Ok(inside)
 }
 
-fn linear_boundary_rings(
-    candidates: &[Option<LinearBoundaryGeometry>],
+fn linear_boundary_rings<'a>(
+    mut candidates: impl ExactSizeIterator<Item = Option<&'a LinearBoundaryGeometry>>,
     space: BoundarySpace,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Result<Vec<SimpleRing>, NonSimpleRing>>, CodecError> {
-    if candidates.is_empty() {
+    if let Some(refusal) = ctx.resource_refusal() { return Err(refusal.into()); }
+    if candidates.len() == 0 {
         return Ok(None);
     }
     let mut rings = ctx.collection_vec(candidates.len(), "iges linear boundary ring slots")?;
-    let mut candidates = candidates.iter();
     while let Some(candidate) =
         ctx.next_charged(&mut candidates, "iges linear boundary candidates")?
     {
         let ((BoundarySpace::Parameter, Some(LinearBoundaryGeometry::Parameter(points)))
         | (BoundarySpace::Model, Some(LinearBoundaryGeometry::Model(points)))) =
-            (space, candidate.as_ref())
+            (space, candidate)
         else {
             return Ok(None);
         };
@@ -3580,11 +3604,11 @@ pub(super) fn project<'ctx>(
             continue;
         }
         let linear_rings = match face_scratch.with_storage(|| {
-            linear_boundary_rings(&linear_boundary_candidates, BoundarySpace::Parameter, ctx)
+            linear_boundary_rings(linear_boundary_candidates.iter().map(|candidate| candidate.as_ref().map(|candidate| &candidate.geometry)), BoundarySpace::Parameter, ctx)
         })? {
             Some(rings) => Some(rings),
             None => face_scratch.with_storage(|| {
-                linear_boundary_rings(&linear_boundary_candidates, BoundarySpace::Model, ctx)
+                linear_boundary_rings(linear_boundary_candidates.iter().map(|candidate| candidate.as_ref().map(|candidate| &candidate.geometry)), BoundarySpace::Model, ctx)
             })?,
         };
         let linear_relationship = match linear_rings {

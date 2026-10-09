@@ -1180,3 +1180,5 @@ fn declared_source_control_allocation_refusal_keeps_original_error() {
     assert_eq!((first.limit, first.used, first.additional), (cap, prior, allocation));
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
 }
+
+mod linear_boundary;

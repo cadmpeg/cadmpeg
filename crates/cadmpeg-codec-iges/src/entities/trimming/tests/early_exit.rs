@@ -398,7 +398,7 @@ fn trimming_segment_walk_stops_at_the_first_missing_carrier() {
 
 #[test]
 fn linear_boundary_candidates_stop_at_the_first_unusable_candidate() {
-    let candidates = vec![None; LARGE_TAIL];
+    let candidates: Vec<_> = std::iter::repeat_with(|| None).take(LARGE_TAIL).collect();
     let limit = {
         let _probe = RefusalProbe::arm(
             ResourceDimension::WorkUnits,
@@ -408,7 +408,7 @@ fn linear_boundary_candidates_stop_at_the_first_unusable_candidate() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
         match crate::test_support::with_policy_context(&[], &policy, |ctx| {
-            linear_boundary_rings(&candidates, BoundarySpace::Parameter, ctx)
+            linear_boundary_rings(candidates.iter().map(Option::as_ref), BoundarySpace::Parameter, ctx)
         }) {
             Err(CodecError::ResourceLimit(limit)) => limit,
             Err(error) => panic!("unexpected ring refusal: {error:?}"),
@@ -419,7 +419,7 @@ fn linear_boundary_candidates_stop_at_the_first_unusable_candidate() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = limit.used + limit.additional;
     crate::test_support::with_policy_context(&[], &policy, |ctx| {
-        assert!(linear_boundary_rings(&candidates, BoundarySpace::Parameter, ctx)
+        assert!(linear_boundary_rings(candidates.iter().map(Option::as_ref), BoundarySpace::Parameter, ctx)
             .unwrap()
             .is_none());
     });
