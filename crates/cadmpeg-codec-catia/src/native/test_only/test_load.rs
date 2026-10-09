@@ -35,7 +35,7 @@ use crate::native::{
     definition_schema_selections, derive_reference_signature_cohorts, design_object_id,
     design_objects, entity_suffix_framing, entity_suffix_schema_selection, entity_suffix_value,
     entity_value_schema_selections, object_production, range_interval, reference_signature,
-    service_semantic_indices, store_projection, terminal_null_entity_id, value_production,
+    semantic_indices_for_test, store_projection, terminal_null_entity_id, value_production,
     visit_payload_references, CatiaAliasRow, CatiaArenaProjection, CatiaCatalog, CatiaCatalogEntry,
     CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedClass61Record,
     CatiaConsolidatedCone, CatiaConsolidatedConeFace, CatiaConsolidatedCylinder,
@@ -188,8 +188,14 @@ impl CatiaNative {
             graph.records.sort_by_key(|record| record.ordinal);
         }
         let class_graphs = graphs.clone();
+        let index_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &index_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("semantic index preparation fits the service profile");
+        let mut index_storage = index_ctx.reserve_scoped(0, "test semantic indices")
+            .expect("semantic index preparation storage");
         let (entity_classes_by_graph_identity, semantic) =
-            service_semantic_indices(&class_graphs, &entity_records)
+            semantic_indices_for_test(&index_ctx, &mut index_storage, &class_graphs, &entity_records)
                 .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         let entities_by_graph_identity = &semantic.entities;
         let terminal_nulls_by_graph = &semantic.maxima;
