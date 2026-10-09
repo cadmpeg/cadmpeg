@@ -14,6 +14,7 @@ use crate::StepCodec;
 
 mod collection_limits;
 mod string_limits;
+mod prefix_admission;
 
 #[test]
 fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {

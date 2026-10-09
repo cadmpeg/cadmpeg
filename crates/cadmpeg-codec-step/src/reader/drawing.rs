@@ -75,16 +75,6 @@ impl<'a> DrawingParameters<'a> {
     fn first(self) -> Option<&'a Value> {
         self.get(0)
     }
-
-    fn values(
-        self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<impl Iterator<Item = &'a Value>, CodecError> {
-        Ok(self
-            .inherited_name
-            .into_iter()
-            .chain(ctx.admit_iter(self.direct, "STEP drawing inherited parameter traversal")?))
-    }
 }
 
 enum TargetResolution<'ctx> {
@@ -118,7 +108,12 @@ fn clone_drawing_identities(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<String>, CodecError> {
     let mut copy = BTreeSet::new();
-    for identity in ctx.admit_iter(source, "STEP clone drawing identities traversal")? {
+    ctx.charge_work(0, "STEP clone drawing identities traversal")?;
+    let mut identity_source = source.iter();
+    for _ in 0..identity_source.len() {
+        let Some(identity) = ctx.next_charged(&mut identity_source, "STEP clone drawing identities traversal")? else {
+            break;
+        };
         let text = ctx.copy_retained_text(identity, "step_drawing_ambiguous_identity_text")?;
         ctx.insert_btree_set(&mut copy, text, "step_drawing_ambiguous_identity_copy")?;
     }
@@ -134,10 +129,12 @@ fn visit_drawing_references(
     match value {
         Value::Reference(id) => visitor(*id)?,
         Value::List(values) => {
-            for value in ctx.admit_iter(
-                values.as_slice(),
-                "STEP visit drawing references value traversal",
-            )? {
+            ctx.charge_work(0, "STEP visit drawing references value traversal")?;
+            let mut reference_source = values.iter();
+            for _ in 0..reference_source.len() {
+                let Some(value) = ctx.next_charged(&mut reference_source, "STEP visit drawing references value traversal")? else {
+                    break;
+                };
                 visit_drawing_references(value, ctx, visitor)?;
             }
         }
@@ -183,7 +180,12 @@ pub(super) fn decode<'ctx>(
     let mut scratch_storage = ctx.reserve_scoped(0, "STEP decode scratch")?;
     let mut losses = Vec::new();
     let mut candidates = Vec::new();
-    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal")? {
+    ctx.charge_work(0, "STEP decode traversal")?;
+    let mut drawing_record_source = exchange.records().iter();
+    for _ in 0..drawing_record_source.len() {
+        let Some((&id, record)) = ctx.next_charged(&mut drawing_record_source, "STEP decode traversal")? else {
+            break;
+        };
         let Some((name, kind)) = drawing_type(ctx, record)? else {
             continue;
         };
@@ -229,16 +231,23 @@ pub(super) fn decode<'ctx>(
     }
 
     let mut drawing_ids = BTreeSet::new();
-    for candidate in ctx.admit_iter(&candidates[..], "STEP decode traversal")? {
+    ctx.charge_work(0, "STEP decode traversal")?;
+    let mut drawing_id_source = candidates.iter();
+    for _ in 0..drawing_id_source.len() {
+        let Some(candidate) = ctx.next_charged(&mut drawing_id_source, "STEP decode traversal")? else {
+            break;
+        };
         scratch_storage.with_storage(|| {
             ctx.insert_btree_set(&mut drawing_ids, candidate.id, "step_drawing_ids")
         })?;
     }
     let mut hidden_drawing_ids = BTreeSet::new();
-    for record in ctx
-        .admit_iter(exchange.records(), "STEP decode map traversal")?
-        .map(|(_, value)| value)
-    {
+    ctx.charge_work(0, "STEP decode map traversal")?;
+    let mut hidden_record_source = exchange.records().values();
+    for _ in 0..hidden_record_source.len() {
+        let Some(record) = ctx.next_charged(&mut hidden_record_source, "STEP decode map traversal")? else {
+            break;
+        };
         let Some(items) = record
             .partial(ctx, "INVISIBILITY")?
             .and_then(|partial| partial.parameters.first())
@@ -270,7 +279,12 @@ pub(super) fn decode<'ctx>(
             )
         })?;
     let mut target_identities = target_identities_buffer;
-    for candidate in ctx.admit_iter(&candidates[..], "STEP decode traversal")? {
+    ctx.charge_work(0, "STEP decode traversal")?;
+    let mut candidate_target_source = candidates.iter();
+    for _ in 0..candidate_target_source.len() {
+        let Some(candidate) = ctx.next_charged(&mut candidate_target_source, "STEP decode traversal")? else {
+            break;
+        };
         let targets = target_storage
             .with_storage(|| {
                 ctx.entry_btree_map(
@@ -294,9 +308,12 @@ pub(super) fn decode<'ctx>(
     // DR-01: a drawing association scoped by PRODUCT_DEFINITION_SHAPE targets
     // that shape's one owning product-definition view, not a product-wide
     // identity set.
-    for (&shape_id, product_definition_id) in
-        ctx.admit_iter(product_definition_ids_by_shape, "STEP decode traversal")?
-    {
+    ctx.charge_work(0, "STEP decode traversal")?;
+    let mut shape_target_source = product_definition_ids_by_shape.iter();
+    for _ in 0..shape_target_source.len() {
+        let Some((&shape_id, product_definition_id)) = ctx.next_charged(&mut shape_target_source, "STEP decode traversal")? else {
+            break;
+        };
         let targets = target_storage
             .with_storage(|| {
                 ctx.entry_btree_map(
@@ -332,7 +349,12 @@ pub(super) fn decode<'ctx>(
         ctx,
     )?;
     let mut external_documents = BTreeMap::new();
-    for entry in ctx.admit_iter(exchange.references(), "STEP decode borrowed traversal")? {
+    ctx.charge_work(0, "STEP decode borrowed traversal")?;
+    let mut external_document_source = exchange.references().iter();
+    for _ in 0..external_document_source.len() {
+        let Some(entry) = ctx.next_charged(&mut external_document_source, "STEP decode borrowed traversal")? else {
+            break;
+        };
         if let ReferenceName::Entity(id) = entry.name {
             scratch_storage.with_storage(|| {
                 ctx.insert_btree_map(
@@ -354,10 +376,12 @@ pub(super) fn decode<'ctx>(
     };
 
     let mut drawings = BTreeMap::<u64, Drawing>::new();
-    for (order, candidate) in ctx
-        .admit_iter(candidates, "STEP drawing candidate traversal")?
-        .enumerate()
-    {
+    ctx.charge_work(0, "STEP drawing candidate traversal")?;
+    let mut candidate_source = candidates.into_iter().enumerate();
+    for _ in 0..candidate_source.len() {
+        let Some((order, candidate)) = ctx.next_charged(&mut candidate_source, "STEP drawing candidate traversal")? else {
+            break;
+        };
         let DrawingCandidate {
             id,
             name,
@@ -378,7 +402,18 @@ pub(super) fn decode<'ctx>(
             ctx.copy_retained_text(name, "STEP drawing source type")?,
             "step_drawing_stored_parameters",
         )?;
-        for (index, value) in parameters.values(ctx)?.enumerate() {
+        ctx.charge_work(0, "STEP drawing inherited parameter traversal")?;
+        let mut inherited_name = parameters.inherited_name;
+        let mut direct_parameters = parameters.direct.iter();
+        for index in 0..parameters.len() {
+            let value = if let Some(name) = inherited_name.take() {
+                name
+            } else {
+                let Some(value) = ctx.next_charged(&mut direct_parameters, "STEP drawing inherited parameter traversal")? else {
+                    break;
+                };
+                value
+            };
             if let Some(value) = value_text(
                 exchange,
                 value,
@@ -446,6 +481,7 @@ pub(super) fn decode<'ctx>(
         })?;
     }
 
+    drop(candidate_source);
     add_sheet_revision_usages(
         exchange,
         &mut drawings,
@@ -465,19 +501,27 @@ pub(super) fn decode<'ctx>(
     )?;
 
     let mut typed_records = BTreeSet::new();
-    for &id in ctx
-        .admit_iter(&(drawings), "STEP decode map traversal")?
-        .map(|(key, _)| key)
-    {
+    ctx.charge_work(0, "STEP decode map traversal")?;
+    let mut drawing_claim_source = drawings.keys();
+    for _ in 0..drawing_claim_source.len() {
+        let Some(&id) = ctx.next_charged(&mut drawing_claim_source, "STEP decode map traversal")? else {
+            break;
+        };
         claim_storage.with_storage(|| {
             ctx.insert_btree_set(&mut typed_records, id, "step_drawing_typed_claims")
         })?;
     }
-    for id in ctx.admit_iter(association_ids, "step_drawing_typed_claims")? {
+    ctx.charge_work(0, "step_drawing_typed_claims")?;
+    let mut association_claim_source = association_ids.into_iter();
+    for _ in 0..association_claim_source.len() {
+        let Some(id) = ctx.next_charged(&mut association_claim_source, "step_drawing_typed_claims")? else {
+            break;
+        };
         claim_storage.with_storage(|| {
             ctx.insert_btree_set(&mut typed_records, id, "step_drawing_typed_claims")
         })?;
     }
+    drop(association_claim_source);
     drop(association_storage);
     ctx.reserve_vec(
         &mut ir.model.drawings,
@@ -515,7 +559,12 @@ fn referenced_target_ids(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u64>, CodecError> {
     let mut ids = BTreeSet::new();
-    for candidate in ctx.admit_iter(candidates, "STEP referenced target ids traversal")? {
+    ctx.charge_work(0, "STEP referenced target ids traversal")?;
+    let mut referenced_candidate_source = candidates.iter();
+    for _ in 0..referenced_candidate_source.len() {
+        let Some(candidate) = ctx.next_charged(&mut referenced_candidate_source, "STEP referenced target ids traversal")? else {
+            break;
+        };
         for &index in relationship_indices(candidate.name) {
             if let Some(value) = candidate.parameters.get(index) {
                 collect_reference_ids(value, &mut ids, ctx)?;
@@ -586,7 +635,12 @@ fn add_source_typed_targets(
     let (native_targets_buffer, mut native_storage) =
         ctx.temporary_vec(0, "step_drawing_native_target_items")?;
     let mut native_targets = native_targets_buffer;
-    for &id in ctx.admit_iter(referenced_ids, "STEP add source typed targets traversal")? {
+    ctx.charge_work(0, "STEP add source typed targets traversal")?;
+    let mut source_target_source = referenced_ids.iter();
+    for _ in 0..source_target_source.len() {
+        let Some(&id) = ctx.next_charged(&mut source_target_source, "STEP add source typed targets traversal")? else {
+            break;
+        };
         if !ctx.contains_hash_set(known_typed, &id, "STEP drawing known_typed contains")?
             || ctx.contains_key_btree_map(
                 target_identities,
@@ -1240,8 +1294,9 @@ fn target_resolution<'ctx>(
     wrappers: Option<&WrapperCache<'ctx>>,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<TargetResolution<'ctx>, CodecError> {
-    if let Some(identity) = ctx
-        .get_btree_map(target_identities, &id, "STEP drawing target_identities get")?
+    let local_targets = ctx
+        .get_btree_map(target_identities, &id, "STEP drawing target_identities get")?;
+    if let Some(identity) = local_targets
         .filter(|identities| identities.len() == 1)
         .and_then(|identities| identities.first())
     {
@@ -1290,8 +1345,7 @@ fn target_resolution<'ctx>(
             )));
         }
     }
-    let ambiguity = ctx
-        .get_btree_map(target_identities, &id, "STEP drawing target_identities get")?
+    let ambiguity = local_targets
         .filter(|identities| identities.len() > 1)
         .map(|identities| {
             ctx.with_scoped_storage("STEP drawing ambiguity scratch", || {
@@ -1387,13 +1441,17 @@ fn wrapper_target_resolution<'ctx>(
         return Ok(None);
     }
     let mut storage = ctx.reserve_scoped(0, "STEP drawing wrapper scratch")?;
+    let mut identity_storage = ctx.reserve_scoped(0, "STEP drawing wrapper identity scratch")?;
     let mut identities = BTreeSet::new();
     let mut active = BTreeSet::new();
     let mut complete = BTreeSet::new();
     let mut pending = storage
         .with_storage(|| ctx.alloc_filled(1, (id, false), "step_drawing_wrapper_pending"))?;
-    while let Some((id, leaving)) = pending.pop() {
+    while !pending.is_empty() {
         ctx.charge_work(1, "STEP drawing worklist step")?;
+        let Some((id, leaving)) = pending.pop() else {
+            break;
+        };
         if leaving {
             ctx.remove_btree_set(&mut active, &id, "STEP drawing active remove")?;
             storage.with_storage(|| {
@@ -1416,12 +1474,17 @@ fn wrapper_target_resolution<'ctx>(
         if let Some(targets) =
             ctx.get_btree_map(target_identities, &id, "STEP drawing target_identities get")?
         {
-            for target in ctx.admit_iter(targets, "STEP drawing targets traversal")? {
+            ctx.charge_work(0, "STEP drawing targets traversal")?;
+            let mut wrapper_target_source = targets.iter();
+            for _ in 0..wrapper_target_source.len() {
+                let Some(target) = ctx.next_charged(&mut wrapper_target_source, "STEP drawing targets traversal")? else {
+                    break;
+                };
                 if !ctx.contains_btree_set(&identities, target, "STEP identities membership")? {
-                    let copy = storage.with_storage(|| {
+                    let copy = identity_storage.with_storage(|| {
                         ctx.copy_retained_text(target, "step_drawing_wrapper_identity_text")
                     })?;
-                    storage.with_storage(|| {
+                    identity_storage.with_storage(|| {
                         ctx.insert_btree_set(
                             &mut identities,
                             copy,
@@ -1485,7 +1548,7 @@ fn wrapper_target_resolution<'ctx>(
         Ok(None)
     } else {
         Ok(Some(WrapperTargetResolution::Ambiguous((
-            identities, storage,
+            identities, identity_storage,
         ))))
     }
 }
