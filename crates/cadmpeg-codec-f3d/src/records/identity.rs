@@ -59,7 +59,7 @@ impl cadmpeg_core::decode::cost::DecodeCost for DesignEntityId {
 }
 
 impl TryFrom<String> for DesignEntityId {
-    type Error = String;
+    type Error = &'static str;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         let (_, suffix) = value
@@ -599,6 +599,26 @@ mod native_record_id_tests {
             NativeRecordId::try_new("f3d:Design%2Fmain:act-guid#43".into(), "act-guid", 42,)
                 .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod entity_id_tests {
+    use super::DesignEntityId;
+
+    #[test]
+    fn entity_id_rejections_borrow_static_messages() {
+        for (text, expected) in [
+            ("", "entity_id requires a decimal suffix"),
+            ("Sketch", "entity_id requires a decimal suffix"),
+            ("Sketch_", "entity_id requires a decimal u64 suffix"),
+            ("Sketch_-1", "entity_id requires a decimal u64 suffix"),
+            ("Sketch_++1", "entity_id requires a decimal u64 suffix"),
+            ("Sketch_18446744073709551616", "entity_id requires a decimal u64 suffix"),
+        ] {
+            let error: &'static str = DesignEntityId::try_from(text.to_owned()).unwrap_err();
+            assert_eq!(error, expected);
+        }
     }
 }
 

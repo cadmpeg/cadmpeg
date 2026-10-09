@@ -430,7 +430,13 @@ fn clone_sketch_entity_id_charged(
     entity_id: &crate::records::identity::DesignEntityId,
 ) -> Result<crate::records::identity::DesignEntityId, CodecError> {
     let text = ctx.copy_retained_text(entity_id.as_str(), "f3d sketch placement entity ID")?;
-    crate::records::identity::DesignEntityId::try_from(text).map_err(CodecError::Malformed)
+    match crate::records::identity::DesignEntityId::try_from(text) {
+        Ok(entity_id) => Ok(entity_id),
+        Err(message) => Err(CodecError::Malformed(ctx.copy_retained_text(
+            message,
+            "f3d sketch placement entity ID",
+        )?)),
+    }
 }
 
 /// Stream indexes built on first use, keyed by borrowed stream identity and
@@ -1939,8 +1945,15 @@ pub(crate) fn decode_entity_headers(
                     )?,
                     byte_offset: u64_from_index(start),
 
-                    entity_id: crate::records::identity::DesignEntityId::try_from(entity_id)
-                        .map_err(CodecError::Malformed)?,
+                    entity_id: match crate::records::identity::DesignEntityId::try_from(entity_id) {
+                        Ok(entity_id) => entity_id,
+                        Err(message) => {
+                            return Err(CodecError::Malformed(ctx.copy_retained_text(
+                                message,
+                                "f3d legacy sketch entity ID",
+                            )?));
+                        }
+                    },
                     class_tag: retain_header_class_tag(ctx, bytes, start)?,
                     optional_slot_present: false,
                     registration: crate::records::entity_header::DesignEntityRegistration::new(

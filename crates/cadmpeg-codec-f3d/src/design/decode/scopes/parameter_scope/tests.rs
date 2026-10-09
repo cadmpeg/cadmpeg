@@ -698,3 +698,5 @@ fn scope_admission_releases_dead_identities_before_retaining_its_output() {
         });
     }
 }
+
+mod entity_id;

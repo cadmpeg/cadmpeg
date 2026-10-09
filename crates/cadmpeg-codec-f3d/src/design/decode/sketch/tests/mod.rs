@@ -7,6 +7,7 @@
 )]
 
 mod curves;
+mod entity_id;
 mod index;
 mod lost_edge;
 mod persistent;

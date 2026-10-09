@@ -659,7 +659,13 @@ fn copy_sketch_entity_id(
     source: &crate::records::identity::DesignEntityId,
 ) -> Result<crate::records::identity::DesignEntityId, CodecError> {
     let text = ctx.copy_retained_text(source.as_str(), "f3d Sketch scope entity ID")?;
-    crate::records::identity::DesignEntityId::try_from(text).map_err(CodecError::NotImplemented)
+    match crate::records::identity::DesignEntityId::try_from(text) {
+        Ok(entity_id) => Ok(entity_id),
+        Err(message) => Err(CodecError::NotImplemented(ctx.copy_retained_text(
+            message,
+            "f3d Sketch scope entity ID",
+        )?)),
+    }
 }
 
 /// Admit one envelope for every logical scope identity.
