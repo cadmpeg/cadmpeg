@@ -4148,10 +4148,22 @@ fn declared_entity_handle_pairs<'a>(
     feature: &str,
 ) -> Result<Vec<[&'a SketchInputEntity; 2]>, cadmpeg_core::CodecError> {
     let mut pairs = declared_entity_handle_linked_pairs(ctx, lane, feature)?;
-    let children = declared_entity_handle_declared_child_pairs(ctx, lane, feature)?;
+    let children_storage;
+    let children;
+    (children, children_storage) = ctx
+        .with_scoped_storage("SLDPRT declared entity-handle child pair source", || {
+            declared_entity_handle_declared_child_pairs(ctx, lane, feature)
+        })?;
     ctx.extend_vec(&mut pairs, children, DIMENSIONED_HANDLE_OPERATION)?;
-    let indexed = declared_entity_handle_indexed_point_pairs(ctx, lane, feature)?;
+    drop(children_storage);
+    let indexed_storage;
+    let indexed;
+    (indexed, indexed_storage) = ctx
+        .with_scoped_storage("SLDPRT declared entity-handle indexed pair source", || {
+            declared_entity_handle_indexed_point_pairs(ctx, lane, feature)
+        })?;
     ctx.extend_vec(&mut pairs, indexed, DIMENSIONED_HANDLE_OPERATION)?;
+    drop(indexed_storage);
     ctx.sort_unstable_by_key(
         &mut pairs,
         |value| {
@@ -6383,3 +6395,6 @@ mod spatial_budget_tests;
 
 #[cfg(test)]
 mod lookup_storage_tests;
+
+#[cfg(test)]
+mod pair_source_storage_tests;
