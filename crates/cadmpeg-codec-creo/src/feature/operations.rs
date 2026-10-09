@@ -632,6 +632,22 @@ pub(crate) fn operation_states(
     Ok(result)
 }
 
+/// Visit recipe-bearing source states without copying their display names.
+pub(crate) fn for_each_recipe_state(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    mut visit: impl FnMut(u32, Option<SchemaClass>, FeatureRecipe, usize) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "creo recipe source state storage")?;
+    let states = storage.with_storage(|| parse_operation_states(ctx, payload))?;
+    for state in ctx.admit_iter(states, "creo DEPDB recipe source traversal")? {
+        if let Some(recipe) = state.recipe.candidate() {
+            visit(state.feature_id, state.root_schema_class(), recipe, state.offset)?;
+        }
+    }
+    Ok(())
+}
+
 /// Decode every NUL-terminated `<Kind> id <N>` operation state and bounded
 /// procedural-recipe record from one feature-state namespace, in byte order.
 fn parse_operation_states<'a>(
