@@ -523,7 +523,7 @@ pub(super) fn push_brep_transfer_note(
     let pcurve_carrier_evidence = PcurveCarrierEvidence(diagnostics);
     let two_chart_mapping_evidence = TwoChartMappingEvidence(diagnostics);
     let carrier_rejection_evidence = CarrierRejectionEvidence(diagnostics);
-    let (vertex_evidence, _vertex_evidence_reservation) = ctx.format_scoped(
+    let vertex_evidence_owned_storage = ctx.format_scoped(
         format_args!(
             "Boundary evidence: {} curve(s), {} without a unique incidence pair, {} with an \
          unsolved endpoint vertex. Vertex solver: {} topological, {} carrier intersections, \
@@ -575,6 +575,8 @@ pub(super) fn push_brep_transfer_note(
         ),
         "creo brep vertex evidence",
     )?;
+    let _vertex_evidence_reservation = vertex_evidence_owned_storage.1;
+    let vertex_evidence = vertex_evidence_owned_storage.0;
 
     push_report_loss(ctx, losses, CreoLossCode::BrepTransferIncomplete, format_args!(
         "General model B-rep transfer remains incomplete. Native face components transfer \
@@ -925,6 +927,9 @@ fn unstatable_vertex_orbit_note(
     ctx: &DecodeContext<'_>,
     orbits: &[crate::topology::HalfEdgeId],
 ) -> Result<Option<LossNote>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(first) = orbits.first() else {
         return Ok(None);
     };
@@ -1265,5 +1270,25 @@ mod tests {
             "{}",
             note.message
         );
+    }
+
+    #[test]
+    fn empty_orbit_report_is_free_and_preserves_original_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(unstatable_vertex_orbit_note(&ctx, &[]).expect("empty report").is_none());
+        let original = ctx.charge_work_limit(1, "seed orbit report refusal").expect_err("zero cap");
+        assert_eq!((original.used, original.additional), (0, 1));
+        let member = HalfEdgeId { curve_id: 4100, side: Side::One };
+        for orbits in [&[][..], &[member][..]] {
+            assert!(matches!(unstatable_vertex_orbit_note(&ctx, orbits),
+                Err(CodecError::ResourceLimit(actual)) if actual == original));
+        }
+        assert_eq!(ctx.resource_refusal(), Some(original));
     }
 }

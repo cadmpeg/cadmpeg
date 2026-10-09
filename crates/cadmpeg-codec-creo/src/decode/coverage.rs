@@ -31,23 +31,23 @@ pub(super) fn source_section_ref<'a>(
     scan: &'a ContainerScan<'_>,
     offset: usize,
 ) -> Result<&'a str, CodecError> {
-    match ctx.find_by(
-        &scan.framing.sections,
-        |section| Ok(section.contains(offset)),
-        "creo source section search",
-    )? {
-        Some(section) => Ok(section.name()),
-        None => Ok(
-            if matches!(
-                scan.framing.layout,
-                crate::container::Layout::LegacyAscii(_)
-            ) {
-                "legacy_ascii"
-            } else {
-                "unknown"
-            },
-        ),
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
     }
+    let mut sections = scan.framing.sections.iter();
+    while sections.len() != 0 {
+        let Some(section) = ctx.next_charged(&mut sections, "creo source section search")? else {
+            break;
+        };
+        if section.contains(offset) {
+            return Ok(section.name());
+        }
+    }
+    Ok(if matches!(scan.framing.layout, crate::container::Layout::LegacyAscii(_)) {
+        "legacy_ascii"
+    } else {
+        "unknown"
+    })
 }
 
 pub(super) fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str {
@@ -467,7 +467,9 @@ pub(super) fn curve_transfer_coverage(
     curves: &[Curve],
 ) -> Result<CurveTransferCoverage, CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo curve coverage lookup storage")?;
-    let (unique_rows, _unique_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let unique_rows_owned_storage = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let _unique_rows_storage = unique_rows_owned_storage.1;
+    let unique_rows = unique_rows_owned_storage.0;
     let mut transferred_ids = BTreeSet::new();
     let mut unknown_ids = BTreeSet::new();
     for curve in ctx.admit_iter(curves, "creo curve coverage traversal")? {
@@ -529,7 +531,9 @@ pub(super) fn surface_transfer_coverage(
     procedural_surfaces: &[ProceduralSurface],
 ) -> Result<SurfaceTransferCoverage, CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo surface coverage lookup storage")?;
-    let (unique_rows, _unique_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let unique_rows_owned_storage = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let _unique_rows_storage = unique_rows_owned_storage.1;
+    let unique_rows = unique_rows_owned_storage.0;
     let mut extrusion_constructions = BTreeSet::new();
     for procedural in ctx.admit_iter(
         procedural_surfaces,
@@ -688,4 +692,5 @@ mod tests {
         ));
     }
     mod prefixes;
+    mod source_sections;
 }
