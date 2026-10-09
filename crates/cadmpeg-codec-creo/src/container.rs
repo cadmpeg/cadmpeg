@@ -983,17 +983,19 @@ fn toc_sections<'a>(
             )?);
         }
     }
-    ctx.stable_sort_by_key(
-        sections.as_mut_slice(),
-        |value| value.section.offset(),
-        Ord::cmp,
-        "creo toc sections sections ordering",
-    )?;
-    ctx.dedup_by_key(
-        &mut sections,
-        |section| Ok(section.section.offset()),
-        "creo toc sections sections deduplication",
-    )?;
+    if sections.len() > 1 {
+        ctx.stable_sort_by_key(
+            sections.as_mut_slice(),
+            |value| value.section.offset(),
+            Ord::cmp,
+            "creo toc sections sections ordering",
+        )?;
+        ctx.dedup_by_key(
+            &mut sections,
+            |section| Ok(section.section.offset()),
+            "creo toc sections sections deduplication",
+        )?;
+    }
     Ok(sections)
 }
 
@@ -1190,17 +1192,19 @@ fn legacy_toc_sections<'a>(
         ctx.reserve_vec(&mut sections, 1, "creo legacy TOC sections")?;
         sections.extend(Section::scan(ctx, raw_name, offset, end, None, data)?);
     }
-    ctx.stable_sort_by_key(
-        sections.as_mut_slice(),
-        |value| value.section.offset(),
-        Ord::cmp,
-        "creo legacy toc sections sections ordering",
-    )?;
-    ctx.dedup_by_key(
-        &mut sections,
-        |section| Ok(section.section.offset()),
-        "creo legacy toc sections sections deduplication",
-    )?;
+    if sections.len() > 1 {
+        ctx.stable_sort_by_key(
+            sections.as_mut_slice(),
+            |value| value.section.offset(),
+            Ord::cmp,
+            "creo legacy toc sections sections ordering",
+        )?;
+        ctx.dedup_by_key(
+            &mut sections,
+            |section| Ok(section.section.offset()),
+            "creo legacy toc sections sections deduplication",
+        )?;
+    }
     Ok(sections)
 }
 
@@ -1911,17 +1915,19 @@ fn loop_array_sections<'a>(
             selected.push(section.copy_retained(ctx)?);
         }
     }
-    ctx.stable_sort_by_key(
-        selected.as_mut_slice(),
-        |value| value.section.offset(),
-        Ord::cmp,
-        "creo loop array sections selected ordering",
-    )?;
-    ctx.dedup_by_key(
-        &mut selected,
-        |section| Ok(section.section.offset()),
-        "creo loop array sections selected deduplication",
-    )?;
+    if selected.len() > 1 {
+        ctx.stable_sort_by_key(
+            selected.as_mut_slice(),
+            |value| value.section.offset(),
+            Ord::cmp,
+            "creo loop array sections selected ordering",
+        )?;
+        ctx.dedup_by_key(
+            &mut selected,
+            |section| Ok(section.section.offset()),
+            "creo loop array sections selected deduplication",
+        )?;
+    }
     Ok(selected)
 }
 
@@ -2101,18 +2107,22 @@ fn loop_array_scan(
                 }),
         );
     }
-    ctx.stable_sort_by(
-        frames.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo loop array scan frames ordering",
-    )?;
-    ctx.stable_sort_by(
-        records.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo loop array scan records ordering",
-    )?;
+    if frames.len() > 1 {
+        ctx.stable_sort_by(
+            frames.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo loop array scan frames ordering",
+        )?;
+    }
+    if records.len() > 1 {
+        ctx.stable_sort_by(
+            records.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo loop array scan records ordering",
+        )?;
+    }
     Ok(LoopArrayScan { frames, records })
 }
 
@@ -2879,12 +2889,14 @@ fn feature_rows(
         ctx.reserve_vec(&mut rows, decoded.len(), "creo feature row aggregation")?;
         rows.extend(ctx.admit_iter(decoded, "creo feature row aggregation traversal")?);
     }
-    ctx.stable_sort_by(
-        rows.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo feature rows rows ordering",
-    )?;
+    if rows.len() > 1 {
+        ctx.stable_sort_by(
+            rows.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo feature rows rows ordering",
+        )?;
+    }
     Ok(rows)
 }
 
@@ -3086,12 +3098,14 @@ fn feature_definitions(
             }
         }
     }
-    ctx.stable_sort_by(
-        definitions.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo feature definitions definitions ordering",
-    )?;
+    if definitions.len() > 1 {
+        ctx.stable_sort_by(
+            definitions.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo feature definitions definitions ordering",
+        )?;
+    }
     Ok(definitions)
 }
 
@@ -3110,12 +3124,14 @@ fn feature_row_definitions(
         ctx.reserve_vec(&mut definitions, 1, "creo feature row definitions")?;
         definitions.push(definition);
     }
-    ctx.stable_sort_by(
-        definitions.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo feature row definitions definitions ordering",
-    )?;
+    if definitions.len() > 1 {
+        ctx.stable_sort_by(
+            definitions.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo feature row definitions definitions ordering",
+        )?;
+    }
     Ok(definitions)
 }
 
@@ -3149,12 +3165,14 @@ fn feature_geometry_tables(
         depdb_tables,
         "creo feature geometry table aggregation traversal",
     )?);
-    ctx.stable_sort_by(
-        tables.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo feature geometry tables tables ordering",
-    )?;
+    if tables.len() > 1 {
+        ctx.stable_sort_by(
+            tables.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo feature geometry tables tables ordering",
+        )?;
+    }
     Ok(tables)
 }
 
@@ -3171,12 +3189,14 @@ fn feature_affected_ids(
         "creo affected-id aggregation",
     )?;
     records.extend(ctx.admit_iter(depdb_records, "creo affected-id aggregation traversal")?);
-    ctx.stable_sort_by(
-        records.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo feature affected ids records ordering",
-    )?;
+    if records.len() > 1 {
+        ctx.stable_sort_by(
+            records.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo feature affected ids records ordering",
+        )?;
+    }
     Ok(records)
 }
 
@@ -3198,12 +3218,14 @@ fn feature_revolution_extents(
         definition_extents,
         "creo revolution extent aggregation traversal",
     )?);
-    ctx.stable_sort_by(
-        extents.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo feature revolution extents extents ordering",
-    )?;
+    if extents.len() > 1 {
+        ctx.stable_sort_by(
+            extents.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo feature revolution extents extents ordering",
+        )?;
+    }
     Ok(extents)
 }
 
@@ -3285,12 +3307,14 @@ fn feature_operations(
             .map(|(_, record)| record),
     );
     drop(node_storage);
-    ctx.stable_sort_by(
-        current.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo feature operations current ordering",
-    )?;
+    if current.len() > 1 {
+        ctx.stable_sort_by(
+            current.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo feature operations current ordering",
+        )?;
+    }
     Ok(current)
 }
 
@@ -3391,12 +3415,14 @@ fn depdb_recipe_rows(
             body_start = body_end;
         }
     }
-    ctx.stable_sort_by(
-        rows.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo depdb recipe rows rows ordering",
-    )?;
+    if rows.len() > 1 {
+        ctx.stable_sort_by(
+            rows.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo depdb recipe rows rows ordering",
+        )?;
+    }
     Ok(rows)
 }
 
@@ -3586,17 +3612,19 @@ fn append_topology_rows(
 ) -> Result<(), CodecError> {
     ctx.reserve_vec(rows, additional.len(), operation)?;
     rows.extend(additional);
-    ctx.stable_sort_by(
-        rows.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo append topology rows rows ordering",
-    )?;
-    ctx.dedup_by_key(
-        rows,
-        |row| Ok(row.offset),
-        "creo append topology rows rows deduplication",
-    )?;
+    if rows.len() > 1 {
+        ctx.stable_sort_by(
+            rows.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo append topology rows rows ordering",
+        )?;
+        ctx.dedup_by_key(
+            rows,
+            |row| Ok(row.offset),
+            "creo append topology rows rows deduplication",
+        )?;
+    }
     Ok(())
 }
 
@@ -3623,17 +3651,19 @@ fn append_legacy_curve_witnesses(
         ctx.admit_iter(legacy_pcurves, "creo legacy pcurve append traversal")?
             .cloned(),
     );
-    ctx.stable_sort_by(
-        pcurves.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo append legacy curve witnesses pcurves ordering",
-    )?;
-    ctx.dedup_by_key(
-        pcurves,
-        |pcurve| Ok(pcurve.offset),
-        "creo append legacy curve witnesses pcurves deduplication",
-    )?;
+    if pcurves.len() > 1 {
+        ctx.stable_sort_by(
+            pcurves.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo append legacy curve witnesses pcurves ordering",
+        )?;
+        ctx.dedup_by_key(
+            pcurves,
+            |pcurve| Ok(pcurve.offset),
+            "creo append legacy curve witnesses pcurves deduplication",
+        )?;
+    }
     Ok(())
 }
 
@@ -3778,12 +3808,14 @@ pub(crate) fn scan_bytes<'a>(
         legacy_geometry.nonvisible_rows,
         "creo legacy nonvisible surface append traversal",
     )?);
-    ctx.stable_sort_by(
-        nonvisible_surface_rows.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo scan bytes nonvisible surface rows ordering",
-    )?;
+    if nonvisible_surface_rows.len() > 1 {
+        ctx.stable_sort_by(
+            nonvisible_surface_rows.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo scan bytes nonvisible surface rows ordering",
+        )?;
+    }
     let mut surface_rows = surface_rows(ctx, &model_geometry_sections)?;
     ctx.reserve_vec(
         &mut surface_rows,
@@ -3792,12 +3824,14 @@ pub(crate) fn scan_bytes<'a>(
     )?;
     surface_rows
         .extend(ctx.admit_iter(legacy_geometry.rows, "creo legacy surface append traversal")?);
-    ctx.stable_sort_by(
-        surface_rows.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo scan bytes surface rows ordering",
-    )?;
+    if surface_rows.len() > 1 {
+        ctx.stable_sort_by(
+            surface_rows.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo scan bytes surface rows ordering",
+        )?;
+    }
     let cross_section_surface_rows = cross_section_surface_rows(ctx, &sections)?;
     let nonvisible_surface_parameters = surface_parameters(ctx, &nonvisible_geometry_sections)?;
     let surface_parameters = surface_parameters(ctx, &model_geometry_sections)?;
@@ -4020,12 +4054,14 @@ pub(crate) fn scan_bytes<'a>(
         feature_row_definitions(ctx, &feature_rows)?,
         "creo feature row definition aggregation",
     )?;
-    ctx.stable_sort_by(
-        feature_definitions.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo scan bytes feature definitions ordering",
-    )?;
+    if feature_definitions.len() > 1 {
+        ctx.stable_sort_by(
+            feature_definitions.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo scan bytes feature definitions ordering",
+        )?;
+    }
     let claimed_definition_owners_owned_storage = ctx
         .with_scoped_storage("creo claimed definition owner storage", || {
             claimed_definition_owners(ctx, &feature_definitions)
@@ -4044,12 +4080,14 @@ pub(crate) fn scan_bytes<'a>(
         replay_definitions,
         "creo replay definition aggregation",
     )?;
-    ctx.stable_sort_by(
-        feature_definitions.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo scan bytes feature definitions ordering",
-    )?;
+    if feature_definitions.len() > 1 {
+        ctx.stable_sort_by(
+            feature_definitions.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo scan bytes feature definitions ordering",
+        )?;
+    }
     let section_owner_ranges_owned_storage = ctx
         .with_scoped_storage("creo section owner range storage", || {
             section_owner_ranges(ctx, &sections, &feature_rows)
@@ -4339,6 +4377,9 @@ fn collect_section_records_result<'a, 'data: 'a, T>(
     relocate: impl Fn(&mut T, usize) -> Result<(), CodecError>,
     offset: impl Fn(&T) -> usize,
 ) -> Result<Vec<T>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut records = Vec::new();
     for section in sections {
         let section = section?;
@@ -4353,12 +4394,14 @@ fn collect_section_records_result<'a, 'data: 'a, T>(
             records.push(record);
         }
     }
-    ctx.stable_sort_by_key(
-        records.as_mut_slice(),
-        offset,
-        Ord::cmp,
-        "creo collect section records result records ordering",
-    )?;
+    if records.len() > 1 {
+        ctx.stable_sort_by_key(
+            records.as_mut_slice(),
+            offset,
+            Ord::cmp,
+            "creo collect section records result records ordering",
+        )?;
+    }
     Ok(records)
 }
 

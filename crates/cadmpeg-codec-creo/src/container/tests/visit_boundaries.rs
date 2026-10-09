@@ -146,3 +146,112 @@ fn wrong_container_signature_is_fixed_and_keeps_original_refusal() {
             Err(CodecError::ResourceLimit(r)) if r == original));
     }
 }
+
+#[test]
+fn empty_container_rosters_are_free_and_keep_original_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let ids = std::collections::BTreeSet::new();
+    for refused in [false, true] {
+        if refused { ctx.charge_work_limit(1, "container roster seed").expect_err("zero cap"); }
+        let results = [
+            super::super::loop_array_sections(&ctx, &[], &[], &[]).map(|v| v.is_empty()),
+            super::super::loop_array_scan(&ctx, &[]).map(|v| v.frames.is_empty() && v.records.is_empty()),
+            super::super::feature_rows(&ctx, &[], &ids).map(|v| v.is_empty()),
+            super::super::feature_definitions(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::feature_row_definitions(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::feature_geometry_tables(&ctx, &[], &[]).map(|v| v.is_empty()),
+            super::super::feature_affected_ids(&ctx, &[], &[]).map(|v| v.is_empty()),
+            super::super::feature_revolution_extents(&ctx, &[], &[], &[]).map(|v| v.is_empty()),
+            super::super::feature_operations(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::depdb_recipe_rows(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::collect_section_records_result::<u32>(
+                &ctx, std::iter::empty(), |_| panic!("absent section decoder"),
+                |_, _| panic!("absent relocation"), |_| panic!("absent ordering"),
+            ).map(|v| v.is_empty()),
+        ];
+        for result in results {
+            if refused {
+                let original = ctx.resource_refusal().expect("seeded original");
+                assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+            } else { assert!(result.expect("empty output")); }
+        }
+        assert_eq!(ctx.resource_refusal().is_some(), refused);
+    }
+}
+
+#[test]
+fn singleton_section_aggregate_admits_source_and_relocation_without_ordering() {
+    let source = b"body";
+    let section = super::super::Section::scan_for_test("Body".into(), 0, source.len(), None, source)
+        .expect("complete section");
+    for cap in 0..=2 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).expect("root");
+        let parse = || {
+            let sections = ctx.admit_iter(std::slice::from_ref(&section), "fixture aggregate source")?;
+            super::super::collect_section_records_result(
+                &ctx, sections.map(Ok), |bytes| {
+                    assert_eq!(bytes, source);
+                    let mut records = Vec::new();
+                    ctx.reserve_vec(&mut records, 1, "fixture aggregate record")?;
+                    records.push(7u32);
+                    Ok(records)
+                }, |value, base| { assert_eq!(base, 0); assert_eq!(*value, 7); Ok(()) },
+                |_| panic!("singleton order projection cannot execute"),
+            )
+        };
+        let original = if cap == 2 {
+            assert_eq!(parse().expect("one source and one relocation visit"), [7]);
+            let refusal = ctx.charge_work_limit(1, "after singleton aggregate").expect_err("exact cap");
+            assert_eq!((refusal.used, refusal.additional), (2, 1));
+            refusal
+        } else {
+            let Err(CodecError::ResourceLimit(refusal)) = parse() else { panic!("present visit refusal"); };
+            assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+            assert_eq!((refusal.used, refusal.additional), (cap, 1));
+            assert_eq!(refusal.operation, if cap == 0 { "fixture aggregate source" }
+                else { "creo section record relocation traversal" });
+            refusal
+        };
+        assert!(matches!(parse(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+    }
+}
+
+#[test]
+fn singleton_topology_and_pcurve_ordering_executes_no_scan_or_move() {
+    let row = crate::curve::CurveTopologyRow { id: 7, type_byte: 0x13, feature_id: 1,
+        directions: [1, 0xf6], faces: [None; 2], next_edges: [7, 7], offset: 12 };
+    let pcurve = crate::curve::PcurveEndpoints { curve_id: 7, faces: [None; 2],
+        face_0_endpoints: [[0.0; 2]; 2], face_1_endpoints: [[0.0; 2]; 2], offset: 12 };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut rows = vec![row.clone()];
+    let mut pcurves = vec![pcurve.clone()];
+    super::super::append_topology_rows(&ctx, &mut rows, std::iter::empty(), "absent topology source")
+        .expect("no append or ordering work");
+    super::super::append_legacy_curve_witnesses(&ctx, &mut rows, &mut pcurves, &[], &[])
+        .expect("no witness append or ordering work");
+    assert_eq!(rows, [row]);
+    assert_eq!(pcurves, [pcurve]);
+    let original = ctx.charge_work_limit(1, "singleton topology seed").expect_err("zero cap");
+    assert!(matches!(super::super::append_topology_rows(&ctx, &mut rows,
+        std::iter::empty(), "absent topology source"), Err(CodecError::ResourceLimit(actual)) if actual == original));
+    assert!(matches!(super::super::append_legacy_curve_witnesses(&ctx, &mut rows, &mut pcurves, &[], &[]),
+        Err(CodecError::ResourceLimit(actual)) if actual == original));
+}
