@@ -101,8 +101,8 @@ pub(super) fn trim_entity_table(
         None => Vec::new(),
     };
     let mut rows = Vec::new();
-    let mut seen = BTreeSet::new();
     let mut seen_storage = ctx.reserve_scoped(0, "creo trim entity ID storage")?;
+    let mut seen = BTreeSet::new();
     while cursor < region_end {
         ctx.next_charged(&mut (cursor..region_end), "creo trim row traversal")?;
         if cursor != first_row && preceding_byte(payload, cursor) != Some(0xe3) {
@@ -190,6 +190,9 @@ pub(super) fn trim_buckets(
     header: TrimTableHeader,
     kind: TrimEntryKind,
 ) -> Result<Vec<FeatureTrimBucket>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if header.declared_count == 0 {
         return Ok(Vec::new());
     }
@@ -234,8 +237,8 @@ pub(super) fn trim_buckets(
     else {
         return Ok(Vec::new());
     };
-    let mut starts = Vec::new();
     let mut starts_storage = ctx.reserve_scoped(0, "creo trim bucket start storage")?;
+    let mut starts = Vec::new();
     starts_storage.with_storage(|| ctx.reserve_vec(&mut starts, 1, "creo trim bucket starts"))?;
     starts.push(TrimBucketStart {
         index: first,
@@ -243,7 +246,7 @@ pub(super) fn trim_buckets(
         offset: first_offset,
         body_start: first_body,
     });
-    while starts.len() < index_from_u32(header.declared_count) {
+    while cursor < end && starts.len() < index_from_u32(header.declared_count) {
         ctx.next_charged(
             &mut (starts.len()..index_from_u32(header.declared_count)),
             "creo trim bucket traversal",
@@ -379,8 +382,8 @@ fn trim_bucket_entry_count(
             Ok(u32::try_from(rows + prototype).ok())
         }
         TrimEntryKind::Vertex => {
-            let mut rows = BTreeSet::new();
             let mut row_storage = ctx.reserve_scoped(0, "creo trim bucket vertex storage")?;
+            let mut rows = BTreeSet::new();
             for offset in ctx.admit_iter(start..end, "creo trim bucket entry scan")? {
                 if payload.get(offset) == Some(&psb::token::ENTITY_REF) {
                     if let Ok((class, row)) = psb::reference_id(payload, offset + 1) {
@@ -434,16 +437,20 @@ fn trim_vertex_entry_bounds(
     offset: usize,
     end: usize,
 ) -> Result<Option<(usize, u32, usize, usize)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut cursor = offset;
     if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
         let (count, next) = psb::compact_int(payload, cursor + 1);
         cursor = next;
         let entities_start = cursor;
         let mut remaining = 0..count;
-        while ctx
-            .next_charged(&mut remaining, "creo trim vertex bound entities")?
-            .is_some()
-        {
+        while !remaining.is_empty() {
+            if cursor >= end {
+                return Ok(None);
+            }
+            ctx.next_charged(&mut remaining, "creo trim vertex bound entities")?;
             let (value, next) = segment_int(payload, cursor);
             if value.is_none() || next > end {
                 return Ok(None);
@@ -494,17 +501,18 @@ pub(super) fn trim_vertex_entry(
     end: usize,
 ) -> Result<Option<(Vec<u32>, u32, usize)>, CodecError> {
     let mut cursor = offset;
-    let mut entities = Vec::new();
     let mut storage = ctx.reserve_scoped(0, "creo trim vertex entities")?;
+    let mut entities = Vec::new();
     let vertex_id;
     if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
         let (count, next) = psb::compact_int(payload, cursor + 1);
         cursor = next;
         let mut items = 0..count;
-        while ctx
-            .next_charged(&mut items, "creo trim vertex entity traversal")?
-            .is_some()
-        {
+        while !items.is_empty() {
+            if cursor >= end {
+                return Ok(None);
+            }
+            ctx.next_charged(&mut items, "creo trim vertex entity traversal")?;
             let (Some(value), next) = segment_int(payload, cursor) else {
                 return Ok(None);
             };
@@ -546,7 +554,7 @@ pub(super) fn trim_vertex_entry(
     if cursor >= end || payload.get(cursor) != Some(&0) {
         return Ok(None);
     }
-    storage.commit()?;
+    let entities = storage.commit_value(entities)?;
     Ok(Some((entities, vertex_id, cursor + 1)))
 }
 
@@ -649,10 +657,11 @@ fn named_trim_vertex_prototype_complete(
         return Ok(false);
     }
     let mut items = 0..count;
-    while ctx
-        .next_charged(&mut items, "creo trim prototype entities")?
-        .is_some()
-    {
+    while !items.is_empty() {
+        if cursor >= end {
+            return Ok(false);
+        }
+        ctx.next_charged(&mut items, "creo trim prototype entities")?;
         let (value, next) = segment_int(payload, cursor);
         if value.is_none() || next > end {
             return Ok(false);
@@ -881,8 +890,8 @@ pub(super) fn positional_trim_entity_table(
         return Ok(None);
     };
     let mut rows = Vec::new();
-    let mut seen = BTreeSet::new();
     let mut seen_storage = ctx.reserve_scoped(0, "creo trim entity ID storage")?;
+    let mut seen = BTreeSet::new();
     let has_entry_class = ctx.any_by(
         rows_start..region_end,
         |offset| {
@@ -1057,8 +1066,8 @@ pub(super) fn trim_vertex_table(
     };
     cursor = first_marker;
 
-    let mut geometry = None;
     let mut geometry_storage = ctx.reserve_scoped(0, "creo trim geometry cache")?;
+    let mut geometry = None;
     let mut rows = Vec::new();
     while cursor < region_end {
         ctx.next_charged(&mut (cursor..region_end), "creo trim row traversal")?;
@@ -1190,8 +1199,8 @@ pub(super) fn positional_trim_vertex_table(
     else {
         return Ok(None);
     };
-    let mut geometry = None;
     let mut geometry_storage = ctx.reserve_scoped(0, "creo trim geometry cache")?;
+    let mut geometry = None;
     let mut rows = Vec::new();
     let mut cursor = rows_start;
     while cursor < region_end {
@@ -1314,6 +1323,9 @@ fn trim_radius(
     center: [f64; 2],
     geometry: &points::TrimGeometry,
 ) -> Result<Option<cadmpeg_ir::scalar::PositiveReal>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(radius_ref) = segment.radius_ref else {
         return Ok(None);
     };
@@ -1362,6 +1374,9 @@ fn trim_carrier(
     segment: &FeatureSegment,
     geometry: &points::TrimGeometry,
 ) -> Result<Option<TrimCarrier>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     Ok(match segment.kind {
         FeatureSegmentKind::Line(_) => {
             let Some(start) = trim_point(ctx, geometry, segment.point_ids()[0])? else {
@@ -1519,8 +1534,8 @@ pub(super) fn entity_intersection(
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
 ) -> Result<Option<[f64; 2]>, CodecError> {
-    let mut geometry = None;
     let mut storage = ctx.reserve_scoped(0, "creo trim geometry cache")?;
+    let mut geometry = None;
     storage.with_storage(|| {
         entity_intersection_cached(ctx, entity_ids, segments, variables, &mut geometry)
     })
@@ -1533,6 +1548,9 @@ fn entity_intersection_cached(
     variables: Option<&FeatureVariableTable>,
     geometry: &mut Option<points::TrimGeometry>,
 ) -> Result<Option<[f64; 2]>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (Some(segments), Some(variables)) = (segments, variables) else {
         return Ok(None);
     };
@@ -1543,7 +1561,10 @@ fn entity_intersection_cached(
     let mut unique_entities = BTreeSet::new();
     let mut segments_for_intersection = Vec::new();
     let mut ids = entity_ids.iter();
-    while let Some(entity_id) = ctx.next_charged(&mut ids, "creo trim intersection entities")? {
+    while ids.len() != 0 {
+        let Some(entity_id) = ctx.next_charged(&mut ids, "creo trim intersection entities")? else {
+            break;
+        };
         if !storage.with_storage(|| {
             ctx.insert_btree_set(
                 &mut unique_entities,
@@ -1598,7 +1619,10 @@ fn entity_intersection_cached(
     }
     let mut carriers = Vec::new();
     let mut segment_iter = segments_for_intersection.iter();
-    while let Some(segment) = ctx.next_charged(&mut segment_iter, "creo trim carrier traversal")? {
+    while segment_iter.len() != 0 {
+        let Some(segment) = ctx.next_charged(&mut segment_iter, "creo trim carrier traversal")? else {
+            break;
+        };
         let Some(carrier) = trim_carrier(ctx, segment, geometry)? else {
             return Ok(None);
         };
@@ -1610,9 +1634,15 @@ fn entity_intersection_cached(
     let mut scale = 1.0_f64;
     let mut difference = 0.0_f64;
     let mut firsts = 0..carriers.len();
-    while let Some(first) = ctx.next_charged(&mut firsts, "creo trim carrier pairs")? {
+    while !firsts.is_empty() {
+        let Some(first) = ctx.next_charged(&mut firsts, "creo trim carrier pairs")? else {
+            break;
+        };
         let mut seconds = first + 1..carriers.len();
-        while let Some(second) = ctx.next_charged(&mut seconds, "creo trim intersections")? {
+        while !seconds.is_empty() {
+            let Some(second) = ctx.next_charged(&mut seconds, "creo trim intersections")? else {
+                break;
+            };
             let Some(coordinate) = (match (carriers[first], carriers[second]) {
                 (
                     TrimCarrier::Line { start, end },
