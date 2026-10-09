@@ -3262,14 +3262,12 @@ fn parse_light(
     })
 }
 
-fn push_light(
+fn prepare_light(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    staging: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    lights: &mut Vec<LightRecord>,
     identities: &mut HashSet<Uuid>,
     mut light: LightRecord,
-) -> Result<(), CodecError> {
+) -> Result<LightRecord, CodecError> {
     let source_id = parse_uuid_text(ctx, &light.source_uuid)?
         .ok_or_else(|| CodecError::malformed("light source UUID is invalid"))?;
     if !source_id.is_nil()
@@ -3282,9 +3280,7 @@ fn push_light(
             "Rhino duplicate light ID",
         )?;
     }
-    staging.with_storage(|| ctx.reserve_vec(lights, 1, "Rhino lights"))?;
-    lights.push(light);
-    Ok(())
+    Ok(light)
 }
 
 fn segments(
@@ -5349,16 +5345,35 @@ fn admit_group_member(
     })
 }
 
-fn retain_presentation_record_storage<'ctx>(
+/// Keeps the record owned until its backing reservations have entered the
+/// outer owner. Tuple fields drop the record before its remaining reservations.
+fn push_presentation_record<'ctx, T>(
     ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    staging: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
     guard_storage: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
+    records: &mut Vec<T>,
     guards: &mut Vec<cadmpeg_core::decode::ScopedReservation<'ctx>>,
-    guard: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    mut record: (
+        T,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+        Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+    ),
+    operation: &'static str,
 ) -> Result<(), CodecError> {
+    staging.with_storage(|| ctx.reserve_vec(records, 1, operation))?;
     guard_storage.with_storage(|| {
         ctx.reserve_vec(guards, 1, "Rhino presentation record guards")
     })?;
-    guards.push(guard);
+    guards.push(record.1);
+    if record.2.is_some() {
+        guard_storage.with_storage(|| {
+            ctx.reserve_vec(guards, 1, "Rhino presentation record guards")
+        })?;
+        if let Some(extra_storage) = record.2.take() {
+            guards.push(extra_storage);
+        }
+    }
+    records.push(record.0);
     Ok(())
 }
 
@@ -5566,15 +5581,14 @@ record_losses.append_admitted(
                                     Ok::<_, CodecError>(())
                                 })?;
                             }
-                            staging.with_storage(|| {
-                                ctx.reserve_vec(&mut materials, 1, "Rhino materials")
-                            })?;
-                            materials.push(material);
-                            retain_presentation_record_storage(
+                            push_presentation_record(
                                 ctx,
+                                &mut staging,
                                 &mut record_guard_storage,
+                                &mut materials,
                                 &mut record_storages,
-                                record_storage,
+                                (material, record_storage, None),
+                                "Rhino materials",
                             )?;
                             if material_requires_opaque {
                                 push_opaque_record(
@@ -5698,30 +5712,18 @@ attribute_losses.append_admitted(
                                 )?;
                             }
                         }
-                        light_storage.with_storage(|| {
-                            push_light(
-                                ctx,
-                                &mut light_index_workspace,
-                                &mut staging,
-                                &mut lights,
-                                &mut light_identities,
-                                light,
-                            )
+                        let light = light_storage.with_storage(|| {
+                            prepare_light(ctx, &mut light_index_workspace, &mut light_identities, light)
                         })?;
-                        retain_presentation_record_storage(
+                        push_presentation_record(
                             ctx,
+                            &mut staging,
                             &mut record_guard_storage,
+                            &mut lights,
                             &mut record_storages,
-                            light_storage,
+                            (light, light_storage, attribute_storage.take()),
+                            "Rhino lights",
                         )?;
-                        if let Some(storage) = attribute_storage.take() {
-                            retain_presentation_record_storage(
-                                ctx,
-                                &mut record_guard_storage,
-                                &mut record_storages,
-                                storage,
-                            )?;
-                        }
                         parsed = true;
                     } else {
                         drop(light_storage);
@@ -5742,15 +5744,14 @@ attribute_losses.append_admitted(
                         )
                     }) {
                         Ok((value, storage)) => {
-                            staging.with_storage(|| {
-                                ctx.reserve_vec(&mut linetypes, 1, "Rhino linetypes")
-                            })?;
-                            linetypes.push(value);
-                            retain_presentation_record_storage(
+                            push_presentation_record(
                                 ctx,
+                                &mut staging,
                                 &mut record_guard_storage,
+                                &mut linetypes,
                                 &mut record_storages,
-                                storage,
+                                (value, storage, None),
+                                "Rhino linetypes",
                             )?;
                         }
                         Err(PatternTransferError::Framing(FramingError::Resource(limit))) => {
@@ -5785,15 +5786,14 @@ attribute_losses.append_admitted(
                         )
                     }) {
                         Ok((value, storage)) => {
-                            staging.with_storage(|| {
-                                ctx.reserve_vec(&mut hatch_patterns, 1, "Rhino hatch patterns")
-                            })?;
-                            hatch_patterns.push(value);
-                            retain_presentation_record_storage(
+                            push_presentation_record(
                                 ctx,
+                                &mut staging,
                                 &mut record_guard_storage,
+                                &mut hatch_patterns,
                                 &mut record_storages,
-                                storage,
+                                (value, storage, None),
+                                "Rhino hatch patterns",
                             )?;
                         }
                         Err(PatternTransferError::Framing(FramingError::Resource(limit))) => {
@@ -5894,24 +5894,15 @@ attribute_losses.append_admitted(
                             },
                         )?;
                         if let Some(value) = value {
-                            staging.with_storage(|| {
-                                ctx.reserve_vec(&mut dimension_styles, 1, "Rhino dimension styles")
-                            })?;
-                            dimension_styles.push(value);
-                            retain_presentation_record_storage(
+                            push_presentation_record(
                                 ctx,
+                                &mut staging,
                                 &mut record_guard_storage,
+                                &mut dimension_styles,
                                 &mut record_storages,
-                                storage,
+                                (value, storage, extra_storage),
+                                "Rhino dimension styles",
                             )?;
-                            if let Some(extra_storage) = extra_storage {
-                                retain_presentation_record_storage(
-                                    ctx,
-                                    &mut record_guard_storage,
-                                    &mut record_storages,
-                                    extra_storage,
-                                )?;
-                            }
                             if extra_requires_opaque {
                                 push_opaque_record(
                                     ctx,
@@ -5940,15 +5931,14 @@ attribute_losses.append_admitted(
                         },
                     )?;
                     if let Some(value) = value {
-                        staging.with_storage(|| {
-                            ctx.reserve_vec(&mut dimension_styles, 1, "Rhino dimension styles")
-                        })?;
-                        dimension_styles.push(value);
-                        retain_presentation_record_storage(
+                        push_presentation_record(
                             ctx,
+                            &mut staging,
                             &mut record_guard_storage,
+                            &mut dimension_styles,
                             &mut record_storages,
-                            storage,
+                            (value, storage, None),
+                            "Rhino dimension styles",
                         )?;
                         parsed = true;
                     }
@@ -5974,13 +5964,14 @@ attribute_losses.append_admitted(
                         },
                     )?;
                     if let Some(value) = value {
-                        staging.with_storage(|| ctx.reserve_vec(&mut images, 1, "Rhino images"))?;
-                        images.push(value);
-                        retain_presentation_record_storage(
+                        push_presentation_record(
                             ctx,
+                            &mut staging,
                             &mut record_guard_storage,
+                            &mut images,
                             &mut record_storages,
-                            storage,
+                            (value, storage, None),
+                            "Rhino images",
                         )?;
                         parsed = true;
                     }
@@ -6006,19 +5997,14 @@ attribute_losses.append_admitted(
                             },
                         )?;
                         if let Some(value) = value {
-                            staging.with_storage(|| {
-                                ctx.reserve_vec(
-                                    &mut windows_bitmaps,
-                                    1,
-                                    "Rhino Windows bitmaps",
-                                )
-                            })?;
-                            windows_bitmaps.push(value);
-                            retain_presentation_record_storage(
+                            push_presentation_record(
                                 ctx,
+                                &mut staging,
                                 &mut record_guard_storage,
+                                &mut windows_bitmaps,
                                 &mut record_storages,
-                                storage,
+                                (value, storage, None),
+                                "Rhino Windows bitmaps",
                             )?;
                             parsed = true;
                         }
@@ -6045,15 +6031,14 @@ attribute_losses.append_admitted(
                         },
                     )?;
                     if let Some(value) = value {
-                        staging.with_storage(|| {
-                            ctx.reserve_vec(&mut texture_mappings, 1, "Rhino texture mappings")
-                        })?;
-                        texture_mappings.push(value.value);
-                        retain_presentation_record_storage(
+                        push_presentation_record(
                             ctx,
+                            &mut staging,
                             &mut record_guard_storage,
+                            &mut texture_mappings,
                             &mut record_storages,
-                            storage,
+                            (value.value, storage, None),
+                            "Rhino texture mappings",
                         )?;
                         if value.cache_requires_opaque {
                             push_presentation_loss(
@@ -6127,15 +6112,14 @@ record_losses.append_admitted(
                                 &mut losses,
                                 "Rhino text-style parse loss copies",
                             )?;
-                            staging.with_storage(|| {
-                                ctx.reserve_vec(&mut text_styles, 1, "Rhino text styles")
-                            })?;
-                            text_styles.push(value);
-                            retain_presentation_record_storage(
+                            push_presentation_record(
                                 ctx,
+                                &mut staging,
                                 &mut record_guard_storage,
+                                &mut text_styles,
                                 &mut record_storages,
-                                record_storage,
+                                (value, record_storage, None),
+                                "Rhino text styles",
                             )?;
                             parsed = true;
                         }
@@ -6225,21 +6209,17 @@ record_losses.append_admitted(
                     )
                 }) {
                     Ok(light) => {
-                        light_storage.with_storage(|| {
-                            push_light(
-                                ctx,
-                                &mut light_index_workspace,
-                                &mut staging,
-                                &mut lights,
-                                &mut light_identities,
-                                light,
-                            )
+                        let light = light_storage.with_storage(|| {
+                            prepare_light(ctx, &mut light_index_workspace, &mut light_identities, light)
                         })?;
-                        retain_presentation_record_storage(
+                        push_presentation_record(
                             ctx,
+                            &mut staging,
                             &mut record_guard_storage,
+                            &mut lights,
                             &mut record_storages,
-                            light_storage,
+                            (light, light_storage, None),
+                            "Rhino lights",
                         )?;
                     }
                     Err(FramingError::Resource(limit)) => {
@@ -6326,19 +6306,14 @@ record_losses.append_admitted(
                     links,
                 })
             })?;
-            staging.with_storage(|| {
-                ctx.reserve_vec(
-                    &mut object_presentation,
-                    1,
-                    "Rhino object presentation records",
-                )
-            })?;
-            object_presentation.push(record);
-            retain_presentation_record_storage(
+            push_presentation_record(
                 ctx,
+                &mut staging,
                 &mut record_guard_storage,
+                &mut object_presentation,
                 &mut record_storages,
-                record_storage,
+                (record, record_storage, None),
+                "Rhino object presentation records",
             )?;
         }
     }
@@ -6474,24 +6449,15 @@ record_losses.append_admitted(
                 per_viewport_settings,
             })
         })?;
-        staging.with_storage(|| {
-            ctx.reserve_vec(&mut layers, 1, "Rhino layer presentation records")
-        })?;
-        layers.push(record);
-        retain_presentation_record_storage(
+        push_presentation_record(
             ctx,
+            &mut staging,
             &mut record_guard_storage,
+            &mut layers,
             &mut record_storages,
-            layer_storage,
+            (record, layer_storage, rendering_storage),
+            "Rhino layer presentation records",
         )?;
-        if let Some(rendering_storage) = rendering_storage {
-            retain_presentation_record_storage(
-                ctx,
-                &mut record_guard_storage,
-                &mut record_storages,
-                rendering_storage,
-            )?;
-        }
     }
     ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = group_index_counts[..].iter();

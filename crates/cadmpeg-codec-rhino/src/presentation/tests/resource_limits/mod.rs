@@ -305,7 +305,13 @@ fn push_light_refusal(
         indexes.insert(Uuid::from_canonical([0x55; 16]));
     }
     let mut staging = ctx.reserve_scoped(0, "Rhino test light staging").unwrap();
-    crate::presentation::push_light(&ctx, &mut workspace, &mut staging, &mut Vec::new(), &mut indexes, light)
+    let mut guard_storage = ctx.reserve_scoped(0, "Rhino test light guard staging").unwrap();
+    let light_storage = ctx.reserve_scoped(0, "Rhino test light record").unwrap();
+    crate::presentation::prepare_light(&ctx, &mut workspace, &mut indexes, light)
+        .and_then(|light| crate::presentation::push_presentation_record(
+            &ctx, &mut staging, &mut guard_storage, &mut Vec::new(), &mut Vec::new(),
+            (light, light_storage, None), "Rhino lights",
+        ))
         .expect_err("light collection or identity exceeds limit")
 }
 
