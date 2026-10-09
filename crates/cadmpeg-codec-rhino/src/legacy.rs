@@ -3421,7 +3421,10 @@ fn evaluate_nurbs(
         };
         values.push([point.x * weight, point.y * weight, point.z * weight, weight]);
     }
-    for level in ctx.admit_iter(1..=degree, "Rhino V1 curve evaluation")? {
+    let mut levels = 1..=degree;
+    for _ in 0..degree {
+        let level = ctx.next_charged(&mut levels, "Rhino V1 curve evaluation")?
+            .ok_or_else(|| CodecError::malformed("V1 evaluation level source ended early"))?;
         for j in ctx
             .admit_iter(level..=degree, "Rhino V1 curve evaluation")?
             .rev()

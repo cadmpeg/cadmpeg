@@ -1868,11 +1868,17 @@ pub(crate) fn install<'ctx>(
     let mut cplanes = Vec::new();
     let mut losses = ScratchVec::new(ctx, "Rhino view loss Vec")?;
     let mut opaque_records = ScratchVec::new(ctx, "Rhino view source Vec")?;
-    for table in ctx.admit_iter(&scan.tables[..], "Rhino install traversal")? {
+    let mut table_source = scan.tables.iter();
+    for _ in 0..table_source.len() {
+        let table = ctx.next_charged(&mut table_source, "Rhino install traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino view table source ended early"))?;
         if table.typecode & !0x0000_8000 != SETTINGS {
             continue;
         }
-        for record in ctx.admit_iter(&table.records[..], "Rhino install traversal")? {
+        let mut record_source = table.records.iter();
+        for _ in 0..record_source.len() {
+            let record = ctx.next_charged(&mut record_source, "Rhino install traversal")?
+                .ok_or_else(|| CodecError::malformed("Rhino view record source ended early"))?;
             if record.typecode == NAMED_CPLANES {
                 let Some(scale) = binding.neutral_scale() else {
                     retain_unbound_view_record(
@@ -2026,6 +2032,7 @@ pub(crate) fn install<'ctx>(
 mod tests {
     mod attributes_projection;
     mod budget_repairs;
+    mod fallible_prefix;
     mod image_limits;
     mod resource_limits;
 

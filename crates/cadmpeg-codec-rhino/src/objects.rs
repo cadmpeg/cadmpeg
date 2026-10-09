@@ -2171,14 +2171,17 @@ pub(crate) fn resolve_identities(
     let mut workspace = ctx.reserve_scoped(0, "Rhino identity lookup workspace")?;
     let mut seen_ids = HashSet::new();
     let mut layers = LayerLookup::new();
-    for layer in ctx.admit_iter(&metadata.layers[..], "Rhino resolve identities traversal")? {
+    let mut layer_source = metadata.layers.iter();
+    for _ in 0..layer_source.len() {
+        let layer = ctx.next_charged(&mut layer_source, "Rhino resolve identities traversal")?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino identity layer source ended early"))?;
         workspace.with_storage(|| layers.insert(ctx, layer))?;
     }
     let mut resolved = Vec::new();
-    for (index, object) in ctx
-        .admit_iter(objects, "Rhino resolve identities traversal")?
-        .enumerate()
-    {
+    let mut object_source = objects.into_iter();
+    for index in 0..object_source.len() {
+        let object = ctx.next_charged(&mut object_source, "Rhino resolve identities traversal")?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino identity object source ended early"))?;
         ctx.reserve_vec(&mut resolved, 1, "Rhino resolved object identities")?;
         resolved.push(match object {
             ObjectRecord::Degraded { range, warning } => ObjectRecord::Degraded { range, warning },

@@ -1886,3 +1886,5 @@ fn attribute_userdata_checksum_refusal_propagates_without_diagnostic() {
 mod allocation;
 
 mod user_strings;
+
+mod fallible_prefix;

@@ -1108,6 +1108,8 @@ mod embedded_records;
 mod layer_tables;
 mod layers;
 mod rendering_checksums;
+mod deferred_utf16;
+mod fallible_prefix;
 
 #[test]
 fn every_standard_unit_reads_its_scale_from_the_admitted_table() {

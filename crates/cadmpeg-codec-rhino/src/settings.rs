@@ -16,7 +16,7 @@ use serde::Serialize;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{OpaqueRecord, Record, Table};
 use crate::objects::{
-    parse_class_wrapper_with_userdata, skip_uuid_list, ClassUserdata, UserdataDescriptor,
+    parse_class_wrapper_with_scoped_userdata, skip_uuid_list, ClassUserdata, UserdataDescriptor,
 };
 use crate::wire::{finite, read_finite, uuid, Uuid};
 
@@ -1118,12 +1118,15 @@ pub(crate) fn utf16_deferred<'a>(
     let error_offset = reader.position();
     let mut view = View::over_retained(bytes);
     let mut characters = char::decode_utf16(std::iter::from_fn(|| view.u16_le()));
-    while let Some(character) =
-        ctx.next_charged(&mut characters, "validate Rhino deferred UTF-16")?
-    {
-        character.map_err(|_| {
-            FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence")
-        })?;
+    // The empty source still observes the original refused session.
+    ctx.charge_work(0, "validate Rhino deferred UTF-16")?;
+    let mut remaining_units = bytes.len() / 2;
+    while remaining_units != 0 {
+        let character = ctx.next_charged(&mut characters, "validate Rhino deferred UTF-16")?
+            .ok_or_else(|| FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence"))?
+            .map_err(|_| FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence"))?;
+        // A valid supplementary character consumed both surrogate units.
+        remaining_units -= character.len_utf16();
     }
     Ok(DeferredUtf16 {
         bytes,
@@ -2516,7 +2519,7 @@ fn parse_layer(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(LayerRecord, bool), FramingError> {
     let (class, userdata) =
-        parse_class_wrapper_with_userdata(ctx, data, record.body(), archive, warnings)?;
+        parse_class_wrapper_with_scoped_userdata(ctx, data, record.body(), archive, warnings)?;
     if class.class_uuid != ON_LAYER_UUID {
         return Err(FramingError::Structural {
             offset: record.range.start,
@@ -2661,7 +2664,7 @@ fn parse_layer(
     // internal disambiguation.
     let mut source_requires_opaque = serialized_id.is_some_and(super::wire::Uuid::is_nil);
     if let Some(descriptor) = ctx.find_map(
-        &userdata,
+        &userdata[..],
         |raw| {
             let Some(descriptor) = UserdataDescriptor::known(raw) else {
                 return Ok(None);
@@ -2829,9 +2832,15 @@ pub(crate) fn parse_metadata(
     let mut seen_property_singletons = [false; PROPERTY_SINGLETONS.len()];
     let mut seen_setting_singletons = [false; SETTING_SINGLETONS.len()];
     let mut opaque_records = Vec::new();
-    for table in ctx.admit_iter(tables, "Rhino parse metadata traversal")? {
+    let mut table_source = tables.iter();
+    for _ in 0..table_source.len() {
+        let table = ctx.next_charged(&mut table_source, "Rhino parse metadata traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino metadata table source ended early"))?;
         let table_type = table.typecode & !0x0000_8000;
-        for record in ctx.admit_iter(&table.records[..], "Rhino parse metadata traversal")? {
+        let mut record_source = table.records.iter();
+        for _ in 0..record_source.len() {
+            let record = ctx.next_charged(&mut record_source, "Rhino parse metadata traversal")?
+                .ok_or_else(|| CodecError::malformed("Rhino metadata record source ended early"))?;
             // The singleton lists are constants, so finding a record's slot
             // and remembering that it was seen is fixed work.
             let singleton = match table_type {
@@ -2968,9 +2977,10 @@ pub(crate) fn parse_metadata(
         "Rhino layer index counts",
     )?;
     let layer_index_counts = layer_index_counts_buffer;
-    for &(index, count) in
-        ctx.admit_iter(&layer_index_counts, "Rhino layer index count traversal")?
-    {
+    let mut index_source = layer_index_counts.iter();
+    for _ in 0..index_source.len() {
+        let &(index, count) = ctx.next_charged(&mut index_source, "Rhino layer index count traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino layer index source ended early"))?;
         if count > 1 {
             warnings.push_coded_admitted(ctx,
                 crate::loss::RhinoLossCode::DuplicateRecordResolved,
@@ -3085,7 +3095,10 @@ fn report_layer_parent_references(
 ) -> Result<(), CodecError> {
     let mut workspace = ctx.reserve_scoped(0, "Rhino layer parent workspace")?;
     let mut id_counts = HashMap::<Uuid, usize>::new();
-    for layer in ctx.admit_iter(layers, "Rhino report layer parent references traversal")? {
+    let mut layer_source = layers.iter();
+    for _ in 0..layer_source.len() {
+        let layer = ctx.next_charged(&mut layer_source, "Rhino report layer parent references traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino layer parent source ended early"))?;
         if let Some(id) = layer.id.filter(|id| !id.is_nil()) {
             let count = workspace
                 .with_storage(|| {
@@ -3095,7 +3108,10 @@ fn report_layer_parent_references(
             *count += 1;
         }
     }
-    for layer in ctx.admit_iter(layers, "Rhino report layer parent references traversal")? {
+    let mut layer_source = layers.iter();
+    for _ in 0..layer_source.len() {
+        let layer = ctx.next_charged(&mut layer_source, "Rhino report layer parent references traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino layer parent source ended early"))?;
         let Some(parent) = layer
             .hierarchy
             .map(|hierarchy| hierarchy.parent_id)
