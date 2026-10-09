@@ -762,8 +762,8 @@ impl<'a, 'b, 'ctx> TypedFrameSource<'a, 'b, 'ctx> {
         }
 
         let mut resolved = Vec::new();
-        let mut frames = Vec::new();
         let mut frames_storage = ctx.reserve_scoped(0, "f3d typed primary frames")?;
+        let mut frames = Vec::new();
         let (primary_frames, _) = match &mut self.primary_frames {
             Some(primary_frames) => primary_frames,
             slot @ None => {
