@@ -313,6 +313,25 @@ impl DecodeContext<'_> {
         })
     }
 
+    /// Admits the comparison bound for one standard-library B-tree lookup.
+    pub fn charge_btree_lookup(
+        &self,
+        len: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        // Nodes have at most eleven keys. A height-h tree has at least
+        // 2 * 6^h - 1 keys: the root has two children and other internal
+        // nodes have at least six. A lookup compares at most eleven keys
+        // per level, and never more keys than the whole tree contains.
+        let mut levels = 1_u64;
+        let mut minimum_subtree = len.div_ceil(2);
+        while minimum_subtree >= 6 {
+            minimum_subtree /= 6;
+            levels += 1;
+        }
+        self.charge_work(u64_from_index(len).min(11 * levels), operation)
+    }
+
     /// Inserts a new scoped tree key after charging lookup work and node storage.
     pub fn insert_scoped_btree_set<T: Ord>(
         &self,
@@ -322,8 +341,20 @@ impl DecodeContext<'_> {
         work_operation: &'static str,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        self.charge_work(u64_from_index(values.len()), work_operation)?;
-        reservation.with_storage(|| self.insert_btree_set(values, value, operation))
+        self.charge_btree_lookup(values.len(), work_operation)?;
+        if values.contains(&value) {
+            return Ok(false);
+        }
+        // Insertion searches the tree again after storage admission.
+        self.charge_btree_lookup(values.len(), work_operation)?;
+        reservation.with_storage(|| {
+            self.charge_retained(
+                self.tree_growth_bytes::<T, ()>(values.len(), operation)?,
+                operation,
+            )?;
+            self.charge_collection_items(1, operation)?;
+            Ok(values.insert(value))
+        })
     }
 
     /// Inserts a vacant scoped tree entry after charging lookup work and node storage.
@@ -1642,5 +1673,120 @@ mod temporary_capacity_tests {
             .expect("admitted test operation");
         assert_eq!(values.capacity(), capacity);
         drop(storage);
+    }
+}
+
+#[cfg(test)]
+mod tree_work_tests {
+    use std::cell::Cell;
+    use std::cmp::Ordering;
+    use std::collections::BTreeSet;
+
+    use super::DecodeContext;
+    use crate::decode::{DecodeArena, DecodePolicy};
+
+    thread_local! {
+        static COMPARISONS: Cell<u64> = const { Cell::new(0) };
+    }
+
+    #[derive(Debug)]
+    struct CountedKey {
+        value: usize,
+    }
+
+    impl PartialEq for CountedKey {
+        fn eq(&self, other: &Self) -> bool {
+            self.value == other.value
+        }
+    }
+
+    impl Eq for CountedKey {}
+
+    impl PartialOrd for CountedKey {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Ord for CountedKey {
+        fn cmp(&self, other: &Self) -> Ordering {
+            COMPARISONS.with(|count| count.set(count.get() + 1));
+            self.value.cmp(&other.value)
+        }
+    }
+
+    #[test]
+    fn scoped_tree_work_refuses_before_comparing_or_inserting() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        COMPARISONS.with(|count| count.set(0));
+        let mut values = BTreeSet::from([CountedKey { value: 0 }]);
+        let mut storage = ctx.reserve_scoped(0, "tree test storage").expect("scope");
+        let error = ctx
+            .insert_scoped_btree_set(
+                &mut storage,
+                &mut values,
+                CountedKey { value: 1 },
+                "tree test comparisons",
+                "tree test storage",
+            )
+            .expect_err("lookup exceeds work allowance");
+        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
+            if limit.operation == "tree test comparisons"));
+        assert_eq!(COMPARISONS.with(Cell::get), 0);
+        assert_eq!(values.len(), 1);
+    }
+
+    #[test]
+    fn scoped_tree_work_bounds_comparisons_without_billing_full_scans() {
+        const COUNT: usize = 16_384;
+        for order in 0..3 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // The old insertion charges alone cost COUNT * (COUNT - 1) / 2.
+            policy.limits.max_work_units = 3_000_000;
+            let ctx = DecodeContext::new(&arena, &policy, false);
+            COMPARISONS.with(|count| count.set(0));
+            let mut values = BTreeSet::new();
+            let mut storage = ctx.reserve_scoped(0, "tree test storage").expect("scope");
+            for index in 0..COUNT {
+                let value = match order {
+                    0 => index,
+                    1 => COUNT - index - 1,
+                    _ => (index * 8191) % COUNT,
+                };
+                assert!(ctx
+                    .insert_scoped_btree_set(
+                        &mut storage,
+                        &mut values,
+                        CountedKey { value },
+                        "tree test comparisons",
+                        "tree test storage",
+                    )
+                    .expect("indexed insertion fits work allowance"));
+            }
+            for value in 0..=COUNT {
+                ctx.charge_btree_lookup(values.len(), "tree test membership")
+                    .expect("indexed membership fits work allowance");
+                assert_eq!(values.contains(&CountedKey { value }), value < COUNT);
+            }
+            assert!(!ctx
+                .insert_scoped_btree_set(
+                    &mut storage,
+                    &mut values,
+                    CountedKey { value: COUNT / 2 },
+                    "tree test comparisons",
+                    "tree test storage",
+                )
+                .expect("duplicate fits work allowance"));
+            assert_eq!(values.len(), COUNT);
+            let refusal = ctx
+                .charge_work_limit(u64::MAX, "read tree test work")
+                .expect_err("measurement exceeds the work limit");
+            assert!(refusal.used >= COMPARISONS.with(Cell::get));
+            assert!(refusal.used < policy.limits.max_work_units);
+        }
     }
 }
