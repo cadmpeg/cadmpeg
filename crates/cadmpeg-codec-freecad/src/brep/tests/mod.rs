@@ -5,6 +5,7 @@ mod allocation_tests;
 mod actual_visits;
 mod nesting;
 mod numeric_text;
+mod parser_recursion;
 mod reference_diagnostics;
 mod source_transfer;
 
