@@ -626,102 +626,104 @@ fn transfer_display_tessellations(
                 (&[][..], rows.as_slice(), rows.len())
             }
         };
-        let mut vertex_storage = ctx.reserve_scoped(0, "creo display vertex staging storage")?;
-        let mut positions = Vec::new();
-        ctx.reserve_scoped_vec(
-            &mut vertex_storage,
-            &mut positions,
-            vertex_count,
-            "creo display tessellation positions",
-        )?;
-        let position_operation = if unshaded.is_empty() {
-            "creo display tessellation shaded position rows"
-        } else {
-            "creo display tessellation position rows"
-        };
-        let mut source_positions = unshaded
-            .iter()
-            .chain(shaded.iter().map(|row| &row.position));
-        // Exactly one lane is present, so the lower bound is its remaining row count.
-        while source_positions.size_hint().0 != 0 {
-            let Some(position) = ctx.next_charged(&mut source_positions, position_operation)? else {
-                break;
-            };
-            let mut point = Point3::from(position.get());
-            if let Some(scale) = length_scale {
-                point = Point3::new(
-                    point.x * scale.get(),
-                    point.y * scale.get(),
-                    point.z * scale.get(),
-                );
-                if !point.is_finite() {
-                    return Err(CodecError::NotImplemented(ctx.format_retained(
-                        format_args!("SolidPrimdata display triangle strip at byte {} has a vertex that cannot be represented in millimeters", strip.offset),
-                        "creo display tessellation overflow text",
-                    )?));
-                }
-            }
-            let Some(point) = FinitePoint3::new(point) else {
-                return Err(display_strip_error(
-                    ctx,
-                    strip.offset,
-                    "vertices contain a non-finite coordinate",
-                )?);
-            };
-            positions.push(point);
-        }
-        let mesh = if matches!(
-            strip.vertices(),
-            crate::primdata::PrimitiveVertices::Shaded(_)
-        ) {
-            let normals = shaded.iter().map(|row| &row.normal);
-            let mut rows = Vec::new();
+        let mesh = {
+            let mut vertex_storage = ctx.reserve_scoped(0, "creo display vertex staging storage")?;
+            let mut positions = Vec::new();
             ctx.reserve_scoped_vec(
                 &mut vertex_storage,
-                &mut rows,
-                positions.len(),
-                "creo display tessellation shaded rows",
+                &mut positions,
+                vertex_count,
+                "creo display tessellation positions",
             )?;
-            let mut source_rows = positions.iter().copied().zip(normals);
-            while source_rows.len() != 0 {
-                let Some((position, normal)) = ctx.next_charged(
-                    &mut source_rows,
-                    "creo display shaded position assembly",
-                )? else {
+            let position_operation = if unshaded.is_empty() {
+                "creo display tessellation shaded position rows"
+            } else {
+                "creo display tessellation position rows"
+            };
+            let mut source_positions = unshaded
+                .iter()
+                .chain(shaded.iter().map(|row| &row.position));
+            // Exactly one lane is present, so the lower bound is its remaining row count.
+            while source_positions.size_hint().0 != 0 {
+                let Some(position) = ctx.next_charged(&mut source_positions, position_operation)? else {
                     break;
                 };
-                let Some(normal) = FiniteVector3::new(Vector3::from(normal.get())) else {
+                let mut point = Point3::from(position.get());
+                if let Some(scale) = length_scale {
+                    point = Point3::new(
+                        point.x * scale.get(),
+                        point.y * scale.get(),
+                        point.z * scale.get(),
+                    );
+                    if !point.is_finite() {
+                        return Err(CodecError::NotImplemented(ctx.format_retained(
+                            format_args!("SolidPrimdata display triangle strip at byte {} has a vertex that cannot be represented in millimeters", strip.offset),
+                            "creo display tessellation overflow text",
+                        )?));
+                    }
+                }
+                let Some(point) = FinitePoint3::new(point) else {
                     return Err(display_strip_error(
                         ctx,
                         strip.offset,
-                        "normals contain a non-finite coordinate",
+                        "vertices contain a non-finite coordinate",
                     )?);
                 };
-                rows.push(ShadedVertex { position, normal });
+                positions.push(point);
             }
-            let Some(strips) = admitted_display_strips(ctx, rows, strip.strip_lengths())? else {
-                return Err(display_strip_error(
-                    ctx,
-                    strip.offset,
-                    TessellationLaneError::Strips {
-                        spans: strip.strip_lengths().len(),
-                    },
-                )?);
-            };
-            TessellationMesh::ShadedStrips { strips }
-        } else {
-            // An absent normal lane is an unshaded strip set.
-            let Some(strips) = admitted_display_strips(ctx, positions, strip.strip_lengths())?
-            else {
-                return Err(display_strip_error(
-                    ctx,
-                    strip.offset,
-                    TessellationLaneError::Strips {
-                        spans: strip.strip_lengths().len(),
-                    },
-                )?);
-            };
-            TessellationMesh::Strips { strips }
+            if matches!(
+                strip.vertices(),
+                crate::primdata::PrimitiveVertices::Shaded(_)
+            ) {
+                let normals = shaded.iter().map(|row| &row.normal);
+                let mut rows = Vec::new();
+                ctx.reserve_scoped_vec(
+                    &mut vertex_storage,
+                    &mut rows,
+                    positions.len(),
+                    "creo display tessellation shaded rows",
+                )?;
+                let mut source_rows = positions.iter().copied().zip(normals);
+                while source_rows.len() != 0 {
+                    let Some((position, normal)) = ctx.next_charged(
+                        &mut source_rows,
+                        "creo display shaded position assembly",
+                    )? else {
+                        break;
+                    };
+                    let Some(normal) = FiniteVector3::new(Vector3::from(normal.get())) else {
+                        return Err(display_strip_error(
+                            ctx,
+                            strip.offset,
+                            "normals contain a non-finite coordinate",
+                        )?);
+                    };
+                    rows.push(ShadedVertex { position, normal });
+                }
+                let Some(strips) = admitted_display_strips(ctx, rows, strip.strip_lengths())? else {
+                    return Err(display_strip_error(
+                        ctx,
+                        strip.offset,
+                        TessellationLaneError::Strips {
+                            spans: strip.strip_lengths().len(),
+                        },
+                    )?);
+                };
+                TessellationMesh::ShadedStrips { strips }
+            } else {
+                // An absent normal lane is an unshaded strip set.
+                let Some(strips) = admitted_display_strips(ctx, positions, strip.strip_lengths())?
+                else {
+                    return Err(display_strip_error(
+                        ctx,
+                        strip.offset,
+                        TessellationLaneError::Strips {
+                            spans: strip.strip_lengths().len(),
+                        },
+                    )?);
+                };
+                TessellationMesh::Strips { strips }
+            }
         };
         let tessellation = match Tessellation::from_parts(id, mesh, Vec::new()) {
             Ok(tessellation) => tessellation,
