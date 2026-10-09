@@ -1049,7 +1049,7 @@ pub(super) fn project<'ctx>(
             continue;
         };
         let shell_count = void_count.checked_add(1).ok_or_else(|| {
-            cadmpeg_core::decode::refuse_local_limit("iges B-rep solid shell uses", u64::MAX, 1)
+            ctx.refuse_codec_limit("iges B-rep solid shell uses", u64::MAX, 1)
         })?;
         let mut record_storage = ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
         let mut shell_uses = record_storage
@@ -1840,7 +1840,7 @@ pub(super) fn project<'ctx>(
                     }
                     FaceLoopPointers::Unclassified { first, rest } => {
                         let count = rest.len().checked_add(1).ok_or_else(|| {
-                            cadmpeg_core::decode::refuse_local_limit(
+                            ctx.refuse_codec_limit(
                                 "iges B-rep face unspecified loop ids",
                                 u64::MAX,
                                 1,

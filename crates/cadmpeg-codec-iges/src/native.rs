@@ -21,7 +21,7 @@ use crate::parameter::{
     QuarantinedParameterRecord, ResolvedGroups, TextNodeLayout, Token, TokenValue,
     TrailingPointerAnalysis,
 };
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -2398,7 +2398,7 @@ fn collect_native_inputs<'a, 'ctx>(
     let card_count = framed
         .len()
         .checked_add(trailing.len())
-        .ok_or_else(|| refuse_local_limit("iges native card slots", u64::MAX, 1))?;
+        .ok_or_else(|| ctx.refuse_codec_limit("iges native card slots", u64::MAX, 1))?;
     let (cards, cards_storage) = ctx.with_scoped_storage("iges native cards scratch", || {
         let mut cards = ctx.collection_vec(card_count, "iges native card slots")?;
         let mut index = 0;
@@ -2467,7 +2467,7 @@ pub(crate) fn store<'ctx>(
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(scan.cards().len())
             .checked_add(cadmpeg_core::decode::u64_from_index(scan.trailing().len()))
-            .ok_or_else(|| refuse_local_limit("iges_native_entities", u64::MAX, 1))?,
+            .ok_or_else(|| ctx.refuse_codec_limit("iges_native_entities", u64::MAX, 1))?,
         "iges_native_entities",
     )?;
     let NativeInputRecords {

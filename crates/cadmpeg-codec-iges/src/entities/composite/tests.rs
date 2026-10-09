@@ -1845,3 +1845,5 @@ fn composite_trim_multiplicity_refuses_work_before_scan() {
         super::trim_nurbs_lanes(ctx, &curve, [0.25, 0.75]).map(|_| ())
     });
 }
+
+mod local_limits;

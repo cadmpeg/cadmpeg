@@ -6,7 +6,7 @@ use crate::card::{Card, CardScan, FramingDefect, FramingRecoveries, FramingValue
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
 use crate::global::{GlobalTable, NumericLimits, RealPrecision, ResolvedGlobal};
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{bounded_len, refuse_local_limit, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -657,7 +657,7 @@ fn analyze_trailing_pointer_groups_from_end(
             .tokens
             .len()
             .checked_add(1)
-            .ok_or_else(|| refuse_local_limit("iges pointer class prefixes", u64::MAX, 1))?;
+            .ok_or_else(|| ctx.refuse_codec_limit("iges pointer class prefixes", u64::MAX, 1))?;
         let mut prefix_storage = ctx.reserve_scoped(0, "iges pointer class prefixes")?;
         let mut prefix = prefix_storage
             .with_storage(|| ctx.collection_vec(prefix_count, "iges pointer class prefixes"))?;
@@ -2717,7 +2717,7 @@ fn non_integer_prefix(
         .tokens
         .len()
         .checked_add(1)
-        .ok_or_else(|| refuse_local_limit("iges noninteger token prefix", u64::MAX, 1))?;
+        .ok_or_else(|| ctx.refuse_codec_limit("iges noninteger token prefix", u64::MAX, 1))?;
     let mut prefix = ctx.collection_vec(count, "iges noninteger token prefix")?;
     prefix.push(0);
     for index in ctx.admit_iter(0..record.tokens.len(), "iges noninteger token prefix")? {
@@ -4146,7 +4146,7 @@ fn owned_bytes<'ctx>(
         };
         byte_count = byte_count
             .checked_add(line.payload.get(..64).unwrap_or_default().len())
-            .ok_or_else(|| refuse_local_limit("iges owned parameter bytes", u64::MAX, 1))?;
+            .ok_or_else(|| ctx.refuse_codec_limit("iges owned parameter bytes", u64::MAX, 1))?;
         card_count += 1;
     }
     let mut bytes = ctx.vector_storage(byte_count, "iges owned parameter bytes")?;
@@ -4192,7 +4192,7 @@ fn quarantine(
         };
         byte_count = byte_count
             .checked_add(line.payload.len())
-            .ok_or_else(|| refuse_local_limit("iges quarantined parameter bytes", u64::MAX, 1))?;
+            .ok_or_else(|| ctx.refuse_codec_limit("iges quarantined parameter bytes", u64::MAX, 1))?;
     }
     let mut source_cards = cards.iter();
     let first = loop {
@@ -4760,7 +4760,7 @@ pub(crate) fn summary_notes<'ctx>(
                 records,
                 0_usize,
                 |total, record| total.checked_add(record.tokens.len()).ok_or_else(|| {
-                    refuse_local_limit("iges parameter token census", u64::MAX, 1)
+                    ctx.refuse_codec_limit("iges parameter token census", u64::MAX, 1)
                 }),
                 "iges parameter summary token census",
             )?

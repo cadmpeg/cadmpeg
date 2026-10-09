@@ -9,7 +9,7 @@ use crate::directory::{DirectoryEntry, Hierarchy, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
@@ -1630,7 +1630,7 @@ fn elevate_nurbs_to_degree(
             .len()
             .checked_add(target_knot_count)
             .ok_or_else(|| {
-                DegreeElevationError::Allocation(refuse_local_limit(
+                DegreeElevationError::Allocation(ctx.refuse_codec_limit(
                     "iges composite elevated knot suffix",
                     u64::MAX,
                     1,
@@ -2860,7 +2860,7 @@ fn project_with_type_130_policy<'ctx>(
             .ok()
             .filter(|count| *count > cadmpeg_core::decode::u64_from_index(MAX_COMPOSITE_CHILDREN))
         {
-            return Err(refuse_local_limit(
+            return Err(ctx.refuse_codec_limit(
                 "iges_composite_children",
                 cadmpeg_core::decode::u64_from_index(MAX_COMPOSITE_CHILDREN),
                 observed,
@@ -3280,10 +3280,10 @@ fn project_with_type_130_policy<'ctx>(
             )
         })?;
         let component_count = segments.preceding.len().checked_add(1).ok_or_else(|| {
-            refuse_local_limit("iges composite procedural components", u64::MAX, 1)
+            ctx.refuse_codec_limit("iges composite procedural components", u64::MAX, 1)
         })?;
         let boundary_count = component_count.checked_add(1).ok_or_else(|| {
-            refuse_local_limit("iges composite procedural boundaries", u64::MAX, 1)
+            ctx.refuse_codec_limit("iges composite procedural boundaries", u64::MAX, 1)
         })?;
         let mut boundaries =
             { ctx.collection_vec(boundary_count, "iges composite procedural boundaries")? };

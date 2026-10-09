@@ -4,7 +4,7 @@
 use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::report::loss::LossNote;
@@ -611,7 +611,7 @@ fn frame_sections<'a>(
         if let Some(count) = raw.fused_cards {
             let bytes = count
                 .checked_mul(CARD_WIDTH)
-                .ok_or_else(|| refuse_local_limit("iges fused card byte count", u64::MAX, 1))?;
+                .ok_or_else(|| ctx.refuse_codec_limit("iges fused card byte count", u64::MAX, 1))?;
             recoveries.record(
                 ctx,
                 (current, FramingDefect::CardBoundary),
@@ -783,7 +783,7 @@ pub(crate) fn summarize(
                 .checked_add(u64_from_index(
                     line.payload.len() + line.ending.bytes().len(),
                 ))
-                .ok_or_else(|| refuse_local_limit("iges card summary section size", u64::MAX, 1))?;
+                .ok_or_else(|| ctx.refuse_codec_limit("iges card summary section size", u64::MAX, 1))?;
             let index = match line.ending {
                 LineEnding::Cr => 0,
                 LineEnding::CrLf => 1,
@@ -831,7 +831,7 @@ pub(crate) fn summarize(
                     line.payload.len() + line.ending.bytes().len(),
                 ))
                 .ok_or_else(|| {
-                    refuse_local_limit("iges card summary trailing size", u64::MAX, 1)
+                    ctx.refuse_codec_limit("iges card summary trailing size", u64::MAX, 1)
                 })?;
         }
         ctx.reserve_vec(&mut entries, 1, "iges card summary entries")?;

@@ -7,7 +7,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
@@ -336,7 +336,7 @@ pub(super) fn project(
             .ok()
             .filter(|count| *count > cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SEGMENTS))
         {
-            return Err(refuse_local_limit(
+            return Err(ctx.refuse_codec_limit(
                 "iges_spline_segments",
                 cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SEGMENTS),
                 observed,
@@ -804,7 +804,7 @@ pub(super) fn project(
                 });
             match requested {
                 None => {
-                    return Err(refuse_local_limit(
+                    return Err(ctx.refuse_codec_limit(
                         "iges_spline_surface_poles",
                         cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
                         u64::MAX,
@@ -814,7 +814,7 @@ pub(super) fn project(
                     if requested
                         > cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES) =>
                 {
-                    return Err(refuse_local_limit(
+                    return Err(ctx.refuse_codec_limit(
                         "iges_spline_surface_poles",
                         cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
                         requested,
@@ -851,14 +851,14 @@ pub(super) fn project(
             continue;
         };
         let Some(pole_count) = u_count.checked_mul(v_count) else {
-            return Err(refuse_local_limit(
+            return Err(ctx.refuse_codec_limit(
                 "iges_spline_surface_poles",
                 cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
                 u64::MAX,
             ));
         };
         if pole_count > MAX_SPLINE_SURFACE_POLES {
-            return Err(refuse_local_limit(
+            return Err(ctx.refuse_codec_limit(
                 "iges_spline_surface_poles",
                 cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
                 cadmpeg_core::decode::u64_from_index(pole_count),

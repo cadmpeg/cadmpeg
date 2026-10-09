@@ -7,7 +7,7 @@ use super::push_attributed_loss;
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     nurbs::{KnotVector, NurbsCurve},
@@ -586,7 +586,7 @@ pub(super) fn project(
         let knot_count = positions
             .len()
             .checked_add(2)
-            .ok_or_else(|| refuse_local_limit("iges copious knots", u64::MAX, 1))?;
+            .ok_or_else(|| ctx.refuse_codec_limit("iges copious knots", u64::MAX, 1))?;
         let mut knots = ctx.collection_vec(knot_count, "iges copious knots")?;
         knots.extend([0.0, 0.0]);
         for value in ctx.admit_iter(1..positions.len() - 1, "iges copious knot construction")? {

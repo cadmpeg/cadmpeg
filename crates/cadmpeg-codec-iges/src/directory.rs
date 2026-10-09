@@ -5,7 +5,7 @@ use crate::card::{Card, CardScan, PhysicalLine, Section};
 
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
@@ -540,7 +540,7 @@ fn quarantine(
         .payload
         .len()
         .checked_add(second.len())
-        .ok_or_else(|| refuse_local_limit("iges quarantined directory bytes", u64::MAX, 1))?;
+        .ok_or_else(|| ctx.refuse_codec_limit("iges quarantined directory bytes", u64::MAX, 1))?;
     let mut bytes = ctx.collection_vec(bytes_len, "iges quarantined directory bytes")?;
     ctx.extend_from_slice(
         &mut bytes,

@@ -1874,3 +1874,5 @@ fn homogeneous_rail_extraction_uses_scoped_storage() {
         .unwrap();
     assert!(!spans.is_empty());
 }
+
+mod local_limits;
