@@ -4452,8 +4452,8 @@ fn parse_sketch_surface(
     else {
         return Ok(None);
     };
-    let mut points = Vec::new();
     let mut points_storage = ctx.reserve_scoped(0, "f3d sketch surface scaled points")?;
+    let mut points = Vec::new();
     for (ordinal, values) in coordinates.chunks(3).enumerate() {
         ctx.charge_work(1, "scan F3D sketch surface coordinates")?;
         let Some(source) = FinitePoint3::new(Point3::new(values[0], values[1], values[2])) else {
