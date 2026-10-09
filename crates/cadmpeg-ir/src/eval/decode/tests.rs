@@ -43,6 +43,34 @@ fn heap_curve() -> NurbsCurve {
     .expect("finite high-degree line")
 }
 
+/// Degree 16: the smallest support that exceeds the inline window.
+fn heap_support_curve() -> NurbsCurve {
+    const DEGREE: u32 = 16;
+    let poles = usize::try_from(DEGREE).expect("degree") + 1;
+    let knots: Vec<f64> = std::iter::repeat_n(0.0, poles)
+        .chain(std::iter::repeat_n(1.0, poles))
+        .collect();
+    let points = (0..poles)
+        .map(|index| {
+            Point3::new(
+                f64::from(u32::try_from(index).expect("pole")) / 16.0,
+                0.0,
+                0.0,
+            )
+        })
+        .collect();
+    NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        DEGREE,
+        knots,
+        points,
+        None,
+        false,
+    )
+    .expect("admitted high-degree fixture")
+    .expect("finite high-degree line")
+}
+
 #[test]
 fn admitted_curve_point_uses_inline_basis() {
     let curve = heap_curve();
@@ -218,17 +246,17 @@ fn admitted_curve_point_refuses_recursive_frame() {
 
 #[test]
 fn reusable_nurbs_evaluator_admits_once_and_matches_point_evaluation() {
-    let curve = heap_curve();
+    let curve = heap_support_curve();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
+    policy.limits.max_collection_items = 16;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert!(
         matches!(super::NurbsPointEvaluator::new(&ctx, &curve).map_err(CodecError::from),
         Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR B-spline basis")
     );
     let arena = DecodeArena::new();
-    policy.limits.max_collection_items = 5;
+    policy.limits.max_collection_items = 17;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut evaluator = super::NurbsPointEvaluator::new(&ctx, &curve)
         .map_err(CodecError::from)
@@ -251,9 +279,9 @@ fn reusable_nurbs_evaluator_admits_once_and_matches_point_evaluation() {
 
 #[test]
 fn reusable_nurbs_evaluator_refuses_work_and_depth() {
-    let curve = heap_curve();
+    let curve = heap_support_curve();
     for (work, depth, operation) in [
-        (8, 128, "IR B-spline basis work"),
+        (17, 128, "IR B-spline basis work"),
         (u64::MAX, 0, "geometry evaluation nesting"),
     ] {
         let arena = DecodeArena::new();
@@ -654,10 +682,10 @@ fn uncharged_scratch_reports_an_allocation_refusal_instead_of_no_value() {
 
 #[test]
 fn decode_evaluation_scratch_charges_scoped_bytes_and_releases_them() {
-    let curve = heap_curve();
+    let curve = heap_support_curve();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    let bytes = 5 * std::mem::size_of::<f64>();
+    let bytes = 17 * std::mem::size_of::<f64>();
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = u64::try_from(bytes).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -681,11 +709,11 @@ fn decode_evaluation_scratch_charges_scoped_bytes_and_releases_them() {
 
 #[test]
 fn decode_evaluation_refuses_scoped_basis_storage() {
-    let curve = heap_curve();
+    let curve = heap_support_curve();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes =
-        u64::try_from(5 * std::mem::size_of::<f64>() - 1).unwrap();
+        u64::try_from(17 * std::mem::size_of::<f64>() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(super::NurbsPointEvaluator::new(&ctx, &curve),
         Err(limit) if limit.dimension == ResourceDimension::MaterializedBytes

@@ -448,7 +448,7 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
         curve: &'curve NurbsCurve,
     ) -> Result<Self, ResourceLimit> {
         let support = curve.knots().len() - curve.pole_count();
-        let (basis, storage) = if support <= 4 {
+        let (basis, storage) = if support <= INLINE_SUPPORT {
             (
                 SupportValues::Inline {
                     values: [0.0; INLINE_SUPPORT],

@@ -399,6 +399,28 @@ impl<'a> DecodeContext<'a> {
         Ok(values)
     }
 
+    /// Allocates `count` copies of `value` whose backing bytes the caller has
+    /// already admitted, as retained or scoped storage, under its own operation.
+    ///
+    /// Charges collection items and fill work only, so the bytes are admitted
+    /// exactly once. The caller must have admitted `count * size_of::<T>()`
+    /// bytes before this call.
+    pub fn alloc_filled_admitted<T: Clone>(
+        &self,
+        count: usize,
+        value: T,
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
+        self.charge_work(u64_from_index(count), operation)?;
+        self.charge_collection_items(u64_from_index(count), operation)?;
+        let mut values = Vec::new();
+        values
+            .try_reserve_exact(count)
+            .map_err(|_| self.collection_allocation_failed(count, operation))?;
+        values.resize(count, value);
+        Ok(values)
+    }
+
     /// Charges admitted entities.
     pub fn charge_entities(&self, count: u64, operation: &'static str) -> Result<(), CodecError> {
         self.budget.charge_entities(count, operation)

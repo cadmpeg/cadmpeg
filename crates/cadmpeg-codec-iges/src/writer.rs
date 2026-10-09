@@ -7066,6 +7066,7 @@ fn encode_nurbs(
             "IGES NURBS parameter range lies outside its knot domain".into(),
         ));
     }
+    let mut _unit_weight_storage = None;
     let weights = match nurbs.weights() {
         Some(weights) => {
             if weights.iter().any(|weight| weight.get() <= 0.0) {
@@ -7075,7 +7076,13 @@ fn encode_nurbs(
             }
             weights.into_iter().map(FiniteReal::from).collect()
         }
-        None => ctx.alloc_filled(control_count, FiniteReal::ONE, "iges NURBS weights")?,
+        None => {
+            let (weights, storage) = ctx.with_scoped_storage("iges NURBS weights", || {
+                ctx.alloc_filled(control_count, FiniteReal::ONE, "iges NURBS weights")
+            })?;
+            _unit_weight_storage = Some(storage);
+            weights
+        }
     };
     let polynomial = weights
         .first()

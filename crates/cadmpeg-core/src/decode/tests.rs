@@ -309,6 +309,35 @@ fn alloc_filled_charges_collection_items_and_reserves() {
 }
 
 #[test]
+fn alloc_filled_admitted_charges_items_and_work_but_no_bytes() {
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| {
+        limits.max_retained_bytes = 0;
+        limits.max_materialized_bytes = 0;
+        limits.max_collection_items = 3;
+        limits.max_work_units = 3;
+    });
+    let ctx = DecodeContext::new(&arena, &policy, false);
+    assert_eq!(
+        ctx.alloc_filled_admitted(3, 7u64, "admitted").unwrap(),
+        [7, 7, 7]
+    );
+    assert!(matches!(
+        ctx.alloc_filled_admitted(1, 0u8, "admitted"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+    ));
+    let policy = policy_with(|limits| limits.max_collection_items = 1);
+    let ctx = DecodeContext::new(&arena, &policy, false);
+    assert!(matches!(
+        ctx.alloc_filled_admitted(2, 0u8, "admitted"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "admitted"
+    ));
+}
+
+#[test]
 fn depth_is_scoped_and_work_budget_is_sticky() {
     let arena = DecodeArena::new();
     let policy = policy_with(|limits| {

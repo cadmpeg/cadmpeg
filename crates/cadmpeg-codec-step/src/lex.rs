@@ -776,7 +776,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             .map_err(|error| Self::resource_error(start, error))?;
         let mut raw = self
             .budget
-            .alloc_filled(digit_count, HexDigit(0), "step_binary_hex_digits")
+            .alloc_filled_admitted(digit_count, HexDigit(0), "step_binary_hex_digits")
             .map_err(|error| Self::resource_error(start, error))?;
         let mut cursor = content;
         let mut written = 0usize;
@@ -835,7 +835,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         };
         let mut data = self
             .budget
-            .alloc_filled(packed_len, 0_u8, "step_binary_packed_bytes")
+            .alloc_filled_admitted(packed_len, 0_u8, "step_binary_packed_bytes")
             .map_err(|error| Self::resource_error(start, error))?;
         let mut output = 0usize;
         let mut pairs = digits.chunks_exact(2);
@@ -894,7 +894,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         }
         let mut value = self
             .budget
-            .alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
+            .alloc_filled_admitted(value_len, 0_u8, "step_uri_lexeme_bytes")
             .map_err(|error| Self::resource_error(start, error))?;
         let mut written = 0usize;
         for &byte in &self.input[content..self.at] {
