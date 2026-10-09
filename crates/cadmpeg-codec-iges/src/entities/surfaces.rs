@@ -11,7 +11,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -3070,14 +3070,14 @@ pub(super) fn project<'ctx>(
             continue;
         };
         let Some(surface_pole_count) = generatrix_count.checked_mul(angular_controls.len()) else {
-            return Err(refuse_local_limit(
+            return Err(ctx.refuse_codec_limit(
                 "iges_revolution_poles",
                 cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
                 u64::MAX,
             ));
         };
         if surface_pole_count > MAX_SURFACE_POLES {
-            return Err(refuse_local_limit(
+            return Err(ctx.refuse_codec_limit(
                 "iges_revolution_poles",
                 cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
                 cadmpeg_core::decode::u64_from_index(surface_pole_count),
@@ -3373,7 +3373,7 @@ pub(super) fn project<'ctx>(
             });
         match requested {
             None => {
-                return Err(refuse_local_limit(
+                return Err(ctx.refuse_codec_limit(
                     "iges_surface_poles",
                     cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
                     u64::MAX,
@@ -3382,7 +3382,7 @@ pub(super) fn project<'ctx>(
             Some(requested)
                 if requested > cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES) =>
             {
-                return Err(refuse_local_limit(
+                return Err(ctx.refuse_codec_limit(
                     "iges_surface_poles",
                     cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
                     requested,
@@ -3432,7 +3432,7 @@ pub(super) fn project<'ctx>(
             continue;
         };
         if pole_count > MAX_SURFACE_POLES {
-            return Err(refuse_local_limit(
+            return Err(ctx.refuse_codec_limit(
                 "iges_surface_poles",
                 cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
                 cadmpeg_core::decode::u64_from_index(pole_count),

@@ -3185,7 +3185,7 @@ pub(super) fn project<'ctx>(
             let loop_id = crate::ids::loop_admitted(&stem.slot(boundary_index), ctx)?;
             let mut coedge_ids = ctx.collection_vec(items.len(), "iges trimming coedge ids")?;
             let endpoint_count = items.len().checked_mul(2).ok_or_else(|| {
-                cadmpeg_core::decode::refuse_local_limit(
+                ctx.refuse_codec_limit(
                     "iges trimming source endpoints",
                     u64::MAX,
                     1,

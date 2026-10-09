@@ -6,7 +6,7 @@ use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
-use cadmpeg_core::decode::{index_from_u32, refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{index_from_u32, u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
@@ -996,13 +996,13 @@ pub(crate) fn enforce_transform_depth(
         {
             if depth >= depth_limit {
                 let requested = depth.checked_add(1).map(u64_from_index).ok_or_else(|| {
-                    refuse_local_limit(
+                    ctx.refuse_codec_limit(
                         "iges_transform_depth",
                         cadmpeg_core::decode::u64_from_index(depth_limit),
                         u64::MAX,
                     )
                 })?;
-                return Err(refuse_local_limit(
+                return Err(ctx.refuse_codec_limit(
                     "iges_transform_depth",
                     cadmpeg_core::decode::u64_from_index(depth_limit),
                     requested,
