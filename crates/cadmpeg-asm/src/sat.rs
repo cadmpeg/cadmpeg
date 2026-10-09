@@ -1004,6 +1004,10 @@ impl<'a> Cur<'a, '_, '_> {
     }
 
     fn length(&mut self, value: f64) -> Option<f64> {
+        if let Some(refusal) = self.ctx.resource_refusal() {
+            self.resource = Some(CodecError::ResourceLimit(refusal));
+            return None;
+        }
         match length_cm(value, self.scale) {
             Some(converted) => Some(converted),
             None => {
@@ -1014,6 +1018,10 @@ impl<'a> Cur<'a, '_, '_> {
     }
 
     fn invalid_spline_count<T>(&mut self) -> Option<T> {
+        if let Some(refusal) = self.ctx.resource_refusal() {
+            self.resource = Some(CodecError::ResourceLimit(refusal));
+            return None;
+        }
         self.failure = Some(TypeFailure::InvalidSplineCount);
         None
     }
@@ -1266,6 +1274,9 @@ fn run_shape<'a>(
     slots: &[Slot],
     out: &mut Vec<PendingToken<'a>>,
 ) -> Result<Option<()>, CodecError> {
+    if let Some(refusal) = cur.ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     for slot in slots {
         if take_slot(cur, *slot, out)?.is_none() {
             return Ok(None);
@@ -2132,6 +2143,7 @@ fn type_record(
 #[cfg(test)]
 mod tests {
     mod manual_scans;
+    mod typing_entry;
     fn with_work_limit<T>(
         bytes: &[u8],
         max_work: u64,
