@@ -788,11 +788,11 @@ fn admitted_scope_variant(
             // An equivalent envelope is one serialization of the same logical
             // scope without its source-location and dynamic-class fields.
             let equivalent = match scope_variant_json(ctx, &scopes[*first])? {
-                Some((first_tree, _first_storage)) => ctx.all_by(
+                Some(first_json) => ctx.all_by(
                     following,
                     |(_, _, index)| match scope_variant_json(ctx, &scopes[*index])? {
-                        Some((tree, _storage)) => {
-                            equivalent_scope_json(ctx, &first_tree, &tree, true)
+                        Some(json) => {
+                            equivalent_scope_json(ctx, &first_json.0, &json.0, true)
                         }
                         None => Ok(false),
                     },
@@ -930,16 +930,21 @@ fn equivalent_scope_json(
             if left.len() != right.len() {
                 return Ok(false);
             }
+            let mut left_items = left.iter();
             let mut right_items = right.iter();
-            ctx.all_by(
-                left,
-                |item| {
-                    right_items.next().map_or(Ok(false), |other| {
-                        equivalent_scope_json(ctx, item, other, false)
-                    })
-                },
-                OPERATION,
-            )
+            // Equal exact lengths need no final end probe on either side.
+            while left_items.len() != 0 {
+                let Some(item) = ctx.next_charged(&mut left_items, OPERATION)? else {
+                    return Ok(false);
+                };
+                let Some(other) = ctx.next_charged(&mut right_items, OPERATION)? else {
+                    return Ok(false);
+                };
+                if !equivalent_scope_json(ctx, item, other, false)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
         }
         (Value::Object(left), Value::Object(right)) => {
             // Both maps iterate in key order, so equal member sets pair up.
@@ -949,8 +954,11 @@ fn equivalent_scope_json(
                 members: &mut serde_json::map::Iter<'value>,
                 top_level: bool,
             ) -> Result<Option<(&'value String, &'value Value)>, CodecError> {
-                for (key, value) in members.by_ref() {
-                    ctx.charge_work(1, OPERATION)?;
+                // The exact remaining length makes an empty walk free.
+                while members.len() != 0 {
+                    let Some((key, value)) = ctx.next_charged(members, OPERATION)? else {
+                        return Ok(None);
+                    };
                     if !is_scope_variant_provenance(key, top_level) {
                         return Ok(Some((key, value)));
                     }
