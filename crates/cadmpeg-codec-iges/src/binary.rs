@@ -962,7 +962,7 @@ fn normalize_start(
     let mut primitive_storage = ctx.reserve_scoped(0, "IGES binary start primitives")?;
     let mut stream = ValueStream::new(payload, lengths, ctx);
     let mut text = Vec::new();
-    loop {
+    while !stream.pending.is_empty() || !stream.bits.is_empty() || ctx.resource_refusal().is_some() {
         ctx.charge_work(1, "iges binary start primitives")?;
         let Some(value) = primitive_storage.with_storage(|| stream.next())? else {
             break;
@@ -1495,6 +1495,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 #[cfg(test)]
 mod tests {
     mod source_visits;
+    mod start_primitives;
 
     #[test]
     fn binary_start_text_refuses_retained_limit_before_append() {
