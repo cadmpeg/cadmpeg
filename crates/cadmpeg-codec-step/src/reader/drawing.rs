@@ -255,7 +255,7 @@ pub(super) fn decode<'ctx>(
         })?;
     }
 
-    let (mut target_identities, mut target_storage) =
+    let (target_identities_buffer, mut target_storage) =
         ctx.with_scoped_storage("STEP drawing target index scratch", || {
             record_targets(
                 ir,
@@ -269,6 +269,7 @@ pub(super) fn decode<'ctx>(
                 ctx,
             )
         })?;
+    let mut target_identities = target_identities_buffer;
     for candidate in ctx.admit_iter(&candidates[..], "STEP decode traversal")? {
         let targets = target_storage
             .with_storage(|| {
@@ -316,10 +317,11 @@ pub(super) fn decode<'ctx>(
             )
         })?;
     }
-    let (drawing_target_ids, _target_id_storage) = ctx
+    let (drawing_target_ids_buffer, _target_id_storage) = ctx
         .with_scoped_storage("STEP drawing referenced target scratch", || {
             referenced_target_ids(exchange, &candidates, ctx)
         })?;
+    let drawing_target_ids = drawing_target_ids_buffer;
     add_source_typed_targets(
         ir,
         exchange,
@@ -451,9 +453,9 @@ pub(super) fn decode<'ctx>(
         (&mut losses, &slot_storage),
         ctx,
     )?;
-    let mut association_ids = BTreeSet::new();
     let mut association_storage =
         ctx.reserve_scoped(0, "STEP drawing association claim candidates")?;
+    let mut association_ids = BTreeSet::new();
     add_draughting_model_associations(
         exchange,
         &mut drawings,
@@ -581,8 +583,9 @@ fn add_source_typed_targets(
     storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let (mut native_targets, mut native_storage) =
+    let (native_targets_buffer, mut native_storage) =
         ctx.temporary_vec(0, "step_drawing_native_target_items")?;
+    let mut native_targets = native_targets_buffer;
     for &id in ctx.admit_iter(referenced_ids, "STEP add source typed targets traversal")? {
         if !ctx.contains_hash_set(known_typed, &id, "STEP drawing known_typed contains")?
             || ctx.contains_key_btree_map(
@@ -597,10 +600,11 @@ fn add_source_typed_targets(
         else {
             continue;
         };
-        let (wrapper, _wrapper_storage) = ctx
+        let (wrapper_buffer, _wrapper_storage) = ctx
             .with_scoped_storage("STEP drawing wrapper probe scratch", || {
                 wrapper_target_resolution(id, target_identities, exchange, ctx)
             })?;
+        let wrapper = wrapper_buffer;
         if wrapper.is_some() {
             continue;
         }
@@ -813,11 +817,13 @@ fn add_reference_fields(
                         "step_drawing_relationship_members",
                     )?;
                 }
-                TargetResolution::Ambiguous((identities, _storage)) => {
-                    let (source, _source_storage) = target_context.ctx.format_scoped(
+                TargetResolution::Ambiguous((identities_buffer, _storage)) => {
+                    let identities = identities_buffer;
+                    let (source_buffer, _source_storage) = target_context.ctx.format_scoped(
                         format_args!("drawing #{source_id} {name}"),
                         "STEP drawing source label",
                     )?;
+                    let source = source_buffer;
                     note_ambiguous_target(
                         (losses, slot_storage),
                         &source,
@@ -855,16 +861,18 @@ fn note_ambiguous_target(
     identities: &BTreeSet<String>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let (mut parts, _parts_storage) =
+    let (parts_buffer, _parts_storage) =
         ctx.temporary_vec(identities.len(), "STEP drawing ambiguity fragments")?;
+    let mut parts = parts_buffer;
     parts.extend(
         ctx.admit_iter(identities, "STEP drawing ambiguity fragment traversal")?
             .map(String::as_str),
     );
-    let (identities, _identity_storage) = ctx
+    let (identities_buffer, _identity_storage) = ctx
         .with_scoped_storage("STEP drawing ambiguity detail scratch", || {
             ctx.join_retained(&parts, ", ", "step_drawing_ambiguous_identities_text")
         })?;
+    let identities = identities_buffer;
     slot_storage
         .borrow_mut()
         .with_storage(|| ctx.reserve_vec(losses, 1, "step_drawing_losses"))?;
@@ -905,14 +913,17 @@ fn add_sheet_revision_usages(
                     "step_drawing_relationship_groups",
                     "step_drawing_relationship_members",
                 )?,
-                TargetResolution::Ambiguous((identities, _storage)) => note_ambiguous_target(
-                    (losses, slot_storage),
-                    &format!("drawing sheet #{sheet_id} usage #{usage_id}"),
-                    "drawing_revision",
-                    revision_id,
-                    &identities,
-                    target_context.ctx,
-                )?,
+                TargetResolution::Ambiguous((identities_buffer, _storage)) => {
+                    let identities = identities_buffer;
+                    note_ambiguous_target(
+                        (losses, slot_storage),
+                        &format!("drawing sheet #{sheet_id} usage #{usage_id}"),
+                        "drawing_revision",
+                        revision_id,
+                        &identities,
+                        target_context.ctx,
+                    )?;
+                }
                 TargetResolution::Unresolved => {
                     slot_storage.borrow_mut().with_storage(|| {
                         target_context
@@ -959,14 +970,17 @@ fn add_sheet_revision_usages(
                     "step_drawing_relationship_groups",
                     "step_drawing_relationship_members",
                 )?,
-                TargetResolution::Ambiguous((identities, _storage)) => note_ambiguous_target(
-                    (losses, slot_storage),
-                    &format!("drawing revision #{revision_id} usage #{usage_id}"),
-                    "sheet_revision",
-                    sheet_id,
-                    &identities,
-                    target_context.ctx,
-                )?,
+                TargetResolution::Ambiguous((identities_buffer, _storage)) => {
+                    let identities = identities_buffer;
+                    note_ambiguous_target(
+                        (losses, slot_storage),
+                        &format!("drawing revision #{revision_id} usage #{usage_id}"),
+                        "sheet_revision",
+                        sheet_id,
+                        &identities,
+                        target_context.ctx,
+                    )?;
+                }
                 TargetResolution::Unresolved => {
                     slot_storage.borrow_mut().with_storage(|| {
                         target_context
@@ -1023,7 +1037,8 @@ fn add_draughting_model_associations(
         let definition_target = if let Some(definition_id) = definition_id {
             match target_context.resolve(definition_id)? {
                 TargetResolution::Resolved(definition) => Some(definition),
-                TargetResolution::Ambiguous((identities, _storage)) => {
+                TargetResolution::Ambiguous((identities_buffer, _storage)) => {
+                    let identities = identities_buffer;
                     note_ambiguous_target(
                         (losses, slot_storage),
                         &format!("draughting model #{model_id} association #{association_id}"),
@@ -1074,7 +1089,8 @@ fn add_draughting_model_associations(
                         "step_drawing_relationship_groups",
                         "step_drawing_relationship_members",
                     )?,
-                    TargetResolution::Ambiguous((identities, _storage)) => {
+                    TargetResolution::Ambiguous((identities_buffer, _storage)) => {
+                        let identities = identities_buffer;
                         note_ambiguous_target(
                             (losses, slot_storage),
                             &format!("draughting model #{model_id} association #{association_id}"),
@@ -1113,7 +1129,8 @@ fn add_draughting_model_associations(
             match association_placeholder_reference(ctx, record, parameters)? {
                 Some(placeholder_id) => match target_context.resolve(placeholder_id)? {
                     TargetResolution::Resolved(placeholder) => Some(placeholder),
-                    TargetResolution::Ambiguous((identities, _storage)) => {
+                    TargetResolution::Ambiguous((identities_buffer, _storage)) => {
+                        let identities = identities_buffer;
                         note_ambiguous_target(
                             (losses, slot_storage),
                             &format!("draughting model #{model_id} association #{association_id}"),
@@ -1439,8 +1456,12 @@ fn wrapper_target_resolution<'ctx>(
             .transpose()?
             .flatten()
         {
-            if let Some(items) = representation::items(ctx, representation)? {
-                for item in items.rev() {
+            if let Some(items) = representation::item_values(ctx, representation)? {
+                let mut item_source = items.iter().rev();
+                for _ in 0..item_source.len() {
+                    let value = ctx.next_charged(&mut item_source, "STEP representation item traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP representation item source ended early"))?;
+                    let Some(item) = value.reference() else { continue };
                     storage.with_storage(|| {
                         ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending")
                     })?;
@@ -1514,7 +1535,8 @@ fn value_text(
             ctx,
         );
     }
-    let (mut parts, mut storage) = ctx.temporary_vec(0, "STEP drawing text fragments")?;
+    let (parts_buffer, mut storage) = ctx.temporary_vec(0, "STEP drawing text fragments")?;
+    let mut parts = parts_buffer;
     if !collect_value_text(
         value,
         exchange,
@@ -1525,8 +1547,9 @@ fn value_text(
     )? {
         return Ok(None);
     }
-    let (mut text_parts, _text_part_storage) =
+    let (text_parts_buffer, _text_part_storage) =
         ctx.temporary_vec(parts.len(), "STEP drawing text join fragments")?;
+    let mut text_parts = text_parts_buffer;
     text_parts.extend(
         ctx.admit_iter(&parts, "STEP drawing text join fragment traversal")?
             .map(std::convert::AsRef::as_ref),
