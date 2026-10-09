@@ -151,3 +151,34 @@ fn mesh_source_refusal_preserves_original_limit_after_candidate_rejection() {
     assert!(matches!(ctx.charge_retained(0, "later mesh publication"),
         Err(CodecError::ResourceLimit(repeated)) if repeated == original));
 }
+
+#[test]
+fn mesh_trailing_payload_keeps_diagnostic_after_population_rejection() {
+    let mut bytes = mesh_bytes(&[[0.0; 3]], &[[0, 0, 0]], [0.0; 6]);
+    bytes.push(0);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("context");
+    let error = parse_mesh(&ctx, &resource_test_property(), &bytes).expect_err("trailing byte");
+    let CodecError::Malformed(message) = error else {
+        panic!("payload diagnostic")
+    };
+    assert_eq!(message, "mesh payload has 1 trailing bytes");
+    assert_eq!(ctx.resource_refusal(), None);
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_retained(u64::MAX, "mesh payload diagnostic probe") else {
+        panic!("retained overflow probe")
+    };
+    assert_eq!(limit.used, u64_from_index(message.len()));
+    assert_eq!(message, "mesh payload has 1 trailing bytes");
+}
+
+#[test]
+fn mesh_trailing_payload_diagnostic_refuses_at_real_caller_limit() {
+    let mut bytes = mesh_bytes(&[[0.0; 3]], &[[0, 0, 0]], [0.0; 6]);
+    bytes.push(0);
+    crate::test_support::assert_retained_refusal_at(
+        &bytes,
+        "FreeCAD application payload diagnostic",
+        |ctx| parse_mesh(ctx, &resource_test_property(), &bytes),
+    );
+}

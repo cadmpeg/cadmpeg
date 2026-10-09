@@ -288,9 +288,9 @@ fn parse_mesh(
                 ));
             }
         }
-        reader.finish("mesh payload")?;
         Ok::<_, CodecError>((vertices, triangles))
     })?;
+    reader.finish(ctx, "mesh payload")?;
     // Format escaping diagnostics after restoring storage routing.
     let id = storage.with_storage(|| {
         Ok::<_, CodecError>(cadmpeg_ir::tessellation::TessellationId::mint(ctx.retained_suffix(
@@ -372,7 +372,7 @@ fn parse_points(
         )))?;
         points.push(storage.commit_value(point)?);
     }
-    reader.finish("point-cloud payload")?;
+    reader.finish(ctx, "point-cloud payload")?;
     Ok(())
 }
 
@@ -585,12 +585,12 @@ impl<'a> Reader<'a> {
         Ok(FinitePoint3::from_coordinates(x.into(), y.into(), z.into()))
     }
 
-    fn finish(&self, label: &str) -> Result<(), CodecError> {
+    fn finish(&self, ctx: &DecodeContext<'_>, label: &str) -> Result<(), CodecError> {
         if !self.view.is_empty() {
-            return Err(CodecError::malformed(format_args!(
-                "{label} has {} trailing bytes",
-                self.remaining()
-            )));
+            return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("{label} has {} trailing bytes", self.remaining()),
+                "FreeCAD application payload diagnostic",
+            )?));
         }
         Ok(())
     }
