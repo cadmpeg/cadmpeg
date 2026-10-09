@@ -340,6 +340,47 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
 }
 
 #[test]
+fn source_topology_walks_release_temporary_stack_bytes() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 4096;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let tshapes = crate::brep::TextTShapes::from(vec![TextTShape {
+        geometry: geometry_for_kind(TextShapeKind::Vertex),
+        flags: [false; 7],
+        children: Vec::new(),
+    }]);
+    let roots: Vec<_> = (0..128)
+        .map(|_| TextShapeUse {
+            shape: 1,
+            orientation: TextOrientation::Forward,
+            location: 0.into(),
+        })
+        .collect();
+    let tables = Tables {
+        locations: &[],
+        curve2ds: &[],
+        curves: &[],
+        surfaces: &[],
+        polygons3d: &[],
+        polygons_on_triangulations: &[],
+        tshapes: &tshapes,
+        triangulations: &[],
+        roots: &roots,
+    };
+    let indices = source_topology_indices(&ctx, tables)
+        .expect("dropped traversal stacks do not consume retained storage");
+    assert_eq!(indices.len(), 1);
+    assert_eq!(
+        indices.get(&(
+            TextShapeKind::Vertex,
+            SourceOccurrenceKey::new(1, Transform::identity()),
+        )),
+        Some(&1)
+    );
+}
+
+#[test]
 fn source_topology_stack_refuses_at_caller_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
