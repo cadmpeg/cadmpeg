@@ -5,6 +5,52 @@ use crate::test_support::{with_materialized_limit, with_retained_limit, with_wor
 use cadmpeg_core::CodecError;
 
 #[test]
+fn formula_conflicting_input_admits_its_surviving_index_key() {
+    let native = crate::native::CatiaNative::decode(
+        &crate::test_support::test_formula::standard_catpart_with_formula_relation(4, false),
+    );
+    let entity = native
+        .entity_records
+        .iter()
+        .find(|entity| entity.parameter_value().is_some())
+        .expect("typed input");
+    let value = entity.parameter_value().expect("typed input");
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| -> Result<_, CodecError> {
+        let existing =
+            super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")?
+                .expect("candidate");
+        let mut incoming =
+            super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")?
+                .expect("candidate");
+        incoming.parameter.value = None;
+        let expected = existing.parameter.id.clone();
+        let mut scratch = ctx.reserve_scoped(0, "test conflict index")?;
+        let mut candidates = std::collections::BTreeMap::from([(expected.clone(), existing)]);
+        let mut conflicts = std::collections::BTreeSet::new();
+        super::super::merge_formula_parameter_candidate(
+            ctx,
+            &mut scratch,
+            &mut candidates,
+            &mut conflicts,
+            incoming,
+        )?;
+        drop(candidates);
+        assert_eq!(conflicts.into_iter().collect::<Vec<_>>(), [expected]);
+        Ok(())
+    };
+    let refusal = with_work_refusal("catia_formula_conflict_id", |ctx| {
+        let result = run(ctx);
+        if let Err(CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
+    assert!(matches!(refusal, Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_formula_conflict_id"));
+    with_retained_limit(0, run).expect("the surviving conflict key remains scoped");
+}
+
+#[test]
 fn formula_speculative_candidates_release_scoped_storage() {
     let native = crate::native::CatiaNative::decode(
         &crate::test_support::test_formula::standard_catpart_with_formula_relation(4, false),

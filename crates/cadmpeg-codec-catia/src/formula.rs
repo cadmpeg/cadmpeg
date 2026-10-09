@@ -507,9 +507,9 @@ pub(crate) fn transfer_parameters<'ctx>(
                                                 native_ref: Some(output_native_ref),
                                             },
                                             parameter_type,
-                                            role: FormulaParameterRole::FormulaOutput {
+                                            output: Some(FormulaOutput {
                                                 fallback: None,
-                                            },
+                                            }),
                                             source_order: output.byte_offset,
                                         })
                                     },
@@ -598,9 +598,9 @@ pub(crate) fn transfer_parameters<'ctx>(
     for id in ctx.admit_iter(&conflicting_inputs, "catia_formula_conflict_visits")? {
         const OPERATION: &str = "catia_formula_conflicts";
         match ctx.get_mut_btree_map(&mut candidates, id, OPERATION)? {
-            Some(candidate) if candidate.role.is_formula_output() => {
-                if let FormulaParameterRole::FormulaOutput { fallback } = &mut candidate.role {
-                    *fallback = None;
+            Some(candidate) if candidate.output.is_some() => {
+                if let Some(output) = &mut candidate.output {
+                    output.fallback = None;
                 }
             }
             Some(_) => {
@@ -612,7 +612,7 @@ pub(crate) fn transfer_parameters<'ctx>(
     ctx.retain_btree_map(
         &mut candidates,
         |id, candidate| -> Result<_, cadmpeg_core::CodecError> {
-            if !candidate.role.is_formula_output() {
+            if candidate.output.is_none() {
                 return Ok(true);
             }
             Ok(
@@ -660,7 +660,7 @@ pub(crate) fn transfer_parameters<'ctx>(
         else {
             continue;
         };
-        if !candidate.role.is_formula_output() {
+        if candidate.output.is_none() {
             continue;
         }
         if !demote_formula_output(candidate) {
@@ -710,7 +710,7 @@ pub(crate) fn transfer_parameters<'ctx>(
         const OPERATION: &str = "catia_formula_consumed_programs";
         let output = ctx
             .get_btree_map(&candidates, &program.output, OPERATION)?
-            .is_some_and(|candidate| candidate.role.is_formula_output());
+            .is_some_and(|candidate| candidate.output.is_some());
         if output
             && ctx.all_by(
                 &program.inputs,
@@ -826,7 +826,7 @@ pub(crate) fn transfer_parameters<'ctx>(
             candidate.parameter.id.as_str(),
             "properties",
         )?;
-        if !candidate.role.is_formula_output() && candidate.parameter.dependencies.is_empty() {
+        if candidate.output.is_none() && candidate.parameter.dependencies.is_empty() {
             resource::derived_annotation(
                 ctx,
                 &mut annotation_builder,
@@ -1154,7 +1154,7 @@ fn definition_chain_parameter_candidate<'ctx>(
                     ),
                 },
                 parameter_type,
-                role: FormulaParameterRole::Input,
+                output: None,
                 source_order: entity.byte_offset,
             }))
         },
@@ -1394,7 +1394,7 @@ fn collect_legacy_parameters<'ctx>(
                                 native_ref: Some(native_ref),
                             },
                             parameter_type,
-                            role: FormulaParameterRole::Input,
+                            output: None,
                             source_order: scalar.byte_offset,
                         })
                     })?;
@@ -1473,7 +1473,7 @@ fn collect_legacy_parameters<'ctx>(
                                 native_ref: Some(native_ref),
                             },
                             parameter_type: FormulaParameterType::String,
-                            role: FormulaParameterRole::Input,
+                            output: None,
                             source_order: string.byte_offset,
                         })
                     })?;
@@ -1550,7 +1550,7 @@ fn collect_legacy_parameters<'ctx>(
                                 native_ref: Some(native_ref),
                             },
                             parameter_type: FormulaParameterType::Integer,
-                            role: FormulaParameterRole::Input,
+                            output: None,
                             source_order: integer.byte_offset,
                         })
                     })?;
@@ -1645,7 +1645,7 @@ fn collect_legacy_parameters<'ctx>(
                 })?;
             candidate.parameter = parameter;
             candidate.storage = Some(storage);
-            candidate.role = FormulaParameterRole::FormulaOutput { fallback: None };
+            candidate.output = Some(FormulaOutput { fallback: None });
             transfer.formulas += 1;
         }
     }
@@ -2018,11 +2018,16 @@ fn resolved_or_intrinsic_legacy_type<'run, 'ctx>(
 }
 
 struct FormulaParameterCandidate<'ctx> {
-    storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     parameter: DesignParameter,
     parameter_type: FormulaParameterType,
-    role: FormulaParameterRole<'ctx>,
+    output: Option<FormulaOutput<'ctx>>,
     source_order: u64,
+    storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+}
+
+struct FormulaInputFallback<'ctx> {
+    parameter: DesignParameter,
+    storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2048,17 +2053,8 @@ impl FormulaParameterType {
     }
 }
 
-enum FormulaParameterRole<'ctx> {
-    Input,
-    FormulaOutput {
-        fallback: Option<Box<FormulaParameterCandidate<'ctx>>>,
-    },
-}
-
-impl FormulaParameterRole<'_> {
-    fn is_formula_output(&self) -> bool {
-        matches!(self, Self::FormulaOutput { .. })
-    }
+struct FormulaOutput<'ctx> {
+    fallback: Option<FormulaInputFallback<'ctx>>,
 }
 
 fn typed_entity_parameter_candidate<'ctx>(
@@ -2112,7 +2108,7 @@ fn typed_entity_parameter_candidate<'ctx>(
                     native_ref: Some(native_ref),
                 },
                 parameter_type,
-                role: FormulaParameterRole::Input,
+                output: None,
                 source_order: entity.byte_offset,
             }))
         },
@@ -2169,22 +2165,18 @@ fn merge_formula_parameter_candidate<'ctx>(
     else {
         return insert_formula_candidate(ctx, scratch, candidates, candidate);
     };
-    let existing_output = existing.role.is_formula_output();
-    let candidate_output = candidate.role.is_formula_output();
+    let existing_output = existing.output.is_some();
+    let candidate_output = candidate.output.is_some();
     if !formula_parameter_candidates_agree(ctx, existing, &candidate)? {
-        match (existing_output, candidate_output) {
-            (true, true) => {}
-            (_, false) => {
-                insert_formula_conflict(ctx, scratch, conflicting_inputs, candidate.parameter.id)?;
-            }
-            (false, true) => {
-                let conflict = scratch.with_storage(|| {
-                    candidate
-                        .parameter
-                        .id
-                        .try_clone_for_decode(ctx, "catia_formula_conflict_id")
-                })?;
-                insert_formula_conflict(ctx, scratch, conflicting_inputs, conflict)?;
+        if !existing_output || !candidate_output {
+            let conflict = scratch.with_storage(|| {
+                candidate
+                    .parameter
+                    .id
+                    .try_clone_for_decode(ctx, "catia_formula_conflict_id")
+            })?;
+            insert_formula_conflict(ctx, scratch, conflicting_inputs, conflict)?;
+            if candidate_output {
                 insert_formula_candidate(ctx, scratch, candidates, candidate)?;
             }
         }
@@ -2193,40 +2185,20 @@ fn merge_formula_parameter_candidate<'ctx>(
     match (existing_output, candidate_output) {
         (false, true) => {
             std::mem::swap(existing, &mut candidate);
-            let mut storage = match candidate.storage.take() {
-                Some(storage) => storage,
-                None => ctx.reserve_scoped(0, "catia_formula_fallback_scratch")?,
-            };
-            let mut fallback =
-                storage.with_storage(|| -> Result<_, cadmpeg_core::CodecError> {
-                    ctx.charge_retained(
-                        u64_from_index(std::mem::size_of_val(&candidate)),
-                        "catia_formula_fallback_box",
-                    )?;
-                    Ok(Box::new(candidate))
-                })?;
-            fallback.storage = Some(storage);
-            existing.role = FormulaParameterRole::FormulaOutput {
-                fallback: Some(fallback),
-            };
+            existing.output = Some(FormulaOutput {
+                fallback: Some(FormulaInputFallback {
+                    parameter: candidate.parameter,
+                    storage: candidate.storage,
+                }),
+            });
         }
         (true, false) => {
-            if let FormulaParameterRole::FormulaOutput { fallback } = &mut existing.role {
-                if fallback.is_none() {
-                    let mut storage = match candidate.storage.take() {
-                        Some(storage) => storage,
-                        None => ctx.reserve_scoped(0, "catia_formula_fallback_scratch")?,
-                    };
-                    let mut input =
-                        storage.with_storage(|| -> Result<_, cadmpeg_core::CodecError> {
-                            ctx.charge_retained(
-                                u64_from_index(std::mem::size_of_val(&candidate)),
-                                "catia_formula_fallback_box",
-                            )?;
-                            Ok(Box::new(candidate))
-                        })?;
-                    input.storage = Some(storage);
-                    *fallback = Some(input);
+            if let Some(output) = &mut existing.output {
+                if output.fallback.is_none() {
+                    output.fallback = Some(FormulaInputFallback {
+                        parameter: candidate.parameter,
+                        storage: candidate.storage,
+                    });
                 }
             }
         }
@@ -2485,7 +2457,7 @@ fn relation_program_output_candidate<'a, 'ctx>(
                     native_ref: Some(output_native_ref),
                 },
                 parameter_type,
-                role: FormulaParameterRole::FormulaOutput { fallback: None },
+                output: Some(FormulaOutput { fallback: None }),
                 source_order: output_entity.byte_offset,
             };
             Ok(candidate)
@@ -2515,8 +2487,8 @@ fn formula_parameter_candidates_agree(
         return Ok(false);
     }
     match (
-        existing.role.is_formula_output(),
-        candidate.role.is_formula_output(),
+        existing.output.is_some(),
+        candidate.output.is_some(),
     ) {
         (true, true) | (false, false) => ctx.equal(
             &existing.parameter,
@@ -2571,7 +2543,7 @@ fn formula_parameter_candidate_accepts_input(
     if candidate.parameter_type != input.1 {
         return Ok(false);
     }
-    if candidate.role.is_formula_output() {
+    if candidate.output.is_some() {
         formula_parameter_matches_input(ctx, &candidate.parameter, &input.0)
     } else {
         ctx.equal(
@@ -2583,14 +2555,11 @@ fn formula_parameter_candidate_accepts_input(
 }
 
 fn demote_formula_output(candidate: &mut FormulaParameterCandidate<'_>) -> bool {
-    let FormulaParameterRole::FormulaOutput {
-        fallback: Some(input),
-    } = std::mem::replace(&mut candidate.role, FormulaParameterRole::Input)
-    else {
-        candidate.role = FormulaParameterRole::Input;
+    let Some(input) = candidate.output.take().and_then(|output| output.fallback) else {
         return false;
     };
-    *candidate = *input;
+    candidate.parameter = input.parameter;
+    candidate.storage = input.storage;
     true
 }
 
@@ -5067,7 +5036,7 @@ mod parser_tests {
         evaluate_legacy_output_assignment, finite_scalar, formula_parameter_candidates_agree,
         parameter_expression, static_formula_value, string_literal_expression,
         typed_parameter_evaluation, EvaluatedFormulaBoolean, EvaluatedFormulaString,
-        EvaluatedFormulaValue, FormulaDimension, FormulaParameterCandidate, FormulaParameterRole,
+        EvaluatedFormulaValue, FormulaDimension, FormulaParameterCandidate, FormulaOutput,
         FormulaParameterType, TypedParameterEvaluation,
     };
     use cadmpeg_ir::features::DesignParameter;
@@ -5093,21 +5062,22 @@ mod parser_tests {
                 native_ref: Some("native-parameter".to_string()),
             },
             parameter_type,
-            role: FormulaParameterRole::Input,
+            output: None,
             source_order: 1,
         }
     }
 
     #[test]
-    fn formula_fallback_box_refuses_scoped_storage_and_preserves_input() {
+    fn formula_input_fallback_preserves_input_without_allocation() {
         for output_first in [false, true] {
-            let refused = crate::test_support::with_materialized_limit(0, |ctx| {
+            crate::test_support::with_materialized_limit(0, |ctx| {
                 let mut existing = unset_candidate(FormulaParameterType::String);
                 let mut incoming = unset_candidate(FormulaParameterType::String);
+                let expected = existing.parameter.clone();
                 if output_first {
-                    existing.role = FormulaParameterRole::FormulaOutput { fallback: None };
+                    existing.output = Some(FormulaOutput { fallback: None });
                 } else {
-                    incoming.role = FormulaParameterRole::FormulaOutput { fallback: None };
+                    incoming.output = Some(FormulaOutput { fallback: None });
                 }
                 let mut candidates = BTreeMap::from([(existing.parameter.id.clone(), existing)]);
                 super::merge_formula_parameter_candidate(
@@ -5116,11 +5086,16 @@ mod parser_tests {
                     &mut candidates,
                     &mut std::collections::BTreeSet::new(),
                     incoming,
-                )
-            });
-            assert!(
-                matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_formula_fallback_box")
-            );
+                )?;
+                let candidate = candidates.values_mut().next().expect("one output");
+                assert!(super::demote_formula_output(candidate));
+                assert_eq!(candidate.parameter, expected);
+                assert_eq!(candidate.source_order, 1);
+                assert!(candidate.parameter_type == FormulaParameterType::String);
+                assert!(candidate.output.is_none());
+                Ok::<_, cadmpeg_core::CodecError>(())
+            })
+            .expect("inline fallback allocates no storage");
             crate::test_support::with_retained_limit(
                 0,
                 |ctx| -> Result<_, cadmpeg_core::CodecError> {
@@ -5128,9 +5103,9 @@ mod parser_tests {
                     let mut incoming = unset_candidate(FormulaParameterType::String);
                     let expected = existing.parameter.clone();
                     if output_first {
-                        existing.role = FormulaParameterRole::FormulaOutput { fallback: None };
+                        existing.output = Some(FormulaOutput { fallback: None });
                     } else {
-                        incoming.role = FormulaParameterRole::FormulaOutput { fallback: None };
+                        incoming.output = Some(FormulaOutput { fallback: None });
                     }
                     let mut candidates =
                         BTreeMap::from([(existing.parameter.id.clone(), existing)]);
@@ -5144,7 +5119,7 @@ mod parser_tests {
                     let candidate = candidates.values_mut().next().expect("one output");
                     assert!(super::demote_formula_output(candidate));
                     assert_eq!(candidate.parameter, expected);
-                    assert!(!candidate.role.is_formula_output());
+                    assert!(candidate.output.is_none());
                     Ok(())
                 },
             )
