@@ -142,8 +142,13 @@ pub(crate) fn planes(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<DatumPlaneRecord>, CodecError> {
-    let rows = crate::surface::counted_row_bounds(ctx, payload)?;
-    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
+    let scratch = ctx.with_scoped_storage("creo datum plane scratch", || {
+        let rows = crate::surface::counted_row_bounds(ctx, payload)?;
+        let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
+        Ok::<_, CodecError>((rows, cache))
+    })?;
+    let _scratch_storage = scratch.1;
+    let (rows, cache) = scratch.0;
     let mut planes = Vec::new();
     for (index, (row, frame_end)) in ctx
         .admit_iter(&rows, "creo datum plane rows")?
@@ -175,12 +180,17 @@ pub(crate) fn cylinders(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<DatumCylinder>, CodecError> {
-    let rows = crate::surface::rows(ctx, payload)?;
-    let parameters = crate::surface::SurfaceParameters::new(
-        ctx,
-        crate::surface::parameter_records(ctx, payload)?,
-        "creo datum cylinder parameter index",
-    )?;
+    let scratch = ctx.with_scoped_storage("creo datum cylinder scratch", || {
+        let rows = crate::surface::rows(ctx, payload)?;
+        let parameters = crate::surface::SurfaceParameters::new(
+            ctx,
+            crate::surface::parameter_records(ctx, payload)?,
+            "creo datum cylinder parameter index",
+        )?;
+        Ok::<_, CodecError>((rows, parameters))
+    })?;
+    let _scratch_storage = scratch.1;
+    let (rows, parameters) = scratch.0;
     let mut cylinders = Vec::new();
     for row in ctx
         .admit_iter(&rows, "creo datum cylinder rows")?
@@ -373,7 +383,11 @@ fn positional_plane(
     })() else {
         return Ok(None);
     };
-    let Some(values) = datum_slots(ctx, payload, body_start, 10, row_end, cache)? else {
+    let scratch = ctx.with_scoped_storage("creo datum plane slot scratch", || {
+        datum_slots(ctx, payload, body_start, 10, row_end, cache)
+    })?;
+    let _scratch_storage = scratch.1;
+    let Some(values) = scratch.0 else {
         return Ok(None);
     };
     let outline = &values[4..];
@@ -469,8 +483,13 @@ pub(crate) fn named_plane(
     })() else {
         return Ok(None);
     };
-    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
-    let Some(slots) = named_outline_slots(ctx, payload, outline + marker.len(), &cache)? else {
+    let scratch = ctx.with_scoped_storage("creo named datum scratch", || {
+        let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
+        let slots = named_outline_slots(ctx, payload, outline + marker.len(), &cache)?;
+        Ok::<_, CodecError>((cache, slots))
+    })?;
+    let _scratch_storage = scratch.1;
+    let (_cache, Some(slots)) = scratch.0 else {
         return Ok(None);
     };
     let standalone_zero = |slot: &DatumSlot<'_>| matches!(slot.token, [0x18 | 0x0f]);
