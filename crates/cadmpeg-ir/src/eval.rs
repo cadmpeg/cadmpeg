@@ -3375,7 +3375,7 @@ pub fn nurbs_surface_isocurve<'ctx, 'arena: 'ctx>(
             SurfaceParameterAxis::V => u_count,
         };
         let rational = surface.weight(0, 0).is_some();
-        let Some((mut control_points, _control_storage)) =
+        let Some(mut controls) =
             scratch.temporary_vec(varying_count, "IR surface isoline controls")
         else {
             return Ok(None);
@@ -3429,7 +3429,7 @@ pub fn nurbs_surface_isocurve<'ctx, 'arena: 'ctx>(
             {
                 return Ok(None);
             }
-            control_points.push(FinitePoint3::from_coordinates(x, y, z).get());
+            controls.0.push(FinitePoint3::from_coordinates(x, y, z).get());
             if rational {
                 if scratch
                     .work(
@@ -3471,7 +3471,7 @@ pub fn nurbs_surface_isocurve<'ctx, 'arena: 'ctx>(
                 ctx,
                 degree,
                 admitted_knots,
-                control_points,
+                controls.0,
                 weights,
                 periodic,
             )
@@ -3483,7 +3483,7 @@ pub fn nurbs_surface_isocurve<'ctx, 'arena: 'ctx>(
                 };
                 let poles = pair_curve_lanes(
                     &StandardNurbsAdmission,
-                    control_points,
+                    controls.0,
                     weights,
                     &mut None,
                     |index, weight| admit_weight(&StandardNurbsAdmission, "poles", index, weight),

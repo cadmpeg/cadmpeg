@@ -576,10 +576,10 @@ impl SketchProfiles {
                     .checked_add(profile.len())
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
             })?;
-        let (mut decisions, _decision_storage) = ctx.temporary_vec(count, OPERATION)?;
+        let mut decisions = ctx.temporary_vec(count, OPERATION)?;
         for profile in ctx.admit_iter(&self.0, OPERATION)? {
             for usage in ctx.admit_iter(profile, OPERATION)? {
-                decisions.push(keep(usage)?);
+                decisions.0.push(keep(usage)?);
             }
         }
         // Admit visits in both retention passes before changing any profile.
@@ -590,7 +590,7 @@ impl SketchProfiles {
         let mut decision_index = 0;
         for profile in &mut self.0 {
             profile.retain(|_| {
-                let decision = decisions[decision_index];
+                let decision = decisions.0[decision_index];
                 decision_index += 1;
                 decision
             });

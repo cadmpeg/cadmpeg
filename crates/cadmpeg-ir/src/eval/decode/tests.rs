@@ -1117,3 +1117,5 @@ fn geometry_entry_returns_the_original_refusal_in_its_single_result() {
         assert_eq!(super::curve_point(ctx, &geometry, 0.5), Err(failure));
     });
 }
+
+mod basis_ownership;
