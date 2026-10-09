@@ -285,17 +285,19 @@ struct CompanionBoundaries {
 
 impl CompanionBoundaries {
     /// The boundaries of one stream, from the stream's own owners,
-    /// parameters, scopes, and record headers. The caller admits each run.
+    /// parameters, scopes, and record headers. Fallible input iterators
+    /// propagate refusal before their records are used.
     fn build<'r>(
         ctx: &DecodeContext<'_>,
-        owners: impl IntoIterator<Item = &'r DesignParameterOwner>,
-        parameters: impl IntoIterator<Item = &'r DesignParameter>,
-        scopes: impl IntoIterator<Item = &'r DesignParameterScope>,
-        headers: impl IntoIterator<Item = &'r DesignRecordHeader>,
+        owners: impl IntoIterator<Item = Result<&'r DesignParameterOwner, CodecError>>,
+        parameters: impl IntoIterator<Item = Result<&'r DesignParameter, CodecError>>,
+        scopes: impl IntoIterator<Item = Result<&'r DesignParameterScope, CodecError>>,
+        headers: impl IntoIterator<Item = Result<&'r DesignRecordHeader, CodecError>>,
     ) -> Result<Self, CodecError> {
         let mut owner_scopes = HashMap::new();
         let mut offsets = Vec::new();
         for owner in owners {
+            let owner = owner?;
             if let Entry::Vacant(slot) = ctx.entry_hash_map(
                 &mut owner_scopes,
                 owner.record_index(),
@@ -310,6 +312,7 @@ impl CompanionBoundaries {
             )?;
         }
         for parameter in parameters {
+            let parameter = parameter?;
             ctx.push_vec(
                 &mut offsets,
                 parameter.byte_offset(),
@@ -322,6 +325,7 @@ impl CompanionBoundaries {
             ctx.reserve_scoped(0, "f3d companion foreign scope members")?;
         let mut referencing_scopes = HashMap::new();
         for scope in scopes {
+            let scope = scope?;
             ctx.push_vec(
                 &mut offsets,
                 scope.byte_offset(),
@@ -351,6 +355,7 @@ impl CompanionBoundaries {
         }
         let mut referenced_headers = Vec::new();
         for header in headers {
+            let header = header?;
             let Some(&(first_scope, other_scope)) = ctx.get_hash_map(
                 &referencing_scopes,
                 &header.record_index,
@@ -466,10 +471,10 @@ impl CompanionBoundaries {
 /// first use and held until the pass ends. The records are grouped by stream
 /// once, so a stream's boundaries read only that stream's records.
 pub(super) struct CompanionIntervals<'a, 'ctx, 'arena> {
-    owners: Grouped<'a, DesignParameterOwner>,
-    parameters: Grouped<'a, DesignParameter>,
-    scopes: Grouped<'a, DesignParameterScope>,
-    headers: Grouped<'a, DesignRecordHeader>,
+    owners: Grouped<'a, 'ctx, 'arena, DesignParameterOwner>,
+    parameters: Grouped<'a, 'ctx, 'arena, DesignParameter>,
+    scopes: Grouped<'a, 'ctx, 'arena, DesignParameterScope>,
+    headers: Grouped<'a, 'ctx, 'arena, DesignRecordHeader>,
     boundaries: HashMap<&'a str, CompanionBoundaries>,
     storage: ScopedReservation<'ctx>,
     ctx: &'ctx DecodeContext<'arena>,
@@ -546,10 +551,10 @@ impl<'a, 'ctx, 'arena> CompanionIntervals<'a, 'ctx, 'arena> {
                     let operation = "scan F3D companion stream records";
                     Ok(entry.insert(CompanionBoundaries::build(
                         ctx,
-                        owners.of(ctx, stream, operation)?,
-                        parameters.of(ctx, stream, operation)?,
-                        scopes.of(ctx, stream, operation)?,
-                        headers.of(ctx, stream, operation)?,
+                        owners.of(stream, operation)?,
+                        parameters.of(stream, operation)?,
+                        scopes.of(stream, operation)?,
+                        headers.of(stream, operation)?,
                     )?))
                 }
             }
@@ -562,8 +567,8 @@ impl<'a, 'ctx, 'arena> CompanionIntervals<'a, 'ctx, 'arena> {
         &self,
         stream: &str,
         operation: &'static str,
-    ) -> Result<impl Iterator<Item = &'a DesignParameterOwner> + '_, CodecError> {
-        self.owners.of(self.ctx, stream, operation)
+    ) -> Result<impl Iterator<Item = Result<&'a DesignParameterOwner, CodecError>> + '_, CodecError> {
+        self.owners.of(stream, operation)
     }
 
     /// The scopes of `stream`, in input order, admitted as visited work.
@@ -571,8 +576,8 @@ impl<'a, 'ctx, 'arena> CompanionIntervals<'a, 'ctx, 'arena> {
         &self,
         stream: &str,
         operation: &'static str,
-    ) -> Result<impl Iterator<Item = &'a DesignParameterScope> + '_, CodecError> {
-        self.scopes.of(self.ctx, stream, operation)
+    ) -> Result<impl Iterator<Item = Result<&'a DesignParameterScope, CodecError>> + '_, CodecError> {
+        self.scopes.of(stream, operation)
     }
 
     /// The intervals of the companion boundaries in `inputs`.
@@ -1507,12 +1512,10 @@ pub(crate) fn bind_dimension_recipe_reference_candidates(
             &(0..reference_count),
             "scan F3D dimension recipe references",
         )?) {
-            let token_tags = tags_by_token.run(ctx, &reference.token)?;
             bind_recipe_reference_candidates_from(
                 ctx,
                 reference,
-                ctx.admit_iter(token_tags, "scan F3D recipe-reference tags")?
-                    .map(|(_, tag)| *tag),
+                tags_by_token.of(&reference.token, "scan F3D recipe-reference tags")?,
                 Some(&record.id),
             )?;
         }
@@ -1532,7 +1535,7 @@ pub(crate) fn bind_recipe_reference_candidates_charged(
     bind_recipe_reference_candidates_from(
         ctx,
         reference,
-        ctx.admit_iter(tags, "scan F3D recipe-reference tags")?,
+        ctx.admit_iter(tags, "scan F3D recipe-reference tags")?.map(Ok),
         owner_id,
     )
 }
@@ -1541,7 +1544,7 @@ pub(crate) fn bind_recipe_reference_candidates_charged(
 fn bind_recipe_reference_candidates_from<'t>(
     ctx: &DecodeContext<'_>,
     reference: &mut crate::records::dimensions::DesignRecipeReference,
-    tags: impl IntoIterator<Item = &'t PersistentSubentityTag>,
+    tags: impl IntoIterator<Item = Result<&'t PersistentSubentityTag, CodecError>>,
     owner_id: Option<&str>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
@@ -1552,6 +1555,7 @@ fn bind_recipe_reference_candidates_from<'t>(
     reference.alternate_selector_faces.clear();
     reference.alternate_selector_edges.clear();
     for tag in tags {
+        let tag = tag?;
         if !(ctx.equal_bytes(
             tag.token.as_str().as_bytes(),
             reference.token.as_bytes(),
@@ -1661,7 +1665,7 @@ pub(crate) fn bind_dimension_recipe_edge_operands(
             Some(stream) => matching_edge_operand_ids(
                 ctx,
                 record,
-                operands_by_stream.of(ctx, stream, "scan F3D dimension recipe edge operands")?,
+                operands_by_stream.of(stream, "scan F3D dimension recipe edge operands")?,
                 |_| Ok(true),
             )?,
             None => dimension_recipe_matching_edge_operand_ids(ctx, record, operands)?,
@@ -1682,7 +1686,7 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
     matching_edge_operand_ids(
         ctx,
         record,
-        ctx.admit_iter(operands, "scan F3D dimension recipe edge operands")?,
+        ctx.admit_iter(operands, "scan F3D dimension recipe edge operands")?.map(Ok),
         |operand| has_stream(ctx, &operand.id, stream),
     )
 }
@@ -1692,11 +1696,12 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
 fn matching_edge_operand_ids<'o>(
     ctx: &DecodeContext<'_>,
     record: &DesignDimensionRecipeRecord,
-    operands: impl IntoIterator<Item = &'o DesignEdgeOperand>,
+    operands: impl IntoIterator<Item = Result<&'o DesignEdgeOperand, CodecError>>,
     mut in_scope: impl FnMut(&DesignEdgeOperand) -> Result<bool, CodecError>,
 ) -> Result<Vec<String>, CodecError> {
     let mut ids = Vec::new();
     for operand in operands {
+        let operand = operand?;
         if !in_scope(operand)? || !program_has_operand_tail(ctx, record, operand)? {
             continue;
         }
@@ -2443,6 +2448,7 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
                     stream,
                     "scan F3D dimension annotation owners",
                 )? {
+                    let owner = owner?;
                     if has_record_key(
                         ctx,
                         &dimension_companions,
@@ -2598,7 +2604,7 @@ fn annotation_intervals<'a, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     stream: &'a str,
     stream_length: usize,
-    companions: &Grouped<'a, DesignParameterCompanion>,
+    companions: &Grouped<'a, '_, '_, DesignParameterCompanion>,
     intervals_by_stream: &mut CompanionIntervals<'a, '_, '_>,
 ) -> Result<(Vec<AnnotationInterval>, ScopedReservation<'ctx>), CodecError> {
     ctx.with_scoped_storage("f3d dimension annotation intervals", || {
@@ -2607,7 +2613,8 @@ fn annotation_intervals<'a, 'ctx>(
         let mut companion_storage =
             ctx.reserve_scoped(0, "f3d dimension annotation companions")?;
         let mut companion_offsets = HashMap::new();
-        for companion in companions.of(ctx, stream, "scan F3D annotation owner companions")? {
+        for companion in companions.of(stream, "scan F3D annotation owner companions")? {
+            let companion = companion?;
             if let Entry::Vacant(slot) = companion_storage.with_storage(|| {
                 ctx.entry_hash_map(
                     &mut companion_offsets,
@@ -2636,6 +2643,7 @@ fn annotation_intervals<'a, 'ctx>(
             stream,
             "scan F3D dimension annotation interval owners",
         )? {
+            let owner = owner?;
             let Some(offset) = ctx
                 .get_hash_map(
                     &companion_offsets,
@@ -2666,6 +2674,7 @@ fn annotation_intervals<'a, 'ctx>(
             stream,
             "scan F3D dimension annotation interval scopes",
         )? {
+            let scope = scope?;
             let Some(&end) = ctx.get_hash_map(
                 &scope_ends,
                 &scope.record_index,
@@ -3148,7 +3157,10 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
         let _stream_types_storage;
         let (stream_types, held_storage) = ctx
             .with_scoped_storage("f3d dimension presentation stream types", || {
-                segment_types_by_entity(ctx, types_by_segment.run(ctx, prefix)?)
+                segment_types_by_entity(
+                    ctx,
+                    types_by_segment.of(prefix, "scan F3D segment types by entity")?,
+                )
             })?;
         _stream_types_storage = held_storage;
         let type_guid_of = |class_code: u32| -> Result<Option<&str>, CodecError> {
@@ -3256,10 +3268,11 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
 /// register. A later registration of an entity replaces an earlier one.
 fn segment_types_by_entity<'t>(
     ctx: &DecodeContext<'_>,
-    segment_types: &[(&str, &'t SegmentType)],
+    segment_types: impl IntoIterator<Item = Result<&'t SegmentType, CodecError>>,
 ) -> Result<HashMap<u64, (&'t str, u32)>, CodecError> {
     let mut by_entity = HashMap::new();
-    for &(_, design_type) in ctx.admit_iter(segment_types, "scan F3D segment types by entity")? {
+    for design_type in segment_types {
+        let design_type = design_type?;
         for entity_id in
             admit_reference_values(ctx, &design_type.entities, "scan F3D segment type entities")?
         {
@@ -3323,7 +3336,7 @@ fn presentation_stream_prefixes<'a, 'ctx>(
 /// The tables a presentation pass shares across streams, built when the
 /// first presentation-typed record appears.
 struct PresentationPassTables<'a, 'ctx, 'arena> {
-    owners: Grouped<'a, DesignParameterOwner>,
+    owners: Grouped<'a, 'ctx, 'arena, DesignParameterOwner>,
     geometry: StreamIndexRuns<'a, 'ctx, 'arena>,
     sketch_entities: StreamIndexRuns<'a, 'ctx, 'arena>,
     _storage: [ScopedReservation<'ctx>; 3],
@@ -3388,8 +3401,9 @@ impl<'a, 'r, 'ctx, 'arena> PresentationStreamTables<'a, 'r, 'ctx, 'arena> {
         let mut dimension_owners = Vec::new();
         for owner in pass
             .owners
-            .of(ctx, stream, "scan F3D dimension presentation owners")?
+            .of(stream, "scan F3D dimension presentation owners")?
         {
+            let owner = owner?;
             if is_dimension_parameter(ctx, parameters, stream, owner.parameter_record_index())? {
                 owner_storage.with_storage(|| {
                     ctx.push_vec(

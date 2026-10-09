@@ -254,7 +254,9 @@ fn companion_boundaries_commit_only_surviving_offsets() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let storage;
         let (boundaries, held_storage) = ctx.with_scoped_storage("test companion boundaries", || {
-            super::super::CompanionBoundaries::build(&ctx, &[], &[], &scopes, &[])
+            super::super::CompanionBoundaries::build(
+                &ctx, [].iter().map(Ok), [].iter().map(Ok), scopes.iter().map(Ok), [].iter().map(Ok),
+            )
         }).unwrap();
         storage = held_storage;
         assert_eq!(boundaries.offsets, [80]);

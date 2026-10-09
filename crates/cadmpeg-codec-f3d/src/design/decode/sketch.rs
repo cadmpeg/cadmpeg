@@ -255,19 +255,21 @@ impl IndexedRecordOffsets {
 
 /// The records of one input slice that have a text key, such as a stream
 /// scope, grouped by key: ascending by key, and within a key in input order.
-pub(super) struct Grouped<'a, T> {
+pub(super) struct Grouped<'a, 'ctx, 'arena, T> {
+    ctx: &'ctx DecodeContext<'arena>,
     records: Vec<(&'a str, &'a T)>,
 }
 
-impl<'a, T> Grouped<'a, T> {
+impl<'a, 'ctx, 'arena, T> Grouped<'a, 'ctx, 'arena, T> {
     /// Group `records` by the key `key_of` reads from each record; a record
     /// without one is left out.
     pub(super) fn build(
-        ctx: &DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'arena>,
         records: &'a [T],
         key_of: impl Fn(&'a T) -> Result<Option<&'a str>, CodecError>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
+        ctx.charge_work(0, operation)?;
         let mut grouped = Vec::new();
         for record in ctx.admit_iter(records, operation)? {
             if let Some(key) = key_of(record)? {
@@ -276,30 +278,49 @@ impl<'a, T> Grouped<'a, T> {
         }
         // The stable sort keeps the records of each key in input order.
         ctx.stable_sort_by(&mut grouped[..], |(key, _)| *key, Ord::cmp, operation)?;
-        Ok(Self { records: grouped })
+        Ok(Self { ctx, records: grouped })
     }
 
     /// The records of `key` with their key, in input order. Two bisections
     /// locate them.
     pub(super) fn run(
         &self,
-        ctx: &DecodeContext<'_>,
         key: &str,
     ) -> Result<&[(&'a str, &'a T)], CodecError> {
-        let run = key_range(ctx, &self.records, |(record_key, _)| record_key, key)?;
+        self.ctx.charge_work(0, "find F3D grouped records")?;
+        let run = key_range(self.ctx, &self.records, |(record_key, _)| record_key, key)?;
         Ok(self.records.get(run).unwrap_or(&[]))
     }
 
     /// The records of `key`, in input order, each admitted as visited work.
     pub(super) fn of(
         &self,
-        ctx: &DecodeContext<'_>,
         key: &str,
         operation: &'static str,
-    ) -> Result<impl Iterator<Item = &'a T> + '_, CodecError> {
-        Ok(ctx
-            .admit_iter(self.run(ctx, key)?, operation)?
-            .map(|(_, record)| *record))
+    ) -> Result<impl Iterator<Item = Result<&'a T, CodecError>> + '_, CodecError> {
+        let mut values = Some(self.run(key)?.iter());
+        Ok(std::iter::from_fn(move || {
+            let source = values.as_mut()?;
+            if let Err(error) = self.ctx.charge_work(0, operation) {
+                values = None;
+                return Some(Err(error));
+            }
+            if source.as_slice().is_empty() {
+                values = None;
+                return None;
+            }
+            match self.ctx.next_charged(source, operation) {
+                Ok(Some((_, record))) => Some(Ok(*record)),
+                Ok(None) => {
+                    values = None;
+                    None
+                }
+                Err(error) => {
+                    values = None;
+                    Some(Err(error))
+                }
+            }
+        }))
     }
 }
 
@@ -2221,7 +2242,7 @@ pub(crate) fn decode_sketch_relations(
         let (scope, held_scope_storage) = native_scope_scoped(ctx, &entry.name)?;
         scope_storage = held_scope_storage;
         let segment_types = match scope.strip_suffix(BULK_STREAM_FILE) {
-            Some(prefix) => types_by_segment.run(ctx, prefix)?,
+            Some(prefix) => types_by_segment.run(prefix)?,
             None => &[],
         };
         ctx.push_scoped_vec(
