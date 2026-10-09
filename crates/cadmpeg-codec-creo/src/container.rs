@@ -1796,7 +1796,6 @@ fn relation_model_name<'a>(
 
 fn family_table(
     ctx: &DecodeContext<'_>,
-    data: &[u8],
     sections: &[ScannedSection<'_>],
 ) -> Result<Option<FamilyTableRecord>, CodecError> {
     let Some(section) = ctx.find_by(
@@ -1807,37 +1806,28 @@ fn family_table(
     else {
         return Ok(None);
     };
-    let end = section.section.end();
+    let payload = section.region;
     let label = b"drv_tbl_ptr\0";
-    let Some(label_offset) = ctx.find_bytes_from(
-        data,
-        label,
-        section.section.offset(),
-        "find Creo family table",
-    )?
+    let Some(label_offset) =
+        ctx.find_bytes_from(payload, label, 0, "find Creo family table")?
     else {
         return Ok(None);
     };
     let offset = label_offset + label.len();
-    Ok((|| {
-        if offset >= end {
-            return None;
+    let pointer = match payload.get(offset) {
+        Some(&0xe1) => FamilyTablePointer::Null,
+        Some(&psb::token::ENTITY_REF) => {
+            let Ok((id, _)) = psb::reference_id(payload, offset + 1) else {
+                return Ok(None);
+            };
+            FamilyTablePointer::Entity(id)
         }
-        let pointer = match data[offset] {
-            0xe1 => FamilyTablePointer::Null,
-            psb::token::ENTITY_REF => {
-                let Ok((id, after)) = psb::reference_id(data, offset + 1) else {
-                    return None;
-                };
-                if after > end {
-                    return None;
-                }
-                FamilyTablePointer::Entity(id)
-            }
-            _ => return None,
-        };
-        Some(FamilyTableRecord { pointer, offset })
-    })())
+        _ => return Ok(None),
+    };
+    Ok(Some(FamilyTableRecord {
+        pointer,
+        offset: section.section.offset() + offset,
+    }))
 }
 
 fn model_geometry_sections<'a>(
@@ -3789,7 +3779,7 @@ pub(crate) fn scan_bytes<'a>(
             .flatten(),
         BinaryUnitSelection::Unsupported | BinaryUnitSelection::Conflicting => None,
     };
-    let family_table = family_table(ctx, &data, &sections)?;
+    let family_table = family_table(ctx, &sections)?;
     let legacy_family_table = legacy_ascii
         .map(|framing| crate::legacy_family::parse(ctx, &framing.persistence))
         .transpose()?
