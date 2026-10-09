@@ -5,6 +5,7 @@ use cadmpeg_test_support::EditableDecodeResult;
 use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
+mod checksum_storage;
 mod prefix_admission;
 mod recovery;
 mod resource_limits;
