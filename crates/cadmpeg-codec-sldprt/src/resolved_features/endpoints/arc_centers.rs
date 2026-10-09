@@ -98,8 +98,10 @@ impl<'a, 'ctx> ArcCenterIndex<'a, 'ctx> {
         ctx: &DecodeContext<'_>,
         records: Vec<ArcCenterRecord<'a>>,
         tolerance: f64,
-        mut storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+        storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     ) -> Result<Self, CodecError> {
+        let mut storage = storage;
+        let records = records;
         let mut order = storage.with_storage(|| {
             ctx.collect_vec(0..records.len(), "index SLDPRT arc center positions")
         })?;
