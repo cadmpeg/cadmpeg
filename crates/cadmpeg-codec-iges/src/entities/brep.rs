@@ -327,6 +327,9 @@ fn resolve_pcurve_uses<'a>(
         ),
     ),
 ) -> Result<Option<ResolvedPcurveUses>, super::composite::CompositeCurveError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::from(refusal).into());
+    }
     let PcurveEndpointCheck {
         start: expected_start,
         end: expected_end,
