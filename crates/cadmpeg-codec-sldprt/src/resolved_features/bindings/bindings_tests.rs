@@ -1170,3 +1170,5 @@ fn scalar_binding_skips_dissected_offset_sort_without_feature_pair() {
         .iter()
         .all(|scalar| scalar.feature_ref.as_deref() == Some("owner")));
 }
+
+mod candidate_lifetime;
