@@ -476,21 +476,20 @@ pub(crate) fn resolve_display_appearances(
             source_id,
             "collect matched SLDPRT appearance sources",
         )?;
-        let name = ctx.copy_retained_text(
-            FEATURE_APPEARANCE_NAME,
-            "retain SLDPRT feature appearance name",
-        )?;
-        let definition = AppearanceDefinition {
-            name,
-            color: assignment.color,
-            source_name: clone_stream_name(ctx, &assignment.source_name)?,
-            record_offset: assignment.record_offset,
-        };
         for face_index in ctx
             .admit_iter(face_indexes, "scan SLDPRT feature appearance face indexes")?
             .copied()
         {
-            let copied = copy_definition(ctx, &definition)?;
+            let name = ctx.copy_retained_text(
+                FEATURE_APPEARANCE_NAME,
+                "copy SLDPRT appearance name",
+            )?;
+            let copied = AppearanceDefinition {
+                name,
+                color: assignment.color,
+                source_name: clone_stream_name(ctx, &assignment.source_name)?,
+                record_offset: assignment.record_offset,
+            };
             ctx.insert_btree_map(
                 &mut by_face,
                 face_index,
