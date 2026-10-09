@@ -445,3 +445,63 @@ fn decode_transfer_verification_preserves_the_first_unresolved_target() {
         });
     }
 }
+
+
+#[test]
+fn decode_report_borrowed_serialization_preserves_wire_order_and_omissions() {
+    use super::DecodeReportWire;
+    use crate::report::loss::{LossKind, LossNamespace, LossNote, LossTaxonomy};
+
+    for has_coverage in [false, true] {
+        for has_ledger in [false, true] {
+            let coverage = if has_coverage {
+                BTreeMap::from([("a_count".to_owned(), 2), ("z_count".to_owned(), 9)])
+            } else {
+                BTreeMap::new()
+            };
+            let ledger = if has_ledger {
+                TransferLedger {
+                    entries: vec![TransferRecord {
+                        source: "source\n🦀".to_owned(),
+                        outcome: TransferOutcome::Omitted {
+                            note: Some("omitted\t\"".to_owned()),
+                        },
+                    }],
+                }
+            } else {
+                TransferLedger::default()
+            };
+            let report = DecodeReport::unclassified(
+                "test",
+                DecodeTransfer::full(true),
+                coverage,
+                vec![LossNote::new(
+                    LossKind::namespaced(
+                        LossNamespace::new("test").unwrap(),
+                        "geometry.omitted",
+                        LossTaxonomy::GeometryNotTransferred,
+                    ),
+                    "loss\n🦀",
+                )],
+                vec!["note\t\"".to_owned()],
+                ledger,
+            );
+            // The original owned wire serializer is the compatibility oracle.
+            let expected = DecodeReportWire {
+                identity: report.classification.clone(),
+                transfer: report.transfer,
+                coverage: report.coverage.entries.clone(),
+                losses: report.losses.clone(),
+                notes: report.notes.clone(),
+                transfer_ledger: report.transfer_ledger.clone(),
+            };
+            let bytes = serde_json::to_vec(&report).unwrap();
+            assert_eq!(bytes, serde_json::to_vec(&expected).unwrap());
+            assert_eq!(serde_json::from_slice::<DecodeReport>(&bytes).unwrap(), report);
+            let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(value.get("coverage").is_some(), has_coverage);
+            assert_eq!(value.get("transfer_ledger").is_some(), has_ledger);
+            assert_eq!(value["losses"][0]["code"]["namespace"], "test");
+        }
+    }
+}

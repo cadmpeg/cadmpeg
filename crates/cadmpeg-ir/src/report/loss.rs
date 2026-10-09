@@ -373,10 +373,16 @@ macro_rules! loss_namespace {
 }
 
 /// An owned loss namespace other than the reserved shared namespace.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "String", into = "String")]
 struct LossNamespaceName(String);
+
+impl Serialize for LossNamespaceName {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
 
 impl LossNamespaceName {
     fn as_str(&self) -> &str {
@@ -393,11 +399,6 @@ impl TryFrom<String> for LossNamespaceName {
     }
 }
 
-impl From<LossNamespaceName> for String {
-    fn from(namespace: LossNamespaceName) -> Self {
-        namespace.0
-    }
-}
 
 /// Codec-local loss identity and classification.
 ///
