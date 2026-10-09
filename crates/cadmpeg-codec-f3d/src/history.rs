@@ -206,7 +206,9 @@ pub(crate) fn decode(
     width: RefWidth,
     _limits: &cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
-    let (output, storage) = ctx.with_scoped_storage(
+    let storage;
+    let output;
+    (output, storage) = ctx.with_scoped_storage(
         "retain F3D ASM history output",
         || -> Result<_, cadmpeg_core::CodecError> {
             let preamble_offset = ctx.find_bytes(bytes, PREAMBLE, "find F3D ASM preamble")?;
@@ -1051,7 +1053,9 @@ fn external_bodies<'a, 'ctx>(
     shells: &'a [cadmpeg_ir::topology::Shell],
 ) -> Result<ExternalBodies<'a, 'ctx>, cadmpeg_core::CodecError> {
     let mut storage = ctx.reserve_scoped(0, "index F3D external bodies")?;
-    let (body_by_region, _region_storage) =
+    let _region_storage;
+    let body_by_region;
+    (body_by_region, _region_storage) =
         ctx.with_scoped_storage("index F3D external body regions", || {
             ctx.collect_hash_map(
                 regions.iter().map(|region| (&region.id, &region.body)),
@@ -1283,7 +1287,9 @@ pub(crate) fn bind_feature_body_selections(
         let Some(seed_slot) = historical_body_slot(ctx, seed_body.as_str())? else {
             continue;
         };
-        let (candidate, candidate_storage) = ctx.with_scoped_storage(
+        let candidate_storage;
+        let candidate;
+        (candidate, candidate_storage) = ctx.with_scoped_storage(
             "index F3D pattern body slots",
             || -> Result<_, cadmpeg_core::CodecError> {
                 let mut slots = BTreeSet::new();
@@ -1475,7 +1481,9 @@ pub(crate) fn bind_feature_body_selections(
                             return;
                         }
                     };
-                    let (historical, target_storage) = admitted!(ctx.with_scoped_storage(
+                    let target_storage;
+                    let historical;
+                    (historical, target_storage) = admitted!(ctx.with_scoped_storage(
                         "retain F3D Combine target selection",
                         || -> Result<_, cadmpeg_core::CodecError> {
                             let body_id = crate::ids::history_input_body_id_charged(
@@ -1815,7 +1823,9 @@ fn combine_history_tools<'a, 'ctx>(
     drop(historical_slots);
     drop(direct_bodies);
     drop(seen_storage);
-    let (selection, output_storage) = ctx.with_scoped_storage(
+    let output_storage;
+    let selection;
+    (selection, output_storage) = ctx.with_scoped_storage(
         "retain F3D Combine tool selection",
         || -> Result<_, cadmpeg_core::CodecError> {
             if complete && direct.len() == count {
@@ -1859,7 +1869,9 @@ fn combine_history_tools<'a, 'ctx>(
                     .ok()
                     .map(|members| BodySelection::ResolvedSet { members }));
             }
-            let (slots, temporary) = if complete && historical.len() == count {
+            let _temporary;
+            let slots;
+            (slots, _temporary) = if complete && historical.len() == count {
                 (historical, proof_storage)
             } else {
                 // Neither partial lane contributes identities to a fallback.
@@ -1874,7 +1886,9 @@ fn combine_history_tools<'a, 'ctx>(
                         "collect F3D Combine tool record indices",
                     )
                 })?;
-                let (slots, slots_storage) =
+                let slots_storage;
+                let slots;
+                (slots, slots_storage) =
                     ctx.with_scoped_storage("collect F3D Combine fallback slots", || {
                         if let Some(slots) = combine_recipe_family_tool_slots(
                             ctx,
@@ -1918,7 +1932,7 @@ fn combine_history_tools<'a, 'ctx>(
                 }
                 (slots, slots_storage)
             };
-            historical_combine_selection(ctx, &input, stream, slots, temporary)
+            historical_combine_selection(ctx, &input, stream, slots)
         },
     )?;
     if selection.is_some() {
@@ -1934,7 +1948,6 @@ fn historical_combine_selection(
     input: &CombineHistoryTools<'_>,
     stream: &str,
     slots: Vec<i64>,
-    _temporary: cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Option<cadmpeg_ir::features::BodySelection>, cadmpeg_core::CodecError> {
     let Some(operation) = input.scope.combine_operation() else {
         return Ok(None);
@@ -1978,7 +1991,9 @@ fn combine_historical_rows(
     Option<Vec<cadmpeg_ir::features::BodyMember<cadmpeg_ir::ids::HistoricalBodyId>>>,
     cadmpeg_core::CodecError,
 > {
-    let (output, storage) = ctx.with_scoped_storage(
+    let storage;
+    let output;
+    (output, storage) = ctx.with_scoped_storage(
         "retain F3D Combine fallback selection",
         || -> Result<_, cadmpeg_core::CodecError> {
             ctx.collect_fallible_options(
@@ -2209,16 +2224,18 @@ fn combine_recipe_family_tool_slots<'a, 'ctx>(
                 if other.is_empty() {
                     return Ok(false);
                 }
-                let (other, _other_storage) =
+                let _other_storage;
+                let other_set;
+                (other_set, _other_storage) =
                     ctx.with_scoped_storage("index F3D Combine other candidate tools", || {
                         ctx.collect_btree_set(
                             other.iter().copied(),
                             "index F3D Combine other candidate tools",
                         )
                     })?;
-                Ok(other.len() != candidates.len()
+                Ok(other_set.len() != candidates.len()
                     || !ctx.is_subset_btree_set(
-                        &other,
+                        &other_set,
                         &candidates,
                         "compare F3D Combine candidate tools",
                     )?)
@@ -2254,7 +2271,9 @@ fn combine_external_local_tools(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> Result<Option<cadmpeg_ir::features::BodySelection>, cadmpeg_core::CodecError> {
-    let (output, storage) = ctx.with_scoped_storage(
+    let storage;
+    let output;
+    (output, storage) = ctx.with_scoped_storage(
         "retain F3D Combine external selection",
         || -> Result<_, cadmpeg_core::CodecError> {
             let Some(operation) = scope.combine_operation() else {
@@ -2412,9 +2431,13 @@ fn unique_external_body_candidate<'a>(
     current_history_source: Option<&str>,
     external: &ExternalBodies<'a, '_>,
 ) -> Result<Option<&'a cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
-    let (current_prefix, _prefix_storage) = match current_history_source {
+    let _prefix_storage;
+    let current_prefix;
+    (current_prefix, _prefix_storage) = match current_history_source {
         Some(source) => {
-            let (prefix, storage) =
+            let storage;
+            let prefix;
+            (prefix, storage) =
                 ctx.with_scoped_storage("retain F3D current history prefix", || {
                     ctx.format_retained(
                         format_args!("f3d:brep/{source}/"),
@@ -2512,7 +2535,9 @@ fn bind_body_recipe_body_selection<'a, 'ctx>(
     scope: &'a DesignScope,
     index: &BodySelectionIndex<'a, 'ctx>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (bound, storage) = ctx.with_scoped_storage(
+    let storage;
+    let bound;
+    (bound, storage) = ctx.with_scoped_storage(
         "retain F3D historical body selection",
         || -> Result<_, cadmpeg_core::CodecError> {
             use cadmpeg_ir::features::BodySelection;
@@ -2598,7 +2623,9 @@ fn bind_direct_body_recipe_body_selection<'a, 'ctx>(
     scope: &'a DesignScope,
     index: &BodySelectionIndex<'a, 'ctx>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (bound, storage) = ctx.with_scoped_storage(
+    let storage;
+    let bound;
+    (bound, storage) = ctx.with_scoped_storage(
         "retain F3D direct body selection",
         || -> Result<_, cadmpeg_core::CodecError> {
             use cadmpeg_ir::features::BodySelection;
@@ -3606,7 +3633,9 @@ fn bind_surface_stitch_face_selection<'a, 'ctx>(
     if candidates.len().checked_mul(2) != Some(input_end) {
         return Ok(());
     }
-    let (mut matching_groups, _matching_storage) = ctx
+    let _matching_storage;
+    let mut matching_groups;
+    (matching_groups, _matching_storage) = ctx
         .copy_temporary_slice(candidates, "collect F3D Stitch face groups")
         .map_err(cadmpeg_core::CodecError::ResourceLimit)?;
     ctx.stable_sort_by(
@@ -3712,7 +3741,9 @@ fn bind_entity_face_groups<'a, 'ctx>(
             })?;
         }
     }
-    let (candidate, mut output_storage) = ctx.with_scoped_storage(
+    let mut output_storage;
+    let candidate;
+    (candidate, output_storage) = ctx.with_scoped_storage(
         "retain F3D historical entity face selection",
         || -> Result<_, cadmpeg_core::CodecError> {
             let state_id =
@@ -3838,7 +3869,9 @@ fn bind_hole_face_selection(
     let Some(source) = historical_brep_source(ctx, &candidate.history_id)? else {
         return Ok(());
     };
-    let (candidate, mut output_storage) = ctx.with_scoped_storage(
+    let mut output_storage;
+    let resolved;
+    (resolved, output_storage) = ctx.with_scoped_storage(
         "retain F3D historical hole face selection",
         || -> Result<_, cadmpeg_core::CodecError> {
             let state_id =
@@ -3864,7 +3897,7 @@ fn bind_hole_face_selection(
             Ok(Some((state_id, face)))
         },
     )?;
-    let Some((state_id, face)) = candidate else {
+    let Some((state_id, face)) = resolved else {
         return Ok(());
     };
     binding.input_faces.add_face(
@@ -4016,7 +4049,9 @@ fn bind_entity_selection_path<'a, 'ctx>(
     groups: &GroupIndex<'a, 'ctx>,
     operands: &UniqueIndex<'a, 'ctx, PathOperandKey<'a>, EntityOperand>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (bound, storage) = ctx.with_scoped_storage(
+    let storage;
+    let bound;
+    (bound, storage) = ctx.with_scoped_storage(
         "retain F3D historical path selection",
         || -> Result<_, cadmpeg_core::CodecError> {
             use cadmpeg_ir::features::PathRef;
@@ -4031,7 +4066,9 @@ fn bind_entity_selection_path<'a, 'ctx>(
                 return Ok(None);
             }
             let stream = crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?;
-            let (mut edge_slots, _edge_slots_storage) = ctx
+            let _edge_slots_storage;
+            let mut edge_slots;
+            (edge_slots, _edge_slots_storage) = ctx
                 .with_scoped_storage("collect F3D path edge slots", || {
                     ctx.collection_vec(group.members().len(), "collect F3D path edge slots")
                 })?;
@@ -4130,7 +4167,9 @@ pub(crate) fn project_feature_input_topologies(
         let Some(topology) = state.topology() else {
             continue;
         };
-        let (projection, storage) = ctx.with_scoped_storage(
+        let storage;
+        let projection;
+        (projection, storage) = ctx.with_scoped_storage(
             "retain F3D input topology",
             || -> Result<_, cadmpeg_core::CodecError> {
                 let Some(bodies) = project_input_members(
@@ -4257,7 +4296,9 @@ pub(crate) fn bind_vertex_recipe_history(
     timelines: &[crate::records::entity_header::DesignFeatureTimeline],
     histories: &[AsmHistory],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (input_states, _input_state_storage) = ctx
+    let _input_state_storage;
+    let input_states;
+    (input_states, _input_state_storage) = ctx
         .with_scoped_storage("index F3D vertex recipe input states", || {
             vertex_recipe_input_states(ctx, scopes, timelines)
         })?;
@@ -4371,7 +4412,9 @@ fn vertex_recipe_input_states<'s>(
 ) -> Result<Vec<Option<i64>>, cadmpeg_core::CodecError> {
     use crate::records::feature::scope::DesignFeatureKind;
 
-    let (source_ordinals, _ordinal_storage) =
+    let _ordinal_storage;
+    let source_ordinals;
+    (source_ordinals, _ordinal_storage) =
         ctx.with_scoped_storage("index F3D authored scope ordinals", || {
             crate::design::feature_project::authored_scope_ordinals_per_stream(
                 ctx, scopes, timelines,
@@ -4623,7 +4666,9 @@ fn common_face_vertex(
     let mut common = None::<BTreeSet<i64>>;
     let mut history_source = IntoIterator::into_iter(face_slots);
     while let Some(face) = decode.next_charged(&mut history_source, "scan F3D common face slots")? {
-        let (vertices, reference_storage) =
+        let reference_storage;
+        let vertices;
+        (vertices, reference_storage) =
             decode.with_scoped_storage("collect F3D boundary vertices", || {
                 topology::boundary_vertices_for_faces(
                     decode,
@@ -4671,7 +4716,9 @@ fn recipe_reference_common_vertex(
                 .contains_hash_set(&index.faces, &slot, "find F3D history faces")?
                 .then_some(slot))
         });
-        let (vertices, reference_storage) = decode
+        let reference_storage;
+        let vertices;
+        (vertices, reference_storage) = decode
             .with_scoped_storage("collect F3D boundary vertices", || {
                 topology::boundary_vertices_for_faces(decode, faces, &index)
             })?;
@@ -6001,14 +6048,18 @@ fn recipe_topology_index<'t, 'ctx>(
     decode: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     topology: &'t AsmHistoricalTopology,
 ) -> Result<RecipeTopologyIndex<'t, 'ctx>, cadmpeg_core::CodecError> {
-    let (live_faces, _live_faces_storage) =
+    let _live_faces_storage;
+    let live_faces;
+    (live_faces, _live_faces_storage) =
         decode.with_scoped_storage("index F3D live recipe faces", || {
             decode.collect_hash_set(
                 topology.faces.iter().copied(),
                 "index F3D live recipe faces",
             )
         })?;
-    let (live_edges, _live_edges_storage) =
+    let _live_edges_storage;
+    let live_edges;
+    (live_edges, _live_edges_storage) =
         decode.with_scoped_storage("index F3D live recipe edges", || {
             decode.collect_hash_set(
                 topology.edges.iter().copied(),
@@ -6435,14 +6486,18 @@ pub(crate) fn bind_face_operand_history_candidates(
                 "clear F3D alternate selector face candidates",
             )?;
         }
-        let (changed_faces, _changed_faces_storage) = decode
+        let _changed_faces_storage;
+        let changed_faces;
+        (changed_faces, _changed_faces_storage) = decode
             .with_scoped_storage("collect F3D changed faces", || {
                 face_changes_across_state_chain(decode, state, previous_state_id, states)
             })?;
         let Some(changed_faces) = changed_faces else {
             continue;
         };
-        let (direct_face_candidates, _direct_storage) =
+        let _direct_storage;
+        let direct_face_candidates;
+        (direct_face_candidates, _direct_storage) =
             decode.with_scoped_storage("collect F3D direct face candidate lane", || {
                 Ok::<_, cadmpeg_core::CodecError>(
                     if let Some(record_index) = decode.get_hash_map(
@@ -6462,7 +6517,9 @@ pub(crate) fn bind_face_operand_history_candidates(
                 )
             })?;
         let feature_family = crate::design::design_feature_family(&scope.kind());
-        let (thread_face_candidates, _thread_face_candidates_storage) = decode
+        let _thread_face_candidates_storage;
+        let thread_face_candidates;
+        (thread_face_candidates, _thread_face_candidates_storage) = decode
             .with_scoped_storage("collect F3D thread face candidates", || {
                 Ok::<_, cadmpeg_core::CodecError>(
                     if feature_family == Some(crate::design::DesignFeatureFamily::Thread)
@@ -6492,7 +6549,9 @@ pub(crate) fn bind_face_operand_history_candidates(
                     },
                 )
             })?;
-        let (nested_split_face_candidates, _nested_split_face_candidates_storage) = decode
+        let _nested_split_face_candidates_storage;
+        let nested_split_face_candidates;
+        (nested_split_face_candidates, _nested_split_face_candidates_storage) = decode
             .with_scoped_storage("collect F3D nested split face candidates", || {
                 Ok::<_, cadmpeg_core::CodecError>(
                     if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
@@ -6506,7 +6565,9 @@ pub(crate) fn bind_face_operand_history_candidates(
                     },
                 )
             })?;
-        let (grouped_reference_face_candidates, _grouped_reference_face_candidates_storage) =
+        let _grouped_reference_face_candidates_storage;
+        let grouped_reference_face_candidates;
+        (grouped_reference_face_candidates, _grouped_reference_face_candidates_storage) =
             decode.with_scoped_storage("collect F3D grouped reference face candidates", || {
                 (!matches!(
                     feature_family,
@@ -6528,7 +6589,9 @@ pub(crate) fn bind_face_operand_history_candidates(
                 })
                 .transpose()
             })?;
-        let (legacy_face_candidates, _legacy_face_candidates_storage) = decode.with_scoped_storage("collect F3D legacy face candidates", || -> Result<Option<_>, cadmpeg_core::CodecError> {
+        let _legacy_face_candidates_storage;
+        let legacy_face_candidates;
+        (legacy_face_candidates, _legacy_face_candidates_storage) = decode.with_scoped_storage("collect F3D legacy face candidates", || -> Result<Option<_>, cadmpeg_core::CodecError> {
             if feature_family != Some(crate::design::DesignFeatureFamily::Extrude) {
                 return Ok(None);
             }
@@ -6562,9 +6625,9 @@ pub(crate) fn bind_face_operand_history_candidates(
                 *recipe_record_index,
             )
         })?;
-        let fallback_candidates;
         let mut fallback_storage =
             decode.reserve_scoped(0, "collect F3D fallback face candidate lane")?;
+        let fallback_candidates;
         let history_candidates = if let Some(candidates) = direct_face_candidates
             .as_deref()
             .or(thread_face_candidates.as_deref())
@@ -7109,7 +7172,9 @@ fn resolve_pattern_face_by_surface_radius(
     if candidate_faces.is_empty() {
         return Ok(None);
     }
-    let (result_radii, _result_radii_storage) = unique_surface_radii(decode, result)?;
+    let _result_radii_storage;
+    let result_radii;
+    (result_radii, _result_radii_storage) = unique_surface_radii(decode, result)?;
     let mut result_radius = None;
     let mut bound_candidates = HashSet::new();
     let mut history_source = IntoIterator::into_iter(&result.face_surfaces);
@@ -7157,7 +7222,9 @@ fn resolve_pattern_face_by_surface_radius(
     let Some(result_radius) = result_radius else {
         return Ok(None);
     };
-    let (preceding_radii, _preceding_radii_storage) = unique_surface_radii(decode, preceding)?;
+    let _preceding_radii_storage;
+    let preceding_radii;
+    (preceding_radii, _preceding_radii_storage) = unique_surface_radii(decode, preceding)?;
     let mut matched = None;
     let mut history_source = IntoIterator::into_iter(&preceding.face_surfaces);
     while let Some(binding) = decode.next_charged(
@@ -7202,7 +7269,9 @@ fn resolve_split_tool_face(
     let [reference] = operand.recipe_references.as_slice() else {
         return Ok(None);
     };
-    let (candidates, _candidates_storage) = decode
+    let _candidates_storage;
+    let candidates;
+    (candidates, _candidates_storage) = decode
         .with_scoped_storage("collect F3D split tool face candidates", || {
             selection::faces_in_topology(decode, &reference.candidate_faces, topology)
         })?;
@@ -7262,14 +7331,18 @@ fn resolve_thread_face_by_transition(
         return Ok(None);
     }
     let tolerance = EPS_HISTORY_RESOLVE_THREAD_FACE_BY_TRANSITION_E9 * (1.0 + maximum_radius.abs());
-    let (face_carriers, _face_carriers_storage) = decode.unique_index(
+    let _face_carriers_storage;
+    let face_carriers;
+    (face_carriers, _face_carriers_storage) = decode.unique_index(
         topology
             .face_surfaces
             .iter()
             .map(|binding| (binding.entity, binding.carrier)),
         "index F3D Thread face carriers",
     )?;
-    let (cylinders, _cylinders_storage) = decode.unique_index(
+    let _cylinders_storage;
+    let cylinders;
+    (cylinders, _cylinders_storage) = decode.unique_index(
         topology
             .surface_cylinders
             .iter()
@@ -7449,9 +7522,15 @@ fn resolve_bounded_face_recipe_target<'r>(
             operation,
         )
     };
-    let (body_regions, _body_regions_storage) = relations(&result.body_regions)?;
-    let (region_shells, _region_shells_storage) = relations(&result.region_shells)?;
-    let (shell_faces, _shell_faces_storage) = relations(&result.shell_faces)?;
+    let _body_regions_storage;
+    let body_regions;
+    (body_regions, _body_regions_storage) = relations(&result.body_regions)?;
+    let _region_shells_storage;
+    let region_shells;
+    (region_shells, _region_shells_storage) = relations(&result.region_shells)?;
+    let _shell_faces_storage;
+    let shell_faces;
+    (shell_faces, _shell_faces_storage) = relations(&result.shell_faces)?;
     let mut construction_faces = Vec::new();
     let mut history_source = IntoIterator::into_iter(inserted_bodies);
     'bodies: while let Some(body) =
@@ -7511,7 +7590,9 @@ fn resolve_bounded_face_recipe_target<'r>(
         Option<(usize, Vec<cadmpeg_ir::math::Point3>)>,
         cadmpeg_core::CodecError,
     > {
-        let (contexts, _contexts_storage) = decode
+        let _contexts_storage;
+        let contexts;
+        (contexts, _contexts_storage) = decode
             .with_scoped_storage("collect F3D bounded face loop contexts", || {
                 topology::face_boundary_contexts_for_slots(decode, &[face], topology)
             })?;
@@ -7689,7 +7770,9 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         let Some(topology) = previous.topology() else {
             continue;
         };
-        let (changed_faces, _changed_faces_storage) = decode
+        let _changed_faces_storage;
+        let changed_faces;
+        (changed_faces, _changed_faces_storage) = decode
             .with_scoped_storage("collect F3D changed faces", || {
                 face_changes_across_state_chain(decode, state, previous.state_id, states)
             })?;
@@ -7840,15 +7923,17 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         let Some(body) = operand.resolved_body_slot else {
             continue;
         };
-        let (identity, key_storage) = decode
+        let key_storage;
+        let identity_key;
+        (identity_key, key_storage) = decode
             .with_scoped_storage("retain F3D body recipe identity key", || identity(operand))?;
-        let Some(identity) = identity else {
+        let Some(identity_key) = identity_key else {
             continue;
         };
         resolved_by_identity_storage.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
             match decode.entry_hash_map(
                 &mut resolved_by_identity,
-                identity,
+                identity_key,
                 "index F3D resolved body recipe identities",
             )? {
                 std::collections::hash_map::Entry::Occupied(mut entry) => {
@@ -8105,7 +8190,9 @@ fn resolve_direct_face_recipe_clauses(
     topology: &crate::history_records::AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
 ) -> Result<Vec<i64>, cadmpeg_core::CodecError> {
-    let (resolved, storage) = decode.with_scoped_storage(
+    let storage;
+    let resolved;
+    (resolved, storage) = decode.with_scoped_storage(
         "retain F3D direct face clause result",
         || -> Result<_, cadmpeg_core::CodecError> {
             let mut grouping_storage =
@@ -8269,7 +8356,9 @@ fn bind_profile_face_group_cardinality(
             None
         };
         let scoped_histories = scoped_history.map_or(histories, std::slice::from_ref);
-        let (profile_groups, _groups_storage) =
+        let _groups_storage;
+        let profile_groups;
+        (profile_groups, _groups_storage) =
             decode.with_scoped_storage("collect F3D profile roots", || {
                 crate::design::face_resolve::extrude_profile_group_roots(
                     decode,
@@ -8281,7 +8370,9 @@ fn bind_profile_face_group_cardinality(
             continue;
         };
         for group in decode.admit_iter(profile_groups, "scan F3D profile face groups")? {
-            let (indices, _indices_storage) =
+            let _indices_storage;
+            let indices;
+            (indices, _indices_storage) =
                 decode.with_scoped_storage("collect F3D profile operand indices", || {
                     crate::design::face_resolve::extrude_profile_group_operand_indices(
                         decode,
@@ -8330,7 +8421,9 @@ fn bind_profile_face_group_cardinality(
             let Some(states) = history_states.states_of(decode, history)? else {
                 continue;
             };
-            let (changed_faces, _changed_faces_storage) = decode
+            let _changed_faces_storage;
+            let changed_faces;
+            (changed_faces, _changed_faces_storage) = decode
                 .with_scoped_storage("collect F3D changed faces", || {
                     face_changes_across_state_chain(decode, state, previous_state_id, states)
                 })?;
@@ -8891,14 +8984,18 @@ pub(crate) fn bind_edge_operand_history_candidates(
         let Some(states) = history_states.states_of(decode, history)? else {
             continue;
         };
-        let (changed_faces, _changed_faces_storage) = decode
+        let _changed_faces_storage;
+        let changed_faces;
+        (changed_faces, _changed_faces_storage) = decode
             .with_scoped_storage("collect F3D changed faces", || {
                 face_changes_across_state_chain(decode, state, previous_state_id, states)
             })?;
         let Some(changed_faces) = changed_faces else {
             continue;
         };
-        let (edge_changes, _edge_changes_storage) = decode
+        let _edge_changes_storage;
+        let edge_changes;
+        (edge_changes, _edge_changes_storage) = decode
             .with_scoped_storage("collect F3D changed edges", || {
                 edge_changes_across_state_chain(decode, state, previous_state_id, states)
             })?;
@@ -9354,11 +9451,15 @@ fn surface_patch_edge_operand_slot(
     } else {
         &face_reference.candidate_faces
     };
-    let (faces, _faces_storage) = decode
+    let _faces_storage;
+    let faces;
+    (faces, _faces_storage) = decode
         .with_scoped_storage("collect F3D surface patch faces", || {
             selection::faces_in_topology(decode, face_candidates, topology)
         })?;
-    let (face_boundary_edges, _edges_storage) = decode
+    let _edges_storage;
+    let face_boundary_edges;
+    (face_boundary_edges, _edges_storage) = decode
         .with_scoped_storage("collect F3D surface patch boundary edges", || {
             topology::face_boundary_edges(decode, &faces, topology)
         })?;
@@ -9423,7 +9524,9 @@ fn bind_active_edge_operand_candidates(
             decode.reserve_scoped(0, "collect F3D active edge candidate")?;
         let candidate =
             candidate_storage.with_storage(|| -> Result<Option<_>, cadmpeg_core::CodecError> {
-                let (all_reference_faces, _all_reference_faces_storage) = decode
+                let _all_reference_faces_storage;
+                let all_reference_faces;
+                (all_reference_faces, _all_reference_faces_storage) = decode
                     .with_scoped_storage("collect F3D active edge reference faces", || {
                         terminal_edge_recipe_reference_faces(
                             decode,
@@ -9431,7 +9534,9 @@ fn bind_active_edge_operand_candidates(
                             None,
                         )
                     })?;
-                let (reference_faces, _reference_faces_storage) = decode.with_scoped_storage(
+                let _reference_faces_storage;
+                let reference_faces;
+                (reference_faces, _reference_faces_storage) = decode.with_scoped_storage(
                     "collect F3D active edge local reference faces",
                     || {
                         terminal_edge_recipe_reference_faces(
@@ -9441,7 +9546,9 @@ fn bind_active_edge_operand_candidates(
                         )
                     },
                 )?;
-                let (terminal_faces, _terminal_faces_storage) =
+                let _terminal_faces_storage;
+                let terminal_faces;
+                (terminal_faces, _terminal_faces_storage) =
                     decode.with_scoped_storage("collect F3D active edge terminal faces", || {
                         terminal_edge_recipe_faces(
                             decode,
@@ -9468,7 +9575,9 @@ fn bind_active_edge_operand_candidates(
                     operand.recipe_structure.as_ref(),
                     &contexts,
                 )?;
-                let (reference_edge_sets, _reference_edge_sets_storage) = decode
+                let _reference_edge_sets_storage;
+                let reference_edge_sets;
+                (reference_edge_sets, _reference_edge_sets_storage) = decode
                     .with_scoped_storage("collect F3D active edge reference sets", || {
                         topology::collect_reference_edge_sets(decode, &reference_faces, topology)
                     })?;
