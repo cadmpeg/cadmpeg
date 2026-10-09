@@ -41,7 +41,6 @@ fn shared_face_chain_work(count: u64) -> u64 {
             &exchange,
             &mut BTreeSet::new(),
             &mut cache,
-            &ctx,
         )
         .expect("face ancestry fits") else {
             panic!("resolved face");
@@ -55,10 +54,9 @@ fn shared_face_chain_work(count: u64) -> u64 {
         );
         claim_face_ancestors(
             info.parent,
-            &cache.completed,
+            &cache,
             (&mut typed, &mut typed_storage),
             (&mut seen, &mut seen_storage),
-            &ctx,
         )
         .expect("claim ancestry");
     }
@@ -106,8 +104,7 @@ fn cyclic_face_ancestry_caches_failure_and_clears_the_active_set() {
                 exchange.records().get(&id).expect("face"),
                 &exchange,
                 &mut active,
-                &mut cache,
-                &ctx
+                &mut cache
             )
             .expect("cycle rejection fits"),
             FaceResolution::Unresolved
@@ -137,8 +134,7 @@ fn face_attribute_cache_releases_its_scratch_after_use() {
                 exchange.records().get(&1).expect("face"),
                 &exchange,
                 &mut BTreeSet::new(),
-                &mut cache,
-                &ctx
+                &mut cache
             )
             .expect("resolve face"),
             FaceResolution::Resolved(_)
@@ -235,3 +231,5 @@ fn cached_face_failures_keep_carrier_and_attribute_diagnostics_distinct() {
         .any(|loss| loss.message.contains("face attributes #6")));
     assert_eq!(ctx.resource_refusal(), None);
 }
+
+mod original_context;

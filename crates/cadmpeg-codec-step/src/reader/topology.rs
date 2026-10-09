@@ -3565,8 +3565,8 @@ struct BuildSources<'records, 'a, 'ctx, 'b> {
     ctx: &'ctx DecodeContext<'b>,
 }
 
-struct BuildState<'ctx, 'ir, 'records, 'cache> {
-    face_cache: &'cache mut FaceAttributeCache<'ctx, 'records>,
+struct BuildState<'ctx, 'ir, 'records, 'cache, 'arena> {
+    face_cache: &'cache mut FaceAttributeCache<'ctx, 'records, 'arena>,
     failure: Option<BuildFailure>,
     selection_index: Option<PcurveSelectionIndex<'ctx, 'ir>>,
 }
@@ -3584,11 +3584,11 @@ struct BuildScope {
     root: bool,
 }
 
-fn build<'ctx, 'records>(
+fn build<'ctx, 'records, 'arena>(
     id: u64,
     root: &RawRecord,
-    sources: BuildSources<'records, '_, 'ctx, '_>,
-    face_cache: &mut FaceAttributeCache<'ctx, 'records>,
+    sources: BuildSources<'records, '_, 'ctx, 'arena>,
+    face_cache: &mut FaceAttributeCache<'ctx, 'records, 'arena>,
     scope_root: bool,
     losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
 ) -> Result<BuildOutcome<'ctx>, CodecError> {
@@ -3734,14 +3734,14 @@ impl From<CodecError> for BuildError {
     }
 }
 
-fn build_one<'ctx, 'ir, 'records>(
+fn build_one<'ctx, 'ir, 'records, 'arena>(
     id: u64,
     root: &RawRecord,
-    sources: BuildSources<'records, 'ir, 'ctx, '_>,
+    sources: BuildSources<'records, 'ir, 'ctx, 'arena>,
     root_parts: BuildRoot<'_>,
     scope: BuildScope,
     losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
-    state: &mut BuildState<'ctx, 'ir, 'records, '_>,
+    state: &mut BuildState<'ctx, 'ir, 'records, '_, 'arena>,
 ) -> Result<Built<'ctx>, BuildError> {
     let (losses, loss_storage) = losses;
     let BuildState {
@@ -3965,7 +3965,6 @@ fn build_one<'ctx, 'ir, 'records>(
                 exchange,
                 &mut BTreeSet::new(),
                 face_cache,
-                ctx,
             )? {
                 FaceResolution::Resolved(info) => info,
                 FaceResolution::Unrecognized => {
@@ -4039,10 +4038,9 @@ fn build_one<'ctx, 'ir, 'records>(
             }
             claim_face_ancestors(
                 face_info.parent,
-                &face_cache.completed,
+                face_cache,
                 (&mut typed, &mut built_storage),
                 (&mut claimed_face_ancestors, &mut ancestor_storage),
-                ctx,
             )?;
             let face_suffix = if scope_faces {
                 if scope_root {
@@ -7473,15 +7471,17 @@ enum FaceResolution<'records> {
 }
 
 /// Borrowed face attributes shared across topology roots and document commits.
-struct FaceAttributeCache<'ctx, 'records> {
+struct FaceAttributeCache<'ctx, 'records, 'arena> {
     completed: BTreeMap<u64, FaceResolution<'records>>,
+    ctx: &'ctx DecodeContext<'arena>,
     storage: ScopedReservation<'ctx>,
 }
 
-impl<'ctx> FaceAttributeCache<'ctx, '_> {
-    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+impl<'ctx, 'arena> FaceAttributeCache<'ctx, '_, 'arena> {
+    fn new(ctx: &'ctx DecodeContext<'arena>) -> Result<Self, CodecError> {
         Ok(Self {
             completed: BTreeMap::new(),
+            ctx,
             storage: ctx.reserve_scoped(0, "STEP face attribute cache storage")?,
         })
     }
@@ -7490,11 +7490,11 @@ impl<'ctx> FaceAttributeCache<'ctx, '_> {
 /// Claim each successful ancestor once in this staged body.
 fn claim_face_ancestors(
     mut parent: Option<u64>,
-    cache: &BTreeMap<u64, FaceResolution<'_>>,
+    cache: &FaceAttributeCache<'_, '_, '_>,
     claims: (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
     seen: (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
-    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    let ctx = cache.ctx;
     let (typed, typed_storage) = claims;
     let (seen, seen_storage) = seen;
     while let Some(id) = parent {
@@ -7507,7 +7507,7 @@ fn claim_face_ancestors(
         typed_storage
             .with_storage(|| ctx.insert_btree_set(typed, id, "step_face_attribute_typed"))?;
         parent = ctx
-            .get_btree_map(cache, &id, "STEP face ancestor lookup")?
+            .get_btree_map(&cache.completed, &id, "STEP face ancestor lookup")?
             .and_then(|resolution| match resolution {
                 FaceResolution::Resolved(info) => info.parent,
                 FaceResolution::Unrecognized | FaceResolution::Unresolved => None,
@@ -7521,9 +7521,9 @@ fn face_attributes<'a>(
     record: &'a RawRecord,
     exchange: &'a Exchange,
     active: &mut BTreeSet<u64>,
-    cache: &mut FaceAttributeCache<'_, 'a>,
-    ctx: &DecodeContext<'_>,
+    cache: &mut FaceAttributeCache<'_, 'a, '_>,
 ) -> Result<FaceResolution<'a>, CodecError> {
+    let ctx = cache.ctx;
     if let Some(info) =
         ctx.get_btree_map(&cache.completed, &id, "STEP face attribute cache lookup")?
     {
@@ -7558,7 +7558,7 @@ fn face_attributes<'a>(
     let mut active_storage = ctx.reserve_scoped(0, "step_face_attribute_active")?;
     active_storage
         .with_storage(|| ctx.insert_btree_set(active, id, "step_face_attribute_active"))?;
-    let result = face_attributes_inner(kind, record, exchange, active, cache, ctx);
+    let result = face_attributes_inner(kind, record, exchange, active, cache);
     ctx.remove_btree_set(active, &id, "STEP topology active removal")?;
     drop(active_storage);
     let result = result?.map_or(FaceResolution::Unresolved, FaceResolution::Resolved);
@@ -7578,9 +7578,9 @@ fn face_attributes_inner<'a>(
     record: &'a RawRecord,
     exchange: &'a Exchange,
     active: &mut BTreeSet<u64>,
-    cache: &mut FaceAttributeCache<'_, 'a>,
-    ctx: &DecodeContext<'_>,
+    cache: &mut FaceAttributeCache<'_, 'a, '_>,
 ) -> Result<Option<FaceInfo<'a>>, CodecError> {
+    let ctx = cache.ctx;
     let result = match kind {
         "ORIENTED_FACE" => {
             let Some(face_element) = oriented_face_element(ctx, record)? else {
@@ -7595,7 +7595,7 @@ fn face_attributes_inner<'a>(
                 return Ok(None);
             };
             let FaceResolution::Resolved(mut base) =
-                face_attributes(face_element, element_record, exchange, active, cache, ctx)?
+                face_attributes(face_element, element_record, exchange, active, cache)?
             else {
                 return Ok(None);
             };
@@ -7622,7 +7622,7 @@ fn face_attributes_inner<'a>(
                 return Ok(None);
             };
             let FaceResolution::Resolved(mut parent_info) =
-                face_attributes(parent, parent_record, exchange, active, cache, ctx)?
+                face_attributes(parent, parent_record, exchange, active, cache)?
             else {
                 return Ok(None);
             };
