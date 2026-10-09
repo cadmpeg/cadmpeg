@@ -243,73 +243,82 @@ fn parse_mesh(
             "mesh population exceeds remaining payload",
         ));
     }
-    let mut vertices = ctx.collection_vec(point_count, "FreeCAD mesh vertices")?;
-    let mut vertex_sources = 0..point_count;
-    while vertex_sources.len() != 0 {
-        let Some(_) = ctx.next_charged(&mut vertex_sources, "FreeCAD mesh vertex visits")? else {
-            break;
-        };
-        vertices.push(reader.point3(byte_order, "mesh point")?);
-    }
-    // Each facet consumes three point indices and three neighbour indices (24 bytes),
-    // so the declared count cannot exceed the unread payload.
-    let facet_capacity = reader
-        .counted(
-            cadmpeg_core::decode::u64_from_index(facet_count),
-            mesh_facet::LEN,
-        )
-        .ok_or_else(|| {
-            CodecError::Malformed("mesh facet count exceeds remaining payload".into())
-        })?;
-    let mut triangles = ctx.collection_vec(facet_capacity, "FreeCAD mesh facets")?;
-    let mut facet_sources = 0..facet_count;
-    while facet_sources.len() != 0 {
-        let Some(_) = ctx.next_charged(&mut facet_sources, "FreeCAD mesh facet visits")? else {
-            break;
-        };
-        let triangle = [
-            reader.index(byte_order, point_count, "mesh facet point")?,
-            reader.index(byte_order, point_count, "mesh facet point")?,
-            reader.index(byte_order, point_count, "mesh facet point")?,
-        ];
-        // The three facet padding words are skipped, not read.
-        for _ in 0..3 {
-            reader.skip(4)?;
+    let mut storage = ctx.provisional_retained("FreeCAD mesh candidate")?;
+    let (vertices, triangles) = storage.with_storage(|| {
+        let mut vertices = ctx.collection_vec(point_count, "FreeCAD mesh vertices")?;
+        let mut vertex_sources = 0..point_count;
+        while vertex_sources.len() != 0 {
+            let Some(_) = ctx.next_charged(&mut vertex_sources, "FreeCAD mesh vertex visits")? else {
+                break;
+            };
+            vertices.push(reader.point3(byte_order, "mesh point")?);
         }
-        triangles.push(triangle);
-    }
-    for _ in 0..6 {
-        let value = reader.f32(byte_order)?;
-        if !value.is_finite() {
-            return Err(CodecError::Malformed(
-                "FCStd mesh bounding box contains a non-finite value".into(),
-            ));
+        // Each facet consumes three point indices and three neighbour indices (24 bytes),
+        // so the declared count cannot exceed the unread payload.
+        let facet_capacity = reader
+            .counted(
+                cadmpeg_core::decode::u64_from_index(facet_count),
+                mesh_facet::LEN,
+            )
+            .ok_or_else(|| {
+                CodecError::Malformed("mesh facet count exceeds remaining payload".into())
+            })?;
+        let mut triangles = ctx.collection_vec(facet_capacity, "FreeCAD mesh facets")?;
+        let mut facet_sources = 0..facet_count;
+        while facet_sources.len() != 0 {
+            let Some(_) = ctx.next_charged(&mut facet_sources, "FreeCAD mesh facet visits")? else {
+                break;
+            };
+            let triangle = [
+                reader.index(byte_order, point_count, "mesh facet point")?,
+                reader.index(byte_order, point_count, "mesh facet point")?,
+                reader.index(byte_order, point_count, "mesh facet point")?,
+            ];
+            // The three facet padding words are skipped, not read.
+            for _ in 0..3 {
+                reader.skip(4)?;
+            }
+            triangles.push(triangle);
         }
-    }
-    reader.finish("mesh payload")?;
-    Ok(Tessellation::from_parts(
-        cadmpeg_ir::tessellation::TessellationId::mint(ctx.retained_suffix(
+        for _ in 0..6 {
+            let value = reader.f32(byte_order)?;
+            if !value.is_finite() {
+                return Err(CodecError::Malformed(
+                    "FCStd mesh bounding box contains a non-finite value".into(),
+                ));
+            }
+        }
+        reader.finish("mesh payload")?;
+        Ok::<_, CodecError>((vertices, triangles))
+    })?;
+    // Format escaping diagnostics after restoring storage routing.
+    let id = storage.with_storage(|| {
+        Ok::<_, CodecError>(cadmpeg_ir::tessellation::TessellationId::mint(ctx.retained_suffix(
             &property.id,
             ":mesh",
             "FreeCAD mesh identity",
-        )?)
+        )?))
+    })?
         .map_err(|error| {
             crate::resource::malformed_charged(
                 ctx,
                 format_args!("{error}"),
                 "FreeCAD mesh diagnostic",
             )
-        })?,
+        })?;
+    let tessellation = storage.with_storage(|| Ok::<_, CodecError>(Tessellation::from_parts(
+        id,
         cadmpeg_ir::tessellation::TessellationMesh::List {
             vertices,
             triangles,
         },
         Vec::new(),
-    )
+    )))?
     .map_err(|error| {
         crate::resource::malformed_charged(ctx, format_args!("{error}"), "FreeCAD mesh diagnostic")
-    })?
-    .with_source_object(Some(association(ctx, property)?)))
+    })?;
+    let source = storage.with_storage(|| association(ctx, property))?;
+    storage.commit_value(tessellation.with_source_object(Some(source)))
 }
 
 fn parse_points(
@@ -589,6 +598,7 @@ impl<'a> Reader<'a> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod mesh_publication;
     mod point_publication;
     use super::{association, parse_mesh, parse_points, ByteOrder, Reader};
     use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
