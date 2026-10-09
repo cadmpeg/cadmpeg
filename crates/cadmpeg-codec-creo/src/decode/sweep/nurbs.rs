@@ -279,8 +279,9 @@ fn interpolation_controls(
     let Some(control_count) = points.len().checked_add(2) else {
         return Ok(None);
     };
-    let (mut matrix, mut matrix_storage) =
-        ctx.temporary_vec(0, "creo interpolation matrix rows")?;
+    let matrix_owned_storage = ctx.temporary_vec(0, "creo interpolation matrix rows")?;
+    let mut matrix_storage = matrix_owned_storage.1;
+    let mut matrix = matrix_owned_storage.0;
     ctx.reserve_scoped_vec(
         &mut matrix_storage,
         &mut matrix,
@@ -419,8 +420,9 @@ fn saved_spline_curve(
     let Some(control_points) = control_points else {
         return Ok(None);
     };
-    let (mut converted_controls, mut converted_storage) =
-        ctx.temporary_vec(0, "creo saved spline controls")?;
+    let converted_controls_owned_storage = ctx.temporary_vec(0, "creo saved spline controls")?;
+    let mut converted_storage = converted_controls_owned_storage.1;
+    let mut converted_controls = converted_controls_owned_storage.0;
     ctx.reserve_scoped_vec(
         &mut converted_storage,
         &mut converted_controls,
@@ -609,8 +611,9 @@ pub(in super::super) fn interpolation_spline_surface(
     }
     let mut v_samples = 0..v_sample_count;
     while let Some(v) = ctx.next_charged(&mut v_samples, "creo interpolation v sample scan")? {
-        let (mut samples, mut sample_storage) =
-            ctx.temporary_vec(0, "creo interpolation surface position samples")?;
+        let samples_owned_storage = ctx.temporary_vec(0, "creo interpolation surface position samples")?;
+        let mut sample_storage = samples_owned_storage.1;
+        let mut samples = samples_owned_storage.0;
         ctx.reserve_scoped_vec(
             &mut sample_storage,
             &mut samples,
@@ -643,8 +646,9 @@ pub(in super::super) fn interpolation_spline_surface(
     }
     let mut v_derivative_controls = [Vec::new(), Vec::new()];
     for (v_boundary, derivative_controls) in v_derivative_controls.iter_mut().enumerate() {
-        let (mut samples, mut sample_storage) =
-            ctx.temporary_vec(0, "creo interpolation surface derivative samples")?;
+        let samples_owned_storage = ctx.temporary_vec(0, "creo interpolation surface derivative samples")?;
+        let mut sample_storage = samples_owned_storage.1;
+        let mut samples = samples_owned_storage.0;
         ctx.reserve_scoped_vec(
             &mut sample_storage,
             &mut samples,
@@ -675,8 +679,9 @@ pub(in super::super) fn interpolation_spline_surface(
         };
         *derivative_controls = controls;
     }
-    let (mut pole_rows, mut pole_storage) =
-        ctx.temporary_vec(0, "creo interpolation surface NURBS pole rows")?;
+    let pole_rows_owned_storage = ctx.temporary_vec(0, "creo interpolation surface NURBS pole rows")?;
+    let mut pole_storage = pole_rows_owned_storage.1;
+    let mut pole_rows = pole_rows_owned_storage.0;
     ctx.reserve_scoped_vec(
         &mut pole_storage,
         &mut pole_rows,
@@ -1385,8 +1390,9 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     else {
         return Ok(None);
     };
-    let (mut controls, mut control_storage) =
-        ctx.temporary_vec(0, "creo tabulated-cylinder directrix controls")?;
+    let controls_owned_storage = ctx.temporary_vec(0, "creo tabulated-cylinder directrix controls")?;
+    let mut control_storage = controls_owned_storage.1;
+    let mut controls = controls_owned_storage.0;
     ctx.reserve_scoped_vec(
         &mut control_storage,
         &mut controls,
