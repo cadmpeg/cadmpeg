@@ -2052,6 +2052,7 @@ fn wide_string(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<String, FramingError> {
+    ctx.charge_work(0, "Rhino wide string")?;
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if chunk.typecode != UTF8_STRING_CHUNK || chunk.short() {
         return Err(FramingError::structural(
@@ -2065,9 +2066,10 @@ fn wide_string(
         0 if value.remaining() == 0 => String::new(),
         1 => {
             let bytes = value.take(value.remaining())?;
-            let text = std::str::from_utf8(bytes).map_err(|_| {
-                FramingError::structural(value.position(), "wide string is not UTF-8")
-            })?;
+            let text = ctx.validate_utf8(bytes, "validate Rhino wide string UTF-8")?
+                .map_err(|_| {
+                    FramingError::structural(value.position(), "wide string is not UTF-8")
+                })?;
             ctx.copy_retained_text(text, "Rhino wide string")?
         }
         _ => {

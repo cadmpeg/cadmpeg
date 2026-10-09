@@ -1933,3 +1933,5 @@ mod userdata_search;
 mod known_searches;
 
 mod xml_children;
+
+mod wide_utf8;
