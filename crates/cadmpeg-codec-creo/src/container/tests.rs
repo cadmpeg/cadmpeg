@@ -1444,3 +1444,5 @@ mod identity_index;
 mod family_pointer;
 
 mod thumbnail;
+
+mod definition_operation_lifetime;
