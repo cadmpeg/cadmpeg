@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Analytic third partials and second partials of an oriented offset.
+//! Analytic higher partials and second partials of an oriented offset.
+
+pub(super) mod normal_third;
 
 use super::super::{admit_lanes, vector_sum, EvaluationFailure, SurfaceJet};
 use crate::features::FiniteVector3;
@@ -70,6 +72,55 @@ pub(in crate::eval) fn analytic_third(
     admit_lanes(lanes)
 }
 
+pub(in crate::eval) fn analytic_fourth(
+    geometry: &SolvedSurfaceGeometry,
+    u: f64,
+    v: f64,
+    base: SurfaceJet,
+) -> Result<[FiniteVector3; 5], EvaluationFailure<()>> {
+    let zero = Vector3::new(0.0, 0.0, 0.0);
+    let [duu, duv, dvv] = base.second?;
+    let (neg_uu, neg_uv, neg_vv) = (duu.negated().get(), duv.negated().get(), dvv.negated().get());
+    let lanes = match geometry {
+        SolvedSurfaceGeometry::Cylinder(_) => [neg_uu, zero, zero, zero, zero],
+        SolvedSurfaceGeometry::Cone(_) => [neg_uu, neg_uv, zero, zero, zero],
+        SolvedSurfaceGeometry::Sphere(_) => [neg_uu, neg_uv, neg_uu, neg_uv, neg_vv],
+        SolvedSurfaceGeometry::Torus(torus) => {
+            let reference = *torus.frame().reference().as_raw();
+            let transverse = torus.frame().axis().as_raw().cross(reference);
+            let radial = torus.minor_radius().get() * v.cos();
+            let mixed = vector_sum(&[(radial * u.cos(), reference), (radial * u.sin(), transverse)]);
+            [neg_uu, neg_uv, mixed, neg_uv, neg_vv]
+        }
+        _ => return Err(EvaluationFailure::NoValue),
+    };
+    admit_lanes(lanes)
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct OffsetSecond {
+    pub(super) offset: Result<[FiniteVector3; 3], EvaluationFailure<()>>,
+    pub(super) normal: NormalSecond,
+}
+
+#[derive(Clone, Copy)]
+struct NormalDerivative {
+    finite: [FiniteReal; 3],
+    numerator: [Option<ScaledValue>; 3],
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct NormalSecond {
+    normal: [FiniteReal; 3],
+    magnitude: ScaledValue,
+    finite_magnitude: FiniteReal,
+    first: [NormalDerivative; 2],
+    second: [NormalDerivative; 3],
+    radial_first: [Option<ScaledValue>; 2],
+    radial_second_cross: [Option<ScaledValue>; 3],
+    radial_second_normal: [Option<ScaledValue>; 3],
+}
+
 /// A cross-product sum kept outside the binary64 exponent range. Each term
 /// has at most three finite factors, including its fixed coefficient.
 fn cross_sum(terms: &[(f64, Vector3, Vector3)]) -> [Option<ScaledValue>; 3] {
@@ -104,20 +155,22 @@ fn normal_first(
     normal: [FiniteReal; 3],
     radial: Option<ScaledValue>,
     magnitude: ScaledValue,
-) -> Result<[FiniteReal; 3], EvaluationFailure<()>> {
+) -> Result<NormalDerivative, EvaluationFailure<()>> {
     let mut output = [FiniteReal::ZERO; 3];
+    let mut numerator = [None; 3];
     for (axis, lane) in output.iter_mut().enumerate() {
         let mut sum = ExactSignedSum::default();
         sum.add_scaled_product(derivative[axis], FiniteReal::ONE)
             .ok_or(EvaluationFailure::NonFinite(()))?;
         sum.add_scaled_product(radial, normal[axis].negated())
             .ok_or(EvaluationFailure::NonFinite(()))?;
-        *lane = sum.finish().map_or(Ok(FiniteReal::ZERO), |sum| {
+        numerator[axis] = sum.finish();
+        *lane = numerator[axis].map_or(Ok(FiniteReal::ZERO), |sum| {
             sum.quotient(magnitude)
                 .map_err(|_| EvaluationFailure::NonFinite(()))
         })?;
     }
-    Ok(output)
+    Ok(NormalDerivative { finite: output, numerator })
 }
 
 /// Differentiate W=r*n twice, where W=S_u cross S_v. The caller has already
@@ -130,7 +183,7 @@ pub(super) fn offset_second(
     distance: f64,
     normal: Vector3,
     magnitude: f64,
-) -> Result<[FiniteVector3; 3], EvaluationFailure<()>> {
+) -> Result<OffsetSecond, EvaluationFailure<()>> {
     let [du, dv] = FiniteVector3::raw_array(base.first?);
     let [duu, duv, dvv] = FiniteVector3::raw_array(base.second?);
     let [duuu, duuv, duvv, dvvv] = FiniteVector3::raw_array(third?);
@@ -152,15 +205,16 @@ pub(super) fn offset_second(
         cross_sum(&[(1.0, duuv, dv), (1.0, duu, dvv), (1.0, du, duvv)]),
         cross_sum(&[(1.0, duvv, dv), (2.0, duv, dvv), (1.0, du, dvvv)]),
     ];
-    let second = [duu, duv, dvv];
-    let mut output = [FiniteVector3::ZERO; 3];
+    let mut normal_second_lanes = [NormalDerivative { finite: [FiniteReal::ZERO; 3], numerator: [None; 3] }; 3];
+    let mut radial_second_cross = [None; 3];
+    let mut radial_second_normal = [None; 3];
     for (order, (first_axis, second_axis)) in [(0, 0), (0, 1), (1, 1)].into_iter().enumerate() {
         let radial_second = dot_scaled(second_cross[order], normal)?;
         let mut normal_dot = ExactSignedSum::default();
         for axis in 0..3 {
             normal_dot.add_product(
-                first_normal[first_axis][axis].get(),
-                first_normal[second_axis][axis].get(),
+                first_normal[first_axis].finite[axis].get(),
+                first_normal[second_axis].finite[axis].get(),
             );
         }
         let normal_dot = normal_dot.finish();
@@ -169,22 +223,40 @@ pub(super) fn offset_second(
             .add_scaled_product(normal_dot, finite_magnitude)
             .ok_or(non_finite)?;
         let normal_scaled_dot = normal_scaled_dot.finish();
-        let mut lanes = [FiniteReal::ZERO; 3];
-        let base_lanes = [second[order].x, second[order].y, second[order].z];
-        for (axis, lane) in lanes.iter_mut().enumerate() {
+        radial_second_cross[order] = radial_second;
+        radial_second_normal[order] = normal_scaled_dot;
+        for axis in 0..3 {
             let mut derivative = ExactSignedSum::default();
             derivative.add_scaled_product(second_cross[order][axis], FiniteReal::ONE).ok_or(non_finite)?;
             derivative.add_scaled_product(radial_second, normal[axis].negated()).ok_or(non_finite)?;
-            derivative.add_scaled_product(radials[second_axis], first_normal[first_axis][axis].negated()).ok_or(non_finite)?;
-            derivative.add_scaled_product(radials[first_axis], first_normal[second_axis][axis].negated()).ok_or(non_finite)?;
+            derivative.add_scaled_product(radials[second_axis], first_normal[first_axis].finite[axis].negated()).ok_or(non_finite)?;
+            derivative.add_scaled_product(radials[first_axis], first_normal[second_axis].finite[axis].negated()).ok_or(non_finite)?;
             derivative.add_scaled_product(normal_scaled_dot, normal[axis].negated()).ok_or(non_finite)?;
-            let normal_second = derivative.finish().map_or(Ok(FiniteReal::ZERO), |value| value.quotient(magnitude).map_err(|_| non_finite))?;
-            let mut sum = ExactSignedSum::default();
-            sum.add_product(base_lanes[axis], 1.0);
-            sum.add_product(distance, normal_second.get());
-            *lane = sum.finish().map_or(Ok(FiniteReal::ZERO), |value| value.finite().map_err(|_| non_finite))?;
+            let numerator = derivative.finish();
+            let normal_second = numerator.map_or(Ok(FiniteReal::ZERO), |value| value.quotient(magnitude).map_err(|_| non_finite))?;
+            normal_second_lanes[order].finite[axis] = normal_second;
+            normal_second_lanes[order].numerator[axis] = numerator;
         }
-        output[order] = FiniteVector3::from_components(lanes[0], lanes[1], lanes[2]);
     }
-    Ok(output)
+    let offset = (|| {
+        let mut output = [FiniteVector3::ZERO; 3];
+        for (order, second) in [duu, duv, dvv].into_iter().enumerate() {
+            let mut lanes = [FiniteReal::ZERO; 3];
+            for (axis, lane) in lanes.iter_mut().enumerate() {
+                let mut sum = ExactSignedSum::default();
+                sum.add_product([second.x, second.y, second.z][axis], 1.0);
+                sum.add_product(distance, normal_second_lanes[order].finite[axis].get());
+                *lane = sum.finish().map_or(Ok(FiniteReal::ZERO), |value| value.finite().map_err(|_| non_finite))?;
+            }
+            output[order] = FiniteVector3::from_components(lanes[0], lanes[1], lanes[2]);
+        }
+        Ok(output)
+    })();
+    Ok(OffsetSecond {
+        offset,
+        normal: NormalSecond {
+            normal, magnitude, finite_magnitude, first: first_normal, second: normal_second_lanes,
+            radial_first: radials, radial_second_cross, radial_second_normal,
+        },
+    })
 }

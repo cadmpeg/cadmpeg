@@ -15,6 +15,7 @@ mod nurbs;
 mod analytic;
 mod procedural_third;
 mod orientation;
+mod fourth;
 
 fn cylinder() -> SolvedSurfaceGeometry {
     SolvedSurfaceGeometry::Cylinder(CylinderSurface::try_new(
@@ -90,7 +91,9 @@ fn requested_offset_replica_segments_keep_placement_order_and_missing_fourth() {
     let result = evaluate(&ir, &missing, 0.0, 0.0, SurfaceRequest::Second);
     assert_eq!(result.point.get(), Point3::new(7.0, 0.0, 0.0));
     assert!(result.first.is_ok());
-    assert_eq!(result.second, Err(EvaluationFailure::NoValue));
+    // The placed inner chart is the ellipse a=6,b=3; its unit offset
+    // has uu=-a-a*a/(b*b)=-10 at zero.
+    assert_eq!(result.second.unwrap()[0].get(), Vector3::new(-10.0, 0.0, 0.0));
 }
 
 #[test]

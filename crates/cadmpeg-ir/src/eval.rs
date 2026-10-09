@@ -6137,7 +6137,13 @@ fn surface_requested_jet_solved(
             let higher = if matches!(geometry, SolvedSurfaceGeometry::Plane(_)) {
                 HigherPartials::Affine
             } else if request.needs_third() {
-                HigherPartials::Third(surface_request::differentials::analytic_third(geometry, u, v, jet))
+                let third = surface_request::differentials::analytic_third(geometry, u, v, jet);
+                if request == SurfaceRequest::Fourth {
+                    HigherPartials::Fourth {
+                        third,
+                        fourth: surface_request::differentials::analytic_fourth(geometry, u, v, jet),
+                    }
+                } else { HigherPartials::Third(third) }
             } else { HigherPartials::Third(Err(EvaluationFailure::NoValue)) };
             Ok(RequestedJet { jet, higher })
         }
