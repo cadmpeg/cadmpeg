@@ -333,11 +333,11 @@ fn quadratic_third_uses_complete_source_constant_equality_and_nonzero_weight() {
         point: FinitePoint3::new(Point3::new(f64::MAX, -0.0, f64::from_bits(1))).unwrap(),
         weight: NonZeroReal::new(weight).unwrap(),
     });
-    assert_eq!(Homogeneous::quadratic_third(&poles, FiniteReal::new(0.5).unwrap(), width),
+    assert_eq!(Homogeneous::quadratic_higher(&poles, FiniteReal::new(0.5).unwrap(), width, false).and_then(|value| value.third),
         Some([Ok(FiniteReal::ZERO); 3]));
     let poles = [1.0, -1.0, 1.0].map(|weight| WeightedPole3 {
         point: FinitePoint3::new(Point3::new(f64::MAX, -0.0, f64::from_bits(1))).unwrap(),
         weight: NonZeroReal::new(weight).unwrap(),
     });
-    assert!(Homogeneous::quadratic_third(&poles, FiniteReal::new(0.5).unwrap(), width).is_none());
+    assert!(Homogeneous::quadratic_higher(&poles, FiniteReal::new(0.5).unwrap(), width, false).and_then(|value| value.third).is_none());
 }
