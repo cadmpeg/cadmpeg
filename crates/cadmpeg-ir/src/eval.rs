@@ -59,6 +59,7 @@ mod priority_queue;
 mod rational;
 mod sketch_offset;
 mod sweep_law;
+mod surface_request;
 #[cfg(test)]
 mod test_support;
 use basis::fill_bspline_basis;
@@ -67,6 +68,7 @@ use polyline::polyline_point;
 use priority_queue::PriorityQueue;
 use rational::{finite_lanes, Homogeneous};
 use sketch_offset::{clamped_nurbs_pcurve_endpoint_frames, fitted_nurbs_offset_candidate};
+use surface_request::{HigherPartials, RequestedJet, SurfaceRequest};
 
 const DEFAULT_NURBS_SURFACE_INVERSION_WORK: usize = 1_000_000;
 
@@ -2980,6 +2982,14 @@ struct NurbsSurfaceFirstPartials {
     lanes: [[FiniteReal; 3]; 2],
 }
 
+/// The second derivative bases, homogeneous sums and projected lanes.
+/// The requested third order reuses all of this actual local state.
+struct NurbsSurfaceSecondPartials {
+    bases: [Cow<'static, [f64]>; 2],
+    sums: [Homogeneous; 3],
+    lanes: [[FiniteReal; 3]; 3],
+}
+
 /// The homogeneous sum of a NURBS surface's poles local to `spans`, blended
 /// by `u_values` along `u` and `v_values` along `v`. A missing pole and a
 /// value that is not finite leave no sum.
@@ -3033,6 +3043,25 @@ impl NurbsSurfaceLocal<'_> {
         )
     }
 
+    /// A third-only homogeneous derivative sum over the exact pole window.
+    fn derivative_sum(
+        &self,
+        scratch: &decode::Scratch<'_, '_>,
+        u_values: &[f64],
+        v_values: &[f64],
+    ) -> Option<Homogeneous> {
+        let count = u_values.len().checked_mul(v_values.len())?;
+        scratch.admit(Homogeneous::derivative_sum(scratch, (0..count).map(|local| {
+            let (i, j) = (local / v_values.len(), local % v_values.len());
+            let (pole_u, pole_v) = (self.spans[0] - self.degrees[0] + i, self.spans[1] - self.degrees[1] + j);
+            Some((
+                [u_values[i], v_values[j]],
+                self.surface.weight(pole_u, pole_v).map_or(1.0, NonZeroReal::get),
+                self.surface.pole(pole_u, pole_v)?,
+            ))
+        })))?
+    }
+
     /// The first partials, or why they have none. At the finite point over
     /// finite knots, a derivative basis that is absent, a sum that is absent
     /// and a projection that is absent or overflows each left the finite
@@ -3084,7 +3113,7 @@ impl NurbsSurfaceLocal<'_> {
         &self,
         scratch: &decode::Scratch<'_, '_>,
         first: &NurbsSurfaceFirstPartials,
-    ) -> Result<[[FiniteReal; 3]; 3], EvaluationFailure<()>> {
+    ) -> Result<NurbsSurfaceSecondPartials, EvaluationFailure<()>> {
         scratch.settle((|| {
             let non_finite = EvaluationFailure::NonFinite(());
             let knots = [self.surface.u_knots(), self.surface.v_knots()];
@@ -3115,13 +3144,79 @@ impl NurbsSurfaceLocal<'_> {
                 finite_lanes(sum.project(self.base, corrections).ok_or(non_finite)?)
                     .map_err(|_| non_finite)
             };
-            Ok([
+            let lanes = [
                 lane(uu, &[(uu, self.point), (u, du), (u, du)])?,
                 lane(uv, &[(uv, self.point), (u, dv), (v, du)])?,
                 lane(vv, &[(vv, self.point), (v, dv), (v, dv)])?,
+            ];
+            Ok(NurbsSurfaceSecondPartials {
+                bases: [u_second, v_second], sums: [uu, uv, vv], lanes,
+            })
+        })())
+    }
+    /// Differentiate H=w*S three times. Polynomial homogeneous derivatives
+    /// above the stored degree are zero; rational quotient corrections remain.
+    fn third(
+        &self,
+        scratch: &decode::Scratch<'_, '_>,
+        first: &NurbsSurfaceFirstPartials,
+        second: &NurbsSurfaceSecondPartials,
+    ) -> Result<[[FiniteReal; 3]; 4], EvaluationFailure<()>> {
+        scratch.settle((|| {
+            scratch.admission.independent_cost(nurbs_surface_third_evaluation_cost(self.degrees))?;
+            let non_finite = EvaluationFailure::NonFinite(());
+            let knots = [self.surface.u_knots(), self.surface.v_knots()];
+            let third = |axis: usize| basis::bspline_basis_third_derivative(
+                scratch, knots[axis], self.degrees[axis], self.spans[axis], self.parameters[axis],
+            ).ok_or_else(|| scratch.failure(non_finite));
+            let bases = [third(0)?, third(1)?];
+            let sum = |active, u: &[f64], v: &[f64]| if active {
+                self.derivative_sum(scratch, u, v).ok_or(non_finite)
+            } else { Ok(Homogeneous::zero()) };
+            let [u_degree, v_degree] = self.degrees;
+            let uuu = sum(u_degree >= 3, &bases[0], &self.bases[1])?;
+            let uuv = sum(u_degree >= 2 && v_degree >= 1, &second.bases[0], &first.bases[1])?;
+            let uvv = sum(u_degree >= 1 && v_degree >= 2, &first.bases[0], &second.bases[1])?;
+            let vvv = sum(v_degree >= 3, &self.bases[0], &bases[1])?;
+            let [u, v] = first.sums;
+            let [uu, uv, vv] = second.sums;
+            let [du, dv] = first.lanes;
+            let [duu, duv, dvv] = second.lanes;
+            let lane = |sum: Homogeneous, corrections: &[(Homogeneous, [FiniteReal; 3])]| {
+                finite_lanes(sum.project(self.base, corrections).ok_or(non_finite)?).map_err(|_| non_finite)
+            };
+            Ok([
+                lane(uuu, &[(uuu, self.point), (uu, du), (uu, du), (uu, du), (u, duu), (u, duu), (u, duu)])?,
+                lane(uuv, &[(uuv, self.point), (uu, dv), (uv, du), (uv, du), (u, duv), (u, duv), (v, duu)])?,
+                lane(uvv, &[(uvv, self.point), (vv, du), (uv, dv), (uv, dv), (v, duv), (v, duv), (u, dvv)])?,
+                lane(vvv, &[(vvv, self.point), (vv, dv), (vv, dv), (vv, dv), (v, dvv), (v, dvv), (v, dvv)])?,
             ])
         })())
     }
+}
+
+/// Extra independent work for the actual third recurrence rows and homogeneous
+/// pole traversals. Existing point/first/second independent laws are unchanged.
+fn nurbs_surface_third_evaluation_cost([u_degree, v_degree]: [usize; 2]) -> Option<usize> {
+    let basis_work = |degree: usize| {
+        if degree < 3 { return Some(0); }
+        let base = degree - 3;
+        let base_work = if base <= 1 { 0 } else {
+            // Heap initialization: q+1. Cox-de Boor: first write, triangular
+            // blends, then one saved value per row.
+            base.checked_add(1)?.checked_add(1)?
+                .checked_add(base.checked_mul(base.checked_add(1)?)?.checked_div(2)?)?
+                .checked_add(base)?
+        };
+        base_work.checked_add(degree.checked_mul(3)?)
+    };
+    let supports = u_degree.checked_add(1)?.checked_mul(v_degree.checked_add(1)?)?;
+    let sums = usize::from(u_degree >= 3)
+        + usize::from(u_degree >= 2 && v_degree >= 1)
+        + usize::from(u_degree >= 1 && v_degree >= 2)
+        + usize::from(v_degree >= 3);
+    let visits = if supports > 2 { supports.checked_mul(sums)? } else { 0 };
+    basis_work(u_degree)?.checked_add(basis_work(v_degree)?)?.checked_add(visits)
 }
 
 /// A tensor-product NURBS surface at `(u, v)`, or why it has no finite
@@ -3244,27 +3339,33 @@ fn nurbs_surface_first_order(
 
 /// A NURBS surface's point with its first and second partials at `(u, v)`,
 /// each order with its own outcome, or why the point has none.
-fn nurbs_surface_jet(
+fn nurbs_surface_requested_jet(
     scratch: &decode::Scratch<'_, '_>,
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
-) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
-    scratch
-        .admission
-        .independent_cost(nurbs_surface_partials_evaluation_cost(surface))?;
+    request: SurfaceRequest,
+) -> Result<RequestedJet, EvaluationFailure<Point3>> {
+    scratch.admission.independent_cost(nurbs_surface_partials_evaluation_cost(surface))?;
     let result = (|| {
         let local = nurbs_surface_local(scratch, surface, u_at, v_at)?;
         let [x, y, z] = local.point;
         let first = local.first(scratch);
-        let second = first
-            .as_ref()
-            .map_err(|failure| *failure)
+        let second = first.as_ref().map_err(|failure| *failure)
             .and_then(|first| local.second(scratch, first));
-        Ok(SurfaceJet {
-            point: FinitePoint3::from_coordinates(x, y, z),
-            first: first.map(|first| first.lanes.map(finite_vector)),
-            second: second.map(|lanes| lanes.map(finite_vector)),
+        let third = if request.needs_third() {
+            first.as_ref().map_err(|failure| *failure).and_then(|first| {
+                second.as_ref().map_err(|failure| *failure)
+                    .and_then(|second| local.third(scratch, first, second))
+            }).map(|lanes| lanes.map(finite_vector))
+        } else { Err(EvaluationFailure::NoValue) };
+        Ok(RequestedJet {
+            jet: SurfaceJet {
+                point: FinitePoint3::from_coordinates(x, y, z),
+                first: first.map(|first| first.lanes.map(finite_vector)),
+                second: second.map(|second| second.lanes.map(finite_vector)),
+            },
+            higher: HigherPartials::Third(third),
         })
     })();
     scratch.settle(result)
@@ -3758,7 +3859,7 @@ pub fn nurbs_surface_second_partials<'ctx, 'arena: 'ctx>(
     v_at: f64,
 ) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
     let scratch = decode::Scratch::new(admission);
-    let result = (|| nurbs_surface_jet(&scratch, surface, u_at, v_at)?.second_partials())();
+    let result = (|| nurbs_surface_requested_jet(&scratch, surface, u_at, v_at, SurfaceRequest::Second)?.jet.second_partials())();
     scratch.settle(result)
 }
 
@@ -6440,45 +6541,43 @@ fn analytic_surface_second_partials(
 ///
 /// The descent is bounded by [`PlacedSurface`](crate::geometry::PlacedSurface)
 /// construction; no arm follows an arena id.
-fn surface_jet_solved(
+fn surface_requested_jet_solved(
     scratch: &decode::Scratch<'_, '_>,
     geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
-) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
-    scratch
-        .unless_refused()
-        .map_err(EvaluationFailure::ResourceLimit)?;
+    request: SurfaceRequest,
+) -> Result<RequestedJet, EvaluationFailure<Point3>> {
+    scratch.unless_refused().map_err(EvaluationFailure::ResourceLimit)?;
     match geometry {
-        SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_jet(scratch, nurbs, u, v),
+        SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_requested_jet(scratch, nurbs, u, v, request),
         SolvedSurfaceGeometry::Transformed(placed) => {
             scratch.admission.independent_cost(Some(1))?;
-            scratch
-                .work(1, "placed surface partial step")
+            scratch.work(1, "placed surface partial step")
                 .ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
-            let _depth = scratch
-                .enter()
-                .ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
-            placed_jet(
-                *placed.transform(),
-                surface_jet_solved(scratch, placed.basis(), u, v),
-            )
+            let _depth = scratch.enter().ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
+            let transform = *placed.transform();
+            let basis = surface_requested_jet_solved(scratch, placed.basis(), u, v, request)
+                .map_err(|failure| failure.map(|point| placed_reach(transform, point)))?;
+            Ok(RequestedJet { jet: placed_jet(transform, Ok(basis.jet))?, higher: basis.higher.placed(transform) })
         }
         _ => {
-            let partials = analytic_surface_second_partials(geometry, u, v)
-                .ok_or(EvaluationFailure::NoValue)?;
-            Ok(SurfaceJet::formed(
-                admit_point(partials.point)?,
-                Ok([partials.du, partials.dv]),
-                Ok([partials.duu, partials.duv, partials.dvv]),
-            ))
+            let partials = analytic_surface_second_partials(geometry, u, v).ok_or(EvaluationFailure::NoValue)?;
+            let jet = SurfaceJet::formed(admit_point(partials.point)?,
+                Ok([partials.du, partials.dv]), Ok([partials.duu, partials.duv, partials.dvv]));
+            let higher = if matches!(geometry, SolvedSurfaceGeometry::Plane(_)) {
+                HigherPartials::Affine
+            } else if request.needs_third() {
+                HigherPartials::Third(surface_request::differentials::analytic_third(geometry, u, v, jet))
+            } else { HigherPartials::Third(Err(EvaluationFailure::NoValue)) };
+            Ok(RequestedJet { jet, higher })
         }
     }
 }
 
 /// The point with the first partials of a directly stored surface at
 /// `(u, v)`, the partials with their own outcome, or why the point has none,
-/// in the terms of [`surface_jet_solved`].
+/// in the terms of [`surface_requested_jet_solved`].
 ///
 /// The descent is bounded by [`PlacedSurface`](crate::geometry::PlacedSurface)
 /// construction; no arm follows an arena id.
@@ -6581,7 +6680,7 @@ pub fn surface_second_partials_solved<'ctx, 'arena: 'ctx>(
     v: f64,
 ) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
     let scratch = decode::Scratch::new(admission);
-    let result = (|| surface_jet_solved(&scratch, geometry, u, v)?.second_partials())();
+    let result = (|| surface_requested_jet_solved(&scratch, geometry, u, v, SurfaceRequest::Second)?.jet.second_partials())();
     scratch.settle(result)
 }
 
@@ -8319,7 +8418,7 @@ fn model_surface_first_order_by_id(
         _ => None,
     };
     let cached =
-        || model_surface_jet_by_id(admission, index, surface, u, v).map(SurfaceJet::first_order);
+        || surface_request::model_jet(admission, index, surface, u, v, SurfaceRequest::First).map(SurfaceJet::first_order);
     let complete = |order: &Result<SurfaceFirstOrder, EvaluationFailure<Point3>>| match order {
         Ok(order) => match &order.first {
             Ok(_) => Ok(true),
@@ -8361,197 +8460,9 @@ fn model_surface_second_partials_by_id(
     v: f64,
 ) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
     admission.within_model(|admission| {
-        model_surface_jet_by_id(admission, index, surface, u, v)
+        surface_request::model_jet(admission, index, surface, u, v, SurfaceRequest::Second)
             .and_then(SurfaceJet::second_partials)
     })
-}
-
-/// The point with the first and second partials of an arena surface through
-/// its carrier walk, each order with its own outcome, or why the point has
-/// none. An offset's point reads its support's first partials and its first
-/// partials read the support's second.
-fn model_surface_jet_by_id(
-    admission: admission::EvaluationAdmission<'_, '_>,
-    index: &crate::index::ModelIndex<'_>,
-    surface: &crate::ids::SurfaceId,
-    u: f64,
-    v: f64,
-) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
-    let mapping = model_surface_mapping(admission, index, surface, u, v)?;
-    let jet = if mapping.offset_distance == 0.0 {
-        mapping.base
-    } else {
-        offset_surface_jet(mapping.base, mapping.offset_distance)?
-    };
-    let reversed = |vector: FiniteVector3, reversed: bool| {
-        if reversed {
-            vector.negated()
-        } else {
-            vector
-        }
-    };
-    let [u_reversed, v_reversed] = mapping.reversed;
-    Ok(SurfaceJet {
-        point: jet.point,
-        first: jet
-            .first
-            .map(|[du, dv]| [reversed(du, u_reversed), reversed(dv, v_reversed)]),
-        second: jet
-            .second
-            .map(|[duu, duv, dvv]| [duu, reversed(duv, u_reversed != v_reversed), dvv]),
-    })
-}
-
-/// A surface's carrier walk to its direct support: the support's jet at the
-/// mapped support coordinates, the offset from it, and the directions the
-/// mapping reverses.
-#[derive(Clone, Copy)]
-struct SurfaceMapping {
-    /// The direct support's jet at the mapped support coordinates.
-    base: SurfaceJet,
-    /// Signed distance from `base` to the evaluated surface.
-    offset_distance: f64,
-    /// Whether the support's `u` and `v` run against the evaluated `u` and
-    /// `v`.
-    reversed: [bool; 2],
-    /// Support normal orientation relative to the direct base normal.
-    orientation: f64,
-}
-
-/// The carrier walk of an arena surface to its direct support at `(u, v)`,
-/// or why its point has none.
-fn model_surface_mapping(
-    admission: admission::EvaluationAdmission<'_, '_>,
-    index: &crate::index::ModelIndex<'_>,
-    surface: &crate::ids::SurfaceId,
-    u: f64,
-    v: f64,
-) -> Result<SurfaceMapping, EvaluationFailure<Point3>> {
-    let budget = admission.work_slice();
-    let depth_guard =
-        ModelEvaluationDepthGuard::enter(budget).map_err(EvaluationFailure::ResourceLimit)?;
-    let no_value = EvaluationFailure::NoValue;
-    admission.model_step()?;
-    let carrier = index
-        .surfaces(surface.as_str(), admission)
-        .map_err(EvaluationFailure::ResourceLimit)?
-        .ok_or(no_value)?;
-    if !depth_guard.bind(
-        ModelEvaluationIdentity::Surface(std::ptr::from_ref(carrier)),
-        admission,
-    ) {
-        return Err(no_value);
-    }
-    let procedural = index
-        .procedural_surface_for_surface(surface.as_str(), admission)
-        .map_err(EvaluationFailure::ResourceLimit)?;
-    let carrier_interval =
-        procedural.and_then(|procedural| record_u_interval(procedural.record_bounds()));
-    let direct = |base: SurfaceJet| SurfaceMapping {
-        base,
-        offset_distance: 0.0,
-        reversed: [false, false],
-        orientation: 1.0,
-    };
-    match procedural.map(crate::geometry::ProceduralSurface::definition) {
-        Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => {
-            model_axis_revolution_jet(
-                admission,
-                index,
-                definition_payload.directrix(),
-                definition_payload.axis_origin().get(),
-                definition_payload.axis_direction(),
-                u,
-                v,
-            )
-            .map(direct)
-        }
-        Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
-            model_native_extrusion_jet(admission, index, definition_payload, carrier_interval, u, v)
-                .map(direct)
-        }
-        Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => {
-            model_linear_sweep_jet(admission, index, definition_payload, u, v).map(direct)
-        }
-        Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => {
-            model_native_revolution_jet(
-                admission,
-                index,
-                definition_payload,
-                carrier_interval,
-                u,
-                v,
-            )
-            .map(direct)
-        }
-        Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => {
-            model_ruled_surface_jet(admission, index, first, second, u, v).map(direct)
-        }
-        Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => {
-            model_sum_surface_jet(admission, index, definition_payload, u, v).map(direct)
-        }
-        Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
-            model_surface_mapping(admission, index, support, u, v)
-        }
-        Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
-            model_surface_mapping(admission, index, source, u, v).and_then(|source| {
-                let base = if source.offset_distance == 0.0 {
-                    source.base
-                } else {
-                    offset_surface_jet(source.base, source.offset_distance)?
-                };
-                Ok(SurfaceMapping {
-                    base: placed_jet(*transform, Ok(base))?,
-                    offset_distance: 0.0,
-                    reversed: source.reversed,
-                    orientation: source.orientation * transform.orientation().ok_or(no_value)?,
-                })
-            })
-        }
-        Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
-            let support = definition_payload.support();
-            let parameter_ranges = definition_payload
-                .parameter_ranges()
-                .map(crate::geometry::DirectedParameterRange::finite_endpoints);
-            let u_sense = definition_payload.u_sense();
-            let v_sense = definition_payload.v_sense();
-            subset_support_parameters_with_derivatives(u, v, parameter_ranges, *u_sense, *v_sense)
-                .ok_or(no_value)
-                .and_then(|(support_u, support_v, u_derivative, v_derivative)| {
-                    let support =
-                        model_surface_mapping(admission, index, support, support_u, support_v)?;
-                    let [u_reversed, v_reversed] = support.reversed;
-                    Ok(SurfaceMapping {
-                        base: support.base,
-                        offset_distance: support.offset_distance,
-                        reversed: [
-                            u_reversed != (u_derivative < 0.0),
-                            v_reversed != (v_derivative < 0.0),
-                        ],
-                        orientation: support.orientation * u_derivative * v_derivative,
-                    })
-                })
-        }
-        Some(ProceduralSurfaceDefinition::ParallelOffset(payload)) => {
-            model_surface_mapping(admission, index, payload.support(), u, v).map(|support| {
-                SurfaceMapping {
-                    offset_distance: support.offset_distance
-                        + payload.distance().get() * support.orientation,
-                    ..support
-                }
-            })
-        }
-        Some(ProceduralSurfaceDefinition::Offset(payload)) => {
-            model_surface_mapping(admission, index, payload.support(), u, v).map(|support| {
-                SurfaceMapping {
-                    offset_distance: support.offset_distance
-                        + payload.distance().get() * support.orientation,
-                    ..support
-                }
-            })
-        }
-        _ => surface_jet(admission, &carrier.geometry, u, v).map(direct),
-    }
 }
 
 fn subset_support_parameters_with_derivatives(
@@ -8584,77 +8495,6 @@ fn subset_parameter(
     let agrees = sense.unwrap_or(end >= start);
     let derivative = if agrees { 1.0 } else { -1.0 };
     Some((start + derivative * parameter, derivative))
-}
-
-/// The jet of the offset by `distance` along the unit normal of `base`, or
-/// why its point has none. The offset point reads the base's first partials,
-/// and its first partials read the base's second. A distance or normal
-/// outside the finite range reaches no coordinate; a zero normal has no
-/// direction. The second partials are the base's.
-fn offset_surface_jet(
-    base: SurfaceJet,
-    distance: f64,
-) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
-    let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
-    if !distance.is_finite() {
-        return Err(unreached);
-    }
-    let [du, dv] = FiniteVector3::raw_array(
-        base.first
-            .map_err(|failure| failure.map(|()| UNREACHED_POINT))?,
-    );
-    let normal_vector = du.cross(dv);
-    let normal_magnitude = normal_vector.norm();
-    if !normal_magnitude.is_finite() {
-        return Err(unreached);
-    }
-    if normal_magnitude == 0.0 {
-        return Err(EvaluationFailure::NoValue);
-    }
-    let normal = Vector3::new(
-        normal_vector.x / normal_magnitude,
-        normal_vector.y / normal_magnitude,
-        normal_vector.z / normal_magnitude,
-    );
-    let base_point = base.point.get();
-    let point = admit_point(Point3::new(
-        base_point.x + distance * normal.x,
-        base_point.y + distance * normal.y,
-        base_point.z + distance * normal.z,
-    ))?;
-    let unit_normal_derivative = |derivative: Vector3| {
-        let normal_component =
-            normal.x * derivative.x + normal.y * derivative.y + normal.z * derivative.z;
-        Vector3::new(
-            (derivative.x - normal_component * normal.x) / normal_magnitude,
-            (derivative.y - normal_component * normal.y) / normal_magnitude,
-            (derivative.z - normal_component * normal.z) / normal_magnitude,
-        )
-    };
-    let first = base.second.and_then(|second| {
-        let [duu, duv, dvv] = FiniteVector3::raw_array(second);
-        let normal_u =
-            unit_normal_derivative(vector_sum(&[(1.0, duu.cross(dv)), (1.0, du.cross(duv))]));
-        let normal_v =
-            unit_normal_derivative(vector_sum(&[(1.0, duv.cross(dv)), (1.0, du.cross(dvv))]));
-        admit_lanes([
-            Vector3::new(
-                du.x + distance * normal_u.x,
-                du.y + distance * normal_u.y,
-                du.z + distance * normal_u.z,
-            ),
-            Vector3::new(
-                dv.x + distance * normal_v.x,
-                dv.y + distance * normal_v.y,
-                dv.z + distance * normal_v.z,
-            ),
-        ])
-    });
-    Ok(SurfaceJet {
-        point,
-        first,
-        second: base.second,
-    })
 }
 
 /// `(end - start) / (domain_end - domain_start)` over exact differences. An
@@ -9606,13 +9446,14 @@ pub fn surface_second_partials<'ctx, 'arena: 'ctx>(
 ) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
     let scratch = decode::Scratch::new(admission);
     let result = (|| {
-        surface_jet_solved(
+        surface_requested_jet_solved(
             &scratch,
             geometry.solved().ok_or(EvaluationFailure::NoValue)?,
             u,
             v,
+            SurfaceRequest::Second,
         )?
-        .second_partials()
+        .jet.second_partials()
     })();
     scratch.settle(result)
 }
@@ -9636,26 +9477,6 @@ fn surface_first_order<'ctx, 'arena: 'ctx>(
     let scratch = decode::Scratch::new(admission);
     let result = (|| {
         surface_first_order_solved(
-            &scratch,
-            geometry.solved().ok_or(EvaluationFailure::NoValue)?,
-            u,
-            v,
-        )
-    })();
-    scratch.settle(result)
-}
-
-/// [`surface_jet_solved`] of a surface carrier's solved geometry. A
-/// procedural carrier without a solved cache has no value here.
-fn surface_jet<'ctx, 'arena: 'ctx>(
-    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
-    geometry: &SurfaceGeometry,
-    u: f64,
-    v: f64,
-) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
-    let scratch = decode::Scratch::new(admission);
-    let result = (|| {
-        surface_jet_solved(
             &scratch,
             geometry.solved().ok_or(EvaluationFailure::NoValue)?,
             u,

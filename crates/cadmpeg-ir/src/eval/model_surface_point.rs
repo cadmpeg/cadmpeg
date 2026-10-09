@@ -12,7 +12,7 @@ use super::model_native_extrusion_point;
 use super::model_native_revolution_point;
 use super::model_ruled_surface_jet;
 use super::model_sum_surface_jet;
-use super::model_surface_jet_by_id;
+use super::surface_request::{model_jet, SurfaceRequest};
 use super::model_surface_point;
 use super::offset;
 use super::placed_reach;
@@ -499,7 +499,7 @@ pub(super) fn model_surface_point_by_id_inner(
                     return Some(evaluation);
                 }
                 if normal {
-                    let placed_normal = model_surface_jet_by_id(admission, index, source, u, v)
+                    let placed_normal = model_jet(admission, index, source, u, v, SurfaceRequest::First)
                         .map_err(|failure| failure.map(|_| ()))
                         .and_then(|jet| {
                             let [du, dv] = placed_vectors(*transform, jet.first?)?;

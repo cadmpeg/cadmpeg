@@ -306,3 +306,60 @@ fn basis_leaf_boundaries_preserve_original_fused_refusal() {
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
     );
 }
+
+#[test]
+fn requested_third_basis_preserves_every_real_row_refusal() {
+    use crate::eval::decode::Scratch;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, ResourceDimension};
+    let knots = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
+    // The degree-zero base is inline. Three recurrence rows have 2+3+4 writes.
+    for cap in 0..=9 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let scratch = Scratch::new(&ctx);
+        let result = super::bspline_basis_third_derivative(&scratch, &knots, 3, 3, 0.25);
+        let original = if cap == 9 {
+            assert_eq!(result.unwrap().as_ref(), &[-6.0, 18.0, -18.0, 6.0]);
+            ctx.charge_work_limit(1, "test next third basis operation").unwrap_err()
+        } else {
+            assert!(result.is_none());
+            let original = scratch.refused().unwrap();
+            assert_eq!(original.operation, "IR B-spline third derivative work");
+            original
+        };
+        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+        assert_eq!((original.limit, original.used, original.additional), (cap, cap, 1));
+        assert!(super::bspline_basis_third_derivative(&scratch, &[], 0, 0, f64::NAN).is_none());
+        assert_eq!(scratch.refused(), Some(original));
+        drop(scratch);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    }
+}
+
+#[test]
+fn requested_low_degree_third_basis_is_exact_borrowed_zero_without_resources() {
+    use std::borrow::Cow;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_recursion_depth = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    {
+        let scratch = crate::eval::decode::Scratch::new(&ctx);
+        for degree in 0..=2 {
+            let result = super::bspline_basis_third_derivative(&scratch, &[], degree, 0, 0.0).unwrap();
+            assert!(matches!(result, Cow::Borrowed(_)));
+            assert_eq!(result.len(), degree + 1);
+            assert!(result.iter().all(|value| *value == 0.0));
+        }
+        assert_eq!(scratch.refused(), None);
+        drop(scratch);
+    }
+    assert!(ctx.finish_session().is_ok());
+}
