@@ -1897,10 +1897,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     (source).try_clone_for_decode(self.ctx, "FreeCAD geometry source association")
                 })
                 .transpose()?;
-            let has_procedural_construction =
-                ir.model.procedural_surfaces.iter().any(|surface| {
-                    ir.model.procedural_surface_owner(&surface.id) == Some(&base_id)
-                });
+            self.ctx
+                .charge_work(1, "FreeCAD surface construction lookup")?;
+            let has_procedural_construction = base.geometry.procedural_construction().is_some();
             self.ctx
                 .reserve_vec(&mut ir.model.surfaces, 1, "FreeCAD surfaces records")?;
             ir.model.surfaces.push(Surface {
@@ -2855,3 +2854,6 @@ mod admission_tests;
 
 #[cfg(test)]
 mod numerical_range_tests;
+
+#[cfg(test)]
+mod located_geometry_tests;

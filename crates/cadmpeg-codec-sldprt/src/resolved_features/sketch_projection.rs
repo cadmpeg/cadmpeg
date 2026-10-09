@@ -347,6 +347,7 @@ fn project_brep(
             }
         }
         for vertex in &brep.vertices {
+            ctx.charge_work(1, "scan SLDPRT sketch free vertices")?;
             if used_vertices.contains(&vertex.id) {
                 continue;
             }
@@ -355,11 +356,7 @@ fn project_brep(
             };
             let Ok(id) = SketchEntityId::mint(format!(
                 "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
-                edge_entities.len()
-                    + entities
-                        .iter()
-                        .filter(|entity| entity.sketch == sketch_id)
-                        .count()
+                edge_entities.len() + (entities.len() - first_entity)
             )) else {
                 continue;
             };
@@ -409,7 +406,7 @@ fn project_brep(
         let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles) else {
             continue;
         };
-        if profiles.is_empty() && !entities.iter().any(|entity| entity.sketch == sketch_id) {
+        if profiles.is_empty() && entities.len() == first_entity {
             continue;
         }
         crate::annotations::note(
@@ -662,6 +659,81 @@ mod projected_brep_output_tests {
                 None,
             )],
             ..Default::default()
+        }
+    }
+
+    #[test]
+    fn projected_point_ids_use_only_entities_emitted_for_the_current_face() {
+        use cadmpeg_ir::sketches::{
+            SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+        };
+
+        let mut brep = point_brep();
+        for ordinal in 1..32 {
+            brep.vertices.push(Vertex {
+                id: VertexId::mint(format!("test:model:vertex#{ordinal}")).unwrap(),
+                point: brep.points[0].id.clone(),
+                tolerance: None,
+            });
+        }
+        // A missing point must not consume a projected entity ordinal.
+        brep.vertices.insert(
+            1,
+            Vertex {
+                id: VertexId::mint("test:model:vertex#missing").unwrap(),
+                point: PointId::mint("test:model:point#missing").unwrap(),
+                tolerance: None,
+            },
+        );
+        let mut second_face = brep.faces[0].clone();
+        second_face.id = FaceId::mint("test:model:face#second").unwrap();
+        brep.faces.push(second_face);
+        let prior = SketchEntity::new(
+            SketchEntityId::mint("test:model:sketch-entity#prior").unwrap(),
+            SketchId::mint("test:model:sketch#prior").unwrap(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            })
+            .unwrap(),
+        );
+        let mut entities = vec![prior];
+        let mut sketches = Vec::new();
+        let mut constraints = Vec::new();
+        let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let stream = cadmpeg_ir::stream_name!("test:sketch-projection");
+        project_brep(
+            &ctx,
+            &brep,
+            &BrepSketchSource {
+                block_offset: 7,
+                stream_ordinal: 2,
+                stream_offset: 0,
+                source_stream: &stream,
+                sketch_name: "point sketches",
+                configuration: None,
+                native_ref: "native:points",
+            },
+            &mut annotations,
+            &mut sketches,
+            &mut entities,
+            &mut constraints,
+        )
+        .unwrap();
+
+        assert_eq!(sketches.len(), 2);
+        assert_eq!(entities.len(), 65);
+        for (face, sketch) in sketches.iter().enumerate() {
+            for ordinal in 0..32 {
+                let entity = &entities[1 + face * 32 + ordinal];
+                assert_eq!(entity.sketch, sketch.id);
+                assert_eq!(
+                    entity.id().as_str(),
+                    format!("sldprt:model:sketch-entity#7:2:{face}:{ordinal}")
+                );
+            }
         }
     }
 
