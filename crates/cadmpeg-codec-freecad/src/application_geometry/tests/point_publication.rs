@@ -136,3 +136,56 @@ fn point_source_refusal_keeps_original_limit_and_releases_unpublished_identity()
     assert!(matches!(ctx.charge_retained(0, "later point publication"),
         Err(CodecError::ResourceLimit(repeated)) if repeated == original));
 }
+
+#[test]
+fn point_trailing_payload_keeps_completed_row_and_retained_diagnostic() {
+    let property = resource_test_property();
+    let mut bytes = [1_u32.to_le_bytes().as_slice(), &[0; 12]].concat();
+    bytes.push(0);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("context");
+    let mut points = Vec::new();
+    let error = parse_points(&ctx, &property, &bytes, 0, &mut 0, None, &mut points)
+        .expect_err("trailing byte");
+    let CodecError::Malformed(message) = error else {
+        panic!("payload diagnostic")
+    };
+    assert_eq!(message, "point-cloud payload has 1 trailing bytes");
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].id.as_str(), "fcstd:model:point#Geometry:0");
+    assert_eq!(points[0].position().get(), Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(ctx.resource_refusal(), None);
+    let live = points.capacity() * std::mem::size_of::<Point>()
+        + "fcstd:model:point#Geometry:0".len()
+        + property.owner.len() + property.name.len() + message.len();
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_retained(u64::MAX, "point payload diagnostic probe") else {
+        panic!("retained overflow probe")
+    };
+    assert_eq!(limit.used, u64_from_index(live));
+    assert_eq!(message, "point-cloud payload has 1 trailing bytes");
+    assert_eq!(points[0].id.as_str(), "fcstd:model:point#Geometry:0");
+}
+
+#[test]
+fn empty_application_payload_finish_is_free_and_real_refusal_stays_sticky() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    super::Reader::new(&[]).finish(&ctx, "point-cloud payload").expect("empty finish");
+    assert_eq!(ctx.resource_refusal(), None);
+    let Err(CodecError::ResourceLimit(original)) = super::Reader::new(b"x")
+        .finish(&ctx, "point-cloud payload") else {
+        panic!("real diagnostic refuses")
+    };
+    // The core formatter admits its length pass before reserving text.
+    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(original.operation, "FreeCAD application payload diagnostic");
+    assert_eq!(original.used, 0);
+    assert!(matches!(super::Reader::new(b"xx").finish(&ctx, "mesh payload"),
+        Err(CodecError::ResourceLimit(repeated)) if repeated == original));
+}
