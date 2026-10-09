@@ -43,8 +43,12 @@ fn history_projection_refuses_before_the_first_record_visit() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let error = super::super::project(&ctx, &records, None,
-        &mut ir, &mut Diagnostics::new()).expect_err("first source visit refuses");
+    let error = super::super::project(
+        crate::history::ProjectionContext::Metadata(&ctx),
+        &records,
+        &mut ir,
+        &mut Diagnostics::new(),
+    ).expect_err("first source visit refuses");
     let super::super::ProjectionError::Codec(CodecError::ResourceLimit(limit)) = error else {
         panic!("work refusal");
     };
@@ -65,8 +69,12 @@ fn history_projection_first_key_refusal_leaves_later_records_unvisited() {
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let error = super::super::project(&ctx, &records, None,
-        &mut ir, &mut Diagnostics::new()).expect_err("first identity key refuses");
+    let error = super::super::project(
+        crate::history::ProjectionContext::Metadata(&ctx),
+        &records,
+        &mut ir,
+        &mut Diagnostics::new(),
+    ).expect_err("first identity key refuses");
     let super::super::ProjectionError::Codec(CodecError::ResourceLimit(limit)) = error else {
         panic!("work refusal");
     };

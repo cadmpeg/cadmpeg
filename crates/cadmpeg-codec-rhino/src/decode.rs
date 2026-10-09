@@ -9815,20 +9815,20 @@ pub(crate) fn decode(
     context.decode_geometry()?;
     context.decode_dimensions()?;
     context.retain_unbound_history_geometry()?;
-    let geometry_context = context.neutral_scale().map(|scale| {
-        (
+    let history_context = match context.neutral_scale() {
+        Some(scale) => crate::history::ProjectionContext::Geometry {
             expand,
-            scan.archive,
-            scan.metadata.properties.writer_version,
+            archive: scan.archive,
+            writer_version: scan.metadata.properties.writer_version,
             scale,
-        )
-    });
+        },
+        None => crate::history::ProjectionContext::Metadata(expand.ctx()),
+    };
     let mut history_warnings = Diagnostics::new();
     let untyped = context.validate_candidate_fallible(|candidate, _annotations, _arena_storage| {
         crate::history::project(
-            expand.ctx(),
+            history_context,
             &scan.history,
-            geometry_context,
             candidate,
             &mut history_warnings,
         )

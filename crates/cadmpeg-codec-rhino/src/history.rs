@@ -2030,19 +2030,35 @@ fn optional_warning(
     }
 }
 
+/// The original admission session and its optional physical geometry binding.
+#[derive(Clone, Copy)]
+pub(crate) enum ProjectionContext<'a> {
+    Metadata(&'a DecodeContext<'a>),
+    Geometry {
+        expand: crate::mesh::MeshExpand<'a>,
+        archive: ArchiveVersion,
+        writer_version: Option<i64>,
+        scale: MillimeterScale,
+    },
+}
+
+impl<'a> ProjectionContext<'a> {
+    fn ctx(self) -> &'a DecodeContext<'a> {
+        match self {
+            Self::Metadata(ctx) => ctx,
+            Self::Geometry { expand, .. } => expand.ctx(),
+        }
+    }
+}
+
 fn structured_value_properties(
-    ctx: &DecodeContext<'_>,
+    context: ProjectionContext<'_>,
     key: &str,
     value: &Value,
-    geometry_context: Option<(
-        crate::mesh::MeshExpand<'_>,
-        ArchiveVersion,
-        Option<i64>,
-        MillimeterScale,
-    )>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     sink: &mut GeometrySink<'_>,
 ) -> Result<(), CodecError> {
+    let ctx = context.ctx();
     match value {
         Value::ObjectReferences(values) => {
             insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
@@ -2074,7 +2090,9 @@ fn structured_value_properties(
                     format_args!("{key}.{index}.class_id"),
                     value.class_id,
                 )?;
-                if let Some((expand, archive, writer_version, scale)) = geometry_context {
+                if let ProjectionContext::Geometry {
+                    expand, archive, writer_version, scale,
+                } = context {
                     let data = expand.data();
                     let mut geometry_workspace =
                         ctx.reserve_scoped(0, "Rhino history curve workspace")?;
@@ -2348,19 +2366,14 @@ fn structured_value_properties(
 /// Returns counts for untyped values, failed geometry, later dependencies, and
 /// repaired optional geometry channels. The caller reports these counts.
 pub(crate) fn project(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    context: ProjectionContext<'_>,
     records: &[HistoryRecord],
-    geometry_context: Option<(
-        crate::mesh::MeshExpand<'_>,
-        ArchiveVersion,
-        Option<i64>,
-        MillimeterScale,
-    )>,
     ir: &mut cadmpeg_ir::document::CadIr,
     warnings: &mut Diagnostics,
 ) -> Result<(usize, usize, usize, usize), ProjectionError> {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
+    let ctx = context.ctx();
     let mut sink = GeometrySink {
         warnings,
         untyped: 0,
@@ -2549,10 +2562,9 @@ pub(crate) fn project(
             };
             *occurrence += 1;
             structured_value_properties(
-                ctx,
+                context,
                 &key,
                 &value.value,
-                geometry_context,
                 &mut properties,
                 &mut sink,
             )
@@ -2560,7 +2572,7 @@ pub(crate) fn project(
             if let Some(error) = sink.refusal.take() {
                 return Err(ProjectionError::Codec(error));
             }
-            if geometry_context.is_none()
+            if matches!(context, ProjectionContext::Metadata(_))
                 && matches!(&value.value, Value::Geometries(values) if !values.is_empty())
             {
                 insert_property(
