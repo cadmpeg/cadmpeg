@@ -20,6 +20,7 @@ use crate::test_support::with_service_context;
 use crate::StepCodec;
 
 mod normals;
+mod prefix_admission;
 mod retained_body;
 
 const EPS_SAME_POINT: f64 = 1.0e-12;
