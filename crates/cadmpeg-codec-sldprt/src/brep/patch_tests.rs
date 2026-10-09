@@ -6,12 +6,13 @@ use cadmpeg_core::CodecError;
 
 #[test]
 fn curve_attribute_lookup_preserves_carrier_scan_refusal() {
-    let body = crate::test_support::parasolid::line_carrier(10, [0.0; 3], [1.0, 0.0, 0.0]);
+    let mut body = crate::test_support::parasolid::line_carrier(10, [0.0; 3], [1.0, 0.0, 0.0]);
+    let source = body.clone();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-    let error = super::patch::curve_by_attr(&ctx, &body, 10).unwrap_err();
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let error = super::patch::CompactCurvePatch::new(&ctx, &mut body, 10).err().unwrap();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("carrier scan refusal");
     };
@@ -27,7 +28,8 @@ fn compact_attribute_patch_preserves_carrier_scan_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&original, &arena, &policy).unwrap();
-    let error = super::patch::patch_compact_values(&ctx, &mut body, 10, &[0.0; 6]).unwrap_err();
+    let error = super::patch::CompactCurvePatch::new(&ctx, &mut body, 10)
+        .and_then(|patch| patch.apply(&[0.0; 6])).unwrap_err();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("carrier scan refusal");
     };

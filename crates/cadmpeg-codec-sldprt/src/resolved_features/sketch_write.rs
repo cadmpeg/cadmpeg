@@ -1,6 +1,7 @@
 //! Sketch record patching in native streams.
 
 use super::SKETCH_POINT_TOLERANCE;
+use crate::brep::patch::{CompactCurveFamily, CompactCurvePatch};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -897,11 +898,10 @@ fn patch_direct_curve_body(
         PatchCurve::Ellipse(ellipse) => return patch_direct_ellipse(ctx, body, request, ellipse),
         PatchCurve::Nurbs(curve) => return patch_direct_nurbs(ctx, body, request, curve),
     };
-    let frame = match crate::brep::patch::curve_by_attr(ctx, body, request.carrier_attr)? {
-        Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
-            *circle_curve.frame()
-        }
-        Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))) => {
+    let patch = CompactCurvePatch::new(ctx, body, request.carrier_attr)?;
+    let frame = match patch.family() {
+        Some(CompactCurveFamily::Circle(frame)) => frame,
+        Some(CompactCurveFamily::Ellipse(_)) => {
             return Err(cadmpeg_core::CodecError::Malformed(
                 "SLDPRT sketch carrier family changed".into(),
             ));
@@ -923,7 +923,7 @@ fn patch_direct_curve_body(
         cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, radius),
     ));
     let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
-    if !crate::brep::patch::patch_compact_values(ctx, body, request.carrier_attr, &values)? {
+    if !patch.apply(&values)? {
         return Err(cadmpeg_core::CodecError::Malformed(
             "SLDPRT sketch circle carrier cannot be patched".into(),
         ));
@@ -1073,11 +1073,10 @@ fn patch_direct_ellipse(
     request: &CurvePatch,
     ellipse: &PatchEllipse,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let axis = match crate::brep::patch::curve_by_attr(ctx, body, request.carrier_attr)? {
-        Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))) => {
-            *ellipse_curve.frame().axis()
-        }
-        Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))) => {
+    let patch = CompactCurvePatch::new(ctx, body, request.carrier_attr)?;
+    let axis = match patch.family() {
+        Some(CompactCurveFamily::Ellipse(axis)) => axis,
+        Some(CompactCurveFamily::Circle(_)) => {
             return Err(cadmpeg_core::CodecError::Malformed(
                 "SLDPRT sketch carrier family changed".into(),
             ));
@@ -1122,7 +1121,7 @@ fn patch_direct_ellipse(
         cadmpeg_ir::geometry::analytic::EllipseCurve::new(center_3d, frame, radii),
     ));
     let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
-    if !crate::brep::patch::patch_compact_values(ctx, body, request.carrier_attr, &values)? {
+    if !patch.apply(&values)? {
         return Err(cadmpeg_core::CodecError::Malformed(
             "SLDPRT sketch ellipse carrier cannot be patched".into(),
         ));
