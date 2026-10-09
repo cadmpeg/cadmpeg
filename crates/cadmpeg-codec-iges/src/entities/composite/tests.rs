@@ -4,6 +4,7 @@
 
 mod index_admission;
 mod index_sources;
+mod presence_sources;
 mod nurbs;
 mod source_visits;
 

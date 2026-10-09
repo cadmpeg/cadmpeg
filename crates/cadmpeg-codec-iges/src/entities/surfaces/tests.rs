@@ -1878,3 +1878,5 @@ fn homogeneous_rail_extraction_uses_scoped_storage() {
 mod local_limits;
 
 mod phase_storage;
+
+mod parameter_index;
