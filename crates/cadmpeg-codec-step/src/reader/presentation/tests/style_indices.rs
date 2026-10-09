@@ -252,3 +252,62 @@ fn hidden_style_path_cache_visits_prefix_before_work_refusal() {
     });
     assert!(found_prefix_refusal, "no partial hidden-style cache boundary");
 }
+
+#[test]
+fn empty_presentation_identity_index_visits_no_terminal_step() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let source: [&str; 0] = [];
+    let result = super::super::collect_identity_indices(source, &ctx, "test empty identity index")
+        .expect("empty index has no source work or allocation");
+    assert!(result.is_empty());
+    assert_eq!(ctx.resource_refusal(), None);
+    ctx.finish_session().expect("no terminal-step refusal");
+}
+
+#[test]
+fn presentation_identity_index_refuses_only_first_visit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let source = ["step:model:item#1"; 1024];
+    let CodecError::ResourceLimit(refusal) = super::super::collect_identity_indices(
+        source, &ctx, "test first identity visit",
+    ).expect_err("first visit refuses before copying its identity") else {
+        panic!("identity visit resource refusal");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(refusal.operation, "test first identity visit");
+    assert_eq!(refusal.used, 0);
+    assert_eq!(refusal.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
+}
+
+#[test]
+fn empty_presentation_identity_index_preserves_original_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "test original identity refusal")
+        .expect_err("original refusal") else {
+        panic!("identity resource refusal");
+    };
+    let source: [&str; 0] = [];
+    assert!(matches!(super::super::collect_identity_indices(source, &ctx, "test empty identity index"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+    assert_eq!(ctx.resource_refusal(), Some(original));
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+}
