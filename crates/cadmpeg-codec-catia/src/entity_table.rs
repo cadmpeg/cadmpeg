@@ -1397,17 +1397,17 @@ fn numeric_value_packets(
     let mut packets = Vec::new();
     let mut previous_end = 0;
     let mut candidates = candidates.into_iter().peekable();
-    while let Some((packet, range, storage)) =
+    while let Some(candidate) =
         ctx.next_charged(&mut candidates, "catia_numeric_packet_overlap")?
     {
-        let overlaps = previous_end > range.start
+        let overlaps = previous_end > candidate.1.start
             || candidates
                 .peek()
-                .is_some_and(|(_, next, _)| next.start < range.end);
-        previous_end = previous_end.max(range.end);
+                .is_some_and(|(_, next, _)| next.start < candidate.1.end);
+        previous_end = previous_end.max(candidate.1.end);
         if !overlaps {
-            ctx.push_vec(&mut packets, packet, "catia_numeric_value_packets")?;
-            storage.commit()?;
+            ctx.reserve_vec(&mut packets, 1, "catia_numeric_value_packets")?;
+            packets.push(candidate.2.commit_value(candidate.0)?);
         }
     }
     Ok(packets)
@@ -1593,8 +1593,8 @@ pub(crate) fn parse_runs(
             records.push(record);
         }
         if complete {
-            record_storage.commit()?;
-            ctx.push_vec(&mut runs, records, "collect CATIA 7C05 materialized runs")?;
+            ctx.reserve_vec(&mut runs, 1, "collect CATIA 7C05 materialized runs")?;
+            runs.push(record_storage.commit_value(records)?);
         }
     }
     Ok(runs)
@@ -1695,7 +1695,6 @@ struct EntityIdentityCandidate {
     entity_id: u32,
 }
 
-#[derive(Clone)]
 struct EntityRecordCandidates {
     pos: usize,
     total_len: usize,
@@ -1762,7 +1761,7 @@ fn unique_monotone_run(
     }
     let mut layers = Vec::new();
     for record in ctx.admit_iter(&records[1..], "catia_entity_path_record_visits")? {
-        let ((ordered_predecessors, cumulative), predecessor_storage) =
+        let predecessors =
             ctx.with_scoped_storage("catia_entity_predecessor_workspace", || {
                 let mut ordered_predecessors =
                     ctx.collection_vec(previous.len(), "collect CATIA 7C05 ordered predecessors")?;
@@ -1807,13 +1806,13 @@ fn unique_monotone_run(
         let mut layer = Vec::new();
         for identity in ctx.admit_iter(&record.identities, "catia_entity_path_identity_visits")? {
             let predecessor_count = ctx.partition_point(
-                &ordered_predecessors,
+                &predecessors.0.0,
                 |(_, state)| Ok(state.identity.entity_id < identity.entity_id),
                 "resolve CATIA 7C05 identity paths",
             )?;
             let (path_count, predecessor) = predecessor_count
                 .checked_sub(1)
-                .map_or((PathCount::None, None), |index| cumulative[index]);
+                .map_or((PathCount::None, None), |index| predecessors.0.1[index]);
             if path_count != PathCount::None {
                 path_storage.with_storage(|| {
                     ctx.push_vec(
@@ -1831,9 +1830,7 @@ fn unique_monotone_run(
         if layer.is_empty() {
             return Ok(None);
         }
-        drop(ordered_predecessors);
-        drop(cumulative);
-        drop(predecessor_storage);
+        drop(predecessors);
         path_storage.with_storage(|| {
             ctx.push_vec(
                 &mut layers,
@@ -1910,6 +1907,9 @@ fn parse_candidate_variants(
         if definition_len_usize < 11 || definition_end > end {
             return None;
         }
+        if data.get(definition_end..definition_end.checked_add(2)?)? != [0x7c, 0x07] {
+            return None;
+        }
         let definition_start = pos + 13;
         let value_len = View::u32_le_at(data, definition_end + 2)?;
         let value_len_usize = usize::try_from(value_len).ok()?;
@@ -1922,9 +1922,6 @@ fn parse_candidate_variants(
                 Ok(identities) => identities,
                 Err(error) => return Some(Err(error)),
             };
-        if data.get(definition_end..definition_end.checked_add(2)?)? != [0x7c, 0x07] {
-            return None;
-        }
         (!identities.is_empty()).then_some(Ok(EntityRecordCandidates {
             pos,
             total_len,
@@ -2236,7 +2233,7 @@ pub(crate) fn parse_reference_signature(
         .transpose()
     })?;
     if parsed.is_some() {
-        storage.commit()?;
+        return storage.commit_value(parsed);
     }
     Ok(parsed)
 }
@@ -2334,6 +2331,8 @@ pub(crate) fn parse_range_interval(
 
 #[cfg(test)]
 mod tests {
+    mod storage_transfer;
+
     use super::{
         parse_definition_schema_selectors, parse_numeric_pair, value_packets,
         DefinitionSchemaSelector, EntityBody, EntityIdentityCandidate, EntityRecord,
