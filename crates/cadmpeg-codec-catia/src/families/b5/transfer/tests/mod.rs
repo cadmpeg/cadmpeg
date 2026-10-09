@@ -750,3 +750,5 @@ fn build_plan(
 }
 
 mod budget_tests;
+
+mod plan_cache;
