@@ -1979,45 +1979,32 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
         if degree == 0 || !point.is_finite() {
             return Ok(None);
         }
-        let mut source_storage = ctx.reserve_scoped(0, "IR curve inversion source scratch")?;
-        let Some(weights) = validated_nurbs_curve_weights(ctx, &mut source_storage, curve)? else {
-            return Ok(None);
-        };
+        if let crate::geometry::nurbs::NurbsPoles3::Rational { points } = curve.pole_rows() {
+            if !ctx.all_by_limit(points, |pole| Ok(pole.weight.get() > 0.0),
+                "IR curve inversion weight scan")?
+            {
+                return Ok(None);
+            }
+        }
         let Some(speed_bound) =
             nurbs_curve_speed_bound_about(ctx, curve, point)?.map(FiniteReal::get)
         else {
             return Ok(None);
         };
-        let mut poles = Vec::new();
-        ctx.reserve_scoped_vec(
-            &mut source_storage,
-            &mut poles,
-            count,
-            "IR curve inversion controls",
-        )?;
-        for index in ctx.admit_iter(0..count, "IR curve inversion controls copy")? {
-            let Some(pole) = curve.pole_rows().point_at(index) else {
-                return Ok(None);
-            };
-            poles.push(pole);
-        }
         let distance = |parameter: FiniteReal| {
             let position = finite_or_refusal(nurbs_curve_point_evaluation(
                 &scratch,
                 curve.degree(),
                 curve.knots(),
-                poles.len(),
-                |index| poles.get(index).copied(),
-                |index| {
-                    weights
-                        .values()
-                        .and_then(|weights| weights.get(index).copied())
-                },
+                count,
+                |index| curve.pole_rows().point_at(index),
+                |index| curve.pole_rows().weight_at(index),
                 parameter,
             ))?;
             Ok(position.map(|position| position.distance(point)))
         };
         let seed = domain.project(ExtendedReal::from_finite(seed));
+        let mut source_storage = ctx.reserve_scoped(0, "IR curve inversion source scratch")?;
         let mut boundaries = Vec::new();
         ctx.reserve_scoped_vec(
             &mut source_storage,
@@ -2039,7 +2026,6 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
         if let Some(parameter) = nurbs_curve_parameter_near_point_newton(
             ctx,
             curve,
-            (&poles, weights.values()),
             point,
             tolerance,
             seed,
@@ -2102,13 +2088,11 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
 fn nurbs_curve_parameter_near_point_newton(
     ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
-    lanes: (&[FinitePoint3], Option<&[f64]>),
     point: Point3,
     tolerance: f64,
     seed: FiniteReal,
     search: NurbsSearchWindow<'_>,
 ) -> Result<Option<FiniteReal>, CodecError> {
-    let (poles, weights) = lanes;
     let scratch = decode::Scratch::new(ctx);
     let result = (|| {
         let window =
@@ -2119,9 +2103,9 @@ fn nurbs_curve_parameter_near_point_newton(
                 &scratch,
                 curve.degree(),
                 curve.knots(),
-                poles.len(),
-                |index| poles.get(index).copied(),
-                |index| weights.and_then(|weights| weights.get(index).copied()),
+                curve.pole_count(),
+                |index| curve.pole_rows().point_at(index),
+                |index| curve.pole_rows().weight_at(index),
                 parameter,
             ))?
             else {
@@ -2139,7 +2123,7 @@ fn nurbs_curve_parameter_near_point_newton(
                 &scratch,
                 curve.degree(),
                 curve.knots(),
-                curve_nurbs::DerivativePoles::Lanes { points: poles, weights },
+                curve_nurbs::DerivativePoles::Stored(curve.pole_rows()),
                 parameter,
                 CurveDerivative::First,
             ))?
@@ -2177,59 +2161,6 @@ pub fn nurbs_curve_speed_bound(
         return Ok(None);
     }
     nurbs_curve_speed_bound_about(ctx, curve, Point3::new(0.0, 0.0, 0.0))
-}
-
-enum ValidatedNurbsWeights {
-    Unit,
-    Rational(Vec<f64>),
-}
-
-impl ValidatedNurbsWeights {
-    fn values(&self) -> Option<&[f64]> {
-        match self {
-            Self::Unit => None,
-            Self::Rational(values) => Some(values),
-        }
-    }
-}
-
-/// A rational weight copy has at most one value per admitted control pole.
-fn validated_nurbs_curve_weights(
-    ctx: &DecodeContext<'_>,
-    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    curve: &NurbsCurve,
-) -> Result<Option<ValidatedNurbsWeights>, CodecError> {
-    if nurbs_curve_parameter_domain(curve).is_none() {
-        return Ok(None);
-    }
-    let points = match curve.pole_rows() {
-        crate::geometry::nurbs::NurbsPoles3::Polynomial { .. } => {
-            return Ok(Some(ValidatedNurbsWeights::Unit));
-        }
-        crate::geometry::nurbs::NurbsPoles3::Rational { points } => points,
-    };
-    let mut weights = Vec::new();
-    ctx.reserve_scoped_vec(
-        storage,
-        &mut weights,
-        curve.pole_count(),
-        "IR curve inversion weights",
-    )?;
-    if !ctx.all_by_limit(
-        points,
-        |pole| {
-            let weight = pole.weight.get();
-            if weight <= 0.0 {
-                return Ok(false);
-            }
-            weights.push(weight);
-            Ok(true)
-        },
-        "IR curve inversion weight scan",
-    )? {
-        return Ok(None);
-    }
-    Ok(Some(ValidatedNurbsWeights::Rational(weights)))
 }
 
 fn nurbs_curve_speed_bound_about(

@@ -1934,6 +1934,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
 }
 
 mod bounded_nurbs;
+mod borrowed_inverse;
 
 mod periodic_and_analytic;
 
