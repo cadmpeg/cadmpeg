@@ -202,12 +202,16 @@ pub(super) fn project<'ctx>(
     let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
 
-    for entry in ctx
-        .admit_iter(directory, "iges csg directory traversal")?
-        .filter(|entry| {
-            matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) && entry.form == 0
-        })
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges csg directory traversal")?
+        else {
+            break;
+        };
+        if !(matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) && entry.form == 0) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(
             records, &entry.sequence, "iges csg parameter record lookup",
         )?.copied() else {
@@ -402,13 +406,16 @@ pub(super) fn project<'ctx>(
         proven: BTreeMap::new(),
         storage: ctx.reserve_scoped(0, "iges solid profile closure proofs")?,
     };
-    for entry in ctx
-        .admit_iter(directory, "iges csg directory traversal")?
-        .filter(|entry| {
-            (entry.entity_type == 162 && matches!(entry.form, 0 | 1))
-                || (entry.entity_type == 164 && entry.form == 0)
-        })
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges csg directory traversal")?
+        else {
+            break;
+        };
+        if !((entry.entity_type == 162 && matches!(entry.form, 0 | 1)) || (entry.entity_type == 164 && entry.form == 0)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(
             records, &entry.sequence, "iges csg parameter record lookup",
         )?.copied() else {
@@ -585,10 +592,16 @@ pub(super) fn project<'ctx>(
 
     let mut boolean_storage = ctx.reserve_scoped(0, "iges Boolean scratch")?;
     let mut boolean_definitions = BTreeMap::new();
-    for entry in ctx
-        .admit_iter(directory, "iges csg directory traversal")?
-        .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges csg directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 180 && matches!(entry.form, 0 | 1)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(
             records, &entry.sequence, "iges csg parameter record lookup",
         )?.copied() else {
@@ -750,10 +763,16 @@ pub(super) fn project<'ctx>(
     drop(boolean_definitions);
     drop(boolean_storage);
 
-    for entry in ctx
-        .admit_iter(directory, "iges csg directory traversal")?
-        .filter(|entry| entry.entity_type == 182 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges csg directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 182 && entry.form == 0) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(
             records, &entry.sequence, "iges csg parameter record lookup",
         )?.copied() else {

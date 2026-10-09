@@ -451,9 +451,12 @@ pub(super) fn project<'ctx>(
     let mut faces = BTreeMap::<u32, FaceDefinition>::new();
 
     let mut directory_entries = directory.iter();
-    while let Some(entry) =
-        ctx.next_charged(&mut directory_entries, "iges B-rep directory traversal")?
-    {
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges B-rep directory traversal")?
+        else {
+            break;
+        };
         if !(entry.entity_type == 502 && entry.form == 1) {
             continue;
         }
@@ -529,10 +532,16 @@ pub(super) fn project<'ctx>(
         definition_storage.absorb(&mut record_storage)?;
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges B-rep directory traversal")?
-        .filter(|entry| entry.entity_type == 504 && entry.form == 1)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges B-rep directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 504 && entry.form == 1) {
+            continue;
+        }
         if entry.transform != 0 {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -618,10 +627,16 @@ pub(super) fn project<'ctx>(
         definition_storage.absorb(&mut record_storage)?;
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges B-rep directory traversal")?
-        .filter(|entry| entry.entity_type == 508 && entry.form == 1)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges B-rep directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 508 && entry.form == 1) {
+            continue;
+        }
         if entry.transform != 0 {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -769,10 +784,16 @@ pub(super) fn project<'ctx>(
         definition_storage.absorb(&mut record_storage)?;
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges B-rep directory traversal")?
-        .filter(|entry| entry.entity_type == 510 && entry.form == 1)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges B-rep directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 510 && entry.form == 1) {
+            continue;
+        }
         if entry.transform != 0 {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -898,10 +919,16 @@ pub(super) fn project<'ctx>(
     }
 
     let mut shell_definitions = BTreeMap::new();
-    for entry in ctx
-        .admit_iter(directory, "iges B-rep directory traversal")?
-        .filter(|entry| entry.entity_type == 514 && matches!(entry.form, 1 | 2))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges B-rep directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 514 && matches!(entry.form, 1 | 2)) {
+            continue;
+        }
         if entry.transform != 0 {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -980,10 +1007,16 @@ pub(super) fn project<'ctx>(
     }
 
     let mut body_definitions = Vec::new();
-    for entry in ctx
-        .admit_iter(directory, "iges B-rep directory traversal")?
-        .filter(|entry| entry.entity_type == 514 && entry.form == 2)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges B-rep directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 514 && entry.form == 2) {
+            continue;
+        }
         if ctx.contains_key_btree_map(&shell_definitions, &entry.sequence, "iges B-rep shell lookup")? {
             let mut shell_storage = ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
             let mut shells = shell_storage
@@ -1003,10 +1036,16 @@ pub(super) fn project<'ctx>(
         }
     }
     let mut referenced_closed_shells = BTreeSet::new();
-    for entry in ctx
-        .admit_iter(directory, "iges B-rep directory traversal")?
-        .filter(|entry| entry.entity_type == 186 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges B-rep directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 186 && entry.form == 0) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -1134,10 +1173,16 @@ pub(super) fn project<'ctx>(
             _shell_storage: record_storage,
         });
     }
-    for entry in ctx
-        .admit_iter(directory, "iges B-rep directory traversal")?
-        .filter(|entry| entry.entity_type == 514 && entry.form == 1)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges B-rep directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 514 && entry.form == 1) {
+            continue;
+        }
         if ctx.contains_key_btree_map(&shell_definitions, &entry.sequence, "iges B-rep shell lookup")?
             && !ctx.contains_btree_set(&referenced_closed_shells, &entry.sequence, "iges B-rep referenced shell lookup")?
         {

@@ -341,10 +341,16 @@ pub(super) fn project<'ctx>(
     let mut appearances = None;
     let mut defined = BTreeMap::new();
     let mut text_fonts = BTreeMap::new();
-    for entry in ctx
-        .admit_iter(directory, "iges presentation directory traversal")?
-        .filter(|entry| entry.entity_type == 310 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 310 && entry.form == 0) {
+            continue;
+        }
         let record = ctx.get_btree_map(
             records,
             &entry.sequence,
@@ -368,10 +374,16 @@ pub(super) fn project<'ctx>(
     }
     let mut cyclic_fonts = BTreeMap::new();
 
-    for entry in ctx
-        .admit_iter(directory, "iges presentation directory traversal")?
-        .filter(|entry| entry.entity_type == 310 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 310 && entry.form == 0) {
+            continue;
+        }
         let mut cycle_storage = ctx.reserve_scoped(0, "iges font cycle scratch")?;
         let mut active = BTreeSet::new();
         let mut next_sequence = Some(entry.sequence);
@@ -438,10 +450,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges presentation directory traversal")?
-        .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 312 && matches!(entry.form, 0..=1)) {
+            continue;
+        }
         let Some(record) = ctx
             .get_btree_map(
                 records,
@@ -494,10 +512,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges presentation directory traversal")?
-        .filter(|entry| entry.entity_type == 406 && entry.form == 1)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 406 && entry.form == 1) {
+            continue;
+        }
         let Some(record) = ctx
             .get_btree_map(
                 records,
@@ -550,10 +574,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges presentation directory traversal")?
-        .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 304 && matches!(entry.form, 1 | 2)) {
+            continue;
+        }
         let Some(record) = ctx
             .get_btree_map(
                 records,
@@ -650,10 +680,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges presentation directory traversal")?
-        .filter(|entry| entry.entity_type == 314 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 314 && entry.form == 0) {
+            continue;
+        }
         let Some(record) = ctx
             .get_btree_map(
                 records,
@@ -805,12 +841,16 @@ pub(super) fn project<'ctx>(
         Ok(Some((id, color)))
     };
 
-    for entry in ctx
-        .admit_iter(directory, "iges presentation directory traversal")?
-        .filter(|entry| {
-            entry.color != 0 && directory_color_is_semantic(entry, global.global_table())
-        })
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.color != 0 && directory_color_is_semantic(entry, global.global_table())) {
+            continue;
+        }
         if resolve_color(entry.color)?.is_none() {
             push_presentation_loss(
                 ctx,
@@ -821,10 +861,16 @@ pub(super) fn project<'ctx>(
             )?;
         }
     }
-    for entry in ctx
-        .admit_iter(directory, "iges presentation directory traversal")?
-        .filter(|entry| entry.level < 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.level < 0) {
+            continue;
+        }
         let sequence = entry.level.unsigned_abs();
         let target_valid = match u32::try_from(sequence) {
             Ok(sequence) => {
@@ -849,13 +895,16 @@ pub(super) fn project<'ctx>(
             )?;
         }
     }
-    for entry in ctx
-        .admit_iter(directory, "iges presentation directory traversal")?
-        .filter(|entry| {
-            entry.line_weight != 0
-                && directory_line_weight_is_semantic(entry, global.global_table())
-        })
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges presentation directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.line_weight != 0 && directory_line_weight_is_semantic(entry, global.global_table())) {
+            continue;
+        }
         if !global.line_weight_number_is_valid(entry.line_weight) {
             push_presentation_loss(
                 ctx,

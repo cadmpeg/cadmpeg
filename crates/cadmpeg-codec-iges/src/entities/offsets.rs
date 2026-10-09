@@ -463,10 +463,16 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
 
-    for entry in ctx
-        .admit_iter(directory, "iges offsets directory traversal")?
-        .filter(|entry| entry.entity_type == 130 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges offsets directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 130 && entry.form == 0) {
+            continue;
+        }
         let factor = global.length_factor_mm();
         let Some(record) = record_by_sequence(parameters, entry.sequence, ctx)? else {
             super::push_entity_loss(
@@ -645,9 +651,13 @@ pub(super) fn project(
         if entry.transform != 0 {
             if transform_tables.is_none() {
                 let mut entries = BTreeMap::new();
-                for entry in
-                    ctx.admit_iter(directory, "iges offsets transform directory traversal")?
-                {
+                let mut directory_entries = directory.iter();
+                while !directory_entries.as_slice().is_empty() {
+                    let Some(entry) =
+                        ctx.next_charged(&mut directory_entries, "iges offsets transform directory traversal")?
+                    else {
+                        break;
+                    };
                     transform_storage.with_storage(|| {
                         ctx.insert_btree_map(
                             &mut entries,

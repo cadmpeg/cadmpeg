@@ -283,10 +283,16 @@ pub(super) fn project<'ctx>(
     let mut loss_slots_storage = ctx.reserve_scoped(0, "iges drawing loss slots")?;
     let mut losses = Vec::new();
 
-    for entry in ctx
-        .admit_iter(directory, "iges drawing directory traversal")?
-        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 16 | 17))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges drawing directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 406 && matches!(entry.form, 16 | 17)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges drawing parameter lookup")?.copied() else {
             push_drawing_entity_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
@@ -319,10 +325,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges drawing directory traversal")?
-        .filter(|entry| entry.entity_type == 404 && matches!(entry.form, 0 | 1))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges drawing directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 404 && matches!(entry.form, 0 | 1)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges drawing parameter lookup")?.copied() else {
             push_drawing_entity_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
@@ -420,10 +432,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges drawing directory traversal")?
-        .filter(|entry| entry.entity_type == 410 && matches!(entry.form, 0 | 1))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges drawing directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 410 && matches!(entry.form, 0 | 1)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges drawing parameter lookup")?.copied() else {
             push_drawing_entity_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
@@ -538,10 +556,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges drawing directory traversal")?
-        .filter(|entry| entry.entity_type == 402 && entry.form == 19)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges drawing directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 402 && entry.form == 19) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges drawing parameter lookup")?.copied() else {
             push_drawing_entity_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
@@ -648,10 +672,16 @@ pub(super) fn project<'ctx>(
     let mut association_storage = ctx.reserve_scoped(0, "iges view association index")?;
     let mut associations = BTreeMap::<u32, BTreeSet<u32>>::new();
 
-    for entry in ctx
-        .admit_iter(directory, "iges drawing directory traversal")?
-        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 3 | 4))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges drawing directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 402 && matches!(entry.form, 3 | 4)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges drawing parameter lookup")?.copied() else {
             push_drawing_entity_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "Parameter Data record is missing")?;
             continue;

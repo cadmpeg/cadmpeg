@@ -308,7 +308,13 @@ pub(super) fn project<'ctx>(
             )?;
         }
         let mut entries = BTreeMap::new();
-        for entry in ctx.admit_iter(directory, "iges analytic-surface directory index traversal")? {
+        let mut directory_entries = directory.iter();
+        while !directory_entries.as_slice().is_empty() {
+            let Some(entry) =
+                ctx.next_charged(&mut directory_entries, "iges analytic-surface directory index traversal")?
+            else {
+                break;
+            };
             ctx.insert_btree_map(
                 &mut entries,
                 entry.sequence,
@@ -325,12 +331,16 @@ pub(super) fn project<'ctx>(
     let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
 
-    for entry in ctx
-        .admit_iter(directory, "iges analytic-surface directory pass")?
-        .filter(|entry| {
-            matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
-        })
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges analytic-surface directory pass")?
+        else {
+            break;
+        };
+        if !(matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)) {
+            continue;
+        }
         let factor = global.length_factor_mm();
         let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
         else {

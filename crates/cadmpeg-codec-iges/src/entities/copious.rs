@@ -224,15 +224,24 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<CopiousProjectionOutcome, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
     let mut free_vertices = Vec::new();
 
-    for entry in ctx
-        .admit_iter(directory, "iges copious directory traversal")?
-        .filter(|entry| entry.entity_type == 106 && expected_interpretation(entry.form).is_some())
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges copious directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 106 && expected_interpretation(entry.form).is_some()) {
+            continue;
+        }
         if !presentation_use_flag_valid(entry.form, entry.status.use_flag(global.global_table())) {
             push_copious_loss(
                 ctx,

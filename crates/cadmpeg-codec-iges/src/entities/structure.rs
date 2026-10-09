@@ -3139,10 +3139,16 @@ pub(super) fn project<'ctx>(
         }
     }
     let mut sheet_identities = None;
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 402 && matches!(entry.form, 18 | 20)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             continue;
         };
@@ -3163,10 +3169,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -3407,9 +3419,13 @@ pub(super) fn project<'ctx>(
                     let (mut identities, result_identity_storage) =
                         ctx.temporary_vec(0, "iges sheet identity index inputs")?;
                     identity_storage = result_identity_storage;
-                    for candidate in
-                        ctx.admit_iter(directory, "iges sheet identity directory")?
-                    {
+                    let mut directory_entries = directory.iter();
+                    while !directory_entries.as_slice().is_empty() {
+                        let Some(candidate) =
+                            ctx.next_charged(&mut directory_entries, "iges sheet identity directory")?
+                        else {
+                            break;
+                        };
                         if candidate.entity_type != 406 || candidate.form != 33 {
                             continue;
                         }
@@ -3565,10 +3581,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 322 && matches!(entry.form, 0..=2)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -3610,10 +3632,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 422 && matches!(entry.form, 0..=1)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -3703,10 +3731,16 @@ pub(super) fn project<'ctx>(
     drop(attribute_shapes);
     drop(attribute_shape_storage);
 
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 316 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 316 && entry.form == 0) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -3733,10 +3767,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 302)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 302) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -3794,10 +3834,16 @@ pub(super) fn project<'ctx>(
         proven: BTreeMap::new(),
         storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")?,
     };
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -3862,13 +3908,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| {
-            entry.entity_type == 402
-                && matches!(entry.form, 2 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | 13 | 16 | 21)
-        })
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 402 && matches!(entry.form, 2 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | 13 | 16 | 21)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -3970,10 +4019,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 108 && matches!(entry.form, -1 | 1))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 108 && matches!(entry.form, -1 | 1)) {
+            continue;
+        }
         if ctx.contains_btree_set(
             &legacy_plane_sequences,
             &entry.sequence,
@@ -4137,10 +4192,16 @@ pub(super) fn project<'ctx>(
         })?;
     }
     let mut visited_flows = BTreeSet::new();
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 402 && matches!(entry.form, 18 | 20)) {
+            continue;
+        }
         let flow = ctx.get_btree_map(
             &flows,
             &entry.sequence,
@@ -4210,10 +4271,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 416 && matches!(entry.form, 0..=4)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -4253,10 +4320,16 @@ pub(super) fn project<'ctx>(
     }
 
     let mut array_targets = BTreeMap::new();
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(matches!(entry.entity_type, 412 | 414) && entry.form == 0) {
+            continue;
+        }
         if let Some(target) = ctx
             .get_btree_map(
                 records,
@@ -4277,10 +4350,16 @@ pub(super) fn project<'ctx>(
         }
     }
     let mut visited_arrays = BTreeSet::new();
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(matches!(entry.entity_type, 412 | 414) && entry.form == 0) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -4366,10 +4445,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 132 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 132 && entry.form == 0) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -4478,10 +4563,16 @@ pub(super) fn project<'ctx>(
     }
 
     let mut solid_instances = BTreeMap::new();
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 430 && matches!(entry.form, 0 | 1)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -4564,10 +4655,16 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 184 && matches!(entry.form, 0 | 1)) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -4760,10 +4857,16 @@ pub(super) fn project<'ctx>(
 
     let mut definitions = BTreeMap::new();
     let mut definition_fields_valid = BTreeSet::new();
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 308 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 308 && entry.form == 0) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -4829,10 +4932,16 @@ pub(super) fn project<'ctx>(
 
     let mut instances = BTreeMap::new();
     let mut instance_fields_valid = BTreeSet::new();
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 408 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 408 && entry.form == 0) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             ctx.insert_btree_map(
                 &mut placement_rejections,
@@ -4931,10 +5040,16 @@ pub(super) fn project<'ctx>(
 
     let mut network_definitions = BTreeMap::new();
     let mut network_definition_fields_valid = BTreeSet::new();
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 320 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 320 && entry.form == 0) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -5047,10 +5162,16 @@ pub(super) fn project<'ctx>(
 
     let mut network_instances = BTreeMap::new();
     let mut network_instance_fields_valid = BTreeSet::new();
-    for entry in ctx
-        .admit_iter(directory, "iges structure directory traversal")?
-        .filter(|entry| entry.entity_type == 420 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges structure directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 420 && entry.form == 0) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             ctx.insert_btree_map(
                 &mut placement_rejections,

@@ -1205,7 +1205,13 @@ fn consumed_support_sequences<'ctx>(
 ) -> Result<(BTreeSet<u32>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
     let mut support_storage = ctx.reserve_scoped(0, "iges consumed-support pending transforms")?;
     let mut transform_sequences = BTreeSet::new();
-    for entry in ctx.admit_iter(directory, "iges consumed-support directory traversal")? {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges consumed-support directory traversal")?
+        else {
+            break;
+        };
         if let Some(sequence) = positive_sequence(entry.transform) {
             if crate::directory::entry_by_sequence(directory, sequence, ctx)?
                 .is_none_or(|target| target.entity_type != 124)
@@ -1221,10 +1227,16 @@ fn consumed_support_sequences<'ctx>(
             })?;
         }
     }
-    for entry in ctx
-        .admit_iter(directory, "iges consumed-support directory traversal")?
-        .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges consumed-support directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 184 && matches!(entry.form, 0 | 1)) {
+            continue;
+        }
         let Some(record) = ctx
             .get_btree_map(records, &entry.sequence, "iges geometry parameter lookup")?
             .copied()
@@ -1259,12 +1271,16 @@ fn consumed_support_sequences<'ctx>(
     }
     let mut consumed_storage = ctx.reserve_scoped(0, "iges consumed membership storage")?;
     let mut direction_sequences = BTreeSet::new();
-    for entry in ctx
-        .admit_iter(directory, "iges consumed-support directory traversal")?
-        .filter(|entry| {
-            matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
-        })
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges consumed-support directory traversal")?
+        else {
+            break;
+        };
+        if !(matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)) {
+            continue;
+        }
         let Some(record) = ctx
             .get_btree_map(records, &entry.sequence, "iges geometry parameter lookup")?
             .copied()
@@ -1810,7 +1826,13 @@ pub(crate) fn project_geometry<'ctx>(
     };
     let mut losses = Vec::new();
     let mut needs_admitted_copy = false;
-    for entry in ctx.admit_iter(directory, "iges geometry directory admission")? {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges geometry directory admission")?
+        else {
+            break;
+        };
         needs_admitted_copy |= !admitted(entry);
         let Some(use_flag) = entry.status.use_flag(global_table) else {
             super::push_entity_loss(
@@ -1849,10 +1871,16 @@ pub(crate) fn project_geometry<'ctx>(
     let mut admitted_storage = ctx.reserve_scoped(0, "iges admitted directory storage")?;
     let admitted_directory = if needs_admitted_copy {
         let mut admitted_entries = Vec::new();
-        for entry in ctx
-            .admit_iter(directory, "iges admitted directory traversal")?
-            .filter(|entry| admitted(entry))
-        {
+        let mut directory_entries = directory.iter();
+        while !directory_entries.as_slice().is_empty() {
+            let Some(entry) =
+                ctx.next_charged(&mut directory_entries, "iges admitted directory traversal")?
+            else {
+                break;
+            };
+            if !(admitted(entry)) {
+                continue;
+            }
             ctx.push_scoped_vec(
                 &mut admitted_storage,
                 &mut admitted_entries,
@@ -1878,7 +1906,13 @@ pub(crate) fn project_geometry<'ctx>(
         })?;
     }
     let mut entries = BTreeMap::new();
-    for entry in ctx.admit_iter(directory, "iges geometry directory index traversal")? {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges geometry directory index traversal")?
+        else {
+            break;
+        };
         lookup_storage.with_storage(|| {
             ctx.insert_btree_map(
                 &mut entries,
@@ -1897,12 +1931,16 @@ pub(crate) fn project_geometry<'ctx>(
     consumed_storage = result_consumed_storage;
     let mut location_storage = ctx.reserve_scoped(0, "iges analytic location storage")?;
     let mut analytic_surface_locations = BTreeSet::new();
-    for entry in ctx
-        .admit_iter(directory, "iges geometry family traversal")?
-        .filter(|entry| {
-            matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
-        })
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges geometry family traversal")?
+        else {
+            break;
+        };
+        if !(matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)) {
+            continue;
+        }
         if let Some(sequence) = ctx
             .get_btree_map(&records, &entry.sequence, "iges geometry parameter lookup")?
             .and_then(|record| record.integer(1))
@@ -1919,10 +1957,16 @@ pub(crate) fn project_geometry<'ctx>(
     }
     let mut free_vertices = Vec::new();
     let mut wire_edges = Vec::new();
-    for entry in ctx
-        .admit_iter(directory, "iges geometry family traversal")?
-        .filter(|entry| entry.entity_type == 123 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges geometry family traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 123 && entry.form == 0) {
+            continue;
+        }
         let Some(record) = ctx
             .get_btree_map(&records, &entry.sequence, "iges geometry parameter lookup")?
             .copied()
@@ -2251,10 +2295,16 @@ pub(crate) fn project_geometry<'ctx>(
             )
         })?;
     }
-    for entry in ctx
-        .admit_iter(directory, "iges geometry family traversal")?
-        .filter(|entry| entry.entity_type == 116 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges geometry family traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 116 && entry.form == 0) {
+            continue;
+        }
         let factor = global.length_factor_mm();
         let Some(record) = ctx
             .get_btree_map(&records, &entry.sequence, "iges geometry parameter lookup")?
@@ -2340,10 +2390,16 @@ pub(crate) fn project_geometry<'ctx>(
             ctx.insert_btree_set(&mut decoded, entry.sequence, "iges point decoded sequences")
         })?;
     }
-    for entry in ctx
-        .admit_iter(directory, "iges geometry family traversal")?
-        .filter(|entry| entry.entity_type == 125 && (0..=4).contains(&entry.form))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges geometry family traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 125 && (0..=4).contains(&entry.form)) {
+            continue;
+        }
         let factor = global.length_factor_mm();
         let Some(record) = ctx
             .get_btree_map(&records, &entry.sequence, "iges geometry parameter lookup")?
@@ -2636,10 +2692,16 @@ pub(crate) fn project_geometry<'ctx>(
             ctx.insert_btree_set(&mut decoded, entry.sequence, "iges line decoded sequences")
         })?;
     }
-    for entry in ctx
-        .admit_iter(directory, "iges geometry family traversal")?
-        .filter(|entry| entry.entity_type == 126 && (0..=5).contains(&entry.form))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges geometry family traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 126 && (0..=5).contains(&entry.form)) {
+            continue;
+        }
         let factor = global.length_factor_mm();
         let Some(record) = ctx
             .get_btree_map(&records, &entry.sequence, "iges geometry parameter lookup")?
