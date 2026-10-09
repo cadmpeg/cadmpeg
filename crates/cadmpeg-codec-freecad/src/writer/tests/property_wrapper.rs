@@ -4,7 +4,7 @@
 use cadmpeg_core::CodecError;
 
 use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml, ValueRecord};
-use crate::writer::serialize_property;
+use crate::writer::{serialize_property, serialize_value};
 
 fn property(xml: &str, body: PropertyBody) -> PropertyRecord {
     PropertyRecord {
@@ -95,4 +95,36 @@ fn wrapper_value_count_and_changed_value_provenance_remain_distinct_errors() {
     let error = serialize_property(&property).expect_err("changed value has foreign provenance");
     assert!(matches!(error, CodecError::Malformed(message)
         if message == "property test:property#values retained value 0 disagrees with provenance"));
+}
+
+#[test]
+fn unchanged_value_xml_borrows_its_source_and_edits_own_output() {
+    let mut value = ValueRecord {
+        tag: "String".into(),
+        order: 0,
+        attributes: [("value".into(), "λ & 𐀀".into())].into(),
+        text: None,
+        raw_xml: "<String value='λ &amp; 𐀀'/>".into(),
+    };
+    let serialized = serialize_value(&value).expect("unchanged value");
+    let std::borrow::Cow::Borrowed(original) = serialized else {
+        panic!("unchanged XML retains its actual source borrow");
+    };
+    assert_eq!(original, value.raw_xml);
+    assert_eq!(original.as_ptr(), value.raw_xml.as_ptr());
+    value.attributes.insert("value".into(), "edited & λ".into());
+    let serialized = serialize_value(&value).expect("edited value");
+    let std::borrow::Cow::Owned(edited) = serialized else {
+        panic!("edited XML owns its actual output");
+    };
+    assert_eq!(edited, r#"<String value="edited &amp; λ"/>"#);
+
+    let nested = ValueRecord {
+        tag: "List".into(), order: 0,
+        attributes: [("marker".into(), "λ".into())].into(),
+        text: None,
+        raw_xml: r#"<List marker="λ"><String/></List>"#.into(),
+    };
+    assert!(matches!(serialize_value(&nested).expect("unchanged nested value"),
+        std::borrow::Cow::Borrowed(raw) if raw == nested.raw_xml));
 }

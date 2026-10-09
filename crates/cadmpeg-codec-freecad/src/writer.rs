@@ -8,6 +8,7 @@
 
 pub(crate) mod target;
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::io::{Seek, SeekFrom, Write};
 
@@ -366,7 +367,7 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
     let mut edits = Vec::new();
     for (value, (start, end)) in property.values().iter().zip(source_ranges) {
         let serialized = serialize_value(value)?;
-        if serialized == value.raw_xml {
+        if serialized.as_ref() == value.raw_xml.as_str() {
             continue;
         }
         if property.xml.text()[start..end] != value.raw_xml {
@@ -390,7 +391,7 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
     Ok(replacement.into_bytes())
 }
 
-fn serialize_value(value: &ValueRecord) -> Result<String, CodecError> {
+fn serialize_value(value: &ValueRecord) -> Result<Cow<'_, str>, CodecError> {
     let wrapped = format!("<Root>{}</Root>", value.raw_xml);
     let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
         CodecError::malformed(format_args!("invalid retained property value XML: {error}"))
@@ -411,7 +412,7 @@ fn serialize_value(value: &ValueRecord) -> Result<String, CodecError> {
         && original_attributes == value.attributes
         && original_text == value.text
     {
-        return Ok(value.raw_xml.clone());
+        return Ok(Cow::Borrowed(&value.raw_xml));
     }
     if original.children().any(|node| node.is_element()) {
         return Err(CodecError::NotImplemented(format!(
@@ -439,7 +440,7 @@ fn serialize_value(value: &ValueRecord) -> Result<String, CodecError> {
         }
         None => serialized.push_str("/>"),
     }
-    Ok(serialized)
+    Ok(Cow::Owned(serialized))
 }
 
 pub(crate) fn escape_xml(value: &str, output: &mut String, attribute: bool) {
