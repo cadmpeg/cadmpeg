@@ -1965,10 +1965,10 @@ fn terminal_repeated_radial_circle_pairs<'a>(
             Ok(Some(pairs))
         },
     )?;
-    if result.is_some() {
-        storage.commit()?;
+    match result {
+        Some(pairs) => storage.commit_value(pairs).map(Some),
+        None => Ok(None),
     }
-    Ok(result)
 }
 
 pub(super) fn extended_radial_circle_index(
