@@ -960,12 +960,12 @@ impl Parser<'_, '_, '_> {
             self.budget
                 .push_vec(&mut self.diagnostics, diagnostic, "step_parse_diagnostics")?;
         }
-        let (schema_names_for_matching, _schema_names_storage) = self
+        let (_schema_names_storage, schema_names_for_matching) = self
             .budget
             .with_scoped_storage("step schema matching storage", || {
                 schema_names_for_matching(&header_admission.schema_identifiers, self.budget)
-            })?;
-        let (header_data_references, _header_reference_storage) = match self
+            }).map(|(value, storage)| (storage, value))?;
+        let (_header_reference_storage, header_data_references) = match self
             .budget
             .with_scoped_storage("step header reference storage", || {
                 validate_header_sections(
@@ -975,17 +975,17 @@ impl Parser<'_, '_, '_> {
                     self.budget,
                 )
             }) {
-            Ok(references) => references,
+            Ok((references, storage)) => (storage, references),
             Err(ValidationError::Invalid(message)) => return self.err(message),
             Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
         };
         let mut anchors = Vec::new();
         if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
             if self.peek_name("ANCHOR") || self.peek_name("REFERENCE") {
-                let (message, _message_storage) = self.budget.format_scoped(
+                let (_message_storage, message) = self.budget.format_scoped(
                     format_args!("{level} forbids ANCHOR and REFERENCE sections"),
                     "STEP forbidden section message",
-                )?;
+                ).map(|(value, storage)| (storage, value))?;
                 return self.err(&message);
             }
         }
@@ -1201,10 +1201,10 @@ impl Parser<'_, '_, '_> {
         let mut signatures = Vec::new();
         if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
             if self.peek_name("SIGNATURE") {
-                let (message, _message_storage) = self.budget.format_scoped(
+                let (_message_storage, message) = self.budget.format_scoped(
                     format_args!("{level} forbids SIGNATURE sections"),
                     "STEP forbidden section message",
-                )?;
+                ).map(|(value, storage)| (storage, value))?;
                 return self.err(&message);
             }
         }
@@ -1692,7 +1692,7 @@ impl Parser<'_, '_, '_> {
                 )? {
                     return Self::err_at(self.budget, start, "duplicate complex partial name");
                 }
-                let (observed, _observed_storage) = self.budget.with_scoped_storage(
+                let (_observed_storage, observed) = self.budget.with_scoped_storage(
                     "STEP observed partial name text storage",
                     || {
                         self.budget.join_display_retained(
@@ -1701,8 +1701,8 @@ impl Parser<'_, '_, '_> {
                             "STEP observed partial name text",
                         )
                     },
-                )?;
-                let (expected, _expected_storage) = self.budget.with_scoped_storage(
+                ).map(|(value, storage)| (storage, value))?;
+                let (_expected_storage, expected) = self.budget.with_scoped_storage(
                     "STEP canonical partial name text storage",
                     || {
                         self.budget.join_display_retained(
@@ -1711,7 +1711,7 @@ impl Parser<'_, '_, '_> {
                             "STEP canonical partial name text",
                         )
                     },
-                )?;
+                ).map(|(value, storage)| (storage, value))?;
                 let message = self.budget.format_retained(format_args!(
                     "complex partial records are not alphabetical: observed ({observed}), expected ({expected})"
                 ), "step_parse_complex_partial_diagnostic_text")?;
@@ -2545,13 +2545,16 @@ fn valid_optional_timestamp(
 ) -> Result<bool, CodecError> {
     match value {
         Value::Omitted => Ok(true),
-        Value::String(_) => match budget
-            .with_scoped_storage("STEP optional header string validation storage", || {
-                decoded_string(value, implementation_level, budget)
-            })? {
-            (Some(value), _storage) => valid_timestamp_text(budget, &value),
-            (None, _) => Ok(false),
-        },
+        Value::String(_) => {
+            let (_storage, value) = budget
+                .with_scoped_storage("STEP optional header string validation storage", || {
+                    decoded_string(value, implementation_level, budget)
+                }).map(|(value, storage)| (storage, value))?;
+            match value {
+                Some(value) => valid_timestamp_text(budget, &value),
+                None => Ok(false),
+            }
+        }
         _ => Ok(false),
     }
 }
@@ -2651,13 +2654,16 @@ fn valid_optional_base64(
 ) -> Result<bool, CodecError> {
     match value {
         Value::Omitted => Ok(true),
-        Value::String(_) => match budget
-            .with_scoped_storage("STEP optional header string validation storage", || {
-                decoded_string(value, implementation_level, budget)
-            })? {
-            (Some(value), _storage) => valid_base64_text(budget, value.as_bytes()),
-            (None, _) => Ok(false),
-        },
+        Value::String(_) => {
+            let (_storage, value) = budget
+                .with_scoped_storage("STEP optional header string validation storage", || {
+                    decoded_string(value, implementation_level, budget)
+                }).map(|(value, storage)| (storage, value))?;
+            match value {
+                Some(value) => valid_base64_text(budget, value.as_bytes()),
+                None => Ok(false),
+            }
+        }
         _ => Ok(false),
     }
 }
@@ -2728,10 +2734,10 @@ fn schema_identifier_matches(
     budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let trimmed = budget.trim_text(schema_name, "STEP schema name match trim")?;
-    let (mut schema_name, _storage) = budget
+    let (_storage, mut schema_name) = budget
         .with_scoped_storage("step_schema_name_matching", || {
             budget.copy_retained_text(trimmed, "step_schema_name_matching")
-        })?;
+        }).map(|(value, storage)| (storage, value))?;
     budget.make_ascii_uppercase(&mut schema_name, "STEP schema name uppercase")?;
     budget.any_by(
         schema_identifiers,
@@ -3516,8 +3522,8 @@ fn references(
     value_out: &mut Vec<u64>,
     budget: &DecodeContext<'_>,
 ) -> Result<(), ParseError> {
-    let (mut pending, mut pending_storage) =
-        budget.temporary_vec(0, "STEP reference worklist storage")?;
+    let (mut pending_storage, mut pending) =
+        budget.temporary_vec(0, "STEP reference worklist storage").map(|(value, storage)| (storage, value))?;
     budget.push_scoped_vec(
         &mut pending_storage,
         &mut pending,
