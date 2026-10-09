@@ -908,7 +908,7 @@ fn toc_sections<'a>(
             if name == "NEXT_TOC_ENTRY" {
                 continue;
             }
-            let (raw_name, offset_field, length_field, expanded_field) = if name == "ModelView" {
+            let (view_id, offset_field, length_field, expanded_field) = if name == "ModelView" {
                 let (Some(id), Some(offset), Some(length), Some(expanded)) = (
                     legacy::text_field(ctx, &mut fields, false)?,
                     legacy::text_field(ctx, &mut fields, false)?,
@@ -917,9 +917,7 @@ fn toc_sections<'a>(
                 ) else {
                     continue;
                 };
-                let raw_name =
-                    ctx.format_retained(format_args!("ModelView#{id}"), "creo TOC section names")?;
-                (raw_name, offset, length, expanded)
+                (Some(id), offset, length, expanded)
             } else {
                 let (Some(offset), Some(length), Some(expanded)) = (
                     legacy::text_field(ctx, &mut fields, false)?,
@@ -928,12 +926,7 @@ fn toc_sections<'a>(
                 ) else {
                     continue;
                 };
-                (
-                    ctx.copy_retained_text(name, "creo TOC section names")?,
-                    offset,
-                    length,
-                    expanded,
-                )
+                (None, offset, length, expanded)
             };
             let (Ok(relative_offset), Ok(length), Ok(expanded_length)) = (
                 ctx.parse_radix::<usize>(offset_field, 16, "creo TOC offset hexadecimal parsing")?,
@@ -949,7 +942,12 @@ fn toc_sections<'a>(
             let Some(offset) = header_base.checked_add(relative_offset) else {
                 continue;
             };
-            let Some(marker_len) = raw_name.len().checked_add(2) else {
+            const VIEW_PREFIX: &[u8] = b"ModelView#";
+            let raw_name_len = match view_id {
+                Some(id) => VIEW_PREFIX.len().checked_add(id.len()),
+                None => Some(name.len()),
+            };
+            let Some(marker_len) = raw_name_len.and_then(|length| length.checked_add(2)) else {
                 continue;
             };
             let Some(marker_end) = offset.checked_add(marker_len) else {
@@ -958,20 +956,32 @@ fn toc_sections<'a>(
             let Some(end) = offset.checked_add(length) else {
                 continue;
             };
+            if data.get(offset..end).is_none() {
+                continue;
+            }
             let Some(marker) = data.get(offset..marker_end) else {
                 continue;
             };
-            if length < marker_len
-                || marker.first() != Some(&b'#')
-                || !ctx.equal(
-                    &marker[1..=raw_name.len()],
-                    raw_name.as_bytes(),
-                    "creo TOC marker name equality",
-                )?
-                || marker.last() != Some(&b'\n')
-            {
+            if length < marker_len || marker.first() != Some(&b'#') || marker.last() != Some(&b'\n') {
                 continue;
             }
+            let marker_name = &marker[1..marker.len() - 1];
+            let name_matches = match view_id {
+                Some(id) => marker_name.starts_with(VIEW_PREFIX)
+                    && ctx.equal(
+                        &marker_name[VIEW_PREFIX.len()..],
+                        id.as_bytes(),
+                        "creo TOC marker name equality",
+                    )?,
+                None => ctx.equal(marker_name, name.as_bytes(), "creo TOC marker name equality")?,
+            };
+            if !name_matches {
+                continue;
+            }
+            let raw_name = match view_id {
+                Some(id) => ctx.format_retained(format_args!("ModelView#{id}"), "creo TOC section names")?,
+                None => ctx.copy_retained_text(name, "creo TOC section names")?,
+            };
             ctx.reserve_vec(&mut sections, 1, "creo TOC sections")?;
             sections.extend(Section::scan(
                 ctx,
@@ -1186,6 +1196,9 @@ fn legacy_toc_sections<'a>(
             )?
             || marker.last() != Some(&b'\n')
         {
+            continue;
+        }
+        if data.get(offset..end).is_none() {
             continue;
         }
         let raw_name = ctx.copy_retained_text(raw_name, "creo legacy TOC section names")?;
