@@ -24,6 +24,7 @@ use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text_charged;
+use super::groups::NonemptyGroup;
 use super::topology::TopologyData;
 use super::StageOutcome;
 
@@ -299,7 +300,8 @@ pub(super) fn decode(
         |_| 0,
         "step_presentation_style_ids_sort",
     )?;
-    let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
+    let mut scalar_color_candidates =
+        HashMap::<AppearanceTarget, NonemptyGroup<(u64, Color)>>::new();
     for (style_id, _) in styles {
         if overridden_styles.contains(&style_id) {
             ctx.insert_hash_set(&mut typed, style_id, "step_presentation_typed_claims")?;
@@ -326,7 +328,7 @@ pub(super) fn decode(
         let color_storage =
             std::cell::RefCell::new(ctx.reserve_scoped(0, "step color search storage")?);
         let mut active = BTreeSet::new();
-        let mut color_cache = BTreeMap::new();
+        let mut color_cache = ColorCache::default();
         let mut invalid_surface_sides = BTreeSet::new();
         let mut style_references = Vec::new();
         for reference in parts
@@ -596,39 +598,39 @@ pub(super) fn decode(
         }
     }
     for (target, candidates) in scalar_color_candidates {
-        let mut colors = Vec::<Color>::new();
-        for (_, color) in &candidates {
-            let Some(existing) = colors.iter_mut().find(|existing| {
-                existing.r() == color.r() && existing.g() == color.g() && existing.b() == color.b()
-            }) else {
-                ctx.push_vec(&mut colors, *color, "step_presentation_distinct_colors")?;
-                continue;
-            };
-            if color.a() < existing.a() {
-                *existing = *color;
+        let mut color = candidates.first().1;
+        let mut conflict = false;
+        for (_, candidate) in candidates.iter().skip(1) {
+            ctx.charge_work(1, "step_presentation_scalar_color_compare")?;
+            if candidate.r() != color.r()
+                || candidate.g() != color.g()
+                || candidate.b() != color.b()
+            {
+                conflict = true;
+            } else if candidate.a() < color.a() {
+                color = *candidate;
             }
         }
-        if let [color] = colors.as_slice() {
-            match target {
-                AppearanceTarget::Face(face) => {
-                    if let Some(&index) = face_indices.get(face.as_str()) {
-                        ir.model.faces[index].color = Some(*color);
-                    }
-                }
-                AppearanceTarget::Body(body) => {
-                    if let Some(&index) = body_indices.get(body.as_str()) {
-                        ir.model.bodies[index].color = Some(*color);
-                    }
-                }
-                _ => {}
-            }
-        } else {
+        if conflict {
             let message = scalar_conflict_message(&candidates, &target, ctx)?;
             ctx.push_vec(
                 &mut losses,
                 StepLossCode::ConflictingScalarColors.note(message),
                 "step_presentation_losses",
             )?;
+        } else {
+            let slot = match &target {
+                AppearanceTarget::Face(face) => face_indices
+                    .get(face.as_str())
+                    .map(|&index| &mut ir.model.faces[index].color),
+                AppearanceTarget::Body(body) => body_indices
+                    .get(body.as_str())
+                    .map(|&index| &mut ir.model.bodies[index].color),
+                _ => None,
+            };
+            if let Some(slot) = slot {
+                *slot = Some(color);
+            }
         }
     }
     Ok(StageOutcome {
@@ -1093,7 +1095,7 @@ struct PresentationIndices<'a> {
 }
 
 fn push_scalar_candidate(
-    candidates: &mut HashMap<AppearanceTarget, Vec<(u64, Color)>>,
+    candidates: &mut HashMap<AppearanceTarget, NonemptyGroup<(u64, Color)>>,
     target: &AppearanceTarget,
     style_id: u64,
     color: Color,
@@ -1116,14 +1118,15 @@ fn push_scalar_candidate(
             _ => return Ok(()),
         };
         ctx.reserve_map(candidates, 1, "step_presentation_scalar_color_groups")?;
-        candidates.insert(key, Vec::new());
+        candidates.insert(key, NonemptyGroup::new((style_id, color)));
+        return Ok(());
     }
     let values = candidates
         .get_mut(target)
         .ok_or_else(|| CodecError::malformed("presentation scalar target was not indexed"))?;
-    ctx.push_vec(
-        values,
+    values.push(
         (style_id, color),
+        ctx,
         "step_presentation_scalar_color_members",
     )
 }
@@ -1238,7 +1241,7 @@ fn context_style_message(
     ctx.format_retained(format_args!("STYLED_ITEM #{style_id} has context-dependent style assignments {details}; no presentation context is selected by the neutral model; those source branches remain opaque"), "step_presentation_context_style_text")
 }
 
-struct ScalarStyleIds<'a>(&'a [(u64, Color)]);
+struct ScalarStyleIds<'a>(&'a NonemptyGroup<(u64, Color)>);
 
 impl std::fmt::Display for ScalarStyleIds<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1253,7 +1256,7 @@ impl std::fmt::Display for ScalarStyleIds<'_> {
 }
 
 fn scalar_conflict_message(
-    candidates: &[(u64, Color)],
+    candidates: &NonemptyGroup<(u64, Color)>,
     target: &AppearanceTarget,
     ctx: &DecodeContext<'_>,
 ) -> Result<String, CodecError> {
@@ -1431,10 +1434,74 @@ fn combine_color_resolutions(
     }
 }
 
+/// Small style searches keep their memo entries in the local frame. Wider
+/// graphs allocate checked ordered-map entries after the inline slots fill.
+#[derive(Default)]
+struct ColorCache {
+    inline: [Option<((u64, StyleDomain), CachedColor)>; 8],
+    overflow: BTreeMap<(u64, StyleDomain), CachedColor>,
+}
+
+impl ColorCache {
+    fn get(
+        &self,
+        key: &(u64, StyleDomain),
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<&CachedColor>, CodecError> {
+        for slot in &self.inline {
+            ctx.charge_work(1, "step_presentation_color_cache_lookup")?;
+            let Some((stored, value)) = slot else {
+                break;
+            };
+            if stored == key {
+                return Ok(Some(value));
+            }
+        }
+        ctx.charge_work(1, "step_presentation_color_cache_lookup")?;
+        Ok(self.overflow.get(key))
+    }
+
+    fn insert(
+        &mut self,
+        key: (u64, StyleDomain),
+        value: CachedColor,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(), CodecError> {
+        for slot in &mut self.inline {
+            ctx.charge_work(1, "step_presentation_color_cache_entries")?;
+            match slot {
+                Some((stored, cached)) if *stored == key => {
+                    *cached = value;
+                    return Ok(());
+                }
+                None => {
+                    *slot = Some((key, value));
+                    return Ok(());
+                }
+                Some(_) => {}
+            }
+        }
+        ctx.insert_btree_map(
+            &mut self.overflow,
+            key,
+            value,
+            "step_presentation_color_cache_entries",
+        )?;
+        Ok(())
+    }
+
+    fn keys(&self) -> impl Iterator<Item = &(u64, StyleDomain)> {
+        self.inline
+            .iter()
+            .filter_map(|slot| slot.as_ref().map(|(key, _)| key))
+            .chain(self.overflow.keys())
+    }
+}
+
 struct ColorSearchState<'a, 'ctx> {
     storage: &'a std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     active: &'a mut BTreeSet<u64>,
-    cache: &'a mut BTreeMap<(u64, StyleDomain), CachedColor>,
+    cache: &'a mut ColorCache,
     losses: &'a mut Vec<LossNote>,
     invalid_surface_sides: &'a mut BTreeSet<u64>,
 }
@@ -1457,7 +1524,7 @@ fn find_color(
     if depth >= 256 {
         return Ok(None);
     }
-    if let Some(result) = cache.get(&(id, domain)) {
+    if let Some(result) = cache.get(&(id, domain), ctx)? {
         return clone_color_resolution(result, ctx, "step_presentation_color_cache_copy");
     }
     let Some(record) = exchange.records().get(&id) else {
@@ -1677,14 +1744,9 @@ fn find_color(
     let cached = storage.borrow_mut().with_storage(|| {
         clone_color_resolution(&result, ctx, "step_presentation_color_cache_value")
     })?;
-    storage.borrow_mut().with_storage(|| {
-        ctx.insert_btree_map(
-            cache,
-            (id, domain),
-            cached,
-            "step_presentation_color_cache_entries",
-        )
-    })?;
+    storage
+        .borrow_mut()
+        .with_storage(|| cache.insert((id, domain), cached, ctx))?;
     Ok(result)
 }
 
@@ -1843,7 +1905,6 @@ fn style_domain_at(
         return Ok(StyleDomain::Any);
     }
     let _nested = ctx.enter_nested("step_presentation_style_domain_walk")?;
-    ctx.insert_btree_set(active, id, "step_presentation_style_domain_active")?;
     let Some(record) = exchange.records().get(&id) else {
         active.remove(&id);
         return Ok(StyleDomain::Any);
@@ -1856,6 +1917,7 @@ fn style_domain_at(
         .then_some(partial.name.as_str())
     });
     if let Some(set_name) = set_name {
+        ctx.insert_btree_set(active, id, "step_presentation_style_domain_active")?;
         let mut first = None;
         let mut same = true;
         for member in named_parameter(record, set_name, 1)

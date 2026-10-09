@@ -187,12 +187,15 @@ fn value_node_count_nodes_refuse_in_the_node_dimension() {
 }
 
 #[test]
-fn unknown_record_rejects_non_finite_real_at_lex_admission() {
+fn unknown_record_omits_non_finite_real_at_lex_admission() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_ITEM(1.E9999);ENDSEC;END-ISO-10303-21;";
     with_service_context(SOURCE, |source, ctx| {
-        assert!(
-            matches!(crate::parse::parse_with_context(source, ctx), Err(CodecError::Malformed(message))
-            if message.contains("finite binary64 range"))
-        );
+        let (exchange, diagnostics) = crate::parse::parse_with_context(source, ctx)
+            .expect("literal failure has a bounded record");
+        assert!(exchange.records().is_empty());
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.kind == crate::parse::ParseDiagnosticKind::RecordOmitted
+                && diagnostic.message.contains("finite binary64 range")
+        }));
     });
 }

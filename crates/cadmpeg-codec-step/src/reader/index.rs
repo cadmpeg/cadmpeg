@@ -31,6 +31,23 @@ pub(super) struct CarrierIndex {
 }
 
 impl CarrierIndex {
+    /// Index newly admitted surfaces without copying existing carrier maps.
+    pub(super) fn refresh_surfaces(
+        &mut self,
+        ir: &CadIr,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(), CodecError> {
+        for (index, surface) in ir.model.surfaces.iter().enumerate() {
+            ctx.charge_work(1, "step_carrier_surface_index")?;
+            if let Some(id) = step_instance_id(surface.id.as_str()) {
+                let additional = usize::from(!self.surfaces.contains_key(&id));
+                ctx.reserve_map(&mut self.surfaces, additional, "step_carrier_surface_index")?;
+                self.surfaces.insert(id, SurfaceIndex(index));
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn from_ir(ir: &CadIr, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let mut curves = HashMap::new();
         for (index, curve) in ir.model.curves.iter().enumerate() {
@@ -142,6 +159,30 @@ mod tests {
     #[test]
     fn curve_carrier_index_refuses_collection_limit() {
         assert_index_refusal(0, "step_carrier_curve_index");
+    }
+
+    #[test]
+    fn surface_extension_reuses_existing_carrier_entries() {
+        let mut ir = carriers();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 4;
+        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+            let mut index = CarrierIndex::from_ir(&ir, ctx).expect("three carrier entries");
+            let mut surface = ir.model.surfaces[0].clone();
+            surface.id = SurfaceId::from(crate::ids::data(crate::ids::kind!("surface"), 4));
+            ir.model.surfaces.push(surface);
+            index
+                .refresh_surfaces(&ir, ctx)
+                .expect("only the new surface allocates a slot");
+            index
+                .refresh_surfaces(&ir, ctx)
+                .expect("existing entries allocate no slots");
+            assert_eq!(index.curves[&1].0, 0);
+            assert_eq!(index.points[&2].index.0, 0);
+            assert_eq!(index.surfaces[&3].0, 0);
+            assert_eq!(index.surfaces[&4].0, 1);
+            assert_eq!(index.get(2), Some(&Point3::new(0.0, 0.0, 0.0)));
+        });
     }
 
     #[test]

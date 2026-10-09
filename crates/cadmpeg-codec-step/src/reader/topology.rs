@@ -41,8 +41,9 @@ use crate::parse::{Exchange, RawRecord, Value};
 
 use self::admissions::{pcurve_admission_note, PcurveAdmission};
 use super::geometry::surface_periodic_domains;
+use super::groups::NonemptyGroup;
 use super::index::CarrierIndex;
-use super::StageOutcome;
+use super::{merge_claims, StageOutcome};
 
 const EPS_TOPOLOGY_READ_DEGENERATE: f64 = 1.0e-10;
 const EPS_TOPOLOGY_READ_EXACT_GEOMETRY: f64 = 1.0e-12;
@@ -83,9 +84,29 @@ pub(super) struct TopologyData {
     pub(super) body_by_root: BTreeMap<u64, Vec<BodyId>>,
     pub(super) shape_representation_relationships: BTreeMap<u64, Vec<u64>>,
     pub(super) body_by_shell: BTreeMap<u64, BTreeSet<BodyId>>,
-    pub(super) faces_by_source: BTreeMap<u64, Vec<FaceId>>,
-    pub(super) edges_by_source: BTreeMap<u64, Vec<EdgeId>>,
-    pub(super) vertices_by_source: BTreeMap<u64, Vec<VertexId>>,
+    pub(super) faces_by_source: BTreeMap<u64, NonemptyGroup<FaceId>>,
+    pub(super) edges_by_source: BTreeMap<u64, NonemptyGroup<EdgeId>>,
+    pub(super) vertices_by_source: BTreeMap<u64, NonemptyGroup<VertexId>>,
+}
+
+fn push_source_identity<T>(
+    groups: &mut BTreeMap<u64, NonemptyGroup<T>>,
+    source: u64,
+    identity: T,
+    group_operation: &'static str,
+    member_operation: &'static str,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    ctx.admit_btree_entry(groups, &source, group_operation)?;
+    match groups.entry(source) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(NonemptyGroup::new(identity));
+        }
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            entry.get_mut().push(identity, ctx, member_operation)?;
+        }
+    }
+    Ok(())
 }
 
 /// A recovered neutral face cannot fully represent conflicting source roles.
@@ -94,7 +115,7 @@ pub(super) struct TopologyData {
 pub(super) fn retain_noncanonical_face_sources(
     exchange: &Exchange,
     topology: &TopologyData,
-    typed: &mut HashSet<u64>,
+    typed: &mut dyn super::claims::SourceClaims,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     for &face_step in topology.faces_by_source.keys() {
@@ -120,9 +141,9 @@ pub(super) fn retain_noncanonical_face_sources(
             })
             .count();
         if outer_count > 1 {
-            typed.remove(&face_step);
+            typed.remove(face_step);
             for id in info.typed.into_iter().chain(info.bounds) {
-                typed.remove(&id);
+                typed.remove(id);
             }
         }
     }
@@ -478,7 +499,6 @@ pub(super) fn decode(
     }
     let vertices = vertex_defs(exchange, ctx)?;
     let edges = edge_defs(exchange, ctx)?;
-    let oriented = oriented_defs(exchange, ctx)?;
     let shells = shell_defs(exchange, ctx)?;
     let point_positions = carrier_index;
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
@@ -568,9 +588,12 @@ pub(super) fn decode(
                         "step_topology_root_groups",
                         "step_topology_root_bodies",
                     )?;
-                    for typed in std::mem::take(&mut built.typed) {
-                        ctx.insert_hash_set(&mut result.claims, typed, "step_topology_claims")?;
-                    }
+                    merge_claims(
+                        &mut result.claims,
+                        std::mem::take(&mut built.typed),
+                        ctx,
+                        "step_topology_claims",
+                    )?;
                 }
             }
             if committed == 0 {
@@ -641,9 +664,12 @@ pub(super) fn decode(
                     "step_topology_root_groups",
                     "step_topology_root_bodies",
                 )?;
-                for typed in std::mem::take(&mut built.typed) {
-                    ctx.insert_hash_set(&mut result.claims, typed, "step_topology_claims")?;
-                }
+                merge_claims(
+                    &mut result.claims,
+                    std::mem::take(&mut built.typed),
+                    ctx,
+                    "step_topology_claims",
+                )?;
             }
         }
         if committed == 0 {
@@ -678,17 +704,59 @@ pub(super) fn decode(
         "MANIFOLD_SOLID_BREP",
         "BREP_WITH_VOIDS",
     ];
-    let mut distinct_roots = BTreeSet::new();
-    for (_, record) in exchange.entities_any(&topology_root_types) {
+    let mut root_sources = BTreeMap::new();
+    for (id, record) in exchange.entities_any(&topology_root_types) {
         if let Some(key) = root_key(record, exchange, &shells, ctx)? {
-            ctx.insert_btree_set(&mut distinct_roots, key, "step_distinct_topology_roots")?;
+            if !root_sources.contains_key(&key) {
+                ctx.insert_btree_map(
+                    &mut root_sources,
+                    key,
+                    (id, record),
+                    "step_distinct_topology_roots",
+                )?;
+            }
         }
     }
-    let distinct_root_count = distinct_roots.len();
-    let scope_distinct_roots = distinct_root_count > 1;
+    let scope_distinct_roots = root_sources.len() > 1;
     let mut built_roots = BTreeMap::<RootKey, RootBuilt>::new();
     let mut representation_cache = BTreeMap::new();
     let mut admissions: Vec<PcurveAdmission> = Vec::new();
+    // Pcurve evaluation uses the geometry fixed before topology drafting.
+    // Build each distinct root against one index, then admit its draft through
+    // the commit session after releasing the immutable geometry borrow.
+    let mut root_outcomes = BTreeMap::new();
+    let seed_cache = std::cell::RefCell::new(PcurveSeedCache::default());
+    {
+        let index = (!decoded_pcurves.is_empty())
+            .then(|| ModelIndex::new_model_only(commit_session.document(), ctx))
+            .transpose()?;
+        for (key, (id, record)) in root_sources {
+            let mut root_losses = Vec::new();
+            let outcome = build(
+                id,
+                record,
+                BuildSources {
+                    exchange,
+                    index: index.as_deref(),
+                    vdefs: &vertices,
+                    edefs: &edges,
+                    shell_definitions: &shells,
+                    decoded_pcurves: &decoded_pcurves,
+                    point_positions,
+                    seed_cache: &seed_cache,
+                    ctx,
+                },
+                scope_distinct_roots,
+                &mut root_losses,
+            )?;
+            ctx.insert_btree_map(
+                &mut root_outcomes,
+                key,
+                (outcome, root_losses),
+                "step_topology_root_outcomes",
+            )?;
+        }
+    }
     for (id, record) in exchange.entities_any(&topology_root_types) {
         let Some(key) = root_key(record, exchange, &shells, ctx)? else {
             ctx.push_vec(
@@ -730,37 +798,19 @@ pub(super) fn decode(
             }
             continue;
         }
-        // A STEP file can define independent topology roots that reuse a
-        // global edge or vertex without reusing the shell record. CADIR
-        // identities are global, so every distinct root receives an owner
-        // scope when more than one root is present. This preserves each root
-        // without making the result depend on source record order.
-        let scope_root = scope_distinct_roots;
-        // Pcurve evaluation reads the geometry that is stable while this
-        // root is drafted. Share its index across all shells and coedges;
-        // release the borrow before committing new topology.
-        let outcome = {
-            let index = (!decoded_pcurves.is_empty())
-                .then(|| ModelIndex::new_model_only(commit_session.document(), ctx))
-                .transpose()?;
-            build(
-                id,
-                record,
-                BuildSources {
-                    exchange,
-                    index: index.as_deref(),
-                    vdefs: &vertices,
-                    edefs: &edges,
-                    odefs: &oriented,
-                    shell_definitions: &shells,
-                    decoded_pcurves: &decoded_pcurves,
-                    point_positions,
-                    ctx,
-                },
-                scope_root,
+        let Some((outcome, mut root_losses)) = root_outcomes.remove(&key) else {
+            ctx.push_vec(
                 &mut losses,
-            )?
+                StepLossCode::TopologyRootIncomplete.note(ctx.format_retained(
+                    format_args!("STEP topology root #{id} shares a rejected topology graph; no body was admitted"),
+                    "step_rejected_root_loss_text",
+                )?),
+                "step_topology_losses",
+            )?;
+            continue;
         };
+        ctx.reserve_vec(&mut losses, root_losses.len(), "step_topology_losses")?;
+        losses.append(&mut root_losses);
         let (built, failures) = outcome.into_parts();
         let failure_message = failures
             .as_ref()
@@ -806,9 +856,12 @@ pub(super) fn decode(
                         .try_clone_for_decode(ctx, "step_topology_built_bodies")?,
                     "step_topology_built_bodies",
                 )?;
-                for typed in std::mem::take(&mut built.typed) {
-                    ctx.insert_hash_set(&mut result.claims, typed, "step_topology_claims")?;
-                }
+                merge_claims(
+                    &mut result.claims,
+                    std::mem::take(&mut built.typed),
+                    ctx,
+                    "step_topology_claims",
+                )?;
                 // A rejected draft transfers no relation, so only a committed
                 // body contributes its admitted relations to the document.
                 ctx.append_vec(
@@ -932,9 +985,12 @@ pub(super) fn decode(
                 "step_topology_root_groups",
                 "step_topology_root_bodies",
             )?;
-            for typed in std::mem::take(&mut built.typed) {
-                ctx.insert_hash_set(&mut result.claims, typed, "step_topology_claims")?;
-            }
+            merge_claims(
+                &mut result.claims,
+                std::mem::take(&mut built.typed),
+                ctx,
+                "step_topology_claims",
+            )?;
         }
     }
     for (id, record) in exchange.entities_any(&[
@@ -1004,31 +1060,33 @@ pub(super) fn decode(
     }
     for face in &commit_session.document().model.faces {
         if let Some(source) = source_numeric_id(face.id.as_str(), "face") {
-            ctx.push_btree_group(
+            push_source_identity(
                 &mut result.faces_by_source,
                 source,
                 face.id
                     .try_clone_for_decode(ctx, "step_topology_source_faces")?,
                 "step_topology_source_face_groups",
                 "step_topology_source_faces",
+                ctx,
             )?;
         }
     }
     for edge in &commit_session.document().model.edges {
         if let Some(source) = source_numeric_id(edge.id.as_str(), "edge") {
-            ctx.push_btree_group(
+            push_source_identity(
                 &mut result.edges_by_source,
                 source,
                 edge.id
                     .try_clone_for_decode(ctx, "step_topology_source_edges")?,
                 "step_topology_source_edge_groups",
                 "step_topology_source_edges",
+                ctx,
             )?;
         }
     }
     for vertex in &commit_session.document().model.vertices {
         if let Some(source) = source_numeric_id(vertex.id.as_str(), "vertex") {
-            ctx.push_btree_group(
+            push_source_identity(
                 &mut result.vertices_by_source,
                 source,
                 vertex
@@ -1036,6 +1094,7 @@ pub(super) fn decode(
                     .try_clone_for_decode(ctx, "step_topology_source_vertices")?,
                 "step_topology_source_vertex_groups",
                 "step_topology_source_vertices",
+                ctx,
             )?;
         }
     }
@@ -2117,7 +2176,6 @@ enum OrientedKind {
     Seam { pcurve: Option<u64> },
 }
 
-#[derive(Clone)]
 struct OrientedDef {
     edge: u64,
     forward: bool,
@@ -2147,17 +2205,52 @@ fn edge_defs(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Rc<EdgeDef>>, CodecError> {
     let mut edges = BTreeMap::new();
-    let mut cache = BTreeMap::new();
+    let mut rejected = BTreeSet::new();
     let mut active = BTreeSet::new();
-    for (id, _) in exchange.entities_any(&[
-        "EDGE_CURVE",
-        "SEAM_EDGE",
-        "ORIENTED_EDGE",
-        "SUBEDGE",
-        "EDGE",
-    ]) {
-        if let Some(edge) = edge_def_for(id, exchange, &mut active, &mut cache, ctx)? {
-            ctx.insert_btree_map(&mut edges, id, edge, "step_edge_definitions")?;
+    for (id, _) in exchange.entities_any(&["EDGE_CURVE", "SUBEDGE", "EDGE"]) {
+        drop(edge_def_for(
+            id,
+            exchange,
+            &mut active,
+            &mut edges,
+            &mut rejected,
+            ctx,
+        )?);
+    }
+    // A coedge reads its orientation from the source record and needs only
+    // its edge element here. Resolve oriented nodes themselves when a parent
+    // chain or a connected wire set uses them as edges.
+    for (_, record) in exchange.entities_any(&["ORIENTED_EDGE", "SEAM_EDGE"]) {
+        if let Some(element) = oriented_edge_reference(record) {
+            drop(edge_def_for(
+                element,
+                exchange,
+                &mut active,
+                &mut edges,
+                &mut rejected,
+                ctx,
+            )?);
+        }
+    }
+    for (_, record) in exchange.entities_any(&["CONNECTED_EDGE_SET", "CONNECTED_EDGE_SUB_SET"]) {
+        let Some(set_type) =
+            most_specific(record, &["CONNECTED_EDGE_SUB_SET", "CONNECTED_EDGE_SET"])
+        else {
+            continue;
+        };
+        for id in connected_set_members(record, set_type)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::reference)
+        {
+            drop(edge_def_for(
+                id,
+                exchange,
+                &mut active,
+                &mut edges,
+                &mut rejected,
+                ctx,
+            )?);
         }
     }
     Ok(edges)
@@ -2167,17 +2260,22 @@ fn edge_def_for(
     id: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-    cache: &mut BTreeMap<u64, Option<Rc<EdgeDef>>>,
+    edges: &mut BTreeMap<u64, Rc<EdgeDef>>,
+    rejected: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Rc<EdgeDef>>, CodecError> {
-    if let Some(edge) = cache.get(&id) {
-        return Ok(edge.clone());
+    ctx.charge_work(1, "step_edge_definition_lookup")?;
+    if let Some(edge) = edges.get(&id) {
+        return Ok(Some(Rc::clone(edge)));
+    }
+    ctx.charge_work(1, "step_edge_definition_lookup")?;
+    if rejected.contains(&id) {
+        return Ok(None);
     }
     let _depth = ctx.enter_nested("step_edge_definition_recursion")?;
     if active.contains(&id) {
         return Ok(None);
     }
-    ctx.insert_btree_set(active, id, "step_edge_definition_active")?;
     let result = if let Some(record) = exchange.records().get(&id) {
         match most_specific(
             record,
@@ -2203,7 +2301,8 @@ fn edge_def_for(
                 if let Some(((start, end), parent)) =
                     edge_vertices(record).zip(subedge_parent(record))
                 {
-                    edge_def_for(parent, exchange, active, cache, ctx)?.map(|basis| {
+                    ctx.insert_btree_set(active, id, "step_edge_definition_active")?;
+                    edge_def_for(parent, exchange, active, edges, rejected, ctx)?.map(|basis| {
                         EdgeDef::Subedge {
                             start,
                             end,
@@ -2219,7 +2318,8 @@ fn edge_def_for(
                 if let Some((element, forward)) =
                     oriented_edge_reference(record).zip(oriented_edge_forward(record))
                 {
-                    edge_def_for(element, exchange, active, cache, ctx)?.map(|basis| {
+                    ctx.insert_btree_set(active, id, "step_edge_definition_active")?;
+                    edge_def_for(element, exchange, active, edges, rejected, ctx)?.map(|basis| {
                         EdgeDef::Oriented {
                             element,
                             basis,
@@ -2245,12 +2345,11 @@ fn edge_def_for(
     } else {
         None
     };
-    ctx.insert_btree_map(
-        &mut *cache,
-        id,
-        result.clone(),
-        "step_edge_definition_cache",
-    )?;
+    if let Some(edge) = &result {
+        ctx.insert_btree_map(edges, id, Rc::clone(edge), "step_edge_definitions")?;
+    } else {
+        ctx.insert_btree_set(rejected, id, "step_edge_definition_rejections")?;
+    }
     Ok(result)
 }
 
@@ -2289,43 +2388,28 @@ fn edge_curve_id_reported(
     }
     Ok(carrier.map(|curve| CurveId::from(ids::data(kind!("curve"), curve))))
 }
-fn oriented_defs(
-    exchange: &Exchange,
-    ctx: &DecodeContext<'_>,
-) -> Result<BTreeMap<u64, OrientedDef>, CodecError> {
-    let mut oriented = BTreeMap::new();
-    for (id, record) in exchange.entities_any(&["ORIENTED_EDGE", "SEAM_EDGE"]) {
-        let Some(edge) = oriented_edge_reference(record) else {
-            continue;
-        };
-        let Some(forward) = oriented_edge_forward(record) else {
-            continue;
-        };
-        let kind = if most_specific(record, &["SEAM_EDGE"]).is_some() {
-            OrientedKind::Seam {
-                pcurve: record.partial("SEAM_EDGE").and_then(|partial| {
-                    partial
-                        .parameters
-                        .iter()
-                        .rev()
-                        .find_map(ValueExt::reference)
-                }),
-            }
-        } else {
-            OrientedKind::Plain
-        };
-        ctx.insert_btree_map(
-            &mut oriented,
-            id,
-            OrientedDef {
-                edge,
-                forward,
-                kind,
-            },
-            "step_oriented_edge_definitions",
-        )?;
-    }
-    Ok(oriented)
+fn oriented_def(record: &RawRecord) -> Option<OrientedDef> {
+    most_specific(record, &["ORIENTED_EDGE", "SEAM_EDGE"])?;
+    let edge = oriented_edge_reference(record)?;
+    let forward = oriented_edge_forward(record)?;
+    let kind = if record.partial("SEAM_EDGE").is_some() {
+        OrientedKind::Seam {
+            pcurve: record.partial("SEAM_EDGE").and_then(|partial| {
+                partial
+                    .parameters
+                    .iter()
+                    .rev()
+                    .find_map(ValueExt::reference)
+            }),
+        }
+    } else {
+        OrientedKind::Plain
+    };
+    Some(OrientedDef {
+        edge,
+        forward,
+        kind,
+    })
 }
 
 fn subedge_parent(record: &RawRecord) -> Option<u64> {
@@ -2726,30 +2810,28 @@ fn root_key(
     };
     for shell in shell_steps {
         let key = if root.partial("FACE_BASED_SURFACE_MODEL").is_some() {
-            Some((shell, Some(true)))
+            (shell, Some(true))
         } else {
             shell_definitions
                 .get(&shell)
-                .map(|definition| (definition.base, Some(definition.forward)))
-                .or(Some((shell, None)))
+                .map_or((shell, None), |definition| {
+                    (definition.base, Some(definition.forward))
+                })
         };
-        if key.as_ref().is_some_and(|(_, forward)| forward.is_some()) {
+        if key.1.is_some() {
             resolved += 1;
         }
-        let Some(key) = key else {
-            return Ok(None);
-        };
         ctx.push_vec(&mut shell_keys, key, "step_root_shell_keys")?;
     }
     if resolved == 0 {
         return Ok(None);
     }
-    ctx.sort_unstable_by(
-        &mut shell_keys,
-        Ord::cmp,
-        |_| 0,
-        "step_root_shell_keys_sort",
-    )?;
+    let unordered = if root_kind == "BREP_WITH_VOIDS" {
+        &mut shell_keys[1..]
+    } else {
+        &mut shell_keys[..]
+    };
+    ctx.sort_unstable_by(unordered, Ord::cmp, |_| 0, "step_root_shell_keys_sort")?;
     Ok(Some(RootKey {
         root_kind,
         shell_keys,
@@ -2762,10 +2844,10 @@ struct BuildSources<'a, 'b> {
     index: Option<&'a ModelIndex<'a>>,
     vdefs: &'a BTreeMap<u64, VertexDef>,
     edefs: &'a BTreeMap<u64, Rc<EdgeDef>>,
-    odefs: &'a BTreeMap<u64, OrientedDef>,
     shell_definitions: &'a BTreeMap<u64, ShellDef>,
     decoded_pcurves: &'a BTreeSet<u64>,
     point_positions: &'a CarrierIndex,
+    seed_cache: &'a std::cell::RefCell<PcurveSeedCache>,
     ctx: &'a DecodeContext<'b>,
 }
 
@@ -2930,10 +3012,10 @@ fn build_one(
         index,
         vdefs,
         edefs,
-        odefs,
         shell_definitions,
         decoded_pcurves,
         point_positions,
+        seed_cache,
         ctx,
     } = sources;
     let BuildRoot {
@@ -3462,8 +3544,9 @@ fn build_one(
                 }
                 let mut coedge_ids = vec![];
                 for use_step in uses {
+                    ctx.charge_work(1, "step_oriented_edge_lookup")?;
                     let o = require_carrier(
-                        odefs.get(&use_step),
+                        exchange.records().get(&use_step).and_then(oriented_def),
                         failure,
                         use_step,
                         CarrierKind::OrientedEdgeDefinition,
@@ -3533,6 +3616,7 @@ fn build_one(
                                             vdefs,
                                             point_positions,
                                             candidates: &associated,
+                                            seed_cache,
                                         },
                                         ctx,
                                     )
@@ -4113,12 +4197,15 @@ fn connected_face_components(
     }
 
     for group in faces_by_edge.values().chain(faces_by_vertex.values()) {
-        for &face in group {
-            for &other in group {
-                if other != face {
-                    ctx.insert_btree_set(&mut neighbors[face], other, "STEP connected-face links")?;
-                }
-            }
+        let mut members = group.iter().copied();
+        let Some(first) = members.next() else {
+            continue;
+        };
+        // A spanning star preserves the group's component membership without
+        // constructing every ordered pair of adjacent faces.
+        for other in members {
+            ctx.insert_btree_set(&mut neighbors[first], other, "STEP connected-face links")?;
+            ctx.insert_btree_set(&mut neighbors[other], first, "STEP connected-face links")?;
         }
     }
     let mut reached = ctx.alloc_filled(face_ids.len(), false, "STEP connected-face reached")?;
@@ -4604,6 +4691,7 @@ struct PcurveAssociationSources<'a> {
     vdefs: &'a BTreeMap<u64, VertexDef>,
     point_positions: &'a CarrierIndex,
     candidates: &'a [PcurveId],
+    seed_cache: &'a std::cell::RefCell<PcurveSeedCache>,
 }
 
 fn select_associated_pcurve(
@@ -4618,6 +4706,7 @@ fn select_associated_pcurve(
         vdefs,
         point_positions,
         candidates,
+        seed_cache,
     } = sources;
     let [candidate] = candidates else {
         return Err(PcurveSelectionFailure::NotUnique {
@@ -4626,10 +4715,9 @@ fn select_associated_pcurve(
     };
     let candidate = candidate.try_clone_for_decode(ctx, "step_selected_pcurve_id")?;
     let surface_identity = ids::data(kind!("surface"), surface_step);
-    let surface = &index
+    let surface = index
         .surfaces(surface_identity.as_str(), ctx)?
-        .ok_or(PcurveSelectionFailure::Carrier)?
-        .geometry;
+        .ok_or(PcurveSelectionFailure::Carrier)?;
     let surface_id = SurfaceId::from(surface_identity);
     let pcurve = index
         .pcurves(candidate.as_str(), ctx)?
@@ -4653,11 +4741,11 @@ fn select_associated_pcurve(
     };
     let endpoint = pcurve_endpoint_fit(
         index,
-        &surface_id,
-        geometry,
+        pcurve,
         surface,
         curve_start,
         curve_end,
+        seed_cache,
         ctx,
     )?
     .ok_or(PcurveSelectionFailure::Endpoint)?;
@@ -4867,13 +4955,16 @@ fn curve_parameter_near_point(
 
 fn pcurve_endpoint_fit(
     index: &ModelIndex<'_>,
-    surface_id: &SurfaceId,
-    geometry: &PcurveGeometry,
-    surface: &SurfaceGeometry,
+    pcurve: &cadmpeg_ir::geometry::pcurve::Pcurve,
+    surface: &Surface,
     start: Point3,
     end: Point3,
+    seed_cache: &std::cell::RefCell<PcurveSeedCache>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PcurveEndpointFit>, PcurveSelectionFailure> {
+    let surface_id = &surface.id;
+    let geometry = &pcurve.geometry;
+    let surface = &surface.geometry;
     if let Some(parameter_range) = pcurve_declared_parameter_range(geometry) {
         let Some(declared_score) = pcurve_declared_endpoint_fit_directed(
             ctx,
@@ -4897,7 +4988,9 @@ fn pcurve_endpoint_fit(
         // A few producers retain a stale trim around an edge-local pcurve.
         // Search for an alternative interval, then use the evaluated residual
         // as the witness. The search does not establish a global minimum.
-        let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface, ctx)?;
+        let seeds = cached_pcurve_selection_seeds(
+            index, surface_id, &pcurve.id, geometry, surface, seed_cache, ctx,
+        )?;
         let Some(start) = pcurve_surface_closest(ctx, index, surface_id, geometry, start, &seeds)?
         else {
             return Ok(None);
@@ -4912,7 +5005,9 @@ fn pcurve_endpoint_fit(
             max_residual: start.0.max(end.0),
         }));
     }
-    let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface, ctx)?;
+    let seeds = cached_pcurve_selection_seeds(
+        index, surface_id, &pcurve.id, geometry, surface, seed_cache, ctx,
+    )?;
     let Some(start) = pcurve_surface_closest(ctx, index, surface_id, geometry, start, &seeds)?
     else {
         return Ok(None);
@@ -5278,6 +5373,58 @@ fn pcurve_parameter_break_fractions(
     Ok(())
 }
 
+/// Seed storage belongs to one immutable geometry index during root drafting.
+#[derive(Default)]
+struct PcurveSeedCache {
+    surfaces: BTreeMap<SurfaceId, BTreeMap<PcurveId, Rc<Vec<f64>>>>,
+}
+
+fn cached_pcurve_selection_seeds(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    pcurve_id: &PcurveId,
+    geometry: &PcurveGeometry,
+    surface: &SurfaceGeometry,
+    cache: &std::cell::RefCell<PcurveSeedCache>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Rc<Vec<f64>>, CodecError> {
+    ctx.charge_work(1, "step_pcurve_seed_cache_lookup")?;
+    if let Some(seeds) = cache
+        .borrow()
+        .surfaces
+        .get(surface_id)
+        .and_then(|curves| curves.get(pcurve_id))
+    {
+        return Ok(Rc::clone(seeds));
+    }
+    let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface, ctx)?;
+    ctx.charge_retained(
+        u64_from_index(std::mem::size_of::<Vec<f64>>() + 2 * std::mem::size_of::<usize>()),
+        "step_pcurve_seed_cache_value",
+    )?;
+    let seeds = Rc::new(seeds);
+    let mut cache = cache.borrow_mut();
+    if !cache.surfaces.contains_key(surface_id) {
+        ctx.insert_btree_map(
+            &mut cache.surfaces,
+            surface_id.try_clone_for_decode(ctx, "step_pcurve_seed_cache_identity")?,
+            BTreeMap::new(),
+            "step_pcurve_seed_cache_surfaces",
+        )?;
+    }
+    let curves = cache
+        .surfaces
+        .get_mut(surface_id)
+        .ok_or_else(|| CodecError::malformed("pcurve seed cache surface was not indexed"))?;
+    ctx.insert_btree_map(
+        curves,
+        pcurve_id.try_clone_for_decode(ctx, "step_pcurve_seed_cache_identity")?,
+        Rc::clone(&seeds),
+        "step_pcurve_seed_cache_curves",
+    )?;
+    Ok(seeds)
+}
+
 fn pcurve_selection_seeds(
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
@@ -5315,7 +5462,7 @@ fn pcurve_selection_seeds(
             ctx.push_vec(&mut fractions, fraction, "step_pcurve_selection_fractions")?;
         }
         pcurve_parameter_break_fractions(geometry, [start, end], &mut fractions, ctx)?;
-        ctx.stable_sort_by(
+        ctx.sort_unstable_by(
             &mut fractions,
             f64::total_cmp,
             |_| 0,
@@ -5403,13 +5550,21 @@ fn pcurve_selection_seeds(
             }
         }
     }
-    let mut unique = Vec::new();
-    for seed in seeds.into_iter().filter(|seed| seed.is_finite()) {
-        if !unique.contains(&seed) {
-            ctx.push_vec(&mut unique, seed, "step_pcurve_unique_seeds")?;
+    let mut kept = 0;
+    for at in 0..seeds.len() {
+        let seed = seeds[at];
+        ctx.charge_work(1, "step_pcurve_unique_seed_comparisons")?;
+        if !seed.is_finite() {
+            continue;
+        }
+        ctx.charge_work(u64_from_index(kept), "step_pcurve_unique_seed_comparisons")?;
+        if !seeds[..kept].contains(&seed) {
+            seeds[kept] = seed;
+            kept += 1;
         }
     }
-    Ok(unique)
+    seeds.truncate(kept);
+    Ok(seeds)
 }
 
 fn periodic_seed_coordinate([lower, upper]: [f64; 2], fraction: f64) -> Option<f64> {

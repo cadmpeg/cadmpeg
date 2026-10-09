@@ -22,6 +22,7 @@ fn parser<'input, 'ctx, 'arena>(
         depth: 0,
         diagnostics: Vec::new(),
         omitted_entity_names: None,
+        defer_lexical_errors: false,
         budget: ctx,
     };
     parser.current = parser.lex_next().expect("fixture lexes");
@@ -174,7 +175,7 @@ fn binding_and_reference_snapshot_text_are_admitted_once_per_copy() {
         let (exchange, _) = crate::parse::parse_with_context(source, ctx)
             .expect("six text buffers plus fixed structures fit");
         assert_eq!(
-            exchange.records()[&1].partials[0].parameters,
+            exchange.records()[&1].partials[0].parameters.as_slice(),
             [Value::Enumeration(text.clone())]
         );
     });

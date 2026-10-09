@@ -80,6 +80,12 @@ pub(crate) fn header(offset: usize) -> UnknownId {
     UnknownId::from(Identity::compose(&namespace, IdentityKey::from(offset)))
 }
 
+/// Omitted exchange statement, keyed by its source byte offset.
+pub(crate) fn omitted_record(offset: usize) -> UnknownId {
+    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_FILE, kind!("omitted"));
+    UnknownId::from(Identity::compose(&namespace, IdentityKey::from(offset)))
+}
+
 /// Retained ZIP member declaration, keyed by its physical central offset.
 #[must_use]
 pub(crate) fn zip_declaration(offset: u64) -> UnknownId {

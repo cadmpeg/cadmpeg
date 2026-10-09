@@ -26,6 +26,8 @@ pub(crate) struct Token {
 /// Part 21 token categories.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TokenKind {
+    /// A lexical defect deferred to its containing statement's recovery.
+    InvalidSource(String),
     /// Standard keyword or entity name.
     Name(String),
     /// User-defined `!`-prefixed keyword.
@@ -119,6 +121,9 @@ pub(crate) struct LexError {
 }
 
 impl LexError {
+    pub(crate) fn offset(&self) -> usize {
+        self.offset
+    }
     pub(crate) fn into_codec_error(self) -> CodecError {
         match self.resource {
             Some(error) => error,
@@ -157,6 +162,12 @@ pub(crate) enum LiteralAdmission {
     Metadata,
 }
 
+#[derive(Clone, Copy)]
+enum ExchangeSyntax {
+    Standard,
+    Draft,
+}
+
 pub(crate) struct Lexer<'a, 'ctx, 'arena> {
     input: &'a [u8],
     budget: &'ctx DecodeContext<'arena>,
@@ -166,6 +177,7 @@ pub(crate) struct Lexer<'a, 'ctx, 'arena> {
     allow_print_controls: bool,
     previous_was_signature: bool,
     tag_name_expected: bool,
+    syntax: ExchangeSyntax,
 }
 
 pub(crate) fn print_control_end(input: &[u8], at: usize) -> Option<usize> {
@@ -175,15 +187,21 @@ pub(crate) fn print_control_end(input: &[u8], at: usize) -> Option<usize> {
 
 impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
     pub(crate) fn new(input: &'a [u8], ctx: &'ctx DecodeContext<'arena>) -> Self {
+        let draft_offset = crate::codec::draft_exchange_offset(input);
         Self {
             input,
             budget: ctx,
             literal_storage: LiteralStorage::Retained,
             literal_admission: LiteralAdmission::Required,
-            at: 0,
+            at: draft_offset.unwrap_or(0),
             allow_print_controls: true,
             previous_was_signature: false,
             tag_name_expected: false,
+            syntax: if draft_offset.is_some() {
+                ExchangeSyntax::Draft
+            } else {
+                ExchangeSyntax::Standard
+            },
         }
     }
 
@@ -205,6 +223,16 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
 
     pub(crate) fn input(&self) -> &[u8] {
         self.input
+    }
+
+    pub(crate) fn is_draft(&self) -> bool {
+        matches!(self.syntax, ExchangeSyntax::Draft)
+    }
+
+    pub(crate) fn seek(&mut self, at: usize) {
+        self.at = at;
+        self.tag_name_expected = false;
+        self.previous_was_signature = false;
     }
 
     pub(crate) fn next_token(&mut self) -> Result<Option<Token>, LexError> {
@@ -253,7 +281,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 continue;
             }
             let candidate = at;
-            let Some(mut after_name) = self.match_ignoring_controls(candidate, b"ENDSEC") else {
+            let Some(mut after_name) = match_ignoring_controls(self.input, candidate, b"ENDSEC")
+            else {
                 at += 1;
                 boundary_allowed = false;
                 continue;
@@ -390,12 +419,14 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 self.at += 1;
                 continue;
             }
-            if self.input.get(self.at..self.at + 2) != Some(b"/*") {
-                return Ok(self.at < self.input.len());
-            }
+            let close = match self.input.get(self.at..self.at + 2) {
+                Some(b"/*") => b"*/",
+                Some(b"!*") if self.is_draft() => b"*!",
+                _ => return Ok(self.at < self.input.len()),
+            };
             let start = self.at;
             self.at += 2;
-            let Some(end) = self.input[self.at..].windows(2).position(|w| w == b"*/") else {
+            let Some(end) = self.input[self.at..].windows(2).position(|w| w == close) else {
                 return Err(Self::error(start, "unterminated comment"));
             };
             self.at += end + 2;
@@ -638,14 +669,24 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
     fn string(&mut self) -> Result<TokenKind, LexError> {
         let start = self.at;
         self.at += 1;
-        let mut bytes = Vec::new();
+        let content = self.at;
         loop {
+            self.budget
+                .charge_work(1, "step_string_boundary_scan")
+                .map_err(|error| Self::resource_error(start, error))?;
             match self.input.get(self.at).copied() {
                 Some(b'\'') => {
                     if let Some(end) = self.match_exact_ignoring_controls(self.at, b"''") {
-                        self.extend_string_bytes(&mut bytes, b"''", start)?;
                         self.at = end;
                     } else {
+                        let mut bytes = self
+                            .budget
+                            .copy_retained(&self.input[content..self.at], "step_string_lexeme")
+                            .map_err(|error| Self::resource_error(start, error))?;
+                        self.budget
+                            .charge_work(u64_from_index(bytes.len()), "step_string_normalization")
+                            .map_err(|error| Self::resource_error(start, error))?;
+                        bytes.retain(|byte| !byte.is_ascii_control());
                         self.at += 1;
                         return Ok(TokenKind::String(bytes));
                     }
@@ -661,25 +702,12 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                                 "print control directive is not allowed in this section",
                             ));
                         }
-                        let directive = if self
-                            .match_exact_ignoring_controls(self.at, b"\\N\\")
-                            .is_some()
-                        {
-                            b"\\N\\"
-                        } else {
-                            b"\\F\\"
-                        };
-                        self.extend_string_bytes(&mut bytes, directive, start)?;
                         self.at = end;
                     } else {
-                        self.extend_string_bytes(&mut bytes, b"\\", start)?;
                         self.at += 1;
                     }
                 }
-                Some(byte) => {
-                    self.extend_string_bytes(&mut bytes, &[byte], start)?;
-                    self.at += 1;
-                }
+                Some(_) => self.at += 1,
                 None => return Err(Self::error(start, "unterminated string")),
             }
         }
@@ -936,40 +964,12 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         Ok((output, reservation))
     }
 
-    fn extend_string_bytes(
-        &self,
-        output: &mut Vec<u8>,
-        bytes: &[u8],
-        start: usize,
-    ) -> Result<(), LexError> {
-        self.budget
-            .extend_retained_bytes(output, bytes, "step_string_lexeme_items")
-            .map_err(|error| Self::resource_error(start, error))
-    }
-
     fn print_control_end(&self, at: usize) -> Option<usize> {
         print_control_end(self.input, at)
     }
 
     fn match_exact_ignoring_controls(&self, at: usize, expected: &[u8]) -> Option<usize> {
         match_exact_ignoring_controls(self.input, at, expected)
-    }
-
-    fn match_ignoring_controls(&self, mut at: usize, expected: &[u8]) -> Option<usize> {
-        for &byte in expected {
-            while self.input.get(at).is_some_and(u8::is_ascii_control) {
-                at += 1;
-            }
-            if !self
-                .input
-                .get(at)
-                .is_some_and(|value| value.eq_ignore_ascii_case(&byte))
-            {
-                return None;
-            }
-            at += 1;
-        }
-        Some(at)
     }
 
     fn error(offset: usize, message: &str) -> LexError {
@@ -1014,12 +1014,36 @@ impl HexDigit {
     }
 }
 
-fn match_exact_ignoring_controls(input: &[u8], mut at: usize, expected: &[u8]) -> Option<usize> {
+pub(crate) fn match_exact_ignoring_controls(
+    input: &[u8],
+    mut at: usize,
+    expected: &[u8],
+) -> Option<usize> {
     for &byte in expected {
         while input.get(at).is_some_and(u8::is_ascii_control) {
             at += 1;
         }
         if input.get(at) != Some(&byte) {
+            return None;
+        }
+        at += 1;
+    }
+    Some(at)
+}
+
+pub(crate) fn match_ignoring_controls(
+    input: &[u8],
+    mut at: usize,
+    expected: &[u8],
+) -> Option<usize> {
+    for &byte in expected {
+        while input.get(at).is_some_and(u8::is_ascii_control) {
+            at += 1;
+        }
+        if !input
+            .get(at)
+            .is_some_and(|value| value.eq_ignore_ascii_case(&byte))
+        {
             return None;
         }
         at += 1;

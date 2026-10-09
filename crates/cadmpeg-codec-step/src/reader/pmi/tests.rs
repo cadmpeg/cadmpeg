@@ -1055,10 +1055,30 @@ DATA;
 ENDSEC;
 END-ISO-10303-21;
 ";
-    let error = StepCodec::default()
+    let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect_err("an entity must contain at least one partial record");
-    assert!(error.to_string().contains("expected name"));
+        .expect("omit the bounded empty instance and its PMI dependent");
+    let result = EditableDecodeResult::from(result);
+    assert!(result.ir().model.pmi.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::ParseRecordOmitted.kind()
+            && loss.message.contains("expected name")
+    }));
+    let retained = result
+        .ir()
+        .native_unknowns("step")
+        .expect("retained source");
+    for bytes in [
+        b"#5=();".as_slice(),
+        b"#10=ANNOTATION_OCCURRENCE('',(),#5);",
+    ] {
+        assert!(retained.iter().any(|record| {
+            result
+                .source_fidelity()
+                .retained_record(record.id.as_str())
+                .is_some_and(|source| source.data() == Some(bytes))
+        }));
+    }
 }
 
 #[test]
@@ -1733,7 +1753,7 @@ fn datum_target_writes_and_round_trips() {
 }
 
 #[test]
-fn nonfinite_pmi_placement_refuses_real_overflow() {
+fn nonfinite_pmi_placement_omits_records_and_retains_source() {
     let result = decode_inline_result(
         "#1=CARTESIAN_POINT('',(1E400,0.,0.));
 #2=DIRECTION('',(0.,0.,1.));
@@ -1741,9 +1761,30 @@ fn nonfinite_pmi_placement_refuses_real_overflow() {
 #4=AXIS2_PLACEMENT_3D('text placement',#1,#2,#3);
 #5=TEXT_LITERAL_WITH_ASSOCIATED_CURVES('note',#4,'left',.RIGHT.,$,());
 #6=ANNOTATION_TEXT_OCCURRENCE('annotation',(),#5);",
-    );
-    assert!(
-        matches!(result, Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message)))
-        if message.contains("finite binary64 range"))
-    );
+    )
+    .expect("omit the bounded point and its PMI dependents");
+    let result = EditableDecodeResult::from(result);
+    assert!(result.ir().model.points.is_empty());
+    assert!(result.ir().model.pmi.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::ParseRecordOmitted.kind()
+            && loss.message.contains("finite binary64 range")
+    }));
+    let retained = result
+        .ir()
+        .native_unknowns("step")
+        .expect("retained source");
+    for bytes in [
+        b"#1=CARTESIAN_POINT('',(1E400,0.,0.));".as_slice(),
+        b"#4=AXIS2_PLACEMENT_3D('text placement',#1,#2,#3);",
+        b"#5=TEXT_LITERAL_WITH_ASSOCIATED_CURVES('note',#4,'left',.RIGHT.,$,());",
+        b"#6=ANNOTATION_TEXT_OCCURRENCE('annotation',(),#5);",
+    ] {
+        assert!(retained.iter().any(|record| {
+            result
+                .source_fidelity()
+                .retained_record(record.id.as_str())
+                .is_some_and(|source| source.data() == Some(bytes))
+        }));
+    }
 }

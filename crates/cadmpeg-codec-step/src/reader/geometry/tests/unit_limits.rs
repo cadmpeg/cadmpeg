@@ -197,23 +197,13 @@ fn candidate_refusal(angle: bool, limit: u64) -> CodecError {
     policy.limits.max_collection_items = limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let (group, value) = if angle {
-        ("step_angle_candidate_groups", "step_angle_candidate_values")
+    let group = if angle {
+        "step_angle_candidate_groups"
     } else {
-        (
-            "step_length_candidate_groups",
-            "step_length_candidate_values",
-        )
+        "step_length_candidate_groups"
     };
-    super::super::add_unit_candidate(
-        &mut BTreeMap::new(),
-        1,
-        PositiveReal::ONE,
-        &ctx,
-        group,
-        value,
-    )
-    .expect_err("candidate exceeds the limit")
+    super::super::add_unit_candidate(&mut BTreeMap::new(), 1, PositiveReal::ONE, &ctx, group)
+        .expect_err("candidate exceeds the limit")
 }
 
 #[test]
@@ -225,27 +215,11 @@ fn length_candidate_groups_refuse_collection_limit() {
 }
 
 #[test]
-fn length_candidate_values_refuse_collection_limit() {
-    assert!(matches!(candidate_refusal(false, 1),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_length_candidate_values"));
-}
-
-#[test]
 fn angle_candidate_groups_refuse_collection_limit() {
     assert!(matches!(candidate_refusal(true, 0),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_angle_candidate_groups"));
-}
-
-#[test]
-fn angle_candidate_values_refuse_collection_limit() {
-    assert!(matches!(candidate_refusal(true, 1),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_angle_candidate_values"));
 }
 
 fn scope_refusal(records: &str, collection_limit: u64, depth_limit: Option<u64>) -> CodecError {
@@ -261,27 +235,13 @@ fn scope_refusal(records: &str, collection_limit: u64, depth_limit: Option<u64>)
     }
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
-    super::super::collect_unit_scope_members(
-        1,
-        &exchange,
-        &mut BTreeSet::new(),
-        &mut BTreeSet::new(),
-        &ctx,
-    )
-    .expect_err("scope traversal exceeds the limit")
-}
-
-#[test]
-fn unit_scope_active_refuses_collection_limit() {
-    assert!(matches!(scope_refusal("#1=ITEM();", 0, None),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_unit_scope_active"));
+    super::super::collect_unit_scope_members(1, &exchange, &mut BTreeSet::new(), &ctx)
+        .expect_err("scope traversal exceeds the limit")
 }
 
 #[test]
 fn unit_scope_members_refuse_collection_limit() {
-    assert!(matches!(scope_refusal("#1=ITEM();", 1, None),
+    assert!(matches!(scope_refusal("#1=ITEM();", 0, None),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_unit_scope_members"));
@@ -289,7 +249,7 @@ fn unit_scope_members_refuse_collection_limit() {
 
 #[test]
 fn unit_scope_pending_refuses_collection_limit() {
-    assert!(matches!(scope_refusal("#1=ITEM(#2);#2=ITEM();", 2, None),
+    assert!(matches!(scope_refusal("#1=ITEM(#2);#2=ITEM();", 1, None),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_unit_scope_pending"));
@@ -312,7 +272,7 @@ fn unit_selected_scales_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let candidates = BTreeMap::from([(1, vec![PositiveReal::ONE])]);
+    let candidates = BTreeMap::from([(1, Some(PositiveReal::ONE))]);
     let default = PositiveReal::new(2.0).expect("positive default");
     assert!(matches!(
         super::super::finalize_unit_candidates(candidates, default, "length", &mut Vec::new(), &ctx),
@@ -329,13 +289,7 @@ fn conflicting_unit_loss_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let candidates = BTreeMap::from([(
-        1,
-        vec![
-            PositiveReal::ONE,
-            PositiveReal::new(2.0).expect("positive scale"),
-        ],
-    )]);
+    let candidates = BTreeMap::from([(1, None)]);
     assert!(matches!(
         super::super::finalize_unit_candidates(candidates, PositiveReal::ONE, "length", &mut Vec::new(), &ctx),
         Err(CodecError::ResourceLimit(refusal))
@@ -414,4 +368,80 @@ fn shared_geometry_is_visited_once_per_unit_scope() {
     )
     .expect("shared members fit linear budget");
     assert_eq!(scales.length([3]), PositiveReal::ONE);
+}
+
+#[test]
+fn repeated_unit_candidates_keep_one_first_scale_and_a_final_conflict() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let mut candidates = BTreeMap::new();
+    let operation = "step_length_candidate_groups";
+    for _ in 0..1_000 {
+        super::super::add_unit_candidate(&mut candidates, 1, PositiveReal::ONE, &ctx, operation)
+            .expect("one candidate slot");
+    }
+    assert_eq!(candidates[&1], Some(PositiveReal::ONE));
+    super::super::add_unit_candidate(
+        &mut candidates,
+        1,
+        PositiveReal::new(2.0).expect("positive"),
+        &ctx,
+        operation,
+    )
+    .expect("conflict replaces the same scalar state");
+    super::super::add_unit_candidate(&mut candidates, 1, PositiveReal::ONE, &ctx, operation)
+        .expect("later agreement cannot clear conflict");
+    assert_eq!(candidates[&1], None);
+}
+
+#[test]
+fn unit_scope_reuses_members_for_shared_children_and_cycles() {
+    let source = format!("{HEADER}#1=ITEM((#2,#2));#2=ITEM((#1,#3));#3=ITEM();{TAIL}");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("cyclic authored scope");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Three unique members plus four traversal edges fit. A second visited
+    // collection would need three additional member slots.
+    policy.limits.max_collection_items = 7;
+    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+        .expect("source fits policy");
+    let mut members = BTreeSet::new();
+    super::super::collect_unit_scope_members(1, &exchange, &mut members, &ctx)
+        .expect("each scope member is stored once");
+    assert_eq!(members, BTreeSet::from([1, 2, 3]));
+}
+
+#[test]
+fn uniform_default_units_skip_geometry_scope_bookkeeping() {
+    use std::fmt::Write;
+
+    let mut source = format!("{HEADER}{LENGTH}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('',''));#3=CARTESIAN_POINT('',(1.,2.,3.));");
+    for id in 100..300 {
+        write!(source, "#{id}=SHAPE_REPRESENTATION('',(#3),#2);").expect("authored representation");
+    }
+    source.push_str(TAIL);
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("shared authored context");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 16;
+    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+        .expect("source fits policy");
+    let mut losses = Vec::new();
+    let scales = super::super::resolve_unit_scales(
+        &exchange,
+        PositiveReal::ONE,
+        PositiveReal::ONE,
+        &mut losses,
+        &ctx,
+    )
+    .expect("one context admission; no per-representation geometry collections");
+    assert!(scales.length.is_empty());
+    assert!(scales.angle.is_empty());
+    assert!(losses.is_empty());
 }

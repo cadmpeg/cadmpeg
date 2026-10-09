@@ -21,7 +21,7 @@ fn pmi_refuses(records: &str, operation: &str) {
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
             .expect("source fits setup policy");
     let mut setup_ir = cadmpeg_ir::document::CadIr::empty();
-    let geometry = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
+    let (geometry, _) = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
         .expect("geometry setup");
     let index =
         crate::reader::index::CarrierIndex::from_ir(&setup_ir, &setup_ctx).expect("carrier setup");
@@ -53,7 +53,7 @@ fn pmi_retained_refuses(records: &str, operation: &str) {
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
             .expect("source fits setup policy");
     let mut setup_ir = cadmpeg_ir::document::CadIr::empty();
-    let geometry = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
+    let (geometry, _) = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
         .expect("geometry setup");
     let index =
         crate::reader::index::CarrierIndex::from_ir(&setup_ir, &setup_ctx).expect("carrier setup");
@@ -419,7 +419,7 @@ fn placement_refuses(operation: &str) {
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
             .expect("setup root fits policy");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let geometry =
+    let (geometry, _) =
         crate::reader::geometry::decode(&exchange, &mut ir, &setup_ctx).expect("geometry setup");
     let refused = (0..=32).any(|limit| {
         let arena = DecodeArena::new();
@@ -458,7 +458,7 @@ fn pmi_placement_walk_refuses_depth_limit() {
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
             .expect("setup root fits policy");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let geometry =
+    let (geometry, _) =
         crate::reader::geometry::decode(&exchange, &mut ir, &setup_ctx).expect("geometry setup");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

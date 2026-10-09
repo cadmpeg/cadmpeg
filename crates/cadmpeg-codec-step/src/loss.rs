@@ -31,6 +31,14 @@ const NAMESPACE: LossNamespace<'static> = match LossNamespace::new("step") {
 pub(crate) enum StepLossCode {
     /// Parser recovered noncanonical Part 21 syntax.
     ParseNoncanonicalSyntax,
+    /// A bounded DATA record or its dependent could not be interpreted.
+    ParseRecordOmitted,
+    /// A bounded noncanonical prefix remains source-only.
+    ParsePreambleOmitted,
+    /// A pre-standard exchange used the Part 21 instance grammar.
+    ParseDraftGrammar,
+    /// Readable DATA ends before a complete closing envelope.
+    ParseEnvelopeIncomplete,
     /// ZIP metadata violates the Part 21 profile without preventing root decoding.
     ContainerMemberNoncanonical,
     /// A decode stage surfaced a per-record warning.
@@ -328,6 +336,10 @@ impl StepLossCode {
     #[cfg(test)]
     const ALL: &'static [StepLossCode] = &[
         Self::ParseNoncanonicalSyntax,
+        Self::ParseRecordOmitted,
+        Self::ParsePreambleOmitted,
+        Self::ParseDraftGrammar,
+        Self::ParseEnvelopeIncomplete,
         Self::ContainerMemberNoncanonical,
         Self::DecodeWarning,
         Self::ByteAccountingUnclassified,
@@ -481,6 +493,10 @@ impl StepLossCode {
         match self {
             Self::ContainerMemberNoncanonical => "container.member-noncanonical",
             Self::ParseNoncanonicalSyntax => "parse.noncanonical-syntax",
+            Self::ParseRecordOmitted => "parse.record-omitted",
+            Self::ParsePreambleOmitted => "parse.preamble-omitted",
+            Self::ParseDraftGrammar => "parse.draft-grammar",
+            Self::ParseEnvelopeIncomplete => "parse.envelope-incomplete",
             Self::DecodeWarning => "decode.warning",
             Self::ByteAccountingUnclassified => "decode.byte-accounting-unclassified",
             Self::OpaqueRecordPreserved => "decode.opaque-record-preserved",
@@ -709,11 +725,15 @@ impl StepLossCode {
         match self {
             Self::ContainerMemberNoncanonical
             | Self::ParseNoncanonicalSyntax
+            | Self::ParsePreambleOmitted
+            | Self::ParseEnvelopeIncomplete
+            | Self::ParseRecordOmitted
             | Self::OrientedShellOmitsCfsFaces
             | Self::HeaderMetadataNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::DecodeWarning
             | Self::ByteAccountingUnclassified
             | Self::PcurveGlobalFidelityUnproved => LossTaxonomy::DecodeDiagnostic,
+            Self::ParseDraftGrammar => LossTaxonomy::SourceDialectUnverified,
             Self::OpaqueRecordPreserved
             | Self::DrawingRecordTooFewParameters
             | Self::DrawingOrderUnstatable => LossTaxonomy::RecordNotTyped,
@@ -890,6 +910,10 @@ mod tests {
             codes,
             [
                 "parse.noncanonical-syntax",
+                "parse.record-omitted",
+                "parse.preamble-omitted",
+                "parse.draft-grammar",
+                "parse.envelope-incomplete",
                 "container.member-noncanonical",
                 "decode.warning",
                 "decode.byte-accounting-unclassified",

@@ -71,6 +71,40 @@ fn explicit_knot_expansion_refuses_caller_collection_limit() {
 }
 
 #[test]
+fn knot_constructors_move_one_admitted_value_vector() {
+    use super::super::DefaultNurbsKnotKind;
+    use crate::parse::Value;
+    use cadmpeg_core::decode::DecodePolicy;
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let counts = Value::List(vec![Value::Integer(2), Value::Integer(1)]);
+        let values = Value::List(vec![
+            Value::Real(cadmpeg_ir::scalar::FiniteReal::ZERO),
+            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite knot")),
+        ]);
+        let knots = super::super::expand_knots(&counts, &values, 3, ctx)
+            .expect("one knot allocation")
+            .expect("ordered knots");
+        assert_eq!(knots.as_slice(), [0.0, 0.0, 0.5]);
+    });
+    policy.limits.max_collection_items = 4;
+    for (kind, expected) in [
+        (DefaultNurbsKnotKind::Uniform, [-1.0, 0.0, 1.0, 2.0]),
+        (DefaultNurbsKnotKind::QuasiUniform, [0.0, 0.0, 1.0, 1.0]),
+        (DefaultNurbsKnotKind::Bezier, [0.0, 0.0, 1.0, 1.0]),
+    ] {
+        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+            let knots = super::super::default_nurbs_knots(2, 1, kind, ctx)
+                .expect("one knot allocation")
+                .expect("default knots");
+            assert_eq!(knots.as_slice(), expected);
+        });
+    }
+}
+
+#[test]
 fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));

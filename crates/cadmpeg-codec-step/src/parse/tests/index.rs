@@ -114,3 +114,29 @@ fn anchor_budget_still_bounds_resource_materialization() {
             .is_err());
     });
 }
+
+#[test]
+fn data_population_uses_source_extent_without_a_second_id_collection() {
+    use cadmpeg_core::decode::{u64_from_index, DecodePolicy};
+    use std::fmt::Write as _;
+
+    let count = 10_000;
+    let mut source = String::from("ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;");
+    for id in 1..=count {
+        write!(source, "#{id}=ITEM();").expect("authored record");
+    }
+    source.push_str("ENDSEC;END-ISO-10303-21;");
+    let mut policy = DecodePolicy::service();
+    // Each record has one graph entry and one entity-index member. The
+    // fixed allowance covers the header, schema, diagnostics and DATA node.
+    policy.limits.max_collection_items = u64_from_index(count) * 2 + 128;
+    crate::test_support::with_policy_context(source.as_bytes(), &policy, |source, ctx| {
+        let (exchange, _) = crate::parse::parse_inner(source, ctx).expect("two record indexes fit");
+        assert_eq!(exchange.records().len(), count);
+        assert_eq!(exchange.data().len(), 1);
+        assert!(exchange
+            .records()
+            .values()
+            .all(|record| exchange.data()[0].span.contains(&record.span.start)));
+    });
+}

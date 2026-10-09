@@ -55,6 +55,85 @@ fn malformed_face_names_preserve_geometry_and_report_source_only_metadata() {
 }
 
 #[test]
+fn byte_census_keeps_metadata_admission_after_an_omitted_record() {
+    let source = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(#0);#2=CARTESIAN_POINT(1.E999,(1.,2.,3.));#3=CARTESIAN_POINT('',(4.,5.,6.));#4=GEOMETRIC_SET('',(#2,#3));ENDSEC;END-ISO-10303-21;";
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("bounded defect and unreadable metadata remain recoverable");
+    assert_eq!(decoded.ir().model.points.len(), 2);
+    assert_eq!(
+        decoded.ir().source.as_ref().expect("source").attributes["bytes_unclassified"],
+        "0"
+    );
+}
+
+#[test]
+fn orphan_point_keeps_its_exact_record_when_no_carrier_owns_it() {
+    let source = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));ENDSEC;END-ISO-10303-21;";
+    let decoded = EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("bounded standalone coordinate"),
+    );
+    assert!(decoded.ir().model.points.is_empty());
+    let unknowns = decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("retained source");
+    let point = unknowns
+        .iter()
+        .find(|record| record.id.as_str() == "step:data:cartesian_point#1")
+        .expect("orphan point source");
+    assert_eq!(
+        decoded
+            .source_fidelity()
+            .retained_record(point.id.as_str())
+            .expect("exact point source")
+            .data(),
+        Some(b"#1=CARTESIAN_POINT('',(1.,2.,3.));".as_slice())
+    );
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::OpaqueRecordPreserved.kind()));
+}
+
+#[test]
+fn opaque_reference_does_not_transfer_a_coordinate() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));#2=UNKNOWN_ITEM(#1);ENDSEC;END-ISO-10303-21;";
+    let decoded = EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("bounded opaque reference"),
+    );
+    assert!(decoded.ir().model.points.is_empty());
+    let unknowns = decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("retained source");
+    assert_eq!(unknowns.len(), 2);
+    let point_id = "step:data:cartesian_point#1";
+    let item = unknowns
+        .iter()
+        .find(|record| record.id.as_str() == "step:data:unknown_item#2")
+        .expect("opaque user");
+    assert!(item.links.iter().any(|link| link.as_str() == point_id));
+    assert_eq!(
+        decoded
+            .source_fidelity()
+            .retained_record(point_id)
+            .expect("exact coordinate source")
+            .data(),
+        Some(b"#1=CARTESIAN_POINT('',(1.,2.,3.));".as_slice())
+    );
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::OpaqueRecordPreserved.kind()
+            && loss.message.contains("CARTESIAN_POINT")
+    }));
+}
+
+#[test]
 fn record_display_name_refuses_retained_byte_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -276,7 +355,7 @@ fn byte_accounting_claims_controls_inside_print_directives() {
     let input = b"1\\\x01N\x02\\2";
     let mut classes = vec![ByteClass::Unclassified; input.len()];
 
-    claim_trivia(input, 1..input.len(), &mut classes)
+    claim_trivia(input, 1..input.len(), &mut classes, false)
         .expect("print directive fits the trivia range");
 
     assert!(classes[1..6]
@@ -358,6 +437,9 @@ fn semantic_decode_uses_the_decode_session_work_budget() {
         if !matches!(
             limit.operation,
             "step_lex_token"
+                | "step_string_boundary_scan"
+                | "step_string_normalization"
+                | "step_string_lexeme"
                 | "step_schema_matching_name"
                 | "step_parse_record"
                 | "step_parse_parameter"
@@ -1248,8 +1330,6 @@ fn reference_walk_refuses_depth_limit() {
 fn record_closure_pending_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    use std::collections::BTreeSet;
-
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
@@ -1259,8 +1339,8 @@ fn record_closure_pending_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
         .expect("root fits collection policy");
-    let error = super::record_closure(&BTreeSet::from([1]), &exchange, &ctx)
-        .expect_err("pending root needs one item");
+    let error =
+        super::record_closure([1], &exchange, &ctx).expect_err("pending root needs one item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "step_record_closure_pending"));
@@ -1270,8 +1350,6 @@ fn record_closure_pending_refuses_collection_limit() {
 fn record_closure_ids_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    use std::collections::BTreeSet;
-
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
@@ -1281,7 +1359,7 @@ fn record_closure_ids_refuse_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
         .expect("root fits collection policy");
-    let error = super::record_closure(&BTreeSet::from([1]), &exchange, &ctx)
+    let error = super::record_closure([1], &exchange, &ctx)
         .expect_err("closure needs one item after the pending root");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -1580,7 +1658,6 @@ fn dialect_match_copy_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use std::collections::BTreeSet;
-
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
@@ -1614,7 +1691,6 @@ fn dialect_match_copy_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use std::collections::BTreeSet;
-
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
@@ -1695,6 +1771,11 @@ fn unowned_pcurve_set_refuses_collection_limit() {
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid exchange");
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let carrier_index = crate::test_support::with_service_context(b"", |_, ctx| {
+        super::index::CarrierIndex::from_ir(&ir, ctx)
+    })
+    .expect("carrier index");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -1702,7 +1783,8 @@ fn unowned_pcurve_set_refuses_collection_limit() {
         .expect("root fits collection policy");
     let error = super::retain_unowned_carriers(
         &exchange,
-        &mut cadmpeg_ir::CadIr::empty(),
+        &mut ir,
+        &carrier_index,
         &mut HashSet::new(),
         &mut Vec::new(),
         &ctx,
@@ -1736,6 +1818,11 @@ fn unowned_direct_carriers_refuse_collection_limit() {
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid exchange");
+    let mut ir = point_ir(false);
+    let carrier_index = crate::test_support::with_service_context(b"", |_, ctx| {
+        super::index::CarrierIndex::from_ir(&ir, ctx)
+    })
+    .expect("carrier index");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -1743,7 +1830,8 @@ fn unowned_direct_carriers_refuse_collection_limit() {
         .expect("root fits collection policy");
     let error = super::retain_unowned_carriers(
         &exchange,
-        &mut point_ir(false),
+        &mut ir,
+        &carrier_index,
         &mut HashSet::new(),
         &mut Vec::new(),
         &ctx,
@@ -1755,7 +1843,7 @@ fn unowned_direct_carriers_refuse_collection_limit() {
 }
 
 #[test]
-fn protected_roots_refuse_collection_limit() {
+fn protected_root_walk_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -1763,49 +1851,28 @@ fn protected_roots_refuse_collection_limit() {
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid exchange");
+    let mut ir = point_ir(true);
+    let carrier_index = crate::test_support::with_service_context(b"", |_, ctx| {
+        super::index::CarrierIndex::from_ir(&ir, ctx)
+    })
+    .expect("carrier index");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
+    policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
         .expect("root fits collection policy");
     let error = super::retain_unowned_carriers(
         &exchange,
-        &mut point_ir(true),
+        &mut ir,
+        &carrier_index,
         &mut HashSet::new(),
         &mut Vec::new(),
         &ctx,
     )
-    .expect_err("protected root needs an additional set item");
+    .expect_err("protected root needs a pending slot");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "step_unowned_protected_roots"));
-}
-
-#[test]
-fn protected_root_copy_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=PCURVE('',#3,#4);#3=ITEM();#4=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) =
-        crate::test_support::with_service_context(source, crate::parse::parse_inner)
-            .expect("valid exchange");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("root fits collection policy");
-    let error = super::retain_unowned_carriers(
-        &exchange,
-        &mut point_ir(true),
-        &mut HashSet::new(),
-        &mut Vec::new(),
-        &ctx,
-    )
-    .expect_err("protected root copy needs an additional set item");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "step_unowned_protected_root_copy"));
+            && limit.operation == "step_record_closure_pending"));
 }
 
 #[test]
@@ -1826,3 +1893,5 @@ fn byte_coverage_does_not_spend_collection_items_per_byte() {
     assert_eq!(counts.structural, source.len());
     assert_eq!(counts.unclassified, 0);
 }
+
+mod retention;

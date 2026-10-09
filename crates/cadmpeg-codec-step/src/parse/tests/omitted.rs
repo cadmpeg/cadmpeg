@@ -2,28 +2,6 @@
 //! Part 21 omitted-name recovery tests.
 
 #[test]
-fn omitted_name_recovery_item_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,0.,0.));ENDSEC;END-ISO-10303-21;";
-    let refused = (0..=512).any(|limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
-            .expect("root fits selected policy");
-        matches!(
-            crate::parse::parse_with_context(SOURCE, &ctx),
-            Err(CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "step_omitted_name_recovery_item"
-        )
-    });
-    assert!(refused, "omitted name insertion must charge one item");
-}
-
-#[test]
 fn user_defined_name_prefix_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -123,7 +101,7 @@ fn parser_recovers_omitted_repositioned_tessellated_item_name() {
         crate::parse::ParseDiagnosticKind::OmittedEntityName
     );
     assert_eq!(
-        exchange.records()[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters.as_slice(),
         vec![
             crate::parse::Value::String(Vec::new()),
             crate::parse::Value::Reference(2),
@@ -141,7 +119,7 @@ fn parser_retains_user_defined_entity_and_type_names() {
     assert!(diagnostics.is_empty());
     assert_eq!(exchange.records()[&1].partials[0].name, "!VENDOR_ENTITY");
     assert_eq!(
-        exchange.records()[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters.as_slice(),
         vec![crate::parse::Value::Typed(
             "!VENDOR_TYPE".into(),
             Box::new(crate::parse::Value::Reference(2)),
@@ -177,7 +155,7 @@ fn parser_does_not_repair_non_carrier_first_parameters() {
 
     assert!(diagnostics.is_empty());
     assert_eq!(
-        exchange.records()[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters.as_slice(),
         vec![
             crate::parse::Value::Integer(1),
             crate::parse::Value::Reference(2),
@@ -201,7 +179,7 @@ fn parser_recovers_omitted_geometry_name_without_shifting_context_fields() {
         .message
         .contains("recovered 4 simple named carrier instance(s)"));
     assert_eq!(
-        exchange.records()[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters.as_slice(),
         vec![
             crate::parse::Value::String(Vec::new()),
             crate::parse::Value::List(vec![
@@ -218,7 +196,7 @@ fn parser_recovers_omitted_geometry_name_without_shifting_context_fields() {
         ]
     );
     assert_eq!(
-        exchange.records()[&2].partials[0].parameters,
+        exchange.records()[&2].partials[0].parameters.as_slice(),
         vec![crate::parse::Value::Integer(3)]
     );
     assert_eq!(
@@ -234,7 +212,7 @@ fn parser_recovers_omitted_geometry_name_without_shifting_context_fields() {
         crate::parse::Value::String(Vec::new())
     );
     assert_eq!(
-        exchange.records()[&6].partials[0].parameters,
+        exchange.records()[&6].partials[0].parameters.as_slice(),
         vec![
             crate::parse::Value::Omitted,
             crate::parse::Value::List(vec![crate::parse::Value::Reference(1)]),
@@ -255,7 +233,7 @@ fn parser_recovers_omitted_shape_representation_with_parameters_name() {
         crate::parse::ParseDiagnosticKind::OmittedEntityName
     );
     assert_eq!(
-        exchange.records()[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters.as_slice(),
         vec![
             crate::parse::Value::String(Vec::new()),
             crate::parse::Value::List(vec![crate::parse::Value::Reference(2)]),
@@ -324,14 +302,18 @@ fn name_admission_preserves_brep_spline_and_transformation_layouts() {
         if !tail.starts_with('$') && !tail.starts_with('\'') {
             let omitted = source(tail);
             let (actual, diagnostics) = crate::test_support::with_service_context(omitted.as_bytes(), crate::parse::parse_inner).unwrap();
-            assert_eq!(actual.records()[&1].partials[0].parameters, expected.records()[&1].partials[0].parameters);
+            assert_eq!(actual.records()[&1].partials[0].parameters.as_slice(), expected.records()[&1].partials[0].parameters.as_slice());
             assert_eq!(diagnostics.len(), 1);
         }
     }
     let required = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNIFORM_CURVE(1.E999,(),.UNSPECIFIED.,.F.,.F.);ENDSEC;END-ISO-10303-21;";
-    assert!(
-        crate::test_support::with_service_context(required, crate::parse::parse_inner).is_err()
-    );
+    let (parsed, diagnostics) =
+        crate::test_support::with_service_context(required, crate::parse::parse_inner)
+            .expect("unreadable required literal omits the bounded record");
+    assert!(parsed.records().is_empty());
+    assert!(diagnostics
+        .iter()
+        .any(|item| item.kind == crate::parse::ParseDiagnosticKind::RecordOmitted));
 }
 
 #[test]
@@ -344,9 +326,23 @@ fn omitted_name_recovery_keeps_required_coordinate_literals_strict() {
         let source = format!(
             "ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;{data}ENDSEC;END-ISO-10303-21;"
         );
-        assert!(
+        let (parsed, diagnostics) =
             crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-                .is_err(),
+                .expect("unreadable coordinate omits only its containing instance");
+        let expected = if data.starts_with("#1=CARTESIAN_POINT();") {
+            vec![1]
+        } else {
+            Vec::new()
+        };
+        assert_eq!(
+            parsed.records().keys().copied().collect::<Vec<_>>(),
+            expected,
+            "{data}"
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.kind == crate::parse::ParseDiagnosticKind::RecordOmitted),
             "{data}"
         );
     }

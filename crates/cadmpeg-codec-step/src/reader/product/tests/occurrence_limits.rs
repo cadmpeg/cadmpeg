@@ -50,7 +50,7 @@ fn occurrence_output_refuses(existing: usize) {
     crate::test_support::with_service_context(super::PRODUCT_STRING_LIMIT_SOURCE, |source, ctx| {
         let (exchange, _) = crate::parse::parse_inner(source, ctx).expect("valid product source");
         let mut ir = cadmpeg_ir::CadIr::empty();
-        let geometry = crate::reader::geometry::decode(&exchange, &mut ir, ctx).unwrap();
+        let (geometry, _) = crate::reader::geometry::decode(&exchange, &mut ir, ctx).unwrap();
         let index = crate::reader::index::CarrierIndex::from_ir(&ir, ctx).unwrap();
         let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, ctx).unwrap();
         let mut admitted = 0;
@@ -104,7 +104,7 @@ fn assembly_depth_slice_refuses_instead_of_skipping_child() {
     crate::test_support::with_service_context(super::PRODUCT_STRING_LIMIT_SOURCE, |source, ctx| {
         let (exchange, _) = crate::parse::parse_inner(source, ctx).unwrap();
         let mut ir = cadmpeg_ir::CadIr::empty();
-        let geometry = crate::reader::geometry::decode(&exchange, &mut ir, ctx).unwrap();
+        let (geometry, _) = crate::reader::geometry::decode(&exchange, &mut ir, ctx).unwrap();
         let index = crate::reader::index::CarrierIndex::from_ir(&ir, ctx).unwrap();
         let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, ctx).unwrap();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
