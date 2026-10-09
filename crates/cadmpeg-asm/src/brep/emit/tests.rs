@@ -1103,12 +1103,15 @@ fn invalid_cache_first_context_keeps_the_decoded_curve() {
     ]);
     let refs = |values: &[i64]| values.iter().copied().map(Token::Ref).collect();
     let records = [
-        record(0, "face", refs(&[-1, -1, -1, -1, 1, -1, -1, 5])),
+        record(0, "face", refs(&[-1, -1, -1, -1, 1, 6, -1, 5])),
         record(1, "loop", refs(&[-1, -1, -1, -1, 2])),
         record(2, "coedge", refs(&[-1, -1, -1, 2, -1, -1, 3])),
         record(3, "edge", refs(&[-1, -1, -1, -1, -1, -1, -1, -1, 4])),
         record(4, "intcurve", curve_tokens),
         record(5, "unknown-surface", vec![]),
+        record(6, "shell", refs(&[-1, -1, -1, -1, -1, 0, -1, 7])),
+        record(7, "lump", refs(&[-1, -1, -1, -1, 6, 8])),
+        record(8, "body", refs(&[-1, -1, -1, 7])),
     ];
 
     let arena = cadmpeg_core::decode::DecodeArena::new();

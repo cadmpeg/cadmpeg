@@ -1262,7 +1262,7 @@ fn revision_vertex_blend_boundary(
             let fit_tolerance =
                 cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()?).ok()?;
             EmbeddedVertexBlendBoundaryGeometry::Pcurve {
-                surface: surface?,
+                surface: surface.into_surface()?,
                 support_bounds,
                 pcurve,
                 sense,

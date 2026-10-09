@@ -848,7 +848,7 @@ face $-1 $-1 $-1 $-1 $-1 $1 forward single #\n\
 plane-surface $-1 0 0 0 0 0 1 1 0 0 forward_v I I I I #\nEnd-of-ACIS-data\n";
     let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
     assert!(result.ir().model.faces.is_empty());
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert!(result.ir().model.surfaces.is_empty());
     assert!(result
         .report()
         .losses
@@ -862,6 +862,17 @@ plane-surface $-1 0 0 0 0 0 1 1 0 0 forward_v I I I I #\nEnd-of-ACIS-data\n";
             .data(),
         Some(b"face $-1 $-1 $-1 $-1 $-1 $1 forward single #".as_slice())
     );
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:source:standalone-faces#0")
+            .unwrap()
+            .data(),
+        Some(source.as_slice())
+    );
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .unwrap()
+        .is_ok());
 }
 
 #[test]

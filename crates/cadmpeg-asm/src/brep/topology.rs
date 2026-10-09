@@ -131,6 +131,12 @@ pub(super) fn keep_faces_and_carriers(
         if r.head() != "face" {
             continue;
         }
+        // A standalone face cannot supply the shell required by the neutral
+        // topology. Do not reach its children or carriers through an owner
+        // that the emit pass must omit.
+        if r.ref_at(5).is_none() {
+            continue;
+        }
         let Some(surf_ref) = r.ref_at(7) else {
             count_kind(
                 ctx,

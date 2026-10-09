@@ -334,6 +334,58 @@ End-of-ACIS-data\n", if version < 107 { "" } else { "$-1 " });
 }
 
 #[test]
+fn legacy_full_surface_cache_reads_scope_identifier_and_rational_poles() {
+    let source = b"600 0 1 0\n1 T 4 ACIS 1 D\n2 0.01 0.001\n\
+body $-1 $1 $-1 $-1 #\nlump $-1 $-1 $2 $0 #\n\
+shell $-1 $-1 $-1 $3 $-1 $1 #\n\
+face $-1 $-1 $-1 $2 $-1 $4 forward single #\n\
+spline-surface $-1 forward { exactsur full nurbs 1 1 both open open none none 2 2 \
+0 1 1 1 0 1 1 1 \
+0 0 0 1 1 0 0 0.5 0 1 0 1 1 1 0 0.5 \
+0 0 0 0 0 0 0 F 1 F 0 F 1 F 0 } I I I I #\nEnd-of-ACIS-data\n";
+    crate::test_support::with_service_context(source, |ctx| {
+        let parsed = crate::sat::parse(ctx, source).unwrap();
+        let header = parsed.header.as_kernel_header(ctx).unwrap();
+        let brep = decode_with_header(
+            ctx,
+            &parsed.records,
+            source,
+            Some(&header),
+            "stream",
+            crate::asm_format!("sat"),
+            DecodePurpose::Model,
+        )
+        .unwrap();
+        assert_eq!(brep.faces.len(), 1);
+        assert_eq!(brep.stats.nurbs_surfaces, 1);
+        let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(surface)) =
+            brep.surfaces[0].geometry.solved()
+        else {
+            panic!("solved rational surface");
+        };
+        assert_eq!(surface.u_degree(), 1);
+        assert_eq!(surface.v_degree(), 1);
+        assert_eq!(surface.poles().len(), 4);
+        let weights: Vec<Vec<f64>> = surface
+            .weights()
+            .unwrap()
+            .into_iter()
+            .map(|row| {
+                row.into_iter()
+                    .map(cadmpeg_ir::scalar::NonZeroReal::get)
+                    .collect()
+            })
+            .collect();
+        assert_eq!(weights, [[1.0, 1.0], [0.5, 0.5]]);
+        assert_eq!(
+            surface.poles()[3].get(),
+            cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0)
+        );
+    })
+    .unwrap();
+}
+
+#[test]
 fn legacy_tolerant_edges_normalize_base_fields_and_length_tolerance() {
     for version in [400, 500, 600] {
         let payload = match version {
