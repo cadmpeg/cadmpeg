@@ -87,11 +87,22 @@ fn stored_higher_frame(
             })
         }
         SolvedCurveGeometry::Nurbs(curve) => {
+            if fourth && curve.degree() == 1 && matches!(curve.pole_rows(),
+                crate::geometry::nurbs::NurbsPoles3::Rational { .. })
+            {
+                return scratch.settle(super::curve_nurbs::linear_higher(scratch, curve, parameter, true)
+                    .map(HigherFrame::Local));
+            }
             let third = match curve.pole_rows() {
                 crate::geometry::nurbs::NurbsPoles3::Polynomial { .. } => super::curve_nurbs::polynomial_third(scratch, curve, parameter),
                 crate::geometry::nurbs::NurbsPoles3::Rational { .. } => super::curve_nurbs::rational_third(scratch, curve, parameter),
             };
-            Ok(HigherFrame::Local(CurveHigher { third, fourth: Err(EvaluationFailure::NoValue) }))
+            // The actual degree-one polynomial span has zero fourth.
+            // Preserve its original selected-span work and width gate.
+            let fourth = if fourth && curve.degree() == 1 && matches!(curve.pole_rows(),
+                crate::geometry::nurbs::NurbsPoles3::Polynomial { .. })
+            { third.map(|_| FiniteVector3::ZERO) } else { Err(EvaluationFailure::NoValue) };
+            Ok(HigherFrame::Local(CurveHigher { third, fourth }))
         }
         SolvedCurveGeometry::Degenerate(_)
         | SolvedCurveGeometry::Composite { .. }

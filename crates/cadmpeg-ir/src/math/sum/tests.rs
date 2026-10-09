@@ -207,3 +207,17 @@ fn five_factor_quotients_keep_normalized_range_with_seven_denominators() {
             [scaled(1.0); 7]).map(FiniteReal::get), Ok(sign));
     }
 }
+
+#[test]
+fn five_factor_nine_denominator_quotients_keep_sign_range_and_final_scaling() {
+    let scaled = |value| scaled_finite(value).unwrap();
+    for sign in [-1.0, 1.0] {
+        let numerator = scaled(2.0_f64.powi(400));
+        let denominator = scaled(2.0_f64.powi(200));
+        assert_eq!(ScaledValue::product_quotient(
+            [scaled(sign * 2.0_f64.powi(400)), numerator, numerator, numerator, numerator],
+            [denominator; 9]).map(FiniteReal::get), Ok(sign * 2.0_f64.powi(200)));
+        assert_eq!(ScaledValue::product_quotient([scaled(sign), scaled(1.0), scaled(1.0), scaled(1.0), scaled(1.0)],
+            [scaled(1.0); 9]).map(FiniteReal::get), Ok(sign));
+    }
+}
