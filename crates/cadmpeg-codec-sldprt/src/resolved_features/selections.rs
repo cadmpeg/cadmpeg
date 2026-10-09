@@ -4,7 +4,8 @@ pub(super) mod diameter_index;
 use diameter_index::CosmeticDiameterIndex;
 
 use super::component_paths::{
-    component_path_input_features, feature_precedes_consumer, surface_selection_producer_features,
+    component_path_input_features, component_path_input_identities, feature_precedes_consumer,
+    surface_selection_producer_features,
     FeaturesBySource,
 };
 use super::endpoints::{
@@ -553,7 +554,7 @@ pub(super) fn compact_edge_selections(
             })?;
             ctx.reserve_vec(&mut result, 1, OPERATION)?;
             result.push(selection);
-            storage.commit()?;
+            result = storage.commit_value(std::mem::take(&mut result))?;
         }
     }
     Ok(result)
@@ -3924,6 +3925,20 @@ pub(crate) fn compact_edge_owner_feature_at(
     consumer_ref: &str,
 ) -> Result<Option<String>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT compact edge owner";
+    compact_edge_owner_identity_at(ctx, payload, marker, components, features, consumer_ref)?
+        .map(|identity| ctx.copy_retained_text(identity, OPERATION))
+        .transpose()
+}
+
+fn compact_edge_owner_identity_at<'a>(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    marker: usize,
+    components: &[FeatureInputComponentPathEntry],
+    features: &'a [crate::records::Feature],
+    consumer_ref: &str,
+) -> Result<Option<&'a str>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT compact edge owner";
     let count = marker
         .checked_sub(12)
         .and_then(|offset| View::u32_le_at(payload, offset))
@@ -3956,11 +3971,11 @@ pub(crate) fn compact_edge_owner_feature_at(
             OPERATION,
         )? {
             if feature_precedes_consumer(ctx, feature, features, consumer_ref)? {
-                return Ok(Some(ctx.copy_retained_text(&feature.id, OPERATION)?));
+                return Ok(Some(feature.id.as_str()));
             }
         }
     }
-    Ok(component_path_input_features(ctx, components, features, consumer_ref)?.pop())
+    Ok(component_path_input_identities(ctx, components, features, consumer_ref)?.last())
 }
 
 pub(crate) fn compact_edge_producer_features_at(
@@ -3974,9 +3989,10 @@ pub(crate) fn compact_edge_producer_features_at(
     const OPERATION: &str = "resolve SLDPRT compact edge producers";
     let mut producers = component_path_input_features(ctx, components, features, consumer_ref)?;
     if let Some(owner) =
-        compact_edge_owner_feature_at(ctx, payload, marker, components, features, consumer_ref)?
+        compact_edge_owner_identity_at(ctx, payload, marker, components, features, consumer_ref)?
     {
-        if !ctx.contains(&producers, &owner, OPERATION)? {
+        if !ctx.any_by(&producers, |producer| ctx.equal(producer.as_str(), owner, OPERATION), OPERATION)? {
+            let owner = ctx.copy_retained_text(owner, "resolve SLDPRT compact edge owner")?;
             ctx.push_vec(&mut producers, owner, OPERATION)?;
         }
     }

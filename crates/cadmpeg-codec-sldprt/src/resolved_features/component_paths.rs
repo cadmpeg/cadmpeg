@@ -192,14 +192,57 @@ fn precedes(
     )
 }
 
-pub(super) fn component_path_input_features(
-    ctx: &DecodeContext<'_>,
+/// Input feature identities borrowed from native history, with scoped vector storage.
+pub(super) struct ComponentInputIdentities<'a, 'ctx> {
+    identities: Vec<&'a str>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+impl<'a> ComponentInputIdentities<'a, '_> {
+    pub(super) fn last(&self) -> Option<&'a str> {
+        self.identities.last().copied()
+    }
+
+    fn retain(self, ctx: &DecodeContext<'_>) -> Result<Vec<String>, CodecError> {
+        const OPERATION: &str = "resolve SLDPRT component path producers";
+        let mut result = Vec::new();
+        for identity in ctx.admit_iter(&self.identities, OPERATION)? {
+            let identity = ctx.copy_retained_text(identity, OPERATION)?;
+            ctx.push_vec(&mut result, identity, OPERATION)?;
+        }
+        Ok(result)
+    }
+}
+
+pub(super) fn component_path_input_identities<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     components: &[FeatureInputComponentPathEntry],
-    features: &[Feature],
+    features: &'a [Feature],
     consumer_ref: &str,
-) -> Result<Vec<String>, CodecError> {
+) -> Result<ComponentInputIdentities<'a, 'ctx>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT component path inputs";
-    let mut producers = component_path_features(ctx, components, features)?;
+    const PRODUCERS: &str = "resolve SLDPRT component path producers";
+    let mut identity_storage = ctx.reserve_scoped(0, PRODUCERS)?;
+    let mut producers = Vec::new();
+    {
+        let by_source = FeaturesBySource::new(ctx, features)?;
+        let mut seen_storage = ctx.reserve_scoped(0, PRODUCERS)?;
+        let mut seen = HashSet::new();
+        for component in ctx.admit_iter(components, PRODUCERS)? {
+            let Some(ComponentProducer::Feature(feature)) =
+                by_source.component(ctx, component, PRODUCERS)?
+            else {
+                continue;
+            };
+            if seen_storage.with_storage(|| {
+                ctx.insert_hash_set(&mut seen, feature.id.as_str(), PRODUCERS)
+            })? {
+                identity_storage.with_storage(|| {
+                    ctx.push_vec(&mut producers, feature.id.as_str(), PRODUCERS)
+                })?;
+            }
+        }
+    }
     let Some(consumer) = ctx.find_by(
         features,
         |consumer| ctx.equal(consumer.id.as_str(), consumer_ref, OPERATION),
@@ -207,27 +250,36 @@ pub(super) fn component_path_input_features(
     )?
     else {
         ctx.clear_vec(&mut producers, OPERATION)?;
-        return Ok(producers);
+        return Ok(ComponentInputIdentities { identities: producers, _storage: identity_storage });
     };
-    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut first_by_id = HashMap::new();
-    for feature in ctx.admit_iter(features, OPERATION)? {
-        storage.with_storage(|| {
-            ctx.entry_hash_map(&mut first_by_id, feature.id.as_str(), OPERATION)
-                .map(|slot| {
-                    slot.or_insert(feature);
-                })
-        })?;
+    {
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut first_by_id = HashMap::new();
+        for feature in ctx.admit_iter(features, OPERATION)? {
+            storage.with_storage(|| {
+                ctx.entry_hash_map(&mut first_by_id, feature.id.as_str(), OPERATION)
+                    .map(|slot| { slot.or_insert(feature); })
+            })?;
+        }
+        ctx.retain_vec(
+            &mut producers,
+            |producer| match ctx.get_hash_map(&first_by_id, *producer, OPERATION)? {
+                Some(feature) => precedes(ctx, feature, consumer, OPERATION),
+                None => Ok(false),
+            },
+            OPERATION,
+        )?;
     }
-    ctx.retain_vec(
-        &mut producers,
-        |producer| match ctx.get_hash_map(&first_by_id, producer.as_str(), OPERATION)? {
-            Some(feature) => precedes(ctx, feature, consumer, OPERATION),
-            None => Ok(false),
-        },
-        OPERATION,
-    )?;
-    Ok(producers)
+    Ok(ComponentInputIdentities { identities: producers, _storage: identity_storage })
+}
+
+pub(super) fn component_path_input_features(
+    ctx: &DecodeContext<'_>,
+    components: &[FeatureInputComponentPathEntry],
+    features: &[Feature],
+    consumer_ref: &str,
+) -> Result<Vec<String>, CodecError> {
+    component_path_input_identities(ctx, components, features, consumer_ref)?.retain(ctx)
 }
 
 pub(crate) fn surface_selection_producer_features(
