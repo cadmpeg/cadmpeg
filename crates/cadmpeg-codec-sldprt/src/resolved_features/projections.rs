@@ -408,7 +408,9 @@ pub(crate) fn bind_parameter_scalars(
     if parameters_by_native.is_empty() {
         return Ok(());
     }
-    let (identity_lanes, _identity_lane_storage) = ctx.with_scoped_storage(
+    let _identity_lane_storage;
+    let identity_lanes;
+    (identity_lanes, _identity_lane_storage) = ctx.with_scoped_storage(
         "SLDPRT parameter identity lane workspace",
         || parameter_identity_lanes(ctx, lanes),
     )?;
@@ -432,7 +434,9 @@ pub(crate) fn bind_parameter_scalars(
     while let Some(lane) = ctx.next_charged(&mut lanes, OPERATION)? {
         let names = ObjectNames::new(ctx, lane)?;
         let mut lane_storage = ctx.reserve_scoped(0, OPERATION)?;
-        let (scalar_positions, _scalar_positions_storage) =
+        let _scalar_positions_storage;
+        let scalar_positions;
+        (scalar_positions, _scalar_positions_storage) =
             first_positions(ctx, &lane.scalars, |scalar| scalar.id.as_str(), OPERATION)?;
         let mut length_scalars = HashSet::new();
         let mut angle_scalars = HashSet::new();
@@ -462,7 +466,9 @@ pub(crate) fn bind_parameter_scalars(
             })?;
         }
         // Scalars by owning feature, and the scalars with no owner in offset order.
-        let (scalars_by_feature, _scalars_by_feature_storage) = group_by_owner(
+        let _scalars_by_feature_storage;
+        let scalars_by_feature;
+        (scalars_by_feature, _scalars_by_feature_storage) = group_by_owner(
             ctx,
             &lane.scalars,
             |scalar| scalar.feature_ref.as_deref(),
@@ -678,7 +684,9 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             )
         })?;
     }
-    let (owned, _owned_storage) = ctx
+    let _owned_storage;
+    let owned;
+    (owned, _owned_storage) = ctx
         .with_scoped_storage("SLDPRT relation ownership index", || {
             owned_relation_parameters(ctx, features, parameters, &lane_refs)
         })?;
@@ -782,7 +790,9 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
     }
 
     for lane in ctx.admit_iter(lane_refs, OPERATION)? {
-        let (names_by_id, _names_by_id_storage) =
+        let _names_by_id_storage;
+        let names_by_id;
+        (names_by_id, _names_by_id_storage) =
             first_positions(ctx, &lane.names, |name| name.id.as_str(), OPERATION)?;
         for relation in ctx.admit_iter(&lane.relation_instances, OPERATION)? {
             if relation.parameter_scalar_ref().is_some()
@@ -1007,7 +1017,9 @@ pub(crate) fn type_display_relation_parameters(
 ) -> Result<(), cadmpeg_core::CodecError> {
     const OPERATION: &str = "group SLDPRT display relation families";
 
-    let (ownership, _ownership_storage) = ctx
+    let _ownership_storage;
+    let ownership;
+    (ownership, _ownership_storage) = ctx
         .with_scoped_storage("SLDPRT relation ownership index", || {
             owned_relation_parameters(ctx, features, parameters, lanes)
         })?;
@@ -1272,7 +1284,9 @@ pub(crate) fn project_compact_edge_selections(
 ) -> Result<(), cadmpeg_core::CodecError> {
     const DEPENDENCY_OPERATION: &str = "add SLDPRT compact edge dependency";
     const INDEX_OPERATION: &str = "index SLDPRT compact edge selections";
-    let (selections, _selections_storage) = selections_by_feature(
+    let _selections_storage;
+    let selections;
+    (selections, _selections_storage) = selections_by_feature(
         ctx,
         lanes,
         |lane| &lane.edge_selections,
@@ -1282,7 +1296,9 @@ pub(crate) fn project_compact_edge_selections(
     if selections.is_empty() {
         return Ok(());
     }
-    let (feature_ids_by_native, _feature_ids_storage) =
+    let _feature_ids_storage;
+    let feature_ids_by_native;
+    (feature_ids_by_native, _feature_ids_storage) =
         model_feature_ids_by_native(ctx, features, INDEX_OPERATION)?;
     for feature in ctx.admit_iter(features, INDEX_OPERATION)? {
         let feature_id = &feature.id;
@@ -1318,7 +1334,9 @@ pub(crate) fn project_compact_edge_selections(
                         complete = false;
                         break;
                     };
-                    let (edge, edge_storage) = ctx.with_scoped_storage(OPERATION, || {
+                    let edge_storage;
+                    let edge;
+                    (edge, edge_storage) = ctx.with_scoped_storage(OPERATION, || {
                         let feature = feature_id.try_clone_for_decode(ctx, OPERATION)?;
                         let local_id = compact_edge_path_value_charged(ctx, selection)?;
                         Ok::<_, cadmpeg_core::CodecError>(
@@ -1350,7 +1368,9 @@ pub(crate) fn project_compact_edge_selections(
             if let Some((existing_edges, tangency_weight)) =
                 sole_unresolved_fillet_group(definition)
             {
-                let (radius_groups, _radius_groups_storage) = ctx.with_scoped_storage(INDEX_OPERATION, || variable_fillet_radius_groups(ctx, native_ref, histories, lanes, edge_selections))?;
+                let _radius_groups_storage;
+                let radius_groups;
+                (radius_groups, _radius_groups_storage) = ctx.with_scoped_storage(INDEX_OPERATION, || variable_fillet_radius_groups(ctx, native_ref, histories, lanes, edge_selections))?;
                 if let Some(radius_groups) = radius_groups {
                     let unresolved_edges = matches!(existing_edges, EdgeSelection::Unresolved);
                     if unresolved_edges || radius_groups.len() == 1 {
@@ -1364,7 +1384,11 @@ pub(crate) fn project_compact_edge_selections(
                                     .map(|group| std::mem::replace(&mut group.edges, EdgeSelection::Unresolved)),
                             _ => None,
                         };
-                        for RadiusSelectionGroup(radius, selections, storage) in ctx.admit_iter(radius_groups, GROUP_OPERATION)? {
+                        for group in ctx.admit_iter(radius_groups, GROUP_OPERATION)? {
+                            let storage;
+                            let selections;
+                            let radius;
+                            RadiusSelectionGroup(radius, selections, storage) = group;
                             let edges = if unresolved_edges {
                                 projected_edges(&selections)?
                             } else {
@@ -1521,10 +1545,12 @@ fn whole_feature_radius_group<'a, 'ctx>(
             "SLDPRT variable radius source samples",
         )?;
     }
-    let (points, radius_storage) = ctx.with_scoped_storage("SLDPRT variable radius law", || {
+    let radius_storage;
+    let law;
+    (law, radius_storage) = ctx.with_scoped_storage("SLDPRT variable radius law", || {
         cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)
     })?;
-    let Some(points) = points.ok() else {
+    let Some(points) = law.ok() else {
         return Ok(None);
     };
     let mut groups = Vec::new();
@@ -1586,7 +1612,9 @@ fn variable_fillet_radius_groups<'a, 'ctx>(
     let has_endpoint_reference = ctx.any_by(
         selections,
         |selection| {
-            let (signatures, _storage) = ctx.with_scoped_storage(OPERATION, || {
+            let _storage;
+            let signatures;
+            (signatures, _storage) = ctx.with_scoped_storage(OPERATION, || {
                 endpoint_signatures(ctx, &selection.references, 1, OPERATION)
             })?;
             Ok(!signatures.is_empty())
@@ -1670,7 +1698,9 @@ fn variable_fillet_radius_groups<'a, 'ctx>(
         while let Some(super::selections::VariableFilletControl(name, references)) =
             ctx.next_charged(&mut visited, OPERATION)?
         {
-            let (signatures, _signatures_storage) = ctx.with_scoped_storage(OPERATION, || {
+            let _signatures_storage;
+            let signatures;
+            (signatures, _signatures_storage) = ctx.with_scoped_storage(OPERATION, || {
                 endpoint_signatures(ctx, &references, 2, OPERATION)
             })?;
             match signatures.as_slice() {
@@ -1792,7 +1822,9 @@ fn variable_fillet_radius_groups<'a, 'ctx>(
     let mut unassigned = Vec::new();
     let mut visited = selections.iter();
     while let Some(&selection) = ctx.next_charged(&mut visited, OPERATION)? {
-        let (signatures, _signatures_storage) = ctx.with_scoped_storage(OPERATION, || {
+        let _signatures_storage;
+        let signatures;
+        (signatures, _signatures_storage) = ctx.with_scoped_storage(OPERATION, || {
             endpoint_signatures(ctx, &selection.references, 3, OPERATION)
         })?;
         match signatures.as_slice() {
@@ -1850,7 +1882,9 @@ fn variable_fillet_radius_groups<'a, 'ctx>(
                 "SLDPRT variable radius source samples",
             )
         })?;
-        let (points, radius_storage) = ctx.with_scoped_storage(OPERATION, || {
+        let radius_storage;
+        let points;
+        (points, radius_storage) = ctx.with_scoped_storage(OPERATION, || {
             cadmpeg_ir::features::edge_treatments::VariableRadii::new(raw_points, ctx)
         })?;
         let Some(points) = points.ok() else {
@@ -1878,14 +1912,18 @@ pub(crate) fn project_compact_surface_selections(
         Vertex(&'a mut cadmpeg_ir::features::VertexSelection),
     }
     const INDEX_OPERATION: &str = "index SLDPRT compact surface selections";
-    let (selections, _selections_storage) = selections_by_feature(
+    let _selections_storage;
+    let selections;
+    (selections, _selections_storage) = selections_by_feature(
         ctx,
         lanes,
         |lane| &lane.surface_selections,
         |selection| selection.feature_ref.as_str(),
         INDEX_OPERATION,
     )?;
-    let (feature_ids_by_native, _feature_ids_storage) =
+    let _feature_ids_storage;
+    let feature_ids_by_native;
+    (feature_ids_by_native, _feature_ids_storage) =
         model_feature_ids_by_native(ctx, features, INDEX_OPERATION)?;
     let mut history_storage = ctx.reserve_scoped(0, INDEX_OPERATION)?;
     let mut history_features = Vec::new();
@@ -1928,7 +1966,9 @@ pub(crate) fn project_compact_surface_selections(
                             break 'feature_edit;
                         }
                         for selection in ctx.admit_iter(feature_selections, OPERATION)? {
-                            let (seed, seed_storage) = ctx.with_scoped_storage(OPERATION, || {
+                            let seed_storage;
+                            let seed;
+                            (seed, seed_storage) = ctx.with_scoped_storage(OPERATION, || {
                             let native = compact_surface_selection_value(ctx, &selection.components)?;
                             let generated = match component_path_feature(
                                 ctx,
@@ -2010,7 +2050,9 @@ pub(crate) fn project_compact_surface_selections(
                                 .zip(selection.components.last())
                                 .and_then(|(producer, component)| Some((producer, component.local_id?)));
                             if let Some((producer, local_id)) = generated {
-                                let (face, face_storage) = ctx.with_scoped_storage(OPERATION, || {
+                                let face_storage;
+                                let face;
+                                (face, face_storage) = ctx.with_scoped_storage(OPERATION, || {
                                     let producer_id = producer.try_clone_for_decode(ctx, OPERATION)?;
                                     let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
                                     cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text, ctx)?
@@ -2055,7 +2097,9 @@ pub(crate) fn project_compact_surface_selections(
  None => None,
  };
                         if let Some(producer) = target_producer {
-                            let (body, body_storage) = ctx.with_scoped_storage(OPERATION, || {
+                            let body_storage;
+                            let body;
+                            (body, body_storage) = ctx.with_scoped_storage(OPERATION, || {
                             let mut local_id = String::new();
                             for component in ctx.admit_iter(&target.components, OPERATION)? {
                                 let Some(id) = component.local_id else { continue; };
@@ -2444,9 +2488,12 @@ pub(crate) fn project_compact_surface_selections(
         let Some(face) = ctx.get_hash_map(&face_aliases, target.as_str(), ALIAS_OPERATION)? else {
             continue;
         };
-        let (face, face_storage) = ctx.with_scoped_storage(ALIAS_OPERATION, || {
+        let face_storage;
+        let copied_face;
+        (copied_face, face_storage) = ctx.with_scoped_storage(ALIAS_OPERATION, || {
             face.try_clone_for_decode(ctx, ALIAS_OPERATION)
         })?;
+        let face = copied_face;
         if let FaceSelection::Generated { faces, .. } = &face {
             for generated in ctx.admit_iter(faces.as_slice(), ALIAS_OPERATION)? {
                 add_dependency(
@@ -2508,7 +2555,9 @@ fn full_round_fillet_selection_triple<'a>(
     selections: &[&'a FeatureInputSurfaceSelection],
 ) -> Result<Option<[&'a FeatureInputSurfaceSelection; 3]>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "group SLDPRT full round fillet selections";
-    let (by_lane, _lane_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let _lane_storage;
+    let by_lane;
+    (by_lane, _lane_storage) = ctx.with_scoped_storage(OPERATION, || {
         surface_selections_by_lane(ctx, selections, OPERATION)
     })?;
     let mut consensus: Option<[&'a FeatureInputSurfaceSelection; 3]> = None;
@@ -2588,7 +2637,9 @@ pub(crate) fn project_draft_operands(
     if candidates.is_empty() {
         return Ok(());
     }
-    let (feature_ids_by_native, _feature_ids_storage) =
+    let _feature_ids_storage;
+    let feature_ids_by_native;
+    (feature_ids_by_native, _feature_ids_storage) =
         model_feature_ids_by_native(ctx, features, INDEX_OPERATION)?;
     for feature in ctx.admit_iter(features, INDEX_OPERATION)? {
         let native_ref = feature.native_ref.as_deref();
@@ -2734,7 +2785,9 @@ fn draft_face_selection(
         else {
             return Ok(cadmpeg_ir::features::FaceSelection::Native(native));
         };
-        let (face, face_storage) = ctx.with_scoped_storage(OPERATION, || {
+        let face_storage;
+        let face;
+        (face, face_storage) = ctx.with_scoped_storage(OPERATION, || {
             let producer_id = producer.try_clone_for_decode(ctx, OPERATION)?;
             let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
             cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text, ctx)?
@@ -2935,7 +2988,9 @@ fn cut_with_surface_selection_pair<'a>(
     cadmpeg_core::CodecError,
 > {
     const OPERATION: &str = "group SLDPRT surface cut selections";
-    let (by_lane, _lane_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let _lane_storage;
+    let by_lane;
+    (by_lane, _lane_storage) = ctx.with_scoped_storage(OPERATION, || {
         surface_selections_by_lane(ctx, selections, OPERATION)
     })?;
     let mut consensus = None;
@@ -3018,13 +3073,17 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 .with_storage(|| ctx.push_vec(&mut history_features, native_feature, OPERATION))?;
         }
     }
-    let (first_history_feature, _first_history_storage) = first_positions(
+    let _first_history_storage;
+    let first_history_feature;
+    (first_history_feature, _first_history_storage) = first_positions(
         ctx,
         &history_features,
         |feature| feature.id.as_str(),
         OPERATION,
     )?;
-    let (feature_ids_by_native, _feature_ids_storage) =
+    let _feature_ids_storage;
+    let feature_ids_by_native;
+    (feature_ids_by_native, _feature_ids_storage) =
         model_feature_ids_by_native(ctx, features, ID_OPERATION)?;
     let face_surfaces = FaceSurfaces::new(ctx, faces, surfaces)?;
     // Each lane's key, feature byte ranges and cylinder reference tokens.
@@ -3187,7 +3246,9 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     Ord::cmp,
                     NATIVE_OPERATION,
                 )?;
-                let (native, native_storage) = ctx.with_scoped_storage(NATIVE_OPERATION, || {
+                let native_storage;
+                let native;
+                (native, native_storage) = ctx.with_scoped_storage(NATIVE_OPERATION, || {
                     let native = if references.is_empty() {
                         None
                     } else {
