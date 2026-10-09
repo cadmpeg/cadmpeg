@@ -52,6 +52,9 @@ pub(in crate::decode) fn section_line_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SketchGeometry>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let crate::feature::definitions::FeatureSegmentKind::Line([start, end]) = segment.kind else {
         return Ok(None);
     };
@@ -81,6 +84,9 @@ pub(in crate::decode) fn section_point_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SketchGeometry>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let crate::feature::definitions::FeatureSegmentKind::Point(point) = segment.kind else {
         return Ok(None);
     };
@@ -98,6 +104,9 @@ pub(in crate::decode) fn section_arc_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SketchGeometry>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !matches!(
         segment.kind,
         crate::feature::definitions::FeatureSegmentKind::Arc(_)
@@ -228,6 +237,9 @@ pub(in crate::decode) fn section_reference_line_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureReferenceLineSegment,
 ) -> Result<Option<SketchGeometry>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let [Some(start_id), Some(end_id)] = segment.point_ids else {
         return Ok(None);
     };
@@ -531,6 +543,9 @@ pub(super) fn saved_section_arc_record<'a>(
     definition: &'a crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<&'a crate::feature::definitions::FeatureSavedArc>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !matches!(
         segment.kind,
         crate::feature::definitions::FeatureSegmentKind::Arc(_)
@@ -726,6 +741,9 @@ pub(in crate::decode) fn saved_section_segment_point_coordinates(
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SavedSegmentPointCoordinates>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let coordinates = match segment.kind {
         crate::feature::definitions::FeatureSegmentKind::Line(_) => {
             let Some(geometry) = saved_section_line_geometry(ctx, definition, segment)? else {
@@ -775,6 +793,9 @@ pub(in crate::decode) fn saved_section_circle_values(
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureCircleSegment,
 ) -> Result<Option<([f64; 2], f64)>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(segments) = definition.segments.as_ref() else {
         return Ok(None);
     };
@@ -1177,9 +1198,12 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
     }
     let mut open = [None, None];
     let mut endpoint_rows = endpoints.iter().enumerate();
-    while let Some((index, endpoint)) =
-        ctx.next_charged(&mut endpoint_rows, "creo missing-line endpoints")?
-    {
+    while endpoint_rows.len() != 0 {
+        let Some((index, endpoint)) =
+            ctx.next_charged(&mut endpoint_rows, "creo missing-line endpoints")?
+        else {
+            break;
+        };
         let mut first_mate = None;
         let has_multiple_mates = ctx.any_by(
             endpoints.iter().enumerate(),
@@ -1282,9 +1306,12 @@ pub(in crate::decode) fn saved_profile_chains(
             let mut has_second_mate = false;
             // Each candidate row is charged as it is visited; a second mate ends the walk.
             let mut candidates = rows.iter().enumerate();
-            'candidate_rows: while let Some((candidate_row, (_, candidate_endpoints))) =
-                ctx.next_charged(&mut candidates, "creo saved profile endpoint candidates")?
-            {
+            'candidate_rows: while candidates.len() != 0 {
+                let Some((candidate_row, (_, candidate_endpoints))) =
+                    ctx.next_charged(&mut candidates, "creo saved profile endpoint candidates")?
+                else {
+                    break;
+                };
                 for (candidate_endpoint, candidate_point) in candidate_endpoints.iter().enumerate()
                 {
                     if (candidate_row != row_index || candidate_endpoint != endpoint_index)
@@ -1356,7 +1383,7 @@ pub(in crate::decode) fn saved_profile_chains(
             if row == seed {
                 if !reversed {
                     ctx.reserve_vec(&mut profiles, 1, "creo saved profile rows")?;
-                    chain_storage.commit()?;
+                    let uses = chain_storage.commit_value(uses)?;
                     profiles.push(uses);
                 }
                 break;

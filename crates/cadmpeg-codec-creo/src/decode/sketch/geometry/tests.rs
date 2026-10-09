@@ -9,6 +9,7 @@ use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 
 const EPS_TEST_ANGLE: f64 = 1.0e-12;
 
+mod admission_recovery;
 mod missing_line;
 
 fn saved_profile_fixture() -> (SketchId, Vec<(u32, SketchGeometry)>) {
