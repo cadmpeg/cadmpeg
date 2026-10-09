@@ -504,11 +504,14 @@ fn spatial_relation_point_line_entities<'a>(
             return Ok(None);
         };
         ctx.reserve_vec(entities, 1, "append SLDPRT spatial relation line")?;
+        let mut endpoint_refs = ctx.collection_vec(2, "retain SLDPRT spatial line endpoints")?;
+        endpoint_refs.push(start_ref);
+        endpoint_refs.push(end_ref);
         entities.push(
             SpatialSketchEntity::new(entity_id, sketch_id, geometry)
                 .with_construction(true)
                 .with_geometry_ref(Some(geometry_ref))
-                .with_endpoint_refs(vec![start_ref, end_ref]),
+                .with_endpoint_refs(endpoint_refs),
         );
         id
     };
@@ -1568,16 +1571,16 @@ pub(crate) fn project_relation_point_geometry(
             } else {
                 None
             };
-            let endpoint_refs = vec![
-                ctx.format_retained(
-                    format_args!("{}", first_marker.id()),
-                    "copy SLDPRT relation-line first endpoint reference",
-                )?,
-                ctx.format_retained(
-                    format_args!("{}", second_marker.id()),
-                    "copy SLDPRT relation-line second endpoint reference",
-                )?,
-            ];
+            let mut endpoint_refs =
+                ctx.collection_vec(2, "retain SLDPRT relation-line endpoints")?;
+            endpoint_refs.push(ctx.format_retained(
+                format_args!("{}", first_marker.id()),
+                "copy SLDPRT relation-line first endpoint reference",
+            )?);
+            endpoint_refs.push(ctx.format_retained(
+                format_args!("{}", second_marker.id()),
+                "copy SLDPRT relation-line second endpoint reference",
+            )?);
             ctx.reserve_vec(entities, 1, "append SLDPRT relation line")?;
             entities.push(
                 SketchEntity::new(id, sketch_id, geometry)
@@ -2535,7 +2538,10 @@ pub(crate) fn project_relation_solved_line_geometry(
                     format_args!("{}", markers[1].id()),
                     "copy SLDPRT solver-line second endpoint reference",
                 )?;
-                let endpoint_refs = vec![first_ref, second_ref];
+                let mut endpoint_refs =
+                    ctx.collection_vec(2, "retain SLDPRT solver-line endpoints")?;
+                endpoint_refs.push(first_ref);
+                endpoint_refs.push(second_ref);
                 ctx.reserve_vec(entities, 1, "append SLDPRT solver line")?;
                 entities.push(
                     SketchEntity::new(
@@ -6398,3 +6404,6 @@ mod lookup_storage_tests;
 
 #[cfg(test)]
 mod pair_source_storage_tests;
+
+#[cfg(test)]
+mod endpoint_reference_storage_tests;
