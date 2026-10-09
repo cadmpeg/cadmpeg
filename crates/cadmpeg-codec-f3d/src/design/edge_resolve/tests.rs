@@ -1992,3 +1992,5 @@ mod candidate_vector_lifetimes;
 mod transition_proof_reuse;
 
 mod fixed_fillet_temporary_lifetimes;
+
+mod fixed_variable_radius_lifetimes;
