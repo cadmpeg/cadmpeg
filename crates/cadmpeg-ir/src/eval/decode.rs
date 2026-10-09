@@ -415,6 +415,7 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
         ctx: &'ctx DecodeContext<'_>,
         curve: &'curve NurbsCurve,
     ) -> Result<Self, ResourceLimit> {
+        ctx.charge_work_limit(0, "IR B-spline basis")?;
         let support = curve.knots().len() - curve.pole_count();
         let basis = if support <= 2 {
             (
