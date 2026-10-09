@@ -1699,7 +1699,13 @@ pub(super) fn project<'ctx>(
             )?;
         }
         let mut entries = BTreeMap::new();
-        for entry in ctx.admit_iter(directory, "iges surfaces directory index traversal")? {
+        let mut directory_entries = directory.iter();
+        while !directory_entries.as_slice().is_empty() {
+            let Some(entry) =
+                ctx.next_charged(&mut directory_entries, "iges surfaces directory index traversal")?
+            else {
+                break;
+            };
             ctx.insert_btree_map(
                 &mut entries,
                 entry.sequence,
@@ -1716,10 +1722,16 @@ pub(super) fn project<'ctx>(
     let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
 
-    for entry in ctx
-        .admit_iter(directory, "iges surfaces directory pass")?
-        .filter(|entry| entry.entity_type == 108 && matches!(entry.form, -1..=1))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges surfaces directory pass")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 108 && matches!(entry.form, -1..=1)) {
+            continue;
+        }
         let factor = global.length_factor_mm();
         let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
         else {
@@ -1904,10 +1916,16 @@ pub(super) fn project<'ctx>(
         )?;
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges surfaces directory pass")?
-        .filter(|entry| entry.entity_type == 118 && matches!(entry.form, 0 | 1))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges surfaces directory pass")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 118 && matches!(entry.form, 0 | 1)) {
+            continue;
+        }
         let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
         else {
             super::push_entity_loss_with_scoped_slots(
@@ -2178,10 +2196,16 @@ pub(super) fn project<'ctx>(
         )?;
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges surfaces directory pass")?
-        .filter(|entry| entry.entity_type == 122 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges surfaces directory pass")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 122 && entry.form == 0) {
+            continue;
+        }
         let factor = global.length_factor_mm();
         let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
         else {
@@ -2744,10 +2768,16 @@ pub(super) fn project<'ctx>(
         )?;
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges surfaces directory pass")?
-        .filter(|entry| entry.entity_type == 120 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges surfaces directory pass")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 120 && entry.form == 0) {
+            continue;
+        }
         let factor = global.length_factor_mm();
         let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
         else {
@@ -3334,10 +3364,16 @@ pub(super) fn project<'ctx>(
         )?;
     }
 
-    'surface: for entry in ctx
-        .admit_iter(directory, "iges surfaces directory pass")?
-        .filter(|entry| entry.entity_type == 128 && (0..=9).contains(&entry.form))
-    {
+    let mut directory_entries = directory.iter();
+    'surface: while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges surfaces directory pass")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 128 && (0..=9).contains(&entry.form)) {
+            continue;
+        }
         let factor = global.length_factor_mm();
         let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
         else {
@@ -3951,10 +3987,16 @@ pub(super) fn project<'ctx>(
     // needed for procedural evaluation cannot borrow across a model append.
     let mut offset_storage = ctx.reserve_scoped(0, "iges offset lookup storage")?;
     let mut offset_lookups = None;
-    for entry in ctx
-        .admit_iter(directory, "iges surfaces directory pass")?
-        .filter(|entry| entry.entity_type == 140 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges surfaces directory pass")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 140 && entry.form == 0) {
+            continue;
+        }
         let factor = global.length_factor_mm();
         let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
         else {

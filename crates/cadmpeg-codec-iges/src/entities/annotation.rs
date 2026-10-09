@@ -1505,10 +1505,16 @@ pub(super) fn project<'ctx>(
     let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
 
-    for (entry, kind) in ctx
-        .admit_iter(directory, "iges annotation directory traversal")?
-        .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind)))
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges annotation directory traversal")?
+        else {
+            break;
+        };
+        let Some(kind) = classify(entry.entity_type, entry.form) else {
+            continue;
+        };
         let valid = ctx
             .get_btree_map(
                 records,

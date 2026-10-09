@@ -2272,10 +2272,16 @@ pub(super) fn project<'ctx>(
     }
     let mut staged_storage = ctx.reserve_scoped(0, "iges trimming staged candidates")?;
     let mut staged = Vec::new();
-    for entry in ctx
-        .admit_iter(directory, "iges trimming directory traversal")?
-        .filter(|entry| entry.entity_type == 142 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges trimming directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 142 && entry.form == 0) {
+            continue;
+        }
         let Some(record) = record_by_sequence(records, entry.sequence, ctx)? else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -2390,10 +2396,16 @@ pub(super) fn project<'ctx>(
             "iges trimming decoded sequences",
         )?;
     }
-    for entry in ctx
-        .admit_iter(directory, "iges trimming directory traversal")?
-        .filter(|entry| entry.entity_type == 141 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges trimming directory traversal")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 141 && entry.form == 0) {
+            continue;
+        }
         let Some(record) = record_by_sequence(records, entry.sequence, ctx)? else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -2560,10 +2572,16 @@ pub(super) fn project<'ctx>(
             )?;
         }
     }
-    for entry in ctx
-        .admit_iter(directory, "iges trimming directory traversal")?
-        .filter(|entry| matches!(entry.entity_type, 143 | 144) && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges trimming directory traversal")?
+        else {
+            break;
+        };
+        if !(matches!(entry.entity_type, 143 | 144) && entry.form == 0) {
+            continue;
+        }
         let mut sequence_storage =
             ctx.reserve_scoped(0, "iges trimming boundary sequence scratch")?;
         let factor = global.length_factor_mm();

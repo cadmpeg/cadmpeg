@@ -270,7 +270,13 @@ pub(super) fn project(
             )?;
         }
         let mut entries = BTreeMap::new();
-        for entry in ctx.admit_iter(directory, "iges splines directory index traversal")? {
+        let mut directory_entries = directory.iter();
+        while !directory_entries.as_slice().is_empty() {
+            let Some(entry) =
+                ctx.next_charged(&mut directory_entries, "iges splines directory index traversal")?
+            else {
+                break;
+            };
             ctx.insert_btree_map(
                 &mut entries,
                 entry.sequence,
@@ -284,10 +290,16 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
 
-    for entry in ctx
-        .admit_iter(directory, "iges splines directory pass")?
-        .filter(|entry| entry.entity_type == 112 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges splines directory pass")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 112 && entry.form == 0) {
+            continue;
+        }
         let factor = global.length_factor_mm();
         let mut scratch = ctx.reserve_scoped(0, "iges spline numeric scratch")?;
         let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
@@ -746,10 +758,16 @@ pub(super) fn project(
         )?;
     }
 
-    for entry in ctx
-        .admit_iter(directory, "iges splines directory pass")?
-        .filter(|entry| entry.entity_type == 114 && entry.form == 0)
-    {
+    let mut directory_entries = directory.iter();
+    while !directory_entries.as_slice().is_empty() {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges splines directory pass")?
+        else {
+            break;
+        };
+        if !(entry.entity_type == 114 && entry.form == 0) {
+            continue;
+        }
         let factor = global.length_factor_mm();
         let mut scratch = ctx.reserve_scoped(0, "iges spline numeric scratch")?;
         let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
