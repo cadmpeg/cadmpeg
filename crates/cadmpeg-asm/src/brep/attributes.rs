@@ -26,8 +26,8 @@ pub fn collect_attributes(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let (emitted, emitted_storage) = emitted;
     let mut current = entity.ref_at(0);
-    let mut chain = HashSet::new();
     let mut chain_storage = ctx.reserve_scoped(0, "ASM attribute chain")?;
+    let mut chain = HashSet::new();
     while let Some(index) = current {
         ctx.charge_work(1, "ASM attribute chain walk")?;
         if !chain_storage
@@ -468,8 +468,8 @@ pub fn attribute_chain_color_carrier<'a>(
     let Some(mut current) = entity.ref_at(0) else {
         return Ok(None);
     };
-    let mut visited = HashSet::new();
     let mut storage = ctx.reserve_scoped(0, "ASM color chain visited")?;
+    let mut visited = HashSet::new();
     for _ in 0..max_steps {
         ctx.charge_work(1, "ASM color chain walk")?;
         if !storage.with_storage(|| {
@@ -514,8 +514,8 @@ pub fn attribute_chain_name(
     let Some(mut current) = entity.ref_at(0) else {
         return Ok(None);
     };
-    let mut visited = HashSet::new();
     let mut storage = ctx.reserve_scoped(0, "ASM name chain visited")?;
+    let mut visited = HashSet::new();
     for _ in 0..by_index.len() {
         ctx.charge_work(1, "ASM name chain walk")?;
         if !storage

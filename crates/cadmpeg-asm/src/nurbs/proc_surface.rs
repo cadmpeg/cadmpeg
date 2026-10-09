@@ -4907,9 +4907,9 @@ pub fn procedural_surface_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
-    let mut seen = std::collections::HashSet::new();
     let mut scratch =
         propagate_resource!(ctx.reserve_scoped(0, "ASM procedural surface references"));
+    let mut seen = std::collections::HashSet::new();
     procedural_resolving_refs(ctx, toks, table, &mut seen, &mut scratch)
 }
 

@@ -756,8 +756,8 @@ impl SubtypeTable {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut defs: Vec<SubtypeDefinition> = Vec::new();
         for record in ctx.admit_iter(records, "index ASM subtype records")? {
-            let mut stack = Vec::new();
             let mut scratch = ctx.reserve_scoped(0, "index ASM subtype boundaries")?;
+            let mut stack = Vec::new();
             for (pos, token) in ctx
                 .admit_iter(record.tokens.as_ref(), "index ASM subtype tokens")?
                 .enumerate()
@@ -831,9 +831,9 @@ pub(crate) fn admit_subtype_references(
     table: &SubtypeTable,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for record in ctx.admit_iter(records, "walk ASM subtype records")? {
+        let mut scratch = ctx.reserve_scoped(0, "walk ASM subtype references")?;
         let mut visited = std::collections::BTreeSet::new();
         let mut pending = Vec::new();
-        let mut scratch = ctx.reserve_scoped(0, "walk ASM subtype references")?;
         let root = (record.tokens.as_ref(), 0usize, None);
         ctx.push_scoped_vec(&mut scratch, &mut pending, root, "walk ASM subtype stack")?;
         while let Some((tokens, position, _guard)) = pending.last_mut() {

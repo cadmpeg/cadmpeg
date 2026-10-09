@@ -318,9 +318,9 @@ pub fn collect_entity_adjacency(
             let Some(id) = entity_id(ctx, item)? else {
                 continue;
             };
-            let mut references = BTreeSet::new();
             let mut reference_storage =
                 ctx.reserve_scoped(0, "ASM adjacency scratch references")?;
+            let mut references = BTreeSet::new();
             reference_storage
                 .with_storage(|| collect_references(ctx, item, owned, &mut references))?;
             ctx.remove_btree_set(&mut references, id, "ASM adjacency self reference")?;
@@ -798,8 +798,8 @@ fn inherited_attribute_target(
     by_index: &HashMap<i64, &Record>,
     targets: &HashMap<i64, AttributeTarget>,
 ) -> Result<Option<AttributeTarget>, cadmpeg_core::CodecError> {
-    let mut visited = HashSet::new();
     let mut storage = ctx.reserve_scoped(0, "ASM inherited attribute visited")?;
+    let mut visited = HashSet::new();
     loop {
         ctx.charge_work(1, "ASM inherited attribute walk")?;
         if !storage.with_storage(|| {

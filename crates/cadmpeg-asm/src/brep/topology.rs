@@ -417,8 +417,8 @@ pub(super) fn walk_reachable_topology(
         ..
     } = &mut *reach;
     // Source order makes shared carrier resolution deterministic.
-    let mut walked_faces = HashSet::new();
     let mut walked_face_storage = ctx.reserve_scoped(0, "ASM visited faces")?;
+    let mut walked_faces = HashSet::new();
     for face in ctx.admit_iter(records, "ASM reachable face walk")? {
         let face_idx = i64::try_from(face.index).map_err(|_| {
             ctx.refuse_codec_limit(
@@ -438,8 +438,8 @@ pub(super) fn walk_reachable_topology(
             continue;
         };
         let mut loop_ref = face.ref_at(4);
-        let mut loop_guard = HashSet::new();
         let mut loop_guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+        let mut loop_guard = HashSet::new();
         while let Some(li) = loop_ref {
             ctx.charge_work(1, "ASM reachable face loop walk")?;
             if !loop_guard_storage.with_storage(|| {
@@ -456,8 +456,8 @@ pub(super) fn walk_reachable_topology(
             // Ring-walk coedges via chunk[3] = next.
             if let Some(first_ce) = lp.ref_at(4) {
                 let mut ce_ref = Some(first_ce);
-                let mut ce_guard = HashSet::new();
                 let mut ce_guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+                let mut ce_guard = HashSet::new();
                 while let Some(ci) = ce_ref {
                     ctx.charge_work(1, "ASM reachable coedge ring walk")?;
                     if !ce_guard_storage.with_storage(|| {
@@ -800,8 +800,8 @@ pub(super) fn collect_wire_topology(
                 cadmpeg_core::decode::u64_from_index(shell.index),
             )
         })?;
-        let mut wire_guard = HashSet::new();
         let mut wire_guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+        let mut wire_guard = HashSet::new();
         let mut roots_storage = ctx.reserve_scoped(0, "ASM shell wire root storage")?;
         let roots = roots_storage.with_storage(|| shell_wire_roots(ctx, shell, by_index))?;
         for root in ctx.admit_iter(roots, "ASM shell wire roots")? {
@@ -824,14 +824,14 @@ pub(super) fn collect_wire_topology(
                     Some(Token::False) => Some(WireSide::Out),
                     _ => None,
                 };
+                let mut wire_edge_storage = ctx.reserve_scoped(0, "ASM wire member storage")?;
                 let mut wire_edges = Vec::new();
                 let mut wire_edge_membership = HashSet::new();
-                let mut wire_edge_storage = ctx.reserve_scoped(0, "ASM wire member storage")?;
                 if let Some(first_coedge) = wire.ref_at(4) {
                     let mut coedge_ref = Some(first_coedge);
-                    let mut coedge_guard = HashSet::new();
                     let mut coedge_guard_storage =
                         ctx.reserve_scoped(0, "ASM topology visited storage")?;
+                    let mut coedge_guard = HashSet::new();
                     while let Some(coedge_index) = coedge_ref {
                         ctx.charge_work(1, "ASM wire coedge ring walk")?;
                         if !coedge_guard_storage.with_storage(|| {
@@ -1221,8 +1221,8 @@ pub(super) fn ring_coedges(
         return Ok(out);
     };
     let mut cur = Some(first);
-    let mut guard = HashSet::new();
     let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard = HashSet::new();
     while let Some(ci) = cur {
         ctx.charge_work(1, "ASM ring coedges walk")?;
         if !guard_storage
@@ -1251,8 +1251,8 @@ pub(super) fn loop_chain(
     let id = |i: i64| LoopId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = face_rec.ref_at(4);
-    let mut guard = HashSet::new();
     let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard = HashSet::new();
     while let Some(li) = cur {
         ctx.charge_work(1, "ASM face loop chain walk")?;
         if !guard_storage
@@ -1279,8 +1279,8 @@ fn face_chain(
     let id = |i: i64| FaceId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = shell_rec.ref_at(5);
-    let mut guard = HashSet::new();
     let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard = HashSet::new();
     while let Some(fi) = cur {
         ctx.charge_work(1, "ASM shell face chain walk")?;
         if !guard_storage
@@ -1308,8 +1308,8 @@ pub(super) fn subshell_ancestor_shells(
         .filter(|record| record.head() == "subshell")
     {
         let mut owner = record.ref_at(3);
-        let mut guard = HashSet::new();
         let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+        let mut guard = HashSet::new();
         while let Some(index) = owner {
             ctx.charge_work(1, "ASM subshell ancestor walk")?;
             if !guard_storage
@@ -1355,8 +1355,8 @@ pub(super) fn shell_faces(
     let mut pending_storage = ctx.reserve_scoped(0, "ASM pending subshells")?;
     let mut pending = pending_storage
         .with_storage(|| ctx.collect_vec(shell.ref_at(4), "ASM pending subshells"))?;
-    let mut guard = HashSet::new();
     let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard = HashSet::new();
     while let Some(index) = pending.pop() {
         ctx.charge_work(1, "ASM shell faces walk")?;
         if !guard_storage
@@ -1392,8 +1392,8 @@ pub(super) fn shell_wire_roots(
     let mut pending_storage = ctx.reserve_scoped(0, "ASM pending subshells")?;
     let mut pending = pending_storage
         .with_storage(|| ctx.collect_vec(shell.ref_at(4), "ASM pending subshells"))?;
-    let mut guard = HashSet::new();
     let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard = HashSet::new();
     while let Some(index) = pending.pop() {
         ctx.charge_work(1, "ASM shell wire roots walk")?;
         if !guard_storage
@@ -1430,8 +1430,8 @@ fn face_chain_from(
     format: IdFormat,
     out: &mut Vec<FaceId>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut guard = HashSet::new();
     let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard = HashSet::new();
     while let Some(index) = current {
         ctx.charge_work(1, "ASM subshell face chain walk")?;
         if !guard_storage
@@ -1459,8 +1459,8 @@ pub(super) fn shell_chain(
     let id = |i: i64| ShellId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = region_rec.ref_at(4);
-    let mut guard = HashSet::new();
     let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard = HashSet::new();
     while let Some(si) = cur {
         ctx.charge_work(1, "ASM region shell chain walk")?;
         if !guard_storage
@@ -1484,8 +1484,8 @@ pub(super) fn region_chain(
     let id = |i: i64| RegionId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = body_rec.ref_at(3);
-    let mut guard = HashSet::new();
     let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard = HashSet::new();
     while let Some(li) = cur {
         ctx.charge_work(1, "ASM body region chain walk")?;
         if !guard_storage

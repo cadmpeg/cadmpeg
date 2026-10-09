@@ -631,8 +631,8 @@ impl AsmEditSet {
         knots: &[f64],
         int_width: RefWidth,
     ) -> Result<(), CodecError> {
-        let mut runs: Vec<(f64, usize)> = Vec::new();
         let mut run_storage = ctx.reserve_scoped(0, "ASM knot edit runs")?;
+        let mut runs: Vec<(f64, usize)> = Vec::new();
         for knot in ctx.admit_iter(knots, "ASM knot edit values")? {
             if let Some((value, count)) = runs.last_mut() {
                 if *value == *knot {

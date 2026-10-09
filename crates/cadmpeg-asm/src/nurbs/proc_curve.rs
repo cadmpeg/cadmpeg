@@ -644,8 +644,8 @@ pub fn procedural_curve_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<Result<DecodedProceduralCurve, cadmpeg_core::CodecError>> {
-    let mut seen = std::collections::HashSet::new();
     let mut scratch = propagate_resource!(ctx.reserve_scoped(0, "ASM procedural curve references"));
+    let mut seen = std::collections::HashSet::new();
     procedural_curve_recursive(ctx, toks, table, &mut seen, &mut scratch)
 }
 
@@ -669,8 +669,8 @@ pub fn pcurve_for_selector_with_chart(
         2 | -2 => 1,
         _ => return None,
     };
-    let mut seen = std::collections::HashSet::new();
     let mut scratch = propagate_resource!(ctx.reserve_scoped(0, "ASM pcurve references"));
+    let mut seen = std::collections::HashSet::new();
     pcurve_for_selector_recursive(ctx, toks, slot, table, &mut seen, &mut scratch)
 }
 
@@ -912,8 +912,8 @@ pub fn cacheless_procedural_curve_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<Result<HelixDefinition, cadmpeg_core::CodecError>> {
-    let mut seen = std::collections::HashSet::new();
     let mut scratch = propagate_resource!(ctx.reserve_scoped(0, "ASM cacheless curve references"));
+    let mut seen = std::collections::HashSet::new();
     cacheless_procedural_curve_recursive(ctx, toks, table, &mut seen, &mut scratch)
 }
 
@@ -3388,7 +3388,8 @@ fn cache_first_support(
         };
         let index = usize::try_from(*index).ok()?;
         if let Some(target) = table.span(index) {
-            let (decoded, _storage) = propagate_resource!(ctx.with_scoped_storage(
+            let _storage;
+            let (decoded, result_storage) = propagate_resource!(ctx.with_scoped_storage(
                 "ASM cacheless support presence",
                 || crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                     ctx,
@@ -3397,6 +3398,7 @@ fn cache_first_support(
                 )
                 .transpose(),
             ));
+            _storage = result_storage;
             decoded.is_some()
         } else {
             false
@@ -3992,8 +3994,10 @@ fn compound_definition(
     if count == 0 {
         return None;
     }
-    let (mut component_parameters, _parameter_storage) =
+    let _parameter_storage;
+    let (mut component_parameters, result_parameter_storage) =
         propagate_resource!(ctx.temporary_vec(count, "ASM compound curve parameters"));
+    _parameter_storage = result_parameter_storage;
     let mut visits = 0..count;
     while propagate_resource!(ctx.next_charged(&mut visits, "ASM compound definition entries"))
         .is_some()

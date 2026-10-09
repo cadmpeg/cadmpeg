@@ -1546,10 +1546,12 @@ pub(super) fn compact_rb_blend_spl_sur(
             let payload_start = cur.pos();
             let support = if !has_outer_kind {
                 let end = {
-                    let (decoded, _cache_storage) = ctx
+                    let _cache_storage;
+                    let (decoded, result_cache_storage) = ctx
                         .with_scoped_storage("ASM compact blend support cache", || {
                             surface_block(ctx, span, cur.pos()).transpose()
                         })?;
+                    _cache_storage = result_cache_storage;
                     let Some((_, end)) = decoded else {
                         return Ok(None);
                     };
