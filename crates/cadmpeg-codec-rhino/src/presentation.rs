@@ -2131,9 +2131,9 @@ fn parse_light_record_attributes(
     writer_version: Option<i64>,
     losses: &mut impl AdmittedVec<LossNote>,
 ) -> Result<Option<LightAttributesRecord>, FramingError> {
-    let mut warnings = Diagnostics::new();
     let mut diagnostics_storage =
         ctx.reserve_scoped(0, "Rhino light attribute parse diagnostics")?;
+    let mut warnings = Diagnostics::new();
     let parsed = diagnostics_storage.with_storage(|| {
         // discarded-value: the class prefix is checked and skipped; ? states the refusal and its range has no reader
         let _ = class_data_prefix(ctx, data, record, archive, LIGHT)?;
@@ -2290,7 +2290,6 @@ fn parse_light_record_attributes(
     })?;
     let Some((source_offset, attributes, attributes_userdata, userdata_requires_opaque)) = parsed
     else {
-        drop(diagnostics_storage);
         return Ok(None);
     };
     let presentation = object_attributes_presentation(
@@ -2326,7 +2325,6 @@ fn parse_light_record_attributes(
         },
         "Rhino light diagnostic traversal",
     )?;
-    drop(diagnostics_storage);
     Ok(Some(LightAttributesRecord {
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         attributes: presentation,
