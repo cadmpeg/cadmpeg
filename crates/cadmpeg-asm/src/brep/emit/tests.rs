@@ -1353,3 +1353,224 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
 }
 
 mod tspline;
+
+#[test]
+fn invalid_embedded_use_curve_interval_keeps_independent_coedges() {
+    let record = |index: usize, carrier_range: Option<[f64; 2]>| {
+        let coedge = i64::try_from(index).unwrap();
+        let mut tokens = vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Ref(coedge),
+            Token::Ref(coedge),
+            Token::Ref(-1),
+            Token::Ref(1),
+            Token::False,
+            Token::Ref(2),
+            Token::Long(0),
+            Token::Ref(-1),
+            Token::Double(0.0),
+            Token::Double(1.0),
+            Token::Ref(-1),
+            Token::Long(1),
+            Token::False,
+            Token::SubtypeOpen,
+            Token::Ident("exact_int_cur".into()),
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Double(0.0),
+            Token::Long(1),
+            Token::Double(1.0),
+            Token::Long(1),
+        ];
+        for point in [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]] {
+            tokens.extend(point.map(Token::Double));
+        }
+        tokens.push(Token::SubtypeClose);
+        match carrier_range {
+            Some([start, end]) => tokens.extend([
+                Token::True,
+                Token::Double(start),
+                Token::True,
+                Token::Double(end),
+                Token::Long(0),
+            ]),
+            None => tokens.extend([Token::False, Token::False, Token::Long(0)]),
+        }
+        Record {
+            index,
+            name: "tcoedge".into(),
+            tokens: tokens.into(),
+            offset: 0,
+            len: 0,
+        }
+    };
+    let records = [
+        record(0, Some([1.0, 0.0])),
+        record(3, Some([0.0, 1.0])),
+        record(4, None),
+    ];
+    let table = subtype_table(&records);
+    let reach = Reachable {
+        coedges: HashSet::from([0, 3, 4]),
+        edges: HashSet::from([1]),
+        loops: HashSet::from([2]),
+        ..Reachable::default()
+    };
+    let mut out = AsmBrep::default();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    emit_coedges(
+        &ctx,
+        &mut out,
+        &records,
+        CoedgeDecodeInputs {
+            token_table: &table,
+            save_format_major: Some(220),
+        },
+        &Carriers::default(),
+        &reach,
+        crate::asm_format!("sat"),
+    )
+    .unwrap();
+    assert_eq!(out.coedges.len(), 3);
+    assert!(out.coedges[0].use_curve.is_none());
+    assert_eq!(out.curves.len(), 2);
+    assert!(out
+        .curves
+        .iter()
+        .all(|curve| curve.id.as_str() != "sat:brep:tolerant-coedge-curve#0"));
+    for coedge in &out.coedges[1..] {
+        assert_eq!(
+            coedge
+                .use_curve
+                .as_ref()
+                .unwrap()
+                .parameter_range
+                .endpoints(),
+            [0.0, 1.0]
+        );
+    }
+    assert_eq!(out.stats.invalid_use_curve_intervals(), 1);
+    assert_eq!(out.tolerant_coedge_parameters.len(), 3);
+    assert!(matches!(out.tolerant_coedge_parameters[0].extension,
+        TolerantCoedgeExtension::EmbeddedCurve { parameter_range: Some(range), .. } if range.get() == [1.0, 0.0]));
+}
+
+#[test]
+fn tolerant_coedge_parameters_follow_the_stored_base_layout() {
+    for reserved in [false, true] {
+        let mut tokens = vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Ref(0),
+            Token::Ref(0),
+            Token::Ref(-1),
+            Token::Ref(1),
+            Token::False,
+            Token::Ref(2),
+        ];
+        if reserved {
+            tokens.push(Token::Long(0));
+        }
+        tokens.extend([Token::Ref(-1), Token::Double(2.0), Token::Double(9.0)]);
+        let records = [Record {
+            index: 0,
+            name: "tcoedge".into(),
+            tokens: tokens.into(),
+            offset: 0,
+            len: 0,
+        }];
+        let table = subtype_table(&records);
+        let reach = Reachable {
+            coedges: HashSet::from([0]),
+            edges: HashSet::from([1]),
+            loops: HashSet::from([2]),
+            ..Reachable::default()
+        };
+        let mut out = AsmBrep::default();
+        let ctx = cadmpeg_test_support::service_decode_context();
+        emit_coedges(
+            &ctx,
+            &mut out,
+            &records,
+            CoedgeDecodeInputs {
+                token_table: &table,
+                save_format_major: Some(6),
+            },
+            &Carriers::default(),
+            &reach,
+            crate::asm_format!("sat"),
+        )
+        .unwrap();
+        assert_eq!(out.coedges.len(), 1);
+        assert_eq!(out.tolerant_coedge_parameters.len(), 1);
+        assert_eq!(
+            out.tolerant_coedge_parameters[0].parameter_range.get(),
+            [2.0, 9.0]
+        );
+    }
+}
+
+#[test]
+fn legacy_tolerant_edge_tolerance_does_not_require_a_revision_field() {
+    use std::collections::HashMap;
+    for continuity in [false, true] {
+        for value in [0.02, 0.0, -1.0] {
+            let mut tokens = vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Ref(1),
+                Token::Double(0.0),
+                Token::Ref(2),
+                Token::Double(1.0),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::False,
+            ];
+            if continuity {
+                tokens.push(Token::Str("unknown".into()));
+            }
+            tokens.push(Token::Double(value));
+            let records = [Record {
+                index: 0,
+                name: "tedge".into(),
+                tokens: tokens.into(),
+                offset: 0,
+                len: 0,
+            }];
+            let reach = Reachable {
+                edges: HashSet::from([0]),
+                vertices: HashSet::from([1, 2]),
+                ..Reachable::default()
+            };
+            let mut out = AsmBrep::default();
+            let ctx = cadmpeg_test_support::service_decode_context();
+            emit_edges(
+                &ctx,
+                &mut out,
+                &records,
+                &HashMap::new(),
+                &reach,
+                CurveSenseRefs {
+                    reversed_curve_refs: &HashSet::new(),
+                    forward_curve_refs: &HashSet::new(),
+                },
+                crate::asm_format!("sat"),
+            )
+            .unwrap();
+            assert_eq!(out.edges.len(), 1);
+            assert_eq!(
+                out.edges[0]
+                    .tolerance
+                    .map(cadmpeg_ir::scalar::PositiveReal::get),
+                (value > 0.0).then_some(0.2)
+            );
+            assert!(out.tolerant_edge_tails.is_empty());
+        }
+    }
+}

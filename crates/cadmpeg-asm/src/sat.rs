@@ -89,6 +89,8 @@ impl TextUnits {
 pub struct TextHeader {
     /// ACIS save-format version word, `major * 100 + minor`.
     pub save_format_version: u32,
+    /// Number of native records, or zero when this count is unwritten.
+    pub record_count: Option<u64>,
     /// Entity-count word: the `RecordTable` index of the first referenced record.
     pub entity_count: u64,
     /// Flags word: bit 0 marks a history partition, bits 1..=7 the revision.
@@ -190,6 +192,10 @@ pub struct TextStream {
     /// Records in file order. Index 0 is the first record after the header
     /// lines; the stream does not always begin with `asmheader`.
     pub records: Vec<Record>,
+    /// Multiple independently headed reference tables were recovered.
+    pub concatenated_streams: bool,
+    /// A later independently headed stream cannot use the active native layout.
+    pub unread_stream_layout: bool,
     /// The terminator line that closed the stream, or the branch the save
     /// format selects when the input ends without one.
     pub terminator: Terminator,
@@ -234,6 +240,8 @@ pub fn has_text_magic(bytes: &[u8]) -> bool {
 // ---------------------------------------------------------------------------
 // Primitive fields
 // ---------------------------------------------------------------------------
+
+mod segments;
 
 /// One whitespace-delimited field, before typing.
 #[derive(Debug, Clone, PartialEq)]
@@ -489,6 +497,9 @@ fn parse_header(
         .into());
     }
     let save_format_version = header_int(line1[0], at, "save format")?;
+    let record_count = header_int::<u32>(line1[1], at, "record count")
+        .ok()
+        .map(u64::from);
     let entity_count = header_int(line1[2], at, "entity count")?;
     let flags = header_int(line1[3], at, "flags")?;
     let mut diagnostics = Vec::new();
@@ -538,6 +549,7 @@ fn parse_header(
         )?;
         return Ok(TextHeader {
             save_format_version,
+            record_count,
             entity_count,
             flags,
             product_family: None,
@@ -704,6 +716,7 @@ fn parse_header(
     }
     Ok(TextHeader {
         save_format_version,
+        record_count,
         entity_count,
         flags,
         product_family,
@@ -781,7 +794,14 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
     let header = parse_header(ctx, bytes, &mut pos)?;
     // Length conversion into the binary centimetre convention: the stream
     // stores lengths in `scale` millimetres per unit.
-    let scale = header.scale().get();
+    let mut scale = header.scale().get();
+    let mut record_count = header.record_count;
+    let mut segment_start = 0;
+    let mut record_segments = Vec::new();
+    let mut segment_storage = ctx
+        .reserve_scoped(0, "SAT record-table segments")
+        .map_err(StreamFailure::from_operation)?;
+    let mut concatenated_streams = false;
 
     let mut reader = FieldReader {
         bytes,
@@ -792,6 +812,8 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
     let mut terminator = None;
     let mut framing = Vec::new();
     let mut incomplete = None;
+    let mut unread = None;
+    let mut unread_stream_layout = false;
     let mut admitted_entities = 0_u64;
     ctx.admit_entities(
         header.entity_count,
@@ -801,6 +823,77 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
     .map_err(StreamFailure::from_operation)?;
     // Record name field, then payload fields until the terminator.
     'stream: loop {
+        let table_complete = terminator.is_some()
+            || record_count.is_some_and(|count| {
+                count > 0
+                    && cadmpeg_core::decode::u64_from_index(records.len() - segment_start) >= count
+            });
+        if let Some(next) = segments::next_header(ctx, bytes, reader.pos, table_complete)
+            .map_err(StreamFailure::from_operation)?
+        {
+            let unread_start = bytes[reader.pos..next]
+                .iter()
+                .position(|byte| !is_ws(*byte))
+                .map_or(next, |offset| reader.pos + offset);
+            let mut end = next;
+            let mut next_header = match parse_header(ctx, bytes, &mut end) {
+                Ok(header) => header,
+                Err(error @ (StreamFailure::Resource(_) | StreamFailure::Operation(_))) => {
+                    return Err(error)
+                }
+                Err(error) => {
+                    push_diagnostic(ctx, &mut framing, StreamDiagnosticKind::Unread, unread_start,
+                        format_args!("the next stream header at byte {next} cannot select a native layout: {error}; the later stream is not read as records"))?;
+                    unread = Some(unread_start..bytes.len());
+                    unread_stream_layout = true;
+                    break 'stream;
+                }
+            };
+            if next_header.save_format_version != header.save_format_version {
+                push_diagnostic(ctx, &mut framing, StreamDiagnosticKind::Unread, unread_start,
+                    format_args!("the next stream header at byte {next} declares save format {}; the active native layout uses {}; the later stream is not read as records",
+                        next_header.save_format_version, header.save_format_version))?;
+                unread = Some(unread_start..bytes.len());
+                unread_stream_layout = true;
+                break 'stream;
+            }
+            segment_storage
+                .with_storage(|| {
+                    ctx.push_vec(
+                        &mut record_segments,
+                        segment_start..records.len(),
+                        "SAT record-table segments",
+                    )
+                })
+                .map_err(StreamFailure::from_operation)?;
+            push_diagnostic(ctx, &mut framing, StreamDiagnosticKind::Metadata, reader.pos,
+                format_args!("a new SAT header at byte {next} starts an independent reference table; tables are rebased separately"))?;
+            ctx.append_vec(
+                &mut framing,
+                &mut next_header.diagnostics,
+                "SAT segment header diagnostics",
+            )
+            .map_err(StreamFailure::from_operation)?;
+            let population = cadmpeg_core::decode::u64_from_index(records.len())
+                .checked_add(next_header.entity_count)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("SAT segment entity population", u64::MAX, u64::MAX)
+                })
+                .map_err(StreamFailure::from_operation)?;
+            ctx.admit_entities(
+                population,
+                &mut admitted_entities,
+                "preflight SAT segment entities",
+            )
+            .map_err(StreamFailure::from_operation)?;
+            scale = next_header.scale().get();
+            record_count = next_header.record_count;
+            segment_start = records.len();
+            reader.pos = end;
+            terminator = None;
+            concatenated_streams = true;
+            continue;
+        }
         let mut scratch = ctx
             .reserve_scoped(0, "frame SAT record")
             .map_err(StreamFailure::from_operation)?;
@@ -817,12 +910,18 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             name = record_name;
         }
         match name.as_str() {
-            "End-of-ASM-data" => {
-                terminator = Some(Terminator::Asm);
-                break 'stream;
-            }
-            "End-of-ACIS-data" => {
-                terminator = Some(Terminator::Acis);
+            "End-of-ASM-data" | "End-of-ACIS-data" => {
+                terminator = Some(if name == "End-of-ASM-data" {
+                    Terminator::Asm
+                } else {
+                    Terminator::Acis
+                });
+                if segments::next_header(ctx, bytes, reader.pos, true)
+                    .map_err(StreamFailure::from_operation)?
+                    .is_some()
+                {
+                    continue 'stream;
+                }
                 break 'stream;
             }
             _ => {}
@@ -939,12 +1038,11 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             len: reader.pos - rec_start,
         });
     }
-    let mut unread = None;
     let has_terminator_line = terminator.is_some();
     let terminator = match terminator {
         Some(terminator) => {
             reader.skip_ws();
-            if reader.pos != bytes.len() {
+            if unread.is_none() && reader.pos != bytes.len() {
                 push_diagnostic(
                     ctx,
                     &mut framing,
@@ -961,33 +1059,35 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
         }
         None => {
             let branch = header.save_format_branch();
-            match incomplete {
-                Some((start, name)) => {
-                    push_diagnostic(
-                        ctx,
-                        &mut framing,
-                        StreamDiagnosticKind::Unread,
-                        start,
-                        format_args!(
-                            "input ends inside record `{name}` before its `#` terminator; \
+            if unread.is_none() {
+                match incomplete {
+                    Some((start, name)) => {
+                        push_diagnostic(
+                            ctx,
+                            &mut framing,
+                            StreamDiagnosticKind::Unread,
+                            start,
+                            format_args!(
+                                "input ends inside record `{name}` before its `#` terminator; \
                              the incomplete record is not read, and the stream is read on \
                              the {} branch its save format selects",
+                                terminator_name(branch)
+                            ),
+                        )?;
+                        unread = Some(start..bytes.len());
+                    }
+                    None => push_diagnostic(
+                        ctx,
+                        &mut framing,
+                        StreamDiagnosticKind::Terminator,
+                        reader.pos,
+                        format_args!(
+                            "input ends without an End-of-ASM-data or End-of-ACIS-data line; \
+                         the stream is read on the {} branch its save format selects",
                             terminator_name(branch)
                         ),
-                    )?;
-                    unread = Some(start..bytes.len());
+                    )?,
                 }
-                None => push_diagnostic(
-                    ctx,
-                    &mut framing,
-                    StreamDiagnosticKind::Terminator,
-                    reader.pos,
-                    format_args!(
-                        "input ends without an End-of-ASM-data or End-of-ACIS-data line; \
-                         the stream is read on the {} branch its save format selects",
-                        terminator_name(branch)
-                    ),
-                )?,
             }
             branch
         }
@@ -1003,9 +1103,24 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             ),
         )?;
     }
+    if concatenated_streams {
+        segment_storage
+            .with_storage(|| {
+                ctx.push_vec(
+                    &mut record_segments,
+                    segment_start..records.len(),
+                    "SAT record-table segments",
+                )
+            })
+            .map_err(StreamFailure::from_operation)?;
+        segments::rebase(ctx, &mut records, &record_segments)
+            .map_err(StreamFailure::from_operation)?;
+    }
     Ok(TextStream {
         header,
         records,
+        concatenated_streams,
+        unread_stream_layout,
         terminator,
         has_terminator_line,
         framing,

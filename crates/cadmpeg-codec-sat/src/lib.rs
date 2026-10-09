@@ -71,3 +71,6 @@ impl CodecBackend for SatCodec {
 mod golden_tests;
 #[cfg(test)]
 pub(crate) mod test_support;
+
+#[cfg(test)]
+mod integration_tests;

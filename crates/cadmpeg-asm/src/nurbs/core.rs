@@ -21,7 +21,6 @@ use cadmpeg_ir::math::Point3;
 
 use crate::nurbs::toks::take_knot_table as knots;
 
-const MAX_RECOVERY_UNIQUE_KNOTS: u64 = 1_000;
 const MAX_RECOVERY_SURFACE_POLES: u64 = 200_000;
 
 macro_rules! propagate_resource {
@@ -92,16 +91,6 @@ pub(super) fn surface_block(
     let n_uniq_v = cur.take_long()?;
     if n_uniq_u < 1 || n_uniq_v < 1 {
         return None;
-    }
-    for count in [n_uniq_u, n_uniq_v] {
-        let count = u64::try_from(count).ok()?;
-        if count > MAX_RECOVERY_UNIQUE_KNOTS {
-            return Some(Err(ctx.refuse_codec_limit(
-                "ASM unique knot recovery",
-                MAX_RECOVERY_UNIQUE_KNOTS,
-                count,
-            )));
-        }
     }
 
     let (u_knots, n_poles_u) = propagate_resource!(knots(
@@ -175,14 +164,6 @@ pub(super) fn curve_block(
     if n_uniq < 1 {
         return None;
     }
-    let knot_count = u64::try_from(n_uniq).ok()?;
-    if knot_count > MAX_RECOVERY_UNIQUE_KNOTS {
-        return Some(Err(ctx.refuse_codec_limit(
-            "ASM unique knot recovery",
-            MAX_RECOVERY_UNIQUE_KNOTS,
-            knot_count,
-        )));
-    }
     let (knot_vector, n_poles) =
         propagate_resource!(knots(ctx, &mut cur, usize::try_from(n_uniq).ok()?, degree)?);
     let poles = propagate_resource!(control_points(ctx, &mut cur, n_poles, marker)?);
@@ -222,13 +203,28 @@ pub(super) fn surface_cache(
     }
 }
 
-/// Decode the surface cache a subtype scope itself owns: the first surface
-/// block outside every construction the scope nests.
+/// Decode a subtype's own surface cache. Variable blends select the cache
+/// clause read by their grammar; an inline support is a separate surface.
 pub(super) fn owned_surface_cache(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: toks::SubtypeScope<'_>,
+    table: Option<&toks::SubtypeTable>,
 ) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
     let tokens = scope.tokens();
+    if matches!(scope.interior().first(), Some(Token::Ident(name) | Token::SubIdent(name))
+        if crate::nurbs::blend::VARIABLE_BLEND_NAMES.contains(&name.as_str()))
+    {
+        let _depth = propagate_resource!(ctx.enter_nested("admit ASM variable-blend cache"));
+        let mut admission =
+            propagate_resource!(ctx.reserve_scoped(0, "ASM variable-blend cache admission"));
+        let cache_marker = propagate_resource!(admission.with_storage(|| {
+            crate::nurbs::blend::var_blend_spl_sur(ctx, tokens, table)
+                .transpose()
+                .map(|decoded| decoded.and_then(|decoded| decoded.current_cache_marker))
+        }));
+        return surface_block(ctx, tokens, cache_marker?)
+            .map(|result| result.map(|(surface, _)| surface));
+    }
     propagate_resource!(scope.owned_marker_positions(ctx))
         .into_iter()
         .find_map(|pos| {
@@ -261,6 +257,14 @@ pub(super) fn owned_curve_cache(
         .find_map(|pos| curve_block(ctx, tokens, pos).map(|result| result.map(|(curve, _)| curve)))
 }
 
+/// A scope either supplies a cache, allows a reference search, or rejects
+/// cache recovery. Rejection must not substitute one of its support caches.
+enum CacheLookup<T> {
+    Found(T),
+    Missing,
+    Rejected,
+}
+
 /// Decode the cache of each scope the `{ref N}` references in `toks` reach,
 /// depth first in stream order. A visited set breaks reference cycles.
 ///
@@ -277,7 +281,7 @@ where
     D: Fn(
         &cadmpeg_core::decode::DecodeContext<'_>,
         toks::SubtypeScope<'_>,
-    ) -> Option<Result<T, cadmpeg_core::CodecError>>,
+    ) -> Result<CacheLookup<T>, cadmpeg_core::CodecError>,
 {
     let mut seen = std::collections::HashSet::new();
     let mut pending = propagate_resource!(ctx.collection_vec(1, "ASM subtype search stack"));
@@ -302,8 +306,10 @@ where
         // the stream rather than skipping the reference and reading the one
         // behind it.
         let target = table.span(index)?;
-        if let Some(decoded) = decode_scope(ctx, target) {
-            return Some(decoded);
+        match propagate_resource!(decode_scope(ctx, target)) {
+            CacheLookup::Found(decoded) => return Some(Ok(decoded)),
+            CacheLookup::Rejected => return None,
+            CacheLookup::Missing => {}
         }
         propagate_resource!(ctx.push_vec(
             &mut pending,
@@ -320,9 +326,25 @@ pub fn surface_cache_resolving_refs(
     toks: &[Token],
     table: &toks::SubtypeTable,
 ) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
+    if let Some(start) =
+        toks::find_owned_subtype_marker(ctx, toks, crate::nurbs::blend::VARIABLE_BLEND_NAMES)
+    {
+        let (start, _) = propagate_resource!(start);
+        return owned_surface_cache(ctx, toks::subtype_span(toks, start)?, Some(table));
+    }
     surface_cache(ctx, toks).or_else(|| {
         cache_from_subtype_refs(ctx, toks, table, |ctx, scope| {
-            surface_cache(ctx, scope.tokens())
+            if matches!(scope.interior().first(), Some(Token::Ident(name) | Token::SubIdent(name))
+                if crate::nurbs::blend::VARIABLE_BLEND_NAMES.contains(&name.as_str()))
+            {
+                owned_surface_cache(ctx, scope, Some(table))
+                    .transpose()
+                    .map(|cache| cache.map_or(CacheLookup::Rejected, CacheLookup::Found))
+            } else {
+                surface_cache(ctx, scope.tokens())
+                    .transpose()
+                    .map(|cache| cache.map_or(CacheLookup::Missing, CacheLookup::Found))
+            }
         })
     })
 }
@@ -333,7 +355,7 @@ pub(super) fn owned_surface_cache_resolving_refs(
     scope: toks::SubtypeScope<'_>,
     table: &toks::SubtypeTable,
 ) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
-    if let Some(cache) = owned_surface_cache(ctx, scope) {
+    if let Some(cache) = owned_surface_cache(ctx, scope, Some(table)) {
         return Some(cache);
     }
     // Only a reference scope aliases another construction. References inside
@@ -345,7 +367,7 @@ pub(super) fn owned_surface_cache_resolving_refs(
         _ => return None,
     };
     let target = table.span(usize::try_from(index).ok()?)?;
-    owned_surface_cache(ctx, target)
+    owned_surface_cache(ctx, target, Some(table))
 }
 
 /// Decode a curve cache, following subtype-table references.
@@ -357,6 +379,8 @@ pub fn curve_cache_resolving_refs(
     curve_cache(ctx, toks).or_else(|| {
         cache_from_subtype_refs(ctx, toks, table, |ctx, scope| {
             curve_cache(ctx, scope.tokens())
+                .transpose()
+                .map(|cache| cache.map_or(CacheLookup::Missing, CacheLookup::Found))
         })
     })
 }
@@ -367,8 +391,13 @@ pub(super) fn owned_curve_cache_resolving_refs(
     scope: toks::SubtypeScope<'_>,
     table: &toks::SubtypeTable,
 ) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
-    owned_curve_cache(ctx, scope)
-        .or_else(|| cache_from_subtype_refs(ctx, scope.tokens(), table, owned_curve_cache))
+    owned_curve_cache(ctx, scope).or_else(|| {
+        cache_from_subtype_refs(ctx, scope.tokens(), table, |ctx, scope| {
+            owned_curve_cache(ctx, scope)
+                .transpose()
+                .map(|cache| cache.map_or(CacheLookup::Missing, CacheLookup::Found))
+        })
+    })
 }
 
 /// Decode a surface `nubs`/`nurbs` block at `marker_pos`, or `None` if the bytes
@@ -440,7 +469,7 @@ pub(super) fn decode_surface_block(
     }
     let n_uniq_u = take_tagged_int(b, &mut pos, 0x04, int_width)?;
     let n_uniq_v = take_tagged_int(b, &mut pos, 0x04, int_width)?;
-    if !(1..=1000).contains(&n_uniq_u) || !(1..=1000).contains(&n_uniq_v) {
+    if n_uniq_u < 1 || n_uniq_v < 1 {
         return None;
     }
 
@@ -569,7 +598,7 @@ pub(super) fn decode_curve_block(
     let periodic_value_offset = pos + 1;
     let closure = take_tagged_int(b, &mut pos, 0x15, int_width)?;
     let n_uniq = take_tagged_int(b, &mut pos, 0x04, int_width)?;
-    if !(1..=1000).contains(&n_uniq) {
+    if n_uniq < 1 {
         return None;
     }
     let (knots, n_poles, knot_layout) = read_knots(
@@ -755,7 +784,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_nurbs_recovery_caps_preserve_resource_refusals() {
+    fn cached_nurbs_recovery_admits_large_knot_tables() {
         use crate::sab::Token;
         let arena = DecodeArena::new();
         let (ctx, _) =
@@ -769,13 +798,27 @@ mod tests {
         for index in 0_u32..1_001 {
             curve.extend([Token::Double(f64::from(index)), Token::Long(1)]);
         }
-        curve.extend(std::iter::repeat_n(Token::Double(0.0), 1_001 * 3));
-        let error = super::curve_block(&ctx, &curve, 0)
-            .expect("ceiling is a recognized cache refusal")
-            .expect_err("knot ceiling");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("ASM unique knot recovery")))
-        );
+        for index in 0_u32..1_001 {
+            curve.extend([
+                Token::Double(f64::from(index)),
+                Token::Double(0.0),
+                Token::Double(0.0),
+            ]);
+        }
+        let (decoded, end) = super::curve_block(&ctx, &curve, 0).unwrap().unwrap();
+        assert_eq!(decoded.control_points().len(), 1_001);
+        assert_eq!(decoded.knots().len(), 1_003);
+        assert_eq!(end, curve.len());
+        for width in [
+            crate::kernel_header::RefWidth::Four,
+            crate::kernel_header::RefWidth::Eight,
+        ] {
+            let bytes = knot_block_bytes(&curve, width);
+            let decoded = super::decode_curve_block(&bytes, 0, width).unwrap();
+            assert_eq!(decoded.curve.control_points().len(), 1_001);
+            assert_eq!(decoded.knots.value_offsets.len(), 1_001);
+            assert_eq!(decoded.end(), bytes.len());
+        }
         let mut surface = vec![
             Token::Ident("nubs".into()),
             Token::Long(1),
@@ -792,16 +835,37 @@ mod tests {
                 surface.extend([Token::Double(f64::from(index)), Token::Long(1)]);
             }
         }
-        surface.extend(std::iter::repeat_n(Token::Double(0.0), 2 * 1_001 * 3));
+        for v in 0_u32..1_001 {
+            for u in 0_u32..2 {
+                surface.extend([
+                    Token::Double(f64::from(u)),
+                    Token::Double(f64::from(v)),
+                    Token::Double(0.0),
+                ]);
+            }
+        }
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
-        let error = super::surface_block(&ctx, &surface, 0)
-            .expect("ceiling is a recognized cache refusal")
-            .expect_err("knot ceiling");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("ASM unique knot recovery")))
-        );
+        let (decoded, end) = super::surface_block(&ctx, &surface, 0).unwrap().unwrap();
+        assert_eq!(decoded.poles().len(), 2_002);
+        assert_eq!(decoded.v_knots().len(), 1_003);
+        assert_eq!(end, surface.len());
+        for width in [
+            crate::kernel_header::RefWidth::Four,
+            crate::kernel_header::RefWidth::Eight,
+        ] {
+            let bytes = knot_block_bytes(&surface, width);
+            let decoded = super::decode_surface_block(&bytes, 0, width).unwrap();
+            assert_eq!(decoded.surface.poles().len(), 2_002);
+            assert_eq!(decoded.v_knots.value_offsets.len(), 1_001);
+            assert_eq!(decoded.end(), bytes.len());
+        }
+    }
+
+    #[test]
+    fn cached_surface_pole_limit_preserves_resource_refusal() {
+        use crate::sab::Token;
         let mut grid = vec![
             Token::Ident("nubs".into()),
             Token::Long(1),
@@ -830,6 +894,566 @@ mod tests {
         );
     }
 
+    fn knot_block_bytes(
+        tokens: &[crate::sab::Token],
+        width: crate::kernel_header::RefWidth,
+    ) -> Vec<u8> {
+        use crate::sab::Token;
+        let mut bytes = Vec::new();
+        for token in tokens {
+            match token {
+                Token::Ident(name) => {
+                    bytes.extend([0x0d, u8::try_from(name.len()).unwrap()]);
+                    bytes.extend(name.as_bytes());
+                }
+                Token::Double(value) => {
+                    bytes.push(0x06);
+                    bytes.extend(value.to_le_bytes());
+                }
+                Token::Long(value) | Token::Enum(value) => {
+                    bytes.push(if matches!(token, Token::Long(_)) {
+                        0x04
+                    } else {
+                        0x15
+                    });
+                    match width {
+                        crate::kernel_header::RefWidth::Four => {
+                            bytes.extend(i32::try_from(*value).unwrap().to_le_bytes());
+                        }
+                        crate::kernel_header::RefWidth::Eight => bytes.extend(value.to_le_bytes()),
+                    }
+                }
+                _ => panic!("not a knot-block token"),
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn knot_counts_without_complete_source_fields_do_not_allocate() {
+        use crate::sab::Token;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let curve = [
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Long(i64::MAX),
+            Token::Double(0.0),
+            Token::Long(1),
+        ];
+        assert!(super::curve_block(&ctx, &curve, 0).is_none());
+        let surface = [
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Long(i64::MAX),
+            Token::Long(2),
+            Token::Double(0.0),
+            Token::Long(1),
+        ];
+        assert!(super::surface_block(&ctx, &surface, 0).is_none());
+        for width in [
+            crate::kernel_header::RefWidth::Four,
+            crate::kernel_header::RefWidth::Eight,
+        ] {
+            let mut truncated = curve.clone();
+            truncated[3] = Token::Long(i64::from(i32::MAX));
+            assert!(
+                super::decode_curve_block(&knot_block_bytes(&truncated, width), 0, width).is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn complete_knot_tables_preserve_work_and_collection_refusals() {
+        use crate::sab::Token;
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::CollectionItems,
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let tokens = [
+                Token::Double(0.0),
+                Token::Long(1),
+                Token::Double(1.0),
+                Token::Long(1),
+            ];
+            let mut cur = crate::nurbs::toks::Cur::at(&tokens, 0);
+            let error = super::knots(&ctx, &mut cur, 2, 1).unwrap().unwrap_err();
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(limit.dimension, dimension);
+        }
+    }
+
+    fn variable_blend_tokens(name: &str, current: i64) -> Vec<crate::sab::Token> {
+        use crate::sab::Token;
+        let mut tokens = vec![
+            Token::SubtypeOpen,
+            Token::Ident(name.into()),
+            Token::Long(1),
+        ];
+        for _ in 0..2 {
+            tokens.extend([
+                Token::Str("blend_support_zero_curve".into()),
+                Token::Ident("null_surface".into()),
+                Token::Ident("null_curve".into()),
+                Token::Ident("nullbs".into()),
+                Token::Position([0.0; 3]),
+                Token::Ident("nullbs".into()),
+            ]);
+        }
+        tokens.extend([
+            Token::Ident("straight".into()),
+            Token::Position([0.0; 3]),
+            Token::Vector3([1.0, 0.0, 0.0]),
+            Token::Double(0.0),
+            Token::Double(1.0),
+            Token::Double(0.0),
+            Token::Double(0.0),
+            Token::Enum(0),
+            Token::Str("two_ends".into()),
+            Token::Enum(0),
+            Token::True,
+            Token::Double(0.0),
+            Token::Double(1.0),
+            Token::Double(1.0),
+            Token::Double(1.0),
+            Token::Enum(7),
+            Token::Double(1.0),
+            Token::Double(1.0),
+            Token::Double(0.0),
+            Token::Double(1.0),
+            Token::Double(0.0),
+            Token::False,
+            Token::Long(current),
+            Token::Double(0.001),
+            Token::Double(0.001),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Long(2),
+        ]);
+        for _ in 0..2 {
+            tokens.extend([
+                Token::Double(0.0),
+                Token::Long(1),
+                Token::Double(1.0),
+                Token::Long(1),
+            ]);
+        }
+        for point in [[7., 0., 0.], [8., 0., 0.], [7., 1., 0.], [8., 1., 0.]] {
+            tokens.extend(point.map(Token::Double));
+        }
+        tokens.extend([
+            Token::Double(0.001),
+            Token::Long(0),
+            Token::Long(0),
+            Token::Long(0),
+            Token::Long(0),
+            Token::Long(0),
+            Token::Long(0),
+            Token::False,
+            Token::Long(0),
+            Token::Long(0),
+            Token::Long(0),
+            Token::Ident("null_curve".into()),
+            Token::True,
+            Token::True,
+            Token::False,
+            Token::False,
+            Token::Ident("nullbs".into()),
+            Token::Ident("nullbs".into()),
+            Token::SubtypeClose,
+        ]);
+        tokens
+    }
+
+    #[test]
+    fn embedded_variable_blend_cache_admission_matches_top_level() {
+        use crate::sab::{Record, Token};
+        use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+        for name in crate::nurbs::blend::VARIABLE_BLEND_NAMES {
+            for current in [0, 1, 2] {
+                let scope = variable_blend_tokens(name, current);
+                let record = |index, name: &str, tokens: Vec<Token>| Record {
+                    index,
+                    name: name.into(),
+                    tokens: tokens.into(),
+                    offset: 0,
+                    len: 0,
+                };
+                let mut surface =
+                    vec![Token::Ref(-1), Token::Long(0), Token::Ref(-1), Token::False];
+                surface.extend(scope.clone());
+                surface.extend([Token::False, Token::False, Token::False, Token::False]);
+                let records = [
+                    record(
+                        0,
+                        "face",
+                        vec![
+                            Token::Ref(-1),
+                            Token::Long(0),
+                            Token::Ref(-1),
+                            Token::Ref(-1),
+                            Token::Ref(-1),
+                            Token::Ref(2),
+                            Token::Ref(-1),
+                            Token::Ref(1),
+                            Token::False,
+                            Token::False,
+                        ],
+                    ),
+                    record(1, "spline", surface),
+                    record(
+                        2,
+                        "shell",
+                        vec![
+                            Token::Ref(-1),
+                            Token::Long(0),
+                            Token::Ref(-1),
+                            Token::Ref(-1),
+                            Token::Ref(-1),
+                            Token::Ref(0),
+                            Token::Ref(-1),
+                            Token::Ref(3),
+                        ],
+                    ),
+                    record(
+                        3,
+                        "lump",
+                        vec![
+                            Token::Ref(-1),
+                            Token::Long(0),
+                            Token::Ref(-1),
+                            Token::Ref(-1),
+                            Token::Ref(2),
+                            Token::Ref(4),
+                        ],
+                    ),
+                    record(
+                        4,
+                        "body",
+                        vec![
+                            Token::Ref(-1),
+                            Token::Long(0),
+                            Token::Ref(-1),
+                            Token::Ref(3),
+                            Token::Ref(-1),
+                            Token::Ref(-1),
+                        ],
+                    ),
+                ];
+                let arena = DecodeArena::new();
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+                let out = crate::brep::decode_with_header(
+                    &ctx,
+                    &records,
+                    &[],
+                    None,
+                    "source",
+                    crate::asm_format!("sat"),
+                    crate::brep::DecodePurpose::Model,
+                )
+                .unwrap();
+                let carrier = out
+                    .surfaces
+                    .iter()
+                    .find(|s| s.id.as_str() == "sat:brep:entity#1")
+                    .unwrap();
+                assert_eq!(out.faces.len(), 1);
+                if current == 0 {
+                    assert!(matches!(
+                        carrier.geometry,
+                        SurfaceGeometry::Procedural { cache: None, .. }
+                    ));
+                } else {
+                    assert!(matches!(
+                        carrier.geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+                    ));
+                }
+                let table = SubtypeTable::from_records(&ctx, &records).unwrap();
+                for reference in [
+                    vec![
+                        Token::SubtypeOpen,
+                        Token::Ident("ref".into()),
+                        Token::Long(0),
+                        Token::SubtypeClose,
+                    ],
+                    vec![Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose],
+                    scope.clone(),
+                ] {
+                    let mut support = vec![Token::Ident("spline".into()), Token::False];
+                    support.extend(reference);
+                    support.extend([Token::False, Token::False, Token::False, Token::False]);
+                    let mut cursor = crate::nurbs::toks::Cur::at(&support, 0);
+                    let decoded = crate::nurbs::proc_curve::optional_embedded_surface_with_bounds(
+                        &ctx,
+                        &mut cursor,
+                        &table,
+                    )
+                    .unwrap()
+                    .unwrap();
+                    assert_eq!(
+                        decoded.surface.is_some(),
+                        current != 0,
+                        "{name}, current={current}"
+                    );
+                    assert_eq!(cursor.pos(), support.len());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn variable_blend_current_cache_is_not_an_inline_support_surface() {
+        use crate::sab::{Record, Token};
+        for name in crate::nurbs::blend::VARIABLE_BLEND_NAMES {
+            for current in [0, 1, 2] {
+                let mut owner = variable_blend_tokens(name, current);
+                let marker = owner
+                    .iter()
+                    .position(|token| matches!(token, Token::Ident(name) if name == "nubs"))
+                    .unwrap();
+                let mut support = owner[marker..marker + 29].to_vec();
+                for token in &mut support[17..] {
+                    if let Token::Double(value) = token {
+                        *value += 100.0;
+                    }
+                }
+                let mut surface = vec![Token::Ident("spline".into())];
+                surface.extend(support);
+                surface.extend([Token::False, Token::False, Token::False, Token::False]);
+                owner[3] = Token::Str("blend_support_surface".into());
+                owner.splice(4..5, surface);
+                let records = [Record {
+                    index: 0,
+                    name: "spline".into(),
+                    tokens: owner.clone().into(),
+                    offset: 0,
+                    len: 0,
+                }];
+                let arena = DecodeArena::new();
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+                let table = SubtypeTable::from_records(&ctx, &records).unwrap();
+                assert!(
+                    crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                        &ctx, &owner, &table
+                    )
+                    .is_some()
+                );
+                for payload in [
+                    owner,
+                    vec![
+                        Token::SubtypeOpen,
+                        Token::Ident("ref".into()),
+                        Token::Long(0),
+                        Token::SubtypeClose,
+                    ],
+                    vec![Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose],
+                ] {
+                    let cache = super::surface_cache_resolving_refs(&ctx, &payload, &table);
+                    if current == 0 {
+                        assert!(cache.is_none());
+                    } else {
+                        let surface = cache.unwrap().unwrap();
+                        assert_eq!(
+                            surface.poles()[0].get(),
+                            cadmpeg_ir::math::Point3::new(70., 0., 0.)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn untyped_variable_blend_cache_is_rejected_for_owner_and_alias() {
+        use crate::sab::{Record, Token};
+        for name in crate::nurbs::blend::VARIABLE_BLEND_NAMES {
+            for current in [0, 1, 2] {
+                let mut tokens = variable_blend_tokens(name, current);
+                let tail = tokens.len() - 2;
+                tokens[tail] = Token::Ident("unsupported_pcurve".into());
+                let records = [Record {
+                    index: 0,
+                    name: "spline".into(),
+                    tokens: tokens.clone().into(),
+                    offset: 0,
+                    len: 0,
+                }];
+                let arena = DecodeArena::new();
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+                let table = SubtypeTable::from_records(&ctx, &records).unwrap();
+                assert!(
+                    crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                        &ctx, &tokens, &table,
+                    )
+                    .is_none()
+                );
+                for payload in [
+                    tokens.clone(),
+                    vec![
+                        Token::SubtypeOpen,
+                        Token::Ident("ref".into()),
+                        Token::Long(0),
+                        Token::SubtypeClose,
+                    ],
+                    vec![Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose],
+                ] {
+                    assert!(super::surface_cache_resolving_refs(&ctx, &payload, &table).is_none());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rejected_blend_alias_does_not_substitute_its_support_cache() {
+        use crate::sab::{Record, Token};
+        for current in [0, 1] {
+            for malformed in [false, true] {
+                let mut owner = variable_blend_tokens("var_blend_spl_sur", current);
+                if malformed {
+                    let tail = owner.len() - 2;
+                    owner[tail] = Token::Ident("unsupported_pcurve".into());
+                }
+                owner.splice(
+                    4..5,
+                    [
+                        Token::Ident("spline".into()),
+                        Token::False,
+                        Token::SubtypeOpen,
+                        Token::Ident("ref".into()),
+                        Token::Long(1),
+                        Token::SubtypeClose,
+                        Token::False,
+                        Token::False,
+                        Token::False,
+                        Token::False,
+                    ],
+                );
+                let record = |index, tokens: Vec<Token>| Record {
+                    index,
+                    name: "spline".into(),
+                    tokens: tokens.into(),
+                    offset: 0,
+                    len: 0,
+                };
+                let records = [
+                    record(0, owner.clone()),
+                    record(1, variable_blend_tokens("var_blend_spl_sur", 1)),
+                ];
+                let arena = DecodeArena::new();
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+                let table = SubtypeTable::from_records(&ctx, &records).unwrap();
+                assert_eq!(
+                    crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                        &ctx, &owner, &table
+                    )
+                    .is_some(),
+                    !malformed,
+                );
+                for payload in [
+                    owner.clone(),
+                    vec![
+                        Token::SubtypeOpen,
+                        Token::Ident("ref".into()),
+                        Token::Long(0),
+                        Token::SubtypeClose,
+                    ],
+                    vec![Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose],
+                ] {
+                    assert_eq!(
+                        super::surface_cache_resolving_refs(&ctx, &payload, &table).is_some(),
+                        current != 0 && !malformed,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn stale_variable_blend_cache_uses_only_temporary_storage() {
+        let tokens = variable_blend_tokens("var_blend_spl_sur", 0);
+        let scope = crate::nurbs::toks::subtype_span(&tokens, 0).unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(super::owned_surface_cache(&ctx, scope, None).is_none());
+    }
+
+    #[test]
+    fn variable_blend_cache_reference_cycles_preserve_depth_refusal() {
+        use crate::sab::{Record, Token};
+        let mut tokens = variable_blend_tokens("var_blend_spl_sur", 1);
+        tokens.splice(
+            4..5,
+            [
+                Token::Ident("spline".into()),
+                Token::False,
+                Token::SubtypeOpen,
+                Token::Ident("ref".into()),
+                Token::Long(0),
+                Token::SubtypeClose,
+                Token::False,
+                Token::False,
+                Token::False,
+                Token::False,
+            ],
+        );
+        let records = [Record {
+            index: 0,
+            name: "spline".into(),
+            tokens: tokens.into(),
+            offset: 0,
+            len: 0,
+        }];
+        let service = cadmpeg_test_support::service_decode_context();
+        let table = SubtypeTable::from_records(&service, &records).unwrap();
+        let scope = table.span(0).unwrap();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 2;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::owned_surface_cache_resolving_refs(&ctx, scope, &table)
+            .unwrap()
+            .unwrap_err();
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("depth refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(limit.operation, "admit ASM variable-blend cache");
+    }
+
     #[test]
     fn subtype_search_stack_refuses_collection_limit() {
         let arena = DecodeArena::new();
@@ -837,9 +1461,11 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let table = SubtypeTable::from_records(&ctx, &[]).unwrap();
-        let error = cache_from_subtype_refs::<(), _>(&ctx, &[], &table, |_, _| None)
-            .expect("stack allocation must refuse")
-            .expect_err("stack allocation must refuse");
+        let error = cache_from_subtype_refs::<(), _>(&ctx, &[], &table, |_, _| {
+            Ok(super::CacheLookup::Missing)
+        })
+        .expect("stack allocation must refuse")
+        .expect_err("stack allocation must refuse");
         let CodecError::ResourceLimit(limit) = error else {
             panic!("expected collection refusal: {error:?}");
         };
@@ -856,9 +1482,11 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let table = SubtypeTable::from_records(&ctx, &[]).unwrap();
         let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
-        let error = cache_from_subtype_refs::<(), _>(&ctx, &tokens, &table, |_, _| None)
-            .expect("visited allocation must refuse")
-            .expect_err("visited allocation must refuse");
+        let error = cache_from_subtype_refs::<(), _>(&ctx, &tokens, &table, |_, _| {
+            Ok(super::CacheLookup::Missing)
+        })
+        .expect("visited allocation must refuse")
+        .expect_err("visited allocation must refuse");
         let CodecError::ResourceLimit(limit) = error else {
             panic!("expected collection refusal: {error:?}");
         };

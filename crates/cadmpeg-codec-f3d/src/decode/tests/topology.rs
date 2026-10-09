@@ -1266,14 +1266,7 @@ fn decode_keeps_face_on_unknown_surface() {
 fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction() {
     use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry};
 
-    for family in [
-        "crv_crv_v_bl_spl_sur",
-        "crv_srf_v_bl_spl_sur",
-        "sfcv_free_bl_spl_sur",
-        "VBL_OFFSURF",
-        "offsetvbsur",
-        "skin_spl_sur2",
-    ] {
+    for family in ["VBL_OFFSURF", "offsetvbsur", "skin_spl_sur2"] {
         let result = F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(&synthetic_exact_spl_sur_smbh(family))),

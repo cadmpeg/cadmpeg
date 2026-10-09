@@ -5107,6 +5107,19 @@ pub(super) fn emit_vertices(
     Ok(())
 }
 
+/// Model-space tolerance following a tolerant edge's optional continuity.
+fn edge_tolerance(record: &Record) -> Option<f64> {
+    if record.head() != "tedge" {
+        return None;
+    }
+    let slot = if matches!(record.chunk(10), Some(Token::Double(_))) {
+        10
+    } else {
+        11
+    };
+    double_at(record, slot)
+}
+
 /// Emit reachable edges with parameter ranges, tolerant tails, ownership, and
 /// continuity records, folding reversed senses onto the shared carrier.
 pub(super) fn emit_edges(
@@ -5202,17 +5215,32 @@ pub(super) fn emit_edges(
             // present when the stream's full format version (save format
             // x 100 + header revision) is at least 2250003. All forms are
             // retained verbatim.
-            let tolerant_tail = match (r.head(), r.chunk(11), r.chunk(12)) {
-                ("tedge", Some(Token::Double(tolerance)), Some(Token::Long(revision))) => {
-                    cadmpeg_ir::scalar::NonNegativeReal::new(*tolerance).map(|tolerance| {
-                        let trailing = match r.chunk(13) {
-                            Some(Token::Long(second)) => Some(*second),
-                            _ => None,
-                        };
-                        (tolerance, *revision, trailing)
-                    })
+            let tolerance = edge_tolerance(r)
+                .and_then(|value| cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM));
+            if edge_tolerance(r).is_some() && tolerance.is_none() {
+                count_kind(
+                    ctx,
+                    &mut out.stats.other_record_kinds,
+                    "tedge-tolerance-unresolved",
+                )?;
+            }
+            let tolerant_tail = if tolerance.is_some() {
+                match (r.chunk(12), r.chunk(13)) {
+                    (Some(Token::Long(revision)), trailing)
+                        if matches!(r.chunk(11), Some(Token::Double(_))) =>
+                    {
+                        Some((
+                            *revision,
+                            match trailing {
+                                Some(Token::Long(value)) => Some(*value),
+                                _ => None,
+                            },
+                        ))
+                    }
+                    _ => None,
                 }
-                _ => None,
+            } else {
+                None
             };
             charged_push!(
                 ctx,
@@ -5223,19 +5251,10 @@ pub(super) fn emit_edges(
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     start: VertexId::from(id(format, start)),
                     end: VertexId::from(id(format, end)),
-                    tolerance: tolerant_tail
-                        .map(|(tolerance, _, _)| {
-                            cadmpeg_ir::scalar::PositiveReal::new(tolerance.get() * LEN_TO_MM)
-                                .ok_or_else(|| {
-                                    cadmpeg_core::CodecError::malformed(
-                                        "edge tolerance must be positive and finite",
-                                    )
-                                })
-                        })
-                        .transpose()?,
+                    tolerance,
                 }
             );
-            if let Some((_, entity_revision, trailing_field)) = tolerant_tail {
+            if let Some((entity_revision, trailing_field)) = tolerant_tail {
                 charged_push!(
                     ctx,
                     out.tolerant_edge_tails,
@@ -5344,7 +5363,12 @@ pub(super) fn emit_coedges(
             }
             let partner = r.ref_at(5).filter(|p| kept_coedges.contains(p));
             let tolerant = if r.head() == "tcoedge" {
-                match (r.chunk(11), r.chunk(12)) {
+                let parameter_start = if matches!(r.chunk(9), Some(Token::Long(_))) {
+                    11
+                } else {
+                    10
+                };
+                match (r.chunk(parameter_start), r.chunk(parameter_start + 1)) {
                     (Some(Token::Double(start)), Some(Token::Double(end))) => {
                         let extension = match save_format_major {
                             Some(major) if major > 219 => tolerant_coedge_extension(r),
@@ -5380,28 +5404,56 @@ pub(super) fn emit_coedges(
                         parameter_range,
                         ..
                     },
-                )) => match nurbs::core::curve_cache_resolving_refs(ctx, &r.tokens, token_table) {
-                    Some(Ok(mut curve)) => {
-                        if *curve_reversed {
-                            curve.reverse_parameterization(ctx)?;
-                        }
-                        let curve_id = brep_id!(format, CurveId, "tolerant-coedge-curve", i);
-                        charged_push!(
-                            ctx,
-                            out.curves,
-                            Curve {
-                                parameter_range: None,
-                                id: curve_id
-                                    .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
-                                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                                source_object: None,
+                )) => {
+                    match cadmpeg_ir::topology::ParameterInterval::from_finite_endpoints(
+                        parameter_range.unwrap_or(*range),
+                    ) {
+                        Ok(parameter_range) => {
+                            match nurbs::core::curve_cache_resolving_refs(
+                                ctx,
+                                &r.tokens,
+                                token_table,
+                            ) {
+                                Some(Ok(mut curve)) => {
+                                    if *curve_reversed {
+                                        curve.reverse_parameterization(ctx)?;
+                                    }
+                                    let curve_id =
+                                        brep_id!(format, CurveId, "tolerant-coedge-curve", i);
+                                    charged_push!(
+                                        ctx,
+                                        out.curves,
+                                        Curve {
+                                            parameter_range: None,
+                                            id: curve_id.try_clone_for_decode(
+                                                ctx,
+                                                "ASM emitted identity copy"
+                                            )?,
+                                            geometry: CurveGeometry::Solved(
+                                                SolvedCurveGeometry::Nurbs(curve)
+                                            ),
+                                            source_object: None,
+                                        }
+                                    );
+                                    Some(cadmpeg_ir::topology::CoedgeUseCurve {
+                                        curve: curve_id,
+                                        parameter_range,
+                                    })
+                                }
+                                Some(Err(error)) => return Err(error),
+                                None => None,
                             }
-                        );
-                        Some((curve_id, parameter_range.unwrap_or(*range)))
+                        }
+                        Err(_) => {
+                            count_kind(
+                                ctx,
+                                &mut out.stats.other_record_kinds,
+                                super::stats::INVALID_USE_CURVE_INTERVAL,
+                            )?;
+                            None
+                        }
                     }
-                    Some(Err(error)) => return Err(error),
-                    None => None,
-                },
+                }
                 _ => None,
             };
             charged_push!(
@@ -5435,18 +5487,7 @@ pub(super) fn emit_coedges(
                             .into_iter(),
                         "ASM coedge pcurve use"
                     )?,
-                    use_curve: use_curve
-                        .map(|(curve, parameter_range)| {
-                            Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::topology::CoedgeUseCurve {
-                            curve,
-                            parameter_range:
-                                cadmpeg_ir::topology::ParameterInterval::from_finite_endpoints(
-                                    parameter_range,
-                                )
-                                .map_err(cadmpeg_core::CodecError::malformed)?,
-                        })
-                        })
-                        .transpose()?,
+                    use_curve,
                 }
             );
             if let Some((parameter_range, extension)) = tolerant {
@@ -6042,6 +6083,9 @@ pub(super) fn emit_passthrough_unknowns(
         if undecoded_carriers.contains(&i)
             || cached_unknown_procedural_surfaces.contains(&i)
             || invalid_vertex_tolerance(r)
+            || edge_tolerance(r).is_some_and(|value| {
+                cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM).is_none()
+            })
             || r.head().is_empty()
             || (r.head() == "face" && r.ref_at(5).is_none())
         {

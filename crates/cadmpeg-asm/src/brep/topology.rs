@@ -237,6 +237,11 @@ pub(super) fn keep_faces_and_carriers(
                         surf_ref,
                         "ASM topology cached_unknown_procedural_surfaces",
                     )?;
+                    count_kind(
+                        ctx,
+                        &mut out.stats.other_record_kinds,
+                        "cached-procedural-surface-untyped",
+                    )?;
                 }
                 out.stats.nurbs_surfaces += 1;
             }
