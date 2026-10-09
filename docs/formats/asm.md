@@ -726,7 +726,7 @@ Curve subset intervals and surface U/V intervals are absent before 106. From 106
 
 Before 103, a plane stores its origin and normal without a chart reference vector or V sense. A sphere stores its center and radius without chart axes or V sense. From 103 onward, these records carry the chart fields of §6.3. The physical plane and sphere do not depend on a choice of chart axes.
 
-The `exactcur`, `surfintcur`, and `exactsur` subtype layouts can start directly with a `nubs` or `nurbs` solved block. No cache-form enum precedes that block. The curve or surface block uses the knot and control-grid grammar of §6.5 and is followed by a model-space fit tolerance. Construction context follows the tolerance and ends at the matching subtype close. The solved block belongs to this subtype; blocks in nested support scopes belong to those supports.
+The `exactcur`, `surfintcur`, and `exactsur` subtype layouts can start with a `nubs` or `nurbs` solved block. The cache-form word `full` can precede that block. The curve or surface block uses the knot and control-grid grammar of §6.5 and is followed by a model-space fit tolerance. In a surface block, one of the words `u`, `v`, or `both` can follow the two degree fields and precede the closure words. Construction context follows the tolerance and ends at the matching subtype close. The solved block belongs to this subtype; blocks in nested support scopes belong to those supports.
 
 The [ACIS save-file reference](https://paulbourke.net/dataformats/sat/sat.pdf) defines the reference, bound, coedge-sense, and cone-scale version gates.
 
