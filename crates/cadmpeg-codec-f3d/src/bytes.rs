@@ -608,8 +608,9 @@ pub(crate) fn is_guid_prefix(value: &str) -> bool {
         })
 }
 
-/// Encode `value` as a u32-code-unit-prefixed UTF-16LE byte sequence, the form
-/// used both as a search needle and by test fixtures.
+/// Encode `value` as a u32-code-unit-prefixed UTF-16LE byte sequence for
+/// test fixtures.
+#[cfg(test)]
 pub(crate) fn lp_utf16_bytes(value: &str) -> Result<Vec<u8>, CodecError> {
     let units: Vec<u8> = value.encode_utf16().flat_map(u16::to_le_bytes).collect();
     let count = u32::try_from(units.len() / 2).map_err(|_| {
