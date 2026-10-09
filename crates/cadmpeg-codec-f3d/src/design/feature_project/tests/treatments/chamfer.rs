@@ -156,3 +156,42 @@ fn chamfer_output_groups_refuse_collection_limit() {
     // Four chamfer entries and one edge-member identity precede the output group.
     assert_chamfer_collection_refusal(5, "f3d chamfer output groups");
 }
+
+#[test]
+fn chamfer_parameter_lane_publishes_only_ordered_references() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let first = localized_fillet_parameter(10, 11, "Distance", Some("mm"), 0.1);
+    let second = localized_fillet_parameter(20, 21, "Distance", Some("mm"), 0.2);
+    let controls = [(1, &second), (0, &first)];
+    let surviving = u64::try_from(4 * std::mem::size_of::<&crate::records::parameters::DesignParameter>())
+        .unwrap();
+    for retained in [surviving, surviving - 1] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = retained;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = crate::design::feature_project::ordered_chamfer_parameters(
+            &ctx, &controls, |kind| kind == "Distance",
+        );
+        if retained == surviving {
+            let lane = result.unwrap();
+            assert_eq!(lane.len(), 2);
+            assert_eq!(lane.capacity(), 4);
+            assert!(std::ptr::eq(lane[0], &first));
+            assert!(std::ptr::eq(lane[1], &second));
+            assert!(ctx.resource_refusal().is_none());
+        } else {
+            let CodecError::ResourceLimit(limit) = result.err().unwrap() else {
+                panic!("expected original retained refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.used, 0);
+            assert_eq!(limit.additional, surviving);
+            assert_eq!(limit.limit, retained);
+            assert_eq!(limit.operation, "f3d chamfer ordered parameter output");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
+    }
+}

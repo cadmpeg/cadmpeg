@@ -5076,13 +5076,19 @@ pub(crate) fn direct_face_selection(
     }
     let mut members = Vec::new();
     for operand in &matching {
-        ctx.push_vec(
-            &mut members,
-            (operand.id.as_str(), operand.resolved_face_slots.as_slice()),
-            "f3d direct face member",
-        )?;
+        scratch_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut members,
+                (operand.id.as_str(), operand.resolved_face_slots.as_slice()),
+                "f3d direct face member",
+            )
+        })?;
     }
-    let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
+    let _feature_id_storage;
+    let (feature_id, held_storage) = ctx.with_scoped_storage("f3d feature identifier", || {
+        crate::design::identity::neutral_feature_id(ctx, scope)
+    })?;
+    _feature_id_storage = held_storage;
     let feature_key = crate::design::identity::identity_key(ctx, feature_id.as_str())?;
     let historical_face = |previous_state_id, slot| -> Result<_, CodecError> {
         let face = crate::design::identity::history_input_face_id(
@@ -5709,6 +5715,45 @@ pub(crate) fn untyped_parameter_unit_count(parameters: &[DesignParameter]) -> us
         .count()
 }
 
+/// Select and order one Chamfer parameter lane. Only the returned reference
+/// list is published; the ordinal/reference sort buffer remains temporary.
+fn ordered_chamfer_parameters<'a>(
+    ctx: &DecodeContext<'_>,
+    parameters: &[(u32, &'a DesignParameter)],
+    matches_kind: impl Fn(&str) -> bool,
+) -> Result<Vec<&'a DesignParameter>, CodecError> {
+    let mut matches_storage = ctx.reserve_scoped(0, "f3d chamfer ordered parameter entries")?;
+    let mut matches = Vec::new();
+    for parameter in ctx
+        .admit_iter(parameters, "scan F3D chamfer parameter kinds")?
+        .filter(|(_, parameter)| matches_kind(parameter.source_kind()))
+        .copied()
+    {
+        matches_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut matches,
+                parameter,
+                "f3d chamfer ordered parameter entries",
+            )
+        })?;
+    }
+    ctx.stable_sort_by_key(
+        &mut matches[..],
+        |(ordinal, _)| *ordinal,
+        Ord::cmp,
+        "sort f3d design feature_project 12",
+    )?;
+    let mut output_storage = ctx.reserve_scoped(0, "f3d chamfer ordered parameter output")?;
+    let mut out = Vec::new();
+    for (_, parameter) in matches {
+        output_storage.with_storage(|| {
+            ctx.push_vec(&mut out, parameter, "f3d chamfer ordered parameter output")
+        })?;
+    }
+    drop(matches_storage);
+    output_storage.commit_value(out)
+}
+
 fn project_chamfer(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
@@ -5756,34 +5801,7 @@ fn project_chamfer(
     let group_count = edge_groups.len();
     let mut ordered_parameters =
         |matches_kind: &dyn Fn(&str) -> bool| -> Result<Vec<&DesignParameter>, CodecError> {
-            scratch_storage.with_storage(|| {
-                let mut matches = Vec::new();
-                for parameter in parameters
-                    .iter()
-                    .filter(|(_, parameter)| matches_kind(parameter.source_kind()))
-                    .copied()
-                {
-                    ctx.push_vec(
-                        &mut matches,
-                        parameter,
-                        "f3d chamfer ordered parameter entries",
-                    )?;
-                }
-                ctx.stable_sort_by_key(
-                    &mut matches[..],
-                    |value| {
-                        let (ordinal, _) = value;
-                        *ordinal
-                    },
-                    Ord::cmp,
-                    "sort f3d design feature_project 12",
-                )?;
-                let mut out = Vec::new();
-                for (_, parameter) in matches {
-                    ctx.push_vec(&mut out, parameter, "f3d chamfer ordered parameter output")?;
-                }
-                Ok(out)
-            })
+            scratch_storage.with_storage(|| ordered_chamfer_parameters(ctx, parameters, matches_kind))
         };
     let distances = ordered_parameters(&|kind| kind == "Distance")?;
     let first_distances = ordered_parameters(&|kind| kind == "Distance 1")?;
