@@ -2771,16 +2771,21 @@ struct SketchProperty<'a> {
 /// Which keys a record carries varies by record, so a caller addresses a
 /// property by name. Reading the block by fixed offset misframes every record
 /// whose key set differs from the one the offsets were taken from.
-struct SketchProperties<'a, 'ctx> {
+struct SketchProperties<'a, 'ctx, 'arena> {
     entries: Vec<SketchProperty<'a>>,
     _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ctx: &'ctx DecodeContext<'arena>,
 }
 
-impl SketchProperties<'_, '_> {
+impl SketchProperties<'_, '_, '_> {
     /// The value of the first property named `key`. Each visited name is
     /// compared with the fixed key.
-    fn find(&self, ctx: &DecodeContext<'_>, key: &'static str) -> Result<Option<u64>, CodecError> {
-        Ok(ctx
+    fn find(&self, key: &'static str) -> Result<Option<u64>, CodecError> {
+        self.ctx.charge_work(0, "find F3D sketch property")?;
+        if self.entries.is_empty() {
+            return Ok(None);
+        }
+        Ok(self.ctx
             .find_by(
                 &self.entries,
                 |property| Ok(property.name.as_bytes() == key.as_bytes()),
@@ -2791,21 +2796,22 @@ impl SketchProperties<'_, '_> {
 
     /// The first property and, in a two-property block, the second. Other
     /// block sizes have no such pair.
-    fn first_two(&self) -> Option<(SketchProperty<'_>, Option<SketchProperty<'_>>)> {
-        match self.entries.as_slice() {
+    fn first_two(&self) -> Result<Option<(SketchProperty<'_>, Option<SketchProperty<'_>>)>, CodecError> {
+        self.ctx.charge_work(0, "read F3D first sketch properties")?;
+        Ok(match self.entries.as_slice() {
             [first] => Some((*first, None)),
             [first, second] => Some((*first, Some(*second))),
             _ => None,
-        }
+        })
     }
 }
 
 /// Read the property block at `cursor`, advancing it past the block.
-fn read_property_block<'a, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+fn read_property_block<'a, 'ctx, 'arena>(
+    ctx: &'ctx DecodeContext<'arena>,
     payload: &'a [u8],
     cursor: &mut usize,
-) -> Result<Option<SketchProperties<'a, 'ctx>>, CodecError> {
+) -> Result<Option<SketchProperties<'a, 'ctx, 'arena>>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "f3d sketch property block")?;
     let mut entries = Vec::new();
     let mut at = *cursor;
@@ -2852,6 +2858,7 @@ fn read_property_block<'a, 'ctx>(
     Ok(Some(SketchProperties {
         entries,
         _storage: storage,
+        ctx,
     }))
 }
 
@@ -3204,8 +3211,8 @@ fn decode_sketch_text_head<'ctx>(
     let Some(properties) = read_property_block(ctx, payload, &mut cursor)? else {
         return Ok(None);
     };
-    let textex_tag = properties.find(ctx, "textex_tag")?;
-    let txt_tag = properties.find(ctx, "txt_tag")?;
+    let textex_tag = properties.find("textex_tag")?;
+    let txt_tag = properties.find("txt_tag")?;
     let is_txt_tag = match (textex_tag, txt_tag) {
         (Some(_), _) => false,
         (None, Some(_)) => true,
@@ -3260,9 +3267,9 @@ fn decode_sketch_text_head<'ctx>(
     cursor += 8;
     Ok(Some((
         SketchTextHead {
-            entity_genesis: properties.find(ctx, "EntityGenesis")?,
+            entity_genesis: properties.find("EntityGenesis")?,
             persistent_id,
-            base_id: properties.find(ctx, "txt_tag_base")?,
+            base_id: properties.find("txt_tag_base")?,
             font_family,
             height,
             color,
@@ -3295,7 +3302,7 @@ fn decode_indexed_sketch_text_head<'ctx>(
     let Some(properties) = read_property_block(ctx, payload, &mut cursor)? else {
         return Ok(None);
     };
-    let Some(persistent_id) = properties.find(ctx, "textex_tag")? else {
+    let Some(persistent_id) = properties.find("textex_tag")? else {
         return Ok(None);
     };
     if payload.get(cursor) != Some(&0) {
@@ -3323,9 +3330,9 @@ fn decode_indexed_sketch_text_head<'ctx>(
     cursor += 8;
     Ok(Some((
         SketchTextHead {
-            entity_genesis: properties.find(ctx, "EntityGenesis")?,
+            entity_genesis: properties.find("EntityGenesis")?,
             persistent_id: Some(persistent_id),
-            base_id: properties.find(ctx, "txt_tag_base")?,
+            base_id: properties.find("txt_tag_base")?,
             font_family,
             height,
             color,
@@ -3868,7 +3875,7 @@ fn decode_sketch_point_record(
     let Some(properties) = read_property_block(ctx, payload, &mut cursor)? else {
         return Ok(None);
     };
-    let Some((first, second)) = properties.first_two() else {
+    let Some((first, second)) = properties.first_two()? else {
         return Ok(None);
     };
     // Property names are compared with fixed keys.
@@ -6096,7 +6103,7 @@ fn parse_classed_sketch_relation(
     let Some(properties) = read_property_block(ctx, payload, &mut cursor)? else {
         return Ok(None);
     };
-    let entity_genesis = properties.find(ctx, "EntityGenesis")?;
+    let entity_genesis = properties.find("EntityGenesis")?;
     let mut auxiliary_references = Vec::new();
     let Some(class_members) =
         parse_relation_class_members(ctx, payload, &mut cursor, class, &mut auxiliary_references)?

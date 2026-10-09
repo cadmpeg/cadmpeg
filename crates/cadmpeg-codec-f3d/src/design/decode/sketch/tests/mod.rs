@@ -22,3 +22,5 @@ mod text;
 mod visibility;
 
 mod grouped_session;
+
+mod property_session;
