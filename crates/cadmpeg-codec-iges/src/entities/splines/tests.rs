@@ -665,3 +665,5 @@ mod local_limits;
 mod parameter_index;
 
 mod identity_custody;
+
+mod entry_refusal;

@@ -53,8 +53,11 @@ impl SurfaceGridWeight for NonZeroReal {
     fn admit(
         self,
         _index: usize,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
     ) -> Result<Result<NonZeroReal, NurbsError>, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         Ok(Ok(self))
     }
 }
@@ -65,6 +68,9 @@ impl SurfaceGridWeight for f64 {
         index: usize,
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<NonZeroReal, NurbsError>, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         match NonZeroReal::new(self) {
             Some(value) => Ok(Ok(value)),
             None => Ok(Err(NurbsError::UnusableWeight {
@@ -86,6 +92,9 @@ fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
     outer_operation: &'static str,
     inner_operation: &'static str,
 ) -> Result<Result<NurbsPoleGrid<FinitePoint3>, NurbsError>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(weights) = weights else {
         return Ok(Ok(NurbsPoleGrid::Polynomial { rows }));
     };
@@ -267,6 +276,9 @@ fn interval_certified_linear_bezier(
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if record.integer(0) != Some(126) {
         return Ok(false);
     }
@@ -426,6 +438,9 @@ fn equal_arc_length_parameterization(
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let [(first, first_sequence), (second, second_sequence)] = rails;
     let valid_interval = |interval: [f64; 2]| {
         interval[0].is_finite() && interval[1].is_finite() && interval[0] < interval[1]
@@ -500,6 +515,9 @@ fn source_parameter_interval(
     carrier_interval: [f64; 2],
     ctx: &DecodeContext<'_>,
 ) -> Result<[f64; 2], CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let is_line = match geometry.solved() {
         Some(SolvedCurveGeometry::Line(_)) => true,
         Some(SolvedCurveGeometry::Transformed(placed)) => {
@@ -587,6 +605,9 @@ fn bernstein_binomial(
     k: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<f64>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if k > n {
         return Ok(None);
     }
@@ -615,6 +636,9 @@ fn homogeneous_product_control(
     index: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<[f64; 4]>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     // C1=A/a and C2=B/b blend as ((1-v)A*b + v*B*a)/(a*b).
     let (Some(vector_degree), Some(scalar_degree)) = (
         vector_controls.len().checked_sub(1),
@@ -676,6 +700,9 @@ fn split_homogeneous_bezier_span(
     cut: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(HomogeneousBezierSpan, HomogeneousBezierSpan)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !cut.is_finite() || cut <= span.domain[0] || cut >= span.domain[1] {
         return Ok(None);
     }
@@ -892,6 +919,9 @@ fn projectively_shared_weights(
     second: &NurbsCurve,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<NonZeroReal>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let count = first.pole_count();
     if count == 0 || count != second.pole_count() {
         return Ok(None);
@@ -1022,6 +1052,9 @@ fn admit_surface_pole_count(
     ctx: &DecodeContext<'_>,
     pole_count: usize,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if pole_count > MAX_SURFACE_POLES {
         return Err(ctx.refuse_codec_limit(
             "iges_surface_poles",
@@ -1153,6 +1186,9 @@ fn ruled_surface_span_lanes<'ctx>(
     second: &NurbsCurve,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<Option<RuledSpanLanes<'ctx>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (Ok(first_degree), Ok(second_degree)) = (
         usize::try_from(first.degree()),
         usize::try_from(second.degree()),
@@ -1308,6 +1344,9 @@ fn homogeneous_curve_boundary_matches(
     range: [f64; 2],
     resolution: f64,
 ) -> Result<Option<bool>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !resolution.is_finite()
         || resolution < 0.0
         || !range[0].is_finite()
@@ -1418,6 +1457,9 @@ fn angular_basis<'ctx>(
     end: f64,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<Option<AngularBasis<'ctx>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some((segment_count, sweep, end)) = angular_span_count(start, end) else {
         return Ok(None);
     };
