@@ -502,6 +502,7 @@ impl ModelDraft<DraftAccounting> {
             ctx,
             self.accounting.exactness.len(),
             identity.len(),
+            3,
             "draft exactness comparisons",
         )?;
         let identity = if exactness != Exactness::ByteExact

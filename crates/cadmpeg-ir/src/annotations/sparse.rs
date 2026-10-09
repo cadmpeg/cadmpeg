@@ -58,6 +58,7 @@ impl Annotations {
                     ctx,
                     transaction.selected.len(),
                     id.len(),
+                    3,
                     "sparse annotation selection",
                 )?;
                 if !transaction.selected.contains(id) {
@@ -99,6 +100,7 @@ impl<'base> SparseAnnotationTransaction<'base, '_> {
             ctx,
             self.selected.len(),
             id.len(),
+            3,
             "sparse annotation selection",
         )?;
         if !self.selected.contains(id) {
@@ -120,6 +122,7 @@ impl<'base> SparseAnnotationTransaction<'base, '_> {
             self.ctx,
             self.selected.len(),
             id.len(),
+            1,
             "sparse annotation selection",
         )?;
         Ok(self.selected.contains(id))
@@ -162,7 +165,22 @@ impl<'base> SparseAnnotationTransaction<'base, '_> {
 
     /// Remove both annotation entries at one selected identity.
     pub fn remove_entity(&mut self, id: &str) -> Result<(), CodecError> {
+        let ctx = self.ctx;
         self.edit(id, |annotations| {
+            admit_identity_work(
+                ctx,
+                annotations.provenance.len(),
+                id.len(),
+                1,
+                "sparse annotation removal",
+            )?;
+            admit_identity_work(
+                ctx,
+                annotations.exactness.len(),
+                id.len(),
+                1,
+                "sparse annotation removal",
+            )?;
             annotations.provenance.remove(id);
             annotations.exactness.remove(id);
             Ok::<_, CodecError>(())
@@ -188,14 +206,30 @@ impl<'base> SparseAnnotationTransaction<'base, '_> {
         for id in &self.selected {
             admit_identity_work(
                 ctx,
+                self.changes.provenance.len(),
+                id.len(),
+                2,
+                "sparse annotation application",
+            )?;
+            admit_identity_work(
+                ctx,
+                self.changes.exactness.len(),
+                id.len(),
+                2,
+                "sparse annotation application",
+            )?;
+            admit_identity_work(
+                ctx,
                 provenance_len,
                 id.len(),
+                2,
                 "sparse annotation application",
             )?;
             admit_identity_work(
                 ctx,
                 exactness_len,
                 id.len(),
+                2,
                 "sparse annotation application",
             )?;
             self.storage.with_storage(|| {
@@ -222,6 +256,8 @@ impl<'base> SparseAnnotationTransaction<'base, '_> {
 
 impl PreparedAnnotationDelta {
     /// Apply the admitted replacements and deletions without rebuilding either table.
+    /// The destination must be the unchanged base used for preparation. Moving
+    /// the base is permitted; intervening annotation edits are not.
     pub fn apply(mut self, annotations: &mut Annotations) {
         for id in self.selected {
             if let Some((key, value)) = self.changes.provenance.remove_entry(&id) {
@@ -248,15 +284,24 @@ fn copy_identity(
         ctx,
         base.provenance.len(),
         id.len(),
+        1,
         "sparse annotation provenance lookup",
     )?;
     admit_identity_work(
         ctx,
         base.exactness.len(),
         id.len(),
+        1,
         "sparse annotation exactness lookup",
     )?;
     if let Some(source) = base.provenance.get(id) {
+        admit_identity_work(
+            ctx,
+            changes.provenance.len(),
+            id.len(),
+            2,
+            "sparse annotation provenance insertion",
+        )?;
         let key = ctx.copy_retained_text(id, "sparse annotation provenance")?;
         let source = source.try_clone_for_decode(ctx, "sparse annotation provenance")?;
         ctx.insert_btree_map(
@@ -267,9 +312,23 @@ fn copy_identity(
         )?;
     }
     if let Some(note) = base.exactness.get(id) {
+        admit_identity_work(
+            ctx,
+            changes.exactness.len(),
+            id.len(),
+            2,
+            "sparse annotation exactness insertion",
+        )?;
         let key = ctx.copy_retained_text(id, "sparse annotation exactness")?;
         let mut fields = BTreeMap::new();
         for (field, value) in note.fields() {
+            admit_identity_work(
+                ctx,
+                fields.len(),
+                field.as_str().len(),
+                2,
+                "sparse annotation field insertion",
+            )?;
             let field =
                 FieldName(ctx.copy_retained_text(field.as_str(), "sparse annotation fields")?);
             ctx.insert_btree_map(&mut fields, field, *value, "sparse annotation fields")?;

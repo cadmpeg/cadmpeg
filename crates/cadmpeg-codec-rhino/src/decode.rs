@@ -5162,11 +5162,20 @@ fn admit_fallback_lookup(
     id: &str,
     probes: u64,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let levels = u64::from(usize::BITS - count.leading_zeros()) + 1;
-    let work = levels
-        .checked_mul(16)
-        .and_then(|comparisons| comparisons.checked_mul(probes))
+    // The pinned standard library uses degree-six nodes with eleven keys.
+    const MIN_CHILDREN: usize = 6;
+    const MAX_KEYS: u64 = 11;
+    let mut height_basis = count / 2 + count % 2;
+    let mut levels = 0_u64;
+    while height_basis != 0 {
+        levels += 1;
+        height_basis /= MIN_CHILDREN;
+    }
+    let comparisons = (levels * MAX_KEYS).min(u64_from_index(count));
+    let work = comparisons
+        .checked_mul(probes)
         .and_then(|comparisons| comparisons.checked_mul(u64_from_index(id.len()).checked_add(1)?))
+        .and_then(|work| work.checked_add(levels * 3 + 1))
         .ok_or_else(|| {
             ctx.refuse_codec_limit("Rhino fallback exactness lookup", u64::MAX - 1, u64::MAX)
         })?;

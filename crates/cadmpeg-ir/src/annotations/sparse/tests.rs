@@ -109,3 +109,44 @@ fn sparse_provenance_edits_leave_unselected_entries_unchanged() {
     );
     assert_eq!(annotations.provenance[ID].stream(), "synthetic");
 }
+
+#[test]
+fn sparse_long_identity_edits_admit_thousands_without_binary_tree_overbilling() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    const COUNT: usize = 8192;
+    const WORK: u64 = 512_000_000;
+    let identity = |index| {
+        format!("test:model:point#annotation-transaction-key-with-a-long-prefix-{index:08}")
+    };
+    let fixture = cadmpeg_test_support::service_decode_context();
+    let mut builder = AnnotationBuilder::new();
+    for index in 0..COUNT {
+        builder
+            .exactness(&fixture, identity(index), Exactness::Derived)
+            .unwrap();
+    }
+    let mut annotations = builder.build();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = WORK;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut transaction = annotations
+        .sparse_transaction(&ctx, "long identity edits")
+        .unwrap();
+    for index in 0..COUNT {
+        transaction
+            .exactness(&identity(index), Exactness::Inferred)
+            .unwrap();
+    }
+    transaction.prepare().unwrap().apply(&mut annotations);
+    assert_eq!(annotations.exactness().len(), COUNT);
+    assert!(annotations
+        .exactness()
+        .values()
+        .all(|note| note.entity() == Exactness::Inferred));
+    // The former bound bills this base lookup during both copying and application.
+    // Those two probes alone exceed the ceiling; this excludes all other work.
+    let old_base_probe = (15 * 32 + 4) * u64::try_from(identity(0).len()).unwrap() + 1;
+    assert!(2 * u64::try_from(COUNT).unwrap() * old_base_probe > WORK);
+    ctx.finish_session().unwrap();
+}

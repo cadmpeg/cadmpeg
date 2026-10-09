@@ -254,7 +254,7 @@ impl<'ctx> AdmittedState<'ctx> {
                 let slot = <$ty as EntitySchema>::KIND.index();
                 let start = self.lengths[slot].min(checkpoint.arena_len::<$ty>());
                 for entity in model.$field.get(start..self.lengths[slot]).ok_or_else(|| CodecError::malformed("admitted suffix was removed before invalidation"))? {
-                    admit_identity_work(ctx, self.identities.len(), entity.identity().len(), "invalidate appended admission identities")?;
+                    admit_identity_work(ctx, self.identities.len(), entity.identity().len(), 1, "invalidate appended admission identities")?;
                     self.identities.remove(entity.identity());
                 }
                 self.lengths[slot] = start;
@@ -318,7 +318,7 @@ fn lookup(
     ids: &BTreeMap<String, bool>,
     id: &str,
 ) -> Result<Option<bool>, CodecError> {
-    admit_identity_work(ctx, ids.len(), id.len(), "admitted identity lookup")?;
+    admit_identity_work(ctx, ids.len(), id.len(), 1, "admitted identity lookup")?;
     Ok(ids.get(id).copied())
 }
 
@@ -328,7 +328,7 @@ fn insert(
     id: &str,
     native: bool,
 ) -> Result<(), CodecError> {
-    admit_identity_work(ctx, ids.len(), id.len(), "admitted identity lookup")?;
+    admit_identity_work(ctx, ids.len(), id.len(), 3, "admitted identity lookup")?;
     if !ids.contains_key(id) {
         let id = ctx.copy_retained_text(id, "admitted identity text")?;
         ctx.insert_btree_map(ids, id, native, "admitted identity slots")?;
