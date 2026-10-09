@@ -1715,7 +1715,10 @@ fn legacy_surface(
     let mut row_storage = ctx.reserve_scoped(0, "Rhino V1 surface row workspace")?;
     let control_rows = row_storage.with_storage(|| {
         let mut rows = ctx.collection_vec(counts[0], "Rhino V1 surface pole rows")?;
-    for row in control_points.chunks(row_width.get()) {
+        let mut row_source = control_points.chunks(row_width.get());
+        for _ in 0..row_source.len() {
+            let row = ctx.next_charged(&mut row_source, "Rhino V1 surface pole row traversal")?
+                .ok_or_else(|| CodecError::malformed("V1 surface pole row source ended early"))?;
             let mut values = ctx.collection_vec(row.len(), "Rhino V1 surface pole grid")?;
             ctx.fold(
                 row,
@@ -1736,7 +1739,10 @@ fn legacy_surface(
     let weight_rows = if let Some(values) = weights {
         Some(weight_row_storage.with_storage(|| {
             let mut rows = ctx.collection_vec(counts[0], "Rhino V1 surface weight rows")?;
-    for row in values.chunks(row_width.get()) {
+            let mut row_source = values.chunks(row_width.get());
+            for _ in 0..row_source.len() {
+                let row = ctx.next_charged(&mut row_source, "Rhino V1 surface weight row traversal")?
+                    .ok_or_else(|| CodecError::malformed("V1 surface weight row source ended early"))?;
                 let mut values = ctx.collection_vec(row.len(), "Rhino V1 surface weight grid")?;
                 ctx.fold(
                     row,
@@ -4253,6 +4259,7 @@ fn v1_nurbs_object<T>(
 #[cfg(test)]
 mod tests {
     mod budget;
+    mod surface_rows;
 
     #[test]
     fn v1_text_charges_source_and_decoded_bytes_once() {
