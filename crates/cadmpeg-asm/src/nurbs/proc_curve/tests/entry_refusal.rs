@@ -242,3 +242,42 @@ fn entry_intersection_cache_invalid_revision_or_enum_preserves_original_refusal(
         }
     });
 }
+
+#[test]
+fn embedded_surface_propagates_knot_refusal_before_missing_bounds() {
+    use crate::nurbs::toks::Cur;
+    use crate::sab::Token;
+    use cadmpeg_core::decode::ResourceDimension;
+    let table = SubtypeTable::from_records(&cadmpeg_test_support::service_decode_context(), &[]).unwrap();
+    let tokens = [Token::Ident("spline".into()), Token::Ident("nubs".into()),
+        Token::Long(1), Token::Long(1), Token::Enum(0), Token::Enum(0), Token::Enum(0), Token::Enum(0),
+        Token::Long(2), Token::Long(2)];
+    // The fixed surface header reaches a two-entry knot table. The first
+    // knot read needs one work unit; no knot payload or bound is present.
+    for cap in [0, 1] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut cur = Cur::at(&tokens, 0);
+        let result = super::super::optional_embedded_surface_with_bounds(&ctx, &mut cur, &table);
+        if cap == 0 {
+            let Some(Err(CodecError::ResourceLimit(first))) = result else {
+                panic!("knot work refusal must precede missing bound recovery");
+            };
+            assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(first.operation, "scan ASM knot pairs");
+            assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
+            for _ in 0..64 {
+                let mut cur = Cur::at(&tokens, 0);
+                assert!(matches!(super::super::optional_embedded_surface_with_bounds(&ctx, &mut cur, &table),
+                    Some(Err(CodecError::ResourceLimit(last))) if last == first));
+                assert_eq!(cur.pos(), 0);
+            }
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        } else {
+            assert!(result.is_none());
+            ctx.finish_session().unwrap();
+        }
+    }
+}

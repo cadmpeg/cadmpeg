@@ -76,6 +76,9 @@ pub(super) fn surface_block(
     toks: &[Token],
     marker_pos: usize,
 ) -> Option<Result<(NurbsSurface, usize), cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let marker = toks::marker_at(toks, marker_pos)?;
     let mut cur = Cur::at(toks, marker_pos + 1);
 
@@ -215,6 +218,9 @@ pub(super) fn curve_block(
     toks: &[Token],
     marker_pos: usize,
 ) -> Option<Result<(NurbsCurve, usize), cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let marker = toks::marker_at(toks, marker_pos)?;
     let mut cur = Cur::at(toks, marker_pos + 1);
 
@@ -396,6 +402,9 @@ where
         toks::SubtypeScope<'_>,
     ) -> Option<Result<T, cadmpeg_core::CodecError>>,
 {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     (|| -> Result<Option<T>, cadmpeg_core::CodecError> {
         if toks.is_empty() {
             return Ok(None);
@@ -1172,4 +1181,5 @@ mod tests {
     }
 
     mod attempt_storage;
+    mod entry_refusal;
 }

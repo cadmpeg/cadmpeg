@@ -3950,6 +3950,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
     }
     cur.set_pos(saved);
     if let Some(surface) = embedded_surface(ctx, cur) {
+        let surface = propagate_resource!(surface);
         let mut bounds = [None; 4];
         if kind == Some("plane") || kind == Some("spline") {
             for bound in &mut bounds {
@@ -3957,7 +3958,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
             }
         }
         return Some(Ok(EmbeddedSurfaceWithBounds {
-            surface: Some(propagate_resource!(surface)),
+            surface: Some(surface),
             bounds,
         }));
     }
