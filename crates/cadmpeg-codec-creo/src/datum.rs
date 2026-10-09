@@ -145,7 +145,10 @@ pub(crate) fn planes(
     let rows = crate::surface::counted_row_bounds(ctx, payload)?;
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut planes = Vec::new();
-    for (index, (row, frame_end)) in rows.iter().enumerate().filter(|(_, (row, _))| {
+    for (index, (row, frame_end)) in ctx
+        .admit_iter(&rows, "creo datum plane rows")?
+        .enumerate()
+        .filter(|(_, (row, _))| {
         row.id != 0
             && row.kind == SurfaceKind::Plane
             && row.boundary_type == crate::surface::BoundaryType::Code01
@@ -189,10 +192,11 @@ pub(crate) fn cylinders(
         if parameter.offset != row.offset {
             continue;
         }
-        if let Some(frame) = parameter
-            .positional_cylinder_frame()
-            .or_else(|| active_cylinder_frame(row, parameter))
-        {
+        let frame = match parameter.positional_cylinder_frame() {
+            Some(frame) => Some(frame),
+            None => active_cylinder_frame(ctx, row, parameter)?,
+        };
+        if let Some(frame) = frame {
             ctx.reserve_vec(&mut cylinders, 1, "creo datum cylinders")?;
             cylinders.push(DatumCylinder {
                 id: row.id,
@@ -215,41 +219,39 @@ pub(crate) fn cylinders(
 /// invariant. The second corner is the oriented axial end and the first
 /// corner supplies the held radial coordinate.
 fn active_cylinder_frame(
+    ctx: &DecodeContext<'_>,
     row: &SurfaceRow,
     parameter: &SurfaceParameterRecord,
-) -> Option<PositionalCylinderFrame> {
-    (row.kind == crate::surface::SurfaceKind::Cylinder
-        && matches!(
-            row.boundary_type,
-            crate::surface::BoundaryType::Code00 | crate::surface::BoundaryType::Code01
-        ))
-    .then_some(())?;
-    let terminal = parameter.terminal_scalar_frame()?;
+) -> Result<Option<PositionalCylinderFrame>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    if row.kind != crate::surface::SurfaceKind::Cylinder
+        || !matches!(row.boundary_type,
+            crate::surface::BoundaryType::Code00 | crate::surface::BoundaryType::Code01)
+    {
+        return Ok(None);
+    }
+    let Some(terminal) = parameter.terminal_scalar_frame() else {
+        return Ok(None);
+    };
     let [length_slot, corner0, corner1, corner2, corner3, corner4, corner5] =
         terminal.slots.as_slice()
     else {
-        return None;
+        return Ok(None);
     };
-    let terminal_values = [
-        length_slot.value?,
-        corner0.value?,
-        corner1.value?,
-        corner2.value?,
-        corner3.value?,
-        corner4.value?,
-        corner5.value?,
-    ];
-    terminal_values
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some(())?;
-    let preceding_count = parameter.scalar_frames.len().checked_sub(1)?;
-    let preceding_values = parameter
-        .scalar_frames
-        .iter()
-        .take(preceding_count)
-        .flat_map(|frame| frame.slots.iter().filter_map(|slot| slot.value));
-    let lengths = std::iter::once(length_slot.value?).chain(preceding_values);
+    let Some(terminal_values) = (|| Some([
+        length_slot.value?, corner0.value?, corner1.value?, corner2.value?,
+        corner3.value?, corner4.value?, corner5.value?,
+    ]))() else {
+        return Ok(None);
+    };
+    if !terminal_values.into_iter().all(f64::is_finite) {
+        return Ok(None);
+    }
+    let Some(preceding_count) = parameter.scalar_frames.len().checked_sub(1) else {
+        return Ok(None);
+    };
     let corners = [
         [terminal_values[1], terminal_values[2], terminal_values[3]],
         [terminal_values[4], terminal_values[5], terminal_values[6]],
@@ -264,23 +266,23 @@ fn active_cylinder_frame(
     let close =
         |first: f64, second: f64| (first - second).abs() <= EPS_ACTIVE_CYLINDER_RELATIVE * scale;
     let mut selected = None;
-    for signed_length in lengths {
+    let mut consider_length = |signed_length: f64| -> Option<()> {
         if !signed_length.is_finite() || signed_length == 0.0 {
-            continue;
+            return Some(());
         }
         let length = signed_length.abs();
         let mut axis_indices = (0..3).filter(|index| close(spans[*index], length));
         let Some(axis_index) = axis_indices.next() else {
-            continue;
+            return Some(());
         };
         if axis_indices.next().is_some() {
-            continue;
+            return Some(());
         }
         let [first_radial, second_radial] = match axis_index {
             0 => [1, 2],
             1 => [0, 2],
             2 => [0, 1],
-            _ => continue,
+            _ => return Some(()),
         };
         let (diameter_index, radius_index) =
             if close(spans[first_radial], 2.0 * spans[second_radial]) {
@@ -288,13 +290,13 @@ fn active_cylinder_frame(
             } else if close(spans[second_radial], 2.0 * spans[first_radial]) {
                 (second_radial, first_radial)
             } else {
-                continue;
+                return Some(());
             };
         let radius = spans[diameter_index] * 0.5;
         if radius <= EPS_ACTIVE_CYLINDER_MIN * scale
             || spans[radius_index] <= EPS_ACTIVE_CYLINDER_MIN * scale
         {
-            continue;
+            return Some(());
         }
         let mut origin = [0.0; 3];
         origin[diameter_index] =
@@ -320,8 +322,33 @@ fn active_cylinder_frame(
         } else {
             selected = Some(candidate);
         }
+        Some(())
+    };
+    if consider_length(terminal_values[0]).is_none() {
+        return Ok(None);
     }
-    selected
+    let mut frames = parameter.scalar_frames[..preceding_count].iter();
+    while frames.len() != 0 {
+        let Some(frame) = ctx.next_charged(
+            &mut frames, "creo active datum cylinder scalar frames",
+        )? else {
+            break;
+        };
+        let mut slots = frame.slots.iter();
+        while slots.len() != 0 {
+            let Some(slot) = ctx.next_charged(
+                &mut slots, "creo active datum cylinder scalar slots",
+            )? else {
+                break;
+            };
+            if let Some(length) = slot.value {
+                if consider_length(length).is_none() {
+                    return Ok(None);
+                }
+            }
+        }
+    }
+    Ok(selected)
 }
 
 fn positional_plane(
@@ -331,6 +358,9 @@ fn positional_plane(
     row_end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<DatumPlaneRecord>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let id_start = row.offset;
     let Some(body_start) = (|| {
         if payload.get(id_start).copied()? > 0xbf {
@@ -386,16 +416,43 @@ pub(crate) fn named_plane(
     let Some(outline) = ctx.find_bytes_from(payload, marker, 0, "find Creo datum outline")? else {
         return Ok(None);
     };
+    let prefix = &payload[..outline];
+    let id_marker = b"\xe0\x01geom_id\0";
+    let mut id_windows = prefix.windows(id_marker.len()).enumerate().rev();
+    let mut id_at = None;
+    while id_windows.len() != 0 {
+        let Some((offset, window)) = ctx.next_charged(
+            &mut id_windows, "creo named datum geometry identity",
+        )? else {
+            break;
+        };
+        if window == id_marker {
+            id_at = Some(offset);
+            break;
+        }
+    }
+    let Some(id_at) = id_at else {
+        return Ok(None);
+    };
+    let feature_marker = b"feat_id\0";
+    let mut feature_windows = prefix.windows(feature_marker.len()).enumerate().rev();
+    let mut feature_at = None;
+    while feature_windows.len() != 0 {
+        let Some((offset, window)) = ctx.next_charged(
+            &mut feature_windows, "creo named datum feature identity",
+        )? else {
+            break;
+        };
+        if window == feature_marker {
+            feature_at = Some(offset);
+            break;
+        }
+    }
+    let Some(feature_at) = feature_at else {
+        return Ok(None);
+    };
     let Some((outline, id, feature_id)) = (|| {
-        let id_marker = b"\xe0\x01geom_id\0";
-        let id_at = payload[..outline]
-            .windows(id_marker.len())
-            .rposition(|window| window == id_marker)?;
         let id_start = id_at + id_marker.len();
-        let feature_marker = b"feat_id\0";
-        let feature_at = payload[..outline]
-            .windows(feature_marker.len())
-            .rposition(|window| window == feature_marker)?;
         let feature_field_start = feature_at.checked_sub(2)?;
         (payload.get(feature_field_start) == Some(&crate::psb::token::NAMED_RECORD))
             .then_some(())?;
