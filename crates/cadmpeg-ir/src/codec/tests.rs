@@ -597,3 +597,5 @@ fn sealed_inspect_preserves_a_swallowed_backend_refusal_before_format_or_backend
         assert_eq!(returned.operation, "test swallowed inspect refusal");
     }
 }
+
+mod format_identity;

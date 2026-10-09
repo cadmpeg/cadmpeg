@@ -451,7 +451,11 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, false)?;
         let result = (|| {
             let result = self.inspect_impl(&ctx, root)?;
-            if result.format() != C::FORMAT.as_str() {
+            if !ctx.equal_bytes(
+                result.format().as_bytes(),
+                C::FORMAT.as_str().as_bytes(),
+                "inspect format identity",
+            )? {
                 return Err(CodecError::WrongFormat(ctx.format_retained(
                     format_args!(
                         "codec {:?} inspected a {:?} container",
@@ -488,7 +492,11 @@ impl<C: CodecBackend + ?Sized> Codec for C {
     ) -> Result<DecodeResult, DecodeFailure> {
         let decoded = self.decode_impl(ctx, root)?;
         let result = DecodeResult::new(decoded, C::FORMAT, options.container_only, ctx)?;
-        if result.report().format() != C::FORMAT.as_str() {
+        if !ctx.equal_bytes(
+            result.report().format().as_bytes(),
+            C::FORMAT.as_str().as_bytes(),
+            "decode format identity",
+        )? {
             return Err(CodecError::WrongFormat(ctx.format_retained(
                 format_args!(
                     "codec {:?} decoded a {:?} document",
