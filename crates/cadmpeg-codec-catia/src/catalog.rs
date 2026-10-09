@@ -106,7 +106,7 @@ fn parse_candidate(
             }
             let (declared_count, mut at) = compact_atom(bytes, pos + 6)?;
             let entry_count = usize::try_from(declared_count.checked_sub(1)?).ok()?;
-            if entry_count > end.checked_sub(at)? {
+            if entry_count < PREFIX.len() || entry_count > end.checked_sub(at)? {
                 return None;
             }
             let mut entries = Vec::new();
@@ -127,6 +127,11 @@ fn parse_candidate(
                     return None;
                 }
                 let raw = &bytes[value_start..next];
+                if let Some(prefix) = PREFIX.get(ordinal) {
+                    if raw != prefix.as_bytes() {
+                        return None;
+                    }
+                }
                 let value = admitted!(ctx.copy_retained_text(
                     admitted!(ctx.validate_utf8(raw, "catia_catalog_entry_utf8")).ok()?,
                     "catia_catalog_entry_value"
@@ -142,13 +147,7 @@ fn parse_candidate(
                 ));
                 at = next;
             }
-            if at != end
-                || entries
-                    .iter()
-                    .take(PREFIX.len())
-                    .map(|entry| entry.value.as_str())
-                    .ne(PREFIX)
-            {
+            if at != end {
                 return None;
             }
             Some(Ok(Catalog {
@@ -159,10 +158,10 @@ fn parse_candidate(
         })()
         .transpose()
     })?;
-    if parsed.is_some() {
-        storage.commit()?;
+    match parsed {
+        Some(catalog) => storage.commit_value(catalog).map(Some),
+        None => Ok(None),
     }
-    Ok(parsed)
 }
 
 #[cfg(test)]
