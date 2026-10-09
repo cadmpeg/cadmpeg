@@ -6124,7 +6124,7 @@ fn append_text_curve(
     id: CurveId,
     association: &SourceObjectAssociation,
     transfer: &mut CurveTransfer,
-) -> Result<CurveGeometry, CodecError> {
+) -> Result<usize, CodecError> {
     let _depth = ctx.enter_nested("FreeCAD curve transfer nesting")?;
     let geometry = match curve {
         TextCurve::Line { origin, direction } => {
@@ -6259,7 +6259,7 @@ fn append_text_curve(
                 "basis",
                 "FreeCAD curve basis identity",
             )?;
-            let basis_geometry = append_text_curve(
+            let basis_index = append_text_curve(
                 ctx,
                 basis.curve(),
                 basis_id.try_clone_for_decode(ctx, "FreeCAD curve basis identity copy")?,
@@ -6267,11 +6267,14 @@ fn append_text_curve(
                 transfer,
             )?;
             let parameter_range = crate::topology_transfer::normalize_occt_curve_range(
-                basis_geometry.solved().ok_or_else(|| {
-                    cadmpeg_core::CodecError::NotImplemented(
-                        "carrier has no solved geometry".into(),
-                    )
-                })?,
+                transfer.curves[basis_index]
+                    .geometry
+                    .solved()
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::NotImplemented(
+                            "carrier has no solved geometry".into(),
+                        )
+                    })?,
                 Some(*parameter_range),
             )
             .unwrap_or(*parameter_range);
@@ -6300,7 +6303,9 @@ fn append_text_curve(
                     ProceduralCurveDefinition::Subset(admitted_payload),
                 ),
             ));
-            basis_geometry
+            transfer.curves[basis_index]
+                .geometry
+                .try_clone_for_decode(ctx, "FreeCAD curve geometry copy")?
         }
         TextCurve::Offset {
             distance,
@@ -6345,15 +6350,16 @@ fn append_text_curve(
         }
     };
     ctx.reserve_vec(&mut transfer.curves, 1, "FreeCAD transferred curves")?;
+    let index = transfer.curves.len();
     transfer.curves.push(Curve {
         parameter_range: None,
         id,
-        geometry: geometry.try_clone_for_decode(ctx, "FreeCAD curve geometry copy")?,
+        geometry,
         source_object: Some(
             (association).try_clone_for_decode(ctx, "FreeCAD geometry source association")?,
         ),
     });
-    Ok(geometry)
+    Ok(index)
 }
 
 #[derive(Default)]
@@ -6420,7 +6426,7 @@ fn append_text_surface(
     association: &SourceObjectAssociation,
     curve_transfer: &mut CurveTransfer,
     transfer: &mut SurfaceTransfer,
-) -> Result<SurfaceGeometry, CodecError> {
+) -> Result<usize, CodecError> {
     let _depth = ctx.enter_nested("FreeCAD surface transfer nesting")?;
     let geometry = match surface {
         TextSurface::Plane {
@@ -6675,7 +6681,7 @@ fn append_text_surface(
                 "basis",
                 "FreeCAD surface basis identity",
             )?;
-            let basis_geometry = append_text_surface(
+            let basis_index = append_text_surface(
                 ctx,
                 basis.surface(),
                 basis_id.try_clone_for_decode(ctx, "FreeCAD surface basis identity copy")?,
@@ -6710,7 +6716,9 @@ fn append_text_surface(
                     None,
                 ),
             ));
-            basis_geometry
+            transfer.surfaces[basis_index]
+                .geometry
+                .try_clone_for_decode(ctx, "FreeCAD surface geometry copy")?
         }
         TextSurface::Offset { distance, basis } => {
             let basis_id: SurfaceId = model_identity(
@@ -6760,14 +6768,15 @@ fn append_text_surface(
         }
     };
     ctx.reserve_vec(&mut transfer.surfaces, 1, "FreeCAD transferred surfaces")?;
+    let index = transfer.surfaces.len();
     transfer.surfaces.push(Surface {
         id,
-        geometry: geometry.try_clone_for_decode(ctx, "FreeCAD surface geometry copy")?,
+        geometry,
         source_object: Some(
             (association).try_clone_for_decode(ctx, "FreeCAD geometry source association")?,
         ),
     });
-    Ok(geometry)
+    Ok(index)
 }
 
 #[cfg(test)]
