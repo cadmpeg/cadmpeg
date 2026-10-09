@@ -5254,15 +5254,23 @@ fn relation_parameter_by_driving_name<'a>(
         return Ok(None);
     };
     let owner = &owner.id;
+    let mut scalars_storage =
+        ctx.reserve_scoped(0, "SLDPRT relation driving scalar workspace")?;
     let mut scalars = HashMap::new();
     for scalar in ctx.admit_iter(&lane.scalars, "index SLDPRT relation driving scalars")? {
         let operation = "index SLDPRT relation driving scalars";
-        ctx.insert_hash_map(&mut scalars, scalar.id.as_str(), scalar, operation)?;
+        scalars_storage.with_storage(|| {
+            ctx.insert_hash_map(&mut scalars, scalar.id.as_str(), scalar, operation)
+        })?;
     }
+    let mut names_storage =
+        ctx.reserve_scoped(0, "SLDPRT relation driving name workspace")?;
     let mut names = HashMap::new();
     for name in ctx.admit_iter(&lane.names, "index SLDPRT relation driving names")? {
         let operation = "index SLDPRT relation driving names";
-        ctx.insert_hash_map(&mut names, name.id.as_str(), name.value.as_str(), operation)?;
+        names_storage.with_storage(|| {
+            ctx.insert_hash_map(&mut names, name.id.as_str(), name.value.as_str(), operation)
+        })?;
     }
     let mut name = None;
     if let Some(scalar_id) = relation.parameter_scalar_ref() {
@@ -5318,6 +5326,8 @@ fn relation_parameter_by_driving_name<'a>(
     let Some(name) = name else {
         return Ok(None);
     };
+    drop((scalars, names));
+    drop((scalars_storage, names_storage));
     let mut candidates = parameters.iter();
     let mut first = None;
     while let Some(parameter) =
@@ -5393,10 +5403,14 @@ pub(super) fn relation_parameter_by_display_name<'a>(
         return Ok(None);
     };
     let owner = &owner.id;
+    let mut names_storage =
+        ctx.reserve_scoped(0, "SLDPRT relation display name workspace")?;
     let mut names = HashMap::new();
     for name in ctx.admit_iter(&lane.names, "index SLDPRT relation display names")? {
         let operation = "index SLDPRT relation display names";
-        ctx.insert_hash_map(&mut names, name.id.as_str(), name.value.as_str(), operation)?;
+        names_storage.with_storage(|| {
+            ctx.insert_hash_map(&mut names, name.id.as_str(), name.value.as_str(), operation)
+        })?;
     }
     let Some(display_scalar) = relation_display_scalar_for_parameter(ctx, relation, lane)? else {
         return Ok(None);
@@ -5411,6 +5425,8 @@ pub(super) fn relation_parameter_by_display_name<'a>(
     else {
         return Ok(None);
     };
+    drop(names);
+    drop(names_storage);
     let mut candidates = parameters.iter();
     let mut first = None;
     while let Some(parameter) =
@@ -6364,3 +6380,6 @@ mod planar_budget_tests;
 
 #[cfg(test)]
 mod spatial_budget_tests;
+
+#[cfg(test)]
+mod lookup_storage_tests;
