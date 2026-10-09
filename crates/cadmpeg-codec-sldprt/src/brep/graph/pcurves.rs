@@ -199,17 +199,30 @@ impl PcurveSink<'_> {
         parameter_range: Option<cadmpeg_ir::geometry::DirectedParameterRange>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         if let Some(coedge) = self.coedges.get_mut(index) {
-            coedge.pcurves = ctx.collect_retained_vec(
-                [cadmpeg_ir::topology::PcurveUse {
+            coedge.pcurves = single_pcurve_use(
+                ctx,
+                cadmpeg_ir::topology::PcurveUse {
                     pcurve,
                     isoparametric: None,
                     parameter_range,
-                }],
+                },
                 "bind derived Parasolid pcurve",
             )?;
         }
         Ok(())
     }
+}
+
+/// Admit the singleton use backing before allocation. The fixed payload
+/// move performs no input-dependent traversal.
+pub(super) fn single_pcurve_use(
+    ctx: &DecodeContext<'_>,
+    value: cadmpeg_ir::topology::PcurveUse,
+    operation: &'static str,
+) -> Result<Vec<cadmpeg_ir::topology::PcurveUse>, cadmpeg_core::CodecError> {
+    let mut uses = ctx.collection_vec(1, operation)?;
+    uses.push(value);
+    Ok(uses)
 }
 
 /// Derive planar, cylindrical, revolved-circle, spherical and NURBS pcurves,

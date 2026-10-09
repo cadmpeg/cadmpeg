@@ -78,6 +78,7 @@ use super::id_point;
 use super::id_surf;
 use super::id_vertex;
 use super::pcurves::intersection_support_pcurve;
+use super::pcurves::single_pcurve_use;
 use super::pcurve_namespace;
 use super::region_namespace;
 use super::construction::resolve_sweep_surface;
@@ -798,11 +799,11 @@ pub(super) fn decode_graph(
                         Ok(Some(
                             cadmpeg_ir::geometry::DirectedParameterRange::new(parameter_range).map(
                                 |range| {
-                                    vec![cadmpeg_ir::topology::PcurveUse {
+                                    cadmpeg_ir::topology::PcurveUse {
                                         pcurve: id,
                                         isoparametric: None,
                                         parameter_range: Some(range),
-                                    }]
+                                    }
                                 },
                             ),
                         ))
@@ -823,10 +824,17 @@ pub(super) fn decode_graph(
                     ctx.reserve_vec(&mut out.losses, 1, "collect intersection pcurve losses")?;
                     out.losses.push(note);
                 }
-                let pcurves = pcurves
+                let pcurves = match pcurves
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?
-                    .unwrap_or_default();
+                {
+                    Some(value) => single_pcurve_use(
+                        ctx,
+                        value,
+                        "collect intersection Parasolid pcurve uses",
+                    )?,
+                    None => Vec::new(),
+                };
                 let mut sense = ce.sense;
                 if ctx.contains_btree_set(
                     &reversed_edge_orientation,
