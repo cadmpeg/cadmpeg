@@ -863,11 +863,12 @@ fn parse_operation_states<'a>(
     Ok(result)
 }
 
-/// Decode one unambiguous or consensus operation projection per feature identifier.
-pub(crate) fn operations(
+/// Visit one borrowed consensus projection per feature identifier.
+fn visit_current_operations<'a>(
     ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<Vec<FeatureOperation>, CodecError> {
+    payload: &'a [u8],
+    mut visit: impl FnMut(ParsedOperation<'a, RecipeResolution>) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
     let mut grouping_storage = ctx.reserve_scoped(0, "creo operation grouping storage")?;
     let mut by_feature = BTreeMap::<u32, Vec<ParsedOperation<'_>>>::new();
     let parsed = grouping_storage.with_storage(|| parse_operation_states(ctx, payload))?;
@@ -895,7 +896,6 @@ pub(crate) fn operations(
             }
         }
     }
-    let mut current = Vec::new();
     for (_, mut states) in ctx.admit_iter(by_feature, "creo operation projection groups")? {
         let mut first_display: Option<usize> = None;
         let mut last_display = None;
@@ -986,10 +986,49 @@ pub(crate) fn operations(
                     projection.kind = ParsedKind::Native;
                 }
             }
-            ctx.reserve_vec(&mut current, 1, "creo current operation projections")?;
-            current.push(projection.materialize(ctx)?);
+            visit(projection)?;
         }
     }
+    Ok(())
+}
+
+/// Select the only feature whose current operation has a resolved recipe.
+pub(crate) fn unique_recipe_owner(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<u32>, CodecError> {
+    enum Owner {
+        Absent,
+        Unique(u32),
+        Conflicting,
+    }
+    let mut owner = Owner::Absent;
+    visit_current_operations(ctx, payload, |operation| {
+        if operation.recipe.resolved().is_some() {
+            owner = match owner {
+                Owner::Absent => Owner::Unique(operation.feature_id),
+                Owner::Unique(_) | Owner::Conflicting => Owner::Conflicting,
+            };
+        }
+        Ok(())
+    })?;
+    Ok(match owner {
+        Owner::Unique(id) => Some(id),
+        Owner::Absent | Owner::Conflicting => None,
+    })
+}
+
+/// Decode one unambiguous or consensus operation projection per feature identifier.
+pub(crate) fn operations(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<FeatureOperation>, CodecError> {
+    let mut current = Vec::new();
+    visit_current_operations(ctx, payload, |projection| {
+        ctx.reserve_vec(&mut current, 1, "creo current operation projections")?;
+        current.push(projection.materialize(ctx)?);
+        Ok(())
+    })?;
     ctx.stable_sort_by(
         current.as_mut_slice(),
         |value| &value.offset,
@@ -1005,6 +1044,7 @@ mod tests {
     mod resource_limits;
     mod admission_visits;
     mod prefix_visits;
+    mod recipe_owner;
 
     use super::reference_names;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
