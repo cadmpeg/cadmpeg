@@ -667,8 +667,8 @@ pub(crate) fn choices(
 ) -> Result<Vec<FeatureChoice>, CodecError> {
     let mut result = Vec::new();
     for row in ctx.admit_iter(rows, "creo feature row traversal")? {
-        let mut hits = Vec::new();
         let mut storage = ctx.reserve_scoped(0, "creo choice hit scratch")?;
+        let mut hits = Vec::new();
         let mut next_label_offset = [0; CHOICE_LABELS.len()];
         for label_offset in ctx.admit_iter(0..row.body.len(), "find Creo feature row")? {
             for (index, &label) in CHOICE_LABELS.iter().enumerate() {
@@ -791,8 +791,8 @@ pub(super) fn field_value(
     }
     if payload[0] == psb::token::ARRAY_OPEN {
         let (count, mut cursor) = psb::compact_int(payload, 1);
-        let mut values = Vec::new();
         let mut storage = ctx.reserve_scoped(0, "creo feature compact integer values")?;
+        let mut values = Vec::new();
         let mut items = 0..count;
         while ctx
             .next_charged(&mut items, "creo compact integer field traversal")?
@@ -815,7 +815,7 @@ pub(super) fn field_value(
         if cursor == payload.len()
             || cursor + 1 == payload.len() && payload[cursor] == psb::token::ARRAY_CLOSE
         {
-            storage.commit()?;
+            let values = storage.commit_value(values)?;
             return Ok(FeatureFieldValue::CompactIntArray(values));
         }
     }
@@ -1074,7 +1074,7 @@ fn positional_datum_geometry_table_at(
             cursor = after_dimension;
         }
     }
-    storage.commit()?;
+    let entry_ids = storage.commit_value(entry_ids)?;
     Ok(Some((count, entry_ids)))
 }
 
@@ -1107,9 +1107,9 @@ fn geometry_table_at(
         after_class += 1;
     }
     if let FeatureGeometryTableKind::DatumIds(ids) = &mut kind {
+        let mut storage = ctx.reserve_scoped(0, "creo named datum ids")?;
         let mut entries = Vec::new();
         let mut entry_cursor = after_class;
-        let mut storage = ctx.reserve_scoped(0, "creo named datum ids")?;
         let mut items = 0..count;
         while ctx
             .next_charged(&mut items, "creo named datum traversal")?
@@ -1130,7 +1130,7 @@ fn geometry_table_at(
             entry_cursor = next;
         }
         if entries.len() == index_from_u32(count) {
-            storage.commit()?;
+            let entries = storage.commit_value(entries)?;
             *ids = Some(entries);
         } else {
             *ids = None;
@@ -1183,8 +1183,8 @@ pub(crate) fn affected_ids(
                 let Some(capacity) = bounded_len(u64::from(count), 1, remaining) else {
                     continue;
                 };
-                let mut ids = Vec::new();
                 let mut storage = ctx.reserve_scoped(0, "creo affected ids")?;
+                let mut ids = Vec::new();
                 let mut items = 0..count;
                 while ctx
                     .next_charged(&mut items, "creo affected ID traversal")?
@@ -1199,7 +1199,7 @@ pub(crate) fn affected_ids(
                     cursor = next;
                 }
                 if ids.len() == capacity {
-                    storage.commit()?;
+                    let ids = storage.commit_value(ids)?;
                     ctx.reserve_vec(&mut result, 1, "creo affected-id records")?;
                     result.push(FeatureAffectedIds {
                         feature_id: row.feature_id,
@@ -1994,7 +1994,9 @@ pub(crate) fn loop_history_entries(
         let Some(decoded) = loop_history_prototypes(ctx, &row.body, roster_offset, count) else {
             continue;
         };
-        let (entries, _prototype_storage) = decoded?;
+        let prototype_parts = decoded?;
+        let _prototype_storage = prototype_parts.1;
+        let entries = prototype_parts.0;
         ctx.reserve_vec(&mut result, entries.len(), "creo loop history entries")?;
         for (ordinal, prototype) in
             (0..table.count).zip(ctx.admit_iter(entries, "creo loop history materialization")?)
@@ -2035,11 +2037,11 @@ fn loop_history_prototypes<'a, 'ctx>(
     >,
 > {
     (count > 0 && count <= body.len().checked_sub(cursor)? / 2).then_some(())?;
-    let mut entries = Vec::new();
     let mut storage = match ctx.reserve_scoped(0, "creo loop history prototypes") {
         Ok(storage) => storage,
         Err(error) => return Some(Err(error)),
     };
+    let mut entries = Vec::new();
     if let Err(error) = storage
         .with_storage(|| ctx.reserve_vec(&mut entries, count, "creo loop history prototypes"))
     {
@@ -2209,10 +2211,12 @@ fn loop_history_roster(
     cursor: usize,
     count: usize,
 ) -> Option<Result<Vec<ParsedLoopHistoryEntry>, CodecError>> {
-    let (prototypes, _storage) = match loop_history_prototypes(ctx, body, cursor, count)? {
+    let prototype_parts = match loop_history_prototypes(ctx, body, cursor, count)? {
         Ok(parsed) => parsed,
         Err(error) => return Some(Err(error)),
     };
+    let _storage = prototype_parts.1;
+    let prototypes = prototype_parts.0;
     let mut entries = Vec::new();
     if let Err(error) = ctx.reserve_vec(&mut entries, prototypes.len(), "creo loop history roster")
     {
