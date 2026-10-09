@@ -1652,21 +1652,34 @@ fn unique_edge_group_assignment(
     if operands.is_empty() {
         return Ok(None);
     }
+    let mut storage = ctx.reserve_scoped(0, "hold F3D unique edge group candidates")?;
     let mut candidate_sets = Vec::new();
-    for operand in operands {
-        let candidates = if let Some(edge) = resolved_edge_operand(operand, ctx)? {
-            Some(EdgeAssignmentCandidates::Edges(vec![edge]))
-        } else {
-            edge_group_assignment_candidates(
-                &operand.recipe_selectors,
-                edge_operand_reference_edge_sets(operand),
-                ctx,
-            )?
+    let mut source = operands.iter();
+    while !source.as_slice().is_empty() {
+        let Some(operand) = ctx.next_charged(&mut source, "scan F3D unique edge group operands")? else {
+            break;
         };
+        let candidates = storage.with_storage(|| -> Result<_, CodecError> {
+            if let Some(edge) = resolved_edge_operand(operand, ctx)? {
+                let mut edges = ctx.collection_vec(1, "f3d unique resolved edge candidate")?;
+                edges.push(edge);
+                Ok(Some(EdgeAssignmentCandidates::Edges(edges)))
+            } else {
+                edge_group_assignment_candidates(
+                    &operand.recipe_selectors,
+                    edge_operand_reference_edge_sets(operand),
+                    ctx,
+                )
+            }
+        })?;
         let Some(candidates) = candidates else {
             return Ok(None);
         };
-        ctx.push_vec(
+        if matches!(candidates, EdgeAssignmentCandidates::Context) {
+            continue;
+        }
+        ctx.push_scoped_vec(
+            &mut storage,
             &mut candidate_sets,
             candidates,
             "f3d unique edge candidate set",
@@ -1996,20 +2009,37 @@ fn unique_edge_assignment_with_context(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
     ctx.charge_work(0, "resolve F3D unique edge assignment with context")?;
+    if matches!(candidate_sets, [] | [EdgeAssignmentCandidates::Context]) {
+        return Ok(None);
+    }
+    let mut storage = ctx.reserve_scoped(0, "hold F3D unique edge assignment candidates")?;
     let mut edge_candidate_sets = Vec::new();
-    for candidates in candidate_sets {
+    let mut source = candidate_sets.iter();
+    while !source.as_slice().is_empty() {
+        let Some(candidates) = ctx.next_charged(&mut source, "scan F3D unique edge assignment sets")? else {
+            break;
+        };
         let EdgeAssignmentCandidates::Edges(edges) = candidates else {
             continue;
         };
+        if edges.is_empty() {
+            return Ok(None);
+        }
         let mut copied_edges = Vec::new();
-        for edge in edges {
-            ctx.push_vec(
+        let mut edges = edges.iter();
+        while !edges.as_slice().is_empty() {
+            let Some(&edge) = ctx.next_charged(&mut edges, "scan F3D unique edge assignment edges")? else {
+                break;
+            };
+            ctx.push_scoped_vec(
+                &mut storage,
                 &mut copied_edges,
-                *edge,
+                edge,
                 "f3d unique edge assignment candidate",
             )?;
         }
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut storage,
             &mut edge_candidate_sets,
             copied_edges,
             "f3d unique edge assignment set",
