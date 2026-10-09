@@ -417,3 +417,5 @@ fn hem_geometry_fixture() -> (
 }
 
 mod reached_carrier;
+
+mod empty_geometry;
