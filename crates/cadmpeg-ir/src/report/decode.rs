@@ -6,13 +6,14 @@ use std::collections::BTreeMap;
 use cadmpeg_core::dialect::{DialectLayers, FormatIdentity};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
+use serde::ser::SerializeStruct as _;
 use serde::{Deserialize, Serialize};
 
 use crate::report::loss::LossNote;
 
 /// Transfer status and loss details from a successful decode.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(into = "DecodeReportWire", from = "DecodeReportWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(from = "DecodeReportWire")]
 #[serde(deny_unknown_fields)]
 pub struct DecodeReport {
     classification: FormatIdentity<DialectLayers>,
@@ -102,24 +103,23 @@ struct DecodeReportWire {
     transfer_ledger: TransferLedger,
 }
 
-impl From<DecodeReport> for DecodeReportWire {
-    fn from(report: DecodeReport) -> Self {
-        let DecodeReport {
-            classification,
-            transfer,
-            coverage,
-            losses,
-            notes,
-            transfer_ledger,
-        } = report;
-        Self {
-            identity: classification,
-            transfer,
-            coverage: coverage.into_wire(),
-            losses,
-            notes,
-            transfer_ledger,
+impl Serialize for DecodeReport {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let coverage = self.coverage.as_map();
+        let fields = 4 + usize::from(!coverage.is_empty())
+            + usize::from(!self.transfer_ledger.is_empty());
+        let mut wire = serializer.serialize_struct("DecodeReportWire", fields)?;
+        wire.serialize_field("identity", &self.classification)?;
+        wire.serialize_field("transfer", &self.transfer)?;
+        if !coverage.is_empty() {
+            wire.serialize_field("coverage", coverage)?;
         }
+        wire.serialize_field("losses", &self.losses)?;
+        wire.serialize_field("notes", &self.notes)?;
+        if !self.transfer_ledger.is_empty() {
+            wire.serialize_field("transfer_ledger", &self.transfer_ledger)?;
+        }
+        wire.end()
     }
 }
 
@@ -475,9 +475,6 @@ impl Coverage {
         Self { entries }
     }
 
-    fn into_wire(self) -> BTreeMap<String, usize> {
-        self.entries
-    }
 }
 
 impl Extend<(CoverageKey, usize)> for Coverage {
