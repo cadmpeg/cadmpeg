@@ -72,6 +72,9 @@ pub(super) fn prototype_tabulated_chart_origin(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &crate::surface::SurfacePrototypeRecord,
 ) -> Result<Option<[f64; 3]>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if record.family
         != crate::surface::SurfacePrototypeFamily::Extrusion(
             crate::surface::ExtrusionLabel::TabulatedCylinder,
@@ -130,9 +133,10 @@ fn prototype_vector_array(
     }
     let mut triples = Vec::new();
     let mut coordinates = array.values().chunks(3);
-    while let Some(coordinates) =
-        ctx.next_charged(&mut coordinates, "creo prototype vector array traversal")?
-    {
+    while coordinates.len() != 0 {
+        let Some(coordinates) = ctx.next_charged(&mut coordinates, "creo prototype vector array traversal")? else {
+            break;
+        };
         if coordinates.len() != 3 {
             continue;
         }
@@ -158,9 +162,10 @@ fn prototype_parameter_array(
     };
     let mut parameters = Vec::new();
     let mut values = array.values().iter();
-    while let Some(value) =
-        ctx.next_charged(&mut values, "creo prototype parameter array traversal")?
-    {
+    while values.len() != 0 {
+        let Some(value) = ctx.next_charged(&mut values, "creo prototype parameter array traversal")? else {
+            break;
+        };
         let Some(value) = value else {
             return Ok(None);
         };
@@ -338,6 +343,9 @@ fn first_instance_surface_row<'rows>(
     prototype_offset: usize,
     row_kind: crate::surface::SurfaceKind,
 ) -> Result<Option<&'rows crate::surface::SurfaceRow>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let position = ctx.partition_point(
         &rows.ordered,
         |row| Ok(row.offset < prototype_offset.min(frame_end)),
@@ -398,6 +406,9 @@ pub(super) fn surface_prototype_frame_bounds(
     prototype_offset: usize,
     frames: &mut PrototypeFrames<'_>,
 ) -> Result<Option<(usize, usize)>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let section_end = section.end();
     if scan.framing.data.is_empty() {
         return Ok(Some((section.offset(), section_end)));
@@ -454,6 +465,9 @@ fn frame_bound(
     section: &crate::container::Section,
     relative: usize,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(bound) = section.offset().checked_add(relative) else {
         return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
             format_args!(
@@ -504,6 +518,9 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
     )>,
     cadmpeg_core::CodecError,
 > {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if scan.surfaces.prototype_records.is_empty() {
         return Ok(Vec::new());
     }
