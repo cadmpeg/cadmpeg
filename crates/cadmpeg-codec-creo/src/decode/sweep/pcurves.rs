@@ -115,6 +115,9 @@ fn revolution_boundary_pcurve(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(axis_direction) = normalize([axis.direction.x, axis.direction.y, axis.direction.z])
     else {
         return Ok(None);
@@ -274,21 +277,28 @@ pub(in super::super) fn revolved_brep_surface(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<SurfaceGeometry>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if matches!(
         geometry.definition(),
         SketchGeometryDefinition::Nurbs { .. }
     ) {
-        let (directrix, _directrix_storage) = ctx
+        let directrix_owned_storage = ctx
             .with_scoped_storage("creo revolved directrix scratch", || {
                 oriented_sketch_nurbs_curve(ctx, geometry, reversed)
             })?;
+        let _directrix_storage = directrix_owned_storage.1;
+        let directrix = directrix_owned_storage.0;
         let Some(directrix) = directrix else {
             return Ok(None);
         };
-        let (placed_directrix, _placed_storage) = ctx
+        let placed_directrix_owned_storage = ctx
             .with_scoped_storage("creo revolved placed directrix scratch", || {
                 placed_section_nurbs(ctx, transform, &directrix)
             })?;
+        let _placed_storage = placed_directrix_owned_storage.1;
+        let placed_directrix = placed_directrix_owned_storage.0;
         let Some(placed_directrix) = placed_directrix else {
             return Ok(None);
         };
@@ -343,17 +353,21 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
         segment.geometry(),
         super::profiles::ProfileGeometry::Nurbs { .. }
     ) {
-        let (sketch, _sketch_storage) = ctx
+        let sketch_owned_storage = ctx
             .with_scoped_storage("creo revolution boundary sketch scratch", || {
                 segment.geometry().to_sketch(ctx)
             })?;
+        let _sketch_storage = sketch_owned_storage.1;
+        let sketch = sketch_owned_storage.0;
         let Some(sketch) = sketch else {
             return Ok(None);
         };
-        let (nurbs, _nurbs_storage) = ctx
+        let nurbs_owned_storage = ctx
             .with_scoped_storage("creo revolution boundary curve scratch", || {
                 oriented_sketch_nurbs_curve(ctx, &sketch, segment.reversed())
             })?;
+        let _nurbs_storage = nurbs_owned_storage.1;
+        let nurbs = nurbs_owned_storage.0;
         let Some(nurbs) = nurbs else {
             return Ok(None);
         };
@@ -392,6 +406,9 @@ pub(in super::super) fn revolution_face_sense(
         &mut crate::lane_refusal::LaneRefusals,
     ),
 ) -> Result<Option<Sense>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (record, refusal) = diagnostics;
 
     macro_rules! require_some {
@@ -408,15 +425,19 @@ pub(in super::super) fn revolution_face_sense(
     );
     let mut nurbs_parameter = None;
     let (point, tangent, pcurve_parameter, u_epsilon) = if is_nurbs {
-        let (geometry, _geometry_storage) = ctx
+        let geometry_owned_storage = ctx
             .with_scoped_storage("creo revolution sense sketch scratch", || {
                 segment.geometry().to_sketch(ctx)
             })?;
+        let _geometry_storage = geometry_owned_storage.1;
+        let geometry = geometry_owned_storage.0;
         let geometry = require_some!(geometry);
-        let (nurbs, _nurbs_storage) = ctx
+        let nurbs_owned_storage = ctx
             .with_scoped_storage("creo revolution sense curve scratch", || {
                 oriented_sketch_nurbs_curve(ctx, &geometry, segment.reversed())
             })?;
+        let _nurbs_storage = nurbs_owned_storage.1;
+        let nurbs = nurbs_owned_storage.0;
         let nurbs = require_some!(nurbs);
         let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(require_some!(
             nurbs_intrinsic_parameter_range(&nurbs)
