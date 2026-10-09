@@ -531,30 +531,33 @@ pub(super) fn project(
         }
         let resolution = global.minimum_resolution_mm();
         if entry.form == 63 {
-            let points = tuple_storage.with_storage(|| {
-                ctx.collect_indexed_vec(positions.len(), "iges copious path points", |index| {
-                    Ok(positions[index].get())
-                })
-            })?;
-            if !points_coincident(points[0], points[points.len() - 1], resolution) {
-                push_copious_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    format_args!(
-                        "simple closed path endpoints disagree beyond the minimum resolution"
-                    ),
-                )?;
-                continue;
-            }
-            if has_forbidden_form_63_duplicate(&points, resolution, ctx)? {
-                let reason = if points.len() == 2 {
-                    "simple closed path has no non-zero segment"
-                } else {
-                    "simple closed path has coincident non-endpoint points"
-                };
-                push_copious_loss(ctx, &mut losses, entry, format_args!("{reason}"))?;
-                continue;
+            {
+                let mut path_storage = ctx.reserve_scoped(0, "iges copious path scratch")?;
+                let points = path_storage.with_storage(|| {
+                    ctx.collect_indexed_vec(positions.len(), "iges copious path points", |index| {
+                        Ok(positions[index].get())
+                    })
+                })?;
+                if !points_coincident(points[0], points[points.len() - 1], resolution) {
+                    push_copious_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!(
+                            "simple closed path endpoints disagree beyond the minimum resolution"
+                        ),
+                    )?;
+                    continue;
+                }
+                if has_forbidden_form_63_duplicate(&points, resolution, ctx)? {
+                    let reason = if points.len() == 2 {
+                        "simple closed path has no non-zero segment"
+                    } else {
+                        "simple closed path has coincident non-endpoint points"
+                    };
+                    push_copious_loss(ctx, &mut losses, entry, format_args!("{reason}"))?;
+                    continue;
+                }
             }
             if has_form_63_self_intersection(&definition_points, ctx)? {
                 push_copious_loss(
@@ -566,6 +569,8 @@ pub(super) fn project(
                 continue;
             }
         }
+        drop(definition_points);
+        drop(tuple_storage);
         let topology_tolerance = if entry.form == 63 && resolution > 0.0 {
             let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(resolution) else {
                 push_copious_loss(
