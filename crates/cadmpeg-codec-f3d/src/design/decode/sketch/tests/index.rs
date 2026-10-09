@@ -87,7 +87,7 @@ fn scoped_record_offsets_retain_nothing() {
     assert_eq!(records.offsets(7), &[0, 11]);
     let mut cache = crate::design::decode::sketch::RecordOffsetCache::new(&ctx).unwrap();
     assert_eq!(
-        cache.get(&ctx, "stream", &bytes).unwrap().offsets(7),
+        cache.get("stream", &bytes).unwrap().offsets(7),
         &[0, 11]
     );
 
@@ -423,3 +423,5 @@ fn native_scope_encoder_preserves_each_iteration_work_refusal() {
         native_scope_scoped(&cadmpeg_test_support::service_decode_context(), name).unwrap();
     assert_eq!(text, "f3d:A%3AB");
 }
+
+mod session;

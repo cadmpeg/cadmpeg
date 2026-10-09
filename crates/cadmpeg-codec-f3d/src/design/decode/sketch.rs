@@ -441,26 +441,28 @@ fn clone_sketch_entity_id_charged(
 
 /// Stream indexes built on first use, keyed by borrowed stream identity and
 /// held under one scoped reservation until the cache is dropped.
-pub(crate) struct RecordOffsetCache<'s, 'ctx> {
+pub(crate) struct RecordOffsetCache<'s, 'ctx, 'arena> {
     indexes: HashMap<&'s str, IndexedRecordOffsets>,
     storage: ScopedReservation<'ctx>,
+    ctx: &'ctx DecodeContext<'arena>,
 }
 
-impl<'s, 'ctx> RecordOffsetCache<'s, 'ctx> {
-    pub(crate) fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+impl<'s, 'ctx, 'arena> RecordOffsetCache<'s, 'ctx, 'arena> {
+    pub(crate) fn new(ctx: &'ctx DecodeContext<'arena>) -> Result<Self, CodecError> {
         Ok(Self {
             indexes: HashMap::new(),
             storage: ctx.reserve_scoped(0, "f3d indexed stream cache")?,
+            ctx,
         })
     }
 
-    /// The index of `stream`, built from `bytes` on first use.
+    /// The index of `stream`, built under the original context on first use.
     pub(in crate::design) fn get(
         &mut self,
-        ctx: &DecodeContext<'_>,
         stream: &'s str,
         bytes: &[u8],
     ) -> Result<&IndexedRecordOffsets, CodecError> {
+        let ctx = self.ctx;
         let indexes = &mut self.indexes;
         self.storage
             .with_storage(move || cached_borrowed_record_offsets(ctx, indexes, stream, bytes))
@@ -4591,14 +4593,16 @@ pub(crate) fn decode_sketch_surfaces(
 
 /// Stream scopes numbered in first-seen order, so the sketch-graph tables key
 /// on fixed-width numbers instead of borrowing record identifiers.
-struct ScopeNumbers<'ctx> {
+struct ScopeNumbers<'ctx, 'arena> {
     numbers: HashMap<String, u32>,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ctx: &'ctx DecodeContext<'arena>,
 }
 
-impl ScopeNumbers<'_> {
+impl ScopeNumbers<'_, '_> {
     /// The number of the stream scope of native record `id`.
-    fn of(&mut self, ctx: &DecodeContext<'_>, id: &str) -> Result<Option<u32>, CodecError> {
+    fn of(&mut self, id: &str) -> Result<Option<u32>, CodecError> {
+        let ctx = self.ctx;
         let Some(scope) = record_streams::record_stream(ctx, id)? else {
             return Ok(None);
         };
@@ -4637,6 +4641,7 @@ pub(crate) fn bind_sketch_graph(
     let mut scopes = ScopeNumbers {
         numbers: HashMap::new(),
         storage: ctx.reserve_scoped(0, "f3d sketch graph scope")?,
+        ctx,
     };
     let mut sketch_owners = HashMap::new();
     for entity in ctx.admit_iter(entities, "scan F3D sketch entities")? {
@@ -4646,7 +4651,7 @@ pub(crate) fn bind_sketch_graph(
         let Ok(suffix) = u32::try_from(entity.entity_id.suffix()) else {
             continue;
         };
-        let Some(scope) = scopes.of(ctx, &entity.id)? else {
+        let Some(scope) = scopes.of(&entity.id)? else {
             continue;
         };
         storage.with_storage(|| {
@@ -4666,7 +4671,7 @@ pub(crate) fn bind_sketch_graph(
         .iter_mut()
         .zip(ctx.admit_iter(&(0..relation_count), "scan F3D sketch relation owners")?)
     {
-        let Some(scope) = scopes.of(ctx, &relation.id)? else {
+        let Some(scope) = scopes.of(&relation.id)? else {
             return Err(crate::design::text::malformed_design(
                 ctx,
                 format_args!(
@@ -4721,7 +4726,7 @@ pub(crate) fn bind_sketch_graph(
     let mut operands = HashMap::new();
     let mut point_scopes = Vec::new();
     for point in ctx.admit_iter(&*points, "scan F3D sketch point operands")? {
-        let scope = scopes.of(ctx, &point.id)?;
+        let scope = scopes.of(&point.id)?;
         ctx.push_scoped_vec(
             &mut storage,
             &mut point_scopes,
@@ -4745,7 +4750,7 @@ pub(crate) fn bind_sketch_graph(
     }
     let mut curve_scopes = Vec::new();
     for curve in ctx.admit_iter(&*curves, "scan F3D sketch curves operands")? {
-        let scope = scopes.of(ctx, &curve.id)?;
+        let scope = scopes.of(&curve.id)?;
         ctx.push_scoped_vec(
             &mut storage,
             &mut curve_scopes,
@@ -4770,7 +4775,7 @@ pub(crate) fn bind_sketch_graph(
     }
     let mut surface_scopes = Vec::new();
     for surface in ctx.admit_iter(&*surfaces, "scan F3D sketch surfaces operands")? {
-        let scope = scopes.of(ctx, &surface.id)?;
+        let scope = scopes.of(&surface.id)?;
         ctx.push_scoped_vec(
             &mut storage,
             &mut surface_scopes,
@@ -4894,7 +4899,7 @@ pub(crate) fn bind_sketch_graph(
         ) else {
             continue;
         };
-        let Some(scope) = scopes.of(ctx, &entity.id)? else {
+        let Some(scope) = scopes.of(&entity.id)? else {
             continue;
         };
         for &record_index in reference_runs::admit_reference_values(
