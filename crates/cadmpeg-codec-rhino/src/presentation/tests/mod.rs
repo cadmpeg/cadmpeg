@@ -1929,3 +1929,5 @@ mod searches;
 
 mod uuid_prefix;
 mod userdata_search;
+
+mod known_searches;
