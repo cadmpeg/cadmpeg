@@ -120,3 +120,159 @@ fn type322_descriptor_and_type_indexes_are_released_for_rejected_record() {
 
     result.unwrap();
 }
+
+const CANDIDATE_ITEMS: usize = 4096;
+const REJECTED_CANDIDATES: usize = 16;
+
+#[derive(Clone, Copy)]
+enum RejectedCandidate {
+    Flow,
+    Assembly,
+    SubfigureMember,
+    SubfigureDepth,
+    NetworkMember,
+    NetworkDepth,
+    NetworkPoint,
+    InstanceDefinition,
+    InstancePoint,
+}
+
+impl RejectedCandidate {
+    fn input(self, sequence: u32) -> (DirectoryEntry, ParameterRecord, &'static str, u64, u64) {
+        let count = i64::try_from(CANDIDATE_ITEMS).unwrap();
+        let member = i64::try_from(std::mem::size_of::<u32>()).unwrap();
+        let item = i64::try_from(std::mem::size_of::<(u32, u32)>()).unwrap();
+        let point = i64::try_from(std::mem::size_of::<Option<u32>>()).unwrap();
+        let (entity_type, form, mut values, reason, first, peak) = match self {
+            Self::Flow => (402, 20, vec![402, 1, count, 0, 0, 0, 0, 0, 0],
+                "flow class counts, flags, typed links, required back pointers, continuation tree, or directory status is invalid", member * count, member * count),
+            Self::Assembly => (184, 0, vec![184, count],
+                "solid-assembly item tuple is invalid", item * count, item * count),
+            Self::SubfigureMember | Self::SubfigureDepth => (308, 0,
+                vec![308, if matches!(self, Self::SubfigureDepth) { -1 } else { 0 }, 0, count],
+                "subfigure depth, member count, or member pointer is invalid", member * count, member * count),
+            Self::NetworkMember | Self::NetworkDepth => (320, 0,
+                vec![320, if matches!(self, Self::NetworkDepth) { -1 } else { 0 }, 0, count],
+                "network definition header or member list is invalid", member * count, member * count),
+            Self::NetworkPoint => (320, 0, vec![320, 0, 0, 0, 0, 0, 0, count + 1],
+                "network definition connect-point count is invalid", 4 * point, 3 * count * point / 2),
+            Self::InstanceDefinition | Self::InstancePoint => (420, 0,
+                vec![420, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, count + i64::from(matches!(self, Self::InstancePoint))],
+                "network instance definition or count is invalid", 4 * point, 3 * count * point / 2),
+        };
+        let pointer = if matches!(self, Self::SubfigureDepth | Self::NetworkDepth) {
+            i64::from(sequence)
+        } else { 0 };
+        values.extend(std::iter::repeat_n(pointer, CANDIDATE_ITEMS));
+        if matches!(self, Self::Assembly) {
+            values.extend(std::iter::repeat_n(0, CANDIDATE_ITEMS));
+        }
+        if matches!(self, Self::NetworkPoint | Self::InstancePoint) { values.push(2); }
+        let mut entry = directory_entry(entity_type, form);
+        entry.sequence = sequence;
+        let parameter_end = values.len();
+        let mut input = record(values.into_iter().map(TokenValue::Integer).collect(), parameter_end);
+        input.directory_sequence = sequence;
+        (entry, input, reason, u64::try_from(first).unwrap(), u64::try_from(peak).unwrap())
+    }
+}
+
+fn assert_rejected_candidate_storage(candidate: RejectedCandidate) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, ResourceDimension};
+    use cadmpeg_ir::report::loss::LossNote;
+    let bytes = crate::test_support::test_owned::owned_test_file(&[]);
+    let global = crate::test_support::with_service_context(&bytes, |setup| {
+        let scan = crate::card::scan_with_context(&bytes, setup).unwrap();
+        let (global, _, _) = crate::global::parse(&scan, setup).unwrap();
+        global.length_context().unwrap()
+    });
+    let fixtures: Vec<_> = (0..REJECTED_CANDIDATES).map(|i| {
+        candidate.input(u32::try_from(2 * i + 1).unwrap())
+    }).collect();
+    let directory: Vec<_> = fixtures.iter().map(|(entry, _, _, _, _)| entry.clone()).collect();
+    let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect();
+    let records = fixtures.iter().map(|(_, record, _, _, _)| (record.directory_sequence, record)).collect();
+    let (_, _, reason, first, peak) = fixtures[0];
+    // Exact list capacities, or the largest old/new overlap of doubling a
+    // 4096-element optional-pointer vector, plus all surviving loss slots.
+    // Sixteen losses use capacities 4, 8, 16; slot growth overlap is at most
+    // 24 slots and is below this candidate-plus-16-slot bound.
+    let slots = u64::try_from(REJECTED_CANDIDATES * std::mem::size_of::<LossNote>()).unwrap();
+    assert!(peak > slots);
+    for cap in [first - 1, peak + slots] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let mut sequences = super::super::super::geometry::SourceSequences::new(&ctx).unwrap();
+        let result = super::super::project(&mut ir, &directory, (&entries, &records),
+            &BTreeMap::new(), &global, &ctx, &mut sequences);
+        if cap == first - 1 {
+            let first_refusal = match result.err().expect("expected candidate refusal") {
+                CodecError::ResourceLimit(first) => first,
+                _ => panic!("expected the first candidate allocation to refuse"),
+            };
+            assert_eq!(first_refusal.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!((first_refusal.limit, first_refusal.used, first_refusal.additional), (cap, 0, first));
+            drop(sequences);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first_refusal));
+        } else {
+            let (outcome, rejections) = result.unwrap();
+            assert!(outcome.decoded.is_empty());
+            assert_eq!(outcome.losses.len(), REJECTED_CANDIDATES);
+            for loss in &outcome.losses { assert!(loss.message.ends_with(reason)); }
+            if matches!(candidate, RejectedCandidate::InstanceDefinition | RejectedCandidate::InstancePoint) {
+                assert_eq!(rejections.len(), REJECTED_CANDIDATES);
+                assert!(rejections.values().all(|value| *value == super::super::PlacementRejection::InvalidDefinition));
+            } else { assert!(rejections.is_empty()); }
+            assert_eq!(ir, cadmpeg_ir::CadIr::empty());
+            // Candidate backing is gone; only the returned loss slots remain.
+            let released = ctx.reserve_scoped(cap - slots, "test discarded structure candidate backing").unwrap();
+            drop(released);
+            drop(outcome);
+            drop(rejections);
+            drop(sequences);
+            let released = ctx.reserve_scoped(cap, "test destroyed structure outcome backing").unwrap();
+            drop(released);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn rejected_flow_candidates_release_pointer_storage_per_attempt() {
+    assert_rejected_candidate_storage(RejectedCandidate::Flow);
+}
+#[test]
+fn rejected_assembly_candidates_release_item_storage_per_attempt() {
+    assert_rejected_candidate_storage(RejectedCandidate::Assembly);
+}
+#[test]
+fn rejected_subfigure_members_release_storage_per_attempt() {
+    assert_rejected_candidate_storage(RejectedCandidate::SubfigureMember);
+}
+#[test]
+fn rejected_subfigure_depth_releases_valid_member_storage_per_attempt() {
+    assert_rejected_candidate_storage(RejectedCandidate::SubfigureDepth);
+}
+#[test]
+fn rejected_network_members_release_storage_per_attempt() {
+    assert_rejected_candidate_storage(RejectedCandidate::NetworkMember);
+}
+#[test]
+fn rejected_network_depth_releases_valid_member_storage_per_attempt() {
+    assert_rejected_candidate_storage(RejectedCandidate::NetworkDepth);
+}
+#[test]
+fn rejected_network_points_release_storage_per_attempt() {
+    assert_rejected_candidate_storage(RejectedCandidate::NetworkPoint);
+}
+#[test]
+fn rejected_instance_definition_releases_valid_point_storage_per_attempt() {
+    assert_rejected_candidate_storage(RejectedCandidate::InstanceDefinition);
+}
+#[test]
+fn rejected_instance_points_release_storage_per_attempt() {
+    assert_rejected_candidate_storage(RejectedCandidate::InstancePoint);
+}

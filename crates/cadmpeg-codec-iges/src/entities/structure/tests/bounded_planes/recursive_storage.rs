@@ -178,3 +178,54 @@ fn bounded_plane_nonsimple_child_preserves_seeded_ancestor_storage() {
     drop(released);
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn plane_boundary_destroys_active_path_before_retaining_proof_cache() {
+    let bytes = bounded_plane_entity_file(GLOBAL_V5_0, 100, "100,0,0,0,1,0,1,0;");
+    let decoded = decode(bytes.clone());
+    let scan = crate::test_support::scan(&bytes).unwrap();
+    let (directory, quarantined) = crate::test_support::with_service_context(&bytes, |setup| {
+        crate::directory::parse(&scan, crate::global::GlobalTable::V5_0, setup)
+    }).unwrap();
+    assert!(quarantined.is_empty());
+    let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect();
+    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    type Key = super::super::super::PlaneBoundaryKey;
+    type Value = &'static cadmpeg_ir::topology::Edge;
+    let cache = u64::try_from(11 * (std::mem::size_of::<Key>() + std::mem::size_of::<Value>())
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<Key>().max(std::mem::align_of::<Value>())
+            .max(std::mem::align_of::<usize>())).unwrap();
+    for cap in [cache - 1, cache] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut proofs = super::super::super::PlaneBoundaryProofs {
+            proven: std::collections::BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "test boundary proof cache storage").unwrap(),
+        };
+        let result = super::super::super::plane_boundary_edge(&index,
+            (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+            3, &entries, 0.001, &ctx, &mut proofs);
+        if cap == cache {
+            let edge = result.unwrap_or_else(|_| panic!("expected unchanged closed circle proof"));
+            assert_eq!(proofs.proven.len(), 1);
+            assert!(std::ptr::eq(edge, decoded.ir().model.edges.first().unwrap()));
+            drop(proofs);
+            let released = ctx.reserve_scoped(cap, "test destroyed complete boundary proof cache").unwrap();
+            drop(released);
+            ctx.finish_session().unwrap();
+        } else {
+            let Err(super::super::super::PlaneBoundaryError::Resource(CodecError::ResourceLimit(first))) = result
+            else { panic!("expected proof node allocation to refuse after active path destruction") };
+            assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(first.operation, "iges plane boundary proof cache");
+            assert_eq!((first.limit, first.used, first.additional), (cap, 0, cache));
+            assert!(proofs.proven.is_empty());
+            drop(proofs);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+}
