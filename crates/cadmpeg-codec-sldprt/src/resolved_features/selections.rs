@@ -91,14 +91,18 @@ pub(super) fn compact_body_selections(
     lane: &FeatureInputLane,
 ) -> Result<Vec<FeatureInputBodySelection>, CodecError> {
     const OPERATION: &str = "decode SLDPRT compact body selections";
-    let (objects, _objects_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let _objects_storage;
+    let objects;
+    (objects, _objects_storage) = ctx.with_scoped_storage(OPERATION, || {
         selection_objects(ctx, histories, lane, OPERATION)
     })?;
     let lane_key = ctx
         .rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
         .map_or(lane.id.as_str(), |(_, key)| key);
     let state_token = compact_body_state_token(ctx, lane)?;
-    let (move_data_offsets, _move_data_storage) =
+    let _move_data_storage;
+    let move_data_offsets;
+    (move_data_offsets, _move_data_storage) =
         super::profiles::class_offsets(ctx, lane, "moMoveCopyBodyData_c", OPERATION)?;
     let mut result = Vec::new();
     for (object_index, &(name, feature, _)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
@@ -364,7 +368,9 @@ pub(crate) fn compact_edge_reference_list_for_feature(
     let Some(count) = count else {
         return Ok(None);
     };
-    let (references, storage) = ctx
+    let storage;
+    let references;
+    (references, storage) = ctx
         .with_scoped_storage("decode SLDPRT variable fillet references", || {
             compact_component_reference_list(ctx, payload, offset, false)
         })?;
@@ -382,7 +388,9 @@ pub(super) fn compact_edge_selections(
     lane: &FeatureInputLane,
 ) -> Result<Vec<FeatureInputEdgeSelection>, CodecError> {
     const OPERATION: &str = "decode SLDPRT compact edge selections";
-    let (objects, _objects_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let _objects_storage;
+    let objects;
+    (objects, _objects_storage) = ctx.with_scoped_storage(OPERATION, || {
         selection_objects(ctx, histories, lane, OPERATION)
     })?;
     let lane_key = ctx
@@ -431,7 +439,9 @@ pub(super) fn compact_edge_selections(
         let direct_child = compact_edge_class
             .and_then(|class| usize::try_from(class.offset).ok())
             .filter(|offset| (start..end).contains(offset));
-        let (selections, _selections_storage) =
+        let _selections_storage;
+        let selections;
+        (selections, _selections_storage) =
             ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
                 let mut selections = Vec::new();
                 if let Some(child_start) = direct_child {
@@ -468,7 +478,9 @@ pub(super) fn compact_edge_selections(
         let mut feature_selections_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut feature_selections = Vec::new();
         for (offset, local_edge_ids) in ctx.admit_iter(selections, OPERATION)? {
-            let (selection, storage) =
+            let storage;
+            let selection;
+            (selection, storage) =
                 ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
                     let references = compact_edge_reference_list_for_feature(
                         ctx,
@@ -528,10 +540,13 @@ pub(super) fn compact_edge_selections(
                 ctx.push_vec(&mut feature_selections, (selection, storage), OPERATION)
             })?;
         }
-        for (mut selection, storage) in ctx.admit_iter(
+        for owned_selection in ctx.admit_iter(
             input_owned_edge_selections(ctx, feature_selections)?,
             OPERATION,
         )? {
+            let storage;
+            let mut selection;
+            (selection, storage) = owned_selection;
             selection.ordinal = u32::try_from(result.len()).map_err(|_| {
                 ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(result.len()))
             })?;
@@ -750,7 +765,9 @@ pub(super) fn compact_surface_selections(
     let diameter_index = CosmeticDiameterIndex::new(ctx, lane)?;
     let face_classes = &operation_classes.faces;
     let reference_plane_classes = ClassObjects::new(ctx, lane, "moFaceRefPlnData_c")?;
-    let (objects, _objects_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let _objects_storage;
+    let objects;
+    (objects, _objects_storage) = ctx.with_scoped_storage(OPERATION, || {
         selection_objects(ctx, histories, lane, OPERATION)
     })?;
     let lane_key = ctx
@@ -788,7 +805,9 @@ pub(super) fn compact_surface_selections(
         let end = next_object
             .and_then(|(next, _, _)| usize::try_from(next.offset).ok())
             .unwrap_or(lane.native_payload.len());
-        let (candidates, _candidate_storage) =
+        let _candidate_storage;
+        let candidates;
+        (candidates, _candidate_storage) =
             ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
                 let candidates = match kind {
                     NativeClassKind::Thicken => {
@@ -1581,7 +1600,9 @@ fn cosmetic_thread_cylinder_references(
     diameter_index: &CosmeticDiameterIndex<'_, '_>,
 ) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
     const OPERATION: &str = "decode SLDPRT cosmetic cylinder references";
-    let (mut offsets, scan_storage) = cosmetic_thread_cylinder_offsets(
+    let scan_storage;
+    let mut offsets;
+    (offsets, scan_storage) = cosmetic_thread_cylinder_offsets(
         ctx,
         &lane.native_payload,
         object_start..object_end,
@@ -1849,7 +1870,9 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
     diameter_index: &CosmeticDiameterIndex<'_, '_>,
 ) -> Result<Vec<CylinderMarkerReference>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "collect SLDPRT cosmetic thread cylinder markers";
-    let (mut markers, scan_storage) = cosmetic_thread_cylinder_offsets(
+    let scan_storage;
+    let mut markers;
+    (markers, scan_storage) = cosmetic_thread_cylinder_offsets(
         ctx,
         &lane.native_payload,
         object_start..object_end,
@@ -2060,7 +2083,9 @@ fn component_face_reference_at_impl(
         let Some(marker) = body_offset.checked_add(*relative) else {
             continue;
         };
-        let (components, storage) = ctx
+        let storage;
+        let components;
+        (components, storage) = ctx
             .with_scoped_storage("decode SLDPRT component face path", || {
                 compact_surface_reference_at(ctx, payload, marker)
             })?;
@@ -2077,7 +2102,11 @@ fn component_face_reference_at_impl(
         candidate = Some((marker, components, storage));
     }
     match candidate {
-        Some((marker, components, storage)) => {
+        Some(owned) => {
+            let storage;
+            let components;
+            let marker;
+            (marker, components, storage) = owned;
             storage.commit()?;
             Ok(Some((marker, components)))
         }
@@ -2138,7 +2167,9 @@ pub(super) fn component_face_reference_in_record(
             {
                 return Ok(false);
             }
-            let (reference, storage) = ctx.with_scoped_storage(OPERATION, || {
+            let storage;
+            let reference;
+            (reference, storage) = ctx.with_scoped_storage(OPERATION, || {
                 component_face_reference_at(ctx, payload, offset + header_length)
             })?;
             let Some(reference) = reference else {
@@ -2157,7 +2188,10 @@ pub(super) fn component_face_reference_in_record(
         return Ok(None);
     }
     match candidate {
-        Some((reference, storage)) => {
+        Some(owned) => {
+            let storage;
+            let reference;
+            (reference, storage) = owned;
             storage.commit()?;
             Ok(Some(reference))
         }
@@ -2170,7 +2204,9 @@ fn compact_sketch_surface_component_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
-    let (result, storage) = ctx.with_scoped_storage(
+    let storage;
+    let result;
+    (result, storage) = ctx.with_scoped_storage(
         "decode SLDPRT sketch surface path",
         || -> Result<_, CodecError> {
             let header = (|| {
@@ -2239,7 +2275,9 @@ fn compact_surface_selection_at(
     payload: &[u8],
     marker: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
-    let (result, storage) = ctx.with_scoped_storage(
+    let storage;
+    let result;
+    (result, storage) = ctx.with_scoped_storage(
         "decode SLDPRT compact surface path",
         || -> Result<_, CodecError> {
             const OPERATION: &str = "decode SLDPRT compact surface path";
@@ -2312,7 +2350,9 @@ fn flatten_surface_references(
     counted: bool,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
     const OPERATION: &str = "flatten SLDPRT surface references";
-    let (references, _references_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let _references_storage;
+    let references;
+    (references, _references_storage) = ctx.with_scoped_storage(OPERATION, || {
         if counted {
             compact_component_reference_list_at(ctx, payload, marker)
         } else {
@@ -2368,7 +2408,9 @@ pub(crate) fn surface_reference_matches_at(
 ) -> Result<bool, CodecError> {
     const OPERATION: &str = "compare SLDPRT surface reference candidates";
     for kind in 0..8 {
-        let (components, _storage) = ctx.with_scoped_storage(OPERATION, || match kind {
+        let _storage;
+        let components;
+        (components, _storage) = ctx.with_scoped_storage(OPERATION, || match kind {
             0 => compact_surface_selection_at(ctx, payload, marker),
             1 => component_vector_path_at(
                 ctx,
@@ -2516,7 +2558,9 @@ pub(super) fn component_vector_path_at(
     let Some(cell_count) = count else {
         return Ok(None);
     };
-    let (exact, exact_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let exact_storage;
+    let exact;
+    (exact, exact_storage) = ctx.with_scoped_storage(OPERATION, || {
         compact_mixed_component_path(
             ctx,
             payload,
@@ -2544,7 +2588,9 @@ pub(super) fn component_vector_path_at(
         let Some(count) = count else {
             continue;
         };
-        let (candidate, storage) = ctx.with_scoped_storage(OPERATION, || {
+        let storage;
+        let candidate;
+        (candidate, storage) = ctx.with_scoped_storage(OPERATION, || {
             if heterogeneous {
                 compact_heterogeneous_component_path(
                     ctx,
@@ -2579,7 +2625,10 @@ pub(super) fn component_vector_path_at(
         }
     }
     match unique {
-        Some(((components, _), storage)) => {
+        Some(owned) => {
+            let storage;
+            let components;
+            ((components, _), storage) = owned;
             storage.commit()?;
             Ok(Some(components))
         }
@@ -2664,7 +2713,9 @@ pub(super) fn compact_mixed_component_path(
     root_separators: bool,
     reserve_operation: &'static str,
 ) -> Result<Option<(Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
-    let (result, storage) = ctx.with_scoped_storage(
+    let storage;
+    let result;
+    (result, storage) = ctx.with_scoped_storage(
         "decode SLDPRT mixed component path",
         || -> Result<_, CodecError> {
             const OPERATION: &str = "decode SLDPRT mixed component path";
@@ -2734,7 +2785,9 @@ fn counted_surface_component_path_at(
         let Some(count) = count else {
             continue;
         };
-        let (candidate, storage) = ctx.with_scoped_storage(OPERATION, || {
+        let storage;
+        let candidate;
+        (candidate, storage) = ctx.with_scoped_storage(OPERATION, || {
             compact_mixed_component_path(
                 ctx,
                 payload,
@@ -2759,7 +2812,10 @@ fn counted_surface_component_path_at(
         }
     }
     match unique {
-        Some(((components, _), storage)) => {
+        Some(owned) => {
+            let storage;
+            let components;
+            ((components, _), storage) = owned;
             storage.commit()?;
             Ok(Some(components))
         }
@@ -2875,7 +2931,9 @@ fn inline_mirror_surface_paths(
             component_storage
                 .with_storage(|| ctx.push_vec(&mut components, component, OPERATION))?;
         }
-        let (key, key_storage) = ctx.with_scoped_storage(OPERATION, || {
+        let key_storage;
+        let key;
+        (key, key_storage) = ctx.with_scoped_storage(OPERATION, || {
             ctx.collect_vec(
                 components.iter().map(|component| {
                     (
@@ -2958,7 +3016,9 @@ fn inline_surface_reference_at(
     payload: &[u8],
     offset: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
-    let (result, storage) = ctx.with_scoped_storage(
+    let storage;
+    let result;
+    (result, storage) = ctx.with_scoped_storage(
         "decode SLDPRT inline surface reference",
         || -> Result<_, CodecError> {
             const OPERATION: &str = "decode SLDPRT inline surface reference";
@@ -3105,7 +3165,9 @@ pub(crate) fn generated_surface_identities(
             component_storage
                 .with_storage(|| ctx.push_vec(&mut components, component, OPERATION))?;
         }
-        let (key, key_storage) = ctx.with_scoped_storage(OPERATION, || {
+        let key_storage;
+        let key;
+        (key, key_storage) = ctx.with_scoped_storage(OPERATION, || {
             ctx.collect_vec(
                 components.iter().map(|component| {
                     (
@@ -3217,7 +3279,9 @@ pub(crate) fn compact_edge_selection_at(
     let Some(count) = count else {
         return Ok(None);
     };
-    let (references, _references_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let _references_storage;
+    let references;
+    (references, _references_storage) = ctx.with_scoped_storage(OPERATION, || {
         compact_component_reference_list_at(ctx, payload, marker)
     })?;
     if let Some(references) = references {
@@ -3231,14 +3295,18 @@ pub(crate) fn compact_edge_selection_at(
     }
     let mut candidate = None;
     let mut consider = |ids: Vec<u32>, storage| {
+        let candidate_storage = storage;
+        let candidate_ids = ids;
         if let Some((candidate, _)) = &candidate {
-            ctx.equal(candidate, &ids, OPERATION)
+            ctx.equal(candidate, &candidate_ids, OPERATION)
         } else {
-            candidate = Some((ids, storage));
+            candidate = Some((candidate_ids, candidate_storage));
             Ok(true)
         }
     };
-    let (homogeneous, homogeneous_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let homogeneous_storage;
+    let homogeneous;
+    (homogeneous, homogeneous_storage) = ctx.with_scoped_storage(OPERATION, || {
         compact_homogeneous_edge_ids(ctx, payload, marker + 18, count)
     })?;
     if let Some(ids) = homogeneous {
@@ -3246,12 +3314,17 @@ pub(crate) fn compact_edge_selection_at(
             return Ok(None);
         }
     }
-    let (paths, _paths_storage) =
+    let _paths_storage;
+    let paths;
+    (paths, _paths_storage) =
         compact_edge_component_path_candidates(ctx, payload, marker, count)?;
-    for (ComponentPathReference(components, _), _components_storage) in
-        ctx.admit_iter(paths, OPERATION)?
-    {
-        let (ids, ids_storage) =
+    for owned_path in ctx.admit_iter(paths, OPERATION)? {
+        let _components_storage;
+        let components;
+        (ComponentPathReference(components, _), _components_storage) = owned_path;
+        let ids_storage;
+        let ids;
+        (ids, ids_storage) =
             ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
                 let mut ids = Vec::new();
                 for component in ctx.admit_iter(components, OPERATION)? {
@@ -3265,7 +3338,9 @@ pub(crate) fn compact_edge_selection_at(
             return Ok(None);
         }
     }
-    let (short, short_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let short_storage;
+    let short;
+    (short, short_storage) = ctx.with_scoped_storage(OPERATION, || {
         compact_u16_edge_ids(ctx, payload, marker + 18, count)
     })?;
     if let Some(ids) = short {
@@ -3274,7 +3349,10 @@ pub(crate) fn compact_edge_selection_at(
         }
     }
     match candidate {
-        Some((ids, storage)) => {
+        Some(owned) => {
+            let storage;
+            let ids;
+            (ids, storage) = owned;
             storage.commit()?;
             Ok(Some(ids))
         }
@@ -3304,7 +3382,9 @@ pub(crate) fn compact_edge_component_path_at(
     let Some(count) = count else {
         return Ok(None);
     };
-    let (references, _references_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let _references_storage;
+    let references;
+    (references, _references_storage) = ctx.with_scoped_storage(OPERATION, || {
         compact_component_reference_list_at(ctx, payload, marker)
     })?;
     if let Some(references) = references {
@@ -3339,7 +3419,9 @@ fn compact_component_reference_list(
     marker: usize,
     require_distinct_framing: bool,
 ) -> Result<Option<Vec<Vec<FeatureInputComponentPathEntry>>>, CodecError> {
-    let (result, storage) =
+    let storage;
+    let result;
+    (result, storage) =
         ctx.with_scoped_storage(
             "decode SLDPRT component reference list",
             || -> Result<_, CodecError> {
@@ -3491,7 +3573,9 @@ pub(super) fn variable_fillet_control_references(
         {
             continue;
         }
-        let (references, references_storage) = ctx.with_scoped_storage(OPERATION, || {
+        let references_storage;
+        let references;
+        (references, references_storage) = ctx.with_scoped_storage(OPERATION, || {
             compact_component_reference_list(ctx, &lane.native_payload, marker, false)
         })?;
         let Some(references) = references else {
@@ -3519,7 +3603,11 @@ pub(super) fn variable_fillet_control_references(
     let mut result_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut result = Vec::new();
     let mut start = control_start;
-    for (marker, references, references_storage) in ctx.admit_iter(controls, OPERATION)? {
+    for owned_control in ctx.admit_iter(controls, OPERATION)? {
+        let references_storage;
+        let references;
+        let marker;
+        (marker, references, references_storage) = owned_control;
         let first = ctx.partition_point(
             &names,
             |name| Ok(name.offset <= u64_from_index(start)),
@@ -3670,14 +3758,19 @@ fn compact_edge_component_path(
     marker: usize,
     count: usize,
 ) -> Result<Option<ComponentPathReference>, CodecError> {
-    let (candidates, _container_storage) =
+    let _container_storage;
+    let candidates;
+    (candidates, _container_storage) =
         compact_edge_component_path_candidates(ctx, payload, marker, count)?;
     if candidates.len() != 1 {
         return Ok(None);
     }
-    let Some((candidate, storage)) = candidates.into_iter().next() else {
+    let Some(owned) = candidates.into_iter().next() else {
         return Ok(None);
     };
+    let storage;
+    let candidate;
+    (candidate, storage) = owned;
     storage.commit()?;
     Ok(Some(candidate))
 }
@@ -3696,10 +3789,12 @@ fn compact_edge_component_path_candidates<'ctx>(
 > {
     const OPERATION: &str = "decode SLDPRT edge path candidates";
     let component_paths = |entry_count| -> Result<_, CodecError> {
-        let mut distinct = Vec::new();
         let mut container_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut distinct = Vec::new();
         for kind in 0..3 {
-            let (candidate, storage) = ctx.with_scoped_storage(OPERATION, || match kind {
+            let storage;
+            let candidate;
+            (candidate, storage) = ctx.with_scoped_storage(OPERATION, || match kind {
                 0 => compact_wide_component_path(
                     ctx,
                     payload,
@@ -3736,8 +3831,14 @@ fn compact_edge_component_path_candidates<'ctx>(
     let mut intermediate_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut terminal_paths = Vec::new();
     if count > 1 {
-        let (paths, _paths_storage) = component_paths(count - 1)?;
-        for (components, end, storage) in ctx.admit_iter(paths, OPERATION)? {
+        let _paths_storage;
+        let paths;
+        (paths, _paths_storage) = component_paths(count - 1)?;
+        for owned_path in ctx.admit_iter(paths, OPERATION)? {
+            let storage;
+            let components;
+            let end;
+            (components, end, storage) = owned_path;
             if let Some(source) = edge_terminal_source_at(payload, end) {
                 intermediate_storage.with_storage(|| {
                     ctx.push_vec(
@@ -3749,7 +3850,9 @@ fn compact_edge_component_path_candidates<'ctx>(
             }
         }
     }
-    let (mut full_paths, _full_storage) = component_paths(count)?;
+    let _full_storage;
+    let mut full_paths;
+    (full_paths, _full_storage) = component_paths(count)?;
     ctx.retain_vec(
         &mut full_paths,
         |(components, end, _)| {
@@ -3765,9 +3868,9 @@ fn compact_edge_component_path_candidates<'ctx>(
         },
         OPERATION,
     )?;
-    let mut candidates = Vec::new();
     let mut candidates_storage = ctx.reserve_scoped(0, OPERATION)?;
-    for (candidate, storage) in ctx
+    let mut candidates = Vec::new();
+    for owned_candidate in ctx
         .admit_iter(terminal_paths, OPERATION)?
         .map(|(components, _, source, storage)| {
             (ComponentPathReference(components, Some(source)), storage)
@@ -3779,6 +3882,9 @@ fn compact_edge_component_path_candidates<'ctx>(
                 }),
         )
     {
+        let storage;
+        let candidate;
+        (candidate, storage) = owned_candidate;
         if !ctx.any_by(
             &candidates,
             |(existing, _): &(ComponentPathReference, ScopedReservation<'_>)| {
@@ -3828,13 +3934,17 @@ pub(crate) fn compact_edge_owner_feature_at(
     let Some(count) = count else {
         return Ok(None);
     };
-    let (reference_list, _reference_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let _reference_storage;
+    let reference_list;
+    (reference_list, _reference_storage) = ctx.with_scoped_storage(OPERATION, || {
         compact_component_reference_list_at(ctx, payload, marker)
     })?;
     let owner_source = if reference_list.is_some() {
         None
     } else {
-        let (path, _path_storage) = ctx.with_scoped_storage(OPERATION, || {
+        let _path_storage;
+        let path;
+        (path, _path_storage) = ctx.with_scoped_storage(OPERATION, || {
             compact_edge_component_path(ctx, payload, marker, count)
         })?;
         let Some(ComponentPathReference(_, owner)) = path else {
@@ -3901,7 +4011,9 @@ fn compact_homogeneous_edge_ids(
     mut cursor: usize,
     count: usize,
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    let (result, storage) = ctx.with_scoped_storage(
+    let storage;
+    let result;
+    (result, storage) = ctx.with_scoped_storage(
         "decode SLDPRT homogeneous edge identities",
         || -> Result<_, CodecError> {
             const OPERATION: &str = "decode SLDPRT homogeneous edge identities";
@@ -4015,7 +4127,9 @@ fn compact_component_path_with_layout(
     wide: bool,
     reserve_operation: &'static str,
 ) -> Result<Option<(Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
-    let (result, storage) = ctx.with_scoped_storage(
+    let storage;
+    let result;
+    (result, storage) = ctx.with_scoped_storage(
         "decode SLDPRT component path layout",
         || -> Result<_, CodecError> {
             const OPERATION: &str = "decode SLDPRT component path layout";
@@ -4117,7 +4231,9 @@ fn compact_sparse_component_path(
     cursor: usize,
     count: usize,
 ) -> Result<Option<(Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
-    let (result, storage) = ctx.with_scoped_storage(
+    let storage;
+    let result;
+    (result, storage) = ctx.with_scoped_storage(
         "decode SLDPRT sparse component path",
         || -> Result<_, CodecError> {
             fn entry_prefix(payload: &[u8], offset: usize) -> Option<(u16, [u8; 12])> {
@@ -4227,7 +4343,9 @@ fn compact_u16_edge_ids(
     cursor: usize,
     count: usize,
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    let (result, storage) = ctx.with_scoped_storage(
+    let storage;
+    let result;
+    (result, storage) = ctx.with_scoped_storage(
         "decode SLDPRT short edge identities",
         || -> Result<_, CodecError> {
             const OPERATION: &str = "decode SLDPRT short edge identities";
@@ -4514,7 +4632,9 @@ pub(super) fn component_reference_curve_path_at(
             }
             Ok(Some((components, cursor)))
         };
-    let (exact, exact_storage) = ctx.with_scoped_storage(OPERATION, || parse(count))?;
+    let exact_storage;
+    let exact;
+    (exact, exact_storage) = ctx.with_scoped_storage(OPERATION, || parse(count))?;
     if let Some((components, _)) = exact {
         exact_storage.commit()?;
         return Ok(Some(components));
@@ -4523,7 +4643,9 @@ pub(super) fn component_reference_curve_path_at(
     if count <= 1 {
         return Ok(None);
     }
-    let (shorter, shorter_storage) = ctx.with_scoped_storage(OPERATION, || parse(count - 1))?;
+    let shorter_storage;
+    let shorter;
+    (shorter, shorter_storage) = ctx.with_scoped_storage(OPERATION, || parse(count - 1))?;
     let Some((components, end)) = shorter else {
         return Ok(None);
     };
