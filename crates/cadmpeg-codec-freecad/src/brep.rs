@@ -2062,14 +2062,19 @@ pub(crate) struct NestedCurve2d {
 }
 
 impl NestedCurve2d {
-    /// Admits `curve` as the basis of one more inline record.
-    pub(crate) fn try_new(curve: TextCurve2d) -> Result<Self, String> {
+    fn checked_depth(curve: &TextCurve2d) -> Result<usize, String> {
         let depth = curve.nesting_depth() + 1;
         if depth > MAX_GEOMETRY_NESTING_DEPTH {
             return Err(format!(
                 "parameter-curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
             ));
         }
+        Ok(depth)
+    }
+
+    /// Admits `curve` as the basis of one more inline record.
+    pub(crate) fn try_new(curve: TextCurve2d) -> Result<Self, String> {
+        let depth = Self::checked_depth(&curve)?;
         Ok(Self {
             curve: Box::new(curve),
             depth,
@@ -2086,7 +2091,8 @@ impl TryFrom<Box<TextCurve2d>> for NestedCurve2d {
     type Error = String;
 
     fn try_from(curve: Box<TextCurve2d>) -> Result<Self, Self::Error> {
-        Self::try_new(*curve)
+        let depth = Self::checked_depth(&curve)?;
+        Ok(Self { curve, depth })
     }
 }
 
@@ -2192,14 +2198,19 @@ pub(crate) struct NestedCurve {
 }
 
 impl NestedCurve {
-    /// Admits `curve` as the basis or directrix of one more inline record.
-    pub(crate) fn try_new(curve: TextCurve) -> Result<Self, String> {
+    fn checked_depth(curve: &TextCurve) -> Result<usize, String> {
         let depth = curve.nesting_depth() + 1;
         if depth > MAX_GEOMETRY_NESTING_DEPTH {
             return Err(format!(
                 "3D curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
             ));
         }
+        Ok(depth)
+    }
+
+    /// Admits `curve` as the basis or directrix of one more inline record.
+    pub(crate) fn try_new(curve: TextCurve) -> Result<Self, String> {
+        let depth = Self::checked_depth(&curve)?;
         Ok(Self {
             curve: Box::new(curve),
             depth,
@@ -2216,7 +2227,8 @@ impl TryFrom<Box<TextCurve>> for NestedCurve {
     type Error = String;
 
     fn try_from(curve: Box<TextCurve>) -> Result<Self, Self::Error> {
-        Self::try_new(*curve)
+        let depth = Self::checked_depth(&curve)?;
+        Ok(Self { curve, depth })
     }
 }
 
@@ -2323,14 +2335,19 @@ pub(crate) struct NestedSurface {
 }
 
 impl NestedSurface {
-    /// Admits `surface` as the basis of one more inline record.
-    pub(crate) fn try_new(surface: TextSurface) -> Result<Self, String> {
+    fn checked_depth(surface: &TextSurface) -> Result<usize, String> {
         let depth = surface.nesting_depth() + 1;
         if depth > MAX_GEOMETRY_NESTING_DEPTH {
             return Err(format!(
                 "surface nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
             ));
         }
+        Ok(depth)
+    }
+
+    /// Admits `surface` as the basis of one more inline record.
+    pub(crate) fn try_new(surface: TextSurface) -> Result<Self, String> {
+        let depth = Self::checked_depth(&surface)?;
         Ok(Self {
             surface: Box::new(surface),
             depth,
@@ -2347,7 +2364,8 @@ impl TryFrom<Box<TextSurface>> for NestedSurface {
     type Error = String;
 
     fn try_from(surface: Box<TextSurface>) -> Result<Self, Self::Error> {
-        Self::try_new(*surface)
+        let depth = Self::checked_depth(&surface)?;
+        Ok(Self { surface, depth })
     }
 }
 
