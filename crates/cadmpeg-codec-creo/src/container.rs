@@ -3804,6 +3804,8 @@ pub(crate) fn scan_bytes<'a>(
         )
     })?;
     let loop_arrays = loop_array_scan(ctx, &loop_array_sections)?;
+    drop(loop_array_sections);
+    drop(loop_selection_storage);
     let mut nonvisible_surface_rows = surface_rows(ctx, &nonvisible_geometry_sections)?;
     ctx.reserve_vec(
         &mut nonvisible_surface_rows,
@@ -3965,6 +3967,9 @@ pub(crate) fn scan_bytes<'a>(
     let fc05_cylinder_cap_pairs =
         curve::fc05_cylinder_cap_pairs(ctx, &fc05_circles, &curve_topology_rows, &surface_rows)?;
     let prototype_pcurves = prototype_pcurves(ctx, &model_geometry_sections)?;
+    drop(model_geometry_sections);
+    drop(nonvisible_geometry_sections);
+    drop(selection_storage);
     let bound_prototype_pcurves =
         curve::bind_prototype_pcurves(ctx, &prototype_pcurves, &curve_prototype_topology)?;
     let (half_edges, loops) = topology::build(ctx, &curve_topology_rows)?;
