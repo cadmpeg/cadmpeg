@@ -32,12 +32,8 @@ fn pcurve_geometry_refusal(collection_limit: u64, depth_limit: u64) -> CodecErro
     policy.limits.max_recursion_depth = depth_limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    let mut workspace = super::super::PcurveWorkspace {
-        records: BTreeSet::new(),
-        storage: ctx
-            .reserve_scoped(0, "test pcurve workspace")
-            .expect("empty scope"),
-    };
+    let mut workspace = super::super::PcurveWorkspace::new(&ctx, "test pcurve workspace")
+        .expect("empty scope");
     super::super::decode_pcurve_geometry(
         1,
         &exchange,
@@ -54,7 +50,6 @@ fn pcurve_geometry_refusal(collection_limit: u64, depth_limit: u64) -> CodecErro
             workspace: &mut workspace,
         },
         0,
-        &ctx,
     )
     .expect_err("pcurve geometry exceeds the limit")
 }

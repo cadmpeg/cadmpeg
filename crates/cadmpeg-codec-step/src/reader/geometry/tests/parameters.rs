@@ -1201,15 +1201,10 @@ ENDSEC;END-ISO-10303-21;",
         &mut losses,
         &mut super::super::PcurveWalk {
             active: &mut active,
-            workspace: &mut super::super::PcurveWorkspace {
-                records: BTreeSet::new(),
-                storage: ctx
-                    .reserve_scoped(0, "test pcurve workspace")
-                    .expect("empty scope")
-            }
+            workspace: &mut super::super::PcurveWorkspace::new(&ctx, "test pcurve workspace")
+                .expect("empty scope")
         },
         0,
-        &ctx
     )
     .expect("no resource refusal")
     .is_none());
@@ -1227,15 +1222,10 @@ ENDSEC;END-ISO-10303-21;",
         &mut losses,
         &mut super::super::PcurveWalk {
             active: &mut active,
-            workspace: &mut super::super::PcurveWorkspace {
-                records: BTreeSet::new(),
-                storage: ctx
-                    .reserve_scoped(0, "test pcurve workspace")
-                    .expect("empty scope")
-            }
+            workspace: &mut super::super::PcurveWorkspace::new(&ctx, "test pcurve workspace")
+                .expect("empty scope")
         },
         0,
-        &ctx
     )
     .expect("no resource refusal")
     .is_none());
@@ -1651,3 +1641,4 @@ fn surface_scale_memo_keeps_each_duplicate_root_geometry() {
 }
 
 mod surface_scale_owner;
+mod pcurve_context;

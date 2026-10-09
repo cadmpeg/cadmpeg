@@ -1184,7 +1184,7 @@ pub(super) fn decode<'ctx>(
             )?;
         }
     }
-    let mut pcurve_geometries = BTreeMap::<u64, (PcurveGeometry, PcurveWorkspace<'_>)>::new();
+    let mut pcurve_geometries = BTreeMap::<u64, CachedPcurve<'_>>::new();
     let mut pcurve_geometry_records = BTreeSet::new();
     for indexed_entity in exchange.entities(ctx, "PCURVE")? {
         let (_, record) = indexed_entity?;
@@ -1223,10 +1223,7 @@ pub(super) fn decode<'ctx>(
             let Some(curve) = value.reference() else {
                 continue;
             };
-            let mut workspace = PcurveWorkspace {
-                records: BTreeSet::new(),
-                storage: ctx.reserve_scoped(0, "step pcurve cache storage")?,
-            };
+            let mut workspace = PcurveWorkspace::new(ctx, "step pcurve cache storage")?;
             if let Some(geometry) = decode_pcurve_geometry(
                 curve,
                 exchange,
@@ -1243,15 +1240,15 @@ pub(super) fn decode<'ctx>(
                     workspace: &mut workspace,
                 },
                 0,
-                ctx,
             )? {
                 decoded_count += 1;
-                decoded = Some((curve, (geometry, workspace)));
+                let PcurveWorkspace { records, storage, .. } = workspace;
+                decoded = Some((curve, CachedPcurve { geometry, records, _storage: storage }));
             }
         }
         if decoded_count == 1 {
-            if let Some((curve, (geometry, records))) = decoded {
-                for &record in ctx.admit_iter(&records.records, "STEP pcurve record traversal")? {
+            if let Some((curve, cached)) = decoded {
+                for &record in ctx.admit_iter(&cached.records, "STEP pcurve record traversal")? {
                     scratch.with_storage(|| {
                         ctx.insert_btree_set(
                             &mut pcurve_geometry_records,
@@ -1264,7 +1261,7 @@ pub(super) fn decode<'ctx>(
                     ctx.insert_btree_map(
                         &mut pcurve_geometries,
                         curve,
-                        (geometry, records),
+                        cached,
                         "step_pcurve_geometries",
                     )
                 })?;
@@ -3342,7 +3339,7 @@ pub(super) fn decode<'ctx>(
             "STEP geometry representation item traversal",
         )?;
         let decoded = if ambiguous { None } else { decoded };
-        let Some((curve_step, (geometry, geometry_records))) = surface_step
+        let Some((curve_step, cached)) = surface_step
             .map(|surface| {
                 Ok::<_, CodecError>(
                     (ctx.contains_key_hash_map(
@@ -3384,7 +3381,7 @@ pub(super) fn decode<'ctx>(
             )?;
             continue;
         };
-        let geometry = geometry.try_clone_for_decode(ctx, "step_pcurve_carrier_copy")?;
+        let geometry = cached.geometry.try_clone_for_decode(ctx, "step_pcurve_carrier_copy")?;
         let Ok(geometry) = geometry.scaled_coordinates_owned(ctx, *scales)? else {
             ctx.push_vec(&mut losses, StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                 "PCURVE #{id} has a 2D carrier that cannot be scaled into the owning surface parameter units"
@@ -3407,7 +3404,7 @@ pub(super) fn decode<'ctx>(
             ctx.insert_btree_set(&mut typed, representation, "step_geometry_typed_ids")?;
         }
         ctx.insert_btree_set(&mut typed, curve_step, "step_geometry_typed_ids")?;
-        for &record in ctx.admit_iter(&geometry_records.records, "STEP pcurve record transfer")? {
+        for &record in ctx.admit_iter(&cached.records, "STEP pcurve record transfer")? {
             ctx.insert_btree_set(&mut typed, record, "step_geometry_typed_ids")?;
         }
     }
@@ -7242,14 +7239,27 @@ struct PcurveSources<'a> {
     angle_scale: f64,
 }
 
-struct PcurveWorkspace<'ctx> {
+struct PcurveWorkspace<'ctx, 'arena> {
     records: BTreeSet<u64>,
+    ctx: &'ctx DecodeContext<'arena>,
     storage: ScopedReservation<'ctx>,
 }
 
-struct PcurveWalk<'a, 'ctx> {
+struct CachedPcurve<'ctx> {
+    geometry: PcurveGeometry,
+    records: BTreeSet<u64>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx, 'arena> PcurveWorkspace<'ctx, 'arena> {
+    fn new(ctx: &'ctx DecodeContext<'arena>, operation: &'static str) -> Result<Self, CodecError> {
+        Ok(Self { records: BTreeSet::new(), ctx, storage: ctx.reserve_scoped(0, operation)? })
+    }
+}
+
+struct PcurveWalk<'a, 'ctx, 'arena> {
     active: &'a mut BTreeSet<u64>,
-    workspace: &'a mut PcurveWorkspace<'ctx>,
+    workspace: &'a mut PcurveWorkspace<'ctx, 'arena>,
 }
 
 fn decode_pcurve_geometry(
@@ -7257,10 +7267,10 @@ fn decode_pcurve_geometry(
     exchange: &Exchange,
     sources: PcurveSources<'_>,
     losses: &mut Vec<LossNote>,
-    walk: &mut PcurveWalk<'_, '_>,
+    walk: &mut PcurveWalk<'_, '_, '_>,
     depth: usize,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<PcurveGeometry>, CodecError> {
+    let ctx = walk.workspace.ctx;
     let PcurveSources {
         points,
         vectors,
@@ -7489,7 +7499,6 @@ fn decode_pcurve_geometry(
                         losses,
                         walk,
                         depth + 1,
-                        ctx,
                     )?);
                     let transform = geometry_or_none!(ctx
                         .get_btree_map(transformations, &operator_id, "step_geometry_lookup")?
@@ -7524,7 +7533,6 @@ fn decode_pcurve_geometry(
                         losses,
                         walk,
                         depth + 1,
-                        ctx,
                     )?);
                     let scale = if matches!(
                         basis,
@@ -7576,7 +7584,6 @@ fn decode_pcurve_geometry(
                         losses,
                         walk,
                         depth + 1,
-                        ctx,
                     )?);
                     ctx.charge_collection_items(1, "step_pcurve_nested_geometry")?;
                     PcurveGeometry::Offset(geometry_or_none!(
