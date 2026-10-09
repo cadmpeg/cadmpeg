@@ -374,7 +374,9 @@ impl SldprtNative {
             "admit SLDPRT native relations",
         )?;
         let scalars: Vec<FeatureInputScalar> = read_arena!("feature_input_scalars");
-        let (history_ids, _history_ids_reservation) = ctx.collect_scoped_string_set(
+        let _history_ids_reservation;
+        let history_ids;
+        (history_ids, _history_ids_reservation) = ctx.collect_scoped_string_set(
             native.feature_histories.len(),
             native
                 .feature_histories
@@ -402,12 +404,16 @@ impl SldprtNative {
                 )?,
             ));
         }
-        let (feature_ids, _feature_ids_reservation) = ctx.collect_scoped_string_set(
+        let _feature_ids_reservation;
+        let feature_ids;
+        (feature_ids, _feature_ids_reservation) = ctx.collect_scoped_string_set(
             features.len(),
             features.iter().map(|record| record.id.as_str()),
             "index SLDPRT feature ids",
         )?;
-        let (lane_ids, _lane_ids_reservation) = ctx.collect_scoped_string_set(
+        let _lane_ids_reservation;
+        let lane_ids;
+        (lane_ids, _lane_ids_reservation) = ctx.collect_scoped_string_set(
             native.feature_input_lanes.len(),
             native
                 .feature_input_lanes
@@ -415,7 +421,9 @@ impl SldprtNative {
                 .map(|lane| lane.id.as_str()),
             "index SLDPRT lane ids",
         )?;
-        let (lane_payloads, _lane_payloads_reservation) = ctx.collect_scoped_string_map(
+        let _lane_payloads_reservation;
+        let lane_payloads;
+        (lane_payloads, _lane_payloads_reservation) = ctx.collect_scoped_string_map(
             native.feature_input_lanes.len(),
             native
                 .feature_input_lanes
@@ -759,14 +767,18 @@ impl SldprtNative {
                 )?,
             ));
         }
-        let (references_by_id, _references_by_id_reservation) = ctx.collect_scoped_string_map(
+        let _references_by_id_reservation;
+        let references_by_id;
+        (references_by_id, _references_by_id_reservation) = ctx.collect_scoped_string_map(
             references.len(),
             references.iter().map(|record| (record.id.as_str(), record)),
             "index SLDPRT references",
         )?;
         // The first class with an identity answers, so the index is filled
         // in reverse.
-        let (classes_by_id, _classes_by_id_reservation) = ctx.collect_scoped_string_map(
+        let _classes_by_id_reservation;
+        let classes_by_id;
+        (classes_by_id, _classes_by_id_reservation) = ctx.collect_scoped_string_map(
             classes.len(),
             classes
                 .iter()
@@ -871,7 +883,9 @@ impl SldprtNative {
         // Lane records are validated against a context of all history
         // features, so lanes are filled before the features move into their
         // histories.
-        let (lane_ids, lane_ids_storage) =
+        let lane_ids_storage;
+        let lane_ids;
+        (lane_ids, lane_ids_storage) =
             ctx.with_scoped_storage("index SLDPRT native lanes", || {
                 ctx.collect_vec(
                     native
@@ -881,77 +895,99 @@ impl SldprtNative {
                     "index SLDPRT native lanes",
                 )
             })?;
-        let (mut lane_classes, lane_classes_storage) = attach_to_owners(
+        let lane_classes_storage;
+        let mut lane_classes;
+        (lane_classes, lane_classes_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             classes,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let (mut lane_names, lane_names_storage) = attach_to_owners(
+        let lane_names_storage;
+        let mut lane_names;
+        (lane_names, lane_names_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             names,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let (mut lane_scalars, lane_scalars_storage) = attach_to_owners(
+        let lane_scalars_storage;
+        let mut lane_scalars;
+        (lane_scalars, lane_scalars_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             scalars,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let (mut lane_references, lane_references_storage) = attach_to_owners(
+        let lane_references_storage;
+        let mut lane_references;
+        (lane_references, lane_references_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             references,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let (mut lane_relation_bindings, lane_relation_bindings_storage) = attach_to_owners(
+        let lane_relation_bindings_storage;
+        let mut lane_relation_bindings;
+        (lane_relation_bindings, lane_relation_bindings_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             relation_bindings,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let (mut lane_relation_instances, lane_relation_instances_storage) = attach_to_owners(
+        let lane_relation_instances_storage;
+        let mut lane_relation_instances;
+        (lane_relation_instances, lane_relation_instances_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             relation_instances,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let (mut lane_body_selections, lane_body_selections_storage) = attach_to_owners(
+        let lane_body_selections_storage;
+        let mut lane_body_selections;
+        (lane_body_selections, lane_body_selections_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             body_selections,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let (mut lane_edge_selections, lane_edge_selections_storage) = attach_to_owners(
+        let lane_edge_selections_storage;
+        let mut lane_edge_selections;
+        (lane_edge_selections, lane_edge_selections_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             edge_selections,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let (mut lane_surface_selections, lane_surface_selections_storage) = attach_to_owners(
+        let lane_surface_selections_storage;
+        let mut lane_surface_selections;
+        (lane_surface_selections, lane_surface_selections_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             surface_selections,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let (mut lane_generated_surfaces, lane_generated_surfaces_storage) = attach_to_owners(
+        let lane_generated_surfaces_storage;
+        let mut lane_generated_surfaces;
+        (lane_generated_surfaces, lane_generated_surfaces_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             generated_surface_identities,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let (mut lane_entities, lane_entities_storage) = attach_to_owners(
+        let lane_entities_storage;
+        let mut lane_entities;
+        (lane_entities, lane_entities_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             entities,
@@ -1033,7 +1069,9 @@ impl SldprtNative {
             lane_entities,
             lane_entities_storage,
         ));
-        let (history_ids, history_ids_storage) =
+        let history_ids_storage;
+        let history_ids;
+        (history_ids, history_ids_storage) =
             ctx.with_scoped_storage("index SLDPRT native histories", || {
                 ctx.collect_vec(
                     native
@@ -1043,14 +1081,18 @@ impl SldprtNative {
                     "index SLDPRT native histories",
                 )
             })?;
-        let (mut history_configurations, history_configurations_storage) = attach_to_owners(
+        let history_configurations_storage;
+        let mut history_configurations;
+        (history_configurations, history_configurations_storage) = attach_to_owners(
             ctx,
             &history_ids,
             configurations,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let (mut history_features, history_features_storage) = attach_to_owners(
+        let history_features_storage;
+        let mut history_features;
+        (history_features, history_features_storage) = attach_to_owners(
             ctx,
             &history_ids,
             features,
@@ -1180,7 +1222,9 @@ impl SldprtNative {
             .map_err(cadmpeg_core::CodecError::from)?
         {
             let lookup = ScalarLookup::new(ctx, &lane.scalars, &lane.names)?;
-            let (references_by_id, _references_by_id_reservation) = ctx.collect_scoped_string_map(
+            let _references_by_id_reservation;
+            let references_by_id;
+            (references_by_id, _references_by_id_reservation) = ctx.collect_scoped_string_map(
                 lane.references.len(),
                 lane.references
                     .iter()
@@ -1188,7 +1232,9 @@ impl SldprtNative {
                 "index SLDPRT stored references",
             )?;
             // Filled in reverse so the first class with an identity answers.
-            let (classes_by_id, _classes_by_id_reservation) = ctx.collect_scoped_string_map(
+            let _classes_by_id_reservation;
+            let classes_by_id;
+            (classes_by_id, _classes_by_id_reservation) = ctx.collect_scoped_string_map(
                 lane.classes.len(),
                 lane.classes
                     .iter()
@@ -1308,7 +1354,9 @@ impl SldprtNative {
             }
             // Selections resolve producers against the history features with
             // this lane's object sources, built only when the lane has any.
-            let (lane_features, _lane_features_reservation) =
+            let _lane_features_reservation;
+            let lane_features;
+            (lane_features, _lane_features_reservation) =
                 if lane.edge_selections.is_empty() && lane.surface_selections.is_empty() {
                     (
                         Vec::new(),
@@ -1572,7 +1620,9 @@ impl SldprtNative {
                     )?,
                 ));
             }
-            let (sketch_entities, _sketch_entities_reservation) = ctx.collect_scoped_string_map(
+            let _sketch_entities_reservation;
+            let sketch_entities;
+            (sketch_entities, _sketch_entities_reservation) = ctx.collect_scoped_string_map(
                 lane.sketch_entities.len(),
                 lane.sketch_entities
                     .iter()
@@ -1612,7 +1662,9 @@ impl SldprtNative {
                         "group SLDPRT stored sketch entities",
                     )?
                     .map_or(&[][..], Vec::as_slice);
-                let (resolved_operands, _operand_storage) =
+                let _operand_storage;
+                let resolved_operands;
+                (resolved_operands, _operand_storage) =
                     ctx.with_scoped_storage("SLDPRT scalar operand validation workspace", || {
                         crate::resolved_features::operands::resolve_scalar_operand_markers(
                             ctx,
@@ -1773,7 +1825,9 @@ impl SldprtNative {
                 }
             }
         }
-        let (mut expected_histories, mut expected_histories_reservation) = ctx
+        let mut expected_histories_reservation;
+        let mut expected_histories;
+        (expected_histories, expected_histories_reservation) = ctx
             .with_scoped_storage("validate SLDPRT expected histories", || {
                 ctx.try_collect_retained_with(
                     self.feature_histories.iter(),
@@ -1781,7 +1835,9 @@ impl SldprtNative {
                     |record| record.clone_charged(ctx, "validate SLDPRT expected histories"),
                 )
             })?;
-        let (history_lanes, _history_lanes_reservation) =
+        let _history_lanes_reservation;
+        let history_lanes;
+        (history_lanes, _history_lanes_reservation) =
             ctx.with_scoped_storage("validate SLDPRT history lanes", || {
                 ctx.try_collect_retained_with(
                     ctx.admit_iter(&self.feature_input_lanes[..], "scan SLDPRT store values")
@@ -1874,7 +1930,9 @@ impl<'a, 'ctx> ScalarLookup<'a, 'ctx> {
         names: &'a [FeatureInputName],
     ) -> Result<Self, cadmpeg_core::CodecError> {
         // Filled in reverse so the first record with an identity is the last write.
-        let (scalar_index, scalar_storage) = ctx.collect_scoped_string_map(
+        let scalar_storage;
+        let scalar_index;
+        (scalar_index, scalar_storage) = ctx.collect_scoped_string_map(
             scalars.len(),
             scalars
                 .iter()
@@ -1883,7 +1941,9 @@ impl<'a, 'ctx> ScalarLookup<'a, 'ctx> {
                 .map(|(position, scalar)| (scalar.id.as_str(), (position, scalar))),
             Self::OPERATION,
         )?;
-        let (name_values, name_storage) = ctx.collect_scoped_string_map(
+        let name_storage;
+        let name_values;
+        (name_values, name_storage) = ctx.collect_scoped_string_map(
             names.len(),
             names
                 .iter()
@@ -2002,7 +2062,9 @@ fn attach_to_owners<'ctx, T: CloneCharged>(
             ctx.push_hash_group(&mut positions, *id, position, OPERATION, OPERATION)
         })?;
     }
-    let (mut owned, outer_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let outer_storage;
+    let mut owned;
+    (owned, outer_storage) = ctx.with_scoped_storage(OPERATION, || {
         ctx.collect_indexed_vec(owner_ids.len(), OPERATION, |_| Ok(Vec::new()))
     })?;
     for record in ctx.admit_iter(records, OPERATION)? {
@@ -2048,7 +2110,9 @@ fn validate_lane_selections(
     features: &[crate::records::Feature],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     const OPERATION: &str = "validate SLDPRT lane selections";
-    let (lane_features, _lane_features_reservation) = ctx.with_scoped_storage(
+    let _lane_features_reservation;
+    let lane_features;
+    (lane_features, _lane_features_reservation) = ctx.with_scoped_storage(
         OPERATION,
         || -> Result<_, cadmpeg_ir::NativeConvertError> {
             let mut lane_features =
@@ -2063,7 +2127,9 @@ fn validate_lane_selections(
             Ok(lane_features)
         },
     )?;
-    let (features_by_id, _features_by_id_reservation) = ctx.collect_scoped_string_map(
+    let _features_by_id_reservation;
+    let features_by_id;
+    (features_by_id, _features_by_id_reservation) = ctx.collect_scoped_string_map(
         lane_features.len(),
         // Filled in reverse so the first feature with an identity answers.
         lane_features
@@ -2084,7 +2150,9 @@ fn validate_lane_selections(
         if edge_selection_disagrees_with_payload(ctx, lane, record, &lane_features)? {
             return Err(disagrees(&record.id, "edge")?);
         }
-        let (references, _references_storage) = ctx.with_scoped_storage(OPERATION, || {
+        let _references_storage;
+        let references;
+        (references, _references_storage) = ctx.with_scoped_storage(OPERATION, || {
             Ok::<_, cadmpeg_ir::NativeConvertError>(match usize::try_from(record.offset) {
                 Ok(offset) => {
                     let feature_kind = ctx
@@ -2158,7 +2226,9 @@ fn generated_surface_identities_disagree_with_payload(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    let (regenerated, _regenerated_storage) = ctx
+    let _regenerated_storage;
+    let regenerated;
+    (regenerated, _regenerated_storage) = ctx
         .with_scoped_storage("SLDPRT regenerated surface identity workspace", || {
             crate::resolved_features::selections::generated_surface_identities(ctx, lane)
         })?;
