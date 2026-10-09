@@ -2,6 +2,7 @@
 //! Archive scan and physical-ledger unit tests.
 
 mod numeric_ordinals;
+mod byte_coverage_storage;
 
 use cadmpeg_test_support::EditableDecodeResult;
 
