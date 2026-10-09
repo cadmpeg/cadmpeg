@@ -1085,6 +1085,56 @@ fn reversed_standard_coedge_builds_one_candidate_without_preliminary_copy() {
     });
 }
 
+#[test]
+fn inferred_partner_replay_keeps_selected_support_copy_refusals() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    for operation in [
+        "catia_freeform_replayed_support_surface",
+        "catia_freeform_replayed_support_pcurve",
+    ] {
+        with_inferred_partner_fixture([cadmpeg_ir::topology::Sense::Forward; 2], |run| {
+            let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+            crate::test_support::with_work_limit(u64::MAX, |ctx| {
+                let result = run(ctx);
+                let error = result.err().expect("selected support copy needs work admission");
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                    panic!("selected support copy must refuse work");
+                };
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(limit.operation, operation);
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+                let Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) =
+                    ctx.charge_work(1, "after selected support copy refusal") else {
+                        panic!("selected support copy refusal must stay sticky");
+                    };
+                assert_eq!(sticky, limit);
+            });
+            drop(probe);
+            let (counts, ir) = crate::test_support::with_service_context(|ctx| run(ctx))
+                .expect("replay keeps the selected support sides");
+            assert_eq!(counts.standard_face_surfaces, 1);
+            assert_eq!(counts.standard_face_pcurves, 2);
+            assert_eq!(ir.model.pcurves.len(), 2);
+            for (pcurve, expected) in ir.model.pcurves.iter().zip([
+                Point2::new(0.0, 0.0),
+                Point2::new(10.0, 20.0),
+            ]) {
+                let start = cadmpeg_ir::eval::decode::pcurve_uv(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &pcurve.geometry,
+                    0.0,
+                ).expect("replayed pcurve evaluates");
+                assert_eq!(start, expected);
+            }
+            assert!(ir.model.coedges.iter().all(|coedge| coedge.pcurves.len() == 1));
+            assert!(matches!(
+                &ir.model.surfaces[1].geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+            ));
+        });
+    }
+}
+
 fn coedge_candidate_destination_refusal(operation: &'static str, senses: [cadmpeg_ir::topology::Sense; 2]) {
     use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
     with_inferred_partner_fixture(senses, |run| {

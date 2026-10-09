@@ -3836,7 +3836,7 @@ fn append_resolved_consolidated_surface_curves(
                         )?;
                         binding_counts.standard_face_surfaces += 1;
                         bound_new_standard_surface = true;
-                    }
+                    } else {
                     let copy_side = |side: usize| {
                         Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
                             surface: Some(binding.standard_surfaces[side].try_clone_for_decode(
@@ -3854,6 +3854,7 @@ fn append_resolved_consolidated_surface_curves(
                         })
                     };
                     sides = [copy_side(0)?, copy_side(1)?];
+                    }
                 }
             }
         }
