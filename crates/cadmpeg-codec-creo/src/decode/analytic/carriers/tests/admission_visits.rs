@@ -133,3 +133,26 @@ fn polygon_pair_containment_admits_each_executed_vertex_and_edge_visit() {
     let outside = vec![[-1.0, 2.0]; 129];
     assert_visits(&[VERTEX, POINT, POINT, POINT, POINT], false, |ctx| polygon_strictly_contains_polygon(ctx, &outer, &outside));
 }
+
+#[test]
+fn geometry_section_absence_admits_only_present_sections_and_preserves_refusal() {
+    const SECTION: &str = "creo geometry section lookup";
+    for count in 0..=2 {
+        let mut scan = crate::test_support::empty_container_scan();
+        for index in 0..count {
+            let offset = 16 + 32 * index;
+            scan.framing.sections.push(
+                crate::container::Section::scan_for_test(
+                    "VisibGeom".to_string(), offset, offset + 16, None, &[0; 96],
+                ).expect("section extent").section,
+            );
+        }
+        // Before the first extent and after every extent, all present sections
+        // are examined once. Neither miss reaches identity construction.
+        for offset in [0, 96] {
+            assert_visits(&[SECTION; 2][..count], true, |ctx| {
+                super::super::geometry_section_record(ctx, &scan, offset).map(|record| record.is_none())
+            });
+        }
+    }
+}
