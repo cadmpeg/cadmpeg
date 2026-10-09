@@ -591,9 +591,10 @@ pub(crate) fn decode_sketch_placements(
         let Some(metadata) = metadata_for_bulk_stream(ctx, scan, stream.name)? else {
             continue;
         };
-        let mut decoded_storage = ctx.reserve_scoped(0, "f3d sketch visibility records")?;
-        let decoded = decoded_storage
-            .with_storage(|| decode_sketch_visibilities_in_stream(ctx, stream.bytes, &metadata))?;
+        let _decoded_storage;
+        let (decoded, held_storage) =
+            decode_sketch_visibilities_in_stream(ctx, stream.bytes, &metadata)?;
+        _decoded_storage = held_storage;
         for &(entity_suffix, visibility) in
             ctx.admit_iter(&decoded, "scan F3D decoded sketch visibilities")?
         {
@@ -870,11 +871,11 @@ const SKETCH_CONTAINER_MEMBER_VERSION: u32 = 4;
 /// Decode the direct display flag in every current sketch container's typed
 /// Geometry member. Other sketch-container versions do not expose this member
 /// layout and therefore leave neutral visibility unknown.
-fn decode_sketch_visibilities_in_stream(
-    ctx: &DecodeContext<'_>,
+fn decode_sketch_visibilities_in_stream<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     metadata: &crate::metastream::MetaStream,
-) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
+) -> Result<(Vec<(u64, DesignSketchVisibility)>, ScopedReservation<'ctx>), CodecError> {
     let _frame_storage;
     let (frames, held_storage) = super::meta::TypedFrameSource::new(bytes, metadata).frames(
         ctx,
@@ -882,6 +883,7 @@ fn decode_sketch_visibilities_in_stream(
         "sketch-container",
     )?;
     _frame_storage = held_storage;
+    let mut output_storage = ctx.reserve_scoped(0, "f3d sketch visibility records")?;
     let mut out = Vec::new();
     for frame in ctx.admit_iter(&frames, "scan F3D sketch visibility frames")? {
         if frame.design_type.version != CURRENT_SKETCH_CONTAINER_VERSION {
@@ -980,13 +982,14 @@ fn decode_sketch_visibilities_in_stream(
             ));
         };
 
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut output_storage,
             &mut out,
             (entity_suffix, visibility),
             "f3d sketch visibility records",
         )?;
     }
-    Ok(out)
+    Ok((out, output_storage))
 }
 
 /// Whether a sketch container's Geometry member registers the typed
