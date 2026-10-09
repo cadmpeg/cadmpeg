@@ -20,6 +20,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 mod resource_limits;
+mod admission_visits;
 
 const SINGLE_ROW: &[u8] = &[40, 0xeb, 0x04, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa];
 
