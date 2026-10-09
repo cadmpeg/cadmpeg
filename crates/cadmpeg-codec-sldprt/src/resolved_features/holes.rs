@@ -2,6 +2,7 @@
 
 mod bore_solutions;
 mod generated_placements;
+mod planar_placements;
 mod thread_history;
 
 use super::compact_reference_planes::{
@@ -2812,7 +2813,9 @@ pub(crate) fn project_hole_position_sketches(
                     }
                     let marker_transform = sketch_frame_marker_transform(sketch, QUANTUM);
                     let v_axis = normal.cross(u_axis.get());
-                    let mut resolved = Vec::new();
+                    let mut resolved = planar_placements::PlanarHolePlacements::new(
+                        ctx, position_dependency,
+                    )?;
                     let mut remaining = authored_markers.iter();
                     while let Some(marker) =
                         ctx.next_charged(&mut remaining, "scan SLDPRT holes records")?
@@ -2824,7 +2827,7 @@ pub(crate) fn project_hole_position_sketches(
                         )? {
                             Some(Some(point)) => Some(*point),
                             Some(None) => {
-                                ctx.clear_vec(&mut resolved, OPERATION)?;
+                                resolved.clear()?;
                                 break;
                             }
                             None => None,
@@ -2844,11 +2847,11 @@ pub(crate) fn project_hole_position_sketches(
                                         "resolve SLDPRT holes references",
                                     )?,
                                 }) else {
-                                    ctx.clear_vec(&mut resolved, OPERATION)?;
+                                    resolved.clear()?;
                                     break;
                                 };
                                 let Some(transform) = marker_transform else {
-                                    ctx.clear_vec(&mut resolved, OPERATION)?;
+                                    resolved.clear()?;
                                     break;
                                 };
                                 let native = quantize(
@@ -2856,11 +2859,11 @@ pub(crate) fn project_hole_position_sketches(
                                     QUANTUM,
                                 );
                                 let Some((u, v)) = transform.apply(native) else {
-                                    ctx.clear_vec(&mut resolved, OPERATION)?;
+                                    resolved.clear()?;
                                     break;
                                 };
                                 let (Some(u), Some(v)) = (f64_from_i64(u), f64_from_i64(v)) else {
-                                    ctx.clear_vec(&mut resolved, OPERATION)?;
+                                    resolved.clear()?;
                                     break;
                                 };
                                 Point2::new(u * QUANTUM, v * QUANTUM)
@@ -2874,28 +2877,21 @@ pub(crate) fn project_hole_position_sketches(
                             )),
                             FeatureDirection3::new(normal.get()),
                         ) else {
-                            ctx.clear_vec(&mut resolved, OPERATION)?;
+                            resolved.clear()?;
                             break;
                         };
-                        ctx.push_vec(
-                            &mut resolved,
-                            HolePlacement::Axis { origin, axis },
-                            OPERATION,
-                        )?;
+                        resolved.push_axis(origin, axis)?;
                     }
-                    if resolved.len() == authored_markers.len() {
-                        projection = Some((resolved, position_dependency));
+                    if resolved.placements().len() == authored_markers.len() {
+                        projection = Some(resolved);
                     }
                 }
                 Ok(projection)
             })?;
-        if let Some((resolved, dependency)) = projection {
-            let resolved = ctx.try_collect_vec(
-                resolved
-                    .iter()
-                    .map(|placement| placement.try_clone_for_decode(ctx, OPERATION)),
-                OPERATION,
-            )?;
+        // Every marker workspace value has died inside the projection closure.
+        drop(_projection_storage);
+        if let Some(projection) = projection {
+            let (resolved, dependency) = projection.into_output()?;
             feature.evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
                     definition
