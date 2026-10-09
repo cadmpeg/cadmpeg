@@ -6,7 +6,10 @@ use cadmpeg_core::decode::refusal_probe::RefusalProbe;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 use cadmpeg_ir::math::Point3;
-use super::{inverse_coordinate_tolerance, nurbs_parameter_at_point, surface_poles, InverseResolution};
+use crate::brep::graph::inverse::inverse_coordinate_tolerance;
+use crate::brep::graph::inverse::nurbs_parameter_at_point;
+use crate::brep::graph::inverse::surface_poles;
+use crate::brep::graph::inverse::InverseResolution;
 
 const SCRATCH_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -42,7 +45,7 @@ fn borrowed_grid_scale_uses_one_visit_per_pole() {
         let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
             inverse_coordinate_tolerance(&ctx, surface_poles(&ctx, &surface).unwrap().map(|point| point.get()))
         });
-        assert_eq!(result.unwrap(), super::looser_tolerance(super::INVERSE_ABSOLUTE_TOLERANCE_MM, 7.0 * super::INVERSE_RELATIVE_TOLERANCE));
+        assert_eq!(result.unwrap(), crate::brep::graph::inverse::looser_tolerance(crate::brep::graph::inverse::INVERSE_ABSOLUTE_TOLERANCE_MM, 7.0 * crate::brep::graph::inverse::INVERSE_RELATIVE_TOLERANCE));
         assert_eq!(allocations, 0);
         let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "test consumed scale budget") else { panic!("single-pass budget"); };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
@@ -88,7 +91,7 @@ fn curve_inverse_scale_avoids_an_extent_prepayment() {
         let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "scan SLDPRT nurbs_parameter_at_point values", None);
         let InverseResolution::Unique(parameter) = nurbs_parameter_at_point(&ctx, &curve, Point3::new(1.0, 0.0, 0.0)).unwrap()
         else { panic!("unique midpoint inverse"); };
-        assert!((parameter - 0.5).abs() <= super::INVERSE_PARAMETER_TOLERANCE);
+        assert!((parameter - 0.5).abs() <= crate::brep::graph::inverse::INVERSE_PARAMETER_TOLERANCE);
         let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "scan SLDPRT nurbs_parameter_at_point values") else { panic!("unvisited extent prepayment"); };
         drop(probe);
         assert_eq!(limit.additional, 1);

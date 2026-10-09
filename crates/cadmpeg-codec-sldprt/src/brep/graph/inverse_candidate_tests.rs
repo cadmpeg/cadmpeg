@@ -4,7 +4,8 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-use super::{sampled_parameter_minima, InverseResolution};
+use crate::brep::graph::inverse::sampled_parameter_minima;
+use crate::brep::graph::inverse::InverseResolution;
 
 const SCRATCH_BYTES: u64 = 16 * 1024 * 1024;
 const SPAN: [f64; 2] = [0.0, 1.0];

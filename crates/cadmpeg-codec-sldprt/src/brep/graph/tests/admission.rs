@@ -11,18 +11,18 @@ fn inverse_coordinate_scale_admits_each_point() {
         cadmpeg_ir::math::Point3::new(5.0, 6.0, 7.0),
     ];
     crate::test_support::work_refusal_at("measure Parasolid inverse coordinate scale", |ctx| {
-        super::super::inverse_coordinate_tolerance(ctx, points)
+        crate::brep::graph::inverse::inverse_coordinate_tolerance(ctx, points)
     });
     let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        super::super::inverse_coordinate_tolerance(&ctx, []).unwrap(),
-        super::super::INVERSE_ABSOLUTE_TOLERANCE_MM
+        crate::brep::graph::inverse::inverse_coordinate_tolerance(&ctx, []).unwrap(),
+        crate::brep::graph::inverse::INVERSE_ABSOLUTE_TOLERANCE_MM
     );
     assert_eq!(
-        super::super::inverse_coordinate_tolerance(&ctx, points).unwrap(),
-        super::super::looser_tolerance(
-            super::super::INVERSE_ABSOLUTE_TOLERANCE_MM,
-            7.0 * super::super::INVERSE_RELATIVE_TOLERANCE
+        crate::brep::graph::inverse::inverse_coordinate_tolerance(&ctx, points).unwrap(),
+        crate::brep::graph::inverse::looser_tolerance(
+            crate::brep::graph::inverse::INVERSE_ABSOLUTE_TOLERANCE_MM,
+            7.0 * crate::brep::graph::inverse::INVERSE_RELATIVE_TOLERANCE
         )
     );
 }
@@ -37,7 +37,7 @@ fn incomplete_brep_marker_does_not_consume_collection_slots() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
     let carriers = scan_carriers(&ctx, &body).unwrap();
     assert!(carriers.curve_attrs(&ctx).unwrap().is_empty());
-    let tables = super::super::topology::scan(&ctx, &body).unwrap();
+    let tables = crate::brep::topology::scan(&ctx, &body).unwrap();
     assert!(tables.points().is_empty());
     assert!(tables.loops().is_empty());
     ctx.finish_session().unwrap();
@@ -124,7 +124,7 @@ fn shell_components_use_linear_stars_within_each_shell() {
             face.id = super::super::id_face(i + 2);
             if i < 2 {
                 face.shell =
-                    super::super::ShellId::compose(&super::super::shell_namespace(), 2_u16);
+                    cadmpeg_ir::ids::ShellId::compose(&super::super::shell_namespace(), 2_u16);
             }
             face
         })
@@ -132,7 +132,7 @@ fn shell_components_use_linear_stars_within_each_shell() {
     for (i, face) in brep.faces.iter().enumerate() {
         let attr = u16::try_from(i + 2).unwrap();
         let loop_id = super::super::id_loop(attr);
-        brep.loops.push(super::super::Loop {
+        brep.loops.push(cadmpeg_ir::topology::Loop {
             id: loop_id.clone(),
             face: face.id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
@@ -140,12 +140,12 @@ fn shell_components_use_linear_stars_within_each_shell() {
                 pcurves: Vec::new(),
             },
         });
-        brep.coedges.push(super::super::Coedge {
+        brep.coedges.push(cadmpeg_ir::topology::Coedge {
             id: super::super::id_coedge(attr),
             owner_loop: loop_id,
             edge: super::super::id_edge(1),
             radial_next: super::super::id_coedge(attr),
-            sense: super::super::Sense::Forward,
+            sense: cadmpeg_ir::topology::Sense::Forward,
             use_curve: None,
             pcurves: Vec::new(),
         });
@@ -212,24 +212,24 @@ fn numerical_followup_inverse_ambiguity_is_independent_of_parameter_units() {
     .unwrap();
     for domain in [1e-200, TINY_PARAMETER_DOMAIN, 1.0, 1e200] {
         assert!(matches!(
-            super::super::unique_inverse_parameter(
+            crate::brep::graph::inverse::unique_inverse_parameter(
                 &ctx,
                 vec![(0.25 * domain, 0.), (0.75 * domain, 0.)],
                 0.001,
                 [0., domain]
             )
             .unwrap(),
-            super::super::InverseResolution::Ambiguous
+            crate::brep::graph::inverse::InverseResolution::Ambiguous
         ));
         assert!(matches!(
-            super::super::unique_inverse_parameter(
+            crate::brep::graph::inverse::unique_inverse_parameter(
                 &ctx,
                 vec![(0.25 * domain, 0.), (0.25 * domain, 0.)],
                 0.001,
                 [0., domain]
             )
             .unwrap(),
-            super::super::InverseResolution::Unique(_)
+            crate::brep::graph::inverse::InverseResolution::Unique(_)
         ));
     }
 }

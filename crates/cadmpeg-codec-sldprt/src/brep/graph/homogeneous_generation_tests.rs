@@ -4,7 +4,8 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-use super::{clamp_nurbs_curve_to_domain_lanes, insert_nurbs_homogeneous_knot};
+use crate::brep::graph::clamp::clamp_nurbs_curve_to_domain_lanes;
+use crate::brep::graph::clamp::insert_nurbs_homogeneous_knot;
 
 const SCRATCH_BYTES: u64 = 16 * 1024 * 1024;
 const KNOTS: [f64; 4] = [0.0, 0.0, 1.0, 1.0];

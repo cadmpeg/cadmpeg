@@ -47,7 +47,7 @@ impl<'curve, 'ctx, 'arena> CylindricalRadialControls<'curve, 'ctx, 'arena> {
                     "collect Parasolid cylinder pole weights",
                 )?),
             };
-            super::quadratic_nurbs_has_constant_radius(ctx, &self.values, weights.as_deref(), self.curve.knots(), radius)
+            super::pcurves::quadratic_nurbs_has_constant_radius(ctx, &self.values, weights.as_deref(), self.curve.knots(), radius)
         })?;
         drop(weights_storage);
         Ok(result)

@@ -6,7 +6,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::scalar::PositiveLength;
-use super::CylindricalRadialControls;
+use crate::brep::graph::cylindrical_radial::CylindricalRadialControls;
 
 const SCRATCH_BYTES: u64 = 16 * 1024 * 1024;
 

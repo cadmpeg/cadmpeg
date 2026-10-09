@@ -6,7 +6,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::math::Point3;
 
-use super::{nurbs_curve_sample_parameters, NurbsPcurveFailure};
+use crate::brep::graph::nurbs_pcurves::nurbs_curve_sample_parameters;
+use crate::brep::graph::nurbs_pcurves::NurbsPcurveFailure;
 
 const SCRATCH_BYTES: u64 = 16 * 1024 * 1024;
 

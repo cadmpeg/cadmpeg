@@ -1,6 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::brep::graph::pcurves::derive_pcurves;
+use crate::brep::graph::inverse::InverseResolution;
+use crate::brep::graph::inverse::unique_inverse_parameter;
+use crate::brep::graph::inverse::nurbs_parameter_at_point;
+use crate::brep::graph::nurbs_pcurves::nurbs_curve_sample_parameters;
+use crate::brep::graph::nurbs_pcurves::nurbs_degree_one_cache_lanes;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::annotations::AnnotationBuilder;
+use cadmpeg_ir::annotations::StreamHandle;
+use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::Surface;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::ids::CoedgeId;
+use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::ids::EdgeId;
+use cadmpeg_ir::ids::FaceId;
+use cadmpeg_ir::ids::LoopId;
+use cadmpeg_ir::ids::ShellId;
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::ids::VertexId;
+use cadmpeg_ir::topology::Coedge;
+use cadmpeg_ir::topology::Edge;
+use cadmpeg_ir::topology::Face;
+use cadmpeg_ir::topology::Loop;
+use cadmpeg_ir::topology::Sense;
 
 const SMALL_PARAMETER_DOMAIN: f64 = 1e-12;
 const INVERSE_FIT_TOLERANCE: f64 = 1e-6;
