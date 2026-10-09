@@ -2276,6 +2276,8 @@ fn plane_boundary_edge<'ir>(
     )? {
         return Err(PlaneBoundaryError::NotSimple);
     }
+    drop(active);
+    drop(active_storage);
     if !curve_geometry_coplanar(
         geometry,
         index,
@@ -3193,7 +3195,8 @@ pub(super) fn project<'ctx>(
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
             continue;
         };
-        if let Some(flow) = scratch.with_storage(|| {
+        let mut candidate_storage = ctx.reserve_scoped(0, "iges flow candidate scratch")?;
+        if let Some(flow) = candidate_storage.with_storage(|| {
             flow_associativity(
                 entry,
                 record,
@@ -3207,6 +3210,7 @@ pub(super) fn project<'ctx>(
             scratch.with_storage(|| {
                 ctx.insert_btree_map(&mut flows, entry.sequence, flow, "iges flow index nodes")
             })?;
+            scratch.absorb(&mut candidate_storage)?;
         }
     }
 
@@ -4777,8 +4781,9 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
+        let mut candidate_storage = ctx.reserve_scoped(0, "iges solid assembly candidate scratch")?;
         let mut items =
-            scratch.with_storage(|| ctx.collection_vec(count, "iges solid assembly items"))?;
+            candidate_storage.with_storage(|| ctx.collection_vec(count, "iges solid assembly items"))?;
         let mut items_valid = true;
         let mut input = 0..count;
         while let Some(index) = ctx.next_charged(&mut input, "iges structure list traversal")? {
@@ -4798,6 +4803,8 @@ pub(super) fn project<'ctx>(
             items.push(item);
         }
         if !items_valid {
+            drop(items);
+            drop(candidate_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -4818,6 +4825,7 @@ pub(super) fn project<'ctx>(
                 "iges solid assembly index nodes",
             )
         })?;
+        scratch.absorb(&mut candidate_storage)?;
     }
 
     let mut assembly_graph = BTreeMap::new();
@@ -4981,8 +4989,9 @@ pub(super) fn project<'ctx>(
             .and_then(|value| usize::try_from(value).ok());
         let name_valid = record.string(2).is_some_and(|name| !name.is_empty());
         let count = record.count(3);
+        let mut candidate_storage = ctx.reserve_scoped(0, "iges subfigure candidate scratch")?;
         let members = match count {
-            Some(count) => scratch.with_storage(|| {
+            Some(count) => candidate_storage.with_storage(|| {
                 definition_members(
                     record,
                     count,
@@ -4993,7 +5002,8 @@ pub(super) fn project<'ctx>(
             })?,
             None => None,
         };
-        let (Some(depth), Some(members)) = (depth, members) else {
+        let Some((depth, members)) = depth.zip(members) else {
+            drop(candidate_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -5014,6 +5024,7 @@ pub(super) fn project<'ctx>(
                 "iges subfigure definition index nodes",
             )
         })?;
+        scratch.absorb(&mut candidate_storage)?;
         if name_valid
             && subfigure_definition_directory_fields_valid(entry, global.global_table())
             && subfigure_definition_label_display_valid(entry, entries, ctx)?
@@ -5164,8 +5175,9 @@ pub(super) fn project<'ctx>(
             .and_then(|value| usize::try_from(value).ok());
         let name_valid = record.string(2).is_some_and(|name| !name.is_empty());
         let member_count = record.count(3);
+        let mut candidate_storage = ctx.reserve_scoped(0, "iges network definition candidate scratch")?;
         let members = match member_count {
-            Some(count) => scratch.with_storage(|| {
+            Some(count) => candidate_storage.with_storage(|| {
                 definition_members(
                     record,
                     count,
@@ -5181,6 +5193,7 @@ pub(super) fn project<'ctx>(
             .zip(members)
             .map(|((depth, member_count), members)| (depth, member_count, members))
         else {
+            drop(candidate_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -5208,7 +5221,7 @@ pub(super) fn project<'ctx>(
             },
             None => false,
         };
-        let Some(connect_points) = scratch.with_storage(|| {
+        let Some(connect_points) = candidate_storage.with_storage(|| {
             network_connect_points(
                 record,
                 7 + member_count,
@@ -5220,6 +5233,8 @@ pub(super) fn project<'ctx>(
             )
         })?
         else {
+            drop(members);
+            drop(candidate_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -5241,6 +5256,7 @@ pub(super) fn project<'ctx>(
                 "iges network definition index nodes",
             )
         })?;
+        scratch.absorb(&mut candidate_storage)?;
         if name_valid
             && type_flag_valid
             && designator_valid
@@ -5320,7 +5336,8 @@ pub(super) fn project<'ctx>(
             },
             None => false,
         };
-        let connect_points = scratch.with_storage(|| {
+        let mut candidate_storage = ctx.reserve_scoped(0, "iges network instance candidate scratch")?;
+        let connect_points = candidate_storage.with_storage(|| {
             network_connect_points(
                 record,
                 11,
@@ -5354,7 +5371,8 @@ pub(super) fn project<'ctx>(
                 "iges placement rejection nodes",
             )?;
         }
-        let (Some(definition), Some(connect_points)) = (definition, connect_points) else {
+        let Some((definition, connect_points)) = definition.zip(connect_points) else {
+            drop(candidate_storage);
             if !ctx.contains_key_btree_map(
                 &placement_rejections,
                 &entry.sequence,
@@ -5391,6 +5409,7 @@ pub(super) fn project<'ctx>(
                 "iges network instance nodes",
             )
         })?;
+        scratch.absorb(&mut candidate_storage)?;
         if placement_valid && type_flag_valid && designator_valid && display_valid {
             scratch.with_storage(|| {
                 ctx.insert_btree_set(
