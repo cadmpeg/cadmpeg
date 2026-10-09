@@ -345,6 +345,9 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
     }
 
     fn next(&mut self) -> Result<Option<BinaryValue>, CodecError> {
+        if let Some(refusal) = self.ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         if let Some(value) = self.pending.pop_front() {
             return Ok(Some(value));
         }
@@ -390,6 +393,9 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
     }
 
     fn finish(&self) -> Result<(), CodecError> {
+        if let Some(refusal) = self.ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         if !self.pending.is_empty() || !self.bits.is_empty() {
             return Err(malformed(
                 "a Binary section has values outside its declared fields",
@@ -679,6 +685,9 @@ fn read_directory(
     lengths: PrimitiveLengths,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<BinaryDirectory>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut records = Vec::new();
     let mut cursor = 0_usize;
     while cursor < payload.len() {
@@ -1069,6 +1078,9 @@ fn read_parameters(
     directory: &[BinaryDirectory],
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<BinaryParameter>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut records = Vec::new();
     let mut cursor = 0_usize;
     while cursor < payload.len() {
@@ -1096,7 +1108,7 @@ fn read_parameters(
             "Parameter Directory pointer",
         )?;
         let mut values = Vec::new();
-        loop {
+        while !stream.pending.is_empty() || !stream.bits.is_empty() || ctx.resource_refusal().is_some() {
             ctx.charge_work(1, "iges binary parameter primitives")?;
             let Some(value) = stream.next()? else {
                 break;
@@ -1494,6 +1506,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 
 #[cfg(test)]
 mod tests {
+    mod parameter_primitives;
     mod source_visits;
     mod start_primitives;
 
