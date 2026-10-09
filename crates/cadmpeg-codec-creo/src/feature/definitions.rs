@@ -1067,11 +1067,12 @@ impl FeatureTrimEntityTable {
         ctx: &DecodeContext<'_>,
     ) -> Result<bool, CodecError> {
         const OPERATION: &str = "creo trim external ID uniqueness";
-        let (mut ids, _storage) = ctx.temporary_vec(self.rows.len(), OPERATION)?;
+        let mut ids_storage = ctx.temporary_vec(self.rows.len(), OPERATION)?;
+        let ids = &mut ids_storage.0;
         for row in ctx.admit_iter(&self.rows, OPERATION)? {
             ids.push(row.external_id);
         }
-        ctx.sort_unstable_by(&mut ids, |id| id, Ord::cmp, OPERATION)?;
+        ctx.sort_unstable_by(ids, |id| id, Ord::cmp, OPERATION)?;
         Ok(!ctx.any_by(ids.windows(2), |pair| Ok(pair[0] == pair[1]), OPERATION)?)
     }
 }
@@ -3412,7 +3413,7 @@ pub(crate) fn equation_table(
             }
             None => None,
         };
-        let Some((arguments, argument_storage)) = equation_arguments(
+        let Some(arguments_storage) = equation_arguments(
             ctx,
             payload,
             &mut cursor,
@@ -3445,8 +3446,8 @@ pub(crate) fn equation_table(
                     equation_id,
                     function_id,
                     explicit_argument_count,
-                    arguments,
-                    argument_storage,
+                    arguments: arguments_storage.0,
+                    argument_storage: arguments_storage.1,
                     arguments_start,
                     arguments_end: arguments_body_end,
                     auxiliary_start,
@@ -7843,8 +7844,9 @@ fn definitions_in_ranges(
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut replay = ReplaySchemas::default();
-    let (mut schema_ends, _storage) =
+    let mut schema_ends_storage =
         ctx.temporary_vec(starts.len(), "creo definition schema ends")?;
+    let schema_ends = &mut schema_ends_storage.0;
     let mut next_schema = payload.len();
     for entry in ctx.admit_iter(starts, "creo schema range traversal")?.rev() {
         schema_ends.push(next_schema);
@@ -8565,8 +8567,10 @@ pub(crate) fn definitions(
             )
         })?;
     }
-    let (mut labeled, mut labeled_storage) =
+    let mut labeled_owned_storage =
         ctx.temporary_vec(starts.len(), "creo inherited definition index")?;
+    let (labeled, labeled_storage) =
+        (&mut labeled_owned_storage.0, &mut labeled_owned_storage.1);
     for entry in ctx.admit_iter(&starts, "creo inherited definition index traversal")? {
         if !entry.positional {
             labeled.push(*entry);
@@ -8574,7 +8578,7 @@ pub(crate) fn definitions(
     }
     labeled_storage.with_storage(|| {
         ctx.stable_sort_by_key(
-            &mut labeled,
+            labeled,
             |entry| entry.offset,
             Ord::cmp,
             "creo inherited definition ordering",
@@ -8585,7 +8589,7 @@ pub(crate) fn definitions(
         .with_storage(|| claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers))?;
     for offset in ctx.admit_iter(replay_markers, "creo replay range traversal")? {
         if !ctx.contains_btree_set(&claimed_markers, &offset, "creo claimed marker membership")? {
-            let id = inherited_definition_id(ctx, &labeled, offset)?;
+            let id = inherited_definition_id(ctx, labeled, offset)?;
             storage.with_storage(|| {
                 ctx.reserve_vec(&mut starts, 1, "creo definition replay starts")
             })?;
@@ -8633,8 +8637,10 @@ pub(crate) fn depdb_definitions(
         )
     })?;
     starts.extend(ctx.admit_iter(depdb_starts, "creo DEPDB start extension")?);
-    let (mut labeled, mut labeled_storage) =
+    let mut labeled_owned_storage =
         ctx.temporary_vec(starts.len(), "creo inherited definition index")?;
+    let (labeled, labeled_storage) =
+        (&mut labeled_owned_storage.0, &mut labeled_owned_storage.1);
     for entry in ctx.admit_iter(&starts, "creo inherited definition index traversal")? {
         if !entry.positional {
             labeled.push(*entry);
@@ -8642,7 +8648,7 @@ pub(crate) fn depdb_definitions(
     }
     labeled_storage.with_storage(|| {
         ctx.stable_sort_by_key(
-            &mut labeled,
+            labeled,
             |entry| entry.offset,
             Ord::cmp,
             "creo inherited definition ordering",
@@ -8653,7 +8659,7 @@ pub(crate) fn depdb_definitions(
         .with_storage(|| claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers))?;
     for offset in ctx.admit_iter(replay_markers, "creo replay range traversal")? {
         if !ctx.contains_btree_set(&claimed_markers, &offset, "creo claimed marker membership")? {
-            let id = inherited_definition_id(ctx, &labeled, offset)?;
+            let id = inherited_definition_id(ctx, labeled, offset)?;
             storage.with_storage(|| {
                 ctx.reserve_vec(&mut starts, 1, "creo definition replay starts")
             })?;
@@ -8771,8 +8777,10 @@ pub(crate) fn positional_replay_definitions(
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "creo definition start scratch")?;
     let mut starts = storage.with_storage(|| definition_starts(ctx, payload))?;
-    let (mut labeled, mut labeled_storage) =
+    let mut labeled_owned_storage =
         ctx.temporary_vec(starts.len(), "creo inherited definition index")?;
+    let (labeled, labeled_storage) =
+        (&mut labeled_owned_storage.0, &mut labeled_owned_storage.1);
     for entry in ctx.admit_iter(&starts, "creo inherited definition index traversal")? {
         if !entry.positional {
             labeled.push(*entry);
@@ -8780,7 +8788,7 @@ pub(crate) fn positional_replay_definitions(
     }
     labeled_storage.with_storage(|| {
         ctx.stable_sort_by_key(
-            &mut labeled,
+            labeled,
             |entry| entry.offset,
             Ord::cmp,
             "creo inherited definition ordering",
@@ -8799,7 +8807,7 @@ pub(crate) fn positional_replay_definitions(
                     "creo pending S2D marker nodes",
                 )
             })?;
-            let id = inherited_definition_id(ctx, &labeled, offset)?;
+            let id = inherited_definition_id(ctx, labeled, offset)?;
             storage.with_storage(|| {
                 ctx.reserve_vec(&mut starts, 1, "creo definition replay starts")
             })?;
