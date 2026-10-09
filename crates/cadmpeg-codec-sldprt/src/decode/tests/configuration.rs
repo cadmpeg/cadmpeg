@@ -21,7 +21,9 @@ fn configuration_body<'ctx>(
     ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     source: &BodyId,
 ) -> crate::decode::ConfigurationBodyIdentity<'ctx> {
-    let (id, storage) = ctx
+    let storage;
+    let id;
+    (id, storage) = ctx
         .with_scoped_storage("retain SLDPRT body ID", || {
             source.try_clone_for_decode(ctx, "retain SLDPRT body ID")
         })
@@ -652,4 +654,55 @@ fn duplicate_configuration_body_keys_release_lookup_storage() {
         limit.used,
         u64::try_from(map_node + output_vector + body.as_str().len()).unwrap()
     );
+}
+
+#[test]
+fn configuration_body_storage_promotes_only_the_selected_identity() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let source = BodyId::mint("test:model:entity#body:stored").unwrap();
+    let mut ir = CadIr::empty();
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("test:model:configuration#stored").unwrap(),
+        ordinal: 0, active: false, source_index: Some(5), name: None,
+        material: None, properties: BTreeMap::new(), bodies: None,
+        parameter_values: BTreeMap::new(), parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(), native_ref: None,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The body text moves intact. The first output vector has four ID slots.
+    let retained = source.as_str().len() + 4 * std::mem::size_of::<BodyId>();
+    policy.limits.max_retained_bytes = u64::try_from(retained).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let identity = configuration_body(&ctx, &source);
+    assign_configuration_bodies(&ctx, &mut ir, vec![(5, vec![identity])]).unwrap();
+    assert_eq!(ir.model.configurations[0].bodies.as_deref(), Some([source].as_slice()));
+    assert!(ctx.resource_refusal().is_none());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn configuration_body_storage_preserves_original_promotion_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let source = BodyId::mint("test:model:entity#body:stored").unwrap();
+    let mut ir = CadIr::empty();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(source.as_str().len() - 1).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let identity = configuration_body(&ctx, &source);
+    let error = assign_configuration_bodies(&ctx, &mut ir, vec![(5, vec![identity])])
+        .unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected configuration body promotion refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "retain SLDPRT body ID");
+    assert_eq!(limit.used, 0);
+    assert_eq!(limit.additional, u64::try_from(source.as_str().len()).unwrap());
+    assert_eq!(limit.limit, policy.limits.max_retained_bytes);
+    assert!(ir.model.configurations.is_empty());
+    assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit));
 }
