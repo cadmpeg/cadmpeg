@@ -211,6 +211,7 @@ pub(super) fn infer_edge_parameter_ranges(
         .with_scoped_storage("step parameter inference model index", || {
             cadmpeg_ir::index::ModelIndex::build(ir, ctx).map_err(CodecError::from)
         })?;
+    let model_index = model_index;
     let inferred = ctx
         .admit_iter(candidates, "step parameter inference candidate traversal")?
         .try_fold(
@@ -583,6 +584,7 @@ pub(super) fn decode<'ctx>(
         .with_scoped_storage("step source curve scale storage", || {
             resolve_source_curve_parameter_scales(exchange, &unit_scales, ctx)
         })?;
+    let source_curve_parameter_scales = source_curve_parameter_scales;
     let mut typed = BTreeSet::new();
     let mut points = BTreeMap::new();
     let mut points2 = BTreeMap::new();
@@ -1460,10 +1462,11 @@ pub(super) fn decode<'ctx>(
     // STEP geometry is a graph, not an ordered stream. Resolve all deferred
     // curve constructors to a fixpoint so nested or forward references do not
     // disappear merely because their source record has a larger instance id.
-    let (mut carrier_index, mut carrier_storage) = ctx
+    let (carrier_index, mut carrier_storage) = ctx
         .with_scoped_storage("step carrier index storage", || {
             CarrierIndex::from_ir(ir, ctx)
         })?;
+    let mut carrier_index = carrier_index;
     let mut deferred_ids = Vec::new();
     for entity in exchange.entities_any(
         ctx,
@@ -1802,6 +1805,7 @@ pub(super) fn decode<'ctx>(
             else {
                 continue;
             };
+            let segments = segments;
             let curve = CurveId::from(ids::data(kind!("curve"), id));
             for &(segment, _) in ctx.admit_iter(&segments, "STEP composite segment traversal")? {
                 ctx.insert_btree_set(&mut typed, segment, "step_geometry_typed_ids")?;
@@ -2441,7 +2445,8 @@ pub(super) fn decode<'ctx>(
     }
     let mut deferred_surface_queue = VecDeque::from(deferred_surface_ids);
     let mut surface_waiting_on = DeferredDependencies::default();
-    let (mut worklist_scale_index, mut worklist_scale_storage) = SurfaceScaleIndex::build(ir, ctx)?;
+    let (worklist_scale_index, mut worklist_scale_storage) = SurfaceScaleIndex::build(ir, ctx)?;
+    let mut worklist_scale_index = worklist_scale_index;
     let mut surface_start = ir.model.surfaces.len();
     let mut procedural_start = ir.model.procedural_surfaces.len();
     while let Some(id) = deferred_surface_queue.pop_front() {
@@ -3213,7 +3218,8 @@ pub(super) fn decode<'ctx>(
         }
     }
     let mut surface_parameter_scales = BTreeMap::new();
-    let (mut scale_index, mut scale_index_workspace) = SurfaceScaleIndex::build(ir, ctx)?;
+    let (scale_index, mut scale_index_workspace) = SurfaceScaleIndex::build(ir, ctx)?;
+    let mut scale_index = scale_index;
     for surface in ctx.admit_iter(&ir.model.surfaces[..], "STEP decode traversal")? {
         let Some(id) = step_instance_id(ctx, surface.id.as_str())? else {
             continue;
@@ -4689,6 +4695,7 @@ pub(super) fn associate_surface_curve_supports(
         .with_scoped_storage("step retained surface curve index", || {
             retained_surface_curve_ids(exchange, index, owned, ctx)
         })?;
+    let retained = retained;
     for entity in
         exchange.entities_any(ctx, &["SURFACE_CURVE", "SEAM_CURVE", "INTERSECTION_CURVE"])?
     {
@@ -4999,9 +5006,9 @@ fn resolve_unit_scales(
         let Some(items) = representation_items(ctx, representation)? else {
             continue;
         };
+        let mut member_storage = ctx.reserve_scoped(0, "STEP unit scope storage")?;
         let mut members = BTreeSet::new();
         let mut active = BTreeSet::new();
-        let mut member_storage = ctx.reserve_scoped(0, "STEP unit scope storage")?;
         for item in items {
             member_storage.with_storage(|| {
                 collect_unit_scope_members(item, exchange, &mut members, &mut active, ctx)
@@ -5710,6 +5717,7 @@ fn linear_uncertainty(
             .with_scoped_storage("step uncertainty context storage", || {
                 context_length_uncertainties(context, exchange, ctx)
             })?;
+        let context_candidates = context_candidates;
         unresolved += context_unresolved;
         for candidate in
             ctx.admit_iter(context_candidates, "step uncertainty candidate traversal")?
@@ -8275,6 +8283,7 @@ fn nurbs_surface(
         format_args!("{surface_name} U direction"),
         "STEP surface periodicity label",
     )?;
+    let u_label = u_label;
     let u_periodic = geometry_or_none!(periodic_value(
         base.parameters.get(offset + 4),
         &u_label,
@@ -8286,6 +8295,7 @@ fn nurbs_surface(
         format_args!("{surface_name} V direction"),
         "STEP surface periodicity label",
     )?;
+    let v_label = v_label;
     let v_periodic = geometry_or_none!(periodic_value(
         base.parameters.get(offset + 5),
         &v_label,
