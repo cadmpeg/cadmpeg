@@ -378,7 +378,7 @@ fn presentation_stream_tables_commit_only_surviving_owner_groups() {
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&ctx, &[]).unwrap();
     let storage;
     let (tables, held_storage) = ctx.with_scoped_storage("test presentation table output", || {
-        super::super::PresentationStreamTables::build(&ctx, stream, &records, &pass, &index)
+        super::super::PresentationStreamTables::build(stream, &records, &pass, &index)
     }).unwrap();
     storage = held_storage;
     assert_eq!(tables.owners_by_scope.capacity(), 3);

@@ -3193,7 +3193,6 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
         let (tables, held_storage) =
             ctx.with_scoped_storage("f3d dimension presentation stream tables", || {
                 PresentationStreamTables::build(
-                    ctx,
                     &stream,
                     stream_records,
                     pass,
@@ -3209,7 +3208,7 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
                 continue;
             }
             let Some(parsed_frame) = parse_scoped(ctx, || {
-                parse_dimension_presentation_frame(ctx, bytes, *at, &tables, is_paired_class)
+                parse_dimension_presentation_frame(bytes, *at, &tables, is_paired_class)
             })?
             else {
                 continue;
@@ -3225,7 +3224,7 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
                 continue;
             };
             let Some(owner) =
-                tables.governing_owner(ctx, scope_record_index, frame.paired_byte_offset)?
+                tables.governing_owner(scope_record_index, frame.paired_byte_offset)?
             else {
                 continue;
             };
@@ -3365,7 +3364,8 @@ impl<'a, 'ctx, 'arena> PresentationPassTables<'a, 'ctx, 'arena> {
 
 /// Per-stream tables for presentation frames, built when a stream's first
 /// presentation-typed record appears.
-struct PresentationStreamTables<'a, 'r> {
+struct PresentationStreamTables<'a, 'r, 'ctx, 'arena> {
+    ctx: &'ctx DecodeContext<'arena>,
     geometry_indices: &'r [u32],
     sketch_entities: &'r [u32],
     records: &'r IndexedRecordOffsets,
@@ -3374,14 +3374,15 @@ struct PresentationStreamTables<'a, 'r> {
     owners_by_scope: HashMap<u32, Vec<&'a DesignParameterOwner>>,
 }
 
-impl<'a, 'r> PresentationStreamTables<'a, 'r> {
+impl<'a, 'r, 'ctx, 'arena> PresentationStreamTables<'a, 'r, 'ctx, 'arena> {
     fn build(
-        ctx: &DecodeContext<'_>,
         stream: &str,
         records: &'r IndexedRecordOffsets,
-        pass: &'r PresentationPassTables<'a, '_, '_>,
+        pass: &'r PresentationPassTables<'a, 'ctx, 'arena>,
         parameters: &ParameterIndex<'_>,
     ) -> Result<Self, CodecError> {
+        let ctx = pass.geometry.ctx;
+        ctx.charge_work(0, "f3d dimension presentation owners")?;
         let mut owner_storage =
             ctx.reserve_scoped(0, "f3d dimension presentation owners")?;
         let mut dimension_owners = Vec::new();
@@ -3418,6 +3419,7 @@ impl<'a, 'r> PresentationStreamTables<'a, 'r> {
             )?;
         }
         Ok(Self {
+            ctx,
             geometry_indices: pass.geometry.of(stream)?,
             sketch_entities: pass.sketch_entities.of(stream)?,
             records,
@@ -3429,10 +3431,14 @@ impl<'a, 'r> PresentationStreamTables<'a, 'r> {
     /// `paired_byte_offset`, earliest in the input among owners at one offset.
     fn governing_owner(
         &self,
-        ctx: &DecodeContext<'_>,
         scope_record_index: u32,
         paired_byte_offset: u64,
     ) -> Result<Option<&'a DesignParameterOwner>, CodecError> {
+        let ctx = self.ctx;
+        ctx.charge_work(0, "find F3D dimension presentation owner")?;
+        if self.owners_by_scope.is_empty() {
+            return Ok(None);
+        }
         let Some(owners) = ctx.get_hash_map(
             &self.owners_by_scope,
             &scope_record_index,
@@ -3451,12 +3457,13 @@ impl<'a, 'r> PresentationStreamTables<'a, 'r> {
 }
 
 fn parse_dimension_presentation_frame(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
-    tables: &PresentationStreamTables<'_, '_>,
+    tables: &PresentationStreamTables<'_, '_, '_, '_>,
     is_paired_class: impl Fn(u32) -> Result<bool, CodecError>,
 ) -> Result<Option<DesignDimensionPresentationFrame>, CodecError> {
+    let ctx = tables.ctx;
+    ctx.charge_work(0, "f3d dimension presentation frame")?;
     let Some(header) = indexed_record_header_at(bytes, start) else {
         return Ok(None);
     };
