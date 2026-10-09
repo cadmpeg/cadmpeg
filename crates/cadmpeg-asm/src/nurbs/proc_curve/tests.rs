@@ -7,6 +7,8 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::mem::size_of;
 
+mod entry_refusal;
+
 #[test]
 fn construction_name_is_retained_only_in_the_selected_unknown_output() {
     let cache_bytes = u64_from_index(4 * size_of::<f64>() + 2 * size_of::<FinitePoint3>());

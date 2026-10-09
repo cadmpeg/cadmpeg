@@ -263,6 +263,9 @@ pub(crate) fn normalize_pcurve_for_surface_record(
     surface_tokens: &[Token],
     pcurve: &mut PcurveNurbs,
 ) -> Option<Result<(), cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let chart = match surface_head {
         "plane" => NativeSupportChart::PlaneLengths,
         "cone" => {
@@ -664,6 +667,9 @@ pub fn pcurve_for_selector_with_chart(
     selector: i64,
     table: &SubtypeTable,
 ) -> Option<Result<(PcurveNurbs, bool), cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let slot = match selector {
         1 | -1 => 0,
         2 | -2 => 1,

@@ -127,3 +127,51 @@ fn pcurve_split_source_preserves_both_sides_with_exact_current_operation_bounds(
     drop(released);
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn pcurve_split_empty_input_preserves_original_entry_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(first)) = ctx.charge_work(1, "test original empty split refusal") else {
+        panic!("expected original work refusal");
+    };
+    assert!(matches!(split_homogeneous_pcurve(&[], 0.5, &ctx),
+        Err(CodecError::ResourceLimit(last)) if last == first));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn pcurve_split_invalid_parameter_preserves_original_entry_refusal() {
+    let controls = controls();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(first)) = ctx.charge_work(1, "test original invalid split refusal") else {
+        panic!("expected original work refusal");
+    };
+    for parameter in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0, 2.0] {
+        assert!(matches!(split_homogeneous_pcurve(&controls, parameter, &ctx),
+            Err(CodecError::ResourceLimit(last)) if last == first));
+    }
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn pcurve_split_empty_or_invalid_input_executes_no_work_or_allocation() {
+    let controls = controls();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(split_homogeneous_pcurve(&[], 0.5, &ctx).unwrap().is_none());
+    for parameter in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0, 2.0] {
+        assert!(split_homogeneous_pcurve(&controls, parameter, &ctx).unwrap().is_none());
+    }
+    ctx.finish_session().unwrap();
+}
