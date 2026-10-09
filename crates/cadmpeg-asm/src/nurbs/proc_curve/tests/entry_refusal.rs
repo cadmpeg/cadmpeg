@@ -84,3 +84,36 @@ fn invalid_pcurve_selector_executes_no_input_work_or_allocation() {
     }
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn manual_surface_bounds_prefix_stops_at_the_last_actual_identifier() {
+    for count in [0_usize, 1, 64] {
+        let tokens = vec![crate::sab::Token::Ident("x".into()); count];
+        let required = u64::try_from(count).unwrap();
+        for cap in [0, required.saturating_sub(1), required] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_entities = 0;
+            policy.limits.max_recursion_depth = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::super::record_trailing_surface_bounds(&ctx, &tokens);
+            if cap == required {
+                assert!(result.unwrap().is_none());
+                ctx.finish_session().unwrap();
+            } else {
+                let Err(CodecError::ResourceLimit(first)) = result else { panic!("actual identifier refusal"); };
+                assert_eq!(first.operation, "ASM trailing surface bounds prefix");
+                assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                for replay in [&[][..], tokens.as_slice()] {
+                    assert!(matches!(super::super::record_trailing_surface_bounds(&ctx, replay),
+                        Err(CodecError::ResourceLimit(last)) if last == first));
+                }
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            }
+        }
+    }
+}

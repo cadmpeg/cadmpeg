@@ -4183,8 +4183,11 @@ pub fn record_trailing_surface_bounds(
     // Walk the fixed spline-record header: any leading payload identifiers,
     // attrib ref, history int, geometry ref, sense boolean, then the subtype
     // scope.
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut position = 0usize;
-    loop {
+    while position < toks.len() {
         ctx.charge_work(1, "ASM trailing surface bounds prefix")?;
         if !toks.get(position).is_some_and(Token::is_payload_ident) {
             break;
@@ -4614,7 +4617,9 @@ mod trailing_surface_bounds_work_tests {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                record_trailing_surface_bounds(&ctx, &[])
+                // The prefix probe visits an existing token. Empty input has
+                // no source visit and is covered by the zero-work control.
+                record_trailing_surface_bounds(&ctx, &[crate::sab::Token::False])
             },
         );
         let CodecError::ResourceLimit(limit) = error else {

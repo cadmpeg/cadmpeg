@@ -256,9 +256,14 @@ impl<'a> BitReader<'a> {
         lengths: PrimitiveLengths,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<u8>, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let mut output = Vec::new();
         loop {
-            ctx.charge_work(1, "iges binary string segments")?;
+            if !self.is_empty() {
+                ctx.charge_work(1, "iges binary string segments")?;
+            }
             let count = self.read_integer(lengths.single_integer)?;
             if count == 0 {
                 return Err(malformed("a Binary string has a zero character count"));

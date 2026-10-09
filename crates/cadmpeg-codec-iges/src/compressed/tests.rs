@@ -114,7 +114,7 @@ fn compressed_sequence_digit_scan_refuses_work_before_probe() {
 
 #[test]
 fn compressed_sequence_number_refuses_utf8_work() {
-    let error = with_work_limit(b"1", 2, |ctx| {
+    let error = with_work_limit(b"1", 1, |ctx| {
         parse_sequence(b"1", 0, "test", ctx).unwrap_err()
     });
     assert_work_limit(&error, "iges compressed sequence number", 1);
@@ -822,11 +822,11 @@ fn compressed_hollerith_parse_refuses_after_utf8_admission() {
 
 #[test]
 fn compressed_sequence_parse_refuses_after_utf8_admission() {
-    // Two digit probes and one UTF-8 byte precede the one-byte parse.
-    let error = with_work_limit(b"1", 3, |ctx| {
+    // One digit probe and one UTF-8 byte precede the one-byte parse.
+    let error = with_work_limit(b"1", 2, |ctx| {
         parse_sequence(b"1", 0, "test", ctx).unwrap_err()
     });
-    assert_work_limit_at(&error, "iges compressed sequence value", 3, 1);
+    assert_work_limit_at(&error, "iges compressed sequence value", 2, 1);
 }
 
 #[test]

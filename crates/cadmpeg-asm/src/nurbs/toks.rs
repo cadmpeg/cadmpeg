@@ -851,7 +851,9 @@ pub(crate) fn admit_subtype_references(
         let root = (record.tokens.as_ref(), 0usize, None);
         ctx.push_scoped_vec(&mut scratch, &mut pending, root, "walk ASM subtype stack")?;
         while let Some((tokens, position, _guard)) = pending.last_mut() {
-            ctx.charge_work(1, "scan ASM subtype references")?;
+            if *position < tokens.len() {
+                ctx.charge_work(1, "scan ASM subtype references")?;
+            }
             let Some(token) = tokens.get(*position) else {
                 pending.pop();
                 continue;

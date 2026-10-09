@@ -3005,8 +3005,11 @@ fn layout_hollerith(
     start: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(usize, usize)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
     let mut cursor = start;
-    loop {
+    while cursor < bytes.len() {
         ctx.charge_work(1, "iges parameter layout Hollerith digits")?;
         if !bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
             break;
@@ -3056,15 +3059,18 @@ pub(crate) fn layout_parameter_cards(
     let mut fields = Vec::new();
     let mut cursor = 0_usize;
     loop {
+        if cursor >= bytes.len() {
+            return Err(CodecError::Malformed("IGES Parameter Data delimiter is missing".into()));
+        }
         ctx.charge_work(1, "iges parameter layout fields")?;
         let start = cursor;
         let mut end = cursor;
         if let Some((_, payload_end)) = layout_hollerith(bytes, cursor, ctx)? {
             end = payload_end;
         }
-        loop {
+        while end < bytes.len() {
             ctx.charge_work(1, "iges parameter layout field bytes")?;
-            if end >= bytes.len() || matches!(bytes[end], b',' | b';') {
+            if matches!(bytes[end], b',' | b';') {
                 break;
             }
             end += 1;
@@ -3199,8 +3205,11 @@ fn hollerith(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(Token, usize)>, TokenizeFailure> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(TokenizeFailure::Refusal(CodecError::ResourceLimit(refusal)));
+    }
     let mut cursor = start;
-    loop {
+    while cursor < bytes.len() {
         ctx.charge_work(1, "iges parameter Hollerith digits")
             .map_err(TokenizeFailure::Refusal)?;
         if !bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
@@ -3290,9 +3299,12 @@ fn trim_macro_span(
     span: Range<usize>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Range<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
     let mut start = span.start;
     let mut end = span.end;
-    loop {
+    while start < end && start < bytes.len() {
         ctx.charge_work(1, "iges macro leading whitespace")?;
         if !bytes
             .get(start)
@@ -3302,13 +3314,9 @@ fn trim_macro_span(
         }
         start += 1;
     }
-    loop {
+    while end > start && end <= bytes.len() {
         ctx.charge_work(1, "iges macro trailing whitespace")?;
-        if !(end > start
-            && bytes
-                .get(end - 1)
-                .is_some_and(|byte| matches!(*byte, b' ' | b'\t')))
-        {
+        if !matches!(bytes[end - 1], b' ' | b'\t') {
             break;
         }
         end -= 1;
@@ -3331,8 +3339,11 @@ fn macro_hollerith_end(
     start: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<HollerithProbe, MacroDataError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal).into());
+    }
     let mut cursor = start;
-    loop {
+    while cursor < bytes.len() {
         ctx.charge_work(1, "iges macro Hollerith digits")?;
         if !bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
             break;
@@ -3371,8 +3382,11 @@ fn macro_next_field(
     record_delimiter: u8,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Range<usize>, u8, usize), MacroDataError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal).into());
+    }
     let mut cursor = start;
-    loop {
+    while cursor < bytes.len() {
         ctx.charge_work(1, "iges macro leading whitespace")?;
         let Some(byte) = bytes.get(cursor) else {
             break;
@@ -3384,7 +3398,7 @@ fn macro_next_field(
         }
     }
     let field_start = cursor;
-    loop {
+    while cursor < bytes.len() {
         ctx.charge_work(1, "iges macro header field scan")?;
         let Some(byte) = bytes.get(cursor).copied() else {
             break;
@@ -3478,10 +3492,13 @@ pub(crate) fn macro_parameter_data_with_context(
     record_delimiter: u8,
     ctx: &DecodeContext<'_>,
 ) -> Result<MacroParameterData, MacroDataError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal).into());
+    }
     let mut statements = Vec::new();
     let mut start = 0_usize;
     let mut cursor = 0_usize;
-    loop {
+    while cursor < bytes.len() {
         ctx.charge_work(1, "iges macro statement scan")?;
         let Some(byte) = bytes.get(cursor).copied() else {
             break;
@@ -3903,19 +3920,28 @@ fn tokenize_with_limits(
     limits: NumericLimits,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<Token>, usize, Vec<u64>), TokenizeFailure> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(TokenizeFailure::Refusal(CodecError::ResourceLimit(refusal)));
+    }
     let mut tokens = Vec::new();
     let mut double_precision_reals = Vec::new();
     let mut cursor = 0_usize;
     loop {
+        if cursor >= bytes.len() {
+            return Err(TokenizeFailure::Defect(ParameterDefect::DelimiterMissing, cursor));
+        }
         ctx.charge_work(1, "iges parameter token scan")
             .map_err(TokenizeFailure::Refusal)?;
-        loop {
+        while cursor < bytes.len() {
             ctx.charge_work(1, "iges parameter leading spaces")
                 .map_err(TokenizeFailure::Refusal)?;
             if bytes.get(cursor) != Some(&b' ') {
                 break;
             }
             cursor += 1;
+        }
+        if cursor >= bytes.len() {
+            return Err(TokenizeFailure::Defect(ParameterDefect::DelimiterMissing, cursor));
         }
         if bytes.get(cursor) == Some(&record_delimiter) {
             return Ok((tokens, cursor + 1, double_precision_reals));

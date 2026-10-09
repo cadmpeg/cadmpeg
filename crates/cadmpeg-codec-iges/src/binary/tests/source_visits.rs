@@ -246,3 +246,44 @@ fn binary_empty_normalization_executes_no_source_steps() {
     assert!(output.is_empty());
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn manual_binary_string_eof_keeps_primitive_truncation_without_a_segment_visit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut reader = BitReader::new(&[]);
+    assert!(matches!(reader.read_string(lengths(), &ctx), Err(CodecError::Malformed(message))
+        if message == "IGES Binary: a Binary primitive is truncated"));
+    assert_eq!((reader.byte, reader.bit), (0, 0));
+    let Err(CodecError::ResourceLimit(first)) = ctx.charge_work(1, "test original Binary string refusal")
+    else { panic!("original refusal"); };
+    for _ in 0..64 {
+        assert!(matches!(reader.read_string(lengths(), &ctx),
+            Err(CodecError::ResourceLimit(last)) if last == first));
+    }
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn manual_binary_negative_string_count_does_not_admit_an_absent_continuation() {
+    let mut writer = BitWriter::default();
+    writer.integer(-1, lengths().single_integer);
+    writer.push_bits(u64::from(b'x'), 8);
+    let bytes = writer.bytes();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // One existing count segment and one existing payload byte. The missing
+    // next count still has the original primitive truncation classification.
+    policy.limits.max_work_units = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut reader = BitReader::new(&bytes);
+    assert!(matches!(reader.read_string(lengths(), &ctx), Err(CodecError::Malformed(message))
+        if message == "IGES Binary: a Binary primitive is truncated"));
+    assert!(reader.is_empty());
+    ctx.finish_session().unwrap();
+}

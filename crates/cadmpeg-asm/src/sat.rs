@@ -170,6 +170,9 @@ struct FieldReader<'a> {
 
 impl<'a> FieldReader<'a> {
     fn skip_ws(&mut self, ctx: &DecodeContext<'_>) -> Result<(), StreamFailure> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(StreamFailure::from_operation(refusal.into()));
+        }
         while self.pos < self.bytes.len() {
             ctx.charge_work(1, "scan SAT whitespace")
                 .map_err(StreamFailure::from_operation)?;
@@ -595,6 +598,9 @@ pub fn parse_container(
 
 /// Parse a complete text stream into its header and typed record table.
 pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, StreamFailure> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(StreamFailure::from_operation(refusal.into()));
+    }
     let mut pos = 0usize;
     let header = parse_header(ctx, bytes, &mut pos)?;
     // Length conversion into the binary centimetre convention: the stream
@@ -613,14 +619,14 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
     .map_err(StreamFailure::from_operation)?;
     // Record name field, then payload fields until the terminator.
     'stream: loop {
+        let Some((rec_start, name, _)) = reader.next_field(ctx)? else {
+            break;
+        };
         ctx.charge_work(1, "frame SAT record")
             .map_err(StreamFailure::from_operation)?;
         let mut scratch = ctx
             .reserve_scoped(0, "frame SAT record")
             .map_err(StreamFailure::from_operation)?;
-        let Some((rec_start, name, _)) = reader.next_field(ctx)? else {
-            break;
-        };
         match name {
             "End-of-ASM-data" => {
                 terminator = Some(Terminator::Asm);
@@ -636,8 +642,6 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
         let mut prims = Vec::new();
         let mut subtype_depth = 0usize;
         loop {
-            ctx.charge_work(1, "frame SAT field")
-                .map_err(StreamFailure::from_operation)?;
             let Some((at, field, integer)) = reader.next_field(ctx)? else {
                 return Err(StreamError {
                     format: StreamFormat::Text,
@@ -646,6 +650,8 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 }
                 .into());
             };
+            ctx.charge_work(1, "frame SAT field")
+                .map_err(StreamFailure::from_operation)?;
             if field == "#" {
                 if subtype_depth != 0 {
                     return Err(StreamError {
@@ -1001,6 +1007,13 @@ impl<'a> Cur<'a, '_, '_> {
     }
     fn peek(&mut self) -> Option<&'a Prim<'a>> {
         if self.resource.is_some() {
+            return None;
+        }
+        if let Some(refusal) = self.ctx.resource_refusal() {
+            self.resource = Some(CodecError::ResourceLimit(refusal));
+            return None;
+        }
+        if self.pos >= self.prims.len() {
             return None;
         }
         if let Err(error) = self.ctx.charge_work(1, "read SAT typing primitive") {
@@ -2106,6 +2119,7 @@ fn type_record(
 
 #[cfg(test)]
 mod tests {
+    mod manual_scans;
     fn with_work_limit<T>(
         bytes: &[u8],
         max_work: u64,

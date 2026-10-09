@@ -57,6 +57,9 @@ pub(crate) fn scan_history_boundary(
     ref_width: RefWidth,
     preamble: Option<&[&str]>,
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if bytes.get(start..).is_none() {
         return Ok(None);
     }
@@ -72,7 +75,9 @@ pub(crate) fn scan_history_boundary(
         let mut name_done = false;
         let mut depth = 0usize;
         loop {
-            ctx.charge_work(1, "scan SAB history token")?;
+            if pos < bytes.len() {
+                ctx.charge_work(1, "scan SAB history token")?;
+            }
             let Ok((lexed, next)) = lex(ctx, bytes, pos, ref_width)? else {
                 return Ok(None);
             };
@@ -246,6 +251,9 @@ pub fn payload_subtype_range(
     ref_width: RefWidth,
     expected: &str,
 ) -> Result<Option<std::ops::Range<usize>>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(limit) = record.offset.checked_add(record.len) else {
         return Ok(None);
     };
@@ -326,6 +334,9 @@ pub fn payload_token(
     ref_width: RefWidth,
     token_index: usize,
 ) -> Result<Option<(usize, Token)>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(limit) = record.offset.checked_add(record.len) else {
         return Ok(None);
     };
@@ -570,6 +581,9 @@ fn frame_impl(
     declared_entities: Option<u64>,
     eof_terminates_final_record: bool,
 ) -> Result<Vec<Record>, StreamFailure> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(StreamFailure::from_operation(refusal.into()));
+    }
     let Some(bytes) = bytes.get(..limit) else {
         return Err(StreamError {
             format: StreamFormat::Binary,
@@ -614,8 +628,10 @@ fn frame_impl(
         let mut payload_start = true;
 
         loop {
-            ctx.charge_work(1, "lex SAB token")
-                .map_err(StreamFailure::from_operation)?;
+            if pos < limit {
+                ctx.charge_work(1, "lex SAB token")
+                    .map_err(StreamFailure::from_operation)?;
+            }
             if eof_terminates_final_record
                 && pos == limit
                 && depth_guards.is_empty()
@@ -794,6 +810,7 @@ fn frame_impl(
 
 #[cfg(test)]
 mod tests {
+    mod manual_scans;
     use super::{
         exact_identifier_at, frame as frame_stream, frame_history as frame_history_stream,
         payload_token, Record,
