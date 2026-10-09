@@ -11,6 +11,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::build_prt;
 use crate::CreoCodec;
 
+mod geometry_custody;
+
 #[test]
 fn tabulated_cylinder_refusals_charge_text_and_loss_rows() {
     let records = ["missing chart".to_string()];
