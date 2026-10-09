@@ -339,13 +339,17 @@ fn create_boundary_vertices<'ctx>(
     let clusters =
         cluster_storage.with_storage(|| cluster_boundary_positions(&positions, tolerance, ctx))?;
     let mut vertex_storage = ctx.reserve_scoped(0, "iges boundary endpoint vertex storage")?;
-    let mut vertex_ids = vertex_storage.with_storage(|| {
+    let mut vertex_slots_storage =
+        ctx.reserve_scoped(0, "iges boundary endpoint temporary vertex slots")?;
+    let mut vertex_ids = vertex_slots_storage.with_storage(|| {
         ctx.collect_indexed_vec(
             positions.len(),
             "iges boundary endpoint vertex slots",
             |_| Ok(None),
         )
     })?;
+    drop(positions);
+    drop(_position_storage);
     let mut derivations = derivation_storage
         .with_storage(|| ctx.collection_vec(clusters.len(), "iges boundary vertex derivations"))?;
     if let Some(refusal) = ctx.resource_refusal() {
@@ -364,7 +368,9 @@ fn create_boundary_vertices<'ctx>(
             "iges boundary vertices",
         )?;
         sequences.record_point(&point_id, stem, ctx)?;
-        let vertex_id = vertex_storage
+        let mut cluster_id_storage =
+            ctx.reserve_scoped(0, "iges boundary cluster temporary vertex identity")?;
+        let vertex_id = cluster_id_storage
             .with_storage(|| crate::ids::vertex_admitted(&stem.slot(boundary).slot(index), ctx))?;
         ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.model_mut().points.push(Point::new(
@@ -400,12 +406,15 @@ fn create_boundary_vertices<'ctx>(
             })?);
         }
     }
+    drop(source_values);
+    drop(cluster_storage);
     let mut result_ids = vertex_storage
         .with_storage(|| ctx.collection_vec(vertex_ids.len(), "iges boundary result vertex ids"))?;
     result_ids.extend(
         ctx.admit_iter(vertex_ids, "iges boundary result vertex traversal")?
             .flatten(),
     );
+    drop(vertex_slots_storage);
     Ok(BoundaryVertices {
         ids: result_ids,
         derivations,
