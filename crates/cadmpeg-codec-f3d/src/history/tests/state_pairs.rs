@@ -1261,7 +1261,8 @@ fn active_face_support_retains_invariant_preceding_owners() {
             &[FaceId::mint("f3d:brep:entity#40").expect("identity grammar")],
             &history,
             &preceding,
-            &changed_faces
+            &changed_faces,
+            &mut crate::history::topology_cache::TopologyQueryCache::default()
         ))
         .unwrap(),
         [
@@ -1283,7 +1284,8 @@ fn active_face_support_retains_invariant_preceding_owners() {
             &[FaceId::mint("f3d:brep:entity#4").expect("identity grammar")],
             &variant,
             &preceding,
-            &changed_faces
+            &changed_faces,
+            &mut crate::history::topology_cache::TopologyQueryCache::default()
         ))
         .unwrap(),
         [
@@ -1303,6 +1305,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
             &variant,
             &preceding,
             &changed_faces,
+            &mut crate::history::topology_cache::TopologyQueryCache::default(),
         )
     })
     .unwrap()
@@ -1691,6 +1694,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
                 boundary_edges: &[7, 98],
             },
             &HashSet::from([7]),
+            &mut crate::history::topology_cache::TopologyQueryCache::default(),
         )
     })
     .unwrap();
@@ -1739,6 +1743,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
                 boundary_edges: &[7, 98],
             },
             &HashSet::from([7]),
+            &mut crate::history::topology_cache::TopologyQueryCache::default(),
         )
     })
     .unwrap();
@@ -1765,6 +1770,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
                 boundary_edges: &[98],
             },
             &HashSet::from([7]),
+            &mut crate::history::topology_cache::TopologyQueryCache::default(),
         )
     })
     .unwrap();
@@ -1801,7 +1807,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
                 }
             })
             .collect();
-        match crate::test_support::with_decode_context(|decode_ctx| historical_loop_boundary(decode_ctx, coedges, topology)).unwrap() {
+        match crate::test_support::with_decode_context(|decode_ctx| historical_loop_boundary(decode_ctx, coedges, &crate::history::loop_index::LoopIndex::new(decode_ctx, topology)?)).unwrap() {
             crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Vertices(rows) => Some(
                 rows.into_iter()
                     .map(|row| row.vertex_slot)

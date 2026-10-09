@@ -269,7 +269,18 @@ fn pattern_seed_error(
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bind_pattern_body_selections(&ctx, std::slice::from_mut(&mut feature), &inputs)?;
+    super::super::bind_pattern_body_selections(
+        &ctx,
+        std::slice::from_mut(&mut feature),
+        &inputs,
+        &mut crate::history::body_candidates::BodyCandidates::new(
+            inputs.bodies,
+            inputs.regions,
+            inputs.shells,
+            inputs.construction_recipes,
+            inputs.persistent_design_links,
+        ),
+    )?;
     Ok(feature)
 }
 

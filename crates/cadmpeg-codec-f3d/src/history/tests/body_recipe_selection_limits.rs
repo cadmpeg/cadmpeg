@@ -197,9 +197,19 @@ fn bind_direct(
     policy.limits.max_collection_items = max_items;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    if let Err(error) =
-        super::super::bind_direct_body_recipe_body_selection(&ctx, &mut selection, &scope, &inputs)
-    {
+    if let Err(error) = super::super::bind_direct_body_recipe_body_selection(
+        &ctx,
+        &mut selection,
+        &scope,
+        &inputs,
+        &mut crate::history::body_candidates::BodyCandidates::new(
+            inputs.bodies,
+            inputs.regions,
+            inputs.shells,
+            inputs.construction_recipes,
+            inputs.persistent_design_links,
+        ),
+    ) {
         if let cadmpeg_core::CodecError::ResourceLimit(first) = &error {
             assert!(matches!(ctx.finish_session(),
                 Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *first));
@@ -216,14 +226,19 @@ fn face_candidate(max_work_units: u64) -> Result<(bool, bool), cadmpeg_core::Cod
     policy.limits.max_work_units = max_work_units;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::body_recipe_face_body_candidates(
-        &ctx,
-        &operands[0],
-        &body.id,
+    let mut candidates = crate::history::body_candidates::BodyCandidates::new(
         std::slice::from_ref(&body),
         std::slice::from_ref(&region),
         std::slice::from_ref(&shell),
-    )
+        &[],
+        &[],
+    );
+    candidates.face_body_candidates(
+        &cadmpeg_test_support::service_decode_context(),
+        &operands[0],
+        &body.id,
+    )?;
+    candidates.face_body_candidates(&ctx, &operands[0], &body.id)
 }
 
 fn external_body(
@@ -238,17 +253,18 @@ fn external_body(
     policy.limits.max_retained_bytes = max_retained_bytes;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::unique_external_body_candidate(
-        &ctx,
-        &operands[0],
-        source,
+    crate::history::body_candidates::BodyCandidates::new(
         std::slice::from_ref(&body),
         std::slice::from_ref(&region),
         std::slice::from_ref(&shell),
+        &[],
+        &[],
     )
+    .external(&ctx, &operands[0], source)
 }
 
 fn linked_body(
+    warm: bool,
     max_work_units: u64,
     max_retained_bytes: u64,
 ) -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
@@ -299,7 +315,20 @@ fn linked_body(
     policy.limits.max_retained_bytes = max_retained_bytes;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::body_recipe_link_candidate(&ctx, &operands[0], &[recipe], &[link], &[body])
+    let bodies = [body];
+    let recipes = [recipe];
+    let links = [link];
+    let mut candidates =
+        crate::history::body_candidates::BodyCandidates::new(&bodies, &[], &[], &recipes, &links);
+    if warm {
+        assert!(candidates
+            .linked(
+                &cadmpeg_test_support::service_decode_context(),
+                &operands[0],
+            )?
+            .is_some());
+    }
+    candidates.linked(&ctx, &operands[0])
 }
 
 #[test]
@@ -417,16 +446,16 @@ fn direct_body_recipe_keeps_resolved_selection() {
 
 #[test]
 fn persistent_body_link_refuses_work_limit() {
-    let error = linked_body(0, u64::MAX).unwrap_err();
+    let error = linked_body(false, 0, u64::MAX).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "resolve F3D persistent body link")
+        if limit.operation == "walk F3D body recipes")
     );
 }
 
 #[test]
 fn persistent_body_link_id_refuses_retained_limit() {
-    let error = linked_body(u64::MAX, 0).unwrap_err();
+    let error = linked_body(true, u64::MAX, 0).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D persistent body link identity")
@@ -436,7 +465,10 @@ fn persistent_body_link_id_refuses_retained_limit() {
 #[test]
 fn persistent_body_link_preserves_identity() {
     assert_eq!(
-        linked_body(u64::MAX, u64::MAX).unwrap().unwrap().as_str(),
+        linked_body(false, u64::MAX, u64::MAX)
+            .unwrap()
+            .unwrap()
+            .as_str(),
         "f3d:brep:body#1"
     );
 }

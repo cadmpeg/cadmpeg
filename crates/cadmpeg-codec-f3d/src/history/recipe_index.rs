@@ -12,7 +12,7 @@ type TokenReferences<'a> = HashMap<&'a str, HashMap<i64, Vec<usize>>>;
 pub(super) struct RecipeTopologyIndex<'a> {
     pub(super) topology: &'a AsmHistoricalTopology,
     tokens: TokenReferences<'a>,
-    faces: HashMap<i64, Vec<usize>>,
+    faces: Option<HashMap<i64, Vec<usize>>>,
 }
 
 impl<'a> RecipeTopologyIndex<'a> {
@@ -31,7 +31,6 @@ impl<'a> RecipeTopologyIndex<'a> {
             ctx.insert_hash_set(&mut live_edges, *edge, "index F3D live recipe edges")?;
         }
         let mut tokens = TokenReferences::new();
-        let mut faces = HashMap::new();
         for (index, tag) in topology.persistent_subentity_tags.iter().enumerate() {
             ctx.charge_work(1, "walk F3D recipe tags")?;
             let live = match tag.entity_kind {
@@ -63,22 +62,12 @@ impl<'a> RecipeTopologyIndex<'a> {
                     "index F3D recipe tag references",
                     "collect F3D recipe tag references",
                 )?;
-                if tag.entity_kind == AsmHistoricalEntityKind::Face {
-                    push_tag(
-                        ctx,
-                        &mut faces,
-                        *reference,
-                        index,
-                        "index F3D recipe face references",
-                        "collect F3D recipe face references",
-                    )?;
-                }
             }
         }
         Ok(Self {
             topology,
             tokens,
-            faces,
+            faces: None,
         })
     }
 
@@ -97,12 +86,41 @@ impl<'a> RecipeTopologyIndex<'a> {
     }
 
     pub(super) fn face_tags(
-        &self,
+        &mut self,
         ctx: &DecodeContext<'_>,
         reference: i64,
     ) -> Result<&[usize], CodecError> {
+        if self.faces.is_none() {
+            let mut faces = HashMap::new();
+            for references in self.tokens.values() {
+                for (reference, tags) in references {
+                    for tag_index in tags {
+                        ctx.charge_work(1, "index F3D recipe face references")?;
+                        if self.topology.persistent_subentity_tags[*tag_index].entity_kind
+                            == AsmHistoricalEntityKind::Face
+                        {
+                            ctx.push_hash_group(
+                                &mut faces,
+                                *reference,
+                                *tag_index,
+                                "index F3D recipe face references",
+                                "collect F3D recipe face references",
+                            )?;
+                        }
+                    }
+                }
+            }
+            for tags in faces.values_mut() {
+                ctx.sort_unstable_by(tags, Ord::cmp, |_| 0, "sort F3D recipe face references")?;
+            }
+            self.faces = Some(faces);
+        }
         ctx.charge_work(17, "query F3D recipe face references")?;
-        Ok(self.faces.get(&reference).map_or(&[], Vec::as_slice))
+        Ok(self
+            .faces
+            .as_ref()
+            .and_then(|faces| faces.get(&reference))
+            .map_or(&[], Vec::as_slice))
     }
 }
 
@@ -156,7 +174,7 @@ impl<'a> RecipeTopologyCache<'a> {
         &mut self,
         ctx: &DecodeContext<'_>,
         topology: &'a AsmHistoricalTopology,
-    ) -> Result<&RecipeTopologyIndex<'a>, CodecError> {
+    ) -> Result<&mut RecipeTopologyIndex<'a>, CodecError> {
         ctx.charge_work(1, "query F3D recipe topology cache")?;
         let key = std::ptr::from_ref(topology);
         if !self.entries.contains_key(&key) {
@@ -164,7 +182,9 @@ impl<'a> RecipeTopologyCache<'a> {
             ctx.reserve_map(&mut self.entries, 1, "cache F3D recipe topology")?;
             self.entries.insert(key, index);
         }
-        Ok(&self.entries[&key])
+        self.entries
+            .get_mut(&key)
+            .ok_or_else(|| CodecError::malformed("recipe topology index was not built"))
     }
 }
 
@@ -215,6 +235,38 @@ mod tests {
                 assert!(index.matching_tags(&ctx, "other", 301).unwrap().is_empty());
                 assert!(index.matching_tags(&ctx, "dead", 301).unwrap().is_empty());
             }
+        }
+        ctx.finish_session().unwrap();
+    }
+    #[test]
+    fn token_only_recipe_queries_do_not_admit_an_unused_face_index() {
+        let topology = AsmHistoricalTopology {
+            faces: vec![10],
+            persistent_subentity_tags: vec![AsmHistoricalPersistentSubentityTag {
+                entity_kind: AsmHistoricalEntityKind::Face,
+                entity_ref: 10,
+                selector: 0,
+                token: "rim".into(),
+                design_references: vec![301],
+                ordinal: 0,
+            }],
+            ..Default::default()
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One live face, token, reference, tag row, and cache entry.
+        policy.limits.max_collection_items = 5;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut cache = RecipeTopologyCache::default();
+        for _ in 0..1_000 {
+            assert_eq!(
+                cache
+                    .get(&ctx, &topology)
+                    .unwrap()
+                    .matching_tags(&ctx, "rim", 301)
+                    .unwrap(),
+                &[0]
+            );
         }
         ctx.finish_session().unwrap();
     }
