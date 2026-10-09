@@ -127,7 +127,8 @@ pub(super) fn move_body_translation_record(
         let Some(ids) = payload.get(ids_start..ids_end) else {
             continue;
         };
-        let (local_body_ids, storage) = ctx.with_scoped_storage(OPERATION, || {
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let local_body_ids = storage.with_storage(|| {
             super::selections::read_compact_body_ids(ctx, ids, OPERATION)
         })?;
         if ctx.contains(&local_body_ids, &0, OPERATION)? {
@@ -148,8 +149,7 @@ pub(super) fn move_body_translation_record(
     let Some((candidate, storage)) = candidate else {
         return Ok(None);
     };
-    storage.commit()?;
-    Ok(Some(candidate))
+    storage.commit_value(candidate).map(Some)
 }
 
 pub(super) fn move_body_selection_at(
@@ -170,8 +170,7 @@ pub(super) fn move_body_selection_at(
     let Some(record) = record.filter(|record| record.selection_offset == offset) else {
         return Ok(None);
     };
-    storage.commit()?;
-    Ok(Some(record.local_body_ids))
+    storage.commit_value(record.local_body_ids).map(Some)
 }
 
 /// Charge each Move Face candidate and its per-feature slot before insertion.
