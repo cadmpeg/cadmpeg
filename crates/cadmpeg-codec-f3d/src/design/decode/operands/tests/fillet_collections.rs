@@ -419,3 +419,57 @@ fn fillet_materialized_projection_storage_is_released_between_scopes() {
         "one scope's projections are released before the next scope builds its own"
     );
 }
+
+#[test]
+fn fillet_parameter_cache_commits_only_surviving_kind_lists() {
+    let fixture = one_scope_fixture(&["Radius"]);
+    let owners: Vec<_> = fixture.owners.iter().collect();
+    let surviving = minimum_vec_bytes::<&DesignParameter>();
+    for retained in [surviving, surviving - 1] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = retained;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let index = super::super::RecordIndex::build(
+            &ctx,
+            &fixture.parameters,
+            |parameter| (parameter.id.as_str(), parameter.record_index),
+            "index F3D Fillet parameters",
+            "f3d Fillet parameter index",
+        )
+        .unwrap();
+        let stream = super::super::record_stream(&ctx, &fixture.parameters[0].id)
+            .unwrap()
+            .unwrap();
+        let cache = super::super::fillet_parameters(&ctx, &owners, &index, stream).unwrap();
+        assert_eq!(cache.count, 1);
+        assert_eq!(cache.of_kind(super::super::RADIUS).len(), 1);
+        assert_eq!(cache.of_kind(super::super::RADIUS)[0].record_index, 201);
+        assert_eq!(cache.by_kind[super::super::RADIUS].capacity(), 4);
+        for kind in 1..cache.by_kind.len() {
+            assert!(cache.by_kind[kind].is_empty());
+            assert_eq!(cache.by_kind[kind].capacity(), 0);
+        }
+        let super::super::FilletParameters {
+            count: _,
+            by_kind,
+            _storage: storage,
+        } = cache;
+        let result = storage.commit_value(by_kind);
+        if retained == surviving {
+            let lists = result.unwrap();
+            assert_eq!(lists[super::super::RADIUS][0].record_index, 201);
+            assert!(ctx.resource_refusal().is_none());
+        } else {
+            let CodecError::ResourceLimit(limit) = result.err().unwrap() else {
+                panic!("expected original retained refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.used, 0);
+            assert_eq!(limit.additional, surviving);
+            assert_eq!(limit.limit, retained);
+            assert_eq!(limit.operation, "f3d Fillet owned parameters");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
+    }
+}
