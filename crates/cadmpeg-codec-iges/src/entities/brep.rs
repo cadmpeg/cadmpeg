@@ -450,10 +450,13 @@ pub(super) fn project<'ctx>(
     let mut loops = BTreeMap::<u32, Vec<LoopUse>>::new();
     let mut faces = BTreeMap::<u32, FaceDefinition>::new();
 
-    for entry in ctx
-        .admit_iter(directory, "iges B-rep directory traversal")?
-        .filter(|entry| entry.entity_type == 502 && entry.form == 1)
+    let mut directory_entries = directory.iter();
+    while let Some(entry) =
+        ctx.next_charged(&mut directory_entries, "iges B-rep directory traversal")?
     {
+        if !(entry.entity_type == 502 && entry.form == 1) {
+            continue;
+        }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?.copied() else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
