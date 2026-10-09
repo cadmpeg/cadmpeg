@@ -1840,7 +1840,7 @@ pub(super) fn contiguous_i32_program(
 pub(crate) fn decode_dimension_locus_pairs<'a>(
     ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'a>,
-    records: &mut RecordOffsetCache<'a, '_>,
+    records: &mut RecordOffsetCache<'a, '_, '_>,
 ) -> Result<Vec<DesignDimensionLocusPair>, CodecError> {
     let &DimensionDecodeInputs {
         scan,
@@ -1903,7 +1903,7 @@ pub(crate) fn decode_dimension_locus_pairs<'a>(
             vacant => vacant.insert(dimension_geometry_runs(ctx, points, curves)?),
         };
         let geometry_indices = geometry.of(ctx, scope)?;
-        let stream_records = records.get(ctx, &entry.name, bytes)?;
+        let stream_records = records.get(&entry.name, bytes)?;
         let Some(parsed_pair) = find_dimension_locus_pair(
             ctx,
             bytes,
@@ -2107,7 +2107,7 @@ fn parse_dimension_locus_pair(
 pub(crate) fn decode_dimension_null_locus_pairs<'a>(
     ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'a>,
-    records: &mut RecordOffsetCache<'a, '_>,
+    records: &mut RecordOffsetCache<'a, '_, '_>,
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
 ) -> Result<Vec<DesignDimensionLocusPair>, CodecError> {
@@ -2200,7 +2200,7 @@ pub(crate) fn decode_dimension_null_locus_pairs<'a>(
             vacant => vacant.insert(dimension_geometry_runs(ctx, points, curves)?),
         };
         let geometry_indices = geometry.of(ctx, scope)?;
-        let stream_records = records.get(ctx, &entry.name, bytes)?;
+        let stream_records = records.get(&entry.name, bytes)?;
         let Some(parsed_pair) = find_dimension_null_locus_pair(
             ctx,
             bytes,
@@ -2346,7 +2346,7 @@ type AnnotationInterval = (usize, usize, Option<u32>);
 pub(crate) fn decode_dimension_annotation_frames<'a>(
     ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'a>,
-    records: &mut RecordOffsetCache<'a, '_>,
+    records: &mut RecordOffsetCache<'a, '_, '_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionAnnotationFrame>, CodecError> {
     let &DimensionDecodeInputs {
@@ -2463,7 +2463,7 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
             Some(index) => index,
             vacant => vacant.insert(dimension_sketch_entity_runs(ctx, entities)?),
         };
-        let stream_records = records.get(ctx, &entry.name, bytes)?;
+        let stream_records = records.get(&entry.name, bytes)?;
         let frame_inputs = AnnotationFrameInputs {
             governed_owners: &governed_owners,
             geometry_indices: geometry.of(ctx, stream)?,
@@ -3060,7 +3060,7 @@ fn is_dimension_presentation_type(type_guid: &str) -> bool {
 pub(crate) fn decode_dimension_presentation_frames<'a>(
     ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'a>,
-    records: &mut RecordOffsetCache<'a, '_>,
+    records: &mut RecordOffsetCache<'a, '_, '_>,
     types: &[SegmentType],
     entities: &'a [DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionPresentationFrame>, CodecError> {
@@ -3161,7 +3161,7 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
             }))
         };
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let stream_records = records.get(ctx, &entry.name, bytes)?;
+        let stream_records = records.get(&entry.name, bytes)?;
         let headers = stream_records.headers_in(ctx, 0, bytes.len())?;
         let is_presentation_record = |at: &usize| -> Result<bool, CodecError> {
             Ok(match indexed_record_header_at(bytes, *at) {
@@ -3560,7 +3560,7 @@ fn parse_dimension_presentation_frame(
 pub(crate) fn decode_dimension_locus_groups<'a>(
     ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'a>,
-    records: &mut RecordOffsetCache<'a, '_>,
+    records: &mut RecordOffsetCache<'a, '_, '_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionLocusGroup>, CodecError> {
     let &DimensionDecodeInputs {
@@ -3627,7 +3627,7 @@ pub(crate) fn decode_dimension_locus_groups<'a>(
         };
         let geometry_indices = geometry.of(ctx, scope)?;
         let stream_sketch_entities = sketch_entities.of(ctx, scope)?;
-        let stream_records = records.get(ctx, &entry.name, bytes)?;
+        let stream_records = records.get(&entry.name, bytes)?;
         find_dimension_locus_groups(
             ctx,
             &LocusGroupStream {
