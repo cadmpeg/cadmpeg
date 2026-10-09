@@ -130,8 +130,8 @@ fn polyline_wrapper(clockwise: bool, closed: bool) -> Vec<u8> {
     }
     push_i32(&mut payload, 2);
     let wire_uuid = [
-        0xe6, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
-        0x22, 0xf0,
+        0xe6, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22,
+        0xf0,
     ];
     let mut class_body = crc_chunk(CHUNKS, 0x0002_fffb, &wire_uuid);
     class_body.extend(crc_chunk(CHUNKS, 0x0002_fffc, &payload));
@@ -153,8 +153,8 @@ fn polycurve_wrapper() -> Vec<u8> {
     }
     payload.extend(children.concat());
     let wire_uuid = [
-        0xe0, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
-        0x22, 0xf0,
+        0xe0, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22,
+        0xf0,
     ];
     let mut class_body = crc_chunk(CHUNKS, 0x0002_fffb, &wire_uuid);
     class_body.extend(crc_chunk(CHUNKS, 0x0002_fffc, &payload));
@@ -302,8 +302,8 @@ fn one_mesh_wrapper() -> Vec<u8> {
         mesh.extend(0_u32.to_le_bytes());
     }
     let mesh_uuid = [
-        0xe4, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
-        0x22, 0xf0,
+        0xe4, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22,
+        0xf0,
     ];
     let mut class_body = crc_chunk(CHUNKS, 0x0002_fffb, &mesh_uuid);
     class_body.extend(crc_chunk(CHUNKS, 0x0002_fffc, &mesh));
@@ -566,13 +566,11 @@ fn orientation_supports_polygon_rational_and_open_profiles() {
         0
     );
     assert_eq!(
-        exact_orientation(&ctx, &decoded_quadratic_circle(false), 0)
-            .expect("required invariant"),
+        exact_orientation(&ctx, &decoded_quadratic_circle(false), 0).expect("required invariant"),
         1
     );
     assert_eq!(
-        exact_orientation(&ctx, &decoded_quadratic_circle(true), 0)
-            .expect("required invariant"),
+        exact_orientation(&ctx, &decoded_quadratic_circle(true), 0).expect("required invariant"),
         -1
     );
     let mut off_plane = decoded_polygon(false, true);
@@ -694,22 +692,21 @@ fn extrusion_single_profile_refuses_collection_limit() {
 fn extrusion_transformed_nurbs_refuses_collection_limit() {
     let curve = polygon_nurbs();
     let needed = curve.knots().len() + curve.pole_count();
-    let refusal =
-        with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
-            transform_nurbs(
-                ctx,
-                &curve,
-                &super::ProfileFrame {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    xaxis: Vector3::new(1.0, 0.0, 0.0),
-                    yaxis: Vector3::new(0.0, 1.0, 0.0),
-                    zaxis: Vector3::new(0.0, 0.0, 1.0),
-                    miter: None,
-                },
-                0,
-            )
-        })
-        .expect_err("curve copy exceeds collection limit");
+    let refusal = with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
+        transform_nurbs(
+            ctx,
+            &curve,
+            &super::ProfileFrame {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                xaxis: Vector3::new(1.0, 0.0, 0.0),
+                yaxis: Vector3::new(0.0, 1.0, 0.0),
+                zaxis: Vector3::new(0.0, 0.0, 1.0),
+                miter: None,
+            },
+            0,
+        )
+    })
+    .expect_err("curve copy exceeds collection limit");
     assert!(matches!(
         refusal,
         GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -752,11 +749,10 @@ fn extrusion_transformed_nurbs_refuses_retained_limit_one_byte_below_copy() {
 fn extrusion_start_curve_copy_refuses_collection_limit() {
     let curve = polygon_nurbs();
     let needed = curve.knots().len() + curve.pole_count();
-    let refusal =
-        with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
-            curve.try_clone_for_decode(ctx, "Rhino extrusion start curve")
-        })
-        .expect_err("start curve copy exceeds collection limit");
+    let refusal = with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
+        curve.try_clone_for_decode(ctx, "Rhino extrusion start curve")
+    })
+    .expect_err("start curve copy exceeds collection limit");
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -830,11 +826,10 @@ fn extrusion_cap_knots_refuse_collection_limit() {
     )
     .expect("unit cap frame");
     let needed = curve.pole_count() + curve.knots().len();
-    let refusal =
-        with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
-            cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
-        })
-        .expect_err("cap knots exceed collection limit");
+    let refusal = with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
+        cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
+    })
+    .expect_err("cap knots exceed collection limit");
     assert!(matches!(
         refusal,
         GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -868,11 +863,10 @@ fn extrusion_cap_weights_refuse_collection_limit() {
     )
     .expect("unit cap frame");
     let needed = curve.pole_count() * 2 + curve.knots().len();
-    let refusal =
-        with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
-            cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
-        })
-        .expect_err("cap weights exceed collection limit");
+    let refusal = with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
+        cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
+    })
+    .expect_err("cap weights exceed collection limit");
     assert!(matches!(
         refusal,
         GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1037,8 +1031,7 @@ fn malformed_mesh_cache_diagnostic_refuses_collection_limit() {
             &mut crate::mesh::MeshBudget::new(),
         )
         .expect_err("mesh cache warning exceeds collection limit");
-        let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(item)) = refusal
-        else {
+        let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(item)) = refusal else {
             panic!("expected resource refusal, got {refusal:?}");
         };
         if item.operation == "Rhino diagnostics" {
@@ -1103,9 +1096,8 @@ fn extrusion_mesh_cache_child_range_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("root view");
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root view");
     let mut reader =
         crate::chunks::BoundedReader::new(&bytes, 0, bytes.len()).expect("valid cache range");
     let refusal = read_mesh_cache(
@@ -1128,8 +1120,8 @@ fn extrusion_mesh_cache_child_range_refuses_collection_limit() {
     ));
 
     let meshes = crate::decode::with_expand_bytes(&bytes, |expand| {
-        let mut reader = crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
-            .expect("valid cache range");
+        let mut reader =
+            crate::chunks::BoundedReader::new(&bytes, 0, bytes.len()).expect("valid cache range");
         read_mesh_cache(
             expand,
             &bytes,
@@ -1141,7 +1133,8 @@ fn extrusion_mesh_cache_child_range_refuses_collection_limit() {
             },
             &mut crate::mesh::MeshBudget::new(),
             &mut Diagnostics::new(),
-        ).map(super::ScopedMeshList::into_test_values)
+        )
+        .map(super::ScopedMeshList::into_test_values)
     })
     .expect("service profile admits the cache");
     assert_eq!(meshes.len(), 1);
@@ -1157,8 +1150,8 @@ fn extrusion_mesh_cache_id_refuses_retained_limit() {
         let (ctx, root) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                 .expect("root view");
-        let mut reader = crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
-            .expect("valid cache range");
+        let mut reader =
+            crate::chunks::BoundedReader::new(&bytes, 0, bytes.len()).expect("valid cache range");
         let refusal = read_mesh_cache(
             crate::mesh::MeshExpand::new(&ctx, root),
             &bytes,
@@ -1234,7 +1227,8 @@ fn v5_mesh_cache_consumes_two_mesh_slots_and_a_null_slot() {
             std::slice::from_ref(&descriptor),
             &mut crate::mesh::MeshBudget::new(),
             &mut Diagnostics::new(),
-        ).map(super::ScopedMeshList::into_test_values)
+        )
+        .map(super::ScopedMeshList::into_test_values)
     })
     .expect("V5 mesh cache");
     assert_eq!(result.len(), 1);
@@ -1322,7 +1316,8 @@ fn v5_mesh_cache_skips_a_bounded_suffix_after_three_slots() {
             std::slice::from_ref(&descriptor),
             &mut crate::mesh::MeshBudget::new(),
             &mut Diagnostics::new(),
-        ).map(super::ScopedMeshList::into_test_values)
+        )
+        .map(super::ScopedMeshList::into_test_values)
     })
     .expect("V5 mesh cache suffix");
     assert_eq!(result.len(), 1);
@@ -1358,8 +1353,7 @@ fn numerical_seventh_miter_preserves_a_shallow_plane_tilt() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
     let normal = super::active_miter(true, Vector3::new(SMALL_MITER_TILT, 0.0, 1.0)).unwrap();
-    let point =
-        super::mitered_local(&ctx, Vector3::new(1.0e8, 0.0, 0.0), Some(normal), 0).unwrap();
+    let point = super::mitered_local(&ctx, Vector3::new(1.0e8, 0.0, 0.0), Some(normal), 0).unwrap();
     assert!((point.z + 1.0).abs() <= 8.0 * f64::EPSILON);
     assert!(Vector3::from(normal).dot(point).abs() <= 8.0 * f64::EPSILON);
 }

@@ -107,10 +107,7 @@ impl<'ctx> ScopedMeshList<'ctx> {
         }
     }
 
-    fn new(
-        ctx: &'ctx DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
+    fn new(ctx: &'ctx DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
         Ok(Self {
             values: Vec::new(),
             storage: Some(ctx.reserve_scoped(0, operation)?),
@@ -297,14 +294,16 @@ pub(crate) fn decode<'ctx>(
         [false, false]
     };
     let mut warnings = Diagnostics::new();
-    let mut payload_children = vec![profile_range];
+    let mut payload_children = [profile_range, 0..0];
+    let mut child_count = 1;
     let meshes = if minor >= 3 {
         let cache_start = reader.position();
         let cache_range = chunk_at(data, cache_start, reader.end(), archive, false)
             .ok()
             .map(|chunk| chunk.range());
         if let Some(range) = cache_range {
-            payload_children.push(range);
+            payload_children[1] = range;
+            child_count = 2;
         }
         match read_mesh_cache(
             expand,
@@ -323,9 +322,9 @@ pub(crate) fn decode<'ctx>(
                 return Err(error);
             }
             Err(cache_error) => {
-                // MeshBudget counters stay monotonic after rejection. The
-                // temporary decoded meshes, descriptor lists, and their
-                // scoped backing guards drop with `read_mesh_cache`.
+                // MeshBudget counters stay monotonic after rejection.
+                // Decoded meshes, descriptors, and their list-backing
+                // guards drop with `read_mesh_cache`.
                 warnings.push_admitted(
                     expand.ctx(),
                     format_args!("extrusion mesh cache dropped: {cache_error}"),
@@ -371,7 +370,7 @@ pub(crate) fn decode<'ctx>(
         data,
         &outer,
         reader,
-        &payload_children,
+        &payload_children[..child_count],
         &mut warnings,
     )?;
 
@@ -734,7 +733,10 @@ fn nurbs_orientation(
     let mut knot_windows = curve.knots()[..].windows(2);
     for _ in 0..knot_window_count {
         let pair = ctx
-            .next_charged(&mut knot_windows, "Rhino exact orientation window traversal")?
+            .next_charged(
+                &mut knot_windows,
+                "Rhino exact orientation window traversal",
+            )?
             .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("Rhino orientation knot source ended early")
             })?;
@@ -1026,8 +1028,7 @@ fn read_mesh_cache<'ctx>(
         "extrusion mesh cache",
     )?;
     let mut meshes = ScopedMeshList::new(expand.ctx(), "Rhino extrusion cache meshes")?;
-    let mut cache_children =
-        ScratchVec::new(expand.ctx(), "Rhino extrusion cache child ranges")?;
+    let mut cache_children = ScratchVec::new(expand.ctx(), "Rhino extrusion cache child ranges")?;
     let mut index = 0_usize;
     loop {
         expand
@@ -1085,11 +1086,7 @@ fn read_mesh_cache<'ctx>(
             },
             mesh_budget,
         )?;
-        meshes.push_admitted(
-            expand.ctx(),
-            mesh,
-            "Rhino extrusion mesh-cache meshes",
-        )?;
+        meshes.push_admitted(expand.ctx(), mesh, "Rhino extrusion mesh-cache meshes")?;
         finish_anonymous(
             expand.ctx(),
             data,
@@ -1154,8 +1151,7 @@ fn read_v5_mesh_cache<'ctx>(
     };
 
     let mut offset = cache.payload_range.start;
-    let mut meshes =
-        ScopedMeshList::new(expand.ctx(), "Rhino V5 extrusion cache meshes")?;
+    let mut meshes = ScopedMeshList::new(expand.ctx(), "Rhino V5 extrusion cache meshes")?;
     for index in 0..3_usize {
         let wrapper = chunk_at(data, offset, cache.payload_range.end, archive, false)?;
         let (class, nested_userdata) = parse_class_wrapper_with_scoped_userdata(
@@ -1181,11 +1177,7 @@ fn read_v5_mesh_cache<'ctx>(
                     },
                     mesh_budget,
                 )?;
-                meshes.push_admitted(
-                    expand.ctx(),
-                    mesh,
-                    "Rhino V5 extrusion mesh-cache meshes",
-                )?;
+                meshes.push_admitted(expand.ctx(), mesh, "Rhino V5 extrusion mesh-cache meshes")?;
             } else if class.class_uuid != Uuid::nil() {
                 return Err(error(
                     wrapper.header_start,
