@@ -118,7 +118,7 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::edge_resolve::edge_assignment_candidates(
                 &[selector_with_counts(0, &[], &[17, 18])],
-                [&[17][..]],
+                [&[17][..]].into_iter().map(Some),
                 decode_ctx,
             )
         })
@@ -129,7 +129,7 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::edge_resolve::edge_assignment_candidates(
                 &[selector_with_counts(0, &[18], &[17, 18])],
-                [&[17, 18][..]],
+                [&[17, 18][..]].into_iter().map(Some),
                 decode_ctx,
             )
         })
@@ -140,7 +140,7 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::edge_resolve::edge_assignment_candidates(
                 &[selector_with_counts(0, &[18], &[17, 18])],
-                [&[17][..]],
+                [&[17][..]].into_iter().map(Some),
                 decode_ctx,
             )
         })
@@ -151,7 +151,7 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::edge_resolve::edge_assignment_candidates(
                 &[selector_with_counts(0, &[], &[17, 18])],
-                [&[17, 18][..]],
+                [&[17, 18][..]].into_iter().map(Some),
                 decode_ctx,
             )
         })
@@ -160,7 +160,7 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::edge_resolve::edge_assignment_candidates(
                 &[selector_with_counts(0, &[18], &[17, 18])],
-                [&[17, 18][..]],
+                [&[17, 18][..]].into_iter().map(Some),
                 decode_ctx,
             )
         })

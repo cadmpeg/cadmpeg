@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolve edge-selection operands to stable edge identities.
 
+use super::edge_references::edge_operand_reference_edge_sets;
 use crate::ids::{self, native_stream};
 use crate::records::{
     feature::{scope::DesignParameterScope, work_geometry::DesignEdgeTreatmentVertexOperand},
@@ -1438,9 +1439,18 @@ fn transition_chain_is_supported_by_recipe(
             .iter()
             .chain(&operand.deleted_boundary_edge_slots)
             .copied()
-            .chain(edge_operand_reference_edge_sets(operand).flatten().copied())
         {
             ctx.push_vec(&mut all_recipe_edges, edge, "f3d transition recipe edge")?;
+        }
+        let mut references = edge_operand_reference_edge_sets(operand);
+        while references.len() != 0 {
+            let Some(edges) = ctx.next_charged(&mut references, "scan F3D transition reference sources")? else {
+                break;
+            };
+            let Some(edges) = edges else { continue; };
+            for &edge in edges {
+                ctx.push_vec(&mut all_recipe_edges, edge, "f3d transition recipe edge")?;
+            }
         }
     }
     ctx.sort_unstable_by(
@@ -1799,21 +1809,34 @@ enum EdgeAssignmentCandidates {
 // record only contributes topology context to its neighboring operands.
 fn edge_group_assignment_candidates<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
+    reference_edge_sets: impl IntoIterator<Item = Option<&'a [i64]>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<EdgeAssignmentCandidates>, CodecError> {
     ctx.charge_work(0, "resolve F3D edge group assignment candidates")?;
     let mut reference_edge_sets = reference_edge_sets
         .into_iter()
-        .filter(|edges| !edges.is_empty());
+        .map(|edges| edges.filter(|edges| !edges.is_empty()));
     if !selector_contexts.is_empty() {
         return Ok(
             edge_assignment_candidates(selector_contexts, reference_edge_sets, ctx)?
                 .map(EdgeAssignmentCandidates::Edges),
         );
     }
-    let (Some(first), Some(second)) = (reference_edge_sets.next(), reference_edge_sets.next())
-    else {
+    let mut first = None;
+    let mut second = None;
+    while reference_edge_sets.size_hint().1 != Some(0) {
+        let Some(edges) = ctx.next_charged(&mut reference_edge_sets, "scan F3D assignment reference sources")? else {
+            break;
+        };
+        let Some(edges) = edges else { continue; };
+        if first.is_none() {
+            first = Some(edges);
+        } else {
+            second = Some(edges);
+            break;
+        }
+    }
+    let (Some(first), Some(second)) = (first, second) else {
         return Ok(Some(EdgeAssignmentCandidates::Context));
     };
     let mut candidates = Vec::new();
@@ -1961,7 +1984,7 @@ fn unique_edge_assignment_with_context(
 
 fn edge_assignment_candidates<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
+    shared_edge_sets: impl IntoIterator<Item = Option<&'a [i64]>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
     ctx.charge_work(0, "resolve F3D edge assignment candidates")?;
@@ -2674,39 +2697,6 @@ fn primary_terminal_reference_shared_edge(
     }
 }
 
-pub(super) fn edge_operand_reference_edge_sets(
-    operand: &DesignEdgeOperand,
-) -> impl Iterator<Item = &[i64]> + '_ {
-    let terminal = operand.recipe_reference_contexts.is_empty();
-    let source_count = if terminal {
-        operand.terminal_reference_edge_slots.len()
-    } else {
-        operand.recipe_reference_contexts.len()
-    };
-    let selected_count = operand
-        .local_topology_references
-        .as_ref()
-        .map_or(source_count, Vec::len);
-    (0..selected_count).filter_map(move |selected| {
-        let source = match &operand.local_topology_references {
-            Some(ordinals) => usize::try_from(ordinals.get(selected)?.get())
-                .ok()?
-                .checked_sub(1)?,
-            None => selected,
-        };
-        if terminal {
-            operand
-                .terminal_reference_edge_slots
-                .get(source)
-                .map(Vec::as_slice)
-        } else {
-            operand
-                .recipe_reference_contexts
-                .get(source)
-                .map(|context| context.changed_reference_edge_slots.as_slice())
-        }
-    })
-}
 
 pub(crate) fn resolved_edge_candidate_intersection<'a, I>(
     ctx: &DecodeContext<'_>,
@@ -2920,7 +2910,7 @@ fn corroborated_edge_intersection(
 
 fn corroborated_edge_candidates<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
+    shared_edge_sets: impl IntoIterator<Item = Option<&'a [i64]>>,
     slots: SelectorSlots,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
@@ -2957,6 +2947,7 @@ fn corroborated_edge_candidates<'a>(
     }
     let mut shared = shared_edge_sets.into_iter();
     while let Some(shared_edges) = ctx.next_charged(&mut shared, "scan F3D corroborated shared sets")? {
+        let Some(shared_edges) = shared_edges else { continue; };
         ctx.retain_vec(&mut candidates, |candidate| ctx.contains(shared_edges, candidate, "find F3D corroborated shared candidate"), "retain F3D corroborated shared candidates")?;
         if candidates.is_empty() {
             return Ok(None);

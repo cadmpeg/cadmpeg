@@ -1743,7 +1743,7 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::edge_resolve::edge_group_assignment_candidates(
                 &[],
-                [&[17, 18][..], &[18, 19][..], &[20][..]],
+                [&[17, 18][..], &[18, 19][..], &[20][..]].into_iter().map(Some),
                 decode_ctx,
             )
         })
@@ -1754,7 +1754,7 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::edge_resolve::edge_group_assignment_candidates(
                 &[],
-                [&[][..], &[18][..]],
+                [&[][..], &[18][..]].into_iter().map(Some),
                 decode_ctx,
             )
         })
@@ -1765,7 +1765,7 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::edge_resolve::edge_group_assignment_candidates(
                 &[],
-                [&[17][..], &[18][..]],
+                [&[17][..], &[18][..]].into_iter().map(Some),
                 decode_ctx,
             )
         })
@@ -1776,7 +1776,7 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::edge_resolve::edge_group_assignment_candidates(
                 &[],
-                [&[17][..]],
+                [&[17][..]].into_iter().map(Some),
                 decode_ctx,
             )
         })
@@ -1978,3 +1978,5 @@ mod empty_gates;
 mod text_comparison;
 
 mod state_consensus;
+
+mod reference_sources;

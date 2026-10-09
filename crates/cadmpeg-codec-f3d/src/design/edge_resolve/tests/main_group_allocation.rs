@@ -556,7 +556,7 @@ fn edge_assignment_reference_candidate_refuses_collection_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match crate::design::edge_resolve::edge_group_assignment_candidates(
             &[],
-            [&[17, 18][..], &[18, 19][..]],
+            [&[17, 18][..], &[18, 19][..]].into_iter().map(Some),
             &ctx,
         ) {
             Err(CodecError::ResourceLimit(failure))
@@ -588,7 +588,7 @@ fn corroborated_edge_candidate_refuses_collection_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match crate::design::edge_resolve::edge_assignment_candidates(
             &selectors,
-            [&[17, 18][..]],
+            [&[17, 18][..]].into_iter().map(Some),
             &ctx,
         ) {
             Err(CodecError::ResourceLimit(failure))

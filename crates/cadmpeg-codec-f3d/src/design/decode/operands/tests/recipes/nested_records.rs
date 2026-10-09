@@ -267,7 +267,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     edge_operand.terminal_reference_edge_slots = vec![vec![17], vec![18, 19]];
     assert_eq!(
-        crate::design::edge_resolve::edge_operand_reference_edge_sets(&edge_operand)
+        crate::design::edge_references::edge_operand_reference_edge_sets(&edge_operand)
+            .flatten()
             .collect::<Vec<_>>(),
         vec![&[17][..], &[18, 19][..]]
     );
@@ -296,7 +297,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         std::num::NonZeroU32::new(2).unwrap(),
     ]);
     assert_eq!(
-        crate::design::edge_resolve::edge_operand_reference_edge_sets(&edge_operand)
+        crate::design::edge_references::edge_operand_reference_edge_sets(&edge_operand)
+            .flatten()
             .collect::<Vec<_>>(),
         vec![&[18, 19][..], &[17][..], &[18, 19][..]]
     );

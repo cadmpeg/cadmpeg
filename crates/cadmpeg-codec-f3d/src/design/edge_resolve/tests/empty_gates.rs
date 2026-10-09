@@ -22,7 +22,7 @@ fn run_case(owner: &str, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
         "unique_group" => unique_edge_group_assignment(&[], ctx).map(|value| value.is_none()),
         "unique_context" => unique_edge_assignment_with_context(&[EdgeAssignmentCandidates::Context], ctx)
             .map(|value| value.is_none()),
-        "assignment" => edge_assignment_candidates(&[], std::iter::empty::<&[i64]>(), ctx)
+        "assignment" => edge_assignment_candidates(&[], std::iter::empty::<Option<&[i64]>>(), ctx)
             .map(|value| value.is_none()),
         "partition" => {
             let mut target = group(2, 10);
@@ -37,14 +37,14 @@ fn run_case(owner: &str, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
         "selector_intersection" => corroborated_edge_intersection(ctx, &[], &[], SelectorSlots::Incidence)
             .map(|value| value.is_none()),
         "selector_candidates" => corroborated_edge_candidates(
-            &[], std::iter::empty::<&[i64]>(), SelectorSlots::Incidence, ctx,
+            &[], std::iter::empty::<Option<&[i64]>>(), SelectorSlots::Incidence, ctx,
         ).map(|value| value.is_none()),
         "selector_empty_candidates" => {
             let selector = crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
                 selector: 0, clauses: Vec::new(), incidence_matching_edge_slots: Vec::new(),
                 boundary_count_matching_edge_slots: Vec::new(),
             };
-            corroborated_edge_candidates(&[selector], std::iter::empty::<&[i64]>(), SelectorSlots::Incidence, ctx)
+            corroborated_edge_candidates(&[selector], std::iter::empty::<Option<&[i64]>>(), SelectorSlots::Incidence, ctx)
                 .map(|value| value.is_none())
         }
         "fixed_fillet" => {
