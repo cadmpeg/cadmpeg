@@ -33,7 +33,7 @@ use crate::math::{product_quotient, scaled_sinh_cosh};
 use crate::math::{Point2, Point3, Vector3};
 use crate::scalar::{
     ExtendedReal, FiniteReal, Length, NonNegativeLength, NonNegativeReal, NonZeroLength,
-    NonZeroReal, PositiveReal, SegmentPosition, UnitCosine,
+    NonZeroReal, SegmentPosition, UnitCosine,
 };
 use crate::topology::{IncreasingParameterInterval, ParameterInterval};
 use crate::transform::Transform;
@@ -56,6 +56,7 @@ mod depth;
 mod curve_higher;
 mod curve_nurbs;
 mod model_surface_point;
+mod pcurve_nurbs;
 mod polyline;
 mod priority_queue;
 mod rational;
@@ -66,6 +67,7 @@ mod surface_request;
 mod test_support;
 use basis::fill_bspline_basis;
 use depth::{ModelEvaluationDepthGuard, ModelEvaluationIdentity};
+use pcurve_nurbs::PcurveDifferential;
 use polyline::polyline_point;
 use priority_queue::PriorityQueue;
 use rational::{finite_lanes, Homogeneous};
@@ -2575,13 +2577,6 @@ pub fn fitted_nurbs_offset_frame_distance(
     })
 }
 
-struct PcurveDifferential {
-    point: FinitePoint2,
-    /// The first derivative, or why it has no finite value.
-    tangent: Result<FinitePoint2, EvaluationFailure<Point2>>,
-    acceleration: Option<FinitePoint2>,
-}
-
 /// The parameter-plane pole `(u, v)` as the model-space pole `(u, v, 0)`.
 fn planar_pole(pole: FinitePoint2) -> FinitePoint3 {
     let [u, v] = pole.coordinates();
@@ -2608,7 +2603,7 @@ fn planar_value(
     }
 }
 
-/// [`nurbs_pcurve_differential_with`] over raw `(u, v)` poles, each admitted
+/// The NURBS differential over raw `(u, v)` poles, each admitted
 /// as the span that supports `t` reads it.
 #[cfg(test)]
 fn nurbs_pcurve_differential(
@@ -2624,218 +2619,14 @@ fn nurbs_pcurve_differential(
     let result = FiniteReal::new(t)
         .ok_or(EvaluationFailure::NoValue)
         .and_then(|t| {
-            nurbs_pcurve_differential_with(
-                &scratch,
-                degree,
-                knots,
-                control_points.len(),
-                |index| FinitePoint2::new(*control_points.get(index)?).map(planar_pole),
-                weights,
-                t,
+            pcurve_nurbs::differential(
+                &scratch, degree, knots,
+                pcurve_nurbs::DifferentialPoles::Raw { points: control_points, weights }, t,
             )
         });
     scratch
         .finish_evaluation(result)
         .map_err(EvaluationFailure::ResourceLimit)?
-}
-
-/// The point and first two derivatives at `t` of a possibly-rational
-/// B-spline over `count` planar poles that `pole` hands out admitted and
-/// placed in the model-space plane `z = 0`.
-///
-/// A point that overflows is non-finite and carries the value each
-/// coordinate reached; a basis that leaves the finite range reaches no
-/// coordinate, and each reads NaN. The rational quotient rule forms the
-/// derivatives from the finite point, so a curve without one has no
-/// derivatives here.
-fn nurbs_pcurve_differential_with(
-    scratch: &decode::Scratch<'_, '_>,
-    degree: u32,
-    knots: &[f64],
-    count: usize,
-    pole: impl Fn(usize) -> Option<FinitePoint3>,
-    weights: Option<&[f64]>,
-    t: FiniteReal,
-) -> Result<PcurveDifferential, EvaluationFailure<Point2>> {
-    scratch.settle(nurbs_pcurve_differential_unsettled(
-        scratch, degree, knots, count, pole, weights, t,
-    ))
-}
-
-fn nurbs_pcurve_differential_unsettled(
-    scratch: &decode::Scratch<'_, '_>,
-    degree: u32,
-    knots: &[f64],
-    count: usize,
-    pole: impl Fn(usize) -> Option<FinitePoint3>,
-    weights: Option<&[f64]>,
-    t: FiniteReal,
-) -> Result<PcurveDifferential, EvaluationFailure<Point2>> {
-    let t = t.get();
-    let unreached = EvaluationFailure::NonFinite(Point2::new(f64::NAN, f64::NAN));
-    let degree = usize::try_from(degree).map_err(|_| EvaluationFailure::NoValue)?;
-    let span = scratch
-        .admit(basis::bspline_span(
-            scratch.admission,
-            knots,
-            degree,
-            count,
-            t,
-        ))
-        .flatten()
-        .ok_or(EvaluationFailure::NoValue)?;
-    // At a finite parameter over finite knots, the basis is absent or not
-    // finite only where one of its terms left the finite range.
-    let basis = basis::bspline_basis(scratch, knots, degree, span, t).ok_or(unreached)?;
-    if !basis::all_finite(scratch, &basis).ok_or_else(|| scratch.failure(unreached))? {
-        return Err(unreached);
-    }
-    let sum = |values: &[f64]| {
-        homogeneous_curve_sum(
-            scratch,
-            values,
-            &pole,
-            |index| weights.and_then(|weights| weights.get(index).copied()),
-            span - degree,
-        )
-    };
-    let base = sum(&basis).ok_or(EvaluationFailure::NoValue)?;
-    let point = finite_lanes(base.project(base, &[]).ok_or(EvaluationFailure::NoValue)?)
-        .map_err(|[u, v, _]| EvaluationFailure::NonFinite(Point2::new(u, v)))?;
-    let uv = |p: [FiniteReal; 3]| FinitePoint2::from_coordinates(p[0], p[1]);
-    let point_only = |tangent| PcurveDifferential {
-        point: uv(point),
-        tangent: Err(tangent),
-        acceleration: None,
-    };
-    // The derivative basis is absent only where a term of the lower basis
-    // left the finite range.
-    let Some(mut first_basis) = basis::bspline_basis_derivative(scratch, knots, degree, span, t)
-    else {
-        return Ok(point_only(unreached));
-    };
-    let mut second_basis = basis::bspline_basis_second_derivative(scratch, knots, degree, span, t);
-    let scale = if basis::all_finite(scratch, &first_basis)
-        .ok_or_else(|| scratch.failure(unreached))?
-        && match &second_basis {
-            Some(values) => {
-                basis::all_finite(scratch, values).ok_or_else(|| scratch.failure(unreached))?
-            }
-            None => true,
-        } {
-        PositiveReal::ONE
-    } else {
-        let width = knots[span + 1] - knots[span];
-        let Some(scale) = PositiveReal::new(width) else {
-            // A span of zero width has no derivative; the derivative over a
-            // width outside the finite range is not reached.
-            return Ok(point_only(if width.is_finite() {
-                EvaluationFailure::NoValue
-            } else {
-                unreached
-            }));
-        };
-        if degree == 1 {
-            let poles = [
-                pole(span - 1).ok_or(EvaluationFailure::NoValue)?,
-                pole(span).ok_or(EvaluationFailure::NoValue)?,
-            ];
-            let local_weights = weights.map(|weights| {
-                [
-                    weights.get(span - 1).copied().unwrap_or(1.0),
-                    weights.get(span).copied().unwrap_or(1.0),
-                ]
-            });
-            let derivative = |second| {
-                curve_nurbs::linear_derivative(
-                    &basis,
-                    curve_nurbs::DerivativePoles::Lanes {
-                        points: &poles,
-                        weights: local_weights.as_ref().map(<[f64; 2]>::as_slice),
-                    },
-                    1,
-                    scale.get(),
-                    second,
-                )
-            };
-            // The quotient form divides by the span itself, so each lane is
-            // the derivative's coordinate or the signed infinity it reached.
-            let lane = |lane: Result<FiniteReal, f64>| lane.map_err(EvaluationFailure::NonFinite);
-            return Ok(PcurveDifferential {
-                point: uv(point),
-                tangent: derivative(false).map_or(Err(EvaluationFailure::NoValue), |[x, y, _]| {
-                    planar_value(lane(x), lane(y))
-                }),
-                acceleration: derivative(true)
-                    .and_then(|lanes| finite_lanes(lanes).ok())
-                    .map(uv),
-            });
-        }
-        let Some(scaled) =
-            basis::bspline_basis_scaled_derivatives(scratch, knots, degree, span, t, scale)
-        else {
-            return Ok(point_only(unreached));
-        };
-        first_basis = scaled.first;
-        second_basis = Some(Cow::Owned(scaled.second));
-        scale
-    };
-    let first_sum = sum(&first_basis);
-    let first_lanes = first_sum.and_then(|sum| sum.project(base, &[(sum, point)]));
-    let first = first_lanes.and_then(|lanes| finite_lanes(lanes).ok());
-    let second = first_sum.zip(first).and_then(|(first_sum, first)| {
-        let second_sum = sum(second_basis.as_ref()?)?;
-        finite_lanes(second_sum.project(
-            base,
-            &[(second_sum, point), (first_sum, first), (first_sum, first)],
-        )?)
-        .ok()
-    });
-    let unscale_twice = |value: FiniteReal| -> Result<Option<FiniteReal>, ResourceLimit> {
-        if scale.get() == 1.0 {
-            Ok(Some(value))
-        } else {
-            let Some(value) = finite_or_refusal(difference_quotient(
-                value,
-                FiniteReal::ZERO,
-                scale.into(),
-                FiniteReal::ZERO,
-            ))?
-            else {
-                return Ok(None);
-            };
-            finite_or_refusal(difference_quotient(
-                value,
-                FiniteReal::ZERO,
-                scale.into(),
-                FiniteReal::ZERO,
-            ))
-        }
-    };
-    // A derivative lane over the span is the coordinate over the scale, or
-    // the signed infinity its quotient reached; the positive scale leaves an
-    // infinity unchanged.
-    let tangent_lane = |lane: Result<FiniteReal, f64>| match lane {
-        Ok(value) if scale.get() == 1.0 => Ok(value),
-        Ok(value) => difference_quotient(value, FiniteReal::ZERO, scale.into(), FiniteReal::ZERO),
-        Err(reached) => Err(EvaluationFailure::NonFinite(reached)),
-    };
-    let acceleration = match second {
-        Some(value) => match (unscale_twice(value[0])?, unscale_twice(value[1])?) {
-            (Some(u), Some(v)) => Some(FinitePoint2::from_coordinates(u, v)),
-            _ => None,
-        },
-        None => None,
-    };
-    Ok(PcurveDifferential {
-        point: uv(point),
-        // A derivative sum or projection is absent only where the derivative
-        // basis left the finite range.
-        tangent: first_lanes.map_or(Err(unreached), |[x, y, _]| {
-            planar_value(tangent_lane(x), tangent_lane(y))
-        }),
-        acceleration,
-    })
 }
 
 /// Return whether a point lies within `tolerance` of a nonperiodic NURBS
@@ -8924,56 +8715,13 @@ fn pcurve_uv_unsettled(
         }
         PcurveGeometry::PolarNurbs { nurbs } => {
             let poles = nurbs.pole_rows();
-            let weights = match poles {
-                crate::geometry::pcurve::PolarNurbsPoles::Polynomial { .. } => None,
-                crate::geometry::pcurve::PolarNurbsPoles::Rational { poles } => {
-                    Some(scratch.collect(
-                        poles.iter().map(|pole| Some(pole.weight.get())),
-                        "IR polar NURBS weights",
-                        "IR polar NURBS weights work",
-                    )?)
-                }
-            };
-            let radial_at = |index: usize| match poles {
-                crate::geometry::pcurve::PolarNurbsPoles::Polynomial { poles } => {
-                    poles.get(index).map(|pole| pole.radial)
-                }
-                crate::geometry::pcurve::PolarNurbsPoles::Rational { poles } => {
-                    poles.get(index).map(|pole| pole.radial)
-                }
-            };
-            let axial_at = |index: usize| match poles {
-                crate::geometry::pcurve::PolarNurbsPoles::Polynomial { poles } => {
-                    poles.get(index).map(|pole| pole.axial)
-                }
-                crate::geometry::pcurve::PolarNurbsPoles::Rational { poles } => {
-                    poles.get(index).map(|pole| pole.axial)
-                }
-            };
-            let radial = nurbs_pcurve_differential_with(
-                scratch,
-                nurbs.degree(),
-                nurbs.knots(),
-                poles.count(),
-                |index| radial_at(index).map(planar_pole),
-                weights.as_deref(),
-                parameter,
+            let radial = pcurve_nurbs::differential(
+                scratch, nurbs.degree(), nurbs.knots(),
+                pcurve_nurbs::DifferentialPoles::PolarRadial(poles), parameter,
             );
-            let axial = nurbs_pcurve_differential_with(
-                scratch,
-                nurbs.degree(),
-                nurbs.knots(),
-                poles.count(),
-                |index| {
-                    let axial = axial_at(index)?;
-                    Some(FinitePoint3::from_coordinates(
-                        axial,
-                        FiniteReal::ZERO,
-                        FiniteReal::ZERO,
-                    ))
-                },
-                weights.as_deref(),
-                parameter,
+            let axial = pcurve_nurbs::differential(
+                scratch, nurbs.degree(), nurbs.knots(),
+                pcurve_nurbs::DifferentialPoles::PolarAxial(poles), parameter,
             );
             if let Err(EvaluationFailure::ResourceLimit(limit)) = &radial {
                 return Some(PcurveEvaluation::resource(*limit));
@@ -9119,31 +8867,9 @@ fn pcurve_uv_unsettled(
         }
         PcurveGeometry::Nurbs { nurbs } => {
             let poles = nurbs.pole_rows();
-            let weights = match poles {
-                crate::geometry::pcurve::PcurveNurbsPoles::Polynomial { .. } => None,
-                crate::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
-                    Some(scratch.collect(
-                        points.iter().map(|pole| Some(pole.weight.get())),
-                        "IR NURBS pcurve weights",
-                        "IR NURBS pcurve weights work",
-                    )?)
-                }
-            };
-            return match nurbs_pcurve_differential_with(
-                scratch,
-                nurbs.degree(),
-                nurbs.knots(),
-                poles.count(),
-                |index| match poles {
-                    crate::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => {
-                        points.get(index).copied().map(planar_pole)
-                    }
-                    crate::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
-                        points.get(index).map(|pole| planar_pole(pole.point))
-                    }
-                },
-                weights.as_deref(),
-                parameter,
+            return match pcurve_nurbs::differential(
+                scratch, nurbs.degree(), nurbs.knots(),
+                pcurve_nurbs::DifferentialPoles::Stored(poles), parameter,
             ) {
                 Ok(differential) => Some(PcurveEvaluation::from(differential)),
                 // The quotient rule forms the derivatives from the finite

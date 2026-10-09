@@ -170,10 +170,9 @@ fn admitted_pcurve_point_refuses_weights_poles_and_derivative_bases() {
         .expect("finite rational line pcurve"),
     };
     for (cap, operation) in [
-        (2, "IR NURBS pcurve weights"),
-        (5, "IR B-spline basis"),
-        (10, "IR B-spline derivative basis"),
-        (13, "IR B-spline second derivative basis"),
+        (2, "IR B-spline basis"),
+        (5, "IR B-spline derivative basis"),
+        (10, "IR B-spline second derivative basis"),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -184,6 +183,14 @@ fn admitted_pcurve_point_refuses_weights_poles_and_derivative_bases() {
             Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
         );
     }
+    // The original cap13 fits after removing the three copied weights.
+    // The real basis/derivative collections total11; no removed-work fee.
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 13;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert_eq!(crate::eval::decode::pcurve_uv(&ctx, &pcurve, 0.5).unwrap().get(),
+        Point2::new(0.5, 0.0));
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -481,7 +488,7 @@ fn admitted_polar_pcurve_refuses_weight_copy() {
     policy.limits.max_collection_items = 2;
     assert!(
         matches!(with_policy(policy, |ctx| crate::eval::decode::outer_refusal(crate::eval::decode::pcurve_uv(ctx, &geometry, 0.5)).map_err(CodecError::from)),
-        Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR polar NURBS weights")
+        Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR B-spline basis")
     );
     assert_eq!(
         with_policy(DecodePolicy::service(), |ctx| {
