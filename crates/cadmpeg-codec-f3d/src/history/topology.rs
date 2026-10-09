@@ -2004,9 +2004,14 @@ fn walk_body_closures(
                         return Ok(false);
                     }
                 }
-                for &vertex in
-                    decode.admit_iter(free_vertices, "scan F3D historical shell vertices")?
-                {
+                let mut free_vertex_source = free_vertices.iter();
+                while !free_vertex_source.as_slice().is_empty() {
+                    let Some(&vertex) = decode.next_charged(
+                        &mut free_vertex_source,
+                        "scan F3D historical shell vertices",
+                    )? else {
+                        break;
+                    };
                     visit(body, vertex)?;
                     visit(
                         body,

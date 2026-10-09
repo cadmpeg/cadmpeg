@@ -6,3 +6,5 @@ mod changes;
 mod state_limits;
 mod state_pairs;
 mod treatment;
+
+mod free_vertices;

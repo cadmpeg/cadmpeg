@@ -1179,3 +1179,5 @@ fn recipe_selector_side_count_scan_refuses_work_limit() {
         cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
 }
+
+mod global_state;
