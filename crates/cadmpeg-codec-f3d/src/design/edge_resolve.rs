@@ -3308,13 +3308,14 @@ pub(super) fn project_fixed_fillet_with_corners(
                 })
             }
         }) };
+    let mut scope_storage = ctx.reserve_scoped(0, "hold F3D fixed fillet scope groups")?;
     let mut scope_groups = Vec::new();
     for group in construction_groups.iter().filter(|group| {
         native_stream(&group.id) == Some(stream)
             && group.scope_record_index == scope.record_index
             && !group.members().is_empty()
     }) {
-        ctx.push_vec(&mut scope_groups, group, "f3d fixed fillet scope group")?;
+        ctx.push_scoped_vec(&mut scope_storage, &mut scope_groups, group, "f3d fixed fillet scope group")?;
     }
     ctx.stable_sort_by_key(
         &mut scope_groups[..],
@@ -3327,6 +3328,7 @@ pub(super) fn project_fixed_fillet_with_corners(
         Ord::cmp,
         "sort f3d design edge_resolve 1",
     )?;
+    let mut complete_storage = ctx.reserve_scoped(0, "hold F3D fixed fillet complete groups")?;
     let mut complete_edge_groups = Vec::new();
     for group in scope_groups.iter().copied().filter(|group| {
         group
@@ -3341,14 +3343,16 @@ pub(super) fn project_fixed_fillet_with_corners(
                 })
             })
     }) {
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut complete_storage,
             &mut complete_edge_groups,
             group,
             "f3d fixed fillet complete group",
         )?;
     }
+    let singleton;
     let edge_groups = if complete_edge_groups.len() == fixed.groups.len() {
-        complete_edge_groups
+        complete_edge_groups.as_slice()
     } else if fixed.groups.len() == 1 && complete_edge_groups.is_empty() {
         let group = {
             // Support-face operands share the compact persistent-identity
@@ -3359,10 +3363,17 @@ pub(super) fn project_fixed_fillet_with_corners(
             let [group] = scope_groups.as_slice() else {
                 return Ok(None);
             };
+            // This fallback needs a constant radius. Do not build variable
+            // samples when its fixed law cannot select an identity chain.
+            if !matches!(fixed.groups[0].law(),
+                crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Constant(_)) {
+                return Ok(None);
+            }
             let radius = radius_spec(&fixed.groups[0])?;
             let Some(RadiusSpec::Constant { radius }) = radius else {
                 return Ok(None);
             };
+            let mut identity_storage = ctx.reserve_scoped(0, "hold F3D fixed fillet identities")?;
             let mut identities = Vec::new();
             for member in group.members().iter().map(|member| &member.value) {
                 let mut matches = edge_identity_operands.iter().filter(|operand| {
@@ -3377,16 +3388,23 @@ pub(super) fn project_fixed_fillet_with_corners(
                 if !operand.layout().is_compact() {
                     return Ok(None);
                 }
-                ctx.push_vec(&mut identities, operand, "f3d fixed fillet identity")?;
+                ctx.push_scoped_vec(&mut identity_storage, &mut identities, operand, "f3d fixed fillet identity")?;
             }
-            or_none!(radius_edge_identity_group_candidates(
-                &identities,
-                radius.get(),
-                ctx
-            )?);
+            let mut candidate_storage = ctx.reserve_scoped(0, "hold F3D fixed fillet radius proof")?;
+            let candidates = candidate_storage.with_storage(|| {
+                radius_edge_identity_group_candidates(&identities, radius.get(), ctx)
+            })?;
+            if candidates.is_none() {
+                return Ok(None);
+            }
+            // The proof keeps no slots. Destroy its actual vector before the
+            // lease refunds the candidate backing.
+            drop(candidates);
+            drop(candidate_storage);
             *group
         };
-        vec![group]
+        singleton = [group];
+        singleton.as_slice()
     } else {
         return Ok(None);
     };
