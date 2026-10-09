@@ -369,14 +369,19 @@ pub fn pcurve_fit_tolerance(
         let (positions, _marker_storage) = propagate_resource!(ctx
             .with_scoped_storage("ASM pcurve tolerance marker positions", || scope
                 .owned_marker_positions(ctx)));
-        let (decoded, _cache_storage) =
-            propagate_resource!(ctx.with_scoped_storage("ASM pcurve tolerance cache", || ctx
-                .find_map(
-                    positions.into_iter().rev(),
-                    |pos| pcurve_block_with_end(ctx, tokens, pos).transpose(),
-                    "ASM pcurve tolerance candidates"
-                )));
-        decoded?.1
+        propagate_resource!(ctx.find_map(
+            positions.into_iter().rev(),
+            |pos| {
+                let (candidate, storage) = ctx.with_scoped_storage(
+                    "ASM pcurve tolerance cache",
+                    || pcurve_block_with_end(ctx, tokens, pos).transpose(),
+                )?;
+                let end = candidate.map(|(_, end)| end);
+                drop(storage);
+                Ok(end)
+            },
+            "ASM pcurve tolerance candidates",
+        ))?
     };
     match tokens.get(end) {
         Some(Token::Double(value)) => Some(Ok(*value)),
