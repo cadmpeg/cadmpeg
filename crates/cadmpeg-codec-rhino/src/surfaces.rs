@@ -733,19 +733,15 @@ fn sum_nurbs(
     } else {
         None
     };
-    for first_index in ctx
-        .admit_iter(0..u_count, "Rhino sum nurbs traversal")
-        .map_err(CodecError::from)?
-    {
+    for first_index in 0..u_count {
+        ctx.charge_work(1, "Rhino sum nurbs traversal")?;
         let first_point = first
             .pole_rows()
             .point_at(first_index)
             .ok_or_else(|| error(offset, "first sum profile pole is absent"))?;
         let first_weight = first.pole_rows().weight_at(first_index).unwrap_or(1.0);
-        for second_index in ctx
-            .admit_iter(0..v_count, "Rhino sum nurbs traversal")
-            .map_err(CodecError::from)?
-        {
+        for second_index in 0..v_count {
+            ctx.charge_work(1, "Rhino sum nurbs traversal")?;
             let second_point = second
                 .pole_rows()
                 .point_at(second_index)
@@ -912,18 +908,18 @@ fn extrusion_rows<T: Copy>(
 ) -> Result<Vec<Vec<T>>, GeometryError> {
     let operation = "Rhino extrusion surface rows";
     let row_count = start.len();
-    let items = row_count.checked_mul(3).ok_or_else(|| {
+    row_count.checked_mul(3).ok_or_else(|| {
         GeometryError::not_implemented("Rhino extrusion surface row count exceeds address space")
     })?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(items), operation)?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(row_count), operation)?;
     let mut rows = Vec::new();
     ctx.reserve_capacity(&mut rows, row_count, operation)?;
-    for (first, second) in ctx
-        .admit_iter(start, "Rhino extrusion rows traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .copied()
-        .zip(end.iter().copied())
-    {
+    let mut points = start.iter().copied().zip(end.iter().copied());
+    for _ in 0..row_count {
+        let (first, second) = ctx
+            .next_charged(&mut points, "Rhino extrusion rows traversal")?
+            .ok_or_else(|| GeometryError::unpositioned("extrusion row source ended early"))?;
+        ctx.charge_collection_items(2, operation)?;
         let mut row = Vec::new();
         ctx.reserve_capacity(&mut row, 2, operation)?;
         row.push(first);
@@ -1387,10 +1383,12 @@ fn reconstruct_checked_knots(
 ) -> Result<KnotVector, GeometryError> {
     let ([start, end], capacity) =
         reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index].get())?;
-    let mut result = Vec::new();
+    let mut scratch = Vec::new();
     let _storage = ctx
-        .reserve_temporary_vec(&mut result, capacity, "Rhino NURBS reconstructed knots")
+        .reserve_temporary_vec(&mut scratch, capacity, "Rhino NURBS reconstructed knots")
         .map_err(CodecError::from)?;
+    // Move the allocated scratch after its reservation so it drops first.
+    let mut result = scratch;
     fill_reconstructed_knots(ctx, &mut result, knots, [start, end])?;
     KnotVector::from_finite_lanes(ctx, result)?
         .map_err(|_| GeometryError::unpositioned("NURBS reconstructed knots are invalid"))

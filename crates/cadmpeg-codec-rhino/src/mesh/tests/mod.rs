@@ -92,8 +92,7 @@ fn mesh_float_point_lanes_refuse_before_allocating_their_counts() {
             if limit.operation == "Rhino mesh f32 points"
     ));
     let f64_refusal = with_expand_policy(&[0_u8; 24], policy, |expand| {
-        super::parse_f64_points(expand.ctx(), &[0_u8; 24])
-            .expect_err("one f64 point exceeds zero")
+        super::parse_f64_points(expand.ctx(), &[0_u8; 24]).expect_err("one f64 point exceeds zero")
     });
     assert!(matches!(
         f64_refusal,
@@ -227,8 +226,7 @@ fn with_expand_policy<R>(
 
 fn chunk(body: &[u8]) -> Vec<u8> {
     let mut result = 0x4000_8000_u32.to_le_bytes().to_vec();
-    result
-        .extend((i64::try_from(body.len() + 4).expect("fixture value fits i64")).to_le_bytes());
+    result.extend((i64::try_from(body.len() + 4).expect("fixture value fits i64")).to_le_bytes());
     result.extend(body);
     result.extend(crc32fast::hash(body).to_le_bytes());
     result
@@ -667,19 +665,15 @@ fn v4v5_ngon_userdata_refuses_record_and_index_work_limits() {
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                     .expect("fixture source fits service limits");
-                match read_v4v5_ngon_userdata(
-                    &ctx,
-                    &bytes,
-                    extra,
-                    ArchiveVersion::V5,
-                    3,
-                    1,
-                ) {
+                match read_v4v5_ngon_userdata(&ctx, &bytes, extra, ArchiveVersion::V5, 3, 1) {
                     Err(GeometryError::Codec(error)) => {
-                        assert_eq!(ctx.resource_refusal(), match error {
-                            cadmpeg_core::CodecError::ResourceLimit(refusal) => Some(refusal),
-                            _ => None,
-                        });
+                        assert_eq!(
+                            ctx.resource_refusal(),
+                            match error {
+                                cadmpeg_core::CodecError::ResourceLimit(refusal) => Some(refusal),
+                                _ => None,
+                            }
+                        );
                         Err::<(), _>(error)
                     }
                     Ok(_) => panic!("n-gon work boundary was not reached"),
@@ -1215,13 +1209,7 @@ fn optional_chunks_use_absolute_offsets() {
     bytes.extend(chunk(&[1, 2, 3]));
     let end = bytes.len();
     let mut reader = BoundedReader::new(&bytes, 11, end).expect("reader");
-    consume_optional_chunk(
-        &mut reader,
-        ArchiveVersion::V5,
-        &mut Diagnostics::new(),
-        "optional",
-    )
-    .expect("chunk");
+    consume_optional_chunk(&mut reader, ArchiveVersion::V5).expect("chunk");
     assert_eq!(reader.position(), end);
 }
 
@@ -1232,9 +1220,8 @@ fn face_widths_and_quad_split_are_deterministic() {
         for index in [0_u32, 1, 2, 2] {
             match width {
                 1 => bytes.push(u8::try_from(index).expect("fixture value fits u8")),
-                2 => bytes.extend(
-                    (u16::try_from(index).expect("fixture value fits u16")).to_le_bytes(),
-                ),
+                2 => bytes
+                    .extend((u16::try_from(index).expect("fixture value fits u16")).to_le_bytes()),
                 4 => bytes.extend(index.to_le_bytes()),
                 _ => unreachable!(),
             }
@@ -1414,8 +1401,8 @@ fn nested_compressed_buffer_inflates_from_a_child_window() {
     with_expand(&bytes, |expand| {
         let outer =
             chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false).expect("outer chunk");
-        let mut child = BoundedReader::new(&bytes, outer.body().start, outer.body().end)
-            .expect("child reader");
+        let mut child =
+            BoundedReader::new(&bytes, outer.body().start, outer.body().end).expect("child reader");
         let decoded = read_buffer(
             expand,
             &mut child,
@@ -1618,3 +1605,5 @@ fn read_faces_truncated_at_record_boundary() {
         assert!(read_faces(expand.ctx(), &mut reader, 3, 2).is_err());
     });
 }
+
+mod prefix;
