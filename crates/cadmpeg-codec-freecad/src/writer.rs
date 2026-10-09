@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Lossless retained-document serialization: the ZIP repack and the
-//! `Document.xml` patch.
+//! Retained-entry serialization: the ZIP repack and the `Document.xml` patch.
 //!
-//! What to write is decided in [`target`], which is the one resolution gate this
-//! codec has. This module carries out what that gate settled, and gates nothing
-//! of its own.
+//! [`target`] selects the eligible source dialect and retained document.
+//! This module validates property spans and the written native graph.
 
 pub(crate) mod target;
 
@@ -33,10 +31,9 @@ fn write(output: &mut dyn Write, resolution: &Resolution<'_>) -> Result<WriteOut
 
 /// Repack the retained entry set with a patched `Document.xml`.
 ///
-/// The replay law is already settled when this runs. A [`Resolution`] comes only
-/// from [`resolve`], which takes its options from [`retained_baseline`], so the
-/// dialect written here is the one the retained document already declares.
-/// This function carries out that decision; it does not gate it.
+/// [`Resolution`] supplies the selected native namespace, document record,
+/// schema declaration and target. Property spans, declarations and the
+/// written native property graph are validated before ZIP serialization.
 fn write_seekable(
     output: &mut dyn WriteSeek,
     resolution: &Resolution<'_>,
