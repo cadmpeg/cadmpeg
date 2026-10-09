@@ -568,12 +568,14 @@ pub(crate) fn ellipse_carriers(
             result.push(value);
         }
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo ellipse carriers result ordering",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo ellipse carriers result ordering",
+        )?;
+    }
     Ok(result)
 }
 
@@ -820,13 +822,16 @@ pub(crate) fn named_conics(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(offset) = ctx.find_bytes_in(
-        payload,
-        LIST,
-        search,
-        payload.len(),
-        "find Creo reference conic",
-    )? {
+    while payload.len().saturating_sub(search) >= LIST.len() {
+        let Some(offset) = ctx.find_bytes_in(
+            payload,
+            LIST,
+            search,
+            payload.len(),
+            "find Creo reference conic",
+        )? else {
+            break;
+        };
         let fields_start = offset + LIST.len();
         let block_end = ctx
             .find_bytes_in(
@@ -1000,12 +1005,14 @@ pub(crate) fn named_conics(
         });
         search = block_end.max(fields_start);
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo named conics result ordering",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo named conics result ordering",
+        )?;
+    }
     Ok(result)
 }
 
@@ -1111,13 +1118,16 @@ pub(crate) fn positional_conics(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = ctx.find_bytes_in(
-        payload,
-        LIST,
-        search,
-        payload.len(),
-        "find Creo reference conic",
-    )? {
+    while payload.len().saturating_sub(search) >= LIST.len() {
+        let Some(prototype) = ctx.find_bytes_in(
+            payload,
+            LIST,
+            search,
+            payload.len(),
+            "find Creo reference conic",
+        )? else {
+            break;
+        };
         let rows_start = prototype + LIST.len();
         let block_end = ctx
             .find_bytes_in(
@@ -1171,17 +1181,19 @@ pub(crate) fn positional_conics(
         }
         search = block_end.max(rows_start);
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo positional conics result ordering",
-    )?;
-    ctx.dedup_by_key(
-        &mut result,
-        |conic| Ok(conic.offset),
-        "creo positional conics result deduplication",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo positional conics result ordering",
+        )?;
+        ctx.dedup_by_key(
+            &mut result,
+            |conic| Ok(conic.offset),
+            "creo positional conics result deduplication",
+        )?;
+    }
     Ok(result)
 }
 
@@ -1199,13 +1211,16 @@ pub(crate) fn lines(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = ctx.find_bytes_in(
-        payload,
-        PROTOTYPE,
-        search,
-        payload.len(),
-        "creo reference byte search",
-    )? {
+    while payload.len().saturating_sub(search) >= PROTOTYPE.len() {
+        let Some(prototype) = ctx.find_bytes_in(
+            payload,
+            PROTOTYPE,
+            search,
+            payload.len(),
+            "creo reference byte search",
+        )? else {
+            break;
+        };
         let instance_search = prototype + PROTOTYPE.len();
         let prototype_end = ctx
             .find_bytes_in(
@@ -1292,17 +1307,19 @@ pub(crate) fn lines(
         }
         search = block_end.max(instance_search);
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo lines result ordering",
-    )?;
-    ctx.dedup_by_key(
-        &mut result,
-        |line| Ok(line.offset),
-        "creo lines result deduplication",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo lines result ordering",
+        )?;
+        ctx.dedup_by_key(
+            &mut result,
+            |line| Ok(line.offset),
+            "creo lines result deduplication",
+        )?;
+    }
     Ok(result)
 }
 
@@ -1388,13 +1405,16 @@ pub(crate) fn line3d_lines(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = ctx.find_bytes_in(
-        payload,
-        PROTOTYPE,
-        search,
-        payload.len(),
-        "creo reference byte search",
-    )? {
+    while payload.len().saturating_sub(search) >= PROTOTYPE.len() {
+        let Some(prototype) = ctx.find_bytes_in(
+            payload,
+            PROTOTYPE,
+            search,
+            payload.len(),
+            "creo reference byte search",
+        )? else {
+            break;
+        };
         let rows_start = prototype + PROTOTYPE.len();
         let block_end = ctx
             .find_bytes_in(
@@ -1454,17 +1474,19 @@ pub(crate) fn line3d_lines(
         }
         search = block_end.max(rows_start);
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo line3d lines result ordering",
-    )?;
-    ctx.dedup_by_key(
-        &mut result,
-        |line| Ok(line.offset),
-        "creo line3d lines result deduplication",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo line3d lines result ordering",
+        )?;
+        ctx.dedup_by_key(
+            &mut result,
+            |line| Ok(line.offset),
+            "creo line3d lines result deduplication",
+        )?;
+    }
     Ok(result)
 }
 
@@ -1596,9 +1618,12 @@ pub(crate) fn arc_z_circles(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) =
-        ctx.find_bytes_from(payload, PROTOTYPE, search, "creo arc-z prototype search")?
-    {
+    while payload.len().saturating_sub(search) >= PROTOTYPE.len() {
+        let Some(prototype) =
+            ctx.find_bytes_from(payload, PROTOTYPE, search, "creo arc-z prototype search")?
+        else {
+            break;
+        };
         let rows_start = prototype + PROTOTYPE.len();
         let block_end = ctx
             .find_bytes_from(payload, LIST, rows_start, "creo arc-z block search")?
@@ -1642,17 +1667,19 @@ pub(crate) fn arc_z_circles(
         }
         search = block_end;
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo arc z circles result ordering",
-    )?;
-    ctx.dedup_by_key(
-        &mut result,
-        |circle| Ok(circle.offset),
-        "creo arc-z row deduplication",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo arc z circles result ordering",
+        )?;
+        ctx.dedup_by_key(
+            &mut result,
+            |circle| Ok(circle.offset),
+            "creo arc-z row deduplication",
+        )?;
+    }
     Ok(result)
 }
 

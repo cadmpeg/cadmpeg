@@ -113,3 +113,21 @@ fn complete_loop_prototype_admits_present_windows_and_leaves_following_bytes_fre
         }
     }
 }
+
+#[test]
+fn empty_loop_array_output_is_free_and_keeps_original_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert_eq!(super::super::scan(&ctx, &[]).expect("no frame discovery or ordering"),
+        super::super::LoopArrayScan::default());
+    let original = ctx.charge_work_limit(1, "empty loop output seed").expect_err("zero cap");
+    assert_eq!((original.used, original.additional), (0, 1));
+    assert!(matches!(super::super::scan(&ctx, &[]),
+        Err(CodecError::ResourceLimit(actual)) if actual == original));
+}
