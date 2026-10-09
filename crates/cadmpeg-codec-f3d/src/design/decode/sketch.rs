@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design sketch placements, headers, relations, and geometry.
 
-use crate::bytes::{lp_utf16_bounded_charged, lp_utf16_bounded_scoped};
+use crate::bytes::lp_utf16_bounded_scoped;
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::sketch_placement::{
@@ -1436,22 +1436,25 @@ pub(super) fn parse_settled_entity_header(
         Some(1) if zeros_at::<4>(bytes, start + 21) => (true, start + 25),
         _ => return Ok(None),
     };
-    let Some((entity_id, end)) =
-        lp_utf16_bounded_charged(ctx, bytes, string_offset, 1..=256, "f3d Design UTF-16 text")?
+    let text_storage;
+    let Some((entity_id, end, held_storage)) =
+        lp_utf16_bounded_scoped(ctx, bytes, string_offset, 1..=256, "f3d Design UTF-16 text")?
     else {
         return Ok(None);
     };
+    text_storage = held_storage;
     let Ok(entity_id) = crate::records::identity::DesignEntityId::try_from(entity_id) else {
         return Ok(None);
     };
-    Ok(
-        (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
-            entity_id,
-            entity_id_offset: string_offset + 4,
-            optional_slot_present,
-            end,
-        }),
-    )
+    if entity_id.suffix() != entity_suffix {
+        return Ok(None);
+    }
+    text_storage.commit_value(Some(NamedEntityHeader {
+        entity_id,
+        entity_id_offset: string_offset + 4,
+        optional_slot_present,
+        end,
+    }))
 }
 
 /// An admitted entity identity and its source header locations.
@@ -1495,7 +1498,8 @@ pub(super) fn parse_genesis_entity_header(
     let Some(after_type) = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64") else {
         return Ok(None);
     };
-    let Some((entity_id, end)) = lp_utf16_bounded_charged(
+    let text_storage;
+    let Some((entity_id, end, held_storage)) = lp_utf16_bounded_scoped(
         ctx,
         bytes,
         after_type + 8,
@@ -1505,17 +1509,19 @@ pub(super) fn parse_genesis_entity_header(
     else {
         return Ok(None);
     };
+    text_storage = held_storage;
     let Ok(entity_id) = crate::records::identity::DesignEntityId::try_from(entity_id) else {
         return Ok(None);
     };
-    Ok(
-        (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
-            entity_id,
-            entity_id_offset: after_type + 12,
-            optional_slot_present: false,
-            end,
-        }),
-    )
+    if entity_id.suffix() != entity_suffix {
+        return Ok(None);
+    }
+    text_storage.commit_value(Some(NamedEntityHeader {
+        entity_id,
+        entity_id_offset: after_type + 12,
+        optional_slot_present: false,
+        end,
+    }))
 }
 
 /// The offset after a u32-counted ASCII field at `at` that holds `expected`.
