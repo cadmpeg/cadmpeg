@@ -348,6 +348,9 @@ pub(super) fn decode_rolling_ball_curve(
     position: &mut usize,
     int_width: RefWidth,
 ) -> Option<Result<RollingBallSupportCurve<CurveGeometry>, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     if marker_at(bytes, *position).is_some() {
         let curve = decode_curve_block(bytes, *position, int_width)?;
         *position = curve.end();
@@ -478,6 +481,9 @@ pub(super) fn rolling_ball_side(
 ) -> Option<
     Result<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>, cadmpeg_core::CodecError>,
 > {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
     let support_kind = match cur.take_str()? {
         "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
@@ -544,6 +550,9 @@ pub(super) fn optional_rolling_ball_surface(
     reference_context: Option<&SubtypeTable>,
 ) -> Option<Result<Nullable<RollingBallSupportSurface<SurfaceGeometry>>, cadmpeg_core::CodecError>>
 {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let saved = cur.pos();
     if cur.take_ident() == Some("null_surface") {
         return Some(Ok(Nullable::Null));
@@ -559,6 +568,9 @@ fn rolling_ball_surface(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
 ) -> Option<Result<RollingBallSupportSurface<SurfaceGeometry>, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let toks = cur.toks();
     let saved = cur.pos();
     let kind = cur.take_ident()?;
@@ -617,6 +629,9 @@ pub(super) fn rolling_ball_curve(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
 ) -> Option<Result<RollingBallSupportCurve<CurveGeometry>, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let toks = cur.toks();
     if toks::marker_at(toks, cur.pos()).is_some() {
         let (curve, curve_end) = propagate_resource!(curve_block(ctx, toks, cur.pos())?);
@@ -634,18 +649,18 @@ pub(super) fn rolling_ball_curve(
     if kind == "intcurve" {
         cur.take_bool()?;
         let scope = propagate_resource!(toks::subtype_span(ctx, toks, cur.pos()))?;
-        let curve = reference_context
+        let curve = propagate_resource!(reference_context
             .and_then(|table| {
                 crate::nurbs::core::owned_curve_cache_resolving_refs(ctx, scope, table)
             })
             .or_else(|| crate::nurbs::core::owned_curve_cache(ctx, scope))
-            .or_else(|| par_int_cur_isoline(ctx, scope.tokens(), reference_context))?;
+            .or_else(|| par_int_cur_isoline(ctx, scope.tokens(), reference_context))?);
         cur.set_pos(cur.pos() + scope.tokens().len());
         let parameter_range = [
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
         ];
-        return Some(curve.map(|curve| RollingBallSupportCurve {
+        return Some(Ok(RollingBallSupportCurve {
             curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             parameter_range,
         }));
@@ -734,6 +749,9 @@ fn rolling_ball_third_side(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedRollingBallThirdSide, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let label = propagate_resource!(
         ctx.copy_retained_text(cur.take_str()?, "ASM rolling ball third-side label")
     );
@@ -1142,6 +1160,9 @@ fn vertex_blend_boundary(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedVertexBlendBoundary, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let kind = cur.take_str()?;
     let boundary_type = cur.take_bool()?;
     let magic = cur.take_position()?;
@@ -1246,6 +1267,9 @@ fn revision_vertex_blend_boundary(
     cur: &mut Cur<'_>,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<EmbeddedVertexBlendBoundary, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let table = resolver?;
     let kind = cur.take_ident()?;
     let boundary_type = cur.take_bool()?;

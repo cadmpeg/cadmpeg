@@ -247,6 +247,9 @@ pub(super) fn pcurve_block_with_end(
     toks: &[Token],
     marker_pos: usize,
 ) -> Option<Result<(PcurveNurbs, usize), cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let rational = toks::marker_at(toks, marker_pos)?.rational();
     let mut cur = Cur::at(toks, marker_pos + 1);
     let degree = cur.take_long()?;
@@ -344,6 +347,9 @@ pub fn explicit_pcurve_cache_from_subtype_ref(
     index: i64,
     table: &toks::SubtypeTable,
 ) -> Option<Result<PcurveNurbs, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let index = usize::try_from(index).ok()?;
     explicit_pcurve_cache(ctx, table.span(index)?)
 }
