@@ -287,6 +287,8 @@ fn cluster_boundary_positions(
             members,
         });
     }
+    drop(groups);
+    drop(root_storage);
     ctx.stable_sort_by_key(
         &mut clusters,
         |value| value.members[0],
