@@ -60,6 +60,9 @@ fn pcurve_candidate_agrees_with_fixed_points(
     directions: [u8; 2],
     fixed_points: &BTreeMap<u32, [f64; 3]>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(ordered) = directed_pcurve_points(directions, points) else {
         return Ok(true);
     };
@@ -84,18 +87,25 @@ fn pcurve_endpoint_is_ambiguous(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     candidates: &[[f64; 3]],
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(first) = candidates.first() else {
         return Ok(false);
     };
-    ctx.any_by(
-        &candidates[1..],
-        |candidate| {
-            Ok(!finite_model_point(*first)
-                .zip(finite_model_point(*candidate))
-                .is_some_and(|(first, candidate)| model_points_agree(first, candidate)))
-        },
-        "creo pcurve endpoint ambiguity search",
-    )
+    let mut remaining = candidates[1..].iter();
+    while !remaining.as_slice().is_empty() {
+        let Some(candidate) = ctx.next_charged(&mut remaining, "creo pcurve endpoint ambiguity search")? else {
+            break;
+        };
+        if !finite_model_point(*first)
+            .zip(finite_model_point(*candidate))
+            .is_some_and(|(first, candidate)| model_points_agree(first, candidate))
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Option<[f64; 3]> {
@@ -162,6 +172,9 @@ fn line_conic_intersections(
     line: &CurveGeometry,
     conic: &CurveGeometry,
 ) -> Result<Vec<[f64; 3]>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = line else {
         return Ok(Vec::new());
     };
@@ -329,6 +342,9 @@ fn conic_conic_intersections(
     first: &CurveGeometry,
     second: &CurveGeometry,
 ) -> Result<Vec<[f64; 3]>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(first_equation) = planar_conic_equation(first) else {
         return Ok(Vec::new());
     };
@@ -493,11 +509,16 @@ fn incident_analytic_vertex_domain(
     ctx.retain_vec(
         &mut candidates,
         |point| {
-            ctx.all_by(
-                curves,
-                |curve| Ok(curve_contains_points(curve, [*point, *point])),
-                "creo incident analytic curve containment",
-            )
+            let mut remaining = curves.iter();
+            while !remaining.as_slice().is_empty() {
+                let Some(curve) = ctx.next_charged(&mut remaining, "creo incident analytic curve containment")? else {
+                    break;
+                };
+                if !curve_contains_points(curve, [*point, *point]) {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
         },
         "creo retained incident analytic candidates",
     )?;
@@ -505,15 +526,21 @@ fn incident_analytic_vertex_domain(
     for point in ctx.admit_iter(&candidates, "creo incident analytic candidates")? {
         // A candidate outside the finite range agrees with no other
         // candidate.
-        if !ctx.any_by(
-            &unique,
-            |candidate| {
-                Ok(finite_model_point(*candidate)
-                    .zip(finite_model_point(*point))
-                    .is_some_and(|(candidate, point)| model_points_agree(candidate, point)))
-            },
-            "creo unique analytic candidate search",
-        )? {
+        let mut remaining = unique.iter();
+        let mut duplicate = false;
+        while !remaining.as_slice().is_empty() {
+            let Some(candidate) = ctx.next_charged(&mut remaining, "creo unique analytic candidate search")? else {
+                break;
+            };
+            if finite_model_point(*candidate)
+                .zip(finite_model_point(*point))
+                .is_some_and(|(candidate, point)| model_points_agree(candidate, point))
+            {
+                duplicate = true;
+                break;
+            }
+        }
+        if !duplicate {
             ctx.reserve_vec(&mut unique, 1, "creo unique analytic candidates")?;
             unique.push(*point);
         }
@@ -1096,6 +1123,7 @@ mod tests {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     mod intersection_storage;
+    mod admission_visits;
 
     const CHART_ORIGIN: [f64; 3] = [0.0, 0.0, 0.0];
     const CHART_U_AXIS: [f64; 3] = [1.0, 0.0, 0.0];
