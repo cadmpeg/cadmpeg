@@ -193,7 +193,12 @@ fn display_assignments(
     section: Section<'_>,
     faces: &[DisplayFace],
 ) -> Result<Vec<DisplayAppearanceAssignment>, cadmpeg_core::CodecError> {
-    let classes = crate::tessellation::class_intervals(ctx, section.payload())?;
+    let _classes_storage;
+    let classes;
+    (classes, _classes_storage) =
+        ctx.with_scoped_storage("SLDPRT appearance class workspace", || {
+            crate::tessellation::class_intervals(ctx, section.payload())
+        })?;
     let mut assignments = Vec::new();
     for (table_index, face) in ctx
         .admit_iter(faces, "scan SLDPRT display_assignments values")?
@@ -325,7 +330,12 @@ pub(crate) fn feature_assignments(
         .filter(|section| section.name() == Some("ThirdPtyStore/VisualStates"))
     {
         let bytes = section.payload();
-        let classes = crate::tessellation::class_intervals(ctx, bytes)?;
+        let _classes_storage;
+        let classes;
+        (classes, _classes_storage) =
+            ctx.with_scoped_storage("SLDPRT appearance class workspace", || {
+                crate::tessellation::class_intervals(ctx, bytes)
+            })?;
         for marker_offset in ctx
             .admit_iter(bytes, "scan SLDPRT feature appearance markers")?
             .windows(const { crate::nonzero(feature_visual::MARKER_VALUE.len()) })
