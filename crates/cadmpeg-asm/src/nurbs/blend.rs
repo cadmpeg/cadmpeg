@@ -124,15 +124,21 @@ pub(super) fn cyl_spl_sur(
             let (positions, _marker_storage) = propagate_resource!(ctx
                 .with_scoped_storage("ASM extrusion marker positions", || scope
                     .owned_marker_positions(ctx)));
-            let (cache, _cache_storage) =
-                propagate_resource!(ctx.with_scoped_storage("ASM extrusion cache", || ctx
-                    .find_map(
-                        positions.into_iter().rev(),
-                        |at| surface_block(ctx, span, at).transpose(),
-                        "ASM extrusion cache candidates"
-                    )));
-            match cache {
-                Some((_, cache_end)) => match span.get(cache_end) {
+            let cache_end = propagate_resource!(ctx.find_map(
+                positions.into_iter().rev(),
+                |at| {
+                    let (candidate, storage) = ctx.with_scoped_storage(
+                        "ASM extrusion cache",
+                        || surface_block(ctx, span, at).transpose(),
+                    )?;
+                    let end = candidate.map(|(_, end)| end);
+                    drop(storage);
+                    Ok(end)
+                },
+                "ASM extrusion cache candidates",
+            ));
+            match cache_end {
+                Some(cache_end) => match span.get(cache_end) {
                     Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
                     _ => None,
                 },
@@ -2112,3 +2118,6 @@ mod variable_blend_value_tests {
         assert_eq!(points[0].tangents, [None, None]);
     }
 }
+
+#[cfg(test)]
+mod tests;
