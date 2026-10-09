@@ -2611,25 +2611,40 @@ fn unresolved_variable_guess_end(
     offset: usize,
     end: usize,
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(bytes) = payload.get(offset + 1..end) else {
         return Ok(None);
     };
-    let Some(relative) = ctx.position_by(
-        bytes,
-        |byte| Ok(*byte == 0xe2),
-        "creo variable guess delimiter",
-    )?
-    else {
+    let mut bytes = bytes.iter().enumerate();
+    let mut delimiter = None;
+    while bytes.len() != 0 {
+        let Some((relative, byte)) = ctx.next_charged(&mut bytes, "creo variable guess delimiter")? else {
+            break;
+        };
+        if *byte == 0xe2 {
+            delimiter = Some(offset + 1 + relative);
+            break;
+        }
+    }
+    let Some(delimiter) = delimiter else {
         return Ok(None);
     };
-    let delimiter = offset + 1 + relative;
     // Three compact fields consume at most six bytes.
-    let mut suffixes = (delimiter.saturating_sub(6).max(offset + 1)..delimiter)
-        .filter(|start| variable_row_trailing_fields(payload, *start, delimiter).is_some());
-    let Some(first) = suffixes.next() else {
-        return Ok(None);
-    };
-    Ok(suffixes.next().is_none().then_some(first))
+    let mut suffixes = delimiter.saturating_sub(6).max(offset + 1)..delimiter;
+    let mut candidate = None;
+    while !suffixes.is_empty() {
+        let Some(start) = ctx.next_charged(&mut suffixes, "creo variable guess suffix scan")? else {
+            break;
+        };
+        if variable_row_trailing_fields(payload, start, delimiter).is_some() {
+            if candidate.replace(start).is_some() {
+                return Ok(None);
+            }
+        }
+    }
+    Ok(candidate)
 }
 
 fn decode_variable_scalar(
@@ -6329,6 +6344,9 @@ fn positional_relation_rows(
     end: usize,
     row_count: RelationBodyRows,
 ) -> Result<Vec<FeatureRelation>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if cursor > end || end > payload.len() {
         return Ok(Vec::new());
     }
@@ -6338,7 +6356,7 @@ fn positional_relation_rows(
     let mut rows = Vec::new();
     let mut counted_items = 0..row_count;
 
-    while ctx
+    while !counted_items.is_empty() && cursor < end && ctx
         .next_charged(
             &mut counted_items,
             "creo positional relation rows traversal",
@@ -6364,7 +6382,14 @@ fn positional_relation_rows(
             break;
         }
         let mut suffix = None;
-        for suffix_start in after_used.max(row_end.saturating_sub(6))..row_end {
+        let mut suffix_starts = after_used.max(row_end.saturating_sub(6))..row_end;
+        while !suffix_starts.is_empty() {
+            let Some(suffix_start) = ctx.next_charged(
+                &mut suffix_starts,
+                "creo positional relation suffix scan",
+            )? else {
+                break;
+            };
             let (sign, after_sign) = psb::compact_int(payload, suffix_start);
             let (dimension_id, after_dimension) = psb::compact_int(payload, after_sign);
             let (relation_type, after_type) = psb::compact_int(payload, after_dimension);
@@ -6991,7 +7016,18 @@ fn saved_positional_generated_entities(
         if after_id > header_end {
             continue;
         }
-        if payload[after_id..header_end].contains(&0xe2) {
+        let mut header = payload[after_id..header_end].iter();
+        let mut has_body = false;
+        while !header.as_slice().is_empty() {
+            let Some(byte) = ctx.next_charged(&mut header, "creo saved generated header scan")? else {
+                break;
+            };
+            if *byte == 0xe2 {
+                has_body = true;
+                break;
+            }
+        }
+        if has_body {
             generated_storage.with_storage(|| {
                 ctx.reserve_vec(&mut starts, 1, "creo saved generated row starts")
             })?;
@@ -8437,6 +8473,35 @@ fn definition_starts(
     Ok(starts)
 }
 
+/// Parse the decimal section identity before the first NUL in a bounded name.
+fn depdb_section_name_id(
+    ctx: &DecodeContext<'_>,
+    name: &[u8],
+) -> Result<Option<u32>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut bytes = name.iter().enumerate();
+    while bytes.len() != 0 {
+        let Some((index, byte)) = ctx.next_charged(&mut bytes, "creo DEPDB section name scan")? else {
+            break;
+        };
+        if *byte == 0 {
+            if index == 0 {
+                return Ok(None);
+            }
+            let Ok(text) = ctx.validate_utf8(&name[..index], "creo UTF-8 validation")? else {
+                return Ok(None);
+            };
+            return Ok(ctx.parse_text::<u32>(text, "creo scalar text parsing")?.ok());
+        }
+        if !byte.is_ascii_digit() {
+            return Ok(None);
+        }
+    }
+    Ok(None)
+}
+
 fn depdb_gsec2d_starts(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -8467,19 +8532,7 @@ fn depdb_gsec2d_starts(
             continue;
         };
         let digits_start = name_offset + NAME.len();
-        let Some(nul) = payload[digits_start..search_end]
-            .iter()
-            .position(|byte| *byte == 0)
-        else {
-            continue;
-        };
-        let digits = &payload[digits_start..digits_start + nul];
-        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
-            continue;
-        }
-        let Some(id) = std::str::from_utf8(digits)
-            .ok()
-            .and_then(|text| text.parse::<u32>().ok())
+        let Some(id) = depdb_section_name_id(ctx, &payload[digits_start..search_end])?
         else {
             continue;
         };
@@ -8820,19 +8873,7 @@ pub(crate) fn depdb_section_definition(
         return Ok(None);
     };
     let name = name_offset + NAME.len();
-    let Some(nul) = payload[name..name_search_end]
-        .iter()
-        .position(|byte| *byte == 0)
-    else {
-        return Ok(None);
-    };
-    let digits = &payload[name..name + nul];
-    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
-        return Ok(None);
-    }
-    let Some(section_id) = std::str::from_utf8(digits)
-        .ok()
-        .and_then(|text| text.parse::<u32>().ok())
+    let Some(section_id) = depdb_section_name_id(ctx, &payload[name..name_search_end])?
     else {
         return Ok(None);
     };

@@ -602,10 +602,24 @@ fn arc_z_coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(
         .or_else(|| scalar::decode_model_reference_coordinate(data, offset, cache))
 }
 
-fn scalar_suffix<const COUNT: usize>(row: &[u8], cache: &ScalarCache) -> Option<[f64; COUNT]> {
+fn scalar_suffix<const COUNT: usize>(
+    ctx: &DecodeContext<'_>,
+    row: &[u8],
+    cache: &ScalarCache,
+) -> Result<Option<[f64; COUNT]>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut candidate = None;
-    let suffix_span = row.len().min(COUNT.checked_mul(9)?);
-    for start in row.len() - suffix_span..row.len() {
+    let Some(max_span) = COUNT.checked_mul(9) else {
+        return Ok(None);
+    };
+    let suffix_span = row.len().min(max_span);
+    let mut starts = row.len() - suffix_span..row.len();
+    while !starts.is_empty() {
+        let Some(start) = ctx.next_charged(&mut starts, "creo reference scalar suffix scan")? else {
+            break;
+        };
         let Some(values) = (|| {
             let mut cursor = crate::psb::Cursor::at(row, start);
             let mut values = [0.0; COUNT];
@@ -618,11 +632,11 @@ fn scalar_suffix<const COUNT: usize>(row: &[u8], cache: &ScalarCache) -> Option<
             continue;
         };
         if candidate.is_some() {
-            return None;
+            return Ok(None);
         }
         candidate = Some(values);
     }
-    candidate
+    Ok(candidate)
 }
 
 const CONIC_FIELD_HEADERS: [&[u8]; 10] = [
@@ -1038,27 +1052,42 @@ fn conic_parameter(
 }
 
 fn positional_conic_local_system(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     local_start: usize,
     cache: &ScalarCache,
-) -> Option<(usize, cadmpeg_ir::units::FiniteVector<12>)> {
+) -> Result<Option<(usize, cadmpeg_ir::units::FiniteVector<12>)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     const MAX_FRAME_BYTES: usize = 12 * 9;
-    let first_end = local_start.checked_add(1)?;
-    let last_end = local_start.checked_add(MAX_FRAME_BYTES)?.min(body.len());
+    let Some(first_end) = local_start.checked_add(1) else {
+        return Ok(None);
+    };
+    let Some(last_end) = local_start.checked_add(MAX_FRAME_BYTES) else {
+        return Ok(None);
+    };
+    let last_end = last_end.min(body.len());
     let mut candidate = None;
-    for end in first_end..=last_end {
-        let tail = body.get(end..)?;
+    let mut ends = first_end..=last_end;
+    while !ends.is_empty() {
+        let Some(end) = ctx.next_charged(&mut ends, "creo conic frame end scan")? else {
+            break;
+        };
+        let Some(tail) = body.get(end..) else {
+            return Ok(None);
+        };
         if !(tail.is_empty() || tail.first() == Some(&0xe2)) {
             continue;
         }
         if let Some(frame) = conic_local_system(&body[local_start..end], cache) {
             if candidate.is_some() {
-                return None;
+                return Ok(None);
             }
             candidate = Some((end, frame));
         }
     }
-    candidate
+    Ok(candidate)
 }
 
 fn positional_conic_body(
@@ -1088,7 +1117,11 @@ fn positional_conic_body(
     let (coefficient_1, next) = coordinate(body, cursor, cache)?;
     cursor = next;
     let (coefficient_2, local_start) = coordinate(body, cursor, cache)?;
-    let (local_end, local_system) = positional_conic_local_system(body, local_start, cache)?;
+    let (local_end, local_system) = match positional_conic_local_system(ctx, body, local_start, cache) {
+        Ok(Some(frame)) => frame,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let start = FinitePoint3::new(endpoints[0].into())?;
     let end = FinitePoint3::new(endpoints[1].into())?;
     let coefficient_1 = FiniteReal::new(coefficient_1)?;
@@ -1301,7 +1334,7 @@ pub(crate) fn lines(
                 continue;
             }
             let Some([first_x, first_y, first_z, last_x, last_y, last_z]) =
-                scalar_suffix::<6>(&payload[start..end], &cache)
+                scalar_suffix::<6>(ctx, &payload[start..end], &cache)?
             else {
                 continue;
             };

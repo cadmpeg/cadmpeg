@@ -653,8 +653,14 @@ fn unresolved_guess_search_stops_at_the_first_delimiter() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = limit.used.checked_add(limit.additional).expect("work need");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = super::unresolved_variable_guess_end(&ctx, &long, 0, long.len())
+        .expect_err("delimiter-only cap refuses before the newly admitted suffix scan");
+    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::WorkUnits
+            && refusal.used == 5 && refusal.additional == 1
+            && refusal.operation == "creo variable guess suffix scan"));
     assert_eq!(
-        super::unresolved_variable_guess_end(&ctx, &long, 0, long.len())
+        crate::decode::with_test_decode_ctx(|ctx| super::unresolved_variable_guess_end(ctx, &long, 0, long.len()))
             .expect("first delimiter scan"),
         Some(2)
     );

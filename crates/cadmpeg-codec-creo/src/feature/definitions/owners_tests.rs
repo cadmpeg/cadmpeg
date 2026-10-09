@@ -1515,6 +1515,9 @@ fn depdb_section_identity_ascii_parses_after_bounded_search() {
         &[
             "creo DEPDB section marker traversal",
             "find Creo feature definition field",
+            "creo DEPDB section name scan",
+            "creo UTF-8 validation",
+            "creo scalar text parsing",
         ],
         |ctx| super::depdb_gsec2d_starts(ctx, b"gsec2d_ptr\0name\0S2D1\0"),
     );
@@ -1538,6 +1541,9 @@ fn depdb_definition_identity_ascii_parses_after_bounded_search() {
             "creo standalone section search",
             "creo standalone section uniqueness",
             "find Creo feature definition field",
+            "creo DEPDB section name scan",
+            "creo UTF-8 validation",
+            "creo scalar text parsing",
         ],
         |ctx| super::depdb_section_definition(ctx, b"gsec2d_ptr\0name\0S2D1\0", None),
     );
