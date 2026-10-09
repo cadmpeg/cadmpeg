@@ -2,8 +2,8 @@
 
 use super::{
     bodies_containing_edges, copy_body_id, decoded_feature_reference_name,
-    evaluated_sweep_body_kind, evaluated_sweep_output_bodies, feature_output_bodies,
-    feature_reference_name, generated_edge_output_bodies, generated_input_output_bodies,
+    evaluated_sweep_body_kind, feature_output_bodies, feature_reference_name,
+    generated_edge_output_bodies, generated_input_output_bodies,
 };
 
 #[test]
@@ -147,6 +147,7 @@ fn feature_output_history_refuses_before_recursive_step() {
 
 #[test]
 fn evaluated_sweep_candidate_refuses_before_scoped_text() {
+    let scan = crate::test_support::empty_container_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
@@ -158,11 +159,11 @@ fn evaluated_sweep_candidate_refuses_before_scoped_text() {
             policy.limits.max_materialized_bytes = cap;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            evaluated_sweep_output_bodies(&ctx, &CadIr::empty(), 40).map(|_| ())
+            feature_output_bodies(&ctx, &scan, &CadIr::empty(), 40).map(|_| ())
         },
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = evaluated_sweep_output_bodies(&ctx, &CadIr::empty(), 40)
+    let error = feature_output_bodies(&ctx, &scan, &CadIr::empty(), 40)
         .expect_err("one candidate needs scoped text");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -173,32 +174,36 @@ fn evaluated_sweep_candidate_refuses_before_scoped_text() {
 
 #[test]
 fn evaluated_sweep_body_refuses_before_retained_id() {
+    let scan = crate::test_support::empty_container_scan();
+    let ir = sweep_output_ir();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        Some("creo evaluated sweep body IDs"),
+        Some("creo feature output body IDs"),
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = policy;
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            evaluated_sweep_output_bodies(&ctx, &sweep_output_ir(), 40).map(|_| ())
+            feature_output_bodies(&ctx, &scan, &ir, 40).map(|_| ())
         },
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = evaluated_sweep_output_bodies(&ctx, &sweep_output_ir(), 40)
+    let error = feature_output_bodies(&ctx, &scan, &ir, 40)
         .expect_err("one output needs a retained ID");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo evaluated sweep body IDs")
+            && resource.operation == "creo feature output body IDs")
     );
 }
 
 #[test]
 fn evaluated_sweep_body_refuses_before_output_row() {
+    let scan = crate::test_support::empty_container_scan();
+    let ir = sweep_output_ir();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
@@ -210,11 +215,11 @@ fn evaluated_sweep_body_refuses_before_output_row() {
             policy.limits.max_collection_items = cap;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            evaluated_sweep_output_bodies(&ctx, &sweep_output_ir(), 40).map(|_| ())
+            feature_output_bodies(&ctx, &scan, &ir, 40).map(|_| ())
         },
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = evaluated_sweep_output_bodies(&ctx, &sweep_output_ir(), 40)
+    let error = feature_output_bodies(&ctx, &scan, &ir, 40)
         .expect_err("one output needs a Vec row");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -326,6 +331,7 @@ fn section_feature_lookups_keep_unique_source_selection() {
 
 #[test]
 fn evaluated_sweep_body_joins_reject_duplicate_ids() {
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
@@ -337,7 +343,7 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
         visible: None,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_output_bodies(ctx, &ir, 40))
+        crate::decode::with_test_decode_ctx(|ctx| feature_output_bodies(ctx, &scan, &ir, 40))
             .expect("service profile admits output bodies"),
         vec![BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar")]
     );
@@ -362,7 +368,7 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
         visible: None,
     });
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_output_bodies(ctx, &ir, 40))
+        crate::decode::with_test_decode_ctx(|ctx| feature_output_bodies(ctx, &scan, &ir, 40))
             .expect("service profile admits output bodies")
             .is_empty()
     );
@@ -380,10 +386,11 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
 
 #[test]
 fn evaluated_sweep_body_scan_refuses_before_identity_comparison() {
+    let scan = crate::test_support::empty_container_scan();
     let ir = sweep_output_ir();
     let outputs = crate::test_support::assert_work_boundaries(
         &["creo evaluated sweep body lookup traversal"],
-        |ctx| evaluated_sweep_output_bodies(ctx, &ir, 40),
+        |ctx| feature_output_bodies(ctx, &scan, &ir, 40),
     );
     assert_eq!(
         outputs,
@@ -392,11 +399,12 @@ fn evaluated_sweep_body_scan_refuses_before_identity_comparison() {
 }
 
 #[test]
-fn evaluated_sweep_body_identity_validation_refuses_at_work_boundary() {
+fn evaluated_sweep_body_identity_comparison_refuses_at_work_boundary() {
+    let scan = crate::test_support::empty_container_scan();
     let ir = sweep_output_ir();
     let bodies = crate::test_support::assert_work_boundaries(
-        &["creo evaluated sweep body identity validation"],
-        |ctx| evaluated_sweep_output_bodies(ctx, &ir, 40),
+        &["creo evaluated sweep body identity comparison"],
+        |ctx| feature_output_bodies(ctx, &scan, &ir, 40),
     );
     assert_eq!(
         bodies,

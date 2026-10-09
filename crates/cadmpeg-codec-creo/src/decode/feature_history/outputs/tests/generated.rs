@@ -37,6 +37,7 @@ fn generated_input_lookup_refuses_before_scoped_text() {
         40,
         &mut super::super::FeatureOutputHistory::new(&ctx, &ir).expect("history storage"),
     )
+    .map(|_| ())
     .expect_err("lookup needs scoped text");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -148,6 +149,7 @@ fn generated_edge_body_refuses_before_merge_row() {
         &edges,
         &mut super::super::FeatureOutputHistory::new(&ctx, &ir).expect("history storage"),
     )
+    .map(|_| ())
     .expect_err("visited producer and its body use the two admitted rows");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -225,6 +227,7 @@ fn generated_input_body_refuses_before_merge_row() {
         10,
         &mut super::super::FeatureOutputHistory::new(&ctx, &ir).expect("history storage"),
     )
+    .map(|_| ())
     .expect_err("generated dependency, visited producer, and its body use three rows");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -344,6 +347,138 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
         crate::decode::with_test_decode_ctx(|ctx| feature_output_bodies(ctx, &scan, &ir, 10))
             .expect("service profile admits output bodies"),
         vec![BodyId::mint("creo:feature:extrusion#70:body".to_string()).expect("identity grammar")]
+    );
+}
+
+#[test]
+fn duplicate_generated_output_candidates_copy_one_final_body_id() {
+    let feature_row = crate::feature::rows::FeatureRow {
+        feature_id: 50,
+        root_schema_class: None,
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0,
+        offset: 0,
+    };
+    let curve_row = crate::curve::CurveTopologyRow {
+        id: 45,
+        type_byte: 8,
+        feature_id: 50,
+        directions: [1, 0xf6],
+        faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
+        next_edges: [45, 45],
+        offset: 0,
+    };
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.rows.push(feature_row);
+    scan.features.affected_ids.push(crate::feature::rows::FeatureAffectedIds {
+        feature_id: 10,
+        kind: crate::feature::rows::AffectedIdKind::Edges,
+        ids: vec![45],
+        offset: 0,
+    });
+    scan.curves.topology_rows.push(curve_row);
+
+    let body_id = BodyId::mint("creo:feature:extrusion#50:body")
+        .expect("identity grammar");
+    let mut ir = CadIr::empty();
+    ir.model.bodies.push(Body {
+        id: body_id.clone(),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.features.push(Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#10")
+            .expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Thicken {
+                faces: FaceSelection::generated(
+                    vec![GeneratedFaceRef::new(
+                        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
+                            .expect("identity grammar"),
+                        "surface#7".to_string(),
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .expect("selection reference admission")
+                    .expect("valid generated face")],
+                    "creo:generated-face#7".to_string(),
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("selection reference admission")
+                .expect("valid generated face selection"),
+                thickness: None,
+                side: None,
+            }),
+        ),
+        native_ref: None,
+    });
+    ir.model.features.push(Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
+            .expect("identity grammar"),
+        ordinal: 1,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+        ),
+        native_ref: None,
+    });
+
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let Some(cadmpeg_ir::features::EdgeSelection::Generated { edges, .. }) =
+            super::super::feature_edge_selection(ctx, &scan, &ir, 10)?
+        else {
+            panic!("the edge row must resolve to a generated producer reference");
+        };
+        let mut history = super::super::FeatureOutputHistory::new(ctx, &ir)?;
+        let edge_outputs = generated_edge_output_bodies(ctx, &scan, &ir, &edges, &mut history)?;
+        assert_eq!(edge_outputs.bodies, vec![&body_id]);
+        let input_outputs = generated_input_output_bodies(ctx, &scan, &ir, 10, &mut history)?;
+        assert_eq!(input_outputs.bodies, vec![&body_id]);
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .expect("both generated paths select the same producer body");
+
+    let cap_below_output_copy = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo feature output body IDs"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            feature_output_bodies(&ctx, &scan, &ir, 10).map(|_| ())
+        },
+    );
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = cap_below_output_copy
+        .checked_add(1)
+        .expect("retained-byte boundary");
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    assert_eq!(
+        feature_output_bodies(&ctx, &scan, &ir, 10)
+            .expect("duplicate candidates need one final body ID copy"),
+        vec![body_id]
     );
 }
 
@@ -687,7 +822,8 @@ fn generated_input_feature_scan_refuses_before_identity_comparison() {
                 40,
                 &mut super::super::FeatureOutputHistory::new(ctx, &ir)?,
             )
+            .map(|outputs| outputs.bodies.is_empty())
         },
     );
-    assert!(outputs.is_empty());
+    assert!(outputs);
 }

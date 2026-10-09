@@ -7,7 +7,7 @@ use crate::decode::feature_history::dimensions::{
     feature_dimension_parameter_row_id, resolved_feature_dimension_parameter,
 };
 use crate::decode::feature_history::outputs::{
-    evaluated_sweep_body_kind, evaluated_sweep_output_bodies,
+    evaluated_sweep_body_kind, feature_output_bodies,
 };
 use crate::decode::sketch::geometry::section_circle_geometry;
 use crate::decode::sketch::radii::resolved_section_radii;
@@ -784,6 +784,7 @@ fn dimension_display_preserves_radius_and_diameter_types() {
 #[test]
 fn evaluated_sweep_bodies_are_feature_outputs() {
     let mut ir = CadIr::empty();
+    let scan = crate::test_support::empty_container_scan();
     for id in [
         "creo:feature:extrusion#40:body",
         "creo:feature:revolution#40:body",
@@ -809,7 +810,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         visible: None,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_output_bodies(ctx, &ir, 40))
+        crate::decode::with_test_decode_ctx(|ctx| feature_output_bodies(ctx, &scan, &ir, 40))
             .expect("service profile admits output bodies"),
         vec![
             BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
