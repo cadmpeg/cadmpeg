@@ -445,3 +445,5 @@ fn history_input_vertex_id_refuses_before_allocation_and_preserves_bytes() {
         },
     );
 }
+
+mod singlepass;

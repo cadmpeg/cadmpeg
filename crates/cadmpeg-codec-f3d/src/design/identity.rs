@@ -3,57 +3,60 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use std::fmt::{self, Write};
+use std::fmt;
 
-struct Encoded<'a>(&'a str, bool);
+struct EncodedText<'ctx> {
+    text: String,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
 
-impl fmt::Display for Encoded<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        const HEX: &[u8; 16] = b"0123456789ABCDEF";
-        for character in self.0.chars() {
-            let character = if self.1 {
+fn encode_component<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    value: &str,
+    lowercase_ascii: bool,
+    operation: &'static str,
+) -> Result<EncodedText<'ctx>, CodecError> {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut storage = ctx.reserve_scoped(0, operation)?;
+    let mut text = String::new();
+    let mut characters = value.chars();
+    while !characters.as_str().is_empty() {
+        if let Some(character) = ctx.next_charged(&mut characters, operation)? {
+            let character = if lowercase_ascii {
                 character.to_ascii_lowercase()
             } else {
                 character
             };
-            let mut bytes = [0u8; 4];
-            let text = character.encode_utf8(&mut bytes);
-            if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-                for byte in text.as_bytes() {
-                    let escaped = [
-                        b'%',
-                        HEX[usize::from(byte >> 4)],
-                        HEX[usize::from(byte & 0x0f)],
-                    ];
-                    let escaped = std::str::from_utf8(&escaped).map_err(|_| fmt::Error)?;
-                    formatter.write_str(escaped)?;
+            let escaped = matches!(character, ':' | '#' | '%') || character.is_whitespace();
+            let width = character.len_utf8() * if escaped { 3 } else { 1 };
+            if text.capacity() - text.len() < width {
+                // Reserve actual geometric growth for this reached scalar.
+                // Only this text backing belongs to the reservation.
+                let growth = text.capacity().max(width);
+                ctx.reserve_scoped_string(&mut storage, &mut text, growth, operation)?;
+            }
+            if escaped {
+                let mut bytes = [0u8; 4];
+                let encoded = character.encode_utf8(&mut bytes);
+                for byte in encoded.as_bytes() {
+                    for escaped in [
+                        '%',
+                        char::from(HEX[usize::from(byte >> 4)]),
+                        char::from(HEX[usize::from(byte & 0x0f)]),
+                    ] {
+                        storage.with_storage(|| {
+                            ctx.push_retained_char(&mut text, escaped, operation)
+                        })?;
+                    }
                 }
             } else {
-                formatter.write_str(text)?;
+                storage.with_storage(|| {
+                    ctx.push_retained_char(&mut text, character, operation)
+                })?;
             }
         }
-        Ok(())
     }
-}
-
-struct Length(usize);
-
-impl fmt::Write for Length {
-    fn write_str(&mut self, text: &str) -> fmt::Result {
-        self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
-        Ok(())
-    }
-}
-
-fn encoded_length(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<usize, CodecError> {
-    let mut length = Length(0);
-    write!(&mut length, "{}", Encoded(value, false))
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(length.0)
+    Ok(EncodedText { text, _storage: storage })
 }
 
 pub(super) fn neutral_configuration_id(
@@ -62,13 +65,15 @@ pub(super) fn neutral_configuration_id(
     name: &str,
 ) -> Result<cadmpeg_ir::features::ConfigurationId, CodecError> {
     let operation = "f3d configuration identifier";
-    let entry_len = encoded_length(ctx, entry, operation)?;
-    let name_len = encoded_length(ctx, name, operation)?;
+    let encoded_entry = encode_component(ctx, entry, false, operation)?;
+    let entry_len = encoded_entry.text.len();
+    let encoded_name = encode_component(ctx, name, false, operation)?;
+    let name_len = encoded_name.text.len();
     let text = ctx.format_retained(
         format_args!(
             "f3d:configuration:variant#{entry_len}:{}{name_len}:{}",
-            Encoded(entry, false),
-            Encoded(name, false)
+            encoded_entry.text,
+            encoded_name.text
         ),
         operation,
     )?;
@@ -91,15 +96,17 @@ pub(super) fn neutral_feature_id(
     let operation = "f3d feature identifier";
     let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
     let kind = scope.kind_name();
-    let stream_len = encoded_length(ctx, stream, operation)?;
-    let kind_len = encoded_length(ctx, kind, operation)?;
+    let encoded_stream = encode_component(ctx, stream, false, operation)?;
+    let stream_len = encoded_stream.text.len();
+    let encoded_kind = encode_component(ctx, kind, false, operation)?;
+    let kind_len = encoded_kind.text.len();
     mint(
         ctx,
         ctx.format_retained(
             format_args!(
                 "f3d:model:feature#{stream_len}:{}{kind_len}:{}{}:{}",
-                Encoded(stream, false),
-                Encoded(kind, false),
+                encoded_stream.text,
+                encoded_kind.text,
                 scope.feature_ordinal.get(),
                 scope.record_index
             ),
@@ -114,13 +121,14 @@ pub(super) fn neutral_parameter_id(
 ) -> Result<cadmpeg_ir::features::ParameterId, CodecError> {
     let operation = "f3d parameter identifier";
     let stream = crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-    let len = encoded_length(ctx, stream, operation)?;
+    let encoded_stream = encode_component(ctx, stream, false, operation)?;
+    let len = encoded_stream.text.len();
     mint(
         ctx,
         ctx.format_retained(
             format_args!(
                 "f3d:model:parameter#{len}:{}{}",
-                Encoded(stream, false),
+                encoded_stream.text,
                 parameter.record_index
             ),
             operation,
@@ -133,12 +141,13 @@ pub(super) fn neutral_sketch_id(
     placement: &crate::records::sketch_placement::DesignSketchPlacement,
 ) -> Result<cadmpeg_ir::sketches::SketchId, CodecError> {
     let stream = crate::ids::native_stream(&placement.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+    let encoded_stream = encode_component(ctx, stream, false, "f3d sketch identifier")?;
     mint(
         ctx,
         ctx.format_retained(
             format_args!(
                 "f3d:model:sketch#{}@{}",
-                Encoded(stream, false),
+                encoded_stream.text,
                 placement.entity_id.suffix()
             ),
             "f3d sketch identifier",
@@ -151,12 +160,13 @@ pub(super) fn neutral_spatial_sketch_id(
     placement: &crate::records::sketch_placement::DesignSketchPlacement,
 ) -> Result<cadmpeg_ir::sketches::SpatialSketchId, CodecError> {
     let stream = crate::ids::native_stream(&placement.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+    let encoded_stream = encode_component(ctx, stream, false, "f3d spatial sketch identifier")?;
     mint(
         ctx,
         ctx.format_retained(
             format_args!(
                 "f3d:model:spatial-sketch#{}@{}",
-                Encoded(stream, false),
+                encoded_stream.text,
                 placement.entity_id.suffix()
             ),
             "f3d spatial sketch identifier",
@@ -171,14 +181,15 @@ macro_rules! tagged_entity_id {
             sketch: &$owner,
             index: $index,
         ) -> Result<$result, CodecError> {
-            let len = encoded_length(ctx, sketch.as_str(), $operation)?;
+            let encoded_sketch = encode_component(ctx, sketch.as_str(), false, $operation)?;
+            let len = encoded_sketch.text.len();
             mint(
                 ctx,
                 ctx.format_retained(
                     format_args!(
                         concat!($namespace, "#{}:{}", $tag, "{}"),
                         len,
-                        Encoded(sketch.as_str(), false),
+                        encoded_sketch.text,
                         index
                     ),
                     $operation,
@@ -250,13 +261,14 @@ pub(super) fn neutral_sketch_curve_id(
     secondary: u64,
 ) -> Result<cadmpeg_ir::sketches::SketchEntityId, CodecError> {
     let operation = "f3d sketch curve identifier";
-    let len = encoded_length(ctx, sketch.as_str(), operation)?;
+    let encoded_sketch = encode_component(ctx, sketch.as_str(), false, operation)?;
+    let len = encoded_sketch.text.len();
     mint(
         ctx,
         ctx.format_retained(
             format_args!(
                 "f3d:model:sketch-entity#{len}:{}c{primary}:{secondary}",
-                Encoded(sketch.as_str(), false)
+                encoded_sketch.text
             ),
             operation,
         )?,
@@ -270,13 +282,14 @@ pub(super) fn neutral_spatial_sketch_curve_id(
     secondary: u64,
 ) -> Result<cadmpeg_ir::sketches::SpatialSketchEntityId, CodecError> {
     let operation = "f3d spatial sketch curve identifier";
-    let len = encoded_length(ctx, sketch.as_str(), operation)?;
+    let encoded_sketch = encode_component(ctx, sketch.as_str(), false, operation)?;
+    let len = encoded_sketch.text.len();
     mint(
         ctx,
         ctx.format_retained(
             format_args!(
                 "f3d:model:spatial-sketch-entity#{len}:{}c{primary}:{secondary}",
-                Encoded(sketch.as_str(), false)
+                encoded_sketch.text
             ),
             operation,
         )?,
@@ -289,12 +302,13 @@ pub(super) fn neutral_sketch_constraint_id(
     record: u32,
 ) -> Result<cadmpeg_ir::sketches::SketchConstraintId, CodecError> {
     let stream = crate::ids::native_stream(native_ref).unwrap_or(crate::ids::DEFAULT_STREAM);
+    let encoded_stream = encode_component(ctx, stream, false, "f3d sketch constraint identifier")?;
     mint(
         ctx,
         ctx.format_retained(
             format_args!(
                 "f3d:model:sketch-constraint#{}@{record}",
-                Encoded(stream, false)
+                encoded_stream.text
             ),
             "f3d sketch constraint identifier",
         )?,
@@ -308,14 +322,15 @@ pub(super) fn neutral_dimension_constraint_id(
 ) -> Result<cadmpeg_ir::sketches::SketchConstraintId, CodecError> {
     let operation = "f3d dimension constraint identifier";
     let key = identity_key(ctx, parameter.as_str())?;
-    let form_len = encoded_length(ctx, form, operation)?;
+    let encoded_form = encode_component(ctx, form, false, operation)?;
+    let form_len = encoded_form.text.len();
     mint(
         ctx,
         ctx.format_retained(
             format_args!(
                 "f3d:model:sketch-constraint#dimension:{}:{key}{form_len}:{}",
                 key.len(),
-                Encoded(form, false)
+                encoded_form.text
             ),
             operation,
         )?,
@@ -337,13 +352,14 @@ pub(super) fn neutral_component_insert_occurrence_id(
 ) -> Result<cadmpeg_ir::ids::OccurrenceId, CodecError> {
     let operation = "f3d component insert occurrence identifier";
     let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-    let len = encoded_length(ctx, stream, operation)?;
+    let encoded_stream = encode_component(ctx, stream, false, operation)?;
+    let len = encoded_stream.text.len();
     mint(
         ctx,
         ctx.format_retained(
             format_args!(
                 "f3d:model:occurrence#component-insert-{len}:{}{}:{}",
-                Encoded(stream, false),
+                encoded_stream.text,
                 scope.feature_ordinal.get(),
                 scope.record_index
             ),
@@ -358,13 +374,14 @@ pub(super) fn neutral_assembly_joint_id(
 ) -> Result<cadmpeg_ir::products::JointId, CodecError> {
     let operation = "f3d assembly joint identifier";
     let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-    let len = encoded_length(ctx, stream, operation)?;
+    let encoded_stream = encode_component(ctx, stream, false, operation)?;
+    let len = encoded_stream.text.len();
     mint(
         ctx,
         ctx.format_retained(
             format_args!(
                 "f3d:model:joint#{len}:{}{}",
-                Encoded(stream, false),
+                encoded_stream.text,
                 scope.record_index
             ),
             operation,
@@ -376,8 +393,9 @@ pub(super) fn configuration_entry_id(
     ctx: &DecodeContext<'_>,
     entry: &str,
 ) -> Result<String, CodecError> {
+    let encoded_entry = encode_component(ctx, entry, false, "f3d configuration native identifier")?;
     ctx.format_retained(
-        format_args!("f3d:configuration:entry#{}", Encoded(entry, false)),
+        format_args!("f3d:configuration:entry#{}", encoded_entry.text),
         "f3d configuration native identifier",
     )
 }
@@ -472,14 +490,20 @@ pub(super) fn neutral_assembly_axial_object_id(
         .external_version
         .as_ref()
         .map_or("", |version| version.version_urn.value.as_str());
-    let asset_len = encoded_length(ctx, asset, operation)?;
-    let context_len = encoded_length(ctx, context, operation)?;
-    let external_len = encoded_length(ctx, external, operation)?;
-    let link_len = encoded_length(ctx, link, operation)?;
-    let property_len = encoded_length(ctx, property, operation)?;
-    let version_len = encoded_length(ctx, version, operation)?;
+    let encoded_asset = encode_component(ctx, asset, true, operation)?;
+    let asset_len = encoded_asset.text.len();
+    let encoded_context = encode_component(ctx, context, true, operation)?;
+    let context_len = encoded_context.text.len();
+    let encoded_external = encode_component(ctx, external, true, operation)?;
+    let external_len = encoded_external.text.len();
+    let encoded_link = encode_component(ctx, link, false, operation)?;
+    let link_len = encoded_link.text.len();
+    let encoded_property = encode_component(ctx, property, true, operation)?;
+    let property_len = encoded_property.text.len();
+    let encoded_version = encode_component(ctx, version, false, operation)?;
+    let version_len = encoded_version.text.len();
     let present = u8::from(identity.external_version.is_some());
-    ctx.format_retained(format_args!("f3d:feature-input:connector#assembly-axial:{asset_len}:{}:{context_len}:{}:{}:{}:{external_len}:{}:{link_len}:{}:{present}:{property_len}:{}:{present}:{version_len}:{}", Encoded(asset, true), Encoded(context, true), identity.external_object_reference, identity.external_segment, Encoded(external, true), Encoded(link, false), Encoded(property, true), Encoded(version, false)), operation)
+    ctx.format_retained(format_args!("f3d:feature-input:connector#assembly-axial:{asset_len}:{}:{context_len}:{}:{}:{}:{external_len}:{}:{link_len}:{}:{present}:{property_len}:{}:{present}:{version_len}:{}", encoded_asset.text, encoded_context.text, identity.external_object_reference, identity.external_segment, encoded_external.text, encoded_link.text, encoded_property.text, encoded_version.text), operation)
 }
 
 pub(super) fn neutral_assembly_legacy_object_id(
@@ -490,10 +514,13 @@ pub(super) fn neutral_assembly_legacy_object_id(
     let asset = selection.asset_id.as_str();
     let context = selection.context_id.as_str();
     let recipe = selection.recipe_id.as_str();
-    let asset_len = encoded_length(ctx, asset, operation)?;
-    let context_len = encoded_length(ctx, context, operation)?;
-    let recipe_len = encoded_length(ctx, recipe, operation)?;
-    ctx.format_retained(format_args!("f3d:feature-input:connector#assembly-legacy:{asset_len}:{}:{context_len}:{}:{recipe_len}:{}:{}:{}", Encoded(asset, true), Encoded(context, true), Encoded(recipe, true), selection.record_index, selection.recipe_record_index), operation)
+    let encoded_asset = encode_component(ctx, asset, true, operation)?;
+    let asset_len = encoded_asset.text.len();
+    let encoded_context = encode_component(ctx, context, true, operation)?;
+    let context_len = encoded_context.text.len();
+    let encoded_recipe = encode_component(ctx, recipe, true, operation)?;
+    let recipe_len = encoded_recipe.text.len();
+    ctx.format_retained(format_args!("f3d:feature-input:connector#assembly-legacy:{asset_len}:{}:{context_len}:{}:{recipe_len}:{}:{}:{}", encoded_asset.text, encoded_context.text, encoded_recipe.text, selection.record_index, selection.recipe_record_index), operation)
 }
 
 #[cfg(test)]
