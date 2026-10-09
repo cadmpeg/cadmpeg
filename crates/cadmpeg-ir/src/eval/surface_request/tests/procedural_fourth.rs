@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use crate::features::FinitePoint3;
+use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::analytic::{CircleCurve, LineCurve};
 use crate::geometry::surface_payloads::{AxisRevolutionSurfaceConstruction, ExtrusionSurfaceConstruction,
     LinearSweepSurfaceConstruction, RevolutionSurfaceConstruction, SumSurfaceConstruction};
@@ -120,7 +120,7 @@ fn native_revolution_fourth_maps_scale_and_oriented_offset_third_in_both_charts(
 }
 
 #[test]
-fn missing_nurbs_curve_fourth_keeps_completed_third_and_all_lower_orders() {
+fn degree_one_nurbs_curve_fourth_keeps_completed_third_and_all_lower_orders() {
     use crate::geometry::nurbs::NurbsCurve;
     let mut ir = CadIr::empty();
     let source = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1,
@@ -134,8 +134,34 @@ fn missing_nurbs_curve_fourth_keeps_completed_third_and_all_lower_orders() {
     assert_eq!(fourth.jet.point, lower.jet.point); assert_eq!(fourth.jet.first, lower.jet.first);
     assert_eq!(fourth.jet.second, lower.jet.second); assert_eq!(fourth.higher.third(), lower.higher.third());
     close(fourth.higher.third().unwrap()[0].get(), Vector3::new(64.0 / 27.0, 0.0, 0.0));
-    assert_eq!(fourth.higher.fourth(), Err(EvaluationFailure::NoValue));
+    close(fourth.higher.fourth().unwrap()[0].get(), Vector3::new(-512.0 / 81.0, 0.0, 0.0));
+    for lane in &fourth.higher.fourth().unwrap()[1..] { assert_eq!(*lane, FiniteVector3::ZERO); }
     let shifted = offset(&mut ir, "missing-fourth-offset", surface, 1.0);
+    let result = requested(&ir, &shifted, 0.5, 0.25, SurfaceRequest::Third);
+    assert!(result.jet.first.is_ok()); assert!(result.jet.second.is_ok());
+    close(result.higher.third().unwrap()[0].get(), Vector3::new(64.0 / 27.0, 0.0, 0.0));
+    for lane in &result.higher.third().unwrap()[1..] { assert_eq!(*lane, FiniteVector3::ZERO); }
+}
+
+#[test]
+fn general_rational_curve_missing_fourth_keeps_its_true_third_and_lower_orders() {
+    use crate::geometry::nurbs::NurbsCurve;
+    let mut ir = CadIr::empty();
+    // C=2t^2/(1+t^2). A zero homogeneous third is not a rational zero law.
+    let source = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        Some(vec![1.0, 1.0, 2.0]), false).unwrap().unwrap();
+    let directrix = curve(&mut ir, "general-missing-fourth", SolvedCurveGeometry::Nurbs(source));
+    let surface = procedural(&mut ir, "general-curve-fourth", ProceduralSurfaceDefinition::LinearSweep(
+        LinearSweepSurfaceConstruction::try_new(directrix, Vector3::new(0.0, 0.0, 1.0)).unwrap()));
+    let fourth = requested(&ir, &surface, 0.5, 0.25, SurfaceRequest::Fourth);
+    let lower = requested(&ir, &surface, 0.5, 0.25, SurfaceRequest::Third);
+    assert_eq!(fourth.jet.point, lower.jet.point); assert_eq!(fourth.jet.first, lower.jet.first);
+    assert_eq!(fourth.jet.second, lower.jet.second); assert_eq!(fourth.higher.third(), lower.higher.third());
+    close(fourth.higher.third().unwrap()[0].get(), Vector3::new(-4608.0 / 625.0, 0.0, 0.0));
+    assert_eq!(fourth.higher.fourth(), Err(EvaluationFailure::NoValue));
+    let shifted = offset(&mut ir, "general-missing-fourth-offset", surface, 1.0);
     let result = requested(&ir, &shifted, 0.5, 0.25, SurfaceRequest::Third);
     assert!(result.jet.first.is_ok()); assert!(result.jet.second.is_ok());
     assert_eq!(result.higher.third(), Err(EvaluationFailure::NoValue));

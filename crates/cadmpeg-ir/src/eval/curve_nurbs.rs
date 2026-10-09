@@ -245,12 +245,17 @@ pub(super) fn linear_derivative(
 /// Keep the actual knot width and factored values in their extended range;
 /// only the final coordinate converts to binary64. This fixed analytic law
 /// does not assert that a zero homogeneous third makes a rational third zero.
-pub(super) fn linear_third(
+/// The same selected rational span supplies C4=-24 K D^3/(h^4 w^5).
+/// Each order converts independently; a fourth range error retains the third.
+/// The third-only reader performs no fourth quotient or second span search.
+pub(super) fn linear_higher(
     scratch: &decode::Scratch<'_, '_>,
     curve: &crate::geometry::nurbs::NurbsCurve,
     parameter: FiniteReal,
-) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    fourth: bool,
+) -> Result<super::curve_higher::CurveHigher, EvaluationFailure<()>> {
     use crate::math::sum::{scaled_finite, ScaledValue};
+    use super::curve_higher::CurveHigher;
     scratch.unless_refused()?;
     if curve.degree() != 1 {
         return Err(EvaluationFailure::NoValue);
@@ -283,22 +288,39 @@ pub(super) fn linear_third(
         difference.add_factors([weight1]);
         difference.add_factors([-weight0]);
         let Some(difference) = difference.finish() else {
-            return Ok(FiniteVector3::ZERO);
+            return Ok(CurveHigher {
+                third: Ok(FiniteVector3::ZERO),
+                fourth: if fourth { Ok(FiniteVector3::ZERO) } else { Err(EvaluationFailure::NoValue) },
+            });
         };
         let six = scaled_finite(6.0).ok_or(EvaluationFailure::NoValue)?;
+        let fourth_factor = if fourth {
+            scaled_finite(-24.0).ok_or(EvaluationFailure::NoValue)?
+        } else { six };
         let coordinate = |left, right| {
             let mut coefficient = ExactSignedSum::default();
             coefficient.add_factors([weight0, weight1, right]);
             coefficient.add_factors([-weight0, weight1, left]);
-            coefficient.finish().map_or(Ok(FiniteReal::ZERO), |coefficient| {
+            let coefficient = coefficient.finish();
+            let third = coefficient.map_or(Ok(FiniteReal::ZERO), |coefficient| {
                 ScaledValue::product_quotient([six, coefficient, difference, difference],
                     [width, width, width, weight, weight, weight, weight])
-            })
+            });
+            let fourth = if fourth {
+                coefficient.map_or(Ok(FiniteReal::ZERO), |coefficient| {
+                    ScaledValue::product_quotient([fourth_factor, coefficient, difference, difference, difference],
+                        [width, width, width, width, weight, weight, weight, weight, weight])
+                })
+            } else { Ok(FiniteReal::ZERO) };
+            (third, fourth)
         };
-        let [x, y, z] = finite_lanes([
-            coordinate(first.x, last.x), coordinate(first.y, last.y), coordinate(first.z, last.z),
-        ]).map_err(|_| EvaluationFailure::NonFinite(()))?;
-        Ok(FiniteVector3::from_components(x, y, z))
+        let lanes = [coordinate(first.x, last.x), coordinate(first.y, last.y), coordinate(first.z, last.z)];
+        let vector = |lanes| finite_lanes(lanes).map(|[x, y, z]| FiniteVector3::from_components(x, y, z))
+            .map_err(|_| EvaluationFailure::NonFinite(()));
+        Ok(CurveHigher {
+            third: vector(lanes.map(|lane| lane.0)),
+            fourth: if fourth { vector(lanes.map(|lane| lane.1)) } else { Err(EvaluationFailure::NoValue) },
+        })
     })();
     scratch.settle(result)
 }
@@ -378,7 +400,7 @@ pub(super) fn rational_third(
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
     use super::rational::Homogeneous;
     scratch.unless_refused()?;
-    if curve.degree() == 1 { return linear_third(scratch, curve, parameter); }
+    if curve.degree() == 1 { return linear_higher(scratch, curve, parameter, false)?.third; }
     let result = (|| {
         let no_value = EvaluationFailure::NoValue;
         let NurbsPoles3::Rational { points } = curve.pole_rows() else { return Err(no_value); };
