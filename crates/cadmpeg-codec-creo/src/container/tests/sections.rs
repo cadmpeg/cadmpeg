@@ -612,3 +612,4 @@ assert_eq!(sections[0].region, b"#BasicData\nabc");
 }
 
 mod allocation_order;
+mod selection_lifetime;
