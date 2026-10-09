@@ -1238,6 +1238,10 @@ pub(super) fn complete_duplicate_face_slots(
         return Ok(None);
     }
 
+    if edge_classes.is_some_and(|classes| classes.len() != edge_rows.len()) {
+        return Ok(None);
+    }
+
     let mut completed = ctx.copy_slice(edge_faces, "catia_standard_duplicate_edge_faces")?;
     let mut storage = ctx.reserve_scoped(0, "catia_standard_duplicate_working_state")?;
     storage.with_storage(|| {
