@@ -331,8 +331,22 @@ fn a8_class21_pcurve_multiplicities_propagate_collection_refusal() {
     let payload = a8_class21_test_payload();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Two knots use thirty-four items before the retained multiplicity vector.
+    // The original cap admits the output after removing the second control vector.
     policy.limits.max_collection_items = 34;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("fixture fits the input limit");
+    let pcurve = parse_a8_class21_pcurve(&ctx, 7, &payload)
+        .expect("one control vector fits the original collection limit")
+        .expect("complete class-21 jet");
+    assert_eq!(pcurve.object_id, 7);
+    assert_eq!(pcurve.surface, 3);
+    assert_eq!(pcurve.distinct_knots, crate::test_support::test_b5::finite_lane(&[10.0, 20.0]));
+    assert_eq!(pcurve.multiplicities, [6, 6]);
+    assert_eq!(pcurve.control_points.len(), 6);
+
+    // Two knots, ten jet lanes, and six controls use twenty-eight items.
+    let arena = DecodeArena::new();
+    policy.limits.max_collection_items = 28;
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
         .expect("fixture fits the input limit");
     let error = parse_a8_class21_pcurve(&ctx, 7, &payload)

@@ -47,8 +47,7 @@ pub(crate) fn finite_f64_lane_charged(
         };
         values.push(value);
     }
-    storage.commit()?;
-    Ok(Some(values))
+    storage.commit_value(values).map(Some)
 }
 
 /// Read `N` consecutive little-endian `f64` values, each finite.
@@ -247,6 +246,42 @@ mod tests {
             if limit.operation == "catia_lane_test"
                 && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
         );
+    }
+
+    #[test]
+    fn finite_lane_promotion_preserves_refusal_and_parent_storage() {
+        use cadmpeg_core::{decode::ResourceDimension, CodecError};
+
+        let bytes = [1.0_f64.to_le_bytes(), (-0.0_f64).to_le_bytes()].concat();
+        let result = crate::test_support::with_retained_refusal(
+            &bytes,
+            "catia_lane_test",
+            |ctx| {
+                let result = super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test");
+                let Err(CodecError::ResourceLimit(limit)) = &result else {
+                    panic!("actual finite lane promotion must refuse");
+                };
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                assert_eq!(limit.operation, "catia_lane_test");
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+                assert!(matches!(ctx.charge_work(0, "after lane promotion refusal"),
+                    Err(CodecError::ResourceLimit(later)) if later == *limit));
+                result
+            },
+        );
+        assert!(matches!(result, Err(CodecError::ResourceLimit(_))));
+        crate::test_support::with_retained_limit(0, |ctx| -> Result<(), CodecError> {
+            let mut storage = ctx.reserve_scoped(0, "test finite lane parent")?;
+            let values = storage.with_storage(|| {
+                super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test")
+            })?.expect("finite lane");
+            assert_eq!(values[0].get(), 1.0);
+            assert_eq!(values[1].get().to_bits(), (-0.0_f64).to_bits());
+            assert_eq!(ctx.resource_refusal(), None);
+            drop(values);
+            drop(storage);
+            Ok(())
+        }).expect("actual lane backing remains under its live parent");
     }
 
     #[test]

@@ -268,10 +268,12 @@ pub(crate) fn reverse_pcurve_geometry(
                 },
             )?;
             let result = note_refusal(ctx, checked, refusal, record)?;
-            if result.is_some() {
-                output_storage.commit()?;
+            match result {
+                Some(nurbs) => output_storage
+                    .commit_value(PcurveGeometry::Nurbs { nurbs })
+                    .map(Some),
+                None => Ok(None),
             }
-            Ok(result.map(|nurbs| PcurveGeometry::Nurbs { nurbs }))
         }
         _ => Ok(None),
     }
@@ -347,15 +349,15 @@ pub(crate) fn reverse_curve_geometry(
                     reverse_nurbs_curve(ctx, nurbs, range)
                 })?;
             let curve = note_refusal(ctx, checked, refusal, record)?;
-            if curve.is_some() {
-                output_storage.commit()?;
+            match curve {
+                Some(curve) => output_storage
+                    .commit_value((
+                        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                        range,
+                    ))
+                    .map(Some),
+                None => Ok(None),
             }
-            Ok(curve.map(|curve| {
-                (
-                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                    range,
-                )
-            }))
         }
         _ => Ok(None),
     }
@@ -424,10 +426,10 @@ pub(crate) fn reverse_nurbs_curve(
         Err(error) => return Ok(Err(error)),
     };
     let result = NurbsCurve::new(ctx, curve.degree(), knots, poles, curve.periodic())?;
-    if result.is_ok() {
-        output_storage.commit()?;
+    match result {
+        Ok(curve) => output_storage.commit_value(curve).map(Ok),
+        Err(error) => Ok(Err(error)),
     }
-    Ok(result)
 }
 
 /// State one trim endpoint inside the carrier domain, or refuse it.
@@ -734,7 +736,7 @@ pub(crate) fn circular_helix_cache(
     let sample_count = segment_count
         .checked_add(1)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_samples", u64::MAX, u64::MAX))?;
-    let (mut samples, samples_storage) = ctx.temporary_vec(sample_count, "catia_helix_samples")?;
+    let mut samples = ctx.temporary_vec(sample_count, "catia_helix_samples")?;
     let mut indices = 0..=segment_count;
     while let Some(index) = ctx.next_charged(&mut indices, "catia_helix_sample_visits")? {
         let parameter = if index == segment_count {
@@ -752,10 +754,10 @@ pub(crate) fn circular_helix_cache(
         let Some(point) = circular_helix_point(construction, parameter) else {
             return Ok(None);
         };
-        samples.push((parameter, point));
+        samples.0.push((parameter, point));
     }
     if !ctx.all_by(
-        samples.windows(2),
+        samples.0.windows(2),
         |pair| Ok(pair[0].0.is_finite() && pair[0].0 < pair[1].0),
         "catia_helix_sample_order",
     )? {
@@ -773,13 +775,13 @@ pub(crate) fn circular_helix_cache(
     let mut controls =
         input_storage.with_storage(|| ctx.collection_vec(sample_count, "catia_helix_controls"))?;
     knots.push(angle_range[0]);
-    for (parameter, point) in ctx.admit_iter(samples, "catia_helix_output_samples")? {
+    for (parameter, point) in ctx.admit_iter(samples.0, "catia_helix_output_samples")? {
         knots.push(parameter);
         controls.push(point);
     }
-    drop(samples_storage);
+    drop(samples.1);
     knots.push(angle_range[1]);
-    let (curve, curve_storage) = ctx.with_scoped_storage("catia_helix_checked_curve", || {
+    let (curve, mut curve_storage) = ctx.with_scoped_storage("catia_helix_checked_curve", || {
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(ctx, 1, knots, controls, None, false)
     })?;
     drop(input_storage);
@@ -790,12 +792,13 @@ pub(crate) fn circular_helix_cache(
     let Some(fit_tolerance) = FitTolerance::try_new(fit_tolerance).ok() else {
         return Ok(None);
     };
-    knot_storage.commit()?;
-    curve_storage.commit()?;
-    Ok(Some(CircularHelixCache {
-        curve,
-        fit_tolerance,
-    }))
+    knot_storage.absorb(&mut curve_storage)?;
+    knot_storage
+        .commit_value(CircularHelixCache {
+            curve,
+            fit_tolerance,
+        })
+        .map(Some)
 }
 
 fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) -> Option<Point3> {
@@ -834,7 +837,7 @@ pub(crate) fn quintic_jet_bspline<const N: usize, T>(
     second: &[[f64; N]],
     convert: impl Fn([f64; N]) -> Option<T>,
 ) -> QuinticJetOutput<T> {
-    let (controls, controls_storage) = ctx
+    let (controls, mut controls_storage) = ctx
         .with_scoped_storage("catia quintic jet output", || {
             quintic_jet_controls(ctx, degree, knots, points, first, second, convert)
         })?;
@@ -845,12 +848,12 @@ pub(crate) fn quintic_jet_bspline<const N: usize, T>(
         .len()
         .checked_mul(6)
         .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet knots", u64::MAX, u64::MAX))?;
-    let mut full_knots = ctx.collection_vec(count, "catia quintic jet knots")?;
+    let mut full_knots = controls_storage
+        .with_storage(|| ctx.collection_vec(count, "catia quintic jet knots"))?;
     for knot in ctx.admit_iter(knots, "catia_quintic_knot_expansion")? {
         full_knots.extend([*knot; 6]);
     }
-    controls_storage.commit()?;
-    Ok(Some((full_knots, controls)))
+    controls_storage.commit_value((full_knots, controls)).map(Some)
 }
 
 /// Lower a quintic jet without allocating a full knot lane.
@@ -896,9 +899,9 @@ pub(crate) fn quintic_jet_controls<const N: usize, T>(
         .checked_sub(1)
         .and_then(|count| count.checked_mul(6))
         .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet controls", u64::MAX, u64::MAX))?;
-    let (mut controls, controls_reservation) =
-        ctx.temporary_vec(control_count, "catia quintic jet controls")?;
     let mut output_storage = ctx.reserve_scoped(0, "catia quintic jet output")?;
+    let mut finite_controls = output_storage
+        .with_storage(|| ctx.collection_vec(control_count, "catia quintic jet controls"))?;
     let mut spans = 0..knots.len() - 1;
     while let Some(index) = ctx.next_charged(&mut spans, "catia_quintic_span_visits")? {
         let h = knots[index + 1] - knots[index];
@@ -929,7 +932,7 @@ pub(crate) fn quintic_jet_controls<const N: usize, T>(
                 ((h / 20.0) * derivative) * h
             }
         };
-        controls.extend([
+        let controls = [
             p0,
             std::array::from_fn(|axis| p0[axis] + tangent(d0[axis])),
             std::array::from_fn(|axis| {
@@ -940,21 +943,15 @@ pub(crate) fn quintic_jet_controls<const N: usize, T>(
             }),
             std::array::from_fn(|axis| p1[axis] - tangent(d1[axis])),
             p1,
-        ]);
+        ];
+        for control in controls {
+            let Some(control) = convert(control) else {
+                return Ok(None);
+            };
+            finite_controls.push(control);
+        }
     }
-    let mut finite_controls = output_storage
-        .with_storage(|| ctx.collection_vec(controls.len(), "catia quintic jet finite controls"))?;
-    let mut controls = controls.into_iter();
-    while let Some(control) = ctx.next_charged(&mut controls, "catia_quintic_control_visits")? {
-        let Some(control) = convert(control) else {
-            return Ok(None);
-        };
-        finite_controls.push(control);
-    }
-    drop(controls);
-    drop(controls_reservation);
-    output_storage.commit()?;
-    Ok(Some(finite_controls))
+    output_storage.commit_value(finite_controls).map(Some)
 }
 
 pub(crate) fn pole_count(
