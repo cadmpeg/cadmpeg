@@ -1954,3 +1954,5 @@ mod isocurves;
 mod admission_derivatives;
 
 mod differentials;
+
+mod admission_scans;

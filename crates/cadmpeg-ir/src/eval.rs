@@ -4753,18 +4753,40 @@ fn construction_curve_parameter(
     let line_interval = if let Some(carrier_interval) = carrier_interval {
         carrier_interval
     } else {
-        let mut ranges = index
-            .ir()
-            .model
-            .edges
-            .iter()
-            .filter(|edge| edge.curve() == Some(directrix))
-            .filter_map(crate::topology::Edge::param_range);
-        let interval = ranges.next().ok_or(no_value)?;
-        if ranges.any(|range| range != interval) {
-            return Err(no_value);
+        let mut interval = None;
+        let mut edges = index.ir().model.edges.iter();
+        while edges.len() != 0 {
+            admission.independent_cost(Some(1))?;
+            admission
+                .work(1, "construction directrix edge scan")
+                .map_err(EvaluationFailure::ResourceLimit)?;
+            let Some(edge) = edges.next() else {
+                break;
+            };
+            let Some(curve) = edge.curve() else {
+                continue;
+            };
+            if !crate::ids::comparison::equal(
+                &admission,
+                curve.as_str(),
+                directrix.as_str(),
+                "construction directrix identity comparison",
+            )
+            .map_err(EvaluationFailure::ResourceLimit)? {
+                continue;
+            }
+            let Some(range) = edge.param_range() else {
+                continue;
+            };
+            if let Some(first) = interval {
+                if range != first {
+                    return Err(no_value);
+                }
+            } else {
+                interval = Some(range);
+            }
         }
-        interval.finite_components()
+        interval.ok_or(no_value)?.finite_components()
     };
     let [curve_start, curve_end] = line_interval;
     let curve_width = positive_width(curve_start, curve_end)?;
@@ -5971,6 +5993,16 @@ pub fn rolling_ball_jet_point(
     t: f64,
     s: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    rolling_ball_jet_point_admitted(admission::EvaluationAdmission::Standard, definition, t, s)
+}
+
+fn rolling_ball_jet_point_admitted(
+    admission: admission::EvaluationAdmission<'_, '_>,
+    definition: &ProceduralSurfaceDefinition,
+    t: f64,
+    s: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    admission.work(0, "rolling-ball jet boundary")?;
     let no_value = EvaluationFailure::NoValue;
     let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
     let ProceduralSurfaceDefinition::RollingBallJet(jet) = definition else {
@@ -5978,36 +6010,58 @@ pub fn rolling_ball_jet_point(
     };
     let degree = jet.degree();
     let stations = jet.stations();
-    if degree != 5
-        || stations
-            .iter()
-            .skip(1)
-            .take(stations.len() - 2)
-            .any(|station| station.multiplicity != 3)
-        || !t.is_finite()
-        || !s.is_finite()
-        || !(0.0..=1.0).contains(&s)
-    {
+    if degree != 5 {
+        return Err(no_value);
+    }
+    let mut interior = stations[1..stations.len() - 1].iter();
+    while interior.len() != 0 {
+        admission.independent_cost(Some(1))?;
+        admission.work(1, "rolling-ball jet multiplicity scan")?;
+        let Some(station) = interior.next() else {
+            break;
+        };
+        if station.multiplicity != 3 {
+            return Err(no_value);
+        }
+    }
+    if !t.is_finite() || !s.is_finite() || !(0.0..=1.0).contains(&s) {
         return Err(no_value);
     }
     let radius = stations[0]
         .site
         .first_limit
         .distance(stations[0].site.center.get());
-    if stations.iter().any(|station| {
+    let mut radius_stations = stations.iter();
+    while radius_stations.len() != 0 {
+        admission.independent_cost(Some(1))?;
+        admission.work(1, "rolling-ball jet radius scan")?;
+        let Some(station) = radius_stations.next() else {
+            break;
+        };
         let site = &station.site;
         let first_radius = site.first_limit.distance(site.center.get());
         let second_radius = site.second_limit.distance(site.center.get());
-        second_radius <= 0.0
+        if second_radius <= 0.0
             || (first_radius - radius).abs()
                 > ROLLING_BALL_JET_RADIUS_TOLERANCE * first_radius.abs().max(radius.abs()).max(1.0)
-    }) {
-        return Err(no_value);
+        {
+            return Err(no_value);
+        }
     }
-    let span = stations
-        .windows(2)
-        .position(|pair| t >= pair[0].knot.get() && t <= pair[1].knot.get())
-        .ok_or(no_value)?;
+    let mut span = None;
+    let mut pairs = stations.windows(2).enumerate();
+    while pairs.len() != 0 {
+        admission.independent_cost(Some(1))?;
+        admission.work(1, "rolling-ball jet span scan")?;
+        let Some((index, pair)) = pairs.next() else {
+            break;
+        };
+        if t >= pair[0].knot.get() && t <= pair[1].knot.get() {
+            span = Some(index);
+            break;
+        }
+    }
+    let span = span.ok_or(no_value)?;
     let interval =
         IncreasingParameterInterval::between(stations[span].knot, stations[span + 1].knot)
             .ok_or(no_value)?;
@@ -6663,7 +6717,7 @@ fn model_surface_point_inner(
                 .and_then(admit_point)
         }
         ProceduralSurfaceDefinition::RollingBallJet(_) => {
-            rolling_ball_jet_point(procedural.definition(), u, v)
+            rolling_ball_jet_point_admitted(admission, procedural.definition(), u, v)
         }
         _ => Err(EvaluationFailure::NoValue),
     }
