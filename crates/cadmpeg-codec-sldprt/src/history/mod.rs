@@ -4,6 +4,7 @@
 pub(crate) mod bind;
 pub(crate) mod classify;
 pub(crate) mod configuration;
+pub(crate) mod feature_graph;
 mod encode;
 pub(crate) mod hash;
 pub(crate) mod literals;
