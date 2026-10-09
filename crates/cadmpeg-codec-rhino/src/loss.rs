@@ -243,6 +243,7 @@ impl Diagnostics {
     }
 
     /// Records a diagnostic whose category the consuming channel decides.
+    #[cfg(test)]
     pub(crate) fn push(&mut self, message: impl Into<String>) {
         self.0.push(RhinoDiagnostic {
             code: None,
@@ -312,6 +313,7 @@ impl Diagnostics {
 
     /// Copies scratch diagnostics into retained report storage after their
     /// producing storage scopes are no longer active.
+    #[cfg(test)]
     pub(crate) fn append_prefixed_scoped_admitted(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
