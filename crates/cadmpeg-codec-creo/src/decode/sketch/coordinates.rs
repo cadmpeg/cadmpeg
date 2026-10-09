@@ -50,6 +50,9 @@ pub(in crate::decode) fn saved_section_coordinate_witnesses(
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<(u32, [f64; 2])>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(segment_tables) = definition.segments.as_ref() else {
         return Ok(Vec::new());
     };
@@ -126,7 +129,6 @@ type ScopedEquationTerms<'ctx> = (EquationTerms, cadmpeg_core::decode::ScopedRes
 struct CoordinateEquationIndex<'ctx> {
     terms: BTreeMap<EquationTerms, Vec<f64>>,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
-    key_storage: Vec<cadmpeg_core::decode::ScopedReservation<'ctx>>,
 }
 
 impl<'ctx> CoordinateEquationIndex<'ctx> {
@@ -136,7 +138,6 @@ impl<'ctx> CoordinateEquationIndex<'ctx> {
     ) -> Result<Self, CodecError> {
         let mut index = Self {
             terms: BTreeMap::new(),
-            key_storage: Vec::new(),
             storage: ctx.reserve_scoped(0, "creo coordinate equation index scratch")?,
         };
         for equation in ctx.admit_iter(equations, "creo coordinate equation index rows")? {
@@ -152,9 +153,12 @@ impl<'ctx> CoordinateEquationIndex<'ctx> {
         let mut storage = ctx.reserve_scoped(0, "creo coordinate equation key scratch")?;
         let mut terms = Vec::new();
         let mut source = equation.terms.iter();
-        while let Some((&variable, &coefficient)) =
-            ctx.next_charged(&mut source, "creo coordinate equation index terms")?
-        {
+        while source.len() != 0 {
+            let Some((&variable, &coefficient)) =
+                ctx.next_charged(&mut source, "creo coordinate equation index terms")?
+            else {
+                break;
+            };
             // Scalar equality equates both zero signs and never equates NaNs.
             if coefficient.is_nan() {
                 return Ok(None);
@@ -180,14 +184,17 @@ impl<'ctx> CoordinateEquationIndex<'ctx> {
         ctx: &DecodeContext<'_>,
         equation: &SectionCoordinateEquation,
     ) -> Result<bool, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let Some(rhs) = FiniteReal::new(equation.rhs) else {
             return Ok(false);
         };
-        let Some((key, _storage)) = Self::key(ctx, equation)? else {
+        let Some(key) = Self::key(ctx, equation)? else {
             return Ok(false);
         };
         let Some(values) =
-            ctx.get_btree_map(&self.terms, &key, "creo coordinate equation index lookup")?
+            ctx.get_btree_map(&self.terms, &key.0, "creo coordinate equation index lookup")?
         else {
             return Ok(false);
         };
@@ -199,14 +206,17 @@ impl<'ctx> CoordinateEquationIndex<'ctx> {
         ctx: &'ctx DecodeContext<'_>,
         equation: &SectionCoordinateEquation,
     ) -> Result<(), CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         if !equation.rhs.is_finite() {
             return Ok(());
         }
-        let Some((key, key_storage)) = Self::key(ctx, equation)? else {
+        let Some(mut key) = Self::key(ctx, equation)? else {
             return Ok(());
         };
         let entry = self.storage.with_storage(|| {
-            ctx.entry_btree_map(&mut self.terms, key, "creo coordinate equation index nodes")
+            ctx.entry_btree_map(&mut self.terms, key.0, "creo coordinate equation index nodes")
         })?;
         match entry {
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -219,13 +229,9 @@ impl<'ctx> CoordinateEquationIndex<'ctx> {
                     )
                 })?;
                 entry.insert(values);
-                self.storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut self.key_storage,
-                        key_storage,
-                        "creo coordinate equation key reservations",
-                    )
-                })?;
+                // The vacant key now belongs to terms. Its receipt owns only
+                // the surviving vector backing, from the same decode session.
+                self.storage.absorb(&mut key.1)?;
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 self.storage.with_storage(|| {
@@ -296,7 +302,7 @@ fn append_point_on_line_equations(
             continue;
         }
         index.insert(ctx, &equation)?;
-        candidate_storage.commit()?;
+        let equation = candidate_storage.commit_value(equation)?;
         ctx.push_vec(equations, equation, "creo section coordinate equations")?;
         appended = true;
     }
@@ -331,7 +337,7 @@ fn append_equal_length_coordinate_values(
             continue;
         }
         index.insert(ctx, &equation)?;
-        candidate_storage.commit()?;
+        let equation = candidate_storage.commit_value(equation)?;
         ctx.push_vec(equations, equation, "creo section coordinate equations")?;
         appended = true;
     }
@@ -407,10 +413,8 @@ fn solve_section_coordinates_with_derived_constraints(
             ctx.refuse_codec_limit("creo section solver pass count", u64::MAX, u64::MAX)
         })?;
     let mut passes = 0..max_passes;
-    while ctx
-        .next_charged(&mut passes, "creo section solver pass scan")?
-        .is_some()
-    {
+    while !passes.is_empty() {
+        ctx.next_charged(&mut passes, "creo section solver pass scan")?;
         let mut pass_storage = ctx.reserve_scoped(0, "creo coordinate solver pass scratch")?;
         let mut appended = false;
         if append_point_on_line_equations(
@@ -477,8 +481,7 @@ fn solve_section_coordinates_with_derived_constraints(
             break;
         }
     }
-    solved_storage.commit()?;
-    Ok(solved_coordinates)
+    solved_storage.commit_value(solved_coordinates)
 }
 
 pub(in crate::decode) fn resolved_section_coordinates(
@@ -1373,9 +1376,12 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
             maximum = value;
         }
         let mut witnesses = saved_segment_points.iter();
-        while let Some(&(saved_point_id, point)) =
-            ctx.next_charged(&mut witnesses, "creo saved coordinate witnesses")?
-        {
+        while witnesses.len() != 0 {
+            let Some(&(saved_point_id, point)) =
+                ctx.next_charged(&mut witnesses, "creo saved coordinate witnesses")?
+            else {
+                break;
+            };
             if saved_point_id != point_id {
                 continue;
             }
@@ -1512,6 +1518,7 @@ pub(in crate::decode) fn resolved_section_points(
 #[cfg(test)]
 mod tests {
     mod auxiliary_work;
+    mod index_custody;
 
     use std::collections::{BTreeMap, BTreeSet};
 
