@@ -502,10 +502,10 @@ fn application_property_hash_refuses_work_and_digest_storage() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // The owner's one-property sort takes its count plus eight bytes over two levels at eight
-    // units each; the property digest then needs more than the ten units left.
+    // The owner's one-property sort charges only its one item; the property digest then needs
+    // more than the ten units left.
     policy.limits.max_work_units =
-        cadmpeg_core::decode::u64_from_index(object.id().as_str().len()) * 3 + 1 + 8 * 2 * 8 + 10;
+        cadmpeg_core::decode::u64_from_index(object.id().as_str().len()) * 3 + 1 + 10;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
     assert!(

@@ -51,7 +51,8 @@ fn persistence_object_data_name_refuses_at_matching_retained_limit() {
     let xml = (2 * nodes + 4) * (128 + 64)
         + (2 * attributes + 16) * (128 * 2)
         + (2 + 4) * (64 + 2)
-        + (2 * nodes + 4) * 2
+        // No namespace declarations: zero namespace references, plus four slots.
+        + 4 * 2
         + (nodes + attributes + 1) * 32
         + 8 * document.len()
         + 1024;

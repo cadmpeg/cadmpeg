@@ -20,7 +20,7 @@ fn unreadable_entry_payload_uses_checked_hex_with_metadata_item_storage() {
         name: "Payload.bin".into(),
         data_start: 0,
         data_end: u64::try_from(data.len()).unwrap(),
-        stored_data: data.clone(),
+        stored_data: data.clone().into(),
         error: "unsupported compression".into(),
     };
     collection_context(256, |ctx| {

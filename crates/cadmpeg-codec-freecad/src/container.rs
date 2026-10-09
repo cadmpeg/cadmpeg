@@ -12,6 +12,7 @@ use cadmpeg_core::decode::tree::AdmittedXml;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
+use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::brep::ShapePayloadRecord;
@@ -102,11 +103,8 @@ pub(crate) struct UnreadableEntry {
     pub(crate) name: String,
     pub(crate) data_start: u64,
     pub(crate) data_end: u64,
-    #[serde(
-        serialize_with = "crate::native::serialize_hex_bytes",
-        deserialize_with = "crate::native::deserialize_hex_bytes"
-    )]
-    pub(crate) stored_data: Vec<u8>,
+    #[serde(deserialize_with = "crate::native::deserialize_lowercase_native_bytes")]
+    pub(crate) stored_data: NativeBytes,
     pub(crate) error: String,
 }
 
@@ -194,7 +192,8 @@ pub(crate) fn scan<'a, 'ctx>(
                             data_start: range.start,
                             data_end: end,
                             stored_data: ctx
-                                .copy_retained(bytes, "FCStd unreadable stored payload")?,
+                                .copy_retained(bytes, "FCStd unreadable stored payload")?
+                                .into(),
                             error: ctx.format_retained(
                                 format_args!("{error}"),
                                 "FCStd unreadable entry diagnostic",

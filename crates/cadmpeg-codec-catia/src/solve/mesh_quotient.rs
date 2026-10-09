@@ -13882,13 +13882,9 @@ fn boundary_component_face_keys_refuse_unadmitted_scan() {
     let candidates = [Vec::new()];
     // Domain discovery, one singleton parent initialization and its root read
     // precede the singleton edge and component sorts.
-    let before_keys = 2
-        + 1
-        + 1
-        + 16 * u64::try_from(
-            std::mem::size_of::<usize>() + std::mem::size_of::<(usize, Vec<usize>)>(),
-        )
-        .expect("sort bytes");
+    // The singleton component stable sort charges no record movement.
+    let before_keys =
+        2 + 1 + 1 + 16 * u64::try_from(std::mem::size_of::<usize>()).expect("sort bytes");
     crate::test_support::with_work_limit(before_keys, |ctx| {
         let mut quotient = MeshQuotient::new(vec![
             Arc::new(HashSet::from([0, 1])),

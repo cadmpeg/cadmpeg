@@ -369,7 +369,18 @@ mod boundary_tests {
     #[test]
     fn mesh_gauge_boundary_sort_refuses_long_signature_bytes() {
         let mut candidate = topology(vec![vec![coedge(1, false); 16], vec![coedge(0, false); 16]]);
-        let result = crate::test_support::with_work_limit(70_000, |ctx| {
+        let cycle_length = 16_u64;
+        let signature_bytes =
+            cycle_length * u64::try_from(std::mem::size_of::<CoedgeUse>()).expect("coedge bytes");
+        let comparison_work = 2 * signature_bytes + 1;
+        // Each boundary has two rotation scans, one copy, reversal and
+        // orientation, and one direction comparison. Refuse one unit below
+        // the first boundary-key comparison after admitting both sort items.
+        let before_sort = 1
+            + 2
+            + 2 * (2 * (cycle_length - 1) * comparison_work + 3 * cycle_length + comparison_work);
+        let work_limit = before_sort + 2 + 2 * signature_bytes;
+        let result = crate::test_support::with_work_limit(work_limit, |ctx| {
             canonicalize_topology_boundary_gauges(ctx, &mut candidate)
         });
         assert!(matches!(
@@ -379,7 +390,7 @@ mod boundary_tests {
                     && limit.operation == "catia_mesh_gauge_boundary_order"
         ));
         let mut short = topology(vec![vec![coedge(1, false)], vec![coedge(0, false)]]);
-        crate::test_support::with_work_limit(70_000, |ctx| {
+        crate::test_support::with_work_limit(work_limit, |ctx| {
             canonicalize_topology_boundary_gauges(ctx, &mut short)
         })
         .expect("short boundary signatures fit the same work limit");

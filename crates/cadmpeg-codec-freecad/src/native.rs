@@ -15,6 +15,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::IdentityKey;
+use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
@@ -3585,7 +3586,7 @@ pub(crate) struct EntryRecord {
     name: ArchiveEntryName,
     pub(crate) role: cadmpeg_core::container::ContainerRole,
     referenced_by: EntryReferences,
-    data: Vec<u8>,
+    data: NativeBytes,
     sha256: String,
 }
 
@@ -3666,7 +3667,7 @@ impl EntryRecord {
             name,
             role,
             referenced_by,
-            data,
+            data: data.into(),
             sha256,
         })
     }
@@ -3681,7 +3682,7 @@ impl EntryRecord {
         &self.referenced_by.0
     }
     pub(crate) fn data(&self) -> &[u8] {
-        &self.data
+        self.data.as_ref()
     }
     pub(crate) fn byte_len(&self) -> u64 {
         cadmpeg_core::decode::u64_from_index(self.data.len())
@@ -3720,58 +3721,21 @@ impl EntryRecord {
     #[cfg(test)]
     pub(crate) fn replace_data(&mut self, bytes: Vec<u8>) {
         self.sha256 = sha256_hex(&bytes);
-        self.data = bytes;
+        self.data = bytes.into();
     }
 }
 
-pub(crate) fn serialize_hex_bytes<S: serde::Serializer>(
-    bytes: &[u8],
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    cadmpeg_ir::hash::LowerHex(bytes).serialize(serializer)
-}
-
-pub(crate) fn deserialize_hex_bytes<'de, D: serde::Deserializer<'de>>(
+/// Read a [`NativeBytes`] payload, requiring the lowercase spelling the writer emits.
+pub(crate) fn deserialize_lowercase_native_bytes<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<Vec<u8>, D::Error> {
-    struct HexBytes;
-    impl serde::de::Visitor<'_> for HexBytes {
-        type Value = Vec<u8>;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            formatter.write_str("an even-length lowercase hexadecimal byte string")
-        }
-
-        fn visit_str<E: serde::de::Error>(self, text: &str) -> Result<Vec<u8>, E> {
-            let mut owned = String::new();
-            owned.try_reserve_exact(text.len()).map_err(E::custom)?;
-            owned.push_str(text);
-            self.visit_string(owned)
-        }
-
-        fn visit_string<E: serde::de::Error>(self, text: String) -> Result<Vec<u8>, E> {
-            if !text.len().is_multiple_of(2) {
-                return Err(E::custom("entry data hex has odd length"));
-            }
-            let nibble = |byte| match byte {
-                b'0'..=b'9' => Ok(byte - b'0'),
-                b'a'..=b'f' => Ok(byte - b'a' + 10),
-                _ => Err(E::custom(
-                    "entry data hex requires lowercase hexadecimal digits",
-                )),
-            };
-            // Native typed conversion owns an admitted copy of this string. Reuse
-            // its allocation rather than allocate another payload-sized buffer.
-            let mut bytes = text.into_bytes();
-            let byte_len = bytes.len() / 2;
-            for index in 0..byte_len {
-                bytes[index] = (nibble(bytes[index * 2])? << 4) | nibble(bytes[index * 2 + 1])?;
-            }
-            bytes.truncate(byte_len);
-            Ok(bytes)
-        }
+) -> Result<NativeBytes, D::Error> {
+    let text = String::deserialize(deserializer)?;
+    if text.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        return Err(serde::de::Error::custom(
+            "entry data hex requires lowercase hexadecimal digits",
+        ));
     }
-    deserializer.deserialize_str(HexBytes)
+    NativeBytes::deserialize(serde::de::value::StrDeserializer::<D::Error>::new(&text))
 }
 
 #[derive(Deserialize)]
@@ -3782,8 +3746,8 @@ struct EntryRecordWire {
     byte_len: u64,
     sha256: String,
     referenced_by: Vec<String>,
-    #[serde(deserialize_with = "deserialize_hex_bytes")]
-    data: Vec<u8>,
+    #[serde(deserialize_with = "deserialize_lowercase_native_bytes")]
+    data: NativeBytes,
 }
 
 #[derive(Serialize)]
@@ -3794,7 +3758,7 @@ struct EntryRecordOut<'a> {
     byte_len: u64,
     sha256: &'a str,
     referenced_by: &'a [String],
-    data: cadmpeg_ir::hash::LowerHex<'a>,
+    data: NativeBytes<&'a [u8]>,
 }
 
 impl Serialize for EntryRecord {
@@ -3806,7 +3770,7 @@ impl Serialize for EntryRecord {
             byte_len: self.byte_len(),
             sha256: self.sha256(),
             referenced_by: self.referenced_by(),
-            data: cadmpeg_ir::hash::LowerHex(self.data()),
+            data: NativeBytes::new(self.data()),
         }
         .serialize(serializer)
     }

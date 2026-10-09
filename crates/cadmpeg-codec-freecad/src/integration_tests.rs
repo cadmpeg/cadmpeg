@@ -816,12 +816,42 @@ fn document_readers_share_one_admitted_xml_tree() {
     document.push_str(&"x".repeat(32_768));
     document.push_str("--><Objects Count=\"0\"/><ObjectData Count=\"0\"/></Document>");
     let bytes = archive(&document);
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_work_units = 24_000_000;
+    let bytes_in = |text: &str| u64::try_from(text.len()).expect("text length");
+    let length = bytes_in(&document);
+    // Work charged by `DecodeContext::parse_xml` for this document: the length
+    // for the scan, four times the length for the parser scans, two nodes per
+    // `<` plus two (five `<` here), the per-tag attribute and name comparisons,
+    // namespace insertion (one unique binding slot over two levels, 1 * 1 * 2),
+    // and one unit per nesting level (the document element and its children).
+    // A tag with `a` attributes whose names total `n` bytes and whose element
+    // name is `e` bytes costs (n + a) * (a + 1) for attribute pairs and
+    // e + n + a + 1 for name lookups against the one visible namespace slot.
+    let tag_comparisons = |element: &str, attribute_names: u64, attributes: u64| {
+        (attribute_names + attributes) * (attributes + 1)
+            + (bytes_in(element) + attribute_names + attributes + 1)
+    };
+    let padding_names: u64 = (0..20)
+        .map(|index| bytes_in(&format!("padding{index}")))
+        .sum();
+    let comparisons = tag_comparisons(
+        "Document",
+        padding_names + bytes_in("SchemaVersion") + bytes_in("FileVersion"),
+        22,
+    ) + tag_comparisons("Objects", bytes_in("Count"), 1)
+        + tag_comparisons("ObjectData", bytes_in("Count"), 1)
+        // The closing tag carries only its name.
+        + tag_comparisons("Document", 0, 0)
+        + 2;
+    let tree_work = length + 4 * length + (2 * 5 + 2) + comparisons + 2;
+    let options = DecodeOptions::default();
+    // The largest work budget that admits one tree and refuses a second: the
+    // first tree leaves `tree_work - 1` units, fewer than a second parse needs.
+    let mut tree_policy = options.policy;
+    tree_policy.limits.max_work_units = 2 * tree_work - 1;
 
     // This budget admits one XML tree, but refuses a second full parse.
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &options.policy).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &tree_policy).unwrap();
     let _first = ctx.parse_xml(&document, "test document XML").unwrap();
     assert!(matches!(ctx.parse_xml(&document, "test duplicate XML"),
         Err(CodecError::ResourceLimit(limit))

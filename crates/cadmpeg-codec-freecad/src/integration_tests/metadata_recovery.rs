@@ -84,7 +84,7 @@ fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
     assert!(physical.last().unwrap().span.end() < unreadable[0].data_end);
     let start = usize::try_from(unreadable[0].data_start).unwrap();
     let end = usize::try_from(unreadable[0].data_end).unwrap();
-    assert_eq!(unreadable[0].stored_data, changed[start..end]);
+    assert_eq!(unreadable[0].stored_data, &changed[start..end]);
 
     let mut shifted = unreadable;
     shifted[0].data_start += 1;
