@@ -73,6 +73,9 @@ fn text_font_definition_pointer_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(sequence) = value
         .checked_neg()
         .and_then(|value| u32::try_from(value).ok())
@@ -91,6 +94,9 @@ pub(super) fn general_note_font_valid_for_global_table(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let standard = match global_table {
         GlobalTable::V4_0 => {
             matches!(
@@ -125,6 +131,9 @@ pub(super) fn new_general_note_charset_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if matches!(value, 1 | 1001 | 1002 | 1003 | 2001 | 3001) {
         Ok(true)
     } else {
