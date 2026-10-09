@@ -750,12 +750,14 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
             }
         };
-        let (id, id_storage) = crate::identity::compose_scoped::<SurfaceId>(
+        let id_parts = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             row.id,
             "creo decoded model identity",
         )?;
+        let id_storage = id_parts.1;
+        let id = id_parts.0;
         let identity_present = surfaces_index
             .lookup(
                 ctx,
@@ -768,7 +770,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             continue;
         }
         geometry_storage.commit()?;
-        id_storage.commit()?;
+        let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
             annotations,
@@ -964,12 +966,14 @@ pub(in super::super) fn transfer_positional_spline_replays(
             }
             continue;
         };
-        let (id, id_storage) = crate::identity::compose_scoped::<SurfaceId>(
+        let id_parts = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             row.id,
             "creo decoded model identity",
         )?;
+        let id_storage = id_parts.1;
+        let id = id_parts.0;
         let identity_present = surfaces_index
             .lookup(
                 ctx,
@@ -982,7 +986,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             continue;
         }
         geometry_storage.commit()?;
-        id_storage.commit()?;
+        let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
             annotations,
@@ -1174,12 +1178,14 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             LegacySurfaceNamespace::Visible => &crate::identity::VISIBGEOM_SURFACE,
             LegacySurfaceNamespace::NonVisible => &crate::identity::NOVISGEOM_SURFACE,
         };
-        let (id, id_storage) = crate::identity::compose_scoped::<SurfaceId>(
+        let id_parts = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             namespace,
             carrier.surface_id,
             "creo decoded model identity",
         )?;
+        let id_storage = id_parts.1;
+        let id = id_parts.0;
         let identity_present = surfaces_index
             .lookup(
                 ctx,
@@ -1192,7 +1198,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             continue;
         }
         geometry_storage.commit()?;
-        id_storage.commit()?;
+        let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
             annotations,
