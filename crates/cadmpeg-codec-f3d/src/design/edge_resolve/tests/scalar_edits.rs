@@ -24,7 +24,7 @@ fn boundary_operand(record: u32, deleted: &[i64], references: &[&[i64]]) -> Desi
     operand
 }
 
-fn run_case(owner: &str, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+pub(super) fn run_case(owner: &str, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
     match owner {
         "sorted_transition_slots" => sorted_transition_slots(&[18, 17, 17], ctx, "scalar transition fixture").map(drop),
         "transition_chain_is_supported_by_recipe" => {
