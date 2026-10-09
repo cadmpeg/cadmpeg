@@ -339,8 +339,10 @@ fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
     bytes.extend_from_slice(&[0; 9]);
 
     let containing = |start: usize, member: usize| {
-        let (headers, _storage) =
+        let _storage;
+        let (headers, held_storage) =
             companion_record_headers(&ctx, &bytes, start, bytes.len()).unwrap();
+        _storage = held_storage;
         record_containing(&ctx, &headers, start, bytes.len(), member)
             .unwrap()
             .map(|(header, end)| (header.offset, *header.class_tag, header.record_index, end))
@@ -1827,12 +1829,14 @@ fn dimension_locus_lookup_collections_refuse_collection_limits() {
         })
         .unwrap();
     let service = cadmpeg_test_support::service_decode_context();
-    let (parameter_index, _parameter_storage) = super::dimension_parameter_index(
+    let _parameter_storage;
+    let (parameter_index, held_storage) = super::dimension_parameter_index(
         &service,
         &parameters,
         "f3d dimension locus parameter index",
     )
     .unwrap();
+    _parameter_storage = held_storage;
     let point = crate::records::sketch_geometry::SketchPoint::try_from(
         crate::records::sketch_geometry::SketchPointDraft {
             id: "f3d:Design/BulkStream.dat:sketch-point#0".into(),

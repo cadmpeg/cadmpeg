@@ -1193,7 +1193,9 @@ fn geometry_kind_counts_keep_sorted_report_text() {
         ("spline".into(), 3),
     ]);
     crate::test_support::with_decode_context(|ctx| {
-        let (text, _storage) = super::super::format_kind_counts(ctx, &counts).unwrap();
+        let _storage;
+        let (text, held_storage) = super::super::format_kind_counts(ctx, &counts).unwrap();
+        _storage = held_storage;
         assert_eq!(text, "plane=2, spline=3");
     });
 }

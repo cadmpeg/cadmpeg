@@ -214,7 +214,8 @@ impl Brep {
         if selectors.is_empty() {
             return Ok((resolved, storage));
         }
-        let (body_keys, _body_keys_storage) = ctx.unique_index(
+        let _body_keys_storage;
+        let (body_keys, held_storage) = ctx.unique_index(
             ctx.admit_iter(&self.asm.body_native_keys, "scan F3D indexed body keys")?
                 .flat_map(|body| {
                     [
@@ -227,6 +228,7 @@ impl Brep {
                 }),
             "index F3D native body selectors",
         )?;
+        _body_keys_storage = held_storage;
         for selector in ctx.admit_iter(selectors, "scan F3D body selectors")? {
             let native = ctx.get_hash_map(
                 &body_keys,

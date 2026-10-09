@@ -678,10 +678,12 @@ pub(super) fn collect_reference_edge_sets(
 ) -> Result<Vec<Vec<i64>>, cadmpeg_core::CodecError> {
     let mut sets = Vec::new();
     for faces in decode.admit_iter(reference_faces, "scan F3D recipe reference faces")? {
-        let (faces, _face_storage) = decode
+        let _face_storage;
+        let (faces, held_storage) = decode
             .with_scoped_storage("collect F3D recipe reference faces", || {
                 selection::faces_in_topology(decode, faces, topology)
             })?;
+        _face_storage = held_storage;
         let edges = face_boundary_edges(decode, &faces, topology)?;
 
         decode.reserve_vec(&mut sets, 1, "collect F3D reference edge sets")?;
@@ -1020,10 +1022,12 @@ pub(super) fn edge_recipe_reference_context(
     };
     let result_faces = selection::faces_in_topology(decode, candidate_faces, result.topology)?;
     let result_face_boundaries = face_boundary_contexts(decode, &result_faces, result.topology)?;
-    let (result_edges, _result_edges_storage) = decode
+    let _result_edges_storage;
+    let (result_edges, held_storage) = decode
         .with_scoped_storage("collect F3D result reference boundary edges", || {
             face_boundary_edges(decode, &result_faces, result.topology)
         })?;
+    _result_edges_storage = held_storage;
     let result_shared_edge_slots = decode.try_collect_vec(
         decode
             .admit_iter(result.boundary_edges, "scan F3D result boundary edges")?
@@ -1051,10 +1055,12 @@ pub(super) fn edge_recipe_reference_context(
         &preceding_support_face_slots,
         preceding.topology,
     )?;
-    let (preceding_edges, _preceding_edges_storage) = decode
+    let _preceding_edges_storage;
+    let (preceding_edges, held_storage) = decode
         .with_scoped_storage("collect F3D preceding reference boundary edges", || {
             face_boundary_edges(decode, &preceding_faces, preceding.topology)
         })?;
+    _preceding_edges_storage = held_storage;
     let shared_edge_slots = decode.try_collect_vec(
         decode
             .admit_iter(
@@ -1183,10 +1189,12 @@ pub(super) fn historical_edge_axis(
             }
         }
     }
-    let (context, _context_storage) = decode
+    let _context_storage;
+    let (context, held_storage) = decode
         .with_scoped_storage("collect F3D edge axis support context", || {
             selection::historical_edge_context(decode, edge, topology)
         })?;
+    _context_storage = held_storage;
     let bindings = UniqueIndex::new(
         &topology.face_surfaces,
         |_, binding| Ok(Some(binding.entity)),
@@ -1276,7 +1284,8 @@ pub(super) fn treatment_edge_candidates<const TRANSITIONS: bool>(
 > {
     let result_boundaries = face_boundary_edge_index(decode, result)?;
     let preceding_boundaries = face_boundary_edge_index(decode, preceding)?;
-    let (supports, _supports_storage) =
+    let _supports_storage;
+    let (supports, held_storage) =
         decode.with_scoped_storage("collect F3D treatment face supports", || {
             treatment_face_supports(
                 decode,
@@ -1286,6 +1295,7 @@ pub(super) fn treatment_edge_candidates<const TRANSITIONS: bool>(
                 &result_boundaries,
             )
         })?;
+    _supports_storage = held_storage;
     let mut deleted_edges_storage =
         decode.reserve_scoped(0, "index F3D treatment deleted edges")?;
     let mut deleted_edge_set = HashSet::new();
@@ -1476,13 +1486,15 @@ fn treatment_face_supports(
             )
         })?;
     }
-    let (result_carriers, _result_carriers_storage) = decode.unique_index(
+    let _result_carriers_storage;
+    let (result_carriers, held_storage) = decode.unique_index(
         result
             .face_surfaces
             .iter()
             .map(|binding| (binding.entity, binding.carrier)),
         "index F3D face carriers",
     )?;
+    _result_carriers_storage = held_storage;
     let mut preceding_carrier_faces = HashMap::new();
     for binding in
         decode.admit_iter(&preceding.face_surfaces, "scan F3D carrier face candidates")?
@@ -1622,27 +1634,33 @@ fn face_boundary_edge_index<'ctx>(
     decode: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     topology: &AsmHistoricalTopology,
 ) -> Result<FaceBoundaryEdgeIndex<'ctx>, cadmpeg_core::CodecError> {
-    let (face_loops, _face_loops_storage) = decode.unique_index(
+    let _face_loops_storage;
+    let (face_loops, held_storage) = decode.unique_index(
         topology
             .face_loops
             .iter()
             .map(|relation| (relation.owner_ref, relation.member_refs.as_slice())),
         "index F3D boundary face loops",
     )?;
-    let (loop_coedges, _loop_coedges_storage) = decode.unique_index(
+    _face_loops_storage = held_storage;
+    let _loop_coedges_storage;
+    let (loop_coedges, held_storage) = decode.unique_index(
         topology
             .loop_coedges
             .iter()
             .map(|relation| (relation.owner_ref, relation.member_refs.as_slice())),
         "index F3D boundary loop coedges",
     )?;
-    let (coedge_edges, _coedge_edges_storage) = decode.unique_index(
+    _loop_coedges_storage = held_storage;
+    let _coedge_edges_storage;
+    let (coedge_edges, held_storage) = decode.unique_index(
         topology
             .coedge_topology
             .iter()
             .map(|coedge| (coedge.coedge, coedge.edge)),
         "index F3D boundary coedge edges",
     )?;
+    _coedge_edges_storage = held_storage;
     let mut boundaries_storage = decode.reserve_scoped(0, "index F3D face boundaries")?;
     let mut boundaries = BTreeMap::new();
     let mut history_source = IntoIterator::into_iter(&topology.faces);
@@ -1716,10 +1734,12 @@ pub(super) fn affected_body_refs(
         return Ok(None);
     };
     let mut affected_storage = ctx.reserve_scoped(0, "merge F3D affected history bodies")?;
-    let (current_changes, _current_changes_storage) = ctx
+    let _current_changes_storage;
+    let (current_changes, held_storage) = ctx
         .with_scoped_storage("index F3D changed topology members", || {
             changed_family_refs(ctx, &transition.topology, false)
         })?;
+    _current_changes_storage = held_storage;
     let Some(mut affected) = affected_storage
         .with_storage(|| bodies_intersecting(ctx, current_topology, &current_changes))?
     else {
@@ -1729,14 +1749,18 @@ pub(super) fn affected_body_refs(
         let Some(previous_topology) = previous.topology() else {
             return Ok(None);
         };
-        let (deleted, _deleted_storage) = ctx
+        let _deleted_storage;
+        let (deleted, held_storage) = ctx
             .with_scoped_storage("index F3D changed topology members", || {
                 changed_family_refs(ctx, &transition.topology, true)
             })?;
-        let (previous_affected, _previous_affected_storage) = ctx
+        _deleted_storage = held_storage;
+        let _previous_affected_storage;
+        let (previous_affected, held_storage) = ctx
             .with_scoped_storage("collect F3D previous affected history bodies", || {
                 bodies_intersecting(ctx, previous_topology, &deleted)
             })?;
+        _previous_affected_storage = held_storage;
         let Some(previous_affected) = previous_affected else {
             return Ok(None);
         };

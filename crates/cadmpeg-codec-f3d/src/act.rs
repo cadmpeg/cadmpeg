@@ -256,10 +256,12 @@ pub(crate) fn decode(
             continue;
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let (meta_name, _meta_name_storage) = ctx
+        let _meta_name_storage;
+        let (meta_name, held_storage) = ctx
             .with_scoped_storage("name F3D ACT MetaStream", || {
                 sibling_meta_name(ctx, &entry.name)
             })?;
+        _meta_name_storage = held_storage;
         let meta_name = meta_name.ok_or_else(|| {
             ctx.format_retained(
                 format_args!(
@@ -281,7 +283,9 @@ pub(crate) fn decode(
             .map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
         let meta = crate::metastream::parse(ctx, meta_bytes.window(), &meta_name)?;
-        let (frames, _frames_storage) = decode_record_frames(ctx, bytes, &meta, &entry.name)?;
+        let _frames_storage;
+        let (frames, held_storage) = decode_record_frames(ctx, bytes, &meta, &entry.name)?;
+        _frames_storage = held_storage;
         let mut selected_table = None;
         let mut table_count = 0usize;
         for frame in ctx.admit_iter(&frames, "select F3D ACT table frames")? {
@@ -394,8 +398,10 @@ pub(crate) fn decode(
             }
         }
 
-        let (merged_entities, _merged_entities_storage) =
+        let _merged_entities_storage;
+        let (merged_entities, held_storage) =
             merge_entities(ctx, &entry.name, table, groups)?;
+        _merged_entities_storage = held_storage;
         ctx.extend_vec(&mut entities, merged_entities, "collect F3D ACT entities")?;
         ctx.extend_vec(&mut guids, stream_guids, "collect F3D ACT GUIDs")?;
         ctx.extend_vec(
@@ -1303,13 +1309,15 @@ mod tests {
     fn record_index_joins_exactly_one_matching_act_change_group() {
         let stream = "Synthetic/FusionACTSegmentType1/BulkStream.dat";
         let ctx = cadmpeg_test_support::service_decode_context();
-        let (entities, _entities_storage) = merge_entities(
+        let _entities_storage;
+        let (entities, held_storage) = merge_entities(
             &ctx,
             stream,
             vec![table_entry("0_985")],
             vec![channel_group(&ctx, "0_985")],
         )
         .expect("matching table and change group");
+        _entities_storage = held_storage;
         assert_eq!(entities.len(), 1);
         assert!(entities[0].in_table());
         assert_eq!(entities[0].record_index(), 7);
@@ -1338,21 +1346,25 @@ mod tests {
             .expect_err("every table reference must resolve to a change group");
         assert!(table_only.to_string().contains("has no change group"));
 
-        let (group_only, _group_only_storage) =
+        let _group_only_storage;
+        let (group_only, held_storage) =
             merge_entities(&ctx, stream, Vec::new(), vec![channel_group(&ctx, "0_985")])
                 .expect("a change group need not have an inline ACTTable row");
+        _group_only_storage = held_storage;
         assert!(!group_only[0].in_table());
         assert!(group_only[0].table_record_index_offset().is_none());
 
         let mut table_keyed_group = channel_group(&ctx, "0_985");
         table_keyed_group.entity_id = None;
-        let (entities, _entities_storage) = merge_entities(
+        let _entities_storage;
+        let (entities, held_storage) = merge_entities(
             &ctx,
             stream,
             vec![table_entry("0_985")],
             vec![table_keyed_group],
         )
         .expect("the table can supply an omitted group key");
+        _entities_storage = held_storage;
         assert_eq!(entities[0].entity_id(), "0_985");
         assert!(entities[0].channel_entity_id_offset().is_none());
     }

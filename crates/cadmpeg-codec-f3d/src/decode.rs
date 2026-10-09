@@ -73,7 +73,9 @@ fn body_visibility_for<'m>(
     body_key: u64,
 ) -> Result<Option<&'m crate::design::decode::body::DecodedBodyVisibility>, CodecError> {
     let operation = "look up F3D body visibility";
-    let (name, _reservation) = ctx.format_scoped(format_args!("{blob_name}"), operation)?;
+    let _reservation;
+    let (name, held_storage) = ctx.format_scoped(format_args!("{blob_name}"), operation)?;
+    _reservation = held_storage;
     ctx.get_hash_map(index, &(name, body_key), operation)
 }
 
@@ -139,7 +141,8 @@ fn container_only_dimension_parameters(
     }
     // Dimension parameters by stream and record index; a repeated key is
     // ambiguous and binds nothing.
-    let (dimension_parameters, _dimension_parameters_storage) = ctx.unique_index(
+    let _dimension_parameters_storage;
+    let (dimension_parameters, held_storage) = ctx.unique_index(
         ctx.admit_iter(&native.design_parameters, "index F3D dimension parameters")?
             .filter(|parameter| {
                 parameter.kind() == crate::records::parameters::DesignParameterKind::Dimension
@@ -156,6 +159,7 @@ fn container_only_dimension_parameters(
             }),
         "index F3D dimension parameters",
     )?;
+    _dimension_parameters_storage = held_storage;
     let mut parameters_by_id = std::collections::HashSet::new();
     for owner in ctx.admit_iter(
         &native.design_parameter_owners,
@@ -2275,7 +2279,9 @@ fn report_design_projection_gaps(
         Ok(())
     };
     if gaps.incomplete_features != 0 {
-        let (families, _families_storage) = format_kind_counts(ctx, &incomplete_families)?;
+        let _families_storage;
+        let (families, held_storage) = format_kind_counts(ctx, &incomplete_families)?;
+        _families_storage = held_storage;
         push(
             F3dLossCode::FeatureDefinitionIncomplete,
             gaps.incomplete_features,
@@ -2793,8 +2799,10 @@ impl<'a> F3dDecodeSession<'a> {
         } = asm_remainder;
         let (subds, subd_losses) = crate::tsm::decode(ctx, scan)?;
         ir.model.subds = subds;
-        let (mesh_projection, mesh_projection_storage) =
+        let mesh_projection_storage;
+        let (mesh_projection, held_storage) =
             project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
+        mesh_projection_storage = held_storage;
         ctx.extend_vec(
             &mut report.losses,
             subd_losses,
@@ -3631,13 +3639,15 @@ impl<'a> F3dDecodeSession<'a> {
             FinalizePath::Bodyless(inputs) => {
                 report_unretained_act_component_links(ctx, &mut self.report, inputs.non_root_act)?;
                 reconcile_appearance_loss(ctx, &mut self.report, &self.ir, inputs.has_appearance)?;
-                let (mesh_projection, _mesh_projection_storage) = project_mesh_bodies(
+                let _mesh_projection_storage;
+                let (mesh_projection, held_storage) = project_mesh_bodies(
                     ctx,
                     scan,
                     &mut self.ir,
                     &mut self.native,
                     &mut self.report,
                 )?;
+                _mesh_projection_storage = held_storage;
                 bind_mesh_feature_definitions(
                     ctx,
                     &mut self.ir.model.features,
@@ -3857,11 +3867,15 @@ fn decode_scanned_document<'a>(
         );
     }
 
-    let (model_blob_names, _model_blob_names_storage) =
+    let _model_blob_names_storage;
+    let (model_blob_names, held_storage) =
         crate::design::decode::body::design_model_blob_names(ctx, scan)?;
+    _model_blob_names_storage = held_storage;
     let unbound_body_bindings =
         crate::design::decode::body::decode_design_body_bindings(ctx, scan, None, &[])?;
-    let (model_breps, _model_breps_storage) = model_brep_candidates(ctx, scan, &model_blob_names)?;
+    let _model_breps_storage;
+    let (model_breps, held_storage) = model_brep_candidates(ctx, scan, &model_blob_names)?;
+    _model_breps_storage = held_storage;
 
     // Every Design body-map pair names its owning BREP blob. Decode the
     // complete referenced set; a document-level model is not confined to one
@@ -3872,8 +3886,10 @@ fn decode_scanned_document<'a>(
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
         let mut decoded_brep_count = 0usize;
-        let (all_body_visibility, _all_body_visibility_storage) =
+        let _all_body_visibility_storage;
+        let (all_body_visibility, held_storage) =
             crate::design::decode::body::decode_all_body_visibility(ctx, scan)?;
+        _all_body_visibility_storage = held_storage;
         let mut selected_body_storage = ctx.reserve_scoped(0, "index F3D selected body blobs")?;
         let mut selected_body_keys =
             std::collections::HashMap::<String, std::collections::BTreeSet<u64>>::new();
@@ -3906,7 +3922,8 @@ fn decode_scanned_document<'a>(
                 continue;
             }
             primary_model_brep.get_or_insert(candidate);
-            let (mut body_selectors, mut body_selectors_storage) = match ctx.get_hash_map(
+            let mut body_selectors_storage;
+            let (mut body_selectors, held_storage) = match ctx.get_hash_map(
                 &selected_body_keys,
                 blob_name,
                 "find F3D selected body keys",
@@ -3914,6 +3931,7 @@ fn decode_scanned_document<'a>(
                 Some(keys) => part.body_selectors_for(ctx, keys)?,
                 None => part.body_selectors(ctx)?,
             };
+            body_selectors_storage = held_storage;
             for body in ctx.admit_iter(&mut part.asm.bodies, "apply F3D body visibility")? {
                 if let Some(visibility) = ctx
                     .get_btree_map(&body_selectors, &body.id, "find F3D body selector")?
@@ -4608,12 +4626,14 @@ fn mesh_texture_assignments(
             "F3D mesh texture-id count differs from the triangle count".into(),
         ));
     }
-    let (mut triangles, _triangles_storage) =
+    let _triangles_storage;
+    let (mut triangles, held_storage) =
         ctx.with_scoped_storage("stage F3D mesh texture assignments", || {
             ctx.collect_indexed_vec(textures.len(), "f3d mesh texture assignments", |_| {
                 Ok(Vec::new())
             })
         })?;
+    _triangles_storage = held_storage;
     for (triangle, texture_id) in ctx
         .admit_iter(texture_ids, "resolve F3D mesh texture triangle")?
         .enumerate()
@@ -4670,7 +4690,9 @@ fn mesh_feature_tessellations<'a>(
     record_index: u32,
 ) -> Result<Option<&'a [String]>, CodecError> {
     let operation = "look up F3D mesh feature tessellations";
-    let (key, _reservation) = ctx.format_scoped(format_args!("{stream}"), operation)?;
+    let _reservation;
+    let (key, held_storage) = ctx.format_scoped(format_args!("{stream}"), operation)?;
+    _reservation = held_storage;
     Ok(ctx
         .get_hash_map(
             &projection.tessellations_by_scope,
@@ -5443,7 +5465,8 @@ fn populate_annotations(
             })?;
         }
     }
-    let (planar_sketches, _planar_sketches_storage) =
+    let _planar_sketches_storage;
+    let (planar_sketches, held_storage) =
         ctx.with_scoped_storage("stage F3D annotation planar_sketches", || {
             ctx.collect_hash_set(
                 ctx.admit_iter(&ir.model.sketches, "scan F3D annotation planar_sketches")?
@@ -5451,7 +5474,9 @@ fn populate_annotations(
                 "index F3D annotation planar sketches",
             )
         })?;
-    let (spatial_sketches, _spatial_sketches_storage) =
+    _planar_sketches_storage = held_storage;
+    let _spatial_sketches_storage;
+    let (spatial_sketches, held_storage) =
         ctx.with_scoped_storage("stage F3D annotation spatial_sketches", || {
             ctx.collect_hash_set(
                 ctx.admit_iter(
@@ -5462,6 +5487,7 @@ fn populate_annotations(
                 "index F3D annotation spatial sketches",
             )
         })?;
+    _spatial_sketches_storage = held_storage;
 
     let native_stream = StreamHandle::new(
         ctx,
@@ -6951,8 +6977,10 @@ fn geometry_losses(
         .map(|(_, count)| *count)
         .sum::<usize>();
     if missing_face_surfaces > 0 {
-        let (kind_counts, _kind_counts_storage) =
+        let _kind_counts_storage;
+        let (kind_counts, held_storage) =
             format_kind_counts(ctx, &s.missing_face_surface_kinds)?;
+        _kind_counts_storage = held_storage;
         push_loss_vec(ctx, &mut losses, F3dLossCode::FaceSurfaceReferenceDangling, format_args!("{missing_face_surfaces} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {kind_counts}."), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
     let unknown_surface_faces = ctx
@@ -6960,8 +6988,10 @@ fn geometry_losses(
         .map(|(_, count)| *count)
         .sum::<usize>();
     if unknown_surface_faces > 0 {
-        let (kind_counts, _kind_counts_storage) =
+        let _kind_counts_storage;
+        let (kind_counts, held_storage) =
             format_kind_counts(ctx, &s.unknown_surface_kinds)?;
+        _kind_counts_storage = held_storage;
         push_loss_vec(
             ctx,
             &mut losses,
@@ -6987,8 +7017,10 @@ fn geometry_losses(
         .map(|(_, count)| *count)
         .sum::<usize>();
     if procedural_curve_edges > 0 {
-        let (kind_counts, _kind_counts_storage) =
+        let _kind_counts_storage;
+        let (kind_counts, held_storage) =
             format_kind_counts(ctx, &s.procedural_curve_kinds)?;
+        _kind_counts_storage = held_storage;
         push_loss_vec(
             ctx,
             &mut losses,
@@ -7005,8 +7037,10 @@ fn geometry_losses(
         .map(|(_, count)| *count)
         .sum::<usize>();
     if undecoded_pcurve_refs > 0 {
-        let (kind_counts, _kind_counts_storage) =
+        let _kind_counts_storage;
+        let (kind_counts, held_storage) =
             format_kind_counts(ctx, &s.undecoded_pcurve_kinds)?;
+        _kind_counts_storage = held_storage;
         push_loss_vec(
             ctx,
             &mut losses,
@@ -7029,7 +7063,9 @@ fn geometry_losses(
         .map(|(_, count)| *count)
         .sum::<usize>();
     if other_records > 0 {
-        let (kind_counts, _kind_counts_storage) = format_kind_counts(ctx, &s.other_record_kinds)?;
+        let _kind_counts_storage;
+        let (kind_counts, held_storage) = format_kind_counts(ctx, &s.other_record_kinds)?;
+        _kind_counts_storage = held_storage;
         push_loss_vec(
             ctx,
             &mut losses,

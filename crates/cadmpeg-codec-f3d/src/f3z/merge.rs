@@ -131,8 +131,8 @@ struct MergeSession<'r, 'a> {
     ctx: &'r DecodeContext<'a>,
     scan: &'r ContainerScan<'a>,
     archive: &'r ArchiveSession<'a, 'r>,
-    stack_storage: cadmpeg_core::decode::ScopedReservation<'r>,
     stack: Vec<String>,
+    stack_storage: cadmpeg_core::decode::ScopedReservation<'r>,
 }
 
 impl MergeSession<'_, '_> {
@@ -149,11 +149,13 @@ impl MergeSession<'_, '_> {
             .ctx
             .admit_iter(&table.references, "merge F3Z reference rows")?
         {
-            let (occurrence, _occurrence_storage) = self
+            let _occurrence_storage;
+            let (occurrence, held_storage) = self
                 .ctx
                 .with_scoped_storage("stage F3Z occurrence key", || {
                     occurrence_key(self.ctx, reference)
                 })?;
+            _occurrence_storage = held_storage;
             let label = xref::design_for(self.ctx, table, reference)?
                 .map_or(reference.relative_path.as_str(), |design| {
                     design.display_name.as_str()
@@ -246,7 +248,8 @@ impl MergeSession<'_, '_> {
                 body: mut component_report,
                 source_fidelity: mut component_fidelity,
             } = component;
-            let (path, _path_storage) =
+            let _path_storage;
+            let (path, held_storage) =
                 self.ctx
                     .with_scoped_storage("stage F3Z merge stack path", || {
                         self.ctx.copy_retained_text(
@@ -254,6 +257,7 @@ impl MergeSession<'_, '_> {
                             "retain F3Z merge stack path",
                         )
                     })?;
+            _path_storage = held_storage;
             self.ctx.push_scoped_vec(
                 &mut self.stack_storage,
                 &mut self.stack,
@@ -413,7 +417,9 @@ fn rescope_fidelity(
         .map_err(CodecError::from)?;
     // The occurrence is one owner component. Escape its separators so two
     // different occurrences cannot share an owner by shifting a path boundary.
-    let (escaped_owner, _owner_storage) = escaped_occurrence_component(ctx, occurrence)?;
+    let _owner_storage;
+    let (escaped_owner, held_storage) = escaped_occurrence_component(ctx, occurrence)?;
+    _owner_storage = held_storage;
     let owner = cadmpeg_ir::StreamName::try_from(ctx.format_retained(
         format_args!("f3d:xref/{escaped_owner}/"),
         "retain F3Z fidelity owner",
@@ -463,7 +469,9 @@ fn occurrence_key(
     ctx: &DecodeContext<'_>,
     reference: &XrefReference,
 ) -> Result<String, CodecError> {
-    let (role, _role_storage) = escaped_occurrence_component(ctx, &reference.neutron_role)?;
+    let _role_storage;
+    let (role, held_storage) = escaped_occurrence_component(ctx, &reference.neutron_role)?;
+    _role_storage = held_storage;
     // `occurrence_ordinal` restarts for each Redirections reference. Keep the
     // source reference ordinal in the scope so two admitted rows carrying the
     // same role cannot merge their model or fidelity identities.

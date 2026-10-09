@@ -676,8 +676,10 @@ pub(super) fn typed_primary_frames<'a>(
     type_guid: &str,
     record_kind: &str,
 ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
-    let (frames, storage) =
+    let storage;
+    let (frames, held_storage) =
         TypedFrameSource::new(bytes, meta).frames(ctx, type_guid, record_kind)?;
+    storage = held_storage;
     storage.commit_value(frames)
 }
 

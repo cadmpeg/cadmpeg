@@ -41,7 +41,9 @@ fn presentation_streams_are_segments_registering_both_presentation_types() {
     types.extend(presentation_types(
         "FusionAssetName[Active]/Design3/MetaStream.dat",
     ));
-    let (streams, _storage) = super::super::presentation_stream_prefixes(&ctx, &types).unwrap();
+    let _storage;
+    let (streams, held_storage) = super::super::presentation_stream_prefixes(&ctx, &types).unwrap();
+    _storage = held_storage;
     let expected = [
         "Fusion Asset:Name[Active]/Design1/BulkStream.dat",
         "FusionAssetName[Active]/Design3/BulkStream.dat",

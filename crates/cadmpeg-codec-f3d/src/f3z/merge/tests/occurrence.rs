@@ -778,8 +778,10 @@ fn occurrence_escaping_preserves_scan_and_storage_refusals() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (escaped, storage) =
+    let storage;
+    let (escaped, held_storage) =
         crate::f3z::merge::escaped_occurrence_component(&ctx, "é /#: %").unwrap();
+    storage = held_storage;
     assert_eq!(escaped, "é%20%2F%23%3A%20%25");
     drop((escaped, storage));
     ctx.finish_session().unwrap();

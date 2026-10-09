@@ -37,7 +37,9 @@ pub(crate) fn inspect<'a>(
     ctx: &DecodeContext<'a>,
     scan: &ContainerScan<'a>,
 ) -> Result<ContainerSummary, CodecError> {
-    let ((model_root, _), _model_root_storage) = archive::model_root(ctx, scan)?;
+    let _model_root_storage;
+    let ((model_root, _), held_storage) = archive::model_root(ctx, scan)?;
+    _model_root_storage = held_storage;
     scan.entry_view(ctx, &model_root)?.ok_or_else(|| {
         ctx.format_retained(
             format_args!("f3z root member {model_root} is not present in the archive"),
@@ -68,7 +70,9 @@ pub(crate) fn decode<'a>(
     ctx: &DecodeContext<'a>,
     scan: &ContainerScan<'a>,
 ) -> Result<Decoded, CodecError> {
-    let ((model_root, omitted_drawing_root), _model_root_storage) = archive::model_root(ctx, scan)?;
+    let _model_root_storage;
+    let ((model_root, omitted_drawing_root), held_storage) = archive::model_root(ctx, scan)?;
+    _model_root_storage = held_storage;
     let outer = archive::classify_members(ctx, scan)?;
     let root_scan = outer.member_scan(ctx, &model_root)?;
     let AuthoredDecoded {

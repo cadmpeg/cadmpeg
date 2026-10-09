@@ -124,10 +124,12 @@ fn decode_stream_parameters(
         let Some(frame) = bytes.get(at..end.unwrap_or(bytes.len())) else {
             break;
         };
-        let (parsed, parsed_storage) = ctx
+        let parsed_storage;
+        let (parsed, held_storage) = ctx
             .with_scoped_storage("f3d parameter frame candidates", || {
                 parse_design_parameter(ctx, frame)
             })?;
+        parsed_storage = held_storage;
         let Some(parsed) = parsed else {
             next = overlapping_header(bytes, at).or(end);
             continue;
@@ -1318,10 +1320,12 @@ pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     let mut payload_storage = ctx.reserve_scoped(0, "f3d companion payloads")?;
     let mut payloads = Vec::new();
     {
-        let (records, _storage) = ctx
+        let _storage;
+        let (records, held_storage) = ctx
             .with_scoped_storage("f3d companion payload records", || {
                 CompanionPayloadRecords::build(ctx, inputs)
             })?;
+        _storage = held_storage;
         let mut intervals = CompanionIntervals::new(
             ctx,
             inputs.parameters,

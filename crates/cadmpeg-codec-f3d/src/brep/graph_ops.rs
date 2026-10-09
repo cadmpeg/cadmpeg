@@ -385,7 +385,9 @@ impl Brep {
         selected_keys: &std::collections::BTreeSet<u64>,
     ) -> Result<(), CodecError> {
         let projected = projection(ctx, self, false, "project F3D retained BREP value")?;
-        let (selected_bodies, _selected_storage) = self.body_selectors_for(ctx, selected_keys)?;
+        let _selected_storage;
+        let (selected_bodies, held_storage) = self.body_selectors_for(ctx, selected_keys)?;
+        _selected_storage = held_storage;
         let reachable = ctx.with_scoped_storage("index F3D retained BREP graph", || {
             let mut owned = Vec::new();
             collect_owned_ids(ctx, &projected, &mut owned)?;

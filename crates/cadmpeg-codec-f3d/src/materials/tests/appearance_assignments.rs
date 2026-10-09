@@ -297,11 +297,13 @@ fn browser_repeated_appearance_keeps_first_without_second_token_copy() {
     bytes.extend([0x01, 0x01]);
     bytes.extend(37_251u64.to_le_bytes());
     crate::test_support::with_decode_context(|ctx| {
-        let (out, storage) = ctx
+        let storage;
+        let (out, held_storage) = ctx
             .with_scoped_storage("test browser output", || {
                 super::super::browser_body_appearances(ctx, &bytes)
             })
             .unwrap();
+        storage = held_storage;
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].0, 37_251);
         assert_eq!(&*out[0].1, visual);

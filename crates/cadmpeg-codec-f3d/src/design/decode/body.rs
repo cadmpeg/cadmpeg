@@ -666,9 +666,12 @@ fn body_map_record<'ctx>(
     ctx: &DecodeContext<'_>,
     pairs_start: usize,
     pairs: &[[u8; BODY_MAP_PAIR_LEN]],
-    (name_at, blob_name, mut storage): (usize, String, ScopedReservation<'ctx>),
+    name: (usize, String, ScopedReservation<'ctx>),
     operation: &'static str,
 ) -> Result<BodyMapRecord<'ctx>, CodecError> {
+    let mut storage;
+    let (name_at, blob_name, held_storage) = name;
+    storage = held_storage;
     let mut bindings = Vec::new();
     for (ordinal, pair) in ctx
         .admit_iter(pairs, "decode F3D body-map pairs")?
@@ -1364,7 +1367,9 @@ pub(crate) fn body_bindings<'ctx>(
     meta: &MetaStream,
 ) -> Result<(Vec<BodyBinding>, ScopedReservation<'ctx>), CodecError> {
     let primary = PrimaryFrames::index(ctx, meta, bytes.len())?;
-    let (records, _records_storage) = body_map_records(ctx, bytes, meta, &primary)?;
+    let _records_storage;
+    let (records, held_storage) = body_map_records(ctx, bytes, meta, &primary)?;
+    _records_storage = held_storage;
     let mut storage = ctx.reserve_scoped(0, "f3d flattened body-map pairs")?;
     let mut bindings = Vec::new();
     for record in ctx.admit_iter(&records, "flatten F3D body-map records")? {
@@ -1423,9 +1428,13 @@ pub(crate) fn design_model_blob_names<'ctx>(
             continue;
         };
         let primary = PrimaryFrames::index(ctx, &metadata, bytes.len())?;
-        let (modern, _modern_storage) = body_map_records(ctx, bytes, &metadata, &primary)?;
-        let (snapshots, _snapshot_storage) =
+        let _modern_storage;
+        let (modern, held_storage) = body_map_records(ctx, bytes, &metadata, &primary)?;
+        _modern_storage = held_storage;
+        let _snapshot_storage;
+        let (snapshots, held_storage) =
             snapshot_body_map_records(ctx, bytes, &metadata, &primary)?;
+        _snapshot_storage = held_storage;
         let modern_selected = !modern.is_empty();
         for (records, selected, operation) in [
             (&modern, modern_selected, "scan F3D modern body-map records"),
@@ -1582,7 +1591,9 @@ pub(crate) fn decode_design_body_bindings(
         else {
             continue;
         };
-        let (records, _records_storage) = selected_body_map_records(ctx, bytes, &metadata)?;
+        let _records_storage;
+        let (records, held_storage) = selected_body_map_records(ctx, bytes, &metadata)?;
+        _records_storage = held_storage;
         for record in ctx.admit_iter(&records, "scan F3D selected body-map records")? {
             let pair_count = u32::try_from(record.bindings.len())
                 .map_err(|_| CodecError::malformed("F3D Design body map exceeds u32::MAX pairs"))?;
@@ -1774,9 +1785,13 @@ pub(crate) fn decode_all_body_visibility<'ctx>(
         else {
             continue;
         };
-        let (hidden_by_entity, _hidden_storage) =
+        let _hidden_storage;
+        let (hidden_by_entity, held_storage) =
             typed_browser_node_hidden_flags(ctx, bytes, &metadata)?;
-        let (records, _records_storage) = selected_body_map_records(ctx, bytes, &metadata)?;
+        _hidden_storage = held_storage;
+        let _records_storage;
+        let (records, held_storage) = selected_body_map_records(ctx, bytes, &metadata)?;
+        _records_storage = held_storage;
         for record in ctx.admit_iter(&records, "scan F3D visibility body-map records")? {
             for binding in
                 ctx.admit_iter(&record.bindings, "scan F3D visibility body-map bindings")?
@@ -1950,7 +1965,9 @@ pub(crate) fn scanned_browser_node_entities<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<(HashMap<String, u64>, ScopedReservation<'ctx>), CodecError> {
-    let (records, _records_storage) = scan_browser_node_identities(ctx, bytes)?;
+    let _records_storage;
+    let (records, held_storage) = scan_browser_node_identities(ctx, bytes)?;
+    _records_storage = held_storage;
     let mut storage = ctx.reserve_scoped(0, "index F3D browser node entities")?;
     let mut entities = HashMap::<String, u64>::new();
     let mut ambiguous_storage = ctx.reserve_scoped(0, "index F3D ambiguous browser nodes")?;
@@ -2117,15 +2134,19 @@ mod tests {
         meta: &crate::metastream::MetaStream,
     ) -> Result<Vec<BodyMapRecord<'ctx>>, CodecError> {
         let primary = PrimaryFrames::index(ctx, meta, bytes.len())?;
-        let (records, _storage) = snapshot_body_map_records(ctx, bytes, meta, &primary)?;
-        Ok(records)
+        let _storage;
+        let (records, held_storage) = snapshot_body_map_records(ctx, bytes, meta, &primary)?;
+        _storage = held_storage;
+        _storage.commit_value(records)
     }
 
     /// The flattened modern body-map pairs of one stream.
     fn flat_pairs(bytes: &[u8], meta: &crate::metastream::MetaStream) -> Vec<super::BodyBinding> {
         let ctx = cadmpeg_test_support::service_decode_context();
-        let (pairs, _storage) = body_bindings(&ctx, bytes, meta).expect("body-map pairs");
-        pairs
+        let _storage;
+        let (pairs, held_storage) = body_bindings(&ctx, bytes, meta).expect("body-map pairs");
+        _storage = held_storage;
+        _storage.commit_value(pairs).expect("body-map pairs storage")
     }
 
     fn body_member_archive(members: &[(u8, u64, u16)], terminator: u8) -> (Vec<u8>, usize) {
@@ -2651,14 +2672,18 @@ mod tests {
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
             let ctx = cadmpeg_test_support::service_decode_context();
-            let (visibility, _storage) = super::decode_all_body_visibility(&ctx, scan).unwrap();
+            let _storage;
+            let (visibility, held_storage) = super::decode_all_body_visibility(&ctx, scan).unwrap();
+            _storage = held_storage;
             assert!(
                 visibility
                     .get(&("BREP.synthetic.smbh".to_owned(), 7))
                     .unwrap()
                     .visible
             );
-            let (names, _storage) = super::design_model_blob_names(&ctx, scan).unwrap();
+            let _storage;
+            let (names, held_storage) = super::design_model_blob_names(&ctx, scan).unwrap();
+            _storage = held_storage;
             assert_eq!(names, ["BREP.synthetic.smbh"]);
             let bindings = super::decode_design_body_bindings(
                 &cadmpeg_test_support::service_decode_context(),
@@ -2720,7 +2745,9 @@ mod tests {
                         "{result:?}"
                     );
                 } else {
-                    let (at, text, _storage) = result.unwrap().expect("framed blob name");
+                    let _storage;
+                    let (at, text, held_storage) = result.unwrap().expect("framed blob name");
+                    _storage = held_storage;
                     assert_eq!((at, text.as_str()), (name_at, "BREP.synthetic.smbh"));
                 }
             }
@@ -2793,7 +2820,9 @@ mod tests {
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
             let ctx = cadmpeg_test_support::service_decode_context();
-            let (names, _storage) = super::design_model_blob_names(&ctx, scan).unwrap();
+            let _storage;
+            let (names, held_storage) = super::design_model_blob_names(&ctx, scan).unwrap();
+            _storage = held_storage;
             assert_eq!(names, ["BREP.a.smb", "BREP.b.smbh"]);
         });
     }
@@ -2904,8 +2933,10 @@ mod tests {
             secondary_records: Vec::new(),
         };
         let ctx = cadmpeg_test_support::service_decode_context();
-        let (visibility, _storage) =
+        let _storage;
+        let (visibility, held_storage) =
             typed_browser_node_hidden_flags(&ctx, &bytes, &meta).expect("typed presentation graph");
+        _storage = held_storage;
         let selected = visibility_of(&visibility, entity).expect("presentation-selected node");
         assert_eq!(selected.byte_offset, selected_offset);
         assert!(!selected.hidden);
@@ -2938,8 +2969,10 @@ mod tests {
             ],
             secondary_records: Vec::new(),
         };
-        let (visibility, _storage) =
+        let _storage;
+        let (visibility, held_storage) =
             typed_browser_node_hidden_flags(&ctx, &nodes_only, &meta).expect("typed browser nodes");
+        _storage = held_storage;
         assert!(
             visibility_of(&visibility, entity).is_none(),
             "two unjoined typed nodes are ambiguous"
@@ -2991,8 +3024,10 @@ mod tests {
             });
         }
         let ctx = cadmpeg_test_support::service_decode_context();
-        let (selected, _storage) =
+        let _storage;
+        let (selected, held_storage) =
             typed_browser_node_hidden_flags(&ctx, &bytes, &metadata).unwrap();
+        _storage = held_storage;
         assert!(visibility_of(&selected, 42).unwrap().hidden);
     }
 
@@ -3019,7 +3054,9 @@ mod tests {
             ));
         }
         let ctx = cadmpeg_test_support::service_decode_context();
-        let (entities, _storage) = super::scanned_browser_node_entities(&ctx, &bytes).unwrap();
+        let _storage;
+        let (entities, held_storage) = super::scanned_browser_node_entities(&ctx, &bytes).unwrap();
+        _storage = held_storage;
         assert!(entities.is_empty());
     }
 
@@ -3048,7 +3085,9 @@ mod tests {
             7,
         );
         let ctx = cadmpeg_test_support::service_decode_context();
-        let (entities, _storage) = super::scanned_browser_node_entities(&ctx, &bytes).unwrap();
+        let _storage;
+        let (entities, held_storage) = super::scanned_browser_node_entities(&ctx, &bytes).unwrap();
+        _storage = held_storage;
         assert_eq!(entities.len(), 2);
         assert_eq!(entities["aaaaaaaa-bbbb-8ccc-9ddd-eeeeeeeeeeee"], 42);
         assert_eq!(entities["11111111-2222-8333-a444-555555555555"], 7);

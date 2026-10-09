@@ -92,15 +92,21 @@ pub(crate) fn decode_parameter_scopes(
     for name in ctx.admit_iter(&names, STREAMS_OPERATION)? {
         let bytes = scan.entry_bytes(ctx, name)?;
         // The stream scope, record index and type table live for this stream only.
-        let (stream, _stream_storage) = ctx
+        let _stream_storage;
+        let (stream, held_storage) = ctx
             .with_scoped_storage("f3d Design parameter-scope stream", || {
                 native_scope_charged(ctx, name)
             })?;
-        let (records, _records_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
-        let (stream_types, _stream_types_storage) = ctx
+        _stream_storage = held_storage;
+        let _records_storage;
+        let (records, held_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
+        _records_storage = held_storage;
+        let _stream_types_storage;
+        let (stream_types, held_storage) = ctx
             .with_scoped_storage("f3d Design parameter-scope stream types", || {
                 crate::design::decode::meta::stream_types_by_entity(ctx, types, name)
             })?;
+        _stream_types_storage = held_storage;
         let stream_scope_start = out.len();
         // A scope is delimited by two headers carrying its record index; any
         // header can open one, and the last of its index finds no pair.

@@ -685,10 +685,12 @@ fn channel_streams<'a>(
     let mut element_code = None;
     let mut values = None;
     let mut index = None;
-    let (fields, _fields_storage) = ctx
+    let _fields_storage;
+    let (fields, held_storage) = ctx
         .with_scoped_storage("stage paramesh protobuf fields", || {
             protobuf_fields(ctx, entry)
         })?;
+    _fields_storage = held_storage;
     for (field, value) in ctx.admit_iter(&fields, "read paramesh protobuf entry fields")? {
         match (*field, *value) {
             (STREAM_ELEMENT_CODE, ProtobufValue::Varint(code)) => {
@@ -747,10 +749,12 @@ fn channel_streams<'a>(
 fn channel_group(ctx: &DecodeContext<'_>, entry: &[u8]) -> Result<(u32, String), CodecError> {
     let mut key = None;
     let mut group_guid = None;
-    let (fields, _fields_storage) = ctx
+    let _fields_storage;
+    let (fields, held_storage) = ctx
         .with_scoped_storage("stage paramesh protobuf fields", || {
             protobuf_fields(ctx, entry)
         })?;
+    _fields_storage = held_storage;
     for (field, value) in ctx.admit_iter(&fields, "read paramesh protobuf entry fields")? {
         match (*field, *value) {
             (GROUP_KEY, ProtobufValue::Varint(value)) => {
@@ -800,10 +804,12 @@ fn registry_channel<'a>(
     let mut resource_guid = None;
     let mut streams = None;
     let mut groups: Vec<(u32, String)> = Vec::new();
-    let (fields, _fields_storage) = ctx
+    let _fields_storage;
+    let (fields, held_storage) = ctx
         .with_scoped_storage("stage paramesh protobuf fields", || {
             protobuf_fields(ctx, entry)
         })?;
+    _fields_storage = held_storage;
     for (field, value) in ctx.admit_iter(&fields, "read paramesh protobuf entry fields")? {
         match (*field, *value) {
             (CHANNEL_ROLE, ProtobufValue::Varint(value)) => {
@@ -868,10 +874,12 @@ fn registry_property(
 ) -> Result<(String, RegistryProperty), CodecError> {
     let mut key = None;
     let mut value = None;
-    let (fields, _fields_storage) = ctx
+    let _fields_storage;
+    let (fields, held_storage) = ctx
         .with_scoped_storage("stage paramesh protobuf fields", || {
             protobuf_fields(ctx, entry)
         })?;
+    _fields_storage = held_storage;
     for (field, field_value) in ctx.admit_iter(&fields, "read paramesh registry property fields")? {
         match (*field, *field_value) {
             (PROPERTY_KEY, ProtobufValue::Bytes(bytes)) => {
@@ -921,10 +929,12 @@ fn mesh_registry<'ctx>(
     let mut mesh_uuid = None;
     let mut vertex_stream = None;
     let mut triangle_stream = None;
-    let (fields, _fields_storage) = ctx
+    let _fields_storage;
+    let (fields, held_storage) = ctx
         .with_scoped_storage("stage paramesh protobuf fields", || {
             protobuf_fields(ctx, message)
         })?;
+    _fields_storage = held_storage;
     for (field, value) in ctx.admit_iter(&fields, "read paramesh protobuf message fields")? {
         match (*field, *value) {
             (REGISTRY_VERTEX_CHANNEL | REGISTRY_TRIANGLE_CHANNEL | REGISTRY_FEATURE_EDGES, _) => {}
@@ -1950,10 +1960,12 @@ fn decode_index_positions(
         return Ok(Vec::new());
     }
 
-    let (decoded, _decoded_storage) = ctx
+    let _decoded_storage;
+    let (decoded, held_storage) = ctx
         .with_scoped_storage("stage paramesh index deltas", || {
             decode_terminal_delta_values(ctx, stream)
         })?;
+    _decoded_storage = held_storage;
     let mut positions = Vec::new();
     let mut previous = None;
     for position in ctx.admit_iter(&decoded, "validate paramesh index positions")? {
@@ -2062,10 +2074,12 @@ fn decode_corner_normals(
             "paramesh role-0 packed directions do not address triangles",
         ));
     }
-    let (selectors, _selectors_storage) = ctx
+    let _selectors_storage;
+    let (selectors, held_storage) = ctx
         .with_scoped_storage("stage paramesh normal selectors", || {
             attribute.corner_selectors(ctx, vertices, triangles)
         })?;
+    _selectors_storage = held_storage;
     let selectors = selectors.ok_or_else(|| {
         CodecError::malformed("paramesh corner-normal addressing is inconsistent")
     })?;
@@ -2093,10 +2107,12 @@ fn registry_feature_edges(
     vertices: usize,
 ) -> Result<Vec<[u32; 2]>, CodecError> {
     let mut declaration = None;
-    let (fields, _fields_storage) = ctx
+    let _fields_storage;
+    let (fields, held_storage) = ctx
         .with_scoped_storage("stage paramesh protobuf fields", || {
             protobuf_fields(ctx, message)
         })?;
+    _fields_storage = held_storage;
     for (field, value) in ctx.admit_iter(&fields, "read paramesh protobuf message fields")? {
         if *field != REGISTRY_FEATURE_EDGES {
             continue;
@@ -2117,10 +2133,12 @@ fn registry_feature_edges(
     };
 
     let mut stream_name = None;
-    let (fields, _fields_storage) = ctx
+    let _fields_storage;
+    let (fields, held_storage) = ctx
         .with_scoped_storage("stage paramesh protobuf fields", || {
             protobuf_fields(ctx, entry)
         })?;
+    _fields_storage = held_storage;
     for (field, value) in ctx.admit_iter(&fields, "read paramesh protobuf entry fields")? {
         let (FEATURE_EDGE_STREAM, ProtobufValue::Bytes(name)) = (*field, *value) else {
             return Err(CodecError::malformed(
@@ -2147,10 +2165,12 @@ fn registry_feature_edges(
             CodecError::malformed("paramesh feature-edge declaration names no stream")
         })?;
     require_layout(ctx, stream, StreamLayout::TerminalDelta)?;
-    let (endpoints, _endpoints_storage) = ctx
+    let _endpoints_storage;
+    let (endpoints, held_storage) = ctx
         .with_scoped_storage("stage paramesh feature-edge endpoints", || {
             decode_terminal_delta_values(ctx, &stream.bytes)
         })?;
+    _endpoints_storage = held_storage;
     if !endpoints.len().is_multiple_of(2) {
         return Err(CodecError::malformed(
             "paramesh feature-edge stream has an unmatched endpoint",
@@ -2272,7 +2292,9 @@ pub(crate) fn decode_mesh_container(
 ) -> Result<MeshContainer, CodecError> {
     let header = ParamMeshHeader::parse(ctx, bytes)?;
     let message = &bytes[header.protobuf.clone()];
-    let (registry, _registry_storage) = mesh_registry(ctx, message)?;
+    let _registry_storage;
+    let (registry, held_storage) = mesh_registry(ctx, message)?;
+    _registry_storage = held_storage;
     let mut at = header.protobuf.end;
     let mut state = MeshChunkState::AwaitNameTable;
     let mut streams_storage = ctx.reserve_scoped(0, "stage paramesh streams")?;
@@ -2354,12 +2376,14 @@ pub(crate) fn decode_mesh_container(
         Ord::cmp,
         "sort paramesh name table",
     )?;
-    let (named_streams, _named_streams_storage) = ctx.unique_index(
+    let _named_streams_storage;
+    let (named_streams, held_storage) = ctx.unique_index(
         ctx.admit_iter(&name_table, "index paramesh named streams")?
             .zip(ctx.admit_iter(&streams, "index paramesh stream positions")?)
             .map(|((name, _), stream)| (name.as_str(), stream)),
         "index paramesh named streams",
     )?;
+    _named_streams_storage = held_storage;
     let named = |name: &str| -> Result<Option<&MeshStream>, CodecError> {
         Ok(ctx
             .get_hash_map(&named_streams, name, "find paramesh named stream")?
@@ -2387,10 +2411,12 @@ pub(crate) fn decode_mesh_container(
             })
         })
         .transpose()?;
-    let (attribute_names, _attribute_names_storage) = ctx
+    let _attribute_names_storage;
+    let (attribute_names, held_storage) = ctx
         .with_scoped_storage("stage paramesh attribute names", || {
             attribute_names(ctx, attribute_name_stream)
         })?;
+    _attribute_names_storage = held_storage;
     let attributes = registry_attributes(
         ctx,
         message,
@@ -2436,10 +2462,12 @@ fn registry_attributes(
             .copied())
     };
     let mut attributes = Vec::new();
-    let (fields, _fields_storage) = ctx
+    let _fields_storage;
+    let (fields, held_storage) = ctx
         .with_scoped_storage("stage paramesh protobuf fields", || {
             protobuf_fields(ctx, message)
         })?;
+    _fields_storage = held_storage;
     for (field, value) in ctx.admit_iter(&fields, "read paramesh protobuf message fields")? {
         let declared_domain = match *field {
             REGISTRY_VERTEX_CHANNEL => MeshAttributeDomain::Vertex,

@@ -96,7 +96,9 @@ fn browser_nodes_in<'ctx>(
     source: &mut TypedFrameSource<'_, '_, 'ctx>,
 ) -> Result<Vec<BrowserNodeRecord>, CodecError> {
     let mut out = Vec::new();
-    let (frames, _frames_storage) = source.frames(ctx, BROWSER_NODE_TYPE_GUID, "browser-node")?;
+    let _frames_storage;
+    let (frames, held_storage) = source.frames(ctx, BROWSER_NODE_TYPE_GUID, "browser-node")?;
+    _frames_storage = held_storage;
     for frame in ctx.admit_iter(&frames, "scan F3D browser-node frames")? {
         if frame.design_type.version != BROWSER_NODE_TYPE_VERSION {
             continue;
@@ -208,15 +210,21 @@ pub(crate) fn body_presentations(
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyPresentation>, CodecError> {
     let mut source = TypedFrameSource::new(bytes, meta);
-    let (nodes, _nodes_storage) = ctx.with_scoped_storage("f3d browser node records", || {
+    let _nodes_storage;
+    let (nodes, held_storage) = ctx.with_scoped_storage("f3d browser node records", || {
         browser_nodes_in(ctx, bytes, &mut source)
     })?;
-    let (entity_types, _entity_types_storage) =
+    _nodes_storage = held_storage;
+    let _entity_types_storage;
+    let (entity_types, held_storage) =
         ctx.with_scoped_storage("f3d presentation entity types", || entity_types(ctx, meta))?;
+    _entity_types_storage = held_storage;
 
     let mut out = Vec::new();
-    let (frames, _frames_storage) =
+    let _frames_storage;
+    let (frames, held_storage) =
         source.frames(ctx, BODY_PRESENTATION_TYPE_GUID, "body-presentation")?;
+    _frames_storage = held_storage;
     for frame in ctx.admit_iter(&frames, "scan F3D body-presentation frames")? {
         if frame.design_type.version != BODY_PRESENTATION_TYPE_VERSION {
             continue;
@@ -416,10 +424,12 @@ fn presentation_material(
         "find F3D physical material marker",
     )? {
         search_at = physical_at + markers.physical.len();
-        let (material, storage) = ctx
+        let storage;
+        let (material, held_storage) = ctx
             .with_scoped_storage("f3d body presentation material candidates", || {
                 envelope.named_material_at(ctx, &markers, &legacy_marker, entity_types, physical_at)
             })?;
+        storage = held_storage;
         let Some(material) = material else {
             continue;
         };
@@ -748,10 +758,12 @@ fn bare_presentation_material(
         "find F3D bare material marker",
     )? {
         search_at = marker_at + marker_len;
-        let (material, storage) = ctx
+        let storage;
+        let (material, held_storage) = ctx
             .with_scoped_storage("f3d body presentation material candidates", || {
                 envelope.bare_material_at(ctx, &markers, marker_at, marker_len)
             })?;
+        storage = held_storage;
         let Some(material) = material else {
             continue;
         };
