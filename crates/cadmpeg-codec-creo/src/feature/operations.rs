@@ -874,7 +874,8 @@ fn visit_current_operations<'a>(
 ) -> Result<(), CodecError> {
     let mut grouping_storage = ctx.reserve_scoped(0, "creo operation grouping storage")?;
     let mut by_feature = BTreeMap::<u32, Vec<ParsedOperation<'_>>>::new();
-    let parsed = grouping_storage.with_storage(|| parse_operation_states(ctx, payload))?;
+    let mut parsed_storage = ctx.reserve_scoped(0, "creo parsed grouping input storage")?;
+    let parsed = parsed_storage.with_storage(|| parse_operation_states(ctx, payload))?;
     for operation in ctx.admit_iter(parsed, "creo operation grouping")? {
         match grouping_storage.with_storage(|| {
             ctx.entry_btree_map(
@@ -899,6 +900,7 @@ fn visit_current_operations<'a>(
             }
         }
     }
+    drop(parsed_storage);
     for (_, mut states) in ctx.admit_iter(by_feature, "creo operation projection groups")? {
         let mut first_display: Option<usize> = None;
         let mut last_display = None;
