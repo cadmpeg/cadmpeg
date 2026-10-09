@@ -37,10 +37,11 @@ struct AnnotationReach<'ctx> {
     _storage: ScopedReservation<'ctx>,
 }
 
-pub(super) struct AnnotationDiscoveryIndex<'ctx> {
+pub(super) struct AnnotationDiscoveryIndex<'ctx, 'arena> {
     independent_reach: BTreeMap<(u64, usize), AnnotationReach<'ctx>>,
     graphs: BTreeMap<(u64, usize), IndexedAnnotationGraph<'ctx>>,
     texts: BTreeMap<u64, CachedAnnotationText<'ctx>>,
+    ctx: &'ctx DecodeContext<'arena>,
     storage: ScopedReservation<'ctx>,
 }
 
@@ -50,9 +51,9 @@ fn index_annotation_graph<'ctx>(
     exchange: &Exchange,
     geometry: &GeometryData,
     active: &mut BTreeSet<u64>,
-    index: &mut AnnotationDiscoveryIndex<'ctx>,
-    ctx: &'ctx DecodeContext<'_>,
+    index: &mut AnnotationDiscoveryIndex<'ctx, '_>,
 ) -> Result<bool, CodecError> {
+    let ctx = index.ctx;
     if depth >= 256 || ctx.contains_btree_set(active, &id, "STEP annotation graph active lookup")? {
         return Ok(false);
     }
@@ -128,7 +129,6 @@ fn index_annotation_graph<'ctx>(
                                 geometry,
                                 active,
                                 index,
-                                ctx,
                             )? {
                                 reusable = false;
                                 continue;
@@ -203,7 +203,7 @@ fn index_annotation_graph<'ctx>(
         (graph, storage)
     } else if active.len() <= 1 {
         drop(storage);
-        independent_annotation_graph(id, depth, exchange, geometry, index, ctx)?
+        independent_annotation_graph(id, depth, exchange, geometry, index)?
     } else {
         drop(storage);
         (
@@ -267,9 +267,9 @@ fn independent_annotation_graph<'ctx>(
     depth: usize,
     exchange: &Exchange,
     geometry: &GeometryData,
-    index: &mut AnnotationDiscoveryIndex<'ctx>,
-    ctx: &'ctx DecodeContext<'_>,
+    index: &mut AnnotationDiscoveryIndex<'ctx, '_>,
 ) -> Result<IndexedAnnotationGraph<'ctx>, CodecError> {
+    let ctx = index.ctx;
     let mut reach_storage = ctx.reserve_scoped(0, "STEP independent annotation reach scratch")?;
     let (graph_reach_buffer, storage) =
         ctx.with_scoped_storage("STEP independent annotation graph scratch", || {
@@ -490,14 +490,14 @@ fn cache_annotation_text<'ctx>(
 fn indexed_annotation_text<'ctx>(
     id: u64,
     exchange: &Exchange,
-    index: &mut AnnotationDiscoveryIndex<'ctx>,
+    index: &mut AnnotationDiscoveryIndex<'ctx, '_>,
     (used, claim_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
     (losses, slot_storage): (
         &mut Vec<LossNote>,
         &std::cell::RefCell<ScopedReservation<'_>>,
     ),
-    ctx: &'ctx DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
+    let ctx = index.ctx;
     let (graph, _) = ctx
         .get_btree_map(&index.graphs, &(id, 0), "STEP annotation graph lookup")?
         .ok_or_else(|| CodecError::malformed("STEP annotation graph was not indexed"))?;
@@ -558,12 +558,13 @@ fn indexed_annotation_text<'ctx>(
     }
 }
 
-impl<'ctx> AnnotationDiscoveryIndex<'ctx> {
-    pub(super) fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+impl<'ctx, 'arena> AnnotationDiscoveryIndex<'ctx, 'arena> {
+    pub(super) fn new(ctx: &'ctx DecodeContext<'arena>) -> Result<Self, CodecError> {
         Ok(Self {
             graphs: BTreeMap::new(),
             texts: BTreeMap::new(),
             independent_reach: BTreeMap::new(),
+            ctx,
             storage: ctx.reserve_scoped(0, "STEP annotation discovery index scratch")?,
         })
     }
@@ -578,10 +579,10 @@ impl<'ctx> AnnotationDiscoveryIndex<'ctx> {
             &mut Vec<LossNote>,
             &std::cell::RefCell<ScopedReservation<'_>>,
         ),
-        ctx: &'ctx DecodeContext<'_>,
     ) -> Result<Option<String>, CodecError> {
-        if index_annotation_graph(id, 0, exchange, geometry, &mut BTreeSet::new(), self, ctx)? {
-            indexed_annotation_text(id, exchange, self, claims, losses, ctx)
+        let ctx = self.ctx;
+        if index_annotation_graph(id, 0, exchange, geometry, &mut BTreeSet::new(), self)? {
+            indexed_annotation_text(id, exchange, self, claims, losses)
         } else {
             find_annotation_text(id, exchange, &mut BTreeSet::new(), claims, losses, 0, ctx)
         }
@@ -594,9 +595,9 @@ impl<'ctx> AnnotationDiscoveryIndex<'ctx> {
         geometry: &GeometryData,
         visited: &mut BTreeMap<u64, usize>,
         (candidates, storage): (&mut BTreeMap<u64, Transform>, &mut ScopedReservation<'_>),
-        ctx: &'ctx DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        if index_annotation_graph(id, 0, exchange, geometry, &mut BTreeSet::new(), self, ctx)? {
+        let ctx = self.ctx;
+        if index_annotation_graph(id, 0, exchange, geometry, &mut BTreeSet::new(), self)? {
             let (graph, _) = ctx
                 .get_btree_map(&self.graphs, &(id, 0), "STEP annotation graph lookup")?
                 .ok_or_else(|| CodecError::malformed("STEP annotation graph was not indexed"))?;
