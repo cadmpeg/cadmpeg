@@ -14,6 +14,7 @@ use crate::CadIr;
 mod nurbs;
 mod analytic;
 mod procedural_third;
+mod orientation;
 
 fn cylinder() -> SolvedSurfaceGeometry {
     SolvedSurfaceGeometry::Cylinder(CylinderSurface::try_new(
