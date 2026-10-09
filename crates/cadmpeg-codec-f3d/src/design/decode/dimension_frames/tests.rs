@@ -60,12 +60,13 @@ fn presentation_frame(
 > {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
     let tables = super::PresentationStreamTables {
+        ctx,
         geometry_indices,
         sketch_entities: &[270],
         records: &records,
         owners_by_scope: HashMap::new(),
     };
-    parse_dimension_presentation_frame(ctx, bytes, start, &tables, |code| Ok(code == 281))
+    parse_dimension_presentation_frame(bytes, start, &tables, |code| Ok(code == 281))
 }
 
 #[test]
@@ -1947,3 +1948,5 @@ mod stream_runs;
 mod lazy_loci;
 
 mod stream_index_session;
+
+mod presentation_session;
