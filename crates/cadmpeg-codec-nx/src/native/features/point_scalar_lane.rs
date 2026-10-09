@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cross-block point scalar lane with derived physical positions.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::om::scalar::ShiftedBinary64;
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +25,7 @@ struct FeaturePointConstructionScalarLaneRef<'a> {
     construction_header: &'a str,
     data_blocks: &'a [String; 2],
     values: [f64; 6],
-    raw_values: [[u8; 8]; 6],
+    raw_values: [NativeBytes<[u8; 8]>; 6],
     source_offsets: [u64; 6],
 }
 
@@ -35,7 +37,7 @@ impl Serialize for FeaturePointConstructionScalarLane {
             construction_header: &self.construction_header,
             data_blocks: &self.data_blocks,
             values: self.scalars.map(|scalar| scalar.value().get()),
-            raw_values: self.scalars.map(ShiftedBinary64::raw),
+            raw_values: (self.scalars.map(ShiftedBinary64::raw)).map(Into::into),
             source_offsets: self.positions.source_offsets(),
         }
         .serialize(serializer)
@@ -87,7 +89,7 @@ struct FeaturePointConstructionScalarLaneWire {
     /// Six finite scalar values in byte order.
     values: [f64; 6],
     /// Exact shifted-binary64 encodings in byte order.
-    raw_values: [[u8; 8]; 6],
+    raw_values: [NativeBytes<[u8; 8]>; 6],
     /// Absolute file offsets of the six scalar markers.
     source_offsets: [u64; 6],
 }
@@ -102,7 +104,7 @@ impl From<FeaturePointConstructionScalarLane> for FeaturePointConstructionScalar
             construction_header: lane.construction_header,
             data_blocks: lane.data_blocks,
             values: lane.scalars.map(|scalar| scalar.value().get()),
-            raw_values: lane.scalars.map(ShiftedBinary64::raw),
+            raw_values: (lane.scalars.map(ShiftedBinary64::raw)).map(Into::into),
             source_offsets,
         }
     }
@@ -113,7 +115,7 @@ impl TryFrom<FeaturePointConstructionScalarLaneWire> for FeaturePointConstructio
 
     fn try_from(wire: FeaturePointConstructionScalarLaneWire) -> Result<Self, Self::Error> {
         let [first, second, third, fourth, fifth, sixth] = std::array::from_fn::<_, 6, _>(|i| {
-            ShiftedBinary64::from_wire(wire.values[i], wire.raw_values[i])
+            ShiftedBinary64::from_wire(wire.values[i], *wire.raw_values[i])
                 .map_err(|error| format!("values/raw_values[{i}]: {error}"))
         });
         let scalars = [first?, second?, third?, fourth?, fifth?, sixth?];
@@ -140,7 +142,7 @@ impl TryFrom<FeaturePointConstructionScalarLaneWire> for FeaturePointConstructio
 mod tests {
     use super::{FeaturePointConstructionScalarLane, FeaturePointConstructionScalarLaneWire};
 
-    const WIRE: &str = r#"{"id":"nx:feature:point-scalar#0","operation_label":"operation","construction_header":"header","data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0],[48,8,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0]],"source_offsets":[100,110,118,126,134,142]}"#;
+    const WIRE: &str = r#"{"id":"nx:feature:point-scalar#0","operation_label":"operation","construction_header":"header","data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],"raw_values":["2ff0000000000000","3000000000000000","3008000000000000","3010000000000000","3014000000000000","3018000000000000"],"source_offsets":[100,110,118,126,134,142]}"#;
 
     #[test]
     fn point_scalar_borrowed_wire_preserves_bytes() {
@@ -166,7 +168,7 @@ mod tests {
 
     #[test]
     fn point_scalar_lane_requires_derived_positions_and_complete_physical_spans() {
-        let wire: serde_json::Value = serde_json::from_str(r#"{"id":"lane","operation_label":"operation","construction_header":"header","data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0],[48,8,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0]],"source_offsets":[100,110,118,126,134,142]}"#).unwrap();
+        let wire: serde_json::Value = serde_json::from_str(r#"{"id":"lane","operation_label":"operation","construction_header":"header","data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],"raw_values":["2ff0000000000000","3000000000000000","3008000000000000","3010000000000000","3014000000000000","3018000000000000"],"source_offsets":[100,110,118,126,134,142]}"#).unwrap();
         for slot in 2..6 {
             let mut invalid = wire.clone();
             invalid["source_offsets"][slot] =

@@ -1911,7 +1911,7 @@ mod relation_records_tests {
         FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload: Vec::new().into(),
             classes,
             names: Vec::new(),
             scalars,

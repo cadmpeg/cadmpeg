@@ -234,7 +234,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         feature_input_lanes: vec![FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload: Vec::new().into(),
             classes: Vec::new(),
             names: Vec::new(),
             scalars: Vec::new(),
@@ -316,7 +316,7 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
         feature_input_lanes: vec![FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload: Vec::new().into(),
             classes: Vec::new(),
             names: Vec::new(),
             scalars: Vec::new(),
@@ -389,7 +389,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),

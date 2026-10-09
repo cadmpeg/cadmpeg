@@ -743,7 +743,7 @@ fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: normalized_payload,
+        native_payload: normalized_payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -954,7 +954,7 @@ fn wide_indexed_curve_owns_its_endpoint_trailer_in_all_generations() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload.clone(),
+        native_payload: payload.clone().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),

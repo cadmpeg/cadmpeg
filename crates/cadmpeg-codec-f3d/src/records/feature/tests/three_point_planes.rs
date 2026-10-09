@@ -15,7 +15,7 @@ fn inputs() -> Box<[DesignVertexRecipe; 3]> {
             "paired_byte_offset": base + 10, "paired_class_tag": "261",
             "recipe_record_index": record_index + 3, "recipe_record_byte_offset": base + 20,
             "recipe_id": format!("vertex-{ordinal}"), "recipe_prefix_offset": base + 31,
-            "recipe_prefix_bytes": "AP8=", "recipe_references": [],
+            "recipe_prefix_bytes": "00ff", "recipe_references": [],
             "recipe_program_offset": base + 33, "recipe_program": [0],
             "next_record_index": record_index + 5, "next_byte_offset": base + 40
         }))

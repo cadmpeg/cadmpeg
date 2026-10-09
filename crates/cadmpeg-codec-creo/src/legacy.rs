@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural grammar for legacy ASCII persistence records.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
@@ -271,7 +273,7 @@ pub(crate) enum ObjectPayload {
     /// A type-0 payload outside the defined object forms.
     Opaque {
         /// Uninterpreted payload bytes after the attribute identifier.
-        bytes: Vec<u8>,
+        bytes: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
     },
 }
 
@@ -364,7 +366,7 @@ pub(crate) enum StringValue {
     /// A byte string whose character encoding is not UTF-8.
     Bytes {
         /// Exact uninterpreted source bytes.
-        bytes: Vec<u8>,
+        bytes: NativeBytes<Vec<u8>>,
     },
 }
 
@@ -1231,7 +1233,9 @@ fn object_records(
             } else {
                 unresolved += 1;
                 ObjectPayload::Opaque {
-                    bytes: ctx.copy_retained(bytes, "creo legacy opaque object bytes")?,
+                    bytes: ctx
+                        .copy_retained(bytes, "creo legacy opaque object bytes")?
+                        .into(),
                 }
             };
             let name =
@@ -1270,7 +1274,9 @@ fn byte_string_value(
         })
     } else {
         Ok(StringValue::Bytes {
-            bytes: ctx.copy_retained(bytes, "creo legacy string byte payload")?,
+            bytes: ctx
+                .copy_retained(bytes, "creo legacy string byte payload")?
+                .into(),
         })
     }
 }

@@ -138,7 +138,7 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
             .iter()
             .map(|component| (
                 component.instance,
-                component.type_signature,
+                component.type_signature.into_inner(),
                 component.local_id
             ))
             .collect::<Vec<_>>(),
@@ -216,7 +216,7 @@ fn operation_surface_selection_finds_marker_inside_class_body() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload.clone(),
+        native_payload: payload.clone().into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -283,7 +283,7 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
     let lane_for = |payload: Vec<u8>| FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -524,7 +524,7 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -1175,7 +1175,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             id: "face-plane-data".into(),
             parent: "lane".into(),
@@ -1315,7 +1315,7 @@ fn face_reference_plane_accepts_a_component_face_path() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             id: "component-face".into(),
             parent: "lane".into(),
@@ -1422,7 +1422,7 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload.clone(),
+        native_payload: payload.clone().into(),
         classes: vec![
             FeatureInputClass {
                 id: "surface-class".into(),
@@ -1515,7 +1515,7 @@ fn generated_surface_identities_are_producer_outputs() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -1584,7 +1584,7 @@ fn idless_history_features_use_unique_feature_input_object_sources() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
             id: "name".into(),

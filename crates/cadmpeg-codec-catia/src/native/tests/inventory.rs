@@ -656,7 +656,7 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
     ));
 
     let mut invalid = loaded;
-    invalid.alias_rows[0]
+    *invalid.alias_rows[0]
         .group
         .as_mut()
         .expect("group membership")

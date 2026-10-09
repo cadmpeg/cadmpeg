@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use super::references::DesignClassTag;
@@ -455,7 +457,7 @@ struct DesignCanvasImageWire {
     /// Byte offset of the primary geometry record.
     geometry_byte_offset: u64,
     /// Fixed geometry prologue immediately following the primary record header.
-    geometry_prologue: [u8; 15],
+    geometry_prologue: NativeBytes<[u8; 15]>,
     /// Whether the Canvas raster is visible.
     visible: bool,
     /// Byte offset of the visibility byte in the geometry prologue.
@@ -507,7 +509,7 @@ struct DesignCanvasImageWire {
     /// Unit direction of increasing image v coordinate.
     v_axis: Vector3,
     /// Uninterpreted fixed geometry payload between the plane reference and scope link.
-    geometry_payload: Vec<u8>,
+    geometry_payload: NativeBytes<Vec<u8>>,
 }
 
 #[derive(Serialize)]
@@ -519,7 +521,7 @@ struct DesignCanvasImageWireRef<'a> {
     geometry_record_index: u32,
     geometry_reference_offset: u64,
     geometry_byte_offset: u64,
-    geometry_prologue: [u8; 15],
+    geometry_prologue: NativeBytes<[u8; 15]>,
     visible: bool,
     visibility_offset: u64,
     geometry_frame_length: u64,
@@ -545,7 +547,7 @@ struct DesignCanvasImageWireRef<'a> {
     origin: Point3,
     u_axis: Vector3,
     v_axis: Vector3,
-    geometry_payload: &'a [u8],
+    geometry_payload: NativeBytes<&'a [u8]>,
 }
 
 impl Serialize for DesignCanvasImage {
@@ -561,7 +563,7 @@ impl Serialize for DesignCanvasImage {
             geometry_record_index: self.geometry.record_index,
             geometry_reference_offset: self.geometry_reference_offset(),
             geometry_byte_offset: self.geometry.byte_offset,
-            geometry_prologue: self.geometry.prologue.bytes(),
+            geometry_prologue: (self.geometry.prologue.bytes()).into(),
             visible: self.geometry.prologue.visible(),
             visibility_offset: self.geometry.visibility_offset(),
             geometry_frame_length: self.geometry.frame_length(),
@@ -587,7 +589,7 @@ impl Serialize for DesignCanvasImage {
             origin: frame.origin().get(),
             u_axis: *frame.u_axis().as_raw(),
             v_axis: *frame.v_axis().as_raw(),
-            geometry_payload: &geometry_payload,
+            geometry_payload: (&geometry_payload).into(),
         }
         .serialize(serializer)
     }
@@ -596,7 +598,8 @@ impl Serialize for DesignCanvasImage {
 impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
     type Error = String;
     fn try_from(wire: DesignCanvasImageWire) -> Result<Self, Self::Error> {
-        let geometry_prologue = DesignCanvasPrologue::try_from(wire.geometry_prologue)?;
+        let geometry_prologue =
+            DesignCanvasPrologue::try_from(wire.geometry_prologue.into_inner())?;
         if geometry_prologue.visible() != wire.visible {
             return Err("visible must match geometry_prologue".into());
         }
@@ -765,7 +768,7 @@ impl From<DesignCanvasImage> for DesignCanvasImageWire {
             geometry_record_index,
             geometry_reference_offset,
             geometry_byte_offset,
-            geometry_prologue,
+            geometry_prologue: (geometry_prologue).into(),
             visible,
             visibility_offset,
             geometry_frame_length,
@@ -791,7 +794,7 @@ impl From<DesignCanvasImage> for DesignCanvasImageWire {
             origin: frame.origin().get(),
             u_axis: *frame.u_axis().as_raw(),
             v_axis: *frame.v_axis().as_raw(),
-            geometry_payload,
+            geometry_payload: (geometry_payload).into(),
         }
     }
 }

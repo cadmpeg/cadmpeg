@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete operation-state tagged integer tokens.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -64,7 +66,7 @@ impl Serialize for StateTaggedValue {
         let mut state = serializer.serialize_struct("StateTaggedValue", 3)?;
         state.serialize_field("value_marker", &self.marker())?;
         state.serialize_field("value", &self.value())?;
-        state.serialize_field("raw_value", self.raw())?;
+        state.serialize_field("raw_value", &NativeBytes::from(self.raw()))?;
         state.end()
     }
 }
@@ -75,7 +77,7 @@ impl<'de> Deserialize<'de> for StateTaggedValue {
         struct Wire {
             value_marker: u8,
             value: u32,
-            raw_value: Vec<u8>,
+            raw_value: NativeBytes<Vec<u8>>,
         }
         let wire = Wire::deserialize(deserializer)?;
         let value = Self::read_at(&wire.raw_value, 0)
@@ -100,10 +102,10 @@ mod tests {
     #[test]
     fn tagged_wire_preserves_width_marker_and_value() {
         for json in [
-            r#"{"value_marker":191,"value":2097151,"raw_value":[191,255,255]}"#,
-            r#"{"value_marker":223,"value":536870911,"raw_value":[223,255,255,255]}"#,
-            r#"{"value_marker":224,"value":4294967295,"raw_value":[224,255,255,255,255]}"#,
-            r#"{"value_marker":255,"value":4294967295,"raw_value":[255,255,255,255,255]}"#,
+            r#"{"value_marker":191,"value":2097151,"raw_value":"bfffff"}"#,
+            r#"{"value_marker":223,"value":536870911,"raw_value":"dfffffff"}"#,
+            r#"{"value_marker":224,"value":4294967295,"raw_value":"e0ffffffff"}"#,
+            r#"{"value_marker":255,"value":4294967295,"raw_value":"ffffffffff"}"#,
         ] {
             let value: StateTaggedValue = serde_json::from_str(json).unwrap();
             assert_eq!(serde_json::to_string(&value).unwrap(), json);
@@ -114,27 +116,27 @@ mod tests {
     fn tagged_wire_rejects_incomplete_tokens_and_inconsistent_projections() {
         for (json, field) in [
             (
-                r#"{"value_marker":160,"value":0,"raw_value":[]}"#,
+                r#"{"value_marker":160,"value":0,"raw_value":""}"#,
                 "raw_value",
             ),
             (
-                r#"{"value_marker":160,"value":0,"raw_value":[160,0]}"#,
+                r#"{"value_marker":160,"value":0,"raw_value":"a000"}"#,
                 "raw_value",
             ),
             (
-                r#"{"value_marker":160,"value":0,"raw_value":[160,0,0,0]}"#,
+                r#"{"value_marker":160,"value":0,"raw_value":"a0000000"}"#,
                 "raw_value",
             ),
             (
-                r#"{"value_marker":225,"value":0,"raw_value":[225,0,0,0,0]}"#,
+                r#"{"value_marker":225,"value":0,"raw_value":"e100000000"}"#,
                 "raw_value",
             ),
             (
-                r#"{"value_marker":255,"value":0,"raw_value":[224,0,0,0,0]}"#,
+                r#"{"value_marker":255,"value":0,"raw_value":"e000000000"}"#,
                 "value_marker",
             ),
             (
-                r#"{"value_marker":160,"value":1,"raw_value":[160,0,0]}"#,
+                r#"{"value_marker":160,"value":1,"raw_value":"a00000"}"#,
                 "value",
             ),
         ] {

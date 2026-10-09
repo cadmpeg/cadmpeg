@@ -4145,7 +4145,7 @@ mod relation_geometry_tests {
         let lane = FeatureInputLane {
             id: "lane#test".into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload: Vec::new().into(),
             classes: Vec::new(),
             names: Vec::new(),
             scalars: vec![
@@ -4381,7 +4381,7 @@ mod relation_geometry_tests {
         let lane = FeatureInputLane {
             id: LANE.into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload: Vec::new().into(),
             classes: Vec::new(),
             names: Vec::new(),
             scalars: vec![FeatureInputScalar {
@@ -4742,7 +4742,7 @@ mod relation_geometry_tests {
         let lane = FeatureInputLane {
             id: LANE.into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: payload.into(),
             classes: Vec::new(),
             names: Vec::new(),
             scalars: vec![scalar],

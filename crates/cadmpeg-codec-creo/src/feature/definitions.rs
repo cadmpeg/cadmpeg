@@ -1232,7 +1232,7 @@ pub(crate) struct FeatureSavedLine {
     /// Entity references preceding or embedded in the record.
     pub(crate) references: Vec<u32>,
     /// Five-byte `eb` attribute payloads in stored order.
-    pub(crate) attributes: Vec<[u8; 5]>,
+    pub(crate) attributes: Vec<cadmpeg_ir::native::bytes::NativeBytes<[u8; 5]>>,
     /// Two three-dimensional endpoints in the section sketch frame.
     pub(crate) endpoints: [[Option<f64>; 3]; 2],
     /// Exact row bytes through the final owned token, excluding the structural boundary.
@@ -6029,7 +6029,7 @@ fn saved_line_block(
                 let mut attribute = [0; 5];
                 attribute.copy_from_slice(bytes);
                 ctx.reserve_vec(&mut attributes, 1, "creo saved line attributes")?;
-                attributes.push(attribute);
+                attributes.push(attribute.into());
                 cursor += 6;
             } else {
                 break;
@@ -6086,7 +6086,7 @@ fn saved_line_block(
                 let mut attribute = [0; 5];
                 attribute.copy_from_slice(bytes);
                 ctx.reserve_vec(&mut attributes, 1, "creo saved line attributes")?;
-                attributes.push(attribute);
+                attributes.push(attribute.into());
                 cursor += 6;
                 continue;
             }

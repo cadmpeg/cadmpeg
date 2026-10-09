@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parasolid source-record extractors and their record types.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::framing::xmt_reference::XmtTarget;
 use crate::parasolid::name_references::NameReferences;
 use crate::parasolid::{Stream, StreamKind};
@@ -2550,7 +2552,7 @@ struct ParasolidAttributeDefinitionRef<'a> {
     type_id: u32,
     action_codes: [AttributeAction; 8],
     field_names_xmt: u32,
-    legal_owner_flags: [u8; 16],
+    legal_owner_flags: NativeBytes<[u8; 16]>,
     #[serde(skip_serializing_if = "is_default_legal_owner_flag_count")]
     legal_owner_flag_count: u8,
     field_count: usize,
@@ -2571,7 +2573,7 @@ impl Serialize for ParasolidAttributeDefinition {
             type_id: self.type_id.get(),
             action_codes: self.action_codes,
             field_names_xmt: XmtTarget::to_wire(self.field_names_xmt),
-            legal_owner_flags: self.legal_owner_flags.padded(),
+            legal_owner_flags: (self.legal_owner_flags.padded()).into(),
             legal_owner_flag_count: u8::try_from(self.legal_owner_flags.as_slice().len())
                 .map_err(serde::ser::Error::custom)?,
             field_count: self.field_codes.len(),
@@ -2605,7 +2607,7 @@ struct ParasolidAttributeDefinitionWire {
     /// Stream-local field-name-list identity; `1` is null.
     field_names_xmt: u32,
     /// Ordered legal-owner flags.
-    legal_owner_flags: [u8; 16],
+    legal_owner_flags: NativeBytes<[u8; 16]>,
     /// Number of legal-owner flags serialized by the definition.
     #[serde(
         default = "default_legal_owner_flag_count",
@@ -2626,7 +2628,7 @@ impl From<ParasolidAttributeDefinition> for ParasolidAttributeDefinitionWire {
         Self {
             legal_owner_flag_count: u8::try_from(value.legal_owner_flags.as_slice().len())
                 .expect("fixture value fits u8"),
-            legal_owner_flags: value.legal_owner_flags.padded(),
+            legal_owner_flags: (value.legal_owner_flags.padded()).into(),
             field_count: value.field_codes.len(),
             id: value.id,
             stream_ordinal: value.stream_ordinal,

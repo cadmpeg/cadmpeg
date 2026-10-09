@@ -231,7 +231,7 @@ mod admission_tests {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    const ROW: &str = r#"{"id":"nx:rm-display-color-assignments:assignment#0","ordinal":0,"encoding":{"kind":"target","target_index":2,"raw_target_index":[2],"target_index_source_offset":15,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[20,21,22],"mode":7},"color_index":128,"color_definition":"definition","raw_color_index":[128,128],"source_entry":"entry","source_offset":8,"row_source_offset":10}"#;
+    const ROW: &str = r#"{"id":"nx:rm-display-color-assignments:assignment#0","ordinal":0,"encoding":{"kind":"target","target_index":2,"raw_target_index":"02","target_index_source_offset":15,"indices":[3,4,5],"raw_indices":["03","04","05"],"index_source_offsets":[20,21,22],"mode":7},"color_index":128,"color_definition":"definition","raw_color_index":"8080","source_entry":"entry","source_offset":8,"row_source_offset":10}"#;
 
     #[test]
     fn display_color_assignment_refuses_collection_limit() {

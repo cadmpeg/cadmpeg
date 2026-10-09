@@ -25,7 +25,7 @@ fn generated_surface_identity_path_keeps_absent_source_component() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),

@@ -95,7 +95,7 @@ fn type100_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         9,
         vec![
             100.into(),
-            TokenValue::String(b"bad-z".to_vec()),
+            TokenValue::String(b"bad-z".to_vec().into()),
             0.into(),
             0.into(),
             1.into(),
@@ -261,8 +261,8 @@ fn type104_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             0.into(),
             2.into(),
             0.into(),
-            TokenValue::String(b"bad-x".to_vec()),
-            TokenValue::String(b"bad-y".to_vec()),
+            TokenValue::String(b"bad-x".to_vec().into()),
+            TokenValue::String(b"bad-y".to_vec().into()),
             1.into(),
             1.into(),
             1.into(),
@@ -442,8 +442,8 @@ fn type108_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             7.into(),
             0.into(),
             0.into(),
-            TokenValue::String(b"bad-z".to_vec()),
-            TokenValue::String(b"bad-size".to_vec()),
+            TokenValue::String(b"bad-z".to_vec().into()),
+            TokenValue::String(b"bad-size".to_vec().into()),
             1.into(),
             1.into(),
             1.into(),
@@ -615,7 +615,7 @@ fn type312_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
                 .enumerate()
                 .map(|(index, value)| {
                     if index == 4 {
-                        TokenValue::String(b"bad-slant".to_vec())
+                        TokenValue::String(b"bad-slant".to_vec().into())
                     } else {
                         TokenValue::Integer(*value)
                     }
@@ -696,7 +696,10 @@ fn type314_form0_boundary_follows_optional_color_name_slot() {
     let property = directory_target(3, 406);
     let source = directory_target(5, 314);
     let directory = BTreeMap::from([(1, &association), (3, &property), (5, &source)]);
-    for name in [TokenValue::String(b"orange".to_vec()), TokenValue::Omitted] {
+    for name in [
+        TokenValue::String(b"orange".to_vec().into()),
+        TokenValue::Omitted,
+    ] {
         let record = token_parameter_record(
             5,
             vec![
@@ -1031,7 +1034,7 @@ fn type130_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             0.into(),
             0.into(),
             0.into(),
-            TokenValue::String(b"bad-distance".to_vec()),
+            TokenValue::String(b"bad-distance".to_vec().into()),
             0.into(),
             0.into(),
             0.into(),

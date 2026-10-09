@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolved extrusion construction from a structured branch.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::FeatureConstructionMember;
 use crate::iter_wire::IterWire;
 use crate::om::branch_items::BranchItems;
@@ -151,7 +153,7 @@ struct FeatureExtrudePayload32BranchWire {
     /// Finite shifted-IEEE scalar following the branch marker.
     scalar: f64,
     /// Exact shifted-binary64 scalar encoding.
-    raw_scalar: [u8; 8],
+    raw_scalar: NativeBytes<[u8; 8]>,
     /// Ordered fixed-width big-endian atoms in the first counted lane.
     atoms_be: Vec<u32>,
     /// Absolute source offsets of the fixed-width atoms in lane order.
@@ -163,7 +165,7 @@ struct FeatureExtrudePayload32BranchWire {
     /// Ordered values in the first compact-index lane.
     first_indices: Vec<u32>,
     /// Exact compact-index tokens in the first lane.
-    raw_first_indices: Vec<Vec<u8>>,
+    raw_first_indices: Vec<NativeBytes<Vec<u8>>>,
     /// Absolute source offsets of the first-lane tokens.
     first_index_source_offsets: Vec<u64>,
     /// Unique offset-only data blocks addressed by the first lane.
@@ -171,7 +173,7 @@ struct FeatureExtrudePayload32BranchWire {
     /// Ordered values in the second compact-index lane.
     second_indices: Vec<u32>,
     /// Exact compact-index tokens in the second lane.
-    raw_second_indices: Vec<Vec<u8>>,
+    raw_second_indices: Vec<NativeBytes<Vec<u8>>>,
     /// Absolute source offsets of the second-lane tokens.
     second_index_source_offsets: Vec<u64>,
     /// Unique offset-only data blocks addressed by the second lane.
@@ -179,7 +181,7 @@ struct FeatureExtrudePayload32BranchWire {
     /// Object index in the terminal field.
     terminal_object_index: u32,
     /// Exact serialized terminal object-index token.
-    raw_terminal_object_index: Vec<u8>,
+    raw_terminal_object_index: NativeBytes<Vec<u8>>,
     /// Absolute file offset of the terminal object-index token.
     terminal_source_offset: u64,
     /// Absolute file offset of the `32` branch marker.
@@ -194,7 +196,7 @@ impl From<FeatureExtrudePayload32Branch> for FeatureExtrudePayload32BranchWire {
             operation_label: branch.operation_label,
             body_object_index: branch.frame.terminal().value(),
             scalar: branch.frame.scalar().value().get(),
-            raw_scalar: branch.frame.scalar().raw(),
+            raw_scalar: (branch.frame.scalar().raw()).into(),
             atoms_be: branch
                 .frame
                 .atoms()
@@ -220,6 +222,7 @@ impl From<FeatureExtrudePayload32Branch> for FeatureExtrudePayload32BranchWire {
                 .frame
                 .first_indices()
                 .map(|(token, _, _)| token.raw().to_vec())
+                .map(Into::into)
                 .collect(),
             first_index_source_offsets: branch
                 .frame
@@ -240,6 +243,7 @@ impl From<FeatureExtrudePayload32Branch> for FeatureExtrudePayload32BranchWire {
                 .frame
                 .second_indices()
                 .map(|(token, _, _)| token.raw().to_vec())
+                .map(Into::into)
                 .collect(),
             second_index_source_offsets: branch
                 .frame
@@ -252,7 +256,7 @@ impl From<FeatureExtrudePayload32Branch> for FeatureExtrudePayload32BranchWire {
                 .map(|(_, binding, _)| binding.clone())
                 .collect(),
             terminal_object_index: branch.frame.terminal().value(),
-            raw_terminal_object_index: branch.frame.terminal().raw().to_vec(),
+            raw_terminal_object_index: (branch.frame.terminal().raw().to_vec()).into(),
             terminal_source_offset: branch.frame.terminal_offset(),
             source_offset: branch.frame.origin(),
         }
@@ -322,7 +326,7 @@ impl TryFrom<FeatureExtrudePayload32BranchWire> for FeatureExtrudePayload32Branc
             .collect::<Result<Vec<_>, _>>()?;
         let frame = Extrude32Frame::new(
             wire.source_offset,
-            ShiftedBinary64::from_wire(wire.scalar, wire.raw_scalar)
+            ShiftedBinary64::from_wire(wire.scalar, *wire.raw_scalar)
                 .map_err(|error| format!("scalar/raw_scalar: {error}"))?,
             BranchItems::new(atoms).map_err(|error| format!("atom_indices: {error}"))?,
             BranchItems::new(first).map_err(|error| format!("first_indices: {error}"))?,
@@ -440,7 +444,7 @@ mod tests {
     }
     #[test]
     fn branch_rejects_impossible_positions_and_lane_counts() {
-        let wire = r#"{"id":"b","operation_label":"o","body_object_index":0,"scalar":1.0,"raw_scalar":[47,240,0,0,0,0,0,0],"atoms_be":[1031798784],"atom_source_offsets":[113],"atom_indices":[0],"atom_data_blocks":[""],"first_indices":[0,4096],"raw_first_indices":[[0],[144,0]],"first_index_source_offsets":[119,120],"first_data_blocks":[null,""],"second_indices":[0],"raw_second_indices":[[128,0]],"second_index_source_offsets":[124],"second_data_blocks":[null],"terminal_object_index":0,"raw_terminal_object_index":[144,0,0],"terminal_source_offset":128,"source_offset":100}"#;
+        let wire = r#"{"id":"b","operation_label":"o","body_object_index":0,"scalar":1.0,"raw_scalar":"2ff0000000000000","atoms_be":[1031798784],"atom_source_offsets":[113],"atom_indices":[0],"atom_data_blocks":[""],"first_indices":[0,4096],"raw_first_indices":["00","9000"],"first_index_source_offsets":[119,120],"first_data_blocks":[null,""],"second_indices":[0],"raw_second_indices":["8000"],"second_index_source_offsets":[124],"second_data_blocks":[null],"terminal_object_index":0,"raw_terminal_object_index":"900000","terminal_source_offset":128,"source_offset":100}"#;
         let parsed: FeatureExtrudePayload32Branch = serde_json::from_str(wire).unwrap();
         assert_eq!(serde_json::to_string(&parsed).unwrap(), wire);
         for field in [
@@ -497,7 +501,7 @@ mod tests {
             }
         }
         let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
-        invalid["raw_terminal_object_index"] = serde_json::json!([240, 0]);
+        invalid["raw_terminal_object_index"] = serde_json::json!("f000");
         assert!(serde_json::from_value::<FeatureExtrudePayload32Branch>(invalid).is_err());
     }
 }

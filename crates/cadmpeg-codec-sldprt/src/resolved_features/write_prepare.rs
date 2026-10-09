@@ -1529,7 +1529,7 @@ fn source_less_lane<'a>(
     lanes.push(FeatureInputLane {
         id: format!("Contents/Config-{configuration}-ResolvedFeatures"),
         configuration: Some(configuration.into()),
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),

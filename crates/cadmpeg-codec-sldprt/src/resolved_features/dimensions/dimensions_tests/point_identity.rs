@@ -30,7 +30,7 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -169,7 +169,7 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -264,7 +264,7 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: vec![
             FeatureInputClass {
                 id: "class".into(),

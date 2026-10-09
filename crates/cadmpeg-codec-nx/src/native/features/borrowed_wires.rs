@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed native wires for feature references and derived membership columns.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use serde::ser::SerializeMap;
 use serde::Serialize;
 
@@ -26,7 +28,10 @@ impl Serialize for FeatureOperationObjectReference {
             wire.serialize_entry("tag", &tag)?;
         }
         wire.serialize_entry("object_index", &self.frame.object().value())?;
-        wire.serialize_entry("raw_object_index", self.frame.object().raw())?;
+        wire.serialize_entry(
+            "raw_object_index",
+            &NativeBytes::from(self.frame.object().raw()),
+        )?;
         if let Some(data_block) = &self.data_block {
             wire.serialize_entry("data_block", data_block)?;
         }
@@ -46,7 +51,7 @@ impl Serialize for FeatureBodyReference {
             wire.serialize_entry("ordinal", &ordinal)?;
         }
         wire.serialize_entry("body_object_index", &self.body.value())?;
-        wire.serialize_entry("raw_body_object_index", self.body.raw())?;
+        wire.serialize_entry("raw_body_object_index", &NativeBytes::from(self.body.raw()))?;
         wire.serialize_entry("source_offset", &self.source_offset)?;
         wire.end()
     }
@@ -172,7 +177,7 @@ impl Serialize for FeatureDatumCsysConstruction {
                 .frame
                 .members()
                 .each_ref()
-                .map(|(token, _)| token.raw()),
+                .map(|(token, _)| cadmpeg_ir::native::bytes::NativeBytes::from(token.raw())),
         )?;
         wire.serialize_entry(
             "data_blocks",
@@ -192,9 +197,9 @@ impl Serialize for FeatureDatumCsysDescriptor {
         wire.serialize_entry("construction", &self.construction)?;
         wire.serialize_entry("reference_ordinal", &u8::from(self.reference_ordinal))?;
         wire.serialize_entry("data_block", &self.data_block)?;
-        wire.serialize_entry("prefix", descriptor.prefix())?;
+        wire.serialize_entry("prefix", &NativeBytes::from(descriptor.prefix()))?;
         wire.serialize_entry("identity", descriptor.identity().as_str())?;
-        wire.serialize_entry("suffix", descriptor.suffix())?;
+        wire.serialize_entry("suffix", &NativeBytes::from(descriptor.suffix()))?;
         wire.serialize_entry("source_offset", &self.descriptor.source_offset())?;
         wire.serialize_entry(
             "identity_source_offset",
@@ -220,7 +225,7 @@ impl Serialize for FeaturePayloadScalar {
         wire.serialize_entry("ordinal", &self.ordinal)?;
         wire.serialize_entry("field_code", &self.field_code)?;
         wire.serialize_entry("value", &self.scalar.value().get())?;
-        wire.serialize_entry("raw_value", &self.scalar.raw())?;
+        wire.serialize_entry("raw_value", &NativeBytes::from(self.scalar.raw()))?;
         wire.serialize_entry("payload_offset", &self.payload_offset)?;
         wire.serialize_entry("source_offset", &self.source_offset)?;
         wire.end()
@@ -254,14 +259,21 @@ impl Serialize for FeatureSketchPayloadScalarLane {
         wire.serialize_entry("operation_label", &self.operation_label)?;
         wire.serialize_entry("construction_payload", &self.construction_payload)?;
         wire.serialize_entry("ordinal", &self.ordinal)?;
-        wire.serialize_entry("discriminator", self.lane.form().discriminator())?;
+        wire.serialize_entry(
+            "discriminator",
+            &cadmpeg_ir::native::bytes::NativeBytes::from(self.lane.form().discriminator()),
+        )?;
         wire.serialize_entry(
             "values",
             &IterWire(self.lane.iter().map(|(_, scalar, _)| scalar.value().get())),
         )?;
         wire.serialize_entry(
             "raw_values",
-            &IterWire(self.lane.iter().map(|(_, scalar, _)| scalar.raw())),
+            &IterWire(
+                self.lane.iter().map(|(_, scalar, _)| {
+                    cadmpeg_ir::native::bytes::NativeBytes::from(scalar.raw())
+                }),
+            ),
         )?;
         wire.serialize_entry(
             "value_payload_offsets",
@@ -288,7 +300,12 @@ impl Serialize for OffsetStoreNamedPoint {
             "values",
             &self.values.map(|token| token.scalar.value().get()),
         )?;
-        wire.serialize_entry("raw_values", &self.values.map(|token| token.scalar.raw()))?;
+        wire.serialize_entry(
+            "raw_values",
+            &self
+                .values
+                .map(|token| NativeBytes::from(token.scalar.raw())),
+        )?;
         wire.serialize_entry(
             "value_source_offsets",
             &self.values.map(|token| token.source_offset),
@@ -341,7 +358,7 @@ impl Serialize for FeatureExtrudePayloadHeader {
         wire.serialize_entry("scalars", &self.scalars.map(|scalar| scalar.value().get()))?;
         wire.serialize_entry(
             "raw_scalars",
-            &self.scalars.map(crate::om::scalar::ShiftedBinary64::raw),
+            &self.scalars.map(|scalar| NativeBytes::from(scalar.raw())),
         )?;
         wire.serialize_entry("source_offset", &self.source_offset)?;
         wire.end()
@@ -357,7 +374,10 @@ impl Serialize for FeatureOperationBodyMember {
         wire.serialize_entry("body_object_index", &self.body_object_index)?;
         wire.serialize_entry("ordinal", &self.ordinal)?;
         wire.serialize_entry("member_index", &self.member.atom.value())?;
-        wire.serialize_entry("raw_member_index", self.member.atom.raw())?;
+        wire.serialize_entry(
+            "raw_member_index",
+            &NativeBytes::from(self.member.atom.raw()),
+        )?;
         wire.serialize_entry("source_offset", &self.member.offset)?;
         wire.end()
     }
@@ -372,7 +392,10 @@ impl Serialize for FeatureOperationBodyOperand {
         wire.serialize_entry("body_reference_ordinal", &self.body_reference_ordinal)?;
         wire.serialize_entry("ordinal", &self.ordinal)?;
         wire.serialize_entry("operand_object_index", &self.operand.atom.value())?;
-        wire.serialize_entry("raw_operand_object_index", self.operand.atom.raw())?;
+        wire.serialize_entry(
+            "raw_operand_object_index",
+            &NativeBytes::from(self.operand.atom.raw()),
+        )?;
         if let Some(value) = &self.operand_data_block {
             wire.serialize_entry("operand_data_block", value)?;
         }
@@ -479,7 +502,10 @@ impl Serialize for FeatureBooleanOperation {
         wire.serialize_entry("operation_label", &self.operation_label)?;
         wire.serialize_entry("kind", &self.kind)?;
         wire.serialize_entry("target_object_index", &self.target.token.value())?;
-        wire.serialize_entry("raw_target_object_index", self.target.token.raw())?;
+        wire.serialize_entry(
+            "raw_target_object_index",
+            &NativeBytes::from(self.target.token.raw()),
+        )?;
         wire.serialize_entry("target_source_offset", &self.target.offset)?;
         wire.serialize_entry(
             "tool_object_indices",
@@ -487,7 +513,11 @@ impl Serialize for FeatureBooleanOperation {
         )?;
         wire.serialize_entry(
             "raw_tool_object_indices",
-            &IterWire(self.tools.iter().map(|tool| tool.token.raw())),
+            &IterWire(
+                self.tools
+                    .iter()
+                    .map(|tool| cadmpeg_ir::native::bytes::NativeBytes::from(tool.token.raw())),
+            ),
         )?;
         wire.serialize_entry(
             "tool_source_offsets",
@@ -550,14 +580,14 @@ mod tests {
         operation_object_reference_native_limit_refuses_before_clone,
         FeatureOperationObjectReference,
         FeatureOperationObjectReferenceWire,
-        r#"{"id":"nx:feature:object-reference#0","operation_label":"operation","operation_record":"record","ordinal":0,"tag":23,"object_index":1,"raw_object_index":[1],"data_block":"block","object_index_source_offset":103,"byte_len":9,"source_offset":100}"#
+        r#"{"id":"nx:feature:object-reference#0","operation_label":"operation","operation_record":"record","ordinal":0,"tag":23,"object_index":1,"raw_object_index":"01","data_block":"block","object_index_source_offset":103,"byte_len":9,"source_offset":100}"#
     );
     route_tests!(
         body_reference_borrowed_wire_preserves_bytes,
         body_reference_native_limit_refuses_before_clone,
         FeatureBodyReference,
         FeatureBodyReferenceWire,
-        r#"{"id":"nx:feature:body-reference#0","operation_label":"operation","ordinal":0,"body_object_index":1,"raw_body_object_index":[1],"source_offset":100}"#
+        r#"{"id":"nx:feature:body-reference#0","operation_label":"operation","ordinal":0,"body_object_index":1,"raw_body_object_index":"01","source_offset":100}"#
     );
     route_tests!(
         input_identity_group_borrowed_wire_preserves_bytes,
@@ -585,21 +615,21 @@ mod tests {
         datum_csys_construction_native_limit_refuses_before_clone,
         FeatureDatumCsysConstruction,
         FeatureDatumCsysConstructionWire,
-        r#"{"id":"nx:feature:datum-csys-construction#0","operation_label":"operation","control":19,"object_indices":[0,1,2,3,4,5,6,7],"raw_object_indices":[[240,0],[240,1],[240,2],[240,3],[240,4],[240,5],[240,6],[240,7]],"data_blocks":["a","b","c","d","e","f","g","h"],"source_offsets":[14,16,18,20,22,24,26,28]}"#
+        r#"{"id":"nx:feature:datum-csys-construction#0","operation_label":"operation","control":19,"object_indices":[0,1,2,3,4,5,6,7],"raw_object_indices":["f000","f001","f002","f003","f004","f005","f006","f007"],"data_blocks":["a","b","c","d","e","f","g","h"],"source_offsets":[14,16,18,20,22,24,26,28]}"#
     );
     route_tests!(
         datum_csys_descriptor_borrowed_wire_preserves_bytes,
         datum_csys_descriptor_native_limit_refuses_before_clone,
         FeatureDatumCsysDescriptor,
         FeatureDatumCsysDescriptorWire,
-        r#"{"id":"nx:feature:datum-csys-descriptor#0","operation_label":"operation","construction":"construction","reference_ordinal":7,"data_block":"block","prefix":[2,1],"identity":"012345678901234567890123456789","suffix":[63,65],"source_offset":10,"identity_source_offset":12}"#
+        r#"{"id":"nx:feature:datum-csys-descriptor#0","operation_label":"operation","construction":"construction","reference_ordinal":7,"data_block":"block","prefix":"0201","identity":"012345678901234567890123456789","suffix":"3f41","source_offset":10,"identity_source_offset":12}"#
     );
     route_tests!(
         payload_scalar_borrowed_wire_preserves_bytes,
         payload_scalar_native_limit_refuses_before_clone,
         FeaturePayloadScalar,
         FeaturePayloadScalarWire,
-        r#"{"id":"nx:feature:payload-scalar#0","operation_label":"operation","datum_csys_payload":"payload","ordinal":0,"field_code":100,"value":2.0,"raw_value":[48,0,0,0,0,0,0,0],"payload_offset":10,"source_offset":20}"#
+        r#"{"id":"nx:feature:payload-scalar#0","operation_label":"operation","datum_csys_payload":"payload","ordinal":0,"field_code":100,"value":2.0,"raw_value":"3000000000000000","payload_offset":10,"source_offset":20}"#
     );
     route_tests!(
         sketch_construction_inputs_borrowed_wire_preserves_bytes,
@@ -613,14 +643,14 @@ mod tests {
         sketch_scalar_lane_native_limit_refuses_before_clone,
         FeatureSketchPayloadScalarLane,
         FeatureSketchPayloadScalarLaneWire,
-        r#"{"id":"nx:feature:sketch-scalar-lane#0","operation_label":"operation","construction_payload":"payload","ordinal":0,"discriminator":[37,37,65,0,4,1,7,1,192,69,16,0,128,134,2,0,1,0],"values":[2.5,4.0],"raw_values":[[80,32,0,0],[80,128,0,0]],"value_payload_offsets":[18,22],"terminator_payload_offset":26,"source_offset":100,"value_source_offsets":[118,122],"terminator_source_offset":126}"#
+        r#"{"id":"nx:feature:sketch-scalar-lane#0","operation_label":"operation","construction_payload":"payload","ordinal":0,"discriminator":"2525410004010701c0451000808602000100","values":[2.5,4.0],"raw_values":["50200000","50800000"],"value_payload_offsets":[18,22],"terminator_payload_offset":26,"source_offset":100,"value_source_offsets":[118,122],"terminator_source_offset":126}"#
     );
     route_tests!(
         named_point_borrowed_wire_preserves_bytes,
         named_point_native_limit_refuses_before_clone,
         OffsetStoreNamedPoint,
         OffsetStoreNamedPointWire,
-        r#"{"id":"nx:feature:named-point#0","name":"Point1","data_blocks":["first","second"],"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"value_source_offsets":[10,20],"source_offset":5}"#
+        r#"{"id":"nx:feature:named-point#0","name":"Point1","data_blocks":["first","second"],"values":[1.0,2.0],"raw_values":["2ff0000000000000","3000000000000000"],"value_source_offsets":[10,20],"source_offset":5}"#
     );
     route_tests!(
         sketch_point_use_borrowed_wire_preserves_bytes,
@@ -634,21 +664,21 @@ mod tests {
         extrude_payload_header_native_limit_refuses_before_clone,
         FeatureExtrudePayloadHeader,
         FeatureExtrudePayloadHeaderWire,
-        r#"{"id":"nx:feature:extrude-header#0","operation_label":"operation","scalars":[1.0,2.0],"raw_scalars":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"source_offset":100}"#
+        r#"{"id":"nx:feature:extrude-header#0","operation_label":"operation","scalars":[1.0,2.0],"raw_scalars":["2ff0000000000000","3000000000000000"],"source_offset":100}"#
     );
     route_tests!(
         operation_body_member_borrowed_wire_preserves_bytes,
         operation_body_member_native_limit_refuses_before_clone,
         FeatureOperationBodyMember,
         FeatureOperationBodyMemberWire,
-        r#"{"id":"nx:feature:body-member#0","operation_label":"operation","body_reference_ordinal":0,"body_object_index":66,"ordinal":0,"member_index":4097,"raw_member_index":[144,1],"source_offset":122}"#
+        r#"{"id":"nx:feature:body-member#0","operation_label":"operation","body_reference_ordinal":0,"body_object_index":66,"ordinal":0,"member_index":4097,"raw_member_index":"9001","source_offset":122}"#
     );
     route_tests!(
         operation_body_operand_borrowed_wire_preserves_bytes,
         operation_body_operand_native_limit_refuses_before_clone,
         FeatureOperationBodyOperand,
         FeatureOperationBodyOperandWire,
-        r#"{"id":"nx:feature:body-operand#0","operation_label":"operation","body_object_index":66,"body_reference_ordinal":0,"ordinal":0,"operand_object_index":4097,"raw_operand_object_index":[144,1],"operand_data_block":"block","segment_body_bindings":["binding"],"source_offset":122}"#
+        r#"{"id":"nx:feature:body-operand#0","operation_label":"operation","body_object_index":66,"body_reference_ordinal":0,"ordinal":0,"operand_object_index":4097,"raw_operand_object_index":"9001","operand_data_block":"block","segment_body_bindings":["binding"],"source_offset":122}"#
     );
 
     route_tests!(
@@ -670,7 +700,7 @@ mod tests {
         boolean_operation_native_limit_refuses_before_clone,
         FeatureBooleanOperation,
         FeatureBooleanOperationWire,
-        r#"{"id":"nx:feature:boolean#0","operation_label":"operation","kind":"subtract","target_object_index":10,"raw_target_object_index":[10],"target_source_offset":100,"tool_object_indices":[20,30],"raw_tool_object_indices":[[20],[30]],"tool_source_offsets":[110,120],"source_offset":90}"#
+        r#"{"id":"nx:feature:boolean#0","operation_label":"operation","kind":"subtract","target_object_index":10,"raw_target_object_index":"0a","target_source_offset":100,"tool_object_indices":[20,30],"raw_tool_object_indices":["14","1e"],"tool_source_offsets":[110,120],"source_offset":90}"#
     );
 
     #[test]

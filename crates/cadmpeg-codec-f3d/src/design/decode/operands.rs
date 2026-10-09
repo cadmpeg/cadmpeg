@@ -5757,7 +5757,7 @@ fn parse_edge_operand(
             recipe_record_byte_offset: parsed.recipe_record_byte_offset,
             recipe_id: parsed.recipe_id,
             recipe_prefix_offset: parsed.recipe_prefix_offset,
-            recipe_prefix_bytes: parsed.recipe_prefix_bytes,
+            recipe_prefix_bytes: parsed.recipe_prefix_bytes.into(),
             recipe_references: parsed.recipe_references,
             recipe_program_offset: parsed.recipe_program_offset,
             recipe_program: parsed.recipe_program,

@@ -158,7 +158,7 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
         id: "nx:display-jt:segment#0-0".to_owned(),
         document: "document".to_owned(),
         toc_entry: "entry".to_owned(),
-        segment_id: [1; 16],
+        segment_id: [1; 16].into(),
         segment_type: 7,
         segment_byte_len: 78,
         payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]),

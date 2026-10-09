@@ -439,7 +439,7 @@ fn dimension_recipe_record(index: u32) -> DesignDimensionRecipeRecord {
         record_index: index,
         frame_length: 10,
         prefix_offset: 0,
-        prefix_bytes: Vec::new(),
+        prefix_bytes: Vec::new().into(),
         references: Vec::new(),
         program_offset: 0,
         program: vec![-1],

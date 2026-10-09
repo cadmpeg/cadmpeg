@@ -39,7 +39,7 @@ fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
         (6466, vec![0x90, 0x19, 0x42]),
     ] {
         let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
-            "object_id":value, "raw_object_id":raw, "source_offset":12});
+            "object_id":value, "raw_object_id":cadmpeg_ir::native::bytes::NativeBytes::from(raw), "source_offset":12});
         let record: super::DataBlockReference = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
     }
@@ -51,7 +51,7 @@ fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
         (0, vec![0, 0]),
     ] {
         let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
-            "object_id":value, "raw_object_id":raw, "source_offset":12});
+            "object_id":value, "raw_object_id":cadmpeg_ir::native::bytes::NativeBytes::from(raw), "source_offset":12});
         assert!(serde_json::from_value::<super::DataBlockReference>(wire)
             .unwrap_err()
             .to_string()
@@ -1430,7 +1430,12 @@ fn decode_retains_length_framed_nx_field_definitions() {
     assert_eq!(fields[0].registry_owner_class, Some(2));
     assert_eq!(fields[0].registry_suffix, [0x01, 0x02]);
     assert_eq!(fields[0].layout_prefix, Vec::<u8>::new());
-    assert_eq!(fields[0].schema_fingerprint, None);
+    assert_eq!(
+        fields[0]
+            .schema_fingerprint
+            .map(cadmpeg_ir::native::bytes::NativeBytes::into_inner),
+        None
+    );
     assert_eq!(fields[0].layout_terminal, None);
     assert_eq!(fields[1].name, "m_tools");
     assert_eq!(fields[1].trailing_code, 0x81);
@@ -1464,7 +1469,9 @@ fn decode_retains_length_framed_nx_field_definitions() {
         .collect();
     assert_eq!(classes[0].layout_prefix, &[0x81, 0x21]);
     assert_eq!(
-        classes[0].schema_fingerprint,
+        classes[0]
+            .schema_fingerprint
+            .map(cadmpeg_ir::native::bytes::NativeBytes::into_inner),
         Some([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef])
     );
     assert_eq!(classes[0].layout_terminal, Some(0x06));
@@ -1485,7 +1492,7 @@ fn class_registry_metadata_requires_a_complete_tail() {
         name: legacy_definition.name.into(),
         ordinal: 0,
         trailing_code: legacy_definition.registry_tail[0],
-        registry_suffix: legacy_definition.registry_tail[1..].to_vec(),
+        registry_suffix: legacy_definition.registry_tail[1..].to_vec().into(),
         section_offset: 0,
         source_entry: String::new(),
         source_offset: 0,
@@ -1494,7 +1501,9 @@ fn class_registry_metadata_requires_a_complete_tail() {
     assert_eq!(legacy.registry_base_class, None);
     assert_eq!(legacy.registry_reference, None);
     assert_eq!(
-        legacy.schema_fingerprint,
+        legacy
+            .schema_fingerprint
+            .map(cadmpeg_ir::native::bytes::NativeBytes::into_inner),
         Some([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef])
     );
     assert_eq!(legacy.layout_terminal, Some(0x06));
@@ -1511,7 +1520,7 @@ fn class_registry_metadata_requires_a_complete_tail() {
         name: complete_definition.name.into(),
         ordinal: 0,
         trailing_code: complete_definition.registry_tail[0],
-        registry_suffix: complete_definition.registry_tail[1..].to_vec(),
+        registry_suffix: complete_definition.registry_tail[1..].to_vec().into(),
         section_offset: 0,
         source_entry: String::new(),
         source_offset: 0,
@@ -1520,7 +1529,9 @@ fn class_registry_metadata_requires_a_complete_tail() {
     assert_eq!(complete.registry_base_class, Some(0x05));
     assert_eq!(complete.registry_reference, Some(0x02));
     assert_eq!(
-        complete.schema_fingerprint,
+        complete
+            .schema_fingerprint
+            .map(cadmpeg_ir::native::bytes::NativeBytes::into_inner),
         Some([0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80])
     );
     assert_eq!(complete.layout_terminal, None);

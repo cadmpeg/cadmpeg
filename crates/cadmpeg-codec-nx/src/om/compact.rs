@@ -17,7 +17,10 @@ pub(crate) struct RawCompactIndex(pub(crate) CompactIndexAtom);
 
 impl serde::Serialize for RawCompactIndex {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serde::Serialize::serialize(self.0.raw(), serializer)
+        serde::Serialize::serialize(
+            &cadmpeg_ir::native::bytes::NativeBytes::from(self.0.raw()),
+            serializer,
+        )
     }
 }
 
@@ -29,9 +32,9 @@ pub(crate) fn atom(value: u32, raw: &[u8], field: &str) -> Result<CompactIndexAt
 /// Reads a row's compact indices from their wire values and raw tokens.
 pub(crate) fn row_indices<const N: usize>(
     values: &[u32; N],
-    raw: &[Vec<u8>; N],
+    raw: &[impl AsRef<[u8]>; N],
 ) -> [Result<CompactIndexAtom, String>; N] {
-    std::array::from_fn(|i| atom(values[i], &raw[i], "indices/raw_indices"))
+    std::array::from_fn(|i| atom(values[i], raw[i].as_ref(), "indices/raw_indices"))
 }
 
 impl CompactIndexAtom {

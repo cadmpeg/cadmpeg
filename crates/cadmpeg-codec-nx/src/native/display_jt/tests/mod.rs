@@ -156,7 +156,7 @@ fn jt_compression_native_limit_refuses_before_owned_wire_conversion() {
 fn jt_shape_lod_element_borrowed_wire_and_native_limit() {
     let wire = serde_json::json!({
         "id": "nx:jt:shape-lod-element#0", "segment": "nx:jt:segment#0",
-        "ordinal": 0, "object_type_id": vec![7; 16], "object_base_type": 4,
+        "ordinal": 0, "object_type_id": cadmpeg_ir::native::bytes::NativeBytes::from(vec![7; 16]), "object_base_type": 4,
         "object_id": 9, "body_byte_len": 3,
         "body_sha256": cadmpeg_ir::hash::sha256_hex(b"body"), "source_offset": 10
     });
@@ -174,7 +174,7 @@ fn jt_shape_lod_element_borrowed_wire_and_native_limit() {
 fn jt_compressed_element_borrowed_wire_and_native_limit() {
     let wire = serde_json::json!({
         "id": "nx:jt:compressed-element#0", "segment": "nx:jt:segment#0",
-        "segment_type": 7, "ordinal": 0, "object_type_id": vec![7; 16],
+        "segment_type": 7, "ordinal": 0, "object_type_id": cadmpeg_ir::native::bytes::NativeBytes::from(vec![7; 16]),
         "object_base_type": 4, "object_id": 9, "body_byte_len": 3,
         "body_sha256": cadmpeg_ir::hash::sha256_hex(b"body"),
         "inflated_offset": 0, "source_offset": 10
@@ -194,7 +194,7 @@ fn jt_compressed_sequence_borrowed_wire_and_native_limit() {
     let wire = serde_json::json!({
         "id": "nx:jt:compressed-sequence#0", "segment": "nx:jt:segment#0",
         "segment_type": 7, "elements": ["nx:jt:compressed-element#0"],
-        "framed_byte_len": 48, "tail": [6, 5],
+        "framed_byte_len": 48, "tail": "0605",
         "tail_sha256": cadmpeg_ir::hash::sha256_hex(&[6, 5]),
         "source_offset": 10
     });
@@ -257,7 +257,7 @@ fn document_wire_derives_version_numbers_and_rejects_disagreement() {
         "id": "document", "index_row": "row",
         "version_field": format!("{:<80}", "Version +0009.005"),
         "format_major": 9, "format_minor": 5, "byte_order": 0,
-        "toc_offset": 105, "lsg_segment_id": vec![0; 16], "toc_entries": [],
+        "toc_offset": 105, "lsg_segment_id": cadmpeg_ir::native::bytes::NativeBytes::from(vec![0; 16]), "toc_entries": [],
         "physical_byte_len": 105, "source_offset": 0
     });
     let document: super::DisplayJtDocument = serde_json::from_value(wire.clone()).unwrap();
@@ -279,7 +279,7 @@ fn document_native_limit_refuses_before_clone() {
         "id": "nx:jt:document#1", "index_row": "nx:jt:row#1",
         "version_field": format!("{:<80}", "Version +0009.005"),
         "format_major": 9, "format_minor": 5, "byte_order": 0,
-        "toc_offset": 105, "lsg_segment_id": vec![0; 16], "toc_entries": [],
+        "toc_offset": 105, "lsg_segment_id": cadmpeg_ir::native::bytes::NativeBytes::from(vec![0; 16]), "toc_entries": [],
         "physical_byte_len": 105, "source_offset": 0
     });
     let document: super::DisplayJtDocument = serde_json::from_value(wire.clone()).unwrap();
@@ -549,7 +549,7 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
         id: "segment".to_string(),
         document: "document".to_string(),
         toc_entry: "entry".to_string(),
-        segment_id: [1; 16],
+        segment_id: [1; 16].into(),
         segment_type: 7,
         segment_byte_len: 78,
         payload_sha256: Sha256Digest::digest(&[]),
@@ -671,7 +671,7 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
         id: "scene".into(),
         document: "document".into(),
         toc_entry: "scene-entry".into(),
-        segment_id: [1; 16],
+        segment_id: [1; 16].into(),
         segment_type: 1,
         segment_byte_len: u32::try_from(33 + compressed.len()).expect("fixture value fits u32"),
         payload_sha256: Sha256Digest::digest(&[]),
@@ -682,7 +682,7 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
         id: "shape".into(),
         document: "document".into(),
         toc_entry: "shape-entry".into(),
-        segment_id: [9; 16],
+        segment_id: [9; 16].into(),
         segment_type: 7,
         segment_byte_len: 0,
         payload_sha256: Sha256Digest::digest(&[]),
@@ -898,7 +898,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         unique_vertex_count: 3,
         component_count: 3,
         component_ranges: [super::QuantizedRange::ZERO; 3],
-        component_quantization_bits: [0; 3],
+        component_quantization_bits: [0; 3].into(),
         compressed_components_byte_len: 4,
         compressed_components_sha256: "00".repeat(32).try_into().unwrap(),
         source_offset: 60,
@@ -907,7 +907,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         id: "shape-element".into(),
         segment: "shape-segment".into(),
         ordinal: 0,
-        object_type_id: [0; 16],
+        object_type_id: [0; 16].into(),
         object_id: 7,
         body_byte_len: 0,
         body_sha256: "00".repeat(32).try_into().unwrap(),
@@ -931,7 +931,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     let base = DisplayJtBaseNodeData {
         id: "base".into(),
         element: "scene-element".into(),
-        object_type_id: [0; 16],
+        object_type_id: [0; 16].into(),
         object_id: 9,
         version: 1,
         flags: 0,
@@ -945,7 +945,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         segment: "scene-segment".into(),
         segment_type: 1,
         ordinal: 0,
-        object_type_id: [0; 16],
+        object_type_id: [0; 16].into(),
         object_base_type: 2,
         object_id: 9,
         body_byte_len: 0,
@@ -958,7 +958,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     let instance_base = DisplayJtBaseNodeData {
         id: "instance-base".into(),
         element: "instance-element".into(),
-        object_type_id: [0; 16],
+        object_type_id: [0; 16].into(),
         object_id: 11,
         version: 1,
         flags: 0,
@@ -972,7 +972,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         segment: "scene-segment".into(),
         segment_type: 1,
         ordinal: 1,
-        object_type_id: [0; 16],
+        object_type_id: [0; 16].into(),
         object_base_type: 0,
         object_id: 11,
         body_byte_len: 0,
@@ -1011,7 +1011,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     let group_base = DisplayJtBaseNodeData {
         id: "group-base".into(),
         element: "group-element".into(),
-        object_type_id: [0; 16],
+        object_type_id: [0; 16].into(),
         object_id: 20,
         version: 1,
         flags: 0,
@@ -1025,7 +1025,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         segment: "scene-segment".into(),
         segment_type: 1,
         ordinal: 3,
-        object_type_id: [0; 16],
+        object_type_id: [0; 16].into(),
         object_base_type: 1,
         object_id: 20,
         body_byte_len: 0,
@@ -1087,7 +1087,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         segment: "scene-segment".into(),
         segment_type: 1,
         ordinal: 5,
-        object_type_id: [0; 16],
+        object_type_id: [0; 16].into(),
         object_base_type: 3,
         object_id: 13,
         body_byte_len: 0,
@@ -1840,7 +1840,8 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
         object_type_id: [
             0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb,
             0x59, 0x97,
-        ],
+        ]
+        .into(),
         object_id: 1,
         body_byte_len: u32::try_from(body.len()).expect("fixture value fits u32"),
         body_sha256: Sha256Digest::digest(&[]),

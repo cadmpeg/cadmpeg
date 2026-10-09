@@ -114,10 +114,13 @@ fn decode_types_fundamental_units_and_property_owner() {
         .unwrap();
     let units = &result.ir().native.namespace("iges").unwrap().arenas()["units_data"][0];
     assert_eq!(units.fields()["units"].as_array().unwrap().len(), 3);
-    assert_eq!(units.fields()["units"][0]["unit_type"][0], 76);
     assert_eq!(
-        units.fields()["units"][0]["unit_value"],
-        serde_json::json!([75, 78])
+        u64::from(crate::test_support::native_bytes(&units.fields()["units"][0]["unit_type"])[0]),
+        76
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&units.fields()["units"][0]["unit_value"]),
+        [75, 78]
     );
     assert_eq!(units.fields()["units"][0]["scale_factor"], 1852.0);
     assert_eq!(
@@ -1177,8 +1180,14 @@ fn decode_preserves_owned_network_connect_points() {
     let points = &native.arenas()["connect_points"];
     assert_eq!(points.len(), 2);
     assert_eq!(points[0].fields()["type_flag"], 101);
-    assert_eq!(points[0].fields()["function_identifier"][0], 80);
-    assert_eq!(points[0].fields()["function_identifier"][1], 49);
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(&points[0].fields()["function_identifier"])[0]),
+        80
+    );
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(&points[0].fields()["function_identifier"])[1]),
+        49
+    );
     assert_eq!(points[0].fields()["owner"], "iges:entity:directory#3");
     assert_eq!(points[1].fields()["position"][2], 3.0);
     assert_eq!(points[1].fields()["owner"], "iges:entity:directory#7");

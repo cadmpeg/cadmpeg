@@ -890,7 +890,9 @@ fn type_3_and_type_4_decode_exact_scalar_bytes() {
     );
     assert_eq!(
         persistence.type_3_values.rows[2].payload,
-        StringValue::Bytes { bytes: vec![0xff] }
+        StringValue::Bytes {
+            bytes: vec![0xff].into()
+        }
     );
     assert_eq!(persistence.type_3_values.rows[0].parent, Some(root_offset));
 
@@ -950,7 +952,9 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
     assert_eq!(
         persistence.string_values[3].payload,
         StringPayload::Scalar {
-            value: StringValue::Bytes { bytes: vec![0xe9] }
+            value: StringValue::Bytes {
+                bytes: vec![0xe9].into()
+            }
         }
     );
     assert_eq!(
@@ -1098,7 +1102,7 @@ fn type_0_objects_retain_incomplete_and_opaque_forms() {
     assert_eq!(
         persistence.objects[1].payload,
         ObjectPayload::Opaque {
-            bytes: b"token".to_vec()
+            bytes: b"token".to_vec().into()
         }
     );
 }
@@ -1251,7 +1255,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         encoded.field("payload"),
         Some(serde_json::json!({
             "form": "scalar",
-            "value": {"form": "bytes", "bytes": [233]}
+            "value": {"form": "bytes", "bytes": "e9"}
         }))
     );
     assert_eq!(

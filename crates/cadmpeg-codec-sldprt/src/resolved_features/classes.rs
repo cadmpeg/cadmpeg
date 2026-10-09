@@ -825,7 +825,7 @@ mod idless_history_binding_tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: payload.into(),
             classes: Vec::new(),
             names: vec![
                 FeatureInputName {
@@ -912,7 +912,7 @@ mod idless_history_binding_tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload: Vec::new().into(),
             classes: Vec::new(),
             names: vec![
                 FeatureInputName {
@@ -1114,7 +1114,7 @@ mod idless_history_binding_tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: payload.into(),
             classes: vec![FeatureInputClass {
                 id: "class".into(),
                 parent: "lane".into(),
@@ -1345,7 +1345,7 @@ mod idless_history_binding_tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload: Vec::new().into(),
             classes,
             names: Vec::new(),
             scalars: Vec::new(),
@@ -1425,7 +1425,7 @@ mod idless_history_binding_tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload: Vec::new().into(),
             classes,
             names,
             scalars: Vec::new(),
@@ -1510,7 +1510,7 @@ mod idless_history_binding_tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: payload.into(),
             classes: vec![class],
             names,
             scalars: Vec::new(),
@@ -1589,7 +1589,7 @@ mod idless_history_binding_tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: payload.into(),
             classes: vec![class],
             names,
             scalars: Vec::new(),

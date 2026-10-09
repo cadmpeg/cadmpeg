@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design dimension recipe records: loci, annotation frames and presentation frames.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::records::admission::RecordAdmission;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -50,8 +52,7 @@ pub(crate) struct DesignDimensionRecipeRecord {
     /// Byte offset of the recipe-specific prefix after the indexed header.
     pub(crate) prefix_offset: u64,
     /// Complete recipe-specific prefix before the length-prefixed family name.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    pub(crate) prefix_bytes: Vec<u8>,
+    pub(crate) prefix_bytes: NativeBytes<Vec<u8>>,
     /// Persistent Design selector/reference tails decoded from the prefix.
     pub(crate) references: Vec<DesignRecipeReference>,
     /// Byte offset of the first i32 after the recipe-family name.
@@ -606,7 +607,7 @@ pub(crate) struct DesignDimensionAnnotationFrame {
     /// `EntityGenesis` origin bitfield.
     pub(crate) entity_genesis: u64,
     /// Opaque annotation bytes between the genesis block and governing owner.
-    annotation_bytes: Vec<u8>,
+    annotation_bytes: NativeBytes<Vec<u8>>,
     /// Indexed parameter-owner record selecting the governed dimension.
     pub(crate) governing_owner_record_index: u32,
     /// Ordered non-null return geometry records.
@@ -636,7 +637,7 @@ impl Clone for DesignDimensionAnnotationFrame {
             frame_length: self.frame_length,
             operands: self.operands.clone(),
             entity_genesis: self.entity_genesis,
-            annotation_bytes: self.annotation_bytes.clone(),
+            annotation_bytes: (self.annotation_bytes.clone()),
             governing_owner_record_index: self.governing_owner_record_index,
             return_members: self.return_members.clone(),
             paired_class_tag: self.paired_class_tag.clone(),
@@ -855,7 +856,7 @@ impl DesignDimensionAnnotationFrame {
                 )
                 .map_err(AnnotationFrameBuildError::Resource)?,
             entity_genesis: draft.entity_genesis,
-            annotation_bytes: draft.annotation_bytes,
+            annotation_bytes: (draft.annotation_bytes).into(),
             governing_owner_record_index: draft.governing_owner_record_index,
             return_members: admission
                 .collect_vec(
@@ -925,7 +926,7 @@ impl DesignDimensionAnnotationFrame {
                 })
                 .collect(),
             entity_genesis: self.entity_genesis,
-            annotation_bytes: self.annotation_bytes,
+            annotation_bytes: self.annotation_bytes.into_inner(),
             annotation_byte_offset,
             governing_owner_record_index: self.governing_owner_record_index,
             governing_owner_reference_offset,
@@ -973,7 +974,7 @@ struct DesignDimensionAnnotationFrameWire {
     /// `EntityGenesis` origin bitfield.
     entity_genesis: u64,
     /// Opaque annotation bytes between the genesis block and governing owner.
-    annotation_bytes: Vec<u8>,
+    annotation_bytes: NativeBytes<Vec<u8>>,
     /// Byte offset of `annotation_bytes`.
     annotation_byte_offset: u64,
     /// Indexed parameter-owner record selecting the governed dimension.
@@ -1042,7 +1043,7 @@ struct DesignDimensionAnnotationFrameWireRef<'a> {
     frame_length: u64,
     operands: AnnotationOperands<'a>,
     entity_genesis: u64,
-    annotation_bytes: &'a [u8],
+    annotation_bytes: NativeBytes<&'a [u8]>,
     annotation_byte_offset: u64,
     governing_owner_record_index: u32,
     governing_owner_reference_offset: u64,
@@ -1066,7 +1067,7 @@ impl Serialize for DesignDimensionAnnotationFrame {
             frame_length: self.frame_length,
             operands: AnnotationOperands(self),
             entity_genesis: self.entity_genesis,
-            annotation_bytes: &self.annotation_bytes,
+            annotation_bytes: (&self.annotation_bytes).into(),
             annotation_byte_offset: self.annotation_byte_offset(),
             governing_owner_record_index: self.governing_owner_record_index,
             governing_owner_reference_offset: self.governing_owner_reference_offset(),
@@ -1116,7 +1117,7 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
                 frame_length: wire.frame_length,
                 operands: wire.operands,
                 entity_genesis: wire.entity_genesis,
-                annotation_bytes: wire.annotation_bytes,
+                annotation_bytes: wire.annotation_bytes.into_inner(),
                 annotation_byte_offset: wire.annotation_byte_offset,
                 governing_owner_record_index: wire.governing_owner_record_index,
                 governing_owner_reference_offset: wire.governing_owner_reference_offset,
@@ -1154,7 +1155,7 @@ impl From<DesignDimensionAnnotationFrame> for DesignDimensionAnnotationFrameWire
             frame_length: value.frame_length,
             operands: value.operands,
             entity_genesis: value.entity_genesis,
-            annotation_bytes: value.annotation_bytes,
+            annotation_bytes: (value.annotation_bytes).into(),
             annotation_byte_offset: value.annotation_byte_offset,
             governing_owner_record_index: value.governing_owner_record_index,
             governing_owner_reference_offset: value.governing_owner_reference_offset,
@@ -1184,7 +1185,7 @@ pub(crate) struct DesignDimensionPresentationFrame {
     pub(crate) operands: Vec<DesignDimensionPresentationOperand>,
     /// Opaque presentation bytes between the operand run and the paired
     /// `EntityTracking` header.
-    pub(crate) presentation_bytes: Vec<u8>,
+    pub(crate) presentation_bytes: NativeBytes<Vec<u8>>,
     /// Byte offset of `presentation_bytes`.
     pub(crate) presentation_byte_offset: u64,
     /// Dynamic class tag of the paired `EntityTracking` header.

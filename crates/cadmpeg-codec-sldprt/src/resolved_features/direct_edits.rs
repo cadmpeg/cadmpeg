@@ -648,7 +648,7 @@ mod tests {
         FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload,
+            native_payload: native_payload.into(),
             classes,
             names: vec![
                 FeatureInputName {

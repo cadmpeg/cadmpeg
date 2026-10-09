@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Scalar dictionary wire projection with positional indices and derived extent.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use serde::ser::{SerializeSeq, SerializeStruct};
 use serde::{Serialize, Serializer};
 
@@ -32,7 +34,7 @@ impl Serialize for Entries<'_> {
         #[derive(Serialize)]
         struct Entry<'a> {
             index: usize,
-            raw: &'a [u8],
+            raw: NativeBytes<&'a [u8]>,
             value: Option<f64>,
             kind: &'static str,
         }
@@ -41,7 +43,7 @@ impl Serialize for Entries<'_> {
         for (index, entry) in self.0.iter().enumerate() {
             entries.serialize_element(&Entry {
                 index,
-                raw: entry.raw(),
+                raw: (entry.raw()).into(),
                 value: entry.value(),
                 kind: entry.kind(),
             })?;

@@ -827,7 +827,7 @@
             "class_tag": "275",
             "companion_record_index": 1202,
             "frame_length": 48,
-            "prefix_bytes": "AAAAAAAAAAAA",
+            "prefix_bytes": "000000000000000000",
             "prefix_offset": 4230,
             "program": [
               0,
@@ -1946,7 +1946,7 @@
             "owner_reference": 277,
             "owner_reference_offset": 56,
             "pattern": null,
-            "raw_bytes": "AwAAADI1OSEAAAAAAAAAAAAAAAECAAAAAWQAAAAAAAAAAAAAAAAAAcgAAAAAAAAAAAAAAAAAAAEVAQAAAAAAAAAAEAAAAAAAAAACAAAAAcgAAAAAAAAAAAABZAAAAAAAAAAAAAA=",
+            "raw_bytes": "03000000323539210000000000000000000000010200000001640000000000000000000000000001c80000000000000000000000000000011501000000000000000010000000000000000200000001c8000000000000000000016400000000000000000000",
             "record_index": 33,
             "resolved_members": [
               {
@@ -2010,7 +2010,7 @@
             "owner_reference": 277,
             "owner_reference_offset": 56,
             "pattern": null,
-            "raw_bytes": "AwAAADI1OSwAAAAAAAAAAAAAAAECAAAAASwBAAAAAAAAAAAAAAAAAZABAAAAAAAAAAAAAAAAAAEVAQAAAAAAAAAABAAAAAAAAAACAAAAAZABAAAAAAAAAAABLAEAAAAAAAAAAAA=",
+            "raw_bytes": "030000003235392c00000000000000000000000102000000012c010000000000000000000000000190010000000000000000000000000001150100000000000000000400000000000000020000000190010000000000000000012c01000000000000000000",
             "record_index": 44,
             "resolved_members": [
               {

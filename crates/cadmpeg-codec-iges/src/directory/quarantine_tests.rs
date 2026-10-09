@@ -171,11 +171,8 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
     assert_eq!(fields["cards"], 2);
     assert_eq!(fields["defect"], "field-not-an-integer");
     assert_eq!(
-        fields["bytes"].as_array().unwrap(),
-        &expected_bytes
-            .iter()
-            .map(|byte| serde_json::Value::from(*byte))
-            .collect::<Vec<_>>()
+        crate::test_support::native_bytes(&fields["bytes"]),
+        expected_bytes
     );
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
@@ -278,7 +275,10 @@ fn an_unpaired_trailing_directory_card_is_quarantined_on_its_own() {
     let fields = quarantined[0].fields();
     assert_eq!(fields["cards"], 1);
     assert_eq!(fields["defect"], "unpaired-card");
-    assert_eq!(fields["bytes"].as_array().unwrap().len(), 80);
+    assert_eq!(
+        crate::test_support::native_bytes(&fields["bytes"]).len(),
+        80
+    );
     assert_eq!(
         code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
         1

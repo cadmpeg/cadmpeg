@@ -195,16 +195,32 @@ fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
         annotations[0].fields()["strings"].as_array().unwrap().len(),
         2
     );
-    assert_eq!(annotations[0].fields()["strings"][0]["text"][0], 65);
+    assert_eq!(
+        u64::from(
+            crate::test_support::native_bytes(&annotations[0].fields()["strings"][0]["text"])[0]
+        ),
+        65
+    );
     assert_eq!(annotations[0].fields()["strings"][1]["mirror"], 1);
     assert_eq!(annotations[0].fields()["strings"][1]["vertical"], 1);
     assert_eq!(annotations[1].fields()["kind"], "new_general_note");
     assert_eq!(annotations[1].fields()["justification"], 2);
     assert_eq!(
-        annotations[1].fields()["strings"][0]["control_codes"][0],
+        u64::from(
+            crate::test_support::native_bytes(
+                &annotations[1].fields()["strings"][0]["control_codes"]
+            )[0]
+        ),
         84
     );
-    assert_eq!(annotations[1].fields()["strings"][0]["text"]["text"][3], 33);
+    assert_eq!(
+        u64::from(
+            crate::test_support::native_bytes(
+                &annotations[1].fields()["strings"][0]["text"]["text"]
+            )[3]
+        ),
+        33
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -268,7 +284,9 @@ fn decode_accepts_and_retains_v5_0_kanji_general_note() {
         .unwrap();
     let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(
-        annotations[0].fields()["strings"][0]["text"],
+        serde_json::json!(crate::test_support::native_bytes(
+            &annotations[0].fields()["strings"][0]["text"]
+        )),
         serde_json::json!([51, 52, 52, 49, 51, 66, 55, 65])
     );
     assert!(
@@ -302,8 +320,8 @@ fn decode_rejects_malformed_v5_0_kanji_general_note_text() {
         );
         let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
         assert_eq!(
-            annotations[0].fields()["strings"][0]["text"],
-            serde_json::json!(text.as_bytes())
+            crate::test_support::native_bytes(&annotations[0].fields()["strings"][0]["text"]),
+            text.as_bytes()
         );
     }
 }

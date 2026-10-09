@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stable JSON columns for checked common-frame structures.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::{FeatureOperationCommonFrame, FeatureOperationTerminalFrame};
 use crate::om::common_frame::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
 use serde::ser::SerializeMap;
@@ -18,16 +20,16 @@ pub(super) struct CommonFrameWire {
     /// Three compact prefix indices.
     indices: [u32; 3],
     /// Exact compact-index tokens in order.
-    raw_indices: [Vec<u8>; 3],
+    raw_indices: [NativeBytes<Vec<u8>>; 3],
     /// Fixed marker selecting the index layout.
-    marker: [u8; 3],
+    marker: NativeBytes<[u8; 3]>,
     /// Exact eight-byte state lane following the fixed state marker.
     ///
     /// The first three bytes remain an untyped operation-state prefix. The
     /// admitted field mappings begin at byte three; callers must not treat the
     /// prefix, or any other state byte, as feature suppression without the
     /// separate serialized owner and typed-value joins.
-    state: [u8; 8],
+    state: NativeBytes<[u8; 8]>,
     /// Whether legacy operation modules are inactive, when the stored field is boolean.
     #[serde(
         default,
@@ -44,18 +46,18 @@ pub(super) struct CommonFrameWire {
     modifies_parasolid_data: Option<bool>,
     /// Exact two-byte `m_splitTrackingData` representation.
     #[serde(default)]
-    split_tracking_data: [u8; 2],
+    split_tracking_data: NativeBytes<[u8; 2]>,
     /// Serialized operation group count.
     #[serde(default)]
     group_count: u8,
     /// Duplicated frame-local ordinal.
     local_ordinal: u32,
     /// Exact canonical token repeated for the local ordinal.
-    raw_local_ordinal: Vec<u8>,
+    raw_local_ordinal: NativeBytes<Vec<u8>>,
     /// Nullable object reference following the duplicated ordinal.
     object_index: Option<u32>,
     /// Exact canonical nullable object-reference token.
-    raw_object_index: Vec<u8>,
+    raw_object_index: NativeBytes<Vec<u8>>,
     /// Unique target in the native offset-store data-block arena, when found.
     #[serde(
         default,
@@ -94,11 +96,11 @@ pub(super) struct TerminalFrameWire {
     /// Duplicated frame-local ordinal.
     local_ordinal: u32,
     /// Exact canonical token repeated for the local ordinal.
-    raw_local_ordinal: Vec<u8>,
+    raw_local_ordinal: NativeBytes<Vec<u8>>,
     /// Nullable object reference following the duplicated ordinal.
     object_index: Option<u32>,
     /// Exact canonical nullable object-reference token.
-    raw_object_index: Vec<u8>,
+    raw_object_index: NativeBytes<Vec<u8>>,
     /// Unique target in the native offset-store data-block arena, when found.
     #[serde(
         default,
@@ -122,21 +124,33 @@ impl Serialize for FeatureOperationCommonFrame {
         wire.serialize_entry("operation_record", &self.operation_record)?;
         wire.serialize_entry("ordinal", &self.ordinal)?;
         wire.serialize_entry("indices", &prefix.indices())?;
-        wire.serialize_entry("raw_indices", &prefix.raw_indices_ref())?;
-        wire.serialize_entry("marker", &prefix.marker())?;
-        wire.serialize_entry("state", &frame.state())?;
+        wire.serialize_entry(
+            "raw_indices",
+            &prefix.raw_indices_ref().map(NativeBytes::from),
+        )?;
+        wire.serialize_entry("marker", &NativeBytes::from(prefix.marker()))?;
+        wire.serialize_entry("state", &NativeBytes::from(frame.state()))?;
         if let Some(value) = frame.legacy_inactive_modules() {
             wire.serialize_entry("legacy_inactive_modules", &value)?;
         }
         if let Some(value) = frame.modifies_parasolid_data() {
             wire.serialize_entry("modifies_parasolid_data", &value)?;
         }
-        wire.serialize_entry("split_tracking_data", &frame.split_tracking_data())?;
+        wire.serialize_entry(
+            "split_tracking_data",
+            &NativeBytes::from(frame.split_tracking_data()),
+        )?;
         wire.serialize_entry("group_count", &frame.group_count())?;
         wire.serialize_entry("local_ordinal", &suffix.local_ordinal())?;
-        wire.serialize_entry("raw_local_ordinal", suffix.raw_local_ordinal())?;
+        wire.serialize_entry(
+            "raw_local_ordinal",
+            &NativeBytes::from(suffix.raw_local_ordinal()),
+        )?;
         wire.serialize_entry("object_index", &suffix.object_index())?;
-        wire.serialize_entry("raw_object_index", suffix.raw_object_index())?;
+        wire.serialize_entry(
+            "raw_object_index",
+            &NativeBytes::from(suffix.raw_object_index()),
+        )?;
         if let Some(value) = suffix.target().and_then(Option::as_deref) {
             wire.serialize_entry("data_block", value)?;
         }
@@ -164,9 +178,15 @@ impl Serialize for FeatureOperationTerminalFrame {
             wire.serialize_entry("immediate_common_frame", value)?;
         }
         wire.serialize_entry("local_ordinal", &suffix.local_ordinal())?;
-        wire.serialize_entry("raw_local_ordinal", suffix.raw_local_ordinal())?;
+        wire.serialize_entry(
+            "raw_local_ordinal",
+            &NativeBytes::from(suffix.raw_local_ordinal()),
+        )?;
         wire.serialize_entry("object_index", &suffix.object_index())?;
-        wire.serialize_entry("raw_object_index", suffix.raw_object_index())?;
+        wire.serialize_entry(
+            "raw_object_index",
+            &NativeBytes::from(suffix.raw_object_index()),
+        )?;
         if let Some(value) = suffix.target().and_then(Option::as_deref) {
             wire.serialize_entry("data_block", value)?;
         }
@@ -185,17 +205,17 @@ impl From<FeatureOperationCommonFrame> for CommonFrameWire {
             operation_record: value.operation_record,
             ordinal: value.ordinal,
             indices: frame.prefix().indices(),
-            raw_indices: frame.prefix().raw_indices(),
-            marker: frame.prefix().marker(),
-            state: frame.state(),
+            raw_indices: (frame.prefix().raw_indices()).map(Into::into),
+            marker: (frame.prefix().marker()).into(),
+            state: (frame.state()).into(),
             legacy_inactive_modules: frame.legacy_inactive_modules(),
             modifies_parasolid_data: frame.modifies_parasolid_data(),
-            split_tracking_data: frame.split_tracking_data(),
+            split_tracking_data: (frame.split_tracking_data()).into(),
             group_count: frame.group_count(),
             local_ordinal: frame.suffix().local_ordinal(),
-            raw_local_ordinal: frame.suffix().raw_local_ordinal().to_vec(),
+            raw_local_ordinal: (frame.suffix().raw_local_ordinal().to_vec()).into(),
             object_index: frame.suffix().object_index(),
-            raw_object_index: frame.suffix().raw_object_index().to_vec(),
+            raw_object_index: (frame.suffix().raw_object_index().to_vec()).into(),
             data_block: frame.suffix().target().cloned().flatten(),
             byte_len: cadmpeg_core::decode::u64_from_index(frame.byte_len()),
             source_offset: frame.offset(),
@@ -210,7 +230,7 @@ impl From<FeatureOperationCommonFrame> for CommonFrameWire {
 impl TryFrom<CommonFrameWire> for FeatureOperationCommonFrame {
     type Error = &'static str;
     fn try_from(wire: CommonFrameWire) -> Result<Self, Self::Error> {
-        let prefix = CommonFramePrefix::from_wire(wire.indices, &wire.raw_indices, wire.marker)?;
+        let prefix = CommonFramePrefix::from_wire(wire.indices, &wire.raw_indices, *wire.marker)?;
         let suffix = CommonFrameSuffix::from_wire(
             wire.local_ordinal,
             &wire.raw_local_ordinal,
@@ -219,7 +239,7 @@ impl TryFrom<CommonFrameWire> for FeatureOperationCommonFrame {
         )?;
         let frame = CommonFrame::<u64, Option<String>>::new(
             prefix,
-            wire.state,
+            *wire.state,
             suffix.with_target(wire.data_block)?,
             wire.source_offset,
         )
@@ -268,9 +288,9 @@ impl From<FeatureOperationTerminalFrame> for TerminalFrameWire {
             operation_record: value.operation_record,
             immediate_common_frame: value.immediate_common_frame,
             local_ordinal: value.frame.suffix().local_ordinal(),
-            raw_local_ordinal: value.frame.suffix().raw_local_ordinal().to_vec(),
+            raw_local_ordinal: (value.frame.suffix().raw_local_ordinal().to_vec()).into(),
             object_index: value.frame.suffix().object_index(),
-            raw_object_index: value.frame.suffix().raw_object_index().to_vec(),
+            raw_object_index: (value.frame.suffix().raw_object_index().to_vec()).into(),
             data_block: value.frame.suffix().target().cloned().flatten(),
             source_offset: value.frame.offset(),
             object_index_source_offset: value.frame.object_index_offset(),
@@ -311,7 +331,7 @@ mod tests {
     use super::{CommonFrameWire, TerminalFrameWire};
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
-    const COMMON: &str = r#"{"id":"common","operation_record":"record","ordinal":0,"indices":[0,4097,0],"raw_indices":[[0],[144,1],[128,0]],"marker":[1,3,2],"state":[1,2,3,0,1,86,169,7],"legacy_inactive_modules":false,"modifies_parasolid_data":true,"split_tracking_data":[86,169],"group_count":7,"local_ordinal":1,"raw_local_ordinal":[1],"object_index":null,"raw_object_index":[255],"byte_len":20,"source_offset":100,"index_source_offsets":[100,101,103],"state_source_offset":108,"local_ordinal_source_offset":116,"object_index_source_offset":118}"#;
+    const COMMON: &str = r#"{"id":"common","operation_record":"record","ordinal":0,"indices":[0,4097,0],"raw_indices":["00","9001","8000"],"marker":"010302","state":"010203000156a907","legacy_inactive_modules":false,"modifies_parasolid_data":true,"split_tracking_data":"56a9","group_count":7,"local_ordinal":1,"raw_local_ordinal":"01","object_index":null,"raw_object_index":"ff","byte_len":20,"source_offset":100,"index_source_offsets":[100,101,103],"state_source_offset":108,"local_ordinal_source_offset":116,"object_index_source_offset":118}"#;
 
     #[test]
     fn common_frame_borrowed_wire_matches_owned_bytes_and_retained_limit() {
@@ -330,7 +350,7 @@ mod tests {
 
     #[test]
     fn terminal_frame_borrowed_wire_matches_owned_bytes_and_retained_limit() {
-        let json = r#"{"id":"nx:feature:terminal#0","operation_record":"record","local_ordinal":128,"raw_local_ordinal":[128,128],"object_index":null,"raw_object_index":[255],"source_offset":100,"object_index_source_offset":104}"#;
+        let json = r#"{"id":"nx:feature:terminal#0","operation_record":"record","local_ordinal":128,"raw_local_ordinal":"8080","object_index":null,"raw_object_index":"ff","source_offset":100,"object_index_source_offset":104}"#;
         let record: FeatureOperationTerminalFrame = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
@@ -349,13 +369,13 @@ mod tests {
         assert_eq!(serde_json::to_string(&frame).unwrap(), COMMON);
         for (field, value) in [
             ("indices", serde_json::json!([0, 4098, 0])),
-            ("marker", serde_json::json!([1, 1, 1])),
+            ("marker", serde_json::json!("010101")),
             ("legacy_inactive_modules", serde_json::json!(true)),
             ("modifies_parasolid_data", serde_json::json!(false)),
-            ("split_tracking_data", serde_json::json!([0, 0])),
+            ("split_tracking_data", serde_json::json!("0000")),
             ("group_count", serde_json::json!(8)),
-            ("raw_local_ordinal", serde_json::json!([128, 1])),
-            ("raw_object_index", serde_json::json!([0])),
+            ("raw_local_ordinal", serde_json::json!("8001")),
+            ("raw_object_index", serde_json::json!("00")),
             ("byte_len", serde_json::json!(21)),
             ("index_source_offsets", serde_json::json!([100, 102, 103])),
             ("state_source_offset", serde_json::json!(109)),
@@ -380,24 +400,24 @@ mod tests {
     fn common_frame_preserves_delete_prefix_unknown_flags_and_resolved_target() {
         let mut wire: serde_json::Value = serde_json::from_str(COMMON).unwrap();
         wire["indices"] = serde_json::json!([0, 0, 0]);
-        wire["raw_indices"] = serde_json::json!([[0], [0], [0]]);
-        wire["marker"] = serde_json::json!([1, 1, 1]);
+        wire["raw_indices"] = serde_json::json!(["00", "00", "00"]);
+        wire["marker"] = serde_json::json!("010101");
         wire["byte_len"] = serde_json::json!(18);
         wire["index_source_offsets"] = serde_json::json!([100, 101, 102]);
         wire["state_source_offset"] = serde_json::json!(106);
         wire["local_ordinal_source_offset"] = serde_json::json!(114);
         wire["object_index_source_offset"] = serde_json::json!(116);
-        wire["state"] = serde_json::json!([0, 0, 0, 2, 3, 5, 6, 9]);
+        wire["state"] = serde_json::json!("0000000203050609");
         wire.as_object_mut()
             .unwrap()
             .remove("legacy_inactive_modules");
         wire.as_object_mut()
             .unwrap()
             .remove("modifies_parasolid_data");
-        wire["split_tracking_data"] = serde_json::json!([5, 6]);
+        wire["split_tracking_data"] = serde_json::json!("0506");
         wire["group_count"] = serde_json::json!(9);
         wire["object_index"] = serde_json::json!(0);
-        wire["raw_object_index"] = serde_json::json!([0]);
+        wire["raw_object_index"] = serde_json::json!("00");
         wire["data_block"] = serde_json::json!("block");
         let frame: FeatureOperationCommonFrame = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(&frame).unwrap(), wire);
@@ -405,9 +425,9 @@ mod tests {
 
     #[test]
     fn terminal_frame_preserves_nullable_wire_and_derives_object_position() {
-        for (value, raw) in [("null", "[255]"), ("4096", "[144,16,0]")] {
+        for (value, raw) in [("null", "\"ff\""), ("4096", "\"901000\"")] {
             let wire = format!(
-                r#"{{"id":"terminal","operation_record":"record","local_ordinal":128,"raw_local_ordinal":[128,128],"object_index":{value},"raw_object_index":{raw},"source_offset":100,"object_index_source_offset":104}}"#
+                r#"{{"id":"terminal","operation_record":"record","local_ordinal":128,"raw_local_ordinal":"8080","object_index":{value},"raw_object_index":{raw},"source_offset":100,"object_index_source_offset":104}}"#
             );
             let frame: FeatureOperationTerminalFrame = serde_json::from_str(&wire).unwrap();
             assert_eq!(serde_json::to_string(&frame).unwrap(), wire);

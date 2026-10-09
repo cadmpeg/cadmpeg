@@ -958,7 +958,12 @@ fn modern_font_matches_producer_wide_string_and_future_suffix() {
     assert_eq!(value.windows_logfont_name, "Arial");
     assert_eq!(value.postscript_name, "ArialMT");
     assert_eq!(value.family_name, "Arial");
-    assert_eq!(value.panose, Some([2, 1, 2, 3, 4, 5, 6, 7, 8, 9]));
+    assert_eq!(
+        value
+            .panose
+            .map(cadmpeg_ir::native::bytes::NativeBytes::into_inner),
+        Some([2, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    );
     assert_eq!(value.quartet_member, Some(2));
 }
 

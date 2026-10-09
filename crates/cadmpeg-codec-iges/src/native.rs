@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned `native.iges` physical cards and entity records.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::card::{CardScan, ScannedLine, Section};
 
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, SourceStatus, UseFlag};
@@ -95,8 +97,8 @@ impl Serialize for NativeCard<'_> {
         struct Wire<'a> {
             id: CardId,
             offset: u64,
-            payload: cadmpeg_ir::hash::LowerHex<'a>,
-            line_ending: cadmpeg_ir::hash::LowerHex<'a>,
+            payload: NativeBytes<&'a [u8]>,
+            line_ending: NativeBytes<&'a [u8]>,
             section: Option<Section>,
             sequence: Option<u32>,
         }
@@ -114,8 +116,8 @@ impl Serialize for NativeCard<'_> {
                     .ok_or_else(|| serde::ser::Error::custom("IGES card index exceeds usize"))?,
             ),
             offset: line.offset,
-            payload: cadmpeg_ir::hash::LowerHex(&line.payload),
-            line_ending: cadmpeg_ir::hash::LowerHex(line.line_ending()),
+            payload: NativeBytes::from(line.payload.as_slice()),
+            line_ending: NativeBytes::from(line.line_ending()),
             section,
             sequence,
         }
@@ -137,7 +139,7 @@ impl Serialize for NativeQuarantinedRecord<'_> {
             sequence: u32,
             source_offset: u64,
             cards: usize,
-            bytes: &'a [u8],
+            bytes: NativeBytes<&'a [u8]>,
             defect: D,
         }
         match self {
@@ -150,7 +152,7 @@ impl Serialize for NativeQuarantinedRecord<'_> {
                 sequence: record.sequence,
                 source_offset: record.source_offset,
                 cards: record.cards(),
-                bytes: &record.bytes,
+                bytes: NativeBytes::from(record.bytes.as_slice()),
                 defect: record.defect,
             }
             .serialize(serializer),
@@ -163,7 +165,7 @@ impl Serialize for NativeQuarantinedRecord<'_> {
                 sequence: record.sequence,
                 source_offset: record.source_offset(),
                 cards: record.cards(),
-                bytes: record.bytes(),
+                bytes: NativeBytes::from(record.bytes()),
                 defect: record.defect,
             }
             .serialize(serializer),
@@ -252,7 +254,7 @@ struct NativeColorDefinition {
     red_percent: Option<f64>,
     green_percent: Option<f64>,
     blue_percent: Option<f64>,
-    name: Option<Vec<u8>>,
+    name: Option<NativeBytes<Vec<u8>>>,
     fallback_color_number: Option<i64>,
 }
 
@@ -410,7 +412,7 @@ enum NativeLineFontDefinition {
         fallback_line_font_number: Option<i64>,
         segment_count: Option<i64>,
         lengths: Vec<Option<f64>>,
-        hexadecimal_pattern: Option<Vec<u8>>,
+        hexadecimal_pattern: Option<NativeBytes<Vec<u8>>>,
     },
 }
 
@@ -448,7 +450,7 @@ struct NativeTextFontDefinition {
     id: String,
     source_entity: String,
     font_code: Option<i64>,
-    name: Option<Vec<u8>>,
+    name: Option<NativeBytes<Vec<u8>>>,
     supersedes_code: Option<i64>,
     supersedes_definition: Option<String>,
     grid_units_per_text_height: Option<i64>,
@@ -635,7 +637,7 @@ struct NativeSubfigureDefinition {
     id: String,
     source_entity: String,
     depth: Option<i64>,
-    name: Option<Vec<u8>>,
+    name: Option<NativeBytes<Vec<u8>>>,
     declared_member_count: Option<i64>,
     members: Vec<Option<String>>,
     transformation: Option<String>,
@@ -657,11 +659,11 @@ struct NativeNetworkDefinition {
     id: String,
     source_entity: String,
     depth: Option<i64>,
-    name: Option<Vec<u8>>,
+    name: Option<NativeBytes<Vec<u8>>>,
     declared_member_count: Option<i64>,
     members: Vec<Option<String>>,
     type_flag: Option<i64>,
-    primary_reference_designator: Option<Vec<u8>>,
+    primary_reference_designator: Option<NativeBytes<Vec<u8>>>,
     display_template: Option<String>,
     declared_connect_point_count: Option<i64>,
     connect_points: Vec<Option<String>>,
@@ -677,7 +679,7 @@ struct NativeNetworkInstance {
     translation: [Option<f64>; 3],
     scale: [Option<f64>; 3],
     type_flag: Option<i64>,
-    primary_reference_designator: Option<Vec<u8>>,
+    primary_reference_designator: Option<NativeBytes<Vec<u8>>>,
     display_template: Option<String>,
     declared_connect_point_count: Option<i64>,
     connect_points: Vec<Option<String>>,
@@ -692,9 +694,9 @@ struct NativeConnectPoint {
     display_geometry: Option<String>,
     type_flag: Option<i64>,
     function_flag: Option<i64>,
-    function_identifier: Option<Vec<u8>>,
+    function_identifier: Option<NativeBytes<Vec<u8>>>,
     identifier_display_template: Option<String>,
-    function_name: Option<Vec<u8>>,
+    function_name: Option<NativeBytes<Vec<u8>>>,
     name_display_template: Option<String>,
     identifier: Option<i64>,
     function_code: Option<i64>,
@@ -740,9 +742,9 @@ struct NativeExternalReference {
     id: String,
     source_entity: String,
     reference_kind: ExternalReferenceKind,
-    file_identifier: Option<Vec<u8>>,
-    symbolic_name: Option<Vec<u8>>,
-    library_name: Option<Vec<u8>>,
+    file_identifier: Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>,
+    symbolic_name: Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>,
+    library_name: Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>,
 }
 
 impl Serialize for NativeExternalReference {
@@ -753,9 +755,9 @@ impl Serialize for NativeExternalReference {
             source_entity: &'a str,
             form: i64,
             reference_kind: &'a ExternalReferenceKind,
-            file_identifier: &'a Option<Vec<u8>>,
-            symbolic_name: &'a Option<Vec<u8>>,
-            library_name: &'a Option<Vec<u8>>,
+            file_identifier: &'a Option<NativeBytes<Vec<u8>>>,
+            symbolic_name: &'a Option<NativeBytes<Vec<u8>>>,
+            library_name: &'a Option<NativeBytes<Vec<u8>>>,
             resolution_state: &'static str,
         }
         Wire {
@@ -801,7 +803,7 @@ struct NativeLabelPlacement {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeExternalIndexEntry {
-    symbolic_name: Option<Vec<u8>>,
+    symbolic_name: Option<NativeBytes<Vec<u8>>>,
     entity: Option<String>,
 }
 
@@ -855,7 +857,7 @@ enum NativeAssociativity {
         declared_connection_count: Option<i64>,
         declared_schematic_count: Option<i64>,
         declared_physical_count: Option<i64>,
-        signal_names: Vec<Option<Vec<u8>>>,
+        signal_names: Vec<Option<NativeBytes<Vec<u8>>>>,
         connections: Vec<Option<String>>,
         schematic_entities: Vec<Option<String>>,
         physical_entities: Vec<Option<String>>,
@@ -912,7 +914,7 @@ enum NativeAssociativity {
         associated_flows: Vec<Option<String>>,
         connections: Vec<Option<String>>,
         joins: Vec<Option<String>>,
-        names: Vec<Option<Vec<u8>>>,
+        names: Vec<Option<NativeBytes<Vec<u8>>>>,
         name_displays: Vec<Option<String>>,
         continuations: Vec<Option<String>>,
     },
@@ -946,7 +948,7 @@ struct NativeAttributeTableDefinition {
     id: String,
     source_entity: String,
     form: i64,
-    name: Option<Vec<u8>>,
+    name: Option<NativeBytes<Vec<u8>>>,
     attribute_list_type: Option<i64>,
     declared_attribute_count: Option<i64>,
     attributes: Vec<NativeAttributeDefinition>,
@@ -967,7 +969,7 @@ struct NativeProductProperty {
     id: String,
     source_entity: String,
     property_kind: ProductPropertyKind,
-    value: Option<Vec<u8>>,
+    value: Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>,
     owners: Vec<String>,
 }
 
@@ -979,7 +981,7 @@ impl Serialize for NativeProductProperty {
             source_entity: &'a String,
             form: i64,
             property_kind: &'a ProductPropertyKind,
-            value: &'a Option<Vec<u8>>,
+            value: &'a Option<NativeBytes<Vec<u8>>>,
             owners: &'a Vec<String>,
         }
         Wire {
@@ -1004,7 +1006,7 @@ enum NativePropertyValue {
     },
     LevelFunction {
         function_code: Option<i64>,
-        description: Option<Vec<u8>>,
+        description: Option<NativeBytes<Vec<u8>>>,
     },
     RegionFill {
         fill_code: Option<i64>,
@@ -1025,16 +1027,16 @@ enum NativePropertyValue {
         upper_layer: Option<i64>,
     },
     ReferenceDesignator {
-        value: Option<Vec<u8>>,
+        value: Option<NativeBytes<Vec<u8>>>,
     },
     PinNumber {
-        value: Option<Vec<u8>>,
+        value: Option<NativeBytes<Vec<u8>>>,
     },
     PartNumber {
-        generic: Option<Vec<u8>>,
-        military: Option<Vec<u8>>,
-        vendor: Option<Vec<u8>>,
-        internal: Option<Vec<u8>>,
+        generic: Option<NativeBytes<Vec<u8>>>,
+        military: Option<NativeBytes<Vec<u8>>>,
+        vendor: Option<NativeBytes<Vec<u8>>>,
+        internal: Option<NativeBytes<Vec<u8>>>,
     },
     Hierarchy {
         line_font: Option<i64>,
@@ -1045,18 +1047,18 @@ enum NativePropertyValue {
         color: Option<i64>,
     },
     ExternalReferenceFileList {
-        names: Vec<Option<Vec<u8>>>,
+        names: Vec<Option<NativeBytes<Vec<u8>>>>,
     },
     NominalSize {
         size: Option<f64>,
-        name: Option<Vec<u8>>,
-        standard: Option<Vec<u8>>,
+        name: Option<NativeBytes<Vec<u8>>>,
+        standard: Option<NativeBytes<Vec<u8>>>,
     },
     FlowLineSpecification {
-        values: Vec<Option<Vec<u8>>>,
+        values: Vec<Option<NativeBytes<Vec<u8>>>>,
     },
     Name {
-        value: Option<Vec<u8>>,
+        value: Option<NativeBytes<Vec<u8>>>,
     },
     IntercharacterSpacing {
         percent: Option<f64>,
@@ -1080,13 +1082,13 @@ enum NativePropertyValue {
     },
     AssociativityGroupType {
         associativity_type: Option<i64>,
-        name: Option<Vec<u8>>,
+        name: Option<NativeBytes<Vec<u8>>>,
     },
     LevelToLepLayerMap {
         definitions: Vec<NativeLepLayerDefinition>,
     },
     LepArtworkStackup {
-        identification: Option<Vec<u8>>,
+        identification: Option<NativeBytes<Vec<u8>>>,
         levels: Vec<Option<i64>>,
     },
     LepDrilledHole {
@@ -1101,14 +1103,14 @@ enum NativePropertyValue {
         dependent_values: Vec<Option<f64>>,
     },
     GenericData {
-        name: Option<Vec<u8>>,
+        name: Option<NativeBytes<Vec<u8>>>,
         values: Vec<NativeGenericPropertyValue>,
     },
     DimensionUnits {
         secondary_position: Option<i64>,
         units_indicator: Option<i64>,
         character_set: Option<i64>,
-        suffix: Option<Vec<u8>>,
+        suffix: Option<NativeBytes<Vec<u8>>>,
         fraction_flag: Option<i64>,
         precision: Option<i64>,
     },
@@ -1127,7 +1129,7 @@ enum NativePropertyValue {
         label_position: Option<i64>,
         declared_character_set: Option<i64>,
         character_set: Option<i64>,
-        label: Option<Vec<u8>>,
+        label: Option<NativeBytes<Vec<u8>>>,
         decimal_symbol: Option<i64>,
         declared_witness_line_angle: Option<f64>,
         witness_line_angle: Option<f64>,
@@ -1142,13 +1144,13 @@ enum NativePropertyValue {
         corners: Vec<[Option<f64>; 2]>,
     },
     DrawingSheetApproval {
-        name: Option<Vec<u8>>,
-        organization: Option<Vec<u8>>,
-        date: Option<Vec<u8>>,
+        name: Option<NativeBytes<Vec<u8>>>,
+        organization: Option<NativeBytes<Vec<u8>>>,
+        date: Option<NativeBytes<Vec<u8>>>,
     },
     DrawingSheetId {
         sheet_number: Option<i64>,
-        revision: Option<Vec<u8>>,
+        revision: Option<NativeBytes<Vec<u8>>>,
     },
     Underscore {
         ranges: Vec<NativeTextScoreRange>,
@@ -1192,9 +1194,9 @@ struct NativeGenericPropertyValue {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeLepLayerDefinition {
     exchange_level: Option<i64>,
-    native_identifier: Option<Vec<u8>>,
+    native_identifier: Option<NativeBytes<Vec<u8>>>,
     physical_layer: Option<i64>,
-    functional_identifier: Option<Vec<u8>>,
+    functional_identifier: Option<NativeBytes<Vec<u8>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1210,8 +1212,8 @@ struct NativeProperty {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeUnitDefinition {
-    unit_type: Option<Vec<u8>>,
-    unit_value: Option<Vec<u8>>,
+    unit_type: Option<NativeBytes<Vec<u8>>>,
+    unit_value: Option<NativeBytes<Vec<u8>>>,
     scale_factor: Option<f64>,
 }
 
@@ -1877,10 +1879,10 @@ struct NativeDrawing {
     declared_annotation_count: Option<i64>,
     annotations: Vec<Option<String>>,
     name_property: Option<String>,
-    name: Option<Vec<u8>>,
+    name: Option<NativeBytes<Vec<u8>>>,
     size: Option<[Option<f64>; 2]>,
     units_flag: Option<i64>,
-    units_name: Option<Vec<u8>>,
+    units_name: Option<NativeBytes<Vec<u8>>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     ambiguous_property_forms: Vec<i64>,
 }
@@ -1934,17 +1936,19 @@ impl Serialize for NativeParameterRecordSlot<'_> {
         struct Wire<'a> {
             parameter_line_start: Option<u32>,
             parameter_line_end: Option<u32>,
-            parameter_bytes: &'a [u8],
+            parameter_bytes: NativeBytes<&'a [u8]>,
             parameters: &'a [Token],
-            comment: &'a [u8],
+            comment: NativeBytes<&'a [u8]>,
         }
         let record = self.0;
         Wire {
             parameter_line_start: record.map(|record| record.line_range.start),
             parameter_line_end: record.map(|record| record.line_range.end),
-            parameter_bytes: record.map_or(&[], |record| record.bytes.as_slice()),
+            parameter_bytes: NativeBytes::from(
+                record.map_or(&[][..], |record| record.bytes.as_slice()),
+            ),
             parameters: record.map_or(&[], ParameterRecord::tokens),
-            comment: record.map_or(&[], |record| record.comment.as_slice()),
+            comment: NativeBytes::from(record.map_or(&[][..], |record| record.comment.as_slice())),
         }
         .serialize(serializer)
     }
@@ -1968,8 +1972,8 @@ struct NativeEntity<'a> {
     status: SourceStatus,
     line_weight: Option<i64>,
     color: Option<i64>,
-    reserved: [[u8; 8]; 2],
-    label: [u8; 8],
+    reserved: [NativeBytes<[u8; 8]>; 2],
+    label: NativeBytes<[u8; 8]>,
     subscript: Option<i64>,
     #[serde(flatten)]
     parameter_record: NativeParameterRecordSlot<'a>,
@@ -1984,9 +1988,9 @@ struct NativeMacroDefinition {
     id: String,
     source_entity: String,
     defined_entity_type: i64,
-    macro_statement: Vec<u8>,
-    language_statements: Vec<Vec<u8>>,
-    end_statement: Vec<u8>,
+    macro_statement: NativeBytes<Vec<u8>>,
+    language_statements: Vec<NativeBytes<Vec<u8>>>,
+    end_statement: NativeBytes<Vec<u8>>,
 }
 
 #[derive(Serialize)]
@@ -2214,7 +2218,8 @@ fn copy_native_token_value(
 ) -> Result<TokenValue, CodecError> {
     match value {
         TokenValue::String(bytes) => Ok(TokenValue::String(
-            ctx.copy_retained(bytes, "iges native token value bytes")?,
+            ctx.copy_retained(bytes, "iges native token value bytes")
+                .map(NativeBytes::from)?,
         )),
         value => Ok(value.clone()),
     }
@@ -2427,10 +2432,13 @@ pub(crate) fn store(
         let mut language_statements = Vec::new();
         for span in language_spans {
             ctx.reserve_vec(&mut language_statements, 1, "iges native macro statements")?;
-            language_statements.push(ctx.copy_retained(
-                &record.bytes[span.clone()],
-                "iges native macro statement bytes",
-            )?);
+            language_statements.push(
+                ctx.copy_retained(
+                    &record.bytes[span.clone()],
+                    "iges native macro statement bytes",
+                )
+                .map(NativeBytes::from)?,
+            );
         }
         ctx.reserve_vec(&mut macro_definitions, 1, "iges native macro definitions")?;
         macro_definitions.push(NativeMacroDefinition {
@@ -2443,15 +2451,19 @@ pub(crate) fn store(
                 "iges native macro source id",
             )?,
             defined_entity_type: data.defined_entity_type,
-            macro_statement: ctx.copy_retained(
-                &record.bytes[first.clone()],
-                "iges native macro header bytes",
-            )?,
-            language_statements,
-            end_statement: ctx.copy_retained(
-                &record.bytes[last.clone()],
-                "iges native macro terminator bytes",
-            )?,
+            macro_statement: ctx
+                .copy_retained(
+                    &record.bytes[first.clone()],
+                    "iges native macro header bytes",
+                )
+                .map(NativeBytes::from)?,
+            language_statements: (language_statements).into_iter().collect(),
+            end_statement: ctx
+                .copy_retained(
+                    &record.bytes[last.clone()],
+                    "iges native macro terminator bytes",
+                )
+                .map(NativeBytes::from)?,
         });
     }
     let mut macro_instances = Vec::new();
@@ -2694,8 +2706,8 @@ pub(crate) fn store(
                 status: entry.status,
                 line_weight: entry.line_weight,
                 color: entry.color,
-                reserved: entry.reserved,
-                label: entry.label,
+                reserved: entry.reserved.map(NativeBytes::from),
+                label: NativeBytes::from(entry.label),
                 subscript: entry.subscript,
                 parameter_record: NativeParameterRecordSlot(parameters),
                 association_links,
@@ -2886,7 +2898,10 @@ pub(crate) fn store(
                 blue_percent: parameters.and_then(|record| record.number(3)),
                 name: parameters
                     .and_then(|record| record.string(4))
-                    .map(|bytes| ctx.copy_retained(bytes, "iges native color name"))
+                    .map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native color name")
+                            .map(NativeBytes::from)
+                    })
                     .transpose()?,
                 fallback_color_number: entry.color,
             })
@@ -3013,7 +3028,10 @@ pub(crate) fn store(
                     hexadecimal_pattern: held
                         .then(|| parameters.and_then(|record| record.string(2 + count)))
                         .flatten()
-                        .map(|bytes| ctx.copy_retained(bytes, "iges native line font pattern"))
+                        .map(|bytes| {
+                            ctx.copy_retained(bytes, "iges native line font pattern")
+                                .map(NativeBytes::from)
+                        })
                         .transpose()?,
                 }
             })
@@ -3156,7 +3174,10 @@ pub(crate) fn store(
                 font_code: record.and_then(|record| record.integer(1)),
                 name: record
                     .and_then(|record| record.string(2))
-                    .map(|bytes| ctx.copy_retained(bytes, "iges native text font name"))
+                    .map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native text font name")
+                            .map(NativeBytes::from)
+                    })
                     .transpose()?,
                 supersedes_code,
                 supersedes_definition: supersedes_code
@@ -3771,7 +3792,10 @@ pub(crate) fn store(
                 depth: record.and_then(|record| record.integer(1)),
                 name: record
                     .and_then(|record| record.string(2))
-                    .map(|bytes| ctx.copy_retained(bytes, "iges native subfigure name"))
+                    .map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native subfigure name")
+                            .map(NativeBytes::from)
+                    })
                     .transpose()?,
                 declared_member_count: record.and_then(|record| record.integer(3)),
                 members: ctx.collect_indexed_vec(
@@ -3902,7 +3926,10 @@ pub(crate) fn store(
                 depth: record.and_then(|record| record.integer(1)),
                 name: record
                     .and_then(|record| record.string(2))
-                    .map(|bytes| ctx.copy_retained(bytes, "iges native network name"))
+                    .map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native network name")
+                            .map(NativeBytes::from)
+                    })
                     .transpose()?,
                 declared_member_count: record.and_then(|record| record.integer(3)),
                 members: if let Some(member_count) = member_count {
@@ -3941,7 +3968,10 @@ pub(crate) fn store(
                         record.and_then(|record| record.string_or_empty(5 + member_count))
                     })
                     .filter(|value| !value.is_empty())
-                    .map(|bytes| ctx.copy_retained(bytes, "iges native network designator"))
+                    .map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native network designator")
+                            .map(NativeBytes::from)
+                    })
                     .transpose()?,
                 display_template: member_count
                     .and_then(|member_count| {
@@ -4071,6 +4101,7 @@ pub(crate) fn store(
                     .filter(|value| !value.is_empty())
                     .map(|bytes| {
                         ctx.copy_retained(bytes, "iges native network instance designator")
+                            .map(NativeBytes::from)
                     })
                     .transpose()?,
                 display_template: record
@@ -4194,12 +4225,16 @@ pub(crate) fn store(
                     .and_then(|record| record.string(7))
                     .map(|bytes| {
                         ctx.copy_retained(bytes, "iges native connect function identifier")
+                            .map(NativeBytes::from)
                     })
                     .transpose()?,
                 identifier_display_template: optional_template_link(8)?,
                 function_name: record
                     .and_then(|record| record.string(9))
-                    .map(|bytes| ctx.copy_retained(bytes, "iges native connect function name"))
+                    .map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native connect function name")
+                            .map(NativeBytes::from)
+                    })
                     .transpose()?,
                 name_display_template: optional_template_link(10)?,
                 identifier: record.and_then(|record| record.integer(11)),
@@ -4426,21 +4461,24 @@ pub(crate) fn store(
                 .and_then(|index| {
                     record.and_then(|record| record.string(index)).map(|bytes| {
                         ctx.copy_retained(bytes, "iges native external file identifier")
+                            .map(NativeBytes::from)
                     })
                 })
                 .transpose()?,
             symbolic_name: symbolic_index
                 .and_then(|index| {
-                    record
-                        .and_then(|record| record.string(index))
-                        .map(|bytes| ctx.copy_retained(bytes, "iges native external symbolic name"))
+                    record.and_then(|record| record.string(index)).map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native external symbolic name")
+                            .map(NativeBytes::from)
+                    })
                 })
                 .transpose()?,
             library_name: library_index
                 .and_then(|index| {
-                    record
-                        .and_then(|record| record.string(index))
-                        .map(|bytes| ctx.copy_retained(bytes, "iges native external library name"))
+                    record.and_then(|record| record.string(index)).map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native external library name")
+                            .map(NativeBytes::from)
+                    })
                 })
                 .transpose()?,
         });
@@ -4735,6 +4773,7 @@ pub(crate) fn store(
                                                 bytes,
                                                 "iges native external index name",
                                             )
+                                            .map(NativeBytes::from)
                                         })
                                         .transpose()?,
                                     entity: entity_link(start + 1)?,
@@ -4834,6 +4873,7 @@ pub(crate) fn store(
                                                         bytes,
                                                         "iges native signal name",
                                                     )
+                                                    .map(NativeBytes::from)
                                                 })
                                                 .transpose()
                                         },
@@ -5220,7 +5260,10 @@ pub(crate) fn store(
                         |offset| {
                             record
                                 .and_then(|record| record.string(cursor + offset))
-                                .map(|bytes| ctx.copy_retained(bytes, "iges native flow name"))
+                                .map(|bytes| {
+                                    ctx.copy_retained(bytes, "iges native flow name")
+                                        .map(NativeBytes::from)
+                                })
                                 .transpose()
                         },
                     )?;
@@ -5516,7 +5559,10 @@ pub(crate) fn store(
                 form: entry.form,
                 name: record
                     .and_then(|record| record.string(1))
-                    .map(|bytes| ctx.copy_retained(bytes, "iges native attribute definition name"))
+                    .map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native attribute definition name")
+                            .map(NativeBytes::from)
+                    })
                     .transpose()?,
                 attribute_list_type: record.and_then(|record| record.integer(2)),
                 declared_attribute_count: record.and_then(|record| record.integer(3)),
@@ -5636,7 +5682,10 @@ pub(crate) fn store(
                 },
                 value: record
                     .and_then(|record| record.string(2))
-                    .map(|bytes| ctx.copy_retained(bytes, "iges native product property value"))
+                    .map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native product property value")
+                            .map(NativeBytes::from)
+                    })
                     .transpose()?,
                 owners: native_entity_ids(
                     ctx,
@@ -5678,14 +5727,18 @@ pub(crate) fn store(
         let string = |index| {
             record
                 .string(index)
-                .map(|bytes| ctx.copy_retained(bytes, "iges native property string"))
+                .map(|bytes| {
+                    ctx.copy_retained(bytes, "iges native property string")
+                        .map(NativeBytes::from)
+                })
                 .transpose()
         };
-        let strings = |start: usize, count: usize| -> Result<Vec<Option<Vec<u8>>>, CodecError> {
-            ctx.collect_indexed_vec(count, "iges native property string slots", |offset| {
-                string(start + offset)
-            })
-        };
+        let strings =
+            |start: usize, count: usize| -> Result<Vec<Option<NativeBytes<Vec<u8>>>>, CodecError> {
+                ctx.collect_indexed_vec(count, "iges native property string slots", |offset| {
+                    string(start + offset)
+                })
+            };
         let value = match entry.form {
             2 => NativePropertyValue::RegionRestriction {
                 electrical_vias: record.integer(2),
@@ -5866,9 +5919,9 @@ pub(crate) fn store(
                             let start = 3 + offset * 4;
                             Ok(NativeLepLayerDefinition {
                                 exchange_level: record.integer(start),
-                                native_identifier: string(start + 1)?,
+                                native_identifier: (string(start + 1)?),
                                 physical_layer: record.integer(start + 2),
-                                functional_identifier: string(start + 3)?,
+                                functional_identifier: (string(start + 3)?),
                             })
                         },
                     )?,
@@ -6078,11 +6131,17 @@ pub(crate) fn store(
                         Ok(NativeUnitDefinition {
                             unit_type: record
                                 .and_then(|record| record.string(start))
-                                .map(|bytes| ctx.copy_retained(bytes, "iges native unit type"))
+                                .map(|bytes| {
+                                    ctx.copy_retained(bytes, "iges native unit type")
+                                        .map(NativeBytes::from)
+                                })
                                 .transpose()?,
                             unit_value: record
                                 .and_then(|record| record.string(start + 1))
-                                .map(|bytes| ctx.copy_retained(bytes, "iges native unit value"))
+                                .map(|bytes| {
+                                    ctx.copy_retained(bytes, "iges native unit value")
+                                        .map(NativeBytes::from)
+                                })
                                 .transpose()?,
                             scale_factor: record.and_then(|record| record.number(start + 2)),
                         })
@@ -6560,7 +6619,10 @@ pub(crate) fn store(
                 name: name_property
                     .and_then(|sequence| by_directory.get(&sequence))
                     .and_then(|record| record.string(2))
-                    .map(|bytes| ctx.copy_retained(bytes, "iges native drawing name"))
+                    .map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native drawing name")
+                            .map(NativeBytes::from)
+                    })
                     .transpose()?,
                 size: size_property.and_then(|sequence| {
                     let record = by_directory.get(&sequence)?;
@@ -6572,7 +6634,10 @@ pub(crate) fn store(
                 units_name: units_property
                     .and_then(|sequence| by_directory.get(&sequence))
                     .and_then(|record| record.string(3))
-                    .map(|bytes| ctx.copy_retained(bytes, "iges native drawing units name"))
+                    .map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native drawing units name")
+                            .map(NativeBytes::from)
+                    })
                     .transpose()?,
                 ambiguous_property_forms,
             })

@@ -34,7 +34,7 @@ pub(crate) enum TokenValue {
     Omitted,
     Integer(i64),
     Real(FiniteReal),
-    String(Vec<u8>),
+    String(cadmpeg_ir::native::bytes::NativeBytes),
     /// The field boundaries are known, but its literal cannot be interpreted.
     Unreadable(ParameterDefect),
 }
@@ -3036,7 +3036,8 @@ fn hollerith(
         Token {
             value: TokenValue::String(
                 ctx.copy_retained(payload, "iges parameter string token")
-                    .map_err(TokenizeFailure::Refusal)?,
+                    .map_err(TokenizeFailure::Refusal)?
+                    .into(),
             ),
             span: start..end,
         },
@@ -3312,7 +3313,8 @@ fn tokenize_macro(
         tokens.push(Token {
             value: TokenValue::String(
                 ctx.copy_retained(&bytes[span.clone()], "iges parameter string token")
-                    .map_err(TokenizeFailure::Refusal)?,
+                    .map_err(TokenizeFailure::Refusal)?
+                    .into(),
             ),
             span,
         });
@@ -3323,7 +3325,8 @@ fn tokenize_macro(
         tokens.push(Token {
             value: TokenValue::String(
                 ctx.copy_retained(&bytes[span.clone()], "iges parameter string token")
-                    .map_err(TokenizeFailure::Refusal)?,
+                    .map_err(TokenizeFailure::Refusal)?
+                    .into(),
             ),
             span: span.clone(),
         });

@@ -132,8 +132,8 @@ fn assert_fem_topologies(global: &[u8], topologies: &[(i64, usize, &str)]) {
             node_count
         );
         assert_eq!(
-            element.fields()["element_type"],
-            json!(element_type.as_bytes())
+            crate::test_support::native_bytes(&element.fields()["element_type"]),
+            element_type.as_bytes()
         );
     }
 }
@@ -161,7 +161,10 @@ fn assert_fem_namespace(global: &[u8]) {
         element.fields()["nodes"],
         json!(["iges:entity:directory#1"])
     );
-    assert_eq!(element.fields()["element_type"], json!([66, 69, 65, 77]));
+    assert_eq!(
+        crate::test_support::native_bytes(&element.fields()["element_type"]),
+        [66, 69, 65, 77]
+    );
 
     let displacement = fem
         .iter()

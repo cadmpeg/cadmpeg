@@ -70,7 +70,7 @@ fn parameter_scalar_binding_fixture() -> (
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
@@ -612,13 +612,13 @@ fn unbound_cosmetic_thread_generated_face_refuses_collection_limit() {
     selection.producer_feature_refs = vec!["producer-native".into()];
     selection.components = vec![FeatureInputComponentPathEntry {
         instance: None,
-        type_signature: [0; 12],
+        type_signature: [0; 12].into(),
         local_id: Some(7),
     }];
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -663,7 +663,7 @@ fn unbound_cosmetic_thread_token_index_refuses_collection_limit() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![crate::records::FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -794,7 +794,7 @@ fn compact_body_projection_fixture() -> (cadmpeg_ir::features::Feature, FeatureI
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1135,7 +1135,7 @@ fn surface_selection_set_preserves_order_and_deduplicates_native_paths() {
     let mut first = full_round_selection();
     first.components = vec![FeatureInputComponentPathEntry {
         instance: None,
-        type_signature: [0; 12],
+        type_signature: [0; 12].into(),
         local_id: Some(7),
     }];
     let duplicate = first.clone();
@@ -1184,7 +1184,7 @@ fn draft_face_selection_preserves_native_path_order_and_deduplicates() {
     let path = |local_id| {
         vec![FeatureInputComponentPathEntry {
             instance: None,
-            type_signature: [0; 12],
+            type_signature: [0; 12].into(),
             local_id: Some(local_id),
         }]
     };
@@ -1213,7 +1213,7 @@ fn draft_face_selection_refuses_retained_limit() {
 
     let paths = [vec![FeatureInputComponentPathEntry {
         instance: None,
-        type_signature: [0; 12],
+        type_signature: [0; 12].into(),
         local_id: Some(7),
     }]];
     let arena = DecodeArena::new();

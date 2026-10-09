@@ -56,7 +56,7 @@ fn entity_selection_native_retained_limit_refuses_before_clone() {
 }
 
 fn loft_carrier_for_borrowed_wire(trailing: bool) -> super::DesignLoftLegacyBodyCarrier {
-    let prefix = r#"{"id":"carrier","scope_record_index":12,"scope_reference_ordinal":0,"record_index":20,"byte_offset":0,"class_tag":"322","owner_scope_record_index":12,"owner_scope_record_index_offset":20,"members":[22],"member_offsets":[30],"member_count":1,"member_count_offset":26,"opaque_index":1,"opaque_index_offset":34,"opaque_scalar":1.0,"opaque_scalar_offset":38,"repeated_opaque_index":1,"repeated_opaque_index_offset":46,"next_next_record_index":22,"next_next_reference_offset":50,"flags":[0,0],"flags_offset":59,"next_record_index":21,"next_reference_offset":61"#;
+    let prefix = r#"{"id":"carrier","scope_record_index":12,"scope_reference_ordinal":0,"record_index":20,"byte_offset":0,"class_tag":"322","owner_scope_record_index":12,"owner_scope_record_index_offset":20,"members":[22],"member_offsets":[30],"member_count":1,"member_count_offset":26,"opaque_index":1,"opaque_index_offset":34,"opaque_scalar":1.0,"opaque_scalar_offset":38,"repeated_opaque_index":1,"repeated_opaque_index_offset":46,"next_next_record_index":22,"next_next_reference_offset":50,"flags":"0000","flags_offset":59,"next_record_index":21,"next_reference_offset":61"#;
     let fields = if trailing {
         ",\"trailing_scope_record_index\":12,\"trailing_scope_reference_offset\":88"
     } else {
@@ -96,7 +96,7 @@ fn loft_legacy_body_carrier_native_retained_limit_refuses_before_clone() {
 
 #[test]
 fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() {
-    let prefix = r#"{"id":"carrier","scope_record_index":12,"scope_reference_ordinal":0,"record_index":20,"byte_offset":0,"class_tag":"322","owner_scope_record_index":12,"owner_scope_record_index_offset":20,"members":[22],"member_offsets":[30],"member_count":1,"member_count_offset":26,"opaque_index":1,"opaque_index_offset":34,"opaque_scalar":1.0,"opaque_scalar_offset":38,"repeated_opaque_index":1,"repeated_opaque_index_offset":46,"next_next_record_index":22,"next_next_reference_offset":50,"flags":[0,0],"flags_offset":59,"next_record_index":21,"next_reference_offset":61"#;
+    let prefix = r#"{"id":"carrier","scope_record_index":12,"scope_reference_ordinal":0,"record_index":20,"byte_offset":0,"class_tag":"322","owner_scope_record_index":12,"owner_scope_record_index_offset":20,"members":[22],"member_offsets":[30],"member_count":1,"member_count_offset":26,"opaque_index":1,"opaque_index_offset":34,"opaque_scalar":1.0,"opaque_scalar_offset":38,"repeated_opaque_index":1,"repeated_opaque_index_offset":46,"next_next_record_index":22,"next_next_reference_offset":50,"flags":"0000","flags_offset":59,"next_record_index":21,"next_reference_offset":61"#;
     let suffix = r#","paired_class_tag":"262","paired_byte_offset":98}"#;
     for fields in [
         "",
@@ -128,7 +128,7 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
     for (field, value) in [
         ("owner_scope_record_index", serde_json::json!(13)),
         ("repeated_opaque_index", serde_json::json!(2)),
-        ("flags", serde_json::json!([0, 1])),
+        ("flags", serde_json::json!("0001")),
     ] {
         let mut invalid = base.clone();
         invalid[field] = value;

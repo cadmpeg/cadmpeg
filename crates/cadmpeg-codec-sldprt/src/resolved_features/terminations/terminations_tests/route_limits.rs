@@ -47,7 +47,7 @@ fn extrusion_termination_error(
     let lane = FeatureInputLane {
         id: "lane#7".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
@@ -192,7 +192,7 @@ fn legacy_face_fixture() -> (Vec<FeatureHistory>, FeatureInputLane) {
     let lane = FeatureInputLane {
         id: "lane#7".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
             id: "extrusion-name".into(),

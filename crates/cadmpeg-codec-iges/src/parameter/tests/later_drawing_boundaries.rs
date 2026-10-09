@@ -248,7 +248,7 @@ fn type404_malformed_counts_or_spans_do_not_enable_generic_recovery() {
     let malformed: Vec<Vec<TokenValue>> = vec![
         vec![
             404_i64.into(),
-            TokenValue::String(b"bad-view-count".to_vec()),
+            TokenValue::String(b"bad-view-count".to_vec().into()),
             7_i64.into(),
             10_i64.into(),
             20_i64.into(),
@@ -286,7 +286,7 @@ fn type404_malformed_counts_or_spans_do_not_enable_generic_recovery() {
             10_i64.into(),
             20_i64.into(),
             1_i64.into(),
-            TokenValue::String(b"bad-annotation-count".to_vec()),
+            TokenValue::String(b"bad-annotation-count".to_vec().into()),
             1_i64.into(),
             1_i64.into(),
             5_i64.into(),
@@ -580,7 +580,10 @@ fn type142_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         (13, &source),
     ]);
 
-    for preference in [TokenValue::String(b"bad".to_vec()), TokenValue::real(2.5)] {
+    for preference in [
+        TokenValue::String(b"bad".to_vec().into()),
+        TokenValue::real(2.5),
+    ] {
         let wrong = token_parameter_record(
             13,
             vec![
@@ -759,7 +762,10 @@ fn type208_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         (13, &source),
     ]);
 
-    for preference in [TokenValue::String(b"bad".to_vec()), TokenValue::real(2.5)] {
+    for preference in [
+        TokenValue::String(b"bad".to_vec().into()),
+        TokenValue::real(2.5),
+    ] {
         let wrong = token_parameter_record(
             13,
             vec![
@@ -946,7 +952,10 @@ fn type210_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
         (13, &source),
     ]);
 
-    for preference in [TokenValue::String(b"bad".to_vec()), TokenValue::real(3.5)] {
+    for preference in [
+        TokenValue::String(b"bad".to_vec().into()),
+        TokenValue::real(3.5),
+    ] {
         let wrong = token_parameter_record(
             13,
             vec![
@@ -1054,7 +1063,7 @@ fn type212_forms_follow_string_count() {
             TokenValue::Integer(0),
             TokenValue::Integer(0),
             TokenValue::Integer(0),
-            TokenValue::String(text.to_vec()),
+            TokenValue::String(text.to_vec().into()),
         ]
     };
     let cases = [

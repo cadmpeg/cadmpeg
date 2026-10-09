@@ -1142,7 +1142,7 @@ fn surface_payload_route_refusal(
 
 fn draft_resolved_lane() -> FeatureDraftConstructionIndexLane {
     serde_json::from_str(
-        r#"{"id":"nx:feature-history:draft-construction-index-lane#0-0000000000","operation_label":"nx:feature-history:operation-label#0-0000000000","declared_count":3,"indices":[1,2],"raw_indices":[[1],[2]],"data_blocks":["nx:om-data-blocks-0:block#1","nx:om-data-blocks-0:block#2"],"source_offsets":[24,25]}"#,
+        r#"{"id":"nx:feature-history:draft-construction-index-lane#0-0000000000","operation_label":"nx:feature-history:operation-label#0-0000000000","declared_count":3,"indices":[1,2],"raw_indices":["01","02"],"data_blocks":["nx:om-data-blocks-0:block#1","nx:om-data-blocks-0:block#2"],"source_offsets":[24,25]}"#,
     ).expect("resolved draft lane")
 }
 
@@ -1221,7 +1221,7 @@ fn draft_graph_references() -> Vec<FeatureDraftConstructionReference> {
             "operation_label": "nx:feature-history:operation-label#0-0000000000",
             "ordinal": ordinal,
             "object_index": index,
-            "raw_object_index": [240, index],
+            "raw_object_index": cadmpeg_ir::native::bytes::NativeBytes::from([240, index]),
             "data_block": format!("nx:om-data-blocks-0:block#{index}"),
             "source_offset": 100 + ordinal,
         })).expect("resolved draft graph reference")

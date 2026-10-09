@@ -78,7 +78,7 @@ fn circle_dimension_driver_supplies_the_center_operand() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
             id: "dimension-name".into(),
@@ -412,7 +412,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
             id: "name".into(),
@@ -967,7 +967,7 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload,
+        native_payload: native_payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1098,7 +1098,7 @@ fn implicit_circle_uses_its_solver_relation_in_a_mixed_point_roster() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1145,7 +1145,7 @@ fn implicit_circle_uses_unique_terminal_radial_point() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1211,7 +1211,7 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: vec![class],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1429,7 +1429,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: vec![class.clone()],
         names: vec![FeatureInputName {
             id: "feature-name".into(),

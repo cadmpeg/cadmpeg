@@ -442,12 +442,12 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         components: vec![
             FeatureInputComponentPathEntry {
                 instance: Some(0x8020),
-                type_signature: signature,
+                type_signature: signature.into(),
                 local_id: Some(7),
             },
             FeatureInputComponentPathEntry {
                 instance: Some(0x8021),
-                type_signature: signature,
+                type_signature: signature.into(),
                 local_id: Some(u32::try_from(offset / 20).expect("test offset fits u32")),
             },
         ],
@@ -455,7 +455,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     let lane = |id: &str, offset| FeatureInputLane {
         id: id.into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -633,12 +633,12 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         components: vec![
             FeatureInputComponentPathEntry {
                 instance: Some(1),
-                type_signature: face_signature,
+                type_signature: face_signature.into(),
                 local_id: Some(7),
             },
             FeatureInputComponentPathEntry {
                 instance: Some(2),
-                type_signature: tail,
+                type_signature: tail.into(),
                 local_id: Some(8),
             },
         ],
@@ -646,7 +646,7 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
     let lane = |id: &str, selection| FeatureInputLane {
         id: id.into(),
         configuration: Some(id.into()),
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -708,7 +708,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -729,7 +729,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
             terminal_feature_ref: None,
             components: vec![FeatureInputComponentPathEntry {
                 instance: Some(1),
-                type_signature: signature,
+                type_signature: signature.into(),
                 local_id: Some(7),
             }],
         }],
@@ -792,7 +792,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -816,7 +816,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
                 terminal_feature_ref: Some("producer-native".into()),
                 components: vec![FeatureInputComponentPathEntry {
                     instance: Some(0x8020),
-                    type_signature: signature,
+                    type_signature: signature.into(),
                     local_id: Some(local_id),
                 }],
             })
@@ -931,7 +931,8 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
                 .iter()
                 .map(|local_id| FeatureInputComponentPathEntry {
                     instance: Some(0x81a5),
-                    type_signature: signature(if producer == "target-native" { 10 } else { 20 }),
+                    type_signature: signature(if producer == "target-native" { 10 } else { 20 })
+                        .into(),
                     local_id: Some(*local_id),
                 })
                 .collect(),
@@ -940,7 +941,7 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1041,7 +1042,7 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         type_signature[4..8].copy_from_slice(&source.to_le_bytes());
         FeatureInputComponentPathEntry {
             instance: Some(0x8675),
-            type_signature,
+            type_signature: type_signature.into(),
             local_id: Some(local_id),
         }
     };
@@ -1062,7 +1063,7 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1189,7 +1190,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     let lane = |id: &str, selection| FeatureInputLane {
         id: id.into(),
         configuration: Some(id.into()),
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1209,8 +1210,8 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
             &mut features,
             std::slice::from_ref(&history),
             &[
-                lane("one", selection("one", first_signature)),
-                lane("two", selection("two", second_signature)),
+                lane("one", selection("one", first_signature.into())),
+                lane("two", selection("two", second_signature.into())),
             ],
         )
     })
@@ -1239,7 +1240,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         };
         *face = cadmpeg_ir::features::FaceSelection::Unresolved;
     });
-    let mut conflicting = selection("conflicting", first_signature);
+    let mut conflicting = selection("conflicting", first_signature.into());
     conflicting.components[0].local_id = Some(8);
     with_projection_context(|ctx| {
         project_compact_surface_selections(
@@ -1247,7 +1248,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
             &mut features,
             std::slice::from_ref(&history),
             &[
-                lane("one", selection("one", first_signature)),
+                lane("one", selection("one", first_signature.into())),
                 lane("conflicting", conflicting),
             ],
         )
@@ -1354,12 +1355,12 @@ fn split_face_collects_distinct_generated_target_faces() {
             components: vec![
                 FeatureInputComponentPathEntry {
                     instance: None,
-                    type_signature: first_signature,
+                    type_signature: first_signature.into(),
                     local_id: None,
                 },
                 FeatureInputComponentPathEntry {
                     instance: Some(0x8020 + u16::try_from(ordinal).unwrap()),
-                    type_signature: last_signature,
+                    type_signature: last_signature.into(),
                     local_id: Some(local_id),
                 },
             ],
@@ -1368,7 +1369,7 @@ fn split_face_collects_distinct_generated_target_faces() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1498,7 +1499,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             id: "vertex-class".into(),
             parent: "lane".into(),
@@ -1538,7 +1539,10 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         feature_ref: "variable".into(),
         local_edge_ids: vec![7, 6, 1, 0],
         components: Vec::new(),
-        references: vec![endpoint(first_vertex), endpoint(second_vertex)],
+        references: vec![
+            endpoint(first_vertex.into()),
+            endpoint(second_vertex.into()),
+        ],
         producer_feature_refs: Vec::new(),
         terminal_feature_ref: None,
     };
@@ -1693,7 +1697,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             id: "edge-class".into(),
             parent: "lane".into(),
@@ -1720,7 +1724,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
     let edge_reference = |local_id| {
         vec![FeatureInputComponentPathEntry {
             instance: Some(0x81a5),
-            type_signature: signature(20),
+            type_signature: signature(20).into(),
             local_id: Some(local_id),
         }]
     };
@@ -1790,7 +1794,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
     };
     let component = |instance, local_id| FeatureInputComponentPathEntry {
         instance: Some(instance),
-        type_signature: [0x38, 0x80, 0x3b, 0, 20, 0, 0, 0, 100, 0, 0, 0],
+        type_signature: [0x38, 0x80, 0x3b, 0, 20, 0, 0, 0, 100, 0, 0, 0].into(),
         local_id: Some(local_id),
     };
     let selection = FeatureInputEdgeSelection {
@@ -1860,7 +1864,7 @@ fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
             terminal_feature_ref: Some("producer-native".into()),
             components: vec![FeatureInputComponentPathEntry {
                 instance: Some(0x8020),
-                type_signature: [0; 12],
+                type_signature: [0; 12].into(),
                 local_id: Some(local_id),
             }],
         };

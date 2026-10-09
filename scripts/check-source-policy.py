@@ -2377,6 +2377,82 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
     return findings
 
 
+def scan_native_byte_fields(sources: dict[Path, str]) -> list[Finding]:
+    """Reject byte arrays and vectors in codec serde wire declarations.
+
+    Inspect the wire type selected by serde conversions, not its internal
+    parser storage. NativeBytes owns the only admitted byte-string spelling.
+    Tuple variants and nested collections follow the same field rule.
+    """
+    findings = []
+    byte_type = re.compile(r"\bVec\s*<\s*u8\s*>|\[\s*u8\s*(?:\]|;)")
+
+    def without_native_bytes(text: str) -> str:
+        chars = list(text)
+        for wrapper in re.finditer(r"\bNativeBytes\s*<", text):
+            cursor = wrapper.end()
+            depth = 1
+            while cursor < len(text) and depth:
+                depth += (text[cursor] == "<") - (text[cursor] == ">")
+                cursor += 1
+            for at in range(wrapper.start(), cursor):
+                if chars[at] != "\n":
+                    chars[at] = " "
+        return "".join(chars)
+
+    for path, source in sources.items():
+        if not is_production_rs(path) or not relative_path(path).startswith("crates/cadmpeg-codec-"):
+            continue
+        code, _ = production_source(source)
+        lines = source.splitlines()
+        masked = code.splitlines()
+        for kind, name, index, attrs in type_declarations(lines, masked):
+            derives = " ".join(attr for attr in attrs if re.search(r"\bderive\s*\(", attr))
+            conversions = " ".join(attr for attr in attrs if SERDE_ATTRIBUTE.search(attr))
+            targets = re.findall(r'\b(?:into|from|try_from)\s*=\s*"([^"\n]*)"', conversions)
+            if any(byte_type.search(without_native_bytes(target)) for target in targets):
+                findings.append(Finding(
+                    "native_byte_array", relative_path(path), index + 1,
+                    f"Codec serde conversion for `{name}` must use cadmpeg_ir::native::bytes::NativeBytes for a hexadecimal byte string.",
+                ))
+            serialize = (bool(re.search(r"\bSerialize\b", derives))
+                         and not re.search(r"\binto\s*=", conversions)) or bool(re.search(
+                r"\bimpl\b[^{};]*\bSerialize\s+for\s+(?:[A-Za-z_]\w*::)*" + re.escape(name) + r"\b", code))
+            deserialize = (bool(re.search(r"\bDeserialize\b", derives))
+                           and not re.search(r"\b(?:from|try_from)\s*=", conversions)) or bool(re.search(
+                r"\bimpl\b[^{};]*\bDeserialize(?:\s*<[^>]*>)?\s+for\s+(?:[A-Za-z_]\w*::)*" + re.escape(name) + r"\b", code))
+            if not (serialize or deserialize):
+                continue
+            offset = sum(len(line) + 1 for line in masked[:index])
+            declaration = TYPE_DECL.match(masked[index])
+            start = offset + declaration.end()
+            # Generics can contain array types. The body starts after them.
+            angle = 0
+            opening = start
+            while opening < len(code):
+                char = code[opening]
+                angle += (char == "<") - (char == ">")
+                if angle == 0 and char in "{(;":
+                    break
+                opening += 1
+            if opening == len(code) or code[opening] == ";":
+                continue
+            closing = matching_close(code, opening)
+            if closing is None:
+                continue
+            body = code[opening + 1:closing]
+            # A NativeBytes payload can retain any storage. Mask the complete
+            # balanced generic argument so nested vectors cannot trigger.
+            body = without_native_bytes(body)
+            for match in byte_type.finditer(body):
+                at = opening + 1 + match.start()
+                findings.append(Finding(
+                    "native_byte_array", relative_path(path), code.count("\n", 0, at) + 1,
+                    f"Serialized codec field in `{name}` must use cadmpeg_ir::native::bytes::NativeBytes for a hexadecimal byte string.",
+                ))
+    return findings
+
+
 def check_source() -> list[Finding]:
     sources = {
         path.resolve(): path.read_text(encoding="utf-8", errors="replace")
@@ -2389,6 +2465,7 @@ def check_source() -> list[Finding]:
     findings.extend(scan_decode_sorts(sources))
     findings.extend(scan_evaluation_refusals(sources))
     findings.extend(scan_wire_mirror_docs(sources))
+    findings.extend(scan_native_byte_fields(sources))
     findings.extend(scan_module_visibility(sources))
     findings.extend(scan_authoring_paths())
     findings.extend(scan_script_tests())

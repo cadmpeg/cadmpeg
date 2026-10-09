@@ -114,14 +114,14 @@ mod tests {
     #[test]
     fn creation_display_borrowed_bytes_and_limit_for_each_form() {
         let encodings = [
-            r#"{"kind":"index","flag":3,"indices":[2,3,4,5],"raw_indices":[[2],[3],[4],[5]],"index_source_offsets":[13,14,15,16]}"#,
-            r#"{"kind":"linked","discriminator":22,"target_index":2,"raw_target_index":[2],"target_index_source_offset":12,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[17,18,19],"flag":3,"mode":4}"#,
-            r#"{"kind":"target","target_index":2,"raw_target_index":[2],"target_index_source_offset":10,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[15,16,17],"mode":7}"#,
+            r#"{"kind":"index","flag":3,"indices":[2,3,4,5],"raw_indices":["02","03","04","05"],"index_source_offsets":[13,14,15,16]}"#,
+            r#"{"kind":"linked","discriminator":22,"target_index":2,"raw_target_index":"02","target_index_source_offset":12,"indices":[3,4,5],"raw_indices":["03","04","05"],"index_source_offsets":[17,18,19],"flag":3,"mode":4}"#,
+            r#"{"kind":"target","target_index":2,"raw_target_index":"02","target_index_source_offset":10,"indices":[3,4,5],"raw_indices":["03","04","05"],"index_source_offsets":[15,16,17],"mode":7}"#,
         ];
         for (ordinal, encoding) in encodings.into_iter().enumerate() {
             let first = match ordinal {
-                0 => r#","first_index":1,"raw_first_index":[128,1],"first_index_source_offset":8"#,
-                1 => r#","first_index":1,"raw_first_index":[128,1],"first_index_source_offset":7"#,
+                0 => r#","first_index":1,"raw_first_index":"8001","first_index_source_offset":8"#,
+                1 => r#","first_index":1,"raw_first_index":"8001","first_index_source_offset":7"#,
                 _ => "",
             };
             let json = format!(

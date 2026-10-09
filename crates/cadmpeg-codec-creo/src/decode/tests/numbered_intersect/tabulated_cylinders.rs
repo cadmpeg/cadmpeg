@@ -20,7 +20,7 @@ fn tabulated_directrix_limit_fixture() -> (
         parameter_body: Vec::new(),
         control_point_ids: [1, 2, 3, 4],
         successor_reference: 5,
-        control_point_bodies: std::array::from_fn(|_| Vec::new()),
+        control_point_bodies: std::array::from_fn(|_| Vec::new().into()),
         control_points: [
             Some([1.0, 2.0]),
             Some([2.0, 2.5]),
@@ -124,7 +124,7 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
         parameter_body: vec![],
         control_point_ids: [1, 2, 3, 4],
         successor_reference: 5,
-        control_point_bodies: std::array::from_fn(|_| vec![]),
+        control_point_bodies: std::array::from_fn(|_| vec![].into()),
         control_points: [
             Some([1.0, 2.0]),
             Some([2.0, 2.5]),
@@ -140,7 +140,7 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
         body: vec![],
         scalar_tokens: vec![],
         opaque_spans: vec![crate::surface::SurfaceParameterOpaqueSpan {
-            raw: vec![0x00, 0x0c, 0x9a],
+            raw: vec![0x00, 0x0c, 0x9a].into(),
             offset: 3,
         }],
         scalar_frames: vec![
@@ -380,7 +380,7 @@ fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
         parameter_body: Vec::new(),
         control_point_ids: [1, 2, 3, 4],
         successor_reference: 0,
-        control_point_bodies: std::array::from_fn(|_| Vec::new()),
+        control_point_bodies: std::array::from_fn(|_| Vec::new().into()),
         control_points: [
             Some([2.603_530_729_189_511_6, -6.634_758_301_120_719]),
             Some([2.486_761_892_214_414, -6.583_162_851_673_087]),
@@ -407,7 +407,7 @@ fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
         body,
         scalar_tokens: Vec::new(),
         opaque_spans: vec![crate::surface::SurfaceParameterOpaqueSpan {
-            raw: vec![0, 0x0c, 0x9a],
+            raw: vec![0, 0x0c, 0x9a].into(),
             offset: 3,
         }],
         scalar_frames: vec![crate::surface::SurfaceParameterScalarFrame {

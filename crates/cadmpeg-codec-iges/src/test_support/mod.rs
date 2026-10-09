@@ -166,3 +166,10 @@ pub(crate) fn with_policy_context<T>(
         .expect("test input is within policy limits");
     use_context(&ctx)
 }
+
+/// Decodes the exact bytes of a native wire payload for byte assertions.
+pub(crate) fn native_bytes(value: &serde_json::Value) -> Vec<u8> {
+    serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(value.clone())
+        .expect("native hexadecimal byte string")
+        .into_inner()
+}

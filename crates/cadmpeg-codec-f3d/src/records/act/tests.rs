@@ -345,15 +345,15 @@ fn act_class_tail_requires_nonpadding_bytes_and_a_bounded_offset() {
         "in_table": false, "channel_class_tag": "261", "channel_record_index_offset": 100,
         "channel_entity_id_offset": 200,
         "channels": {"Appearance":"11111111-2222-3333-4444-555555555555"}, "channel_guid_offsets": {"Appearance":120},
-        "channel_class_tail": [0, 1], "channel_class_tail_offset": 300
+        "channel_class_tail": "0001", "channel_class_tail_offset": 300
     });
     let entity: crate::records::act::ActEntity = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(entity).unwrap(), wire);
     for (bytes, offset) in [
-        (serde_json::json!([]), serde_json::json!(300)),
-        (serde_json::json!([0, 0]), serde_json::json!(300)),
-        (serde_json::json!([1]), serde_json::Value::Null),
-        (serde_json::json!([1]), serde_json::json!(u64::MAX)),
+        (serde_json::json!(""), serde_json::json!(300)),
+        (serde_json::json!("0000"), serde_json::json!(300)),
+        (serde_json::json!("01"), serde_json::Value::Null),
+        (serde_json::json!("01"), serde_json::json!(u64::MAX)),
     ] {
         let mut invalid = wire.clone();
         invalid["channel_class_tail"] = bytes;

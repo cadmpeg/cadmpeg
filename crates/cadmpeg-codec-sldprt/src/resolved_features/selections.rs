@@ -1381,7 +1381,7 @@ fn operation_surface_selection_candidates(
 }
 
 fn component_source(component: &FeatureInputComponentPathEntry) -> Option<u32> {
-    View::u32_le_at(&component.type_signature, 4)
+    View::u32_le_at(component.type_signature.as_ref(), 4)
 }
 
 fn compact_surface_selection_candidates_for_class(
@@ -2162,7 +2162,7 @@ fn compact_surface_selection_at(
         let entry = (|| {
             Some(FeatureInputComponentPathEntry {
                 instance: Some(View::u16_le_at(payload, cursor)?),
-                type_signature: signature,
+                type_signature: signature.into(),
                 local_id: Some(View::u32_le_at(payload, cursor + 16)?),
             })
         })();
@@ -2537,7 +2537,7 @@ fn compact_mixed_component_at(
             Some((
                 FeatureInputComponentPathEntry {
                     instance: Some(instance),
-                    type_signature,
+                    type_signature: type_signature.into(),
                     local_id,
                 },
                 if next_is_tagged { 16 } else { 20 },
@@ -2548,7 +2548,7 @@ fn compact_mixed_component_at(
         Some((
             FeatureInputComponentPathEntry {
                 instance: None,
-                type_signature: signature_at(offset)?,
+                type_signature: signature_at(offset)?.into(),
                 local_id: Some(View::u32_le_at(payload, offset + 12)?),
             },
             16,
@@ -2805,7 +2805,7 @@ fn inline_surface_components_at(
                 && signature_at(cursor + 16).is_some();
             let component = FeatureInputComponentPathEntry {
                 instance: instance_before(cursor),
-                type_signature: signature,
+                type_signature: signature.into(),
                 local_id: (!continues).then(|| View::u32_le_at(&tail, 0)).flatten(),
             };
             Some((component, continues))
@@ -3045,7 +3045,7 @@ pub(crate) fn generated_surface_identities(
             parent,
             ordinal,
             offset: fields.offset,
-            type_prefix: fields.type_prefix,
+            type_prefix: fields.type_prefix.into(),
             feature_source_id: fields.feature_source_id,
             local_identity: fields.local_identity,
             components: fields.components,
@@ -3247,7 +3247,7 @@ fn compact_component_reference_list(
             && type_signature[8..12] != [0; 4])
             .then_some(FeatureInputComponentPathEntry {
                 instance: Some(instance),
-                type_signature,
+                type_signature: type_signature.into(),
                 local_id: None,
             })
     };
@@ -3977,7 +3977,7 @@ fn compact_sparse_component_path(
             };
             let entry = FeatureInputComponentPathEntry {
                 instance: Some(instance),
-                type_signature,
+                type_signature: type_signature.into(),
                 local_id,
             };
             let Some(end) = cursor.checked_add(entry_length) else {
@@ -4292,7 +4292,7 @@ pub(super) fn component_reference_curve_path_at(
                 let entry = (|| {
                     Some(FeatureInputComponentPathEntry {
                         instance: Some(View::u16_le_at(payload, cursor)?),
-                        type_signature: signature,
+                        type_signature: signature.into(),
                         local_id: Some(View::u32_le_at(payload, cursor + 16)?),
                     })
                 })();

@@ -54,14 +54,14 @@ fn round_sample_scan() -> crate::container::ContainerScan<'static> {
     });
     let token = crate::surface::SurfaceParameterScalar {
         value: Some(0.5),
-        raw: vec![0x53, 0, 0, 0, 0, 0, 0],
+        raw: vec![0x53, 0, 0, 0, 0, 0, 0].into(),
         offset: 0,
     };
     scan.surfaces
         .parameters
         .push(crate::surface::SurfaceParameterRecord {
             surface_id: 7,
-            body: token.raw.clone(),
+            body: token.raw.clone().into_inner(),
             scalar_tokens: vec![token],
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
@@ -1135,7 +1135,7 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
         });
         let token = crate::surface::SurfaceParameterScalar {
             value: Some(0.5),
-            raw: vec![0x53, 0, 0, 0, 0, 0, 0],
+            raw: vec![0x53, 0, 0, 0, 0, 0, 0].into(),
             offset: 0,
         };
         scan.surfaces
@@ -1262,7 +1262,7 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
     let parameter = |surface_id, offset| {
         let token = crate::surface::SurfaceParameterScalar {
             value: Some(0.5),
-            raw: vec![0],
+            raw: vec![0].into(),
             offset: 0,
         };
         crate::surface::SurfaceParameterRecord {
@@ -1369,7 +1369,7 @@ fn torus_radius_samples_refuse_collection_limit() {
     });
     let token = crate::surface::SurfaceParameterScalar {
         value: Some(0.5),
-        raw: vec![0],
+        raw: vec![0].into(),
         offset: 0,
     };
     scan.surfaces

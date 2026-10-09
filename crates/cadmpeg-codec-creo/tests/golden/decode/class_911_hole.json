@@ -91,45 +91,15 @@
             "state_offset": 163,
             "state_ordinal": 0,
             "stored_name": "Hole id 4",
-            "stored_name_bytes": [
-              72,
-              111,
-              108,
-              101,
-              32,
-              105,
-              100,
-              32,
-              52
-            ],
+            "stored_name_bytes": "486f6c652069642034",
             "stored_name_prefix": null
           }
         ],
         "feature_rows": [
           {
-            "body": [
-              235,
-              4,
-              0,
-              16,
-              1,
-              128,
-              128,
-              0,
-              228,
-              227,
-              246,
-              131,
-              143,
-              225,
-              35,
-              10
-            ],
+            "body": "eb04001001808000e4e3f6838fe1230a",
             "body_offset": 136,
-            "header": [
-              235,
-              4
-            ],
+            "header": "eb04",
             "id": "creo:allfeatur:feature_row#135",
             "offset": 135,
             "owner_feature_id": 4,
@@ -140,10 +110,7 @@
         ],
         "surface_parameters": [
           {
-            "body": [
-              35,
-              10
-            ],
+            "body": "230a",
             "body_offset": 122,
             "boundary": "section_end",
             "cone_half_angle_override": null,
@@ -153,10 +120,7 @@
               {
                 "length": 2,
                 "offset": 0,
-                "raw": [
-                  35,
-                  10
-                ]
+                "raw": "230a"
               }
             ],
             "positional_cone_frame": null,

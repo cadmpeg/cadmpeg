@@ -902,7 +902,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
         native.entity_records[0].suffix_value().cloned(),
         Some(CatiaEntitySuffixValue {
             prefix_atoms: [5, 22, 2],
-            prefix_atom_widths: [1, 1, 1],
+            prefix_atom_widths: [1, 1, 1].into(),
             prefix_code: 0x6a,
             payload: CatiaEntitySuffixPayload::Evaluation {
                 opcode_offset: 4,
