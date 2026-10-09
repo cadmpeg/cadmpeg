@@ -221,3 +221,59 @@ fn revolve_setters_preserve_every_required_input_and_selection_state() {
         }
     }
 }
+
+#[test]
+fn revolve_setters_move_unchanged_native_backing() {
+    use crate::features::{
+        AngularTermination, FaceSelection, PathRef, PlanarProfileRef, RevolveConstruction,
+        RevolveExtent,
+    };
+    let make = || serde_json::from_value::<RevolveConstruction>(serde_json::json!({
+        "state": "resolved",
+        "profile": {"kind": "native", "value": "test:profile:é"},
+        "axis": {
+            "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+            "reference": {"kind": "native", "value": "test:axis:é"}
+        },
+        "extent": {"kind": "one_sided", "termination": {
+            "kind": "to_face", "face": {"kind": "native", "value": "test:face:🦀"}
+        }},
+        "face_maker_class": "Extension::FaceMakeré"
+    })).unwrap();
+    let extent_address = |construction: &RevolveConstruction| {
+        let Some(RevolveExtent::OneSided {
+            termination: AngularTermination::ToFace { face: FaceSelection::Native(face), .. },
+        }) = construction.extent() else { panic!("native extent fixture"); };
+        face.as_str().as_ptr()
+    };
+    let mut construction = make();
+    let face_maker = construction.face_maker().unwrap().as_str().as_ptr();
+    let Some(PathRef::Native(axis)) = construction.axis().unwrap().reference.as_ref() else {
+        panic!("native axis fixture");
+    };
+    let axis = axis.as_str().as_ptr();
+    let extent = extent_address(&construction);
+    construction.set_profile(None);
+    assert_eq!(construction.face_maker().unwrap().as_str().as_ptr(), face_maker);
+    let Some(PathRef::Native(after)) = construction.axis().unwrap().reference.as_ref() else {
+        panic!("axis retained");
+    };
+    assert_eq!(after.as_str().as_ptr(), axis);
+    assert_eq!(extent_address(&construction), extent);
+
+    let mut construction = make();
+    let face_maker = construction.face_maker().unwrap().as_str().as_ptr();
+    let Some(PlanarProfileRef::Native(profile)) = construction.profile() else {
+        panic!("native profile fixture");
+    };
+    let profile = profile.as_str().as_ptr();
+    let extent = extent_address(&construction);
+    construction.set_axis(None);
+    assert_eq!(construction.face_maker().unwrap().as_str().as_ptr(), face_maker);
+    let Some(PlanarProfileRef::Native(after)) = construction.profile() else {
+        panic!("profile retained");
+    };
+    assert_eq!(after.as_str().as_ptr(), profile);
+    assert_eq!(extent_address(&construction), extent);
+}

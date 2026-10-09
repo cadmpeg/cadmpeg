@@ -8733,6 +8733,29 @@ struct PolarAngle {
     second: Option<FiniteReal>,
 }
 
+/// A computed second derivative or a carrier that states none.
+#[derive(Clone, Copy)]
+enum PcurveAcceleration {
+    Finite(FinitePoint2),
+    NonFinite,
+    Unstated,
+}
+
+impl From<Option<FinitePoint2>> for PcurveAcceleration {
+    fn from(value: Option<FinitePoint2>) -> Self {
+        value.map_or(Self::NonFinite, Self::Finite)
+    }
+}
+
+impl PcurveAcceleration {
+    fn finite(self) -> Option<FinitePoint2> {
+        match self {
+            Self::Finite(value) => Some(value),
+            Self::NonFinite | Self::Unstated => None,
+        }
+    }
+}
+
 /// A pcurve carrier's point and first two derivatives at a parameter.
 struct PcurveEvaluation {
     /// The point, or the point an evaluation that left the finite range
@@ -8740,8 +8763,8 @@ struct PcurveEvaluation {
     point: Result<FinitePoint2, Point2>,
     /// The first derivative, or why it has no finite value.
     tangent: Result<FinitePoint2, EvaluationFailure<Point2>>,
-    /// The second derivative, where it is finite.
-    acceleration: Option<FinitePoint2>,
+    /// The stated finite/non-finite derivative, or an unstated derivative.
+    acceleration: PcurveAcceleration,
     /// Refusal of scratch needed by the evaluated carrier.
     resource: Option<ResourceLimit>,
 }
@@ -8754,7 +8777,7 @@ impl PcurveEvaluation {
     fn evaluated(
         point: Point2,
         tangent: Result<FinitePoint2, EvaluationFailure<Point2>>,
-        acceleration: Option<FinitePoint2>,
+        acceleration: PcurveAcceleration,
     ) -> Self {
         if let Err(EvaluationFailure::ResourceLimit(limit)) = tangent {
             return Self::resource(limit);
@@ -8780,7 +8803,7 @@ impl PcurveEvaluation {
         Self {
             point: Err(point),
             tangent: Err(EvaluationFailure::NonFinite(tangent)),
-            acceleration: None,
+            acceleration: PcurveAcceleration::NonFinite,
             resource: None,
         }
     }
@@ -8789,7 +8812,7 @@ impl PcurveEvaluation {
         Self {
             point: Err(Point2::new(f64::NAN, f64::NAN)),
             tangent: Err(EvaluationFailure::ResourceLimit(limit)),
-            acceleration: None,
+            acceleration: PcurveAcceleration::NonFinite,
             resource: Some(limit),
         }
     }
@@ -8803,7 +8826,7 @@ impl From<PcurveDifferential> for PcurveEvaluation {
         Self {
             point: Ok(differential.point),
             tangent: differential.tangent,
-            acceleration: differential.acceleration,
+            acceleration: differential.acceleration.into(),
             resource: None,
         }
     }
@@ -8973,7 +8996,7 @@ fn pcurve_uv_unsettled(
             return Some(PcurveEvaluation::evaluated(
                 point,
                 FinitePoint2::new(tangent).ok_or(EvaluationFailure::NonFinite(tangent)),
-                FinitePoint2::new(acceleration),
+                FinitePoint2::new(acceleration).into(),
             ));
         }
         PcurveGeometry::Hyperbolic(hyperbolic) => {
@@ -9013,7 +9036,7 @@ fn pcurve_uv_unsettled(
                     .2
                     .ok()
                     .zip(v.2.ok())
-                    .map(|(u, v)| FinitePoint2::from_coordinates(u, v)),
+                    .map(|(u, v)| FinitePoint2::from_coordinates(u, v)).into(),
                 resource: None,
             });
         }
@@ -9078,7 +9101,7 @@ fn pcurve_uv_unsettled(
                 acceleration: second.and_then(|second| {
                     let axial = FiniteReal::new(-axial_cos * cosine - axial_sin * sine)?;
                     Some(FinitePoint2::from_coordinates(second, axial))
-                }),
+                }).into(),
                 resource: None,
             });
         }
@@ -9204,7 +9227,7 @@ fn pcurve_uv_unsettled(
                 tangent: planar_value(first, axial_lane(axial.tangent)),
                 acceleration: second.zip(axial.acceleration).map(|(second, axial)| {
                     FinitePoint2::from_coordinates(second, axial.coordinates()[0])
-                }),
+                }).into(),
                 resource: None,
             });
         }
@@ -9273,7 +9296,7 @@ fn pcurve_uv_unsettled(
             return Some(PcurveEvaluation {
                 point: Ok(FinitePoint2::from_coordinates(azimuth, latitude)),
                 tangent: planar_value(Ok(admitted_rate), latitude_rate),
-                acceleration,
+                acceleration: acceleration.into(),
                 resource: None,
             });
         }
@@ -9337,6 +9360,7 @@ fn pcurve_uv_unsettled(
             };
             let acceleration = basis
                 .acceleration
+                .finite()
                 .map(|acceleration| transform.apply_vector(acceleration.get()));
             // The placement evaluates its derivatives with its point: a basis
             // tangent or acceleration the placement carries outside the finite
@@ -9364,11 +9388,13 @@ fn pcurve_uv_unsettled(
                 };
                 return Some(PcurveEvaluation::left_finite_range(point, tangent));
             }
-            return Some(PcurveEvaluation::evaluated(
-                point,
-                tangent,
-                acceleration.and_then(FinitePoint2::new),
-            ));
+            let acceleration = match basis.acceleration {
+                PcurveAcceleration::Unstated => PcurveAcceleration::Unstated,
+                PcurveAcceleration::Finite(_) | PcurveAcceleration::NonFinite => {
+                    acceleration.and_then(FinitePoint2::new).into()
+                }
+            };
+            return Some(PcurveEvaluation::evaluated(point, tangent, acceleration));
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let basis = trimmed_pcurve.basis();
@@ -9423,7 +9449,7 @@ fn pcurve_uv_unsettled(
                 basis_point.u - distance.get() * unit.v,
                 basis_point.v + distance.get() * unit.u,
             );
-            let tangent = basis.acceleration.map(|acceleration| {
+            let tangent = basis.acceleration.finite().map(|acceleration| {
                 let tangential_acceleration = unit.u * acceleration.u + unit.v * acceleration.v;
                 let unit_derivative = Point2::new(
                     (acceleration.u - tangential_acceleration * unit.u) / speed,
@@ -9440,7 +9466,7 @@ fn pcurve_uv_unsettled(
             // does not reach; an offset basis states none.
             let tangent = match tangent {
                 Some(tangent) => admit_parameter_point(tangent),
-                None if states_pcurve_acceleration(offset_pcurve.basis()) => Err(
+                None if matches!(basis.acceleration, PcurveAcceleration::NonFinite) => Err(
                     EvaluationFailure::NonFinite(Point2::new(f64::NAN, f64::NAN)),
                 ),
                 None => Err(EvaluationFailure::NoValue),
@@ -9448,7 +9474,7 @@ fn pcurve_uv_unsettled(
             return Some(PcurveEvaluation {
                 point: FinitePoint2::new(point).ok_or(point),
                 tangent,
-                acceleration: None,
+                acceleration: PcurveAcceleration::Unstated,
                 resource: None,
             });
         }
@@ -9456,20 +9482,8 @@ fn pcurve_uv_unsettled(
     Some(PcurveEvaluation::evaluated(
         pair.0,
         admit_parameter_point(pair.1),
-        FinitePoint2::new(pair.2),
+        FinitePoint2::new(pair.2).into(),
     ))
-}
-
-/// Whether a pcurve's evaluation states a second derivative. Every carrier
-/// does except an offset, whose evaluation forms no second derivative, and
-/// the trimmed and placed carriers over one.
-fn states_pcurve_acceleration(geometry: &PcurveGeometry) -> bool {
-    match geometry {
-        PcurveGeometry::Offset(_) => false,
-        PcurveGeometry::Trimmed(trimmed) => states_pcurve_acceleration(trimmed.basis()),
-        PcurveGeometry::Transformed(placed) => states_pcurve_acceleration(placed.basis()),
-        _ => true,
-    }
 }
 
 fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
