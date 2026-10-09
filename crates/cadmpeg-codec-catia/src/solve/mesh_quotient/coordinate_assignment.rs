@@ -4380,16 +4380,11 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     }
                     return Ok(false);
                 }
-                let mut arc_domains = ctx.copy_retained_rows(
-                    &local_domains,
-                    "catia_coordinate_closure_arc_domains",
-                    "catia_coordinate_closure_arc_domain_points",
-                )?;
                 let arc_budget =
                     budget.map(|budget| budget.session_child_slice(budget.remaining()));
                 let arc_consistent = enforce_edge_arc_consistency(
                     ctx,
-                    &mut arc_domains,
+                    &mut local_domains,
                     &local_edges,
                     &edge_ids,
                     &root_edges,
@@ -4403,7 +4398,6 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                             return Ok(false);
                         }
                     }
-                    local_domains = arc_domains;
                 } else {
                     if arc_budget.as_ref().is_some_and(WorkBudget::exhausted) {
                         exhausted.set(true);
@@ -5029,8 +5023,6 @@ mod tests {
             "catia_coordinate_closure_local_domains",
             "catia_coordinate_closure_root_edges",
             "catia_coordinate_closure_root_edge_entries",
-            "catia_coordinate_closure_arc_domain_points",
-            "catia_coordinate_closure_arc_domains",
             "catia_coordinate_closure_remaining_points",
             "catia_coordinate_closure_completed_assignment",
             "catia_coordinate_closure_fixed_domain_point",
@@ -5051,6 +5043,63 @@ mod tests {
         ] {
             assert!(refused.contains(operation), "no refusal at {operation}");
         }
+    }
+
+    #[test]
+    fn coordinate_closure_prunes_owned_domains_without_backup_copy() {
+        let candidates = [vec![[0, 1]], vec![[0, 1]]];
+        let edge_faces = [[0, 1], [0, 1]];
+        let boundary = MeshFaceBoundaryAssignment {
+            boundaries: vec![(0..2).map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            }).collect()],
+        };
+        let domains = [
+            MeshFaceBoundaryDomain::Ordered(vec![boundary.clone()]),
+            MeshFaceBoundaryDomain::Ordered(vec![boundary]),
+        ];
+        let run = |ctx: &DecodeContext<'_>| {
+            let mut quotient = MeshQuotient::new((0..4).map(|node| {
+                Arc::new(HashSet::from([node % 2]))
+            }).collect());
+            quotient.merge_charged(ctx, 0, 2)?.expect("shared left endpoint");
+            quotient.merge_charged(ctx, 1, 3)?.expect("shared right endpoint");
+            let budget = WorkBudget::new(39);
+            let outcome = quotient.coordinate_root_closure_outcome(
+                ctx, 2, &candidates, Some((&edge_faces, &domains)), Some(&budget),
+            )?;
+            assert!(!budget.exhausted());
+            Ok::<_, CodecError>(outcome)
+        };
+        for operation in [
+            "catia_coordinate_closure_arc_domain_points",
+            "catia_coordinate_closure_arc_domains",
+        ] {
+            crate::test_support::with_work_limit(u64::MAX, |ctx| {
+                let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                    ResourceDimension::WorkUnits, operation, None,
+                );
+                assert_eq!(run(ctx).expect("no domain backup is constructed"),
+                    MeshSolve::Solved(HashMap::from([(0, 0), (1, 1)])));
+                assert_eq!(ctx.resource_refusal(), None);
+            });
+        }
+        crate::test_support::with_work_limit(u64::MAX, |ctx| {
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::WorkUnits, "catia_arc_supports", None,
+            );
+            let Err(CodecError::ResourceLimit(limit)) = run(ctx) else {
+                panic!("the actual arc-support work must remain admitted");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "catia_arc_supports");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            assert!(matches!(ctx.charge_work(0, "after arc-support refusal"),
+                Err(CodecError::ResourceLimit(later)) if later == limit));
+        });
     }
 
     #[test]
