@@ -2642,10 +2642,10 @@ impl<'ctx> FeatureIdentityIndex<'ctx> {
         if rows.is_empty() {
             return Ok(index);
         }
-        let mut needed_storage =
-            ctx.reserve_scoped(0, "creo reference identity selection storage")?;
+        let mut owner_storage =
+            ctx.reserve_scoped(0, "creo operation identity owner storage")?;
         let mut owners = std::collections::HashSet::new();
-        needed_storage.with_storage(|| {
+        owner_storage.with_storage(|| {
             for row in ctx.admit_iter(rows, "creo operation identity row selection")? {
                 if !ctx.contains_btree_set(
                     structural,
@@ -2686,6 +2686,8 @@ impl<'ctx> FeatureIdentityIndex<'ctx> {
             }
             Ok::<(), CodecError>(())
         })?;
+        let mut needed_storage =
+            ctx.reserve_scoped(0, "creo reference identity selection storage")?;
         let mut needed = std::collections::HashMap::<u32, u8>::new();
         needed_storage.with_storage(|| {
             for row in ctx.admit_iter(rows, "creo reference identity row selection")? {
@@ -2720,6 +2722,7 @@ impl<'ctx> FeatureIdentityIndex<'ctx> {
             }
             Ok::<(), CodecError>(())
         })?;
+        drop((owners, owner_storage));
         if needed.is_empty() {
             return Ok(index);
         }
