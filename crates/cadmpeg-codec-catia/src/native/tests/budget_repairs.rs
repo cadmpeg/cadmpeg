@@ -10,6 +10,55 @@ use cadmpeg_core::{
 };
 
 #[test]
+fn native_graph_index_computes_terminal_identity_in_its_single_source_pass() {
+    let native = crate::native::CatiaNative::decode(
+        &crate::test_support::test_formula::standard_catpart_with_schema_configuration_row_chain(),
+    );
+    let fixture = &native.object_graphs[0].records[0];
+    for (middle, terminal) in [(9, Some(10)), (u32::MAX, None)] {
+        let records = [7, middle, 7].map(|id| {
+            let mut record = fixture.clone();
+            record.entity = Some(super::super::CatiaObjectEntity {
+                record: format!("entity-{id}"), id,
+            });
+            record
+        });
+        // Three visits, four collector steps, six four-byte hashes, and the
+        // initial table growth fit 130 work units without a second source pass.
+        with_work_limit(130, |ctx| -> Result<(), CodecError> {
+            let mut storage = ctx.reserve_scoped(0, "test graph index")?;
+            let index = super::super::GraphRecordIndex::new(ctx, &mut storage, &records)?;
+            assert_eq!(index.positions.len(), 2);
+            assert_eq!(index.positions.get(&7), Some(&2));
+            assert_eq!(index.positions.get(&middle), Some(&1));
+            assert_eq!(index.terminal_null_entity_id, terminal);
+            assert_eq!(ctx.resource_refusal(), None);
+            Ok(())
+        }).expect("indexing and terminal identity share one source pass");
+        let refused = with_work_limit(0, |ctx| {
+            let mut storage = ctx.reserve_scoped(0, "test graph index")?;
+            let result = super::super::GraphRecordIndex::new(ctx, &mut storage, &records);
+            let Err(CodecError::ResourceLimit(limit)) = &result else {
+                panic!("actual record source must refuse before indexing");
+            };
+            assert_eq!(limit.operation, "catia_native_graph_index_source_visits");
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+            assert!(matches!(ctx.charge_work(0, "after graph index refusal"),
+                Err(CodecError::ResourceLimit(later)) if later == *limit));
+            result.map(|_| ())
+        });
+        assert!(matches!(refused, Err(CodecError::ResourceLimit(_))));
+    }
+    with_service_context(|ctx| -> Result<(), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "test empty graph index")?;
+        let index = super::super::GraphRecordIndex::new(ctx, &mut storage, &[])?;
+        assert!(index.positions.is_empty());
+        assert_eq!(index.terminal_null_entity_id, None);
+        Ok(())
+    }).expect("empty index has no terminal identity");
+}
+
+#[test]
 fn native_signature_promotion_preserves_refusal_and_parent_storage() {
     let source = "(#1_ : #In LENGTH,#2_ : #In Real) : LENGTH";
     let refused = crate::test_support::with_retained_refusal(
@@ -285,13 +334,13 @@ fn native_extent_index_preserves_strict_containment_and_overlap_boundaries() {
         (usize::MAX, 1),
     ];
     with_service_context(|ctx| -> Result<_, CodecError> {
-        let (index, _storage) = ctx.with_scoped_storage("test extent index", || {
+        let index = ctx.with_scoped_storage("test extent index", || {
             super::super::NativeExtentIndex::new(ctx, &sources, |&extent| extent)
         })?;
         for start in (0..32).chain([usize::MAX]) {
             for len in 0..16 {
                 assert_eq!(
-                    index.contains(ctx, start, len, "test indexed containment")?,
+                    index.0.contains(ctx, start, len, "test indexed containment")?,
                     sources
                         .iter()
                         .any(|&(owner, width)| crate::object_graph::extent_contains(
@@ -299,7 +348,7 @@ fn native_extent_index_preserves_strict_containment_and_overlap_boundaries() {
                         ))
                 );
                 assert_eq!(
-                    index.overlaps(ctx, start, len, "test indexed overlap")?,
+                    index.0.overlaps(ctx, start, len, "test indexed overlap")?,
                     sources
                         .iter()
                         .any(|&(owner, width)| crate::checked::extents_overlap(

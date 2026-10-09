@@ -83,10 +83,11 @@ fn parameter_native() -> crate::native::CatiaNative {
 fn derive_semantic_indices<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     native: &'a crate::native::CatiaNative,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<crate::native::CatiaSemanticIndices<'a>, cadmpeg_core::CodecError> {
     super::super::semantic_entity_indices(
         ctx,
-        &mut ctx.reserve_scoped(0, "test semantic indices")?,
+        storage,
         &native.entity_records,
         &std::collections::HashMap::new(),
     )
@@ -94,7 +95,8 @@ fn derive_semantic_indices<'a>(
 
 fn assert_semantic_lookup_refusal(native: &crate::native::CatiaNative, operation: &'static str) {
     let refused = crate::test_support::with_work_refusal(operation, |ctx| {
-        let result = derive_semantic_indices(ctx, native);
+        let mut storage = ctx.reserve_scoped(0, "test semantic indices")?;
+        let result = derive_semantic_indices(ctx, native, &mut storage);
         if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
             assert_eq!(
                 limit.dimension,
@@ -116,9 +118,14 @@ fn native_terminal_maximum_entry_refuses_work_and_preserves_terminal_identity() 
     let native = crate::native::CatiaNative::decode(
         &crate::test_support::test_formula::standard_catpart_with_schema_configuration_row_chain(),
     );
-    let indices =
-        crate::test_support::with_service_context(|ctx| derive_semantic_indices(ctx, &native))
-            .expect("service profile admits semantic indices");
+    let index_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &index_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).expect("semantic index preparation fits the service profile");
+    let mut index_storage = index_ctx.reserve_scoped(0, "test semantic indices")
+        .expect("semantic index preparation storage");
+    let indices = derive_semantic_indices(&index_ctx, &native, &mut index_storage)
+        .expect("service profile admits semantic indices");
     let entity = &native.entity_records[0];
     let maximum = native
         .entity_records
@@ -137,9 +144,14 @@ fn native_terminal_maximum_entry_refuses_work_and_preserves_terminal_identity() 
 #[test]
 fn native_binding_graph_entry_refuses_work_and_preserves_parameter_binding() {
     let native = parameter_native();
-    let indices =
-        crate::test_support::with_service_context(|ctx| derive_semantic_indices(ctx, &native))
-            .expect("service profile admits semantic indices");
+    let index_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &index_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).expect("semantic index preparation fits the service profile");
+    let mut index_storage = index_ctx.reserve_scoped(0, "test semantic indices")
+        .expect("semantic index preparation storage");
+    let indices = derive_semantic_indices(&index_ctx, &native, &mut index_storage)
+        .expect("service profile admits semantic indices");
     let entity_record = &native.entity_records[0];
     let parameter = entity_record
         .parameter_value()
@@ -161,9 +173,14 @@ fn native_binding_graph_entry_refuses_work_and_preserves_parameter_binding() {
 #[test]
 fn native_binding_symbol_entry_refuses_work_and_preserves_parameter_binding() {
     let native = parameter_native();
-    let indices =
-        crate::test_support::with_service_context(|ctx| derive_semantic_indices(ctx, &native))
-            .expect("service profile admits semantic indices");
+    let index_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &index_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).expect("semantic index preparation fits the service profile");
+    let mut index_storage = index_ctx.reserve_scoped(0, "test semantic indices")
+        .expect("semantic index preparation storage");
+    let indices = derive_semantic_indices(&index_ctx, &native, &mut index_storage)
+        .expect("service profile admits semantic indices");
     let entity_record = &native.entity_records[0];
     let parameter = entity_record
         .parameter_value()
