@@ -5,7 +5,6 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result as AnyResult};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
@@ -15,8 +14,8 @@ use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
 use crate::application::artifact_store::{self, FileDestination, SidecarPersistOutcome};
 use crate::application::document::{LoadOrigin, LoadedDocument};
-use crate::application::refusal::{ApplicationError, ConversionRefusal};
-use crate::application::validators::validate_ir;
+use crate::application::refusal::{ApplicationError, ConversionRefusal, RefusalStage};
+use crate::application::validators::validate_loaded;
 use crate::loader;
 
 /// Input path and decode options for one conversion.
@@ -342,22 +341,7 @@ pub(crate) fn prepare(
         return Err(refusal.into());
     }
 
-    let validation_arena = DecodeArena::new();
-    let validation_ctx = DecodeContext::for_loaded_input(
-        &validation_arena,
-        &source.options.policy,
-        loaded.input_bytes,
-    )?;
-    let validation = validate_ir(
-        &validation_ctx,
-        inputs,
-        &loaded.ir,
-        loaded.fidelity(),
-        decode_report
-            .as_ref()
-            .map_or_else(Vec::new, |report| report.losses.clone()),
-    )?;
-    validation_ctx.finish_session()?;
+    let validation = validate_loaded(inputs, &loaded, &source.options.policy)?;
     if !validation.is_ok() && !policy.allow_errors {
         return Err(ConversionRefusal::CheckFailed {
             operation: super::refusal::CheckOperation::Export,
@@ -471,8 +455,8 @@ pub(crate) enum EmittedArtifact {
 
 /// Restates an unsupported target as a typed refusal.
 ///
-/// Every other plan failure stays operational. Export-loss refusal is made
-/// only from a completed plan's typed loss rows.
+/// Resource failures retain their typed evidence; other plan failures stay
+/// operational. Export-loss refusal needs a completed plan's typed loss rows.
 fn plan_refusal(
     error: cadmpeg_core::CodecError,
     decode_report: Option<DecodeReport>,
@@ -487,7 +471,7 @@ fn plan_refusal(
             }
             .into()
         }
-        _ => ApplicationError::Operational(error.into()),
+        _ => ApplicationError::from(error).at_stage(RefusalStage::Plan),
     }
 }
 
