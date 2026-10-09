@@ -886,11 +886,10 @@ fn variable_blend_value(
                     Err(error) => return Some(Err(error)),
                 };
             let mut visits = 0..count;
-            while propagate_resource!(
+            while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(
                 ctx.next_charged(&mut visits, "ASM variable blend value entries")
             )
-            .is_some()
-            {
+            .is_some() {
                 let parameter = cur.take_f64()?;
                 let radius = cur.take_f64()? * LEN_TO_MM;
                 let tangents = [cur.take_f64()?, cur.take_f64()?]
@@ -1389,9 +1388,8 @@ pub(super) fn vertex_blend_spl_sur(
         Err(error) => return Some(Err(error)),
     };
     let mut visits = 0..count;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM vertex blend spl sur entries"))
-        .is_some()
-    {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM vertex blend spl sur entries"))
+        .is_some() {
         boundaries.push(if revision.is_some() {
             match revision_vertex_blend_boundary(ctx, &mut cur, resolver)? {
                 Ok(boundary) => boundary,

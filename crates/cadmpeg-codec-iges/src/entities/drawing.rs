@@ -162,9 +162,8 @@ fn conflicting_drawing_property_forms<'text>(
     };
     let mut first: Option<(u32, DrawingPropertyValue<'text>)> = None;
     let mut properties = groups.properties().iter();
-    while let Some(sequence) =
-        ctx.next_charged(&mut properties, "iges drawing property traversal")?
-    {
+    while properties.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(sequence) = ctx.next_charged(&mut properties, "iges drawing property traversal")? else { break; };
         if ctx.get_btree_map(directory, sequence, "iges drawing directory lookup")?
             .is_none_or(|entry| entry.entity_type != 406 || entry.form != form)
         {

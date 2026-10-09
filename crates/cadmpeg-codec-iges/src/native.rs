@@ -1282,9 +1282,8 @@ mod occurrence {
             let mut id =
                 ctx.copy_retained_text("iges:product:occurrence#", "iges native occurrence id")?;
             let mut path_source = path.iter().enumerate();
-            while let Some((index, sequence)) =
-                ctx.next_charged(&mut path_source, "iges native occurrence id path scan")?
-            {
+            while path_source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some((index, sequence)) = ctx.next_charged(&mut path_source, "iges native occurrence id path scan")? else { break; };
                 if index != 0 {
                     ctx.append_retained(&mut id, "/", "iges native occurrence id")?;
                 }
@@ -2179,10 +2178,10 @@ impl OccurrenceExpansion<'_, '_> {
             (local.affine_rows(), definition_world.affine_rows()),
         )?);
         let mut members = definition.members.iter();
-        while let Some(member) = self
+        while members.len() != 0 || self.ctx.resource_refusal().is_some() {
+            let Some(member) = self
             .ctx
-            .next_charged(&mut members, "iges occurrence member scan")?
-        {
+            .next_charged(&mut members, "iges occurrence member scan")? else { break; };
             if output.occurrences.len() >= self.output_limit {
                 output.path.pop();
                 return Err(self.ctx.refuse_codec_limit(
@@ -2285,7 +2284,8 @@ impl OccurrenceExpansion<'_, '_> {
 fn copy_native_tokens(ctx: &DecodeContext<'_>, tokens: &[Token]) -> Result<Vec<Token>, CodecError> {
     let mut copies = ctx.collection_vec(tokens.len(), "iges native token slots")?;
     let mut token_source = tokens.iter();
-    while let Some(token) = ctx.next_charged(&mut token_source, "iges native token scan")? {
+    while token_source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(token) = ctx.next_charged(&mut token_source, "iges native token scan")? else { break; };
         let value = match &token.value {
             TokenValue::String(bytes) => {
                 TokenValue::String(ctx.copy_retained(bytes, "iges native token bytes")?)
@@ -2320,11 +2320,12 @@ fn native_entity_ids<I, F>(
     mut linked_sequence: F,
 ) -> Result<Vec<String>, CodecError>
 where
-    I: Iterator,
+    I: ExactSizeIterator,
     F: FnMut(I::Item) -> Option<u32>,
 {
     let mut ids = Vec::new();
-    while let Some(item) = ctx.next_charged(&mut source, scan_operation)? {
+    while source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(item) = ctx.next_charged(&mut source, scan_operation)? else { break; };
         if let Some(sequence) = linked_sequence(item) {
             ctx.push_formatted_retained(
                 &mut ids,
@@ -2370,10 +2371,11 @@ fn collect_native_inputs<'a, 'ctx>(
                 "iges native quarantined directory slots",
             )?;
             let mut source = quarantine.directory.iter();
-            while let Some(record) = ctx.next_charged(
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(record) = ctx.next_charged(
                 &mut source,
                 "iges native quarantined directory scan",
-            )? {
+            )? else { break; };
                 records.push(NativeQuarantinedRecord::Directory(record));
             }
             Ok::<_, CodecError>(records)
@@ -2385,10 +2387,11 @@ fn collect_native_inputs<'a, 'ctx>(
                 "iges native quarantined parameter slots",
             )?;
             let mut source = quarantine.parameters.iter();
-            while let Some(record) = ctx.next_charged(
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(record) = ctx.next_charged(
                 &mut source,
                 "iges native quarantined parameter scan",
-            )? {
+            )? else { break; };
                 records.push(NativeQuarantinedRecord::Parameter(record));
             }
             Ok::<_, CodecError>(records)
@@ -2403,7 +2406,8 @@ fn collect_native_inputs<'a, 'ctx>(
         let mut cards = ctx.collection_vec(card_count, "iges native card slots")?;
         let mut index = 0;
         let mut framed_source = framed.iter();
-        while let Some(card) = ctx.next_charged(&mut framed_source, "iges native card slots")? {
+        while framed_source.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(card) = ctx.next_charged(&mut framed_source, "iges native card slots")? else { break; };
             cards.push(NativeCard {
                 index,
                 line: &card.line,
@@ -2412,7 +2416,8 @@ fn collect_native_inputs<'a, 'ctx>(
             index += 1;
         }
         let mut trailing_source = trailing.iter();
-        while let Some(line) = ctx.next_charged(&mut trailing_source, "iges native card slots")? {
+        while trailing_source.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(line) = ctx.next_charged(&mut trailing_source, "iges native card slots")? else { break; };
             cards.push(NativeCard {
                 index,
                 line,
@@ -2481,7 +2486,8 @@ pub(crate) fn store<'ctx>(
     let mut directory_index_storage = ctx.reserve_scoped(0, "iges native directory index")?;
     let mut entries = BTreeMap::new();
     let mut directory_source = directory.iter();
-    while let Some(entry) = ctx.next_charged(&mut directory_source, "iges native directory index scan")? {
+    while directory_source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(&mut directory_source, "iges native directory index scan")? else { break; };
         directory_index_storage.with_storage(|| {
             ctx.insert_btree_map(
                 &mut entries,
@@ -2495,7 +2501,8 @@ pub(crate) fn store<'ctx>(
         ctx.with_scoped_storage("iges native macro definitions scratch", || {
             let mut macro_definitions = Vec::new();
             let mut source = directory.iter();
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
         if entry.entity_type != 306 {
             continue;
         }
@@ -2528,7 +2535,8 @@ pub(crate) fn store<'ctx>(
         };
         let mut language_statements = Vec::new();
         let mut statement_source = language_spans.iter();
-        while let Some(span) = ctx.next_charged(&mut statement_source, "iges native macro statement scan")? {
+        while statement_source.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(span) = ctx.next_charged(&mut statement_source, "iges native macro statement scan")? else { break; };
             ctx.reserve_vec(&mut language_statements, 1, "iges native macro statements")?;
             language_statements.push(ctx.copy_retained(
                 &record.bytes[span.clone()],
@@ -2563,7 +2571,8 @@ pub(crate) fn store<'ctx>(
         ctx.with_scoped_storage("iges native macro instances scratch", || {
             let mut macro_instances = Vec::new();
             let mut source = directory.iter();
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
         if !crate::profile::macro_instance_type(entry.entity_type) {
             continue;
         }
@@ -2622,7 +2631,8 @@ pub(crate) fn store<'ctx>(
     let mut property_owners = BTreeMap::<u32, BTreeSet<u32>>::new();
     let no_property_owners = BTreeSet::new();
     let mut primary_source = parameters.iter();
-    while let Some(record) = ctx.next_charged(&mut primary_source, "iges native primary ends")? {
+    while primary_source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(record) = ctx.next_charged(&mut primary_source, "iges native primary ends")? else { break; };
         let layout_end = crate::parameter::entity_primary_end_for_global_table(
             record,
             &entries,
@@ -2642,10 +2652,11 @@ pub(crate) fn store<'ctx>(
         .min(layout_end);
         if let Some(TrailingPointerAnalysis::Unambiguous(groups)) = analysis {
             let mut property_source = groups.properties().iter();
-            while let Some(property) = ctx.next_charged(
+            while property_source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(property) = ctx.next_charged(
                 &mut property_source,
                 "iges native property owner index scan",
-            )? {
+            )? else { break; };
                 property_owner_storage.with_storage(|| {
                     ctx.insert_btree_group_set(
                         &mut property_owners,
@@ -2693,9 +2704,8 @@ pub(crate) fn store<'ctx>(
         ctx.reserve_scoped(0, "iges native required back-pointer storage")?;
     let mut required_back_pointer_members = std::collections::BTreeSet::new();
     let mut back_pointer_groups = directory.iter();
-    while let Some(group) =
-        ctx.next_charged(&mut back_pointer_groups, "iges native directory scan")?
-    {
+    while back_pointer_groups.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(group) = ctx.next_charged(&mut back_pointer_groups, "iges native directory scan")? else { break; };
         if !(group.entity_type == 402 && matches!(group.form, 1 | 14)) {
             continue;
         }
@@ -2708,7 +2718,8 @@ pub(crate) fn store<'ctx>(
             .and_then(|record| record.count_with_stride_before(1, 1, end))
             .unwrap_or_default();
         let mut indices = 0..count;
-        while let Some(index) = ctx.next_charged(&mut indices, "iges native counted item scan")? {
+        while !indices.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(&mut indices, "iges native counted item scan")? else { break; };
             if let Some(sequence) = record
                 .and_then(|record| record.integer(2 + index))
                 .and_then(|value| u32::try_from(value).ok())
@@ -2729,7 +2740,8 @@ pub(crate) fn store<'ctx>(
     }
     let mut ambiguous_parameter_boundaries = Vec::new();
     let mut boundary_source = parameters.iter();
-    while let Some(record) = ctx.next_charged(&mut boundary_source, "iges native ambiguous boundary scan")? {
+    while boundary_source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(record) = ctx.next_charged(&mut boundary_source, "iges native ambiguous boundary scan")? else { break; };
         let sequence = &record.directory_sequence;
         let Some(analysis) = ctx.get_btree_map(
             trailing_pointer_analysis,
@@ -2800,10 +2812,11 @@ pub(crate) fn store<'ctx>(
             };
             if let Some(groups) = trailing {
                 let mut association_source = groups.associations().iter().enumerate();
-                while let Some((index, sequence)) = ctx.next_charged(
+                while association_source.len() != 0 || ctx.resource_refusal().is_some() {
+                    let Some((index, sequence)) = ctx.next_charged(
                     &mut association_source,
                     "iges native trailing association scan",
-                )? {
+                )? else { break; };
                     let _association = parameter_resolver.resolve_any_of(
                         entry.sequence,
                         groups.token_start + 1 + index,
@@ -2815,10 +2828,11 @@ pub(crate) fn store<'ctx>(
             }
             if let Some(groups) = invalid_trailing {
                 let mut association_source = groups.association_pointers.iter();
-                while let Some(pointer) = ctx.next_charged(
+                while association_source.len() != 0 || ctx.resource_refusal().is_some() {
+                    let Some(pointer) = ctx.next_charged(
                     &mut association_source,
                     "iges native invalid trailing association scan",
-                )? {
+                )? else { break; };
                     let _association = parameter_resolver.resolve_any_of(
                         entry.sequence,
                         pointer.token_index,
@@ -2830,10 +2844,11 @@ pub(crate) fn store<'ctx>(
             }
             if let Some(groups) = trailing {
                 let mut property_source = groups.properties().iter().enumerate();
-                while let Some((index, sequence)) = ctx.next_charged(
+                while property_source.len() != 0 || ctx.resource_refusal().is_some() {
+                    let Some((index, sequence)) = ctx.next_charged(
                     &mut property_source,
                     "iges native trailing property scan",
-                )? {
+                )? else { break; };
                     let _property = parameter_resolver.resolve_any_of(
                         entry.sequence,
                         groups.token_start + groups.associations().len() + 2 + index,
@@ -2845,10 +2860,11 @@ pub(crate) fn store<'ctx>(
             }
             if let Some(groups) = invalid_trailing {
                 let mut property_source = groups.property_pointers.iter();
-                while let Some(pointer) = ctx.next_charged(
+                while property_source.len() != 0 || ctx.resource_refusal().is_some() {
+                    let Some(pointer) = ctx.next_charged(
                     &mut property_source,
                     "iges native invalid trailing property scan",
-                )? {
+                )? else { break; };
                     let _property = parameter_resolver.resolve_any_of(
                         entry.sequence,
                         pointer.token_index,
@@ -2920,7 +2936,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native direction scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native direction scan")? else { break; };
                 if !(entry.entity_type == 123 && entry.form == 0) {
                     continue;
                 }
@@ -2956,7 +2973,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 125 && matches!(entry.form, 0..=4)) {
                     continue;
                 }
@@ -3006,7 +3024,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 124 && matches!(entry.form, 0 | 1 | 10 | 11 | 12)) {
                     continue;
                 }
@@ -3049,7 +3068,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 106) {
                     continue;
                 }
@@ -3116,7 +3136,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 314 && entry.form == 0) {
                     continue;
                 }
@@ -3153,7 +3174,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 ctx.reserve_vec(&mut output, 1, "iges native display attribute slots")?;
                 let value = {
                     let display_references = if entry.line_font < 0 || entry.level < 0 || entry.color < 0 {
@@ -3214,7 +3236,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 304 && matches!(entry.form, 1 | 2)) {
                     continue;
                 }
@@ -3307,7 +3330,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 312 && matches!(entry.form, 0..=1)) {
                     continue;
                 }
@@ -3372,7 +3396,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 310 && entry.form == 0) {
                     continue;
                 }
@@ -3501,7 +3526,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 406 && entry.form == 1) {
                     continue;
                 }
@@ -3536,7 +3562,8 @@ pub(crate) fn store<'ctx>(
         ctx.with_scoped_storage("iges native primitive solids scratch", || {
             let mut primitive_solids = Vec::new();
             let mut source = directory.iter();
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
         if !matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) {
             continue;
         }
@@ -3641,7 +3668,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(matches!(entry.entity_type, 162 | 164)) {
                     continue;
                 }
@@ -3715,7 +3743,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 180 && matches!(entry.form, 0 | 1)) {
                     continue;
                 }
@@ -3726,7 +3755,8 @@ pub(crate) fn store<'ctx>(
                     let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 1, 1)?;
                     let mut terms = Vec::new();
                     let mut term_source = 0..count;
-                    while let Some(index) = ctx.next_charged(&mut term_source, "iges native counted item scan")? {
+                    while !term_source.is_empty() || ctx.resource_refusal().is_some() {
+                        let Some(index) = ctx.next_charged(&mut term_source, "iges native counted item scan")? else { break; };
                         let Some(value) = record.and_then(|record| record.integer(2 + index)) else {
                             continue;
                     };
@@ -3807,7 +3837,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 182 && entry.form == 0) {
                     continue;
                 }
@@ -3863,7 +3894,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 184 && matches!(entry.form, 0 | 1)) {
                     continue;
                 }
@@ -3982,7 +4014,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 186 && entry.form == 0) {
                     continue;
                 }
@@ -4054,7 +4087,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 430 && matches!(entry.form, 0 | 1)) {
                     continue;
                 }
@@ -4131,7 +4165,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 308 && entry.form == 0) {
                     continue;
                 }
@@ -4202,7 +4237,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 408 && entry.form == 0) {
                     continue;
                 }
@@ -4259,7 +4295,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 320 && entry.form == 0) {
                     continue;
                 }
@@ -4431,7 +4468,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 420 && entry.form == 0) {
                     continue;
                 }
@@ -4546,7 +4584,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 132 && entry.form == 0) {
                     continue;
                 }
@@ -4669,7 +4708,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 412 && entry.form == 0) {
                     continue;
                 }
@@ -4746,7 +4786,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 414 && entry.form == 0) {
                     continue;
                 }
@@ -4819,7 +4860,8 @@ pub(crate) fn store<'ctx>(
         ctx.with_scoped_storage("iges native external references scratch", || {
             let mut external_references = Vec::new();
             let mut source = directory.iter();
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
         if entry.entity_type != 416 || !matches!(entry.form, 0..=4) {
             continue;
         }
@@ -4898,7 +4940,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15)) {
                     continue;
                 }
@@ -4952,7 +4995,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 302) {
                     continue;
                 }
@@ -5037,9 +5081,8 @@ pub(crate) fn store<'ctx>(
         },
     )?;
     let mut associativity_source = directory.iter();
-    while let Some(entry) =
-        ctx.next_charged(&mut associativity_source, "iges native directory scan")?
-    {
+    while associativity_source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(&mut associativity_source, "iges native directory scan")? else { break; };
         if entry.entity_type != 402
             || !matches!(
                 entry.form,
@@ -5905,7 +5948,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 322 && matches!(entry.form, 0..=2)) {
                     continue;
                 }
@@ -5968,10 +6012,11 @@ pub(crate) fn store<'ctx>(
                     };
                             if entry.form == 2 {
                                 let mut display_source = 0..value_count;
-                                while let Some(offset) = ctx.next_charged(
+                                while !display_source.is_empty() || ctx.resource_refusal().is_some() {
+                                    let Some(offset) = ctx.next_charged(
                                     &mut display_source,
                                     "iges native attribute display sequence scan",
-                                )? {
+                                )? else { break; };
                                     let pointer_index = value_start + offset * stride + 1;
                                     let sequence = record
                                         .integer(pointer_index)
@@ -6084,7 +6129,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 422 && matches!(entry.form, 0..=1)) {
                     continue;
                 }
@@ -6202,7 +6248,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 406 && matches!(entry.form, 7 | 15)) {
                     continue;
                 }
@@ -6255,7 +6302,8 @@ pub(crate) fn store<'ctx>(
         ctx.with_scoped_storage("iges native properties scratch", || {
             let mut properties = Vec::new();
             let mut source = directory.iter();
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
         if entry.entity_type != 406 || !matches!(entry.form, 2..=15 | 18..=36) {
             continue;
         }
@@ -6645,7 +6693,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 316 && entry.form == 0) {
                     continue;
                 }
@@ -6713,7 +6762,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 410 && matches!(entry.form, 0 | 1)) {
                     continue;
                 }
@@ -6807,7 +6857,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 402 && matches!(entry.form, 3 | 4)) {
                     continue;
                 }
@@ -6955,7 +7006,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 402 && entry.form == 19) {
                     continue;
                 }
@@ -7052,7 +7104,8 @@ pub(crate) fn store<'ctx>(
             let mut output = Vec::new();
             let mut source = directory.iter();
 
-            while let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? {
+            while source.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(entry) = ctx.next_charged(&mut source, "iges native directory scan")? else { break; };
                 if !(entry.entity_type == 404 && matches!(entry.form, 0 | 1)) {
                     continue;
                 }
@@ -7276,7 +7329,8 @@ pub(crate) fn store<'ctx>(
         )?
     {
         let mut parameter_source = parameters.iter();
-        while let Some(record) = ctx.next_charged(&mut parameter_source, "iges occurrence parameter index scan")? {
+        while parameter_source.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(record) = ctx.next_charged(&mut parameter_source, "iges occurrence parameter index scan")? else { break; };
             parameter_index_storage.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut by_directory,
@@ -7293,10 +7347,11 @@ pub(crate) fn store<'ctx>(
     let mut contained_instances = BTreeSet::new();
     let mut occurrence_definitions = BTreeMap::new();
     let mut occurrence_definition_entries = directory.iter();
-    while let Some(entry) = ctx.next_charged(
+    while occurrence_definition_entries.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(
         &mut occurrence_definition_entries,
         "iges native directory scan",
-    )? {
+    )? else { break; };
         if !(matches!(entry.entity_type, 308 | 320) && entry.form == 0) {
             continue;
         }
@@ -7348,7 +7403,8 @@ pub(crate) fn store<'ctx>(
         let mut malformed = false;
         let mut members = Vec::new();
         let mut member_source = 0..count;
-        while let Some(index) = ctx.next_charged(&mut member_source, "iges native counted item scan")? {
+        while !member_source.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(&mut member_source, "iges native counted item scan")? else { break; };
             let member = record
                 .integer(4 + index)
                 .and_then(|value| u32::try_from(value).ok())
@@ -7429,7 +7485,8 @@ pub(crate) fn store<'ctx>(
     let mut neutral_storage = ctx.reserve_scoped(0, "iges occurrence neutral link storage")?;
     let mut occurrence_neutral_links = BTreeMap::<u32, Vec<&str>>::new();
     let mut curve_source = ir.model.curves.iter();
-    while let Some(curve) = ctx.next_charged(&mut curve_source, "iges occurrence curve scan")? {
+    while curve_source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(curve) = ctx.next_charged(&mut curve_source, "iges occurrence curve scan")? else { break; };
         if let Some(sequence) = curve
             .source_object
             .as_ref()
@@ -7450,7 +7507,8 @@ pub(crate) fn store<'ctx>(
         }
     }
     let mut surface_source = ir.model.surfaces.iter();
-    while let Some(surface) = ctx.next_charged(&mut surface_source, "iges occurrence surface scan")? {
+    while surface_source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(surface) = ctx.next_charged(&mut surface_source, "iges occurrence surface scan")? else { break; };
         if let Some(sequence) = surface
             .source_object
             .as_ref()
@@ -7471,7 +7529,8 @@ pub(crate) fn store<'ctx>(
         }
     }
     let mut body_source = ir.model.bodies.iter();
-    while let Some(body) = ctx.next_charged(&mut body_source, "iges occurrence body scan")? {
+    while body_source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(body) = ctx.next_charged(&mut body_source, "iges occurrence body scan")? else { break; };
         if let Some(sequence) = sequences.body_neutral_form(&body.id, ctx)? {
             neutral_storage.with_storage(|| {
                 ctx.push_btree_group(
@@ -7485,7 +7544,8 @@ pub(crate) fn store<'ctx>(
         }
     }
     let mut point_source = ir.model.points.iter();
-    while let Some(point) = ctx.next_charged(&mut point_source, "iges occurrence point scan")? {
+    while point_source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(point) = ctx.next_charged(&mut point_source, "iges occurrence point scan")? else { break; };
         if let Some(sequence) = sequences.point(&point.id, ctx)? {
             neutral_storage.with_storage(|| {
                 ctx.push_btree_group(
@@ -7507,9 +7567,8 @@ pub(crate) fn store<'ctx>(
     if let Some(length_factor) = occurrence_length_factor {
         if let Some(admission) = structure_admitted {
             let mut rejections = admission.placement_rejections.iter();
-            while let Some((sequence, reason)) =
-                ctx.next_charged(&mut rejections, "iges occurrence rejected placement scan")?
-            {
+            while rejections.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some((sequence, reason)) = ctx.next_charged(&mut rejections, "iges occurrence rejected placement scan")? else { break; };
                 let rejected = match reason {
                     PlacementRejection::MissingRecord
                     | PlacementRejection::InvalidDefinition
@@ -7557,7 +7616,8 @@ pub(crate) fn store<'ctx>(
             };
             product_occurrences_storage.with_storage(|| {
                 let mut roots = directory.iter();
-                while let Some(root) = ctx.next_charged(&mut roots, "iges occurrence root scan")? {
+                while roots.len() != 0 || ctx.resource_refusal().is_some() {
+                    let Some(root) = ctx.next_charged(&mut roots, "iges occurrence root scan")? else { break; };
                     if matches!(root.entity_type, 408 | 420) && root.form == 0 {
                         let admitted = match structure_admitted {
                             Some(admission) => ctx.contains_btree_set(
@@ -7620,9 +7680,8 @@ pub(crate) fn store<'ctx>(
         ctx.with_scoped_storage("iges native boundary vertex sewing scratch", || {
             let mut output = Vec::new();
             let mut derivations = boundary_vertex_derivations.iter();
-            while let Some(derivation) =
-                ctx.next_charged(&mut derivations, "iges native boundary vertex scan")?
-            {
+            while derivations.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(derivation) = ctx.next_charged(&mut derivations, "iges native boundary vertex scan")? else { break; };
                 ctx.reserve_vec(&mut output, 1, "iges boundary vertex sewing slots")?;
                 let suffix = derivation
                     .vertex
@@ -7634,7 +7693,8 @@ pub(crate) fn store<'ctx>(
                     "iges boundary vertex sewing id",
                 )?;
                 let mut character_source = suffix.chars();
-                while let Some(character) = ctx.next_charged(&mut character_source, "iges boundary vertex sewing id source")? {
+                while !character_source.as_str().is_empty() || ctx.resource_refusal().is_some() {
+                    let Some(character) = ctx.next_charged(&mut character_source, "iges boundary vertex sewing id source")? else { break; };
                     ctx.push_retained_char(
                         &mut id,
                         if character == ':' { '_' } else { character },
@@ -7662,9 +7722,8 @@ pub(crate) fn store<'ctx>(
                 )?;
                 let mut source_endpoints = Vec::new();
                 let mut endpoints = derivation.source_endpoints.iter();
-                while let Some(endpoint) =
-                    ctx.next_charged(&mut endpoints, "iges native boundary endpoint scan")?
-                {
+                while endpoints.len() != 0 || ctx.resource_refusal().is_some() {
+                    let Some(endpoint) = ctx.next_charged(&mut endpoints, "iges native boundary endpoint scan")? else { break; };
                     ctx.reserve_vec(
                         &mut source_endpoints,
                         1,
@@ -7698,7 +7757,8 @@ pub(crate) fn store<'ctx>(
     let reference_storage = parameter_resolver.append_to(references)?;
     entities_storage.with_storage(|| {
         let mut entity_source = entities.iter_mut();
-        while let Some(entity) = ctx.next_charged(&mut entity_source, "iges native resolved entity scan")? {
+        while entity_source.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(entity) = ctx.next_charged(&mut entity_source, "iges native resolved entity scan")? else { break; };
             let edges = ctx.get_btree_map(
                 references,
                 &entity.directory_sequence,
@@ -7716,7 +7776,8 @@ pub(crate) fn store<'ctx>(
                     let mut copies =
                         ctx.collection_vec(edges.len(), "iges resolved native reference slots")?;
                     let mut edge_source = edges.iter();
-                    while let Some(edge) = ctx.next_charged(&mut edge_source, "iges native reference copy scan")? {
+                    while edge_source.len() != 0 || ctx.resource_refusal().is_some() {
+                        let Some(edge) = ctx.next_charged(&mut edge_source, "iges native reference copy scan")? else { break; };
                         copies.push(edge.copy_for_native(ctx, &mut reference_copy_storage)?);
                     }
                     copies

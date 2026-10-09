@@ -721,7 +721,8 @@ pub(super) fn build<'arena>(
 ) -> Result<Vec<NativeAnnotation>, CodecError> {
     let mut annotations = Vec::new();
     let mut source = directory.iter();
-    while let Some(entry) = ctx.next_charged(&mut source, "iges native annotation scan")? {
+    while source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(&mut source, "iges native annotation scan")? else { break; };
         let Some(kind) = classify(entry.entity_type, entry.form) else {
             continue;
         };

@@ -110,7 +110,8 @@ pub(super) fn build(
 ) -> Result<Vec<NativeFemEntity>, CodecError> {
     let mut result = Vec::new();
     let mut source = directory.iter();
-    while let Some(entry) = ctx.next_charged(&mut source, "iges FEM directory scan")? {
+    while source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(&mut source, "iges FEM directory scan")? else { break; };
         if !is_fem(entry) {
             continue;
         }

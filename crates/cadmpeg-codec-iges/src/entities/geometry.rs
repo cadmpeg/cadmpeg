@@ -550,9 +550,8 @@ pub(super) fn type126_declared_control_points(
     let mut controls =
         ctx.collection_vec(control_count, "iges Type126 declared control intervals")?;
     let mut point_iter = 0..control_count;
-    while let Some(point) =
-        ctx.next_charged(&mut point_iter, "iges Type126 declared control traversal")?
-    {
+    while !point_iter.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(point) = ctx.next_charged(&mut point_iter, "iges Type126 declared control traversal")? else { break; };
         let mut coordinates = [DeclaredInterval::around(0.0, 0.0); 3];
         for (coordinate, value) in coordinates.iter_mut().enumerate() {
             let Some(index) = point
@@ -606,12 +605,12 @@ pub(super) fn declared_affine_progression(
     let mut lower = f64::NEG_INFINITY;
     let mut upper = f64::INFINITY;
     let mut first_iter = 0..values.len();
-    while let Some(first) = ctx.next_charged(&mut first_iter, "iges affine progression origins")? {
+    while !first_iter.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(first) = ctx.next_charged(&mut first_iter, "iges affine progression origins")? else { break; };
         let first_interval = DeclaredInterval::around(values[first], uncertainties[first]);
         let mut second_iter = first + 1..values.len();
-        while let Some(second) =
-            ctx.next_charged(&mut second_iter, "iges affine progression pairs")?
-        {
+        while !second_iter.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(second) = ctx.next_charged(&mut second_iter, "iges affine progression pairs")? else { break; };
             let second_interval = DeclaredInterval::around(values[second], uncertainties[second]);
             let Some(span) = cadmpeg_core::convert::f64_from_index(second - first) else {
                 return Ok(false);
@@ -987,10 +986,11 @@ pub(crate) fn enforce_transform_depth(
             policy.min(MAX_TRANSFORM_DEPTH)
         });
     let mut entry_iter = directory.iter();
-    while let Some(entry) = ctx.next_charged(
+    while entry_iter.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(
         &mut entry_iter,
         "iges transform preflight directory traversal",
-    )? {
+    )? else { break; };
         let Some(mut sequence) = u32::try_from(entry.transform)
             .ok()
             .filter(|sequence| sequence % 2 == 1)
@@ -1354,13 +1354,13 @@ fn consumed_support_sequences<'ctx>(
     }
 
     let mut consumed = direction_sequences;
-    while let Some(sequence) = ctx
+    while !transform_sequences.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(sequence) = ctx
         .next_charged(
             &mut transform_sequences.iter(),
             "iges consumed-support closure traversal",
         )?
-        .copied()
-    {
+        .copied() else { break; };
         ctx.remove_btree_set(
             &mut transform_sequences,
             &sequence,
@@ -1499,9 +1499,8 @@ pub(super) fn curve_geometry_coplanar(
         SolvedCurveGeometry::Composite { segments, .. } => {
             let mut valid = true;
             let mut segment_iter = segments.iter();
-            while let Some(segment) =
-                ctx.next_charged(&mut segment_iter, "iges coplanar composite segments")?
-            {
+            while segment_iter.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(segment) = ctx.next_charged(&mut segment_iter, "iges coplanar composite segments")? else { break; };
                 let Some(curve) = index.curves(segment.curve.as_str(), ctx)? else {
                     valid = false;
                     break;
@@ -2055,9 +2054,8 @@ pub(crate) fn project_geometry<'ctx>(
         }
     }
     let mut primitive_entries = directory.iter();
-    while let Some(entry) =
-        ctx.next_charged(&mut primitive_entries, "iges geometry family traversal")?
-    {
+    while primitive_entries.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(&mut primitive_entries, "iges geometry family traversal")? else { break; };
         if !(entry.entity_type == 100 && entry.form == 0) {
             continue;
         }
@@ -2563,9 +2561,8 @@ pub(crate) fn project_geometry<'ctx>(
         })?;
     }
     let mut primitive_entries = directory.iter();
-    while let Some(entry) =
-        ctx.next_charged(&mut primitive_entries, "iges geometry family traversal")?
-    {
+    while primitive_entries.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(&mut primitive_entries, "iges geometry family traversal")? else { break; };
         if !(entry.entity_type == 110 && (0..=2).contains(&entry.form)) {
             continue;
         }

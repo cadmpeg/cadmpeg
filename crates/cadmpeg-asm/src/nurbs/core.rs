@@ -51,8 +51,7 @@ fn control_points(
         marker.rational(),
     ));
     let mut visits = 0..count;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM control points entries")).is_some()
-    {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM control points entries")).is_some() {
         let mut comps = [0.0f64; 4];
         for comp in comps.iter_mut().take(marker.cp_dims()) {
             *comp = cur.take_f64()?;
@@ -147,13 +146,13 @@ pub(super) fn surface_block(
             |_| ctx.collection_vec(n_poles_v, "ASM NURBS grid row poles"),
         ));
         let mut columns = 0..n_poles_v;
-        while propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
-            .is_some()
-        {
+        while (!columns.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
+            .is_some() {
             let mut rows = rows.iter_mut();
-            while let Some(row) = propagate_resource!(
+            while rows.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(row) = propagate_resource!(
                 ctx.next_charged(&mut rows, "ASM surface control points")
-            ) {
+            ) else { break; };
                 let point = FinitePoint3::new(Point3::new(
                     cur.take_f64()? * LEN_TO_MM,
                     cur.take_f64()? * LEN_TO_MM,
@@ -173,13 +172,13 @@ pub(super) fn surface_block(
             |_| ctx.collection_vec(n_poles_v, "ASM NURBS grid row poles"),
         ));
         let mut columns = 0..n_poles_v;
-        while propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
-            .is_some()
-        {
+        while (!columns.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
+            .is_some() {
             let mut rows = rows.iter_mut();
-            while let Some(row) = propagate_resource!(
+            while rows.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(row) = propagate_resource!(
                 ctx.next_charged(&mut rows, "ASM surface control points")
-            ) {
+            ) else { break; };
                 row.push(FinitePoint3::new(Point3::new(
                     cur.take_f64()? * LEN_TO_MM,
                     cur.take_f64()? * LEN_TO_MM,

@@ -199,10 +199,10 @@ fn source_edge_for_vertices<'a>(
 ) -> Result<&'a Edge, SourceEdgeSelectionError> {
     let mut matching = None;
     let mut positions = candidates.iter();
-    while let Some(position) = ctx
+    while positions.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(position) = ctx
         .next_charged(&mut positions, "iges B-rep source edge candidates")
-        .map_err(SourceEdgeSelectionError::Codec)?
-    {
+        .map_err(SourceEdgeSelectionError::Codec)? else { break; };
         let Some(edge) = ir.model.edges.get(*position) else {
             continue;
         };
@@ -260,9 +260,8 @@ fn project_pcurve_uses(
 ) -> Result<Vec<PcurveUse>, PcurveProjectionError> {
     let mut projected = ctx.collection_vec(resolved.len(), "iges B-rep projected pcurve uses")?;
     let mut pcurve_uses = uses.iter().zip(resolved).enumerate();
-    while let Some((index, ((isoparametric, _), (geometry, range)))) =
-        ctx.next_charged(&mut pcurve_uses, "iges B-rep pcurve projection traversal")?
-    {
+    while pcurve_uses.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((index, ((isoparametric, _), (geometry, range)))) = ctx.next_charged(&mut pcurve_uses, "iges B-rep pcurve projection traversal")? else { break; };
         let parameter_range = cadmpeg_ir::units::FiniteVector::new(range).ok_or(
             PcurveProjectionError::Invalid(PcurveMetadata::NON_FINITE_PARAMETER_RANGE),
         )?;
@@ -375,9 +374,8 @@ fn resolve_pcurve_uses<'a>(
         ctx.temporary_vec(uses.len(), "iges B-rep mapped pcurves")?;
     _mapped_storage = result_mapped_storage;
     let mut use_sequences = uses.iter();
-    while let Some((_, sequence)) =
-        ctx.next_charged(&mut use_sequences, "iges B-rep pcurve resolution traversal")?
-    {
+    while use_sequences.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((_, sequence)) = ctx.next_charged(&mut use_sequences, "iges B-rep pcurve resolution traversal")? else { break; };
         let Some((geometry, range)) = pcurve_geometry(
             source,
             index,
@@ -497,7 +495,8 @@ pub(super) fn project<'ctx>(
         let mut points = record_storage
             .with_storage(|| ctx.collection_vec(count, "iges B-rep vertex-list points"))?;
         let mut tuples = 0..count;
-        while let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? {
+        while !tuples.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else { break; };
             let start = 2 + index * 3;
             let values = [
                 record.number(start),
@@ -579,7 +578,8 @@ pub(super) fn project<'ctx>(
         let mut edges = record_storage
             .with_storage(|| ctx.collection_vec(count, "iges B-rep edge-list edges"))?;
         let mut tuples = 0..count;
-        while let Some(item) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? {
+        while !tuples.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(item) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else { break; };
             let start = 2 + item * 5;
             let Some(edge) = pointer(record, start)
                 .zip(pointer(record, start + 1))
@@ -675,10 +675,9 @@ pub(super) fn project<'ctx>(
         let mut uses =
             record_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep loop uses"))?;
         let mut tuples = 0..count;
-        while ctx
+        while (!tuples.is_empty() || ctx.resource_refusal().is_some()) && ctx
             .next_charged(&mut tuples, "iges B-rep definition tuples")?
-            .is_some()
-        {
+            .is_some() {
             let Some(use_type) = record.integer(index) else {
                 uses.clear();
                 break;
@@ -698,9 +697,8 @@ pub(super) fn project<'ctx>(
             let mut pcurves = record_storage
                 .with_storage(|| ctx.collection_vec(pcurve_count, "iges B-rep use pcurves"))?;
             let mut pcurve_tuples = 0..pcurve_count;
-            while let Some(pcurve_index) =
-                ctx.next_charged(&mut pcurve_tuples, "iges B-rep definition tuples")?
-            {
+            while !pcurve_tuples.is_empty() || ctx.resource_refusal().is_some() {
+                let Some(pcurve_index) = ctx.next_charged(&mut pcurve_tuples, "iges B-rep definition tuples")? else { break; };
                 let isoparametric = match record.integer(index + 5 + pcurve_index * 2) {
                     Some(1) => true,
                     Some(0) => false,
@@ -866,7 +864,8 @@ pub(super) fn project<'ctx>(
             .with_storage(|| ctx.collection_vec(count - 1, "iges B-rep face loop pointers"))?;
         let mut valid_pointers = true;
         let mut tuples = 1..count;
-        while let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? {
+        while !tuples.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else { break; };
             let Some(sequence) = pointer(record, 4 + index) else {
                 valid_pointers = false;
                 break;
@@ -966,7 +965,8 @@ pub(super) fn project<'ctx>(
         let mut face_uses = record_storage
             .with_storage(|| ctx.collection_vec(count, "iges B-rep shell face uses"))?;
         let mut tuples = 0..count;
-        while let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? {
+        while !tuples.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else { break; };
             let Some(face) = pointer(record, 2 + index * 2) else {
                 face_uses.clear();
                 break;
@@ -1102,7 +1102,8 @@ pub(super) fn project<'ctx>(
         shell_uses.push((outer, outer_sense));
         let mut valid = true;
         let mut tuples = 0..void_count;
-        while let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? {
+        while !tuples.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else { break; };
             let Some(shell) = pointer(record, 4 + index * 2) else {
                 valid = false;
                 break;
@@ -1313,9 +1314,8 @@ pub(super) fn project<'ctx>(
         let mut consumed = BTreeSet::new();
         let mut valid = true;
         let mut shell_uses = definition.shells.iter();
-        while let Some(&(shell_sequence, shell_sense)) =
-            ctx.next_charged(&mut shell_uses, "iges B-rep body shell traversal")?
-        {
+        while shell_uses.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(&(shell_sequence, shell_sense)) = ctx.next_charged(&mut shell_uses, "iges B-rep body shell traversal")? else { break; };
             let shell_definition = ctx.get_btree_map(&shell_definitions, &shell_sequence, "iges B-rep shell lookup")?
                 .ok_or_else(|| CodecError::malformed("IGES B-rep shell definition is absent"))?;
             let shell_stem = if shell_sequence == entry.sequence && definition.shells.len() == 1 {
@@ -1327,9 +1327,8 @@ pub(super) fn project<'ctx>(
             let mut shell_faces =
                 ctx.collection_vec(shell_definition.faces.len(), "iges B-rep shell face ids")?;
             let mut face_uses = shell_definition.faces.iter();
-            while let Some(&(face_sequence, native_face_sense)) =
-                ctx.next_charged(&mut face_uses, "iges B-rep shell face traversal")?
-            {
+            while face_uses.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(&(face_sequence, native_face_sense)) = ctx.next_charged(&mut face_uses, "iges B-rep shell face traversal")? else { break; };
                 let face_sense = compose_sense(native_face_sense, shell_sense);
                 let face_definition = ctx.get_btree_map(&faces, &face_sequence, "iges B-rep face lookup")?
                     .ok_or_else(|| CodecError::malformed("IGES B-rep face definition is absent"))?;
@@ -1354,9 +1353,8 @@ pub(super) fn project<'ctx>(
                 let loop_id_for =
                     |sequence| crate::ids::loop_admitted(&shell_stem.child(sequence), ctx);
                 let mut loop_sequences = face_definition.loops.iter();
-                while let Some(loop_sequence) =
-                    ctx.next_charged(&mut loop_sequences, "iges B-rep face loop traversal")?
-                {
+                while loop_sequences.size_hint().0 != 0 || ctx.resource_refusal().is_some() {
+                    let Some(loop_sequence) = ctx.next_charged(&mut loop_sequences, "iges B-rep face loop traversal")? else { break; };
                     let uses = ctx.get_btree_map(&loops, &loop_sequence, "iges B-rep loop lookup")?
                         .ok_or_else(|| CodecError::malformed("IGES B-rep loop definition is absent"))?;
                     let loop_id = loop_id_for(loop_sequence)?;
@@ -1389,9 +1387,8 @@ pub(super) fn project<'ctx>(
                         ctx.temporary_vec(vertex_use_count, "iges B-rep loop vertex uses")?;
                     vertex_use_storage = result_vertex_use_storage;
                     let mut loop_uses = uses.iter().enumerate();
-                    while let Some((use_index, use_)) =
-                        ctx.next_charged(&mut loop_uses, "iges B-rep loop use traversal")?
-                    {
+                    while loop_uses.len() != 0 || ctx.resource_refusal().is_some() {
+                        let Some((use_index, use_)) = ctx.next_charged(&mut loop_uses, "iges B-rep loop use traversal")? else { break; };
                         let LoopUse::Edge {
                             edge_list,
                             edge_index,

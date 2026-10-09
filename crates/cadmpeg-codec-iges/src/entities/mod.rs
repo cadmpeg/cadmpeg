@@ -189,7 +189,7 @@ fn non_resource_error(error: CodecError, ctx: &DecodeContext<'_>) -> Result<Stri
     }
 }
 
-fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
+fn directed_cycle<I: DoubleEndedIterator<Item = u32> + ExactSizeIterator>(
     sequence: u32,
     visited: &mut BTreeSet<u32>,
     ctx: &DecodeContext<'_>,
@@ -203,9 +203,8 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     let mut stack = Vec::new();
     search_storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
     stack.push((sequence, false));
-    while let Some((current, expanded)) =
-        ctx.next_charged(&mut std::iter::from_fn(|| stack.pop()), "iges cycle work")?
-    {
+    while !stack.is_empty() || ctx.resource_refusal().is_some() {
+        let Some((current, expanded)) = ctx.next_charged(&mut std::iter::from_fn(|| stack.pop()), "iges cycle work")? else { break; };
         if expanded {
             ctx.remove_btree_set(&mut active, &current, "iges cycle active removal")?;
             ctx.insert_btree_set(visited, current, "iges cycle visited")?;
@@ -222,7 +221,8 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
         search_storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
         stack.push((current, true));
         let mut targets = successors(current)?.rev();
-        while let Some(target) = ctx.next_charged(&mut targets, "iges cycle work")? {
+        while targets.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(target) = ctx.next_charged(&mut targets, "iges cycle work")? else { break; };
             if ctx.contains_btree_set(&active, &target, "iges cycle active lookup")? {
                 return Ok(true);
             }

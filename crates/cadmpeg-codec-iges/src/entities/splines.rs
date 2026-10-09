@@ -477,9 +477,8 @@ pub(super) fn project<'ctx>(
         let mut previous_terminal_tangent = None;
         let mut previous_terminal_curvature = None;
         let mut segments = coefficients.chunks_exact(12).enumerate();
-        while let Some((segment, admitted_values)) =
-            ctx.next_charged(&mut segments, "iges spline curve segments")?
-        {
+        while segments.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some((segment, admitted_values)) = ctx.next_charged(&mut segments, "iges spline curve segments")? else { break; };
             let values: [f64; 12] = std::array::from_fn(|index| admitted_values[index].get());
             let width = breakpoints[segment + 1].get() - breakpoints[segment].get();
             let width_interval = declared_interval(
@@ -1052,13 +1051,11 @@ pub(super) fn project<'ctx>(
         })?;
         let mut valid = true;
         let mut u_patches = 0..u_segments;
-        'patches: while let Some(u_patch) =
-            ctx.next_charged(&mut u_patches, "iges spline surface u patches")?
-        {
+        'patches: while !u_patches.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(u_patch) = ctx.next_charged(&mut u_patches, "iges spline surface u patches")? else { break; };
             let mut v_patches = 0..v_segments;
-            while let Some(v_patch) =
-                ctx.next_charged(&mut v_patches, "iges spline surface v patches")?
-            {
+            while !v_patches.is_empty() || ctx.resource_refusal().is_some() {
+                let Some(v_patch) = ctx.next_charged(&mut v_patches, "iges spline surface v patches")? else { break; };
                 let Some(block_index) = u_patch
                     .checked_mul(block_columns)
                     .and_then(|value| value.checked_add(v_patch))

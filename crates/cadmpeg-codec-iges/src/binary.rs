@@ -917,7 +917,8 @@ fn render_cards(
         return Ok(());
     }
     let mut chunks = data.chunks(CARD_DATA_WIDTH);
-    while let Some(chunk) = ctx.next_charged(&mut chunks, "iges binary rendered cards")? {
+    while chunks.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(chunk) = ctx.next_charged(&mut chunks, "iges binary rendered cards")? else { break; };
         render_card(output, chunk, section, sequence, ctx)?;
     }
     Ok(())
@@ -1378,9 +1379,8 @@ fn render_parameter_lines(
             "iges binary macro parameter cards",
         )?;
         let mut chunks = data.chunks(PARAMETER_DATA_WIDTH);
-        while let Some(chunk) =
-            ctx.next_charged(&mut chunks, "iges binary macro parameter cards")?
-        {
+        while chunks.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(chunk) = ctx.next_charged(&mut chunks, "iges binary macro parameter cards")? else { break; };
             cards.push(ctx.copy_retained(chunk, "iges binary macro parameter card bytes")?);
         }
         return Ok(cards);

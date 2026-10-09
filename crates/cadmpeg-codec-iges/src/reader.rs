@@ -159,7 +159,8 @@ fn attributed_sequences(
 
     let mut attributed = BTreeSet::new();
     let mut source = losses.iter();
-    while let Some(loss) = ctx.next_charged(&mut source, "iges attributed loss records")? {
+    while source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(loss) = ctx.next_charged(&mut source, "iges attributed loss records")? else { break; };
         let Some(tag) = loss
             .provenance
             .as_ref()
@@ -201,7 +202,8 @@ fn projection_directory<'ctx>(
         ctx.temporary_vec(directory.len(), "iges projected directory entries")?;
     storage = result_storage;
     let mut source = directory.iter();
-    while let Some(entry) = ctx.next_charged(&mut source, "iges projected directory entries")? {
+    while source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(&mut source, "iges projected directory entries")? else { break; };
         if !ctx.contains_btree_set(
             quarantined,
             &entry.sequence,
@@ -254,7 +256,8 @@ fn append_generic_losses(
     attribution_storage: &mut ScopedReservation<'_>,
 ) -> Result<(), CodecError> {
     let mut source = directory.iter();
-    while let Some(entry) = ctx.next_charged(&mut source, "iges generic loss directory entries")? {
+    while source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(&mut source, "iges generic loss directory entries")? else { break; };
         if entry.entity_type == 0 {
             continue;
         }
@@ -365,7 +368,8 @@ fn mark_quarantined_placements(
     quarantined: &BTreeSet<u32>,
 ) -> Result<(), CodecError> {
     let mut source = quarantined.iter();
-    while let Some(sequence) = ctx.next_charged(&mut source, "iges quarantined placement sequences")? {
+    while source.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(sequence) = ctx.next_charged(&mut source, "iges quarantined placement sequences")? else { break; };
         let Some(entry) = directory::entry_by_sequence(directory, *sequence, ctx)?
             .filter(|entry| matches!(entry.entity_type, 408 | 420) && entry.form == 0)
         else {
@@ -537,7 +541,8 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         let (mut losses, result_storage) = self.framing_recoveries.notes(ctx)?;
         storage = result_storage;
         let mut directory_records = self.quarantined_directory.iter();
-        while let Some(record) = ctx.next_charged(&mut directory_records, "iges record loss slots")? {
+        while directory_records.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(record) = ctx.next_charged(&mut directory_records, "iges record loss slots")? else { break; };
             ctx.push_scoped_vec(
                 &mut storage,
                 &mut losses,
@@ -546,7 +551,8 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             )?;
         }
         let mut parameter_records = self.quarantined_parameters.iter();
-        while let Some(record) = ctx.next_charged(&mut parameter_records, "iges record loss slots")? {
+        while parameter_records.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(record) = ctx.next_charged(&mut parameter_records, "iges record loss slots")? else { break; };
             ctx.push_scoped_vec(
                 &mut storage,
                 &mut losses,
@@ -763,9 +769,10 @@ fn decode_with_occurrence_limits(
     drop(record_losses);
     drop(record_loss_storage);
     let mut malformed_definitions = product_occurrence_expansion.malformed_definition_sequences.into_iter();
-    while let Some(source_sequence) = ctx.next_charged(
+    while malformed_definitions.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(source_sequence) = ctx.next_charged(
         &mut malformed_definitions, "iges occurrence loss sequences",
-    )? {
+    )? else { break; };
         push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::OccurrenceRootInferenceBlocked,
             format_args!("IGES product occurrence root inference was suppressed because a definition member list is malformed"),
@@ -776,9 +783,10 @@ fn decode_with_occurrence_limits(
     drop(malformed_definitions);
     drop(definition_storage);
     let mut malformed_placements = product_occurrence_expansion.malformed_placement_sequences.into_iter();
-    while let Some(source_sequence) = ctx.next_charged(
+    while malformed_placements.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(source_sequence) = ctx.next_charged(
         &mut malformed_placements, "iges occurrence loss sequences",
-    )? {
+    )? else { break; };
         push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::OccurrencePlacementMalformed,
             format_args!("IGES product occurrence expansion omitted an instance or member with malformed placement data"),
@@ -789,13 +797,14 @@ fn decode_with_occurrence_limits(
     drop(malformed_placements);
     drop(placement_storage);
     let mut boundaries = ambiguous_parameter_boundaries.into_iter();
-    while let Some(native::AmbiguousParameterBoundary {
+    while boundaries.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(native::AmbiguousParameterBoundary {
         sequence: source_sequence,
         ambiguity,
     }) = ctx.next_charged(
         &mut boundaries,
         "iges parameter boundary losses",
-    )? {
+    )? else { break; };
         let (candidate_count, kind) = match ambiguity {
             native::ParameterBoundaryAmbiguity::EquallyValid(count) => (count, "equally valid"),
             native::ParameterBoundaryAmbiguity::Structural(count) => (count, "structural"),
@@ -812,8 +821,8 @@ fn decode_with_occurrence_limits(
     drop(boundaries);
     drop(boundary_storage);
     let mut counts = overdeclared_counts.into_iter();
-    while let Some((source_sequence, crate::parameter::OverdeclaredCount { declared, present })) =
-        ctx.next_charged(&mut counts, "iges overdeclared count losses")? {
+    while counts.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((source_sequence, crate::parameter::OverdeclaredCount { declared, present })) = ctx.next_charged(&mut counts, "iges overdeclared count losses")? else { break; };
         push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::ParameterCountOverdeclared,
             format_args!(
@@ -826,10 +835,11 @@ fn decode_with_occurrence_limits(
     drop(counts);
     drop(count_storage);
     let mut attributes = unstatable_attribute_tables.into_iter();
-    while let Some((source_sequence, refusal)) = ctx.next_charged(
+    while attributes.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((source_sequence, refusal)) = ctx.next_charged(
         &mut attributes,
         "iges attribute table count losses",
-    )? {
+    )? else { break; };
         push_occurrence_loss(
             ctx,
             &mut losses,
@@ -867,9 +877,10 @@ fn decode_with_occurrence_limits(
     };
     let mut transfer_ledger = TransferLedger::default();
     let mut directory_records = parse.directory.iter();
-    while let Some(entry) = ctx.next_charged(
+    while directory_records.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(
         &mut directory_records, "iges transfer ledger directory records",
-    )? {
+    )? else { break; };
         if entry.entity_type == 0 {
             continue;
         }
@@ -911,10 +922,11 @@ fn decode_with_occurrence_limits(
     drop(attributed);
     drop(attribution_storage);
     let mut quarantined_directory_records = parse.quarantined_directory.iter();
-    while let Some(record) = ctx.next_charged(
+    while quarantined_directory_records.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(record) = ctx.next_charged(
         &mut quarantined_directory_records,
         "iges transfer ledger quarantined records",
-    )? {
+    )? else { break; };
         let source = ctx.format_retained(
             format_args!("D{}", record.sequence),
             "iges transfer ledger quarantine source",
@@ -928,10 +940,11 @@ fn decode_with_occurrence_limits(
         )?;
     }
     let mut quarantined_parameter_records = parse.quarantined_parameters.iter();
-    while let Some(record) = ctx.next_charged(
+    while quarantined_parameter_records.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(record) = ctx.next_charged(
         &mut quarantined_parameter_records,
         "iges transfer ledger quarantined records",
-    )? {
+    )? else { break; };
         let source = ctx.format_retained(
             format_args!("D{}:parameter", record.sequence),
             "iges transfer ledger quarantine source",

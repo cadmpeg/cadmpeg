@@ -61,7 +61,7 @@ fn attribute_primary_layout_admits_definition_queries_after_type_gates() {
     let record = integer_parameter_record(1, &[422, 12]);
     let definition_record = integer_parameter_record(3, &[322, 0, 0, 1, 1, 1, 1]);
     let records = BTreeMap::from([(3, &definition_record)]);
-    for work in [16, 22] {
+    for work in [16, 21] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = work;
@@ -69,9 +69,9 @@ fn attribute_primary_layout_admits_definition_queries_after_type_gates() {
         let result = crate::parameter::entity_primary_end_with_records_for_global_table(
             &record, &directory, &records, GlobalTable::V5Later, &ctx,
         );
-        if work == 22 {
+        if work == 21 {
             // Two two-key Directory queries (8 each), one one-key record query
-            // (4), and one attribute visit plus its end probe (2).
+            // (4), and one attribute visit (1).
             assert_eq!(result.unwrap(), Some(2));
             ctx.finish_session().unwrap();
         } else {
@@ -148,14 +148,14 @@ fn invalid_first_real_byte_stops_before_numeric_tail() {
 }
 
 #[test]
-fn valid_real_shape_admits_each_byte_and_the_end_probe() {
+fn valid_real_shape_admits_each_actual_byte() {
     for work in 0..=4 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = work;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = crate::parameter::decimal_shape(b"1E2", &ctx);
-        if work == 4 {
+        if work >= 3 {
             assert_eq!(result.unwrap(), Some(crate::parameter::DecimalShape {
                 magnitude: crate::parameter::Magnitude::Order(2),
                 double_precision: false,
@@ -163,7 +163,7 @@ fn valid_real_shape_admits_each_byte_and_the_end_probe() {
             ctx.finish_session().unwrap();
         } else {
             let CodecError::ResourceLimit(first) = result.unwrap_err() else {
-                panic!("expected byte or end probe refusal");
+                panic!("expected byte visit refusal");
             };
             assert_eq!(first.dimension, ResourceDimension::WorkUnits);
             assert_eq!(first.operation, "iges numeric real shape");

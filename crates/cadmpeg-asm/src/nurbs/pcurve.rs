@@ -112,11 +112,10 @@ pub fn final_pcurve_patch_layout(
                 let control_start = pos;
                 let components = if rational { 3 } else { 2 };
                 let mut visits = 0..control_count * components;
-                while propagate_resource!(
+                while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(
                     ctx.next_charged(&mut visits, "ASM pcurve patch control components")
                 )
-                .is_some()
-                {
+                .is_some() {
                     if record.get(pos) != Some(&0x06) {
                         return None;
                     }
@@ -278,9 +277,8 @@ pub(super) fn pcurve_block_with_end(
         };
     }
     let mut visits = 0..n_poles;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM pcurve block with end entries"))
-        .is_some()
-    {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM pcurve block with end entries"))
+        .is_some() {
         let u = cur.take_f64()?;
         let v = cur.take_f64()?;
         let point = FinitePoint2::new(Point2::new(u, v))?;
