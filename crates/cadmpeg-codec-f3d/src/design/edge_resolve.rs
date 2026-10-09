@@ -30,6 +30,7 @@ fn sorted_transition_slots(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<Vec<i64>, CodecError> {
+    ctx.charge_work(0, "resolve F3D sorted transition slots")?;
     let mut sorted = Vec::new();
     for &slot in slots {
         ctx.push_vec(&mut sorted, slot, operation)?;
@@ -40,7 +41,7 @@ fn sorted_transition_slots(
         Ord::cmp,
         "f3d transition slot sort",
     )?;
-    sorted.dedup();
+    ctx.dedup_vec(&mut sorted, "deduplicate F3D transition slots")?;
     Ok(sorted)
 }
 
@@ -1365,6 +1366,7 @@ fn transition_chain_is_supported_by_recipe(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    ctx.charge_work(0, "resolve F3D transition chain is supported by recipe")?;
     if operands.len() != member_count {
         return Ok(false);
     }
@@ -1400,7 +1402,7 @@ fn transition_chain_is_supported_by_recipe(
         Ord::cmp,
         "f3d transition recipe edge sort",
     )?;
-    all_recipe_edges.dedup();
+    ctx.dedup_vec(&mut all_recipe_edges, "deduplicate F3D transition recipe edges")?;
     Ok(all_recipe_edges.is_empty() || chain.iter().all(|edge| all_recipe_edges.contains(edge)))
 }
 
@@ -1443,6 +1445,7 @@ fn unique_hem_transition_edge_candidate<'a>(
     reference_edge_sets_input: impl IntoIterator<Item = &'a [i64]>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
+    ctx.charge_work(0, "resolve F3D unique hem transition edge candidate")?;
     let mut reference_edge_sets: Vec<&'a [i64]> = Vec::new();
     for edges in reference_edge_sets_input {
         ctx.push_vec(
@@ -1473,7 +1476,7 @@ fn unique_hem_transition_edge_candidate<'a>(
         Ord::cmp,
         "f3d hem support edge sort",
     )?;
-    support_edges.dedup();
+    ctx.dedup_vec(&mut support_edges, "deduplicate F3D Hem support edges")?;
     if support_edges.is_empty()
         || support_edges
             .iter()
@@ -1495,7 +1498,7 @@ fn unique_hem_transition_edge_candidate<'a>(
         Ord::cmp,
         "f3d hem candidate edge sort",
     )?;
-    candidates.dedup();
+    ctx.dedup_vec(&mut candidates, "deduplicate F3D Hem candidate edges")?;
     match candidates.as_slice() {
         [edge] => Ok(Some(*edge)),
         _ => Ok(None),
@@ -1618,6 +1621,7 @@ pub(super) fn changed_reference_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D changed reference edge group candidates")?;
     let mut candidate_sets = Vec::new();
     for operand in operands {
         let mut changed_sets = operand
@@ -1633,7 +1637,7 @@ pub(super) fn changed_reference_edge_group_candidates(
             ctx.push_vec(&mut candidates, *edge, "f3d changed reference candidate")?;
         }
         for changed in changed_sets {
-            candidates.retain(|candidate| changed.contains(candidate));
+            ctx.retain_vec(&mut candidates, |candidate| ctx.contains(changed, candidate, "find F3D changed reference candidate"), "retain F3D changed reference candidates")?;
         }
         ctx.sort_unstable_by(
             &mut candidates,
@@ -1641,7 +1645,7 @@ pub(super) fn changed_reference_edge_group_candidates(
             Ord::cmp,
             "f3d changed reference candidate sort",
         )?;
-        candidates.dedup();
+        ctx.dedup_vec(&mut candidates, "deduplicate F3D changed reference edges")?;
         if candidates.is_empty() {
             return Ok(None);
         }
@@ -1658,6 +1662,7 @@ fn deleted_reference_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D deleted reference edge group candidates")?;
     let mut reference_candidates = Vec::new();
     let mut deleted_candidates = Vec::new();
     for operand in operands {
@@ -1675,7 +1680,7 @@ fn deleted_reference_edge_group_candidates(
             Ord::cmp,
             "f3d deleted reference candidate sort",
         )?;
-        candidates.dedup();
+        ctx.dedup_vec(&mut candidates, "deduplicate F3D deleted reference edges")?;
         ctx.push_vec(
             &mut reference_candidates,
             candidates,
@@ -1699,6 +1704,7 @@ fn unique_deleted_reference_assignment(
     deleted_candidates: &[Vec<i64>],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D unique deleted reference assignment")?;
     if reference_candidates.len() != deleted_candidates.len() {
         return Ok(None);
     }
@@ -1718,7 +1724,7 @@ fn unique_deleted_reference_assignment(
             Ord::cmp,
             "f3d deleted reference shared edge sort",
         )?;
-        candidates.dedup();
+        ctx.dedup_vec(&mut candidates, "deduplicate F3D deleted reference shared edges")?;
         if candidates.is_empty() {
             return Ok(None);
         }
@@ -1745,6 +1751,7 @@ fn edge_group_assignment_candidates<'a>(
     reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<EdgeAssignmentCandidates>, CodecError> {
+    ctx.charge_work(0, "resolve F3D edge group assignment candidates")?;
     let mut reference_edge_sets = reference_edge_sets
         .into_iter()
         .filter(|edges| !edges.is_empty());
@@ -1766,14 +1773,14 @@ fn edge_group_assignment_candidates<'a>(
             "f3d edge assignment reference candidate",
         )?;
     }
-    candidates.retain(|candidate| second.contains(candidate));
+    ctx.retain_vec(&mut candidates, |candidate| ctx.contains(second, candidate, "find F3D second assignment reference candidate"), "retain F3D second assignment reference candidates")?;
     ctx.sort_unstable_by(
         &mut candidates,
         |value| value,
         Ord::cmp,
         "f3d edge assignment candidate sort",
     )?;
-    candidates.dedup();
+    ctx.dedup_vec(&mut candidates, "deduplicate F3D assignment reference edges")?;
     Ok((!candidates.is_empty()).then_some(EdgeAssignmentCandidates::Edges(candidates)))
 }
 
@@ -1821,6 +1828,7 @@ fn radius_edge_identity_group_candidates(
     radius: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D radius edge identity group candidates")?;
     if operands.is_empty() || !radius.is_finite() || radius <= 0.0 {
         return Ok(None);
     }
@@ -1869,7 +1877,7 @@ fn radius_edge_identity_group_candidates(
         Ord::cmp,
         "f3d radius identity edge sort",
     )?;
-    chain.dedup();
+    ctx.dedup_vec(&mut chain, "deduplicate F3D radius identity edges")?;
     Ok((!chain.is_empty()).then_some(chain))
 }
 
@@ -1933,7 +1941,7 @@ fn unique_bipartite_assignment(
                 ctx.sort_unstable_by(
                     candidates, |value| value, Ord::cmp, "f3d edge normalized candidate sort",
                 )?;
-                candidates.dedup();
+                ctx.dedup_vec(candidates, "deduplicate F3D normalized assignment edges")?;
                 if candidates.is_empty() {
                     return Ok::<_, CodecError>(None);
                 }
@@ -2117,6 +2125,7 @@ fn partition_unique_incomplete_edge_group(
     groups: &[Vec<EdgeGroupMember<'_>>],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D partition unique incomplete edge group")?;
     if groups.len() < 2 || target_ordinal >= groups.len() {
         return Ok(None);
     }
@@ -2140,7 +2149,7 @@ fn partition_unique_incomplete_edge_group(
             Ord::cmp,
             "f3d edge partition deleted edge sort",
         )?;
-        deleted.dedup();
+        ctx.dedup_vec(&mut deleted, "deduplicate F3D partition deleted edges")?;
         if deleted.is_empty()
             || universe
                 .as_ref()
@@ -2201,6 +2210,7 @@ fn common_deleted_edge_group_candidates<'a>(
     members: impl IntoIterator<Item = (bool, &'a [i64])>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D common deleted edge group candidates")?;
     let mut candidate_sets = members
         .into_iter()
         .filter_map(|(edge_bearing, candidates)| edge_bearing.then_some(candidates));
@@ -2218,7 +2228,7 @@ fn common_deleted_edge_group_candidates<'a>(
         Ord::cmp,
         "f3d common deleted candidate sort",
     )?;
-    candidates.dedup();
+    ctx.dedup_vec(&mut candidates, "deduplicate F3D common deleted candidates")?;
     for candidate_set in candidate_sets {
         member_count += 1;
         let mut normalized = Vec::new();
@@ -2235,7 +2245,7 @@ fn common_deleted_edge_group_candidates<'a>(
             Ord::cmp,
             "f3d common deleted normalized sort",
         )?;
-        normalized.dedup();
+        ctx.dedup_vec(&mut normalized, "deduplicate F3D common deleted normalized edges")?;
         if normalized != candidates {
             return Ok(None);
         }
@@ -2257,6 +2267,7 @@ fn deleted_boundary_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D deleted boundary edge group candidates")?;
     if operands.is_empty() {
         return Ok(None);
     }
@@ -2302,14 +2313,14 @@ fn deleted_boundary_edge_group_candidates(
         Ord::cmp,
         "f3d deleted boundary edge sort",
     )?;
-    deleted.dedup();
+    ctx.dedup_vec(&mut deleted, "deduplicate F3D deleted boundary edges")?;
     ctx.sort_unstable_by(
         &mut contextual,
         |value| value,
         Ord::cmp,
         "f3d deleted boundary contextual sort",
     )?;
-    contextual.dedup();
+    ctx.dedup_vec(&mut contextual, "deduplicate F3D deleted boundary contextual edges")?;
     Ok((deleted.len() == operands.len()
         && deleted
             .iter()
@@ -2329,6 +2340,7 @@ fn contextual_deleted_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D contextual deleted edge group candidates")?;
     if operands.is_empty() {
         return Ok(None);
     }
@@ -2361,7 +2373,7 @@ fn contextual_deleted_edge_group_candidates(
         Ord::cmp,
         "f3d contextual deleted edge sort",
     )?;
-    deleted.dedup();
+    ctx.dedup_vec(&mut deleted, "deduplicate F3D contextual deleted edges")?;
     if deleted.len() != operands.len() {
         return Ok(None);
     }
@@ -2383,7 +2395,7 @@ fn contextual_deleted_edge_group_candidates(
             Ord::cmp,
             "f3d contextual deleted candidate sort",
         )?;
-        candidates.dedup();
+        ctx.dedup_vec(&mut candidates, "deduplicate F3D contextual deleted candidates")?;
         ctx.push_vec(
             &mut candidate_sets,
             candidates,
@@ -2414,6 +2426,7 @@ fn result_boundary_reference_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D result boundary reference edge group candidates")?;
     let [operand] = operands else {
         return Ok(None);
     };
@@ -2448,7 +2461,7 @@ fn result_boundary_reference_edge_group_candidates(
         Ord::cmp,
         "f3d result boundary candidate sort",
     )?;
-    candidates.dedup();
+    ctx.dedup_vec(&mut candidates, "deduplicate F3D result boundary edges")?;
     let [candidate] = candidates.as_slice() else {
         return Ok(None);
     };
@@ -2471,6 +2484,7 @@ fn changed_boundary_count_edge_group_candidates<'a>(
     >,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D changed boundary count edge group candidates")?;
     let mut member_count = 0;
     let mut candidates = Vec::new();
     for selectors in members {
@@ -2491,7 +2505,7 @@ fn changed_boundary_count_edge_group_candidates<'a>(
         Ord::cmp,
         "f3d boundary-count candidate sort",
     )?;
-    candidates.dedup();
+    ctx.dedup_vec(&mut candidates, "deduplicate F3D boundary count edges")?;
     Ok((member_count > 0 && candidates.len() == member_count).then_some(candidates))
 }
 
