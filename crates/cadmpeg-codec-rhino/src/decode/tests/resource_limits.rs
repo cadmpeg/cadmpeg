@@ -219,7 +219,7 @@ fn class_outcome_keys_refuse_collection_limit() {
     let error = with_transaction_limits(&scan, 4, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
-            .class_outcomes(expand.ctx())
+            .class_outcomes()
             .expect_err("class key exceeds four collection items")
     });
     assert!(
@@ -229,7 +229,7 @@ fn class_outcome_keys_refuse_collection_limit() {
     let outcomes = with_transaction_limits(&scan, 6, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
-            .class_outcomes(expand.ctx())
+            .class_outcomes()
             .expect("service-size class outcome")
             .len()
     });
@@ -242,7 +242,7 @@ fn class_outcome_rows_refuse_collection_limit() {
     let error = with_transaction_limits(&scan, 5, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
-            .class_outcomes(expand.ctx())
+            .class_outcomes()
             .expect_err("class row exceeds five collection items")
     });
     assert!(
@@ -266,7 +266,7 @@ fn class_outcome_label_refuses_materialized_limit() {
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
             let expand = crate::mesh::MeshExpand::new(&ctx, root);
             let context = DecodeContext::new(&scan, expand)?;
-            context.class_outcomes(&ctx).map(|rows| rows.len())
+            context.class_outcomes().map(|rows| rows.len())
         },
     );
     assert!(

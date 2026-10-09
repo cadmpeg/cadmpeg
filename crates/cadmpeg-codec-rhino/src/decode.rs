@@ -4083,7 +4083,7 @@ impl<'a> DecodeContext<'a> {
         self.sort_source_links()?;
         self.session.document_mut()?.finalize(ctx)?;
         let mut losses: Vec<LossNote> = Vec::new();
-        let outcomes = self.class_outcomes(ctx)?;
+        let outcomes = self.class_outcomes()?;
         let decoded = ctx
             .admit_iter(&outcomes[..], "Rhino commit traversal")
             .map_err(cadmpeg_core::CodecError::from)?
@@ -5795,8 +5795,8 @@ impl<'a> DecodeContext<'a> {
 
     fn class_outcomes(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Vec<(String, ClassOutcome<'a>)>, cadmpeg_core::CodecError> {
+        let ctx = self.expand.ctx();
         let mut storage = ctx.reserve_scoped(0, "Rhino class outcome scratch")?;
         let mut outcomes = BTreeMap::new();
         let mut sources = self.scan.objects
