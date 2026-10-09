@@ -255,6 +255,9 @@ impl Section {
         expanded_length: Option<usize>,
         data: &'a [u8],
     ) -> Result<Option<ScannedSection<'a>>, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let Some(region) = data.get(offset..end) else {
             return Ok(None);
         };
@@ -756,7 +759,10 @@ fn scan_sections<'a>(
     }
     let pair_end = data.len() - data.len().min(1);
     let mut positions = i..pair_end;
-    while let Some(i) = ctx.next_charged(&mut positions, "creo section framing scan")? {
+    while !positions.is_empty() {
+        let Some(i) = ctx.next_charged(&mut positions, "creo section framing scan")? else {
+            break;
+        };
         let toc_delimited = data[i] == 0xf1 && data[i + 1] == b'#';
         if !toc_delimited && (data[i] != b'\n' || data[i + 1] != b'#') {
             continue;
@@ -815,9 +821,12 @@ fn scan_sections<'a>(
     let mut sections = Vec::new();
     ctx.reserve_vec(&mut sections, hits.len(), "creo scanned sections")?;
     let mut headers = hits.into_iter().peekable();
-    while let Some((offset, name)) =
-        ctx.next_charged(&mut headers, "creo section header traversal")?
-    {
+    while headers.len() != 0 {
+        let Some((offset, name)) =
+            ctx.next_charged(&mut headers, "creo section header traversal")?
+        else {
+            break;
+        };
         let end = headers.peek().map_or(data.len(), |(next, _)| *next);
         sections.extend(Section::scan(ctx, name, offset, end, None, data)?);
     }
@@ -868,7 +877,8 @@ fn toc_sections<'a>(
         }
         let rows_start = line_end + 1;
         let mut indices = 0..count;
-        while let Some(index) = ctx.next_charged(&mut indices, "creo TOC row traversal")? {
+        while !indices.is_empty() {
+            let index = indices.start;
             let Some(start) = index
                 .checked_mul(row_width)
                 .and_then(|relative| rows_start.checked_add(relative))
@@ -879,6 +889,9 @@ fn toc_sections<'a>(
                 break;
             };
             let Some(row) = data.get(start..end) else {
+                break;
+            };
+            let Some(_) = ctx.next_charged(&mut indices, "creo TOC row traversal")? else {
                 break;
             };
             let Ok(row) = ctx.validate_utf8(row, "creo TOC row UTF-8")? else {
@@ -1082,10 +1095,10 @@ fn legacy_toc_sections<'a>(
     }
     let mut sections = Vec::new();
     let mut entries = 0..count;
-    while ctx
-        .next_charged(&mut entries, "creo legacy TOC entries")?
-        .is_some()
-    {
+    while !entries.is_empty() && next < data.len() {
+        let Some(_) = ctx.next_charged(&mut entries, "creo legacy TOC entries")? else {
+            break;
+        };
         let Some((entry, after_entry)) = legacy::line(ctx, data, next)? else {
             break;
         };
@@ -2465,10 +2478,15 @@ fn structural_feature_ids(
             let (count, mut cursor) = psb::complete_compact_int(payload, start + 1)
                 .ok_or_else(|| CodecError::malformed("incomplete parent-feature count"))?;
             let mut entries = 0..count;
-            while ctx
-                .next_charged(&mut entries, "creo parent-feature entries")?
-                .is_some()
-            {
+            while !entries.is_empty() {
+                if cursor >= payload.len() {
+                    return Err(CodecError::malformed("incomplete parent-feature entry"));
+                }
+                let Some(_) =
+                    ctx.next_charged(&mut entries, "creo parent-feature entries")?
+                else {
+                    break;
+                };
                 let (id, next) = psb::complete_compact_int(payload, cursor)
                     .ok_or_else(|| CodecError::malformed("incomplete parent-feature entry"))?;
                 if id != 0 {
@@ -2513,10 +2531,11 @@ fn candidate_feature_ids(
 /// Consume admitted additions and retain the ordered output IDs.
 fn complete_feature_ids(
     ctx: &DecodeContext<'_>,
-    mut structural: BTreeSet<u32>,
+    structural: BTreeSet<u32>,
     additions: impl IntoIterator<Item = u32>,
 ) -> Result<Vec<u32>, CodecError> {
     let mut index_storage = ctx.reserve_scoped(0, "creo complete feature index storage")?;
+    let mut structural = structural;
     for id in additions {
         index_storage.with_storage(|| {
             ctx.insert_btree_set(&mut structural, id, "creo complete feature ids")
@@ -3243,8 +3262,8 @@ fn feature_operations(
         },
         |record| record.offset,
     )?;
-    let mut by_feature = BTreeMap::new();
     let mut node_storage = ctx.reserve_scoped(0, "creo current operation index storage")?;
+    let mut by_feature = BTreeMap::new();
     for record in ctx.admit_iter(records, "creo operation aggregate traversal")? {
         node_storage.with_storage(|| {
             ctx.insert_btree_map(
@@ -3418,9 +3437,12 @@ fn legacy_first_quilt_ptr(
     let mut parents_indexed = false;
     let mut selected = None;
     let mut records = persistence.integer_values.rows.iter();
-    while let Some(record) =
-        ctx.next_charged(&mut records, "creo legacy geometry value traversal")?
-    {
+    while records.len() != 0 {
+        let Some(record) =
+            ctx.next_charged(&mut records, "creo legacy geometry value traversal")?
+        else {
+            break;
+        };
         if record.name != "first_quilt_ptr" {
             continue;
         }
@@ -3620,6 +3642,9 @@ pub(crate) fn scan_bytes<'a>(
     ctx: &DecodeContext<'_>,
     data: impl Into<Cow<'a, [u8]>>,
 ) -> Result<ContainerScan<'a>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let data = data.into();
     if !looks_like_creo(&data) {
         return Err(CodecError::WrongFormat(

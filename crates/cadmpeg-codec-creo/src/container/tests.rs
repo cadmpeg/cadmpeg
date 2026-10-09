@@ -1252,6 +1252,7 @@ fn container_framing_misses_and_text_copies_refuse_work() {
 mod unit_selection;
 
 mod work_admission;
+mod visit_boundaries;
 
 #[test]
 fn toc_header_utf8_refuses_before_invalid_header() {
