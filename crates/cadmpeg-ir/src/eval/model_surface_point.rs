@@ -10,8 +10,8 @@ use super::model_axis_revolution_point;
 use super::model_linear_sweep_point;
 use super::model_native_extrusion_point;
 use super::model_native_revolution_point;
-use super::model_ruled_surface_jet;
-use super::model_sum_surface_jet;
+use super::model_ruled_surface_point;
+use super::model_sum_surface_point;
 use super::surface_request::{model_jet, SurfaceRequest};
 use super::model_surface_point;
 use super::offset;
@@ -388,11 +388,10 @@ pub(super) fn model_surface_point_by_id_inner(
                 ))
             }
             Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => point_evaluation(
-                model_ruled_surface_jet(admission, index, first, second, u, v).map(|jet| jet.point),
+                model_ruled_surface_point(admission, index, first, second, u, v),
             ),
             Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => point_evaluation(
-                model_sum_surface_jet(admission, index, definition_payload, u, v)
-                    .map(|jet| jet.point),
+                model_sum_surface_point(admission, index, definition_payload, u, v),
             ),
             Some(ProceduralSurfaceDefinition::Sweep(definition_payload)) => {
                 if let Some(construction) = definition_payload.native() {

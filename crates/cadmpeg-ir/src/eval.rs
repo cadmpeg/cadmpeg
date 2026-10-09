@@ -4380,6 +4380,13 @@ pub fn model_curve_point_by_id(
     })
 }
 
+/// The orders a construction reads from a model curve.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ModelCurveRequest {
+    Point,
+    Second,
+}
+
 /// A model curve's finite point with its tangent and acceleration, each
 /// derivative with its own outcome: a derivative that has no value there, or
 /// that left the finite range, leaves the point and the other derivative as
@@ -4480,7 +4487,21 @@ fn model_curve_differential_by_id(
     parameter: f64,
 ) -> Result<ModelCurveDifferential, EvaluationFailure<Point3>> {
     admission.within_model(|admission| {
-        model_curve_differential_by_id_inner(admission, index, curve_id, parameter)
+        model_curve_differential_by_id_inner(admission, index, curve_id, parameter, ModelCurveRequest::Second)
+    })
+}
+
+/// The point from the differential owner's carrier selection and finite
+/// parameter contract, without a derivative request.
+fn model_curve_differential_point_by_id(
+    admission: admission::EvaluationAdmission<'_, '_>,
+    index: &crate::index::ModelIndex<'_>,
+    curve_id: &crate::ids::CurveId,
+    parameter: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    admission.within_model(|admission| {
+        model_curve_differential_by_id_inner(admission, index, curve_id, parameter, ModelCurveRequest::Point)
+            .map(|differential| differential.point)
     })
 }
 
@@ -4493,6 +4514,7 @@ fn model_curve_differential_by_id_inner(
     index: &crate::index::ModelIndex<'_>,
     curve_id: &crate::ids::CurveId,
     parameter: f64,
+    request: ModelCurveRequest,
 ) -> Result<ModelCurveDifferential, EvaluationFailure<Point3>> {
     let budget = admission.work_slice();
     let scratch = decode::Scratch::new(admission);
@@ -4521,7 +4543,7 @@ fn model_curve_differential_by_id_inner(
             match procedural.definition() {
                 ProceduralCurveDefinition::Replica { source, transform } => {
                     let differential =
-                        model_curve_differential_by_id_inner(admission, index, source, parameter)
+                        model_curve_differential_by_id_inner(admission, index, source, parameter, request)
                             .map_err(|failure| {
                             failure.map(|point| {
                                 transform
@@ -4551,6 +4573,7 @@ fn model_curve_differential_by_id_inner(
                         index,
                         source,
                         source_parameter,
+                        request,
                     )?;
                     return Ok(ModelCurveDifferential {
                         point: differential.point,
@@ -4570,19 +4593,24 @@ fn model_curve_differential_by_id_inner(
                 _ => {}
             }
         }
-        if let Some(cache) = curve.geometry.solved_cache() {
-            return differential_at(
-                crate::eval::decode::curve_point_solved(admission, cache, parameter),
-                || curve_derivative_evaluation(&scratch, cache, parameter, CurveDerivative::First),
-                || curve_derivative_evaluation(&scratch, cache, parameter, CurveDerivative::Second),
-            );
-        }
-        let solved = match &curve.geometry {
-            CurveGeometry::Solved(solved) => solved,
-            CurveGeometry::Procedural { .. } => return Err(EvaluationFailure::NoValue),
+        let solved = if let Some(cache) = curve.geometry.solved_cache() {
+            cache
+        } else {
+            match &curve.geometry {
+                CurveGeometry::Solved(solved) => solved,
+                CurveGeometry::Procedural { .. } => return Err(EvaluationFailure::NoValue),
+            }
         };
+        let point = crate::eval::decode::curve_point_solved(admission, solved, parameter);
+        if request == ModelCurveRequest::Point {
+            return point.map(|point| ModelCurveDifferential {
+                point,
+                tangent: Err(EvaluationFailure::NoValue),
+                acceleration: Err(EvaluationFailure::NoValue),
+            });
+        }
         differential_at(
-            crate::eval::decode::curve_point_solved(admission, solved, parameter),
+            point,
             || curve_derivative_evaluation(&scratch, solved, parameter, CurveDerivative::First),
             || curve_derivative_evaluation(&scratch, solved, parameter, CurveDerivative::Second),
         )
@@ -4683,7 +4711,7 @@ fn model_axis_revolution_jet(
         return Err(EvaluationFailure::NoValue);
     }
     let axis = unit_length_axis(axis_direction);
-    let differential = model_curve_differential_by_id_inner(admission, index, directrix, parameter)
+    let differential = model_curve_differential_by_id_inner(admission, index, directrix, parameter, ModelCurveRequest::Second)
         .map_err(|failure| failure.map(|point| revolved_point(point, axis_origin, axis, angle)))?;
     let rotated = rotate_vector_about_axis(
         point_displacement(differential.point.get(), axis_origin),
@@ -4927,10 +4955,9 @@ fn model_native_extrusion_point(
         extrusion_directrix_reversed(construction.revision_form()),
     )
     .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
-    let point =
-        model_curve_differential_by_id_inner(admission, index, directrix, carrier.parameter.get())
-            .map_err(|failure| failure.map(|point| offset(point, &[(v, direction)])))?
-            .point;
+    let point = model_curve_differential_by_id_inner(
+        admission, index, directrix, carrier.parameter.get(), ModelCurveRequest::Point,
+    ).map_err(|failure| failure.map(|point| offset(point, &[(v, direction)])))?.point;
     admit_point(offset(point.get(), &[(v, direction)]))
 }
 
@@ -4965,7 +4992,7 @@ fn model_native_extrusion_jet(
     // A directrix point that leaves the finite range leaves the surface
     // there, at the point its extrusion reaches.
     let differential =
-        model_curve_differential_by_id_inner(admission, index, directrix, carrier.parameter.get())
+        model_curve_differential_by_id_inner(admission, index, directrix, carrier.parameter.get(), ModelCurveRequest::Second)
             .map_err(|failure| failure.map(|point| offset(point, &[(v, direction)])))?;
     let point = admit_point(offset(differential.point.get(), &[(v, direction)]))?;
     let derivative = carrier.derivative;
@@ -5108,9 +5135,9 @@ fn model_native_revolution_point(
         index,
         construction.directrix(),
         carrier.parameter.get(),
+        ModelCurveRequest::Point,
     )
-    .map_err(|failure| failure.map(|point| revolved_point(point, axis_origin, axis, angle)))?
-    .point;
+    .map_err(|failure| failure.map(|point| revolved_point(point, axis_origin, axis, angle)))?.point;
     admit_point(revolved_point(point.get(), axis_origin, axis, angle))
 }
 
@@ -6771,10 +6798,10 @@ fn model_surface_point_inner(
             )
         }
         ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
-            model_ruled_surface_jet(admission, index, first, second, u, v).map(|jet| jet.point)
+            model_ruled_surface_point(admission, index, first, second, u, v)
         }
         ProceduralSurfaceDefinition::Sum(definition_payload) => {
-            model_sum_surface_jet(admission, index, definition_payload, u, v).map(|jet| jet.point)
+            model_sum_surface_point(admission, index, definition_payload, u, v)
         }
         ProceduralSurfaceDefinition::Sweep(definition_payload) => {
             let construction = definition_payload
@@ -6843,7 +6870,7 @@ fn model_linear_sweep_jet(
     }
     let directrix = construction.directrix();
     let direction = *construction.direction().finite();
-    let differential = model_curve_differential_by_id_inner(admission, index, directrix, u)
+    let differential = model_curve_differential_by_id_inner(admission, index, directrix, u, ModelCurveRequest::Second)
         .map_err(|failure| failure.map(|point| offset(point, &[(v, direction.get())])))?;
     Ok(SurfaceJet {
         point: admit_point(offset(differential.point.get(), &[(v, direction.get())]))?,
@@ -8200,6 +8227,68 @@ fn cacheless_variable_blend_first_order(
             EvaluationFailure::NonFinite(_) => ruled,
             EvaluationFailure::NoValue => circular,
             EvaluationFailure::ResourceLimit(limit) => EvaluationFailure::ResourceLimit(limit),
+        }),
+    }
+}
+
+/// The point of a ruled surface. Curve points are evaluated in rail order;
+/// the second is not reached after an original resource refusal on the first.
+fn model_ruled_surface_point(
+    admission: admission::EvaluationAdmission<'_, '_>,
+    index: &crate::index::ModelIndex<'_>,
+    first: &crate::ids::CurveId,
+    second: &crate::ids::CurveId,
+    u: f64,
+    v: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    if !v.is_finite() {
+        return Err(EvaluationFailure::NoValue);
+    }
+    let first = model_curve_differential_point_by_id(admission, index, first, u);
+    if let Err(EvaluationFailure::ResourceLimit(limit)) = first {
+        return Err(EvaluationFailure::ResourceLimit(limit));
+    }
+    combine_curve_points(first, model_curve_differential_point_by_id(admission, index, second, u),
+        |first, second| offset(first, &[(v, point_displacement(second, first))]))
+}
+
+/// The point of a sum surface, with the stored scalar addition order.
+fn model_sum_surface_point(
+    admission: admission::EvaluationAdmission<'_, '_>,
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::surface_payloads::SumSurfaceConstruction,
+    u: f64,
+    v: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let first = model_curve_differential_point_by_id(admission, index, construction.first(), u);
+    if let Err(EvaluationFailure::ResourceLimit(limit)) = first {
+        return Err(EvaluationFailure::ResourceLimit(limit));
+    }
+    let basepoint = *construction.basepoint();
+    combine_curve_points(first, model_curve_differential_point_by_id(admission, index, construction.second(), v),
+        |first, second| Point3::new(
+            first.x + second.x - basepoint.x,
+            first.y + second.y - basepoint.y,
+            first.z + second.z - basepoint.z,
+        ))
+}
+
+/// Combine two point outcomes. Absence wins over a reached non-finite point;
+/// resource errors retain rail order, and only a finite pair is admitted anew.
+fn combine_curve_points(
+    first: Result<FinitePoint3, EvaluationFailure<Point3>>,
+    second: Result<FinitePoint3, EvaluationFailure<Point3>>,
+    combine: impl Fn(Point3, Point3) -> Point3,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let reached = |side: Result<FinitePoint3, EvaluationFailure<Point3>>| match side {
+        Ok(point) => Ok(Some(point.get())),
+        Err(failure) => failure.non_finite(),
+    };
+    match (first, second) {
+        (Ok(first), Ok(second)) => admit_point(combine(first.get(), second.get())),
+        (first, second) => Err(match (reached(first)?, reached(second)?) {
+            (Some(first), Some(second)) => EvaluationFailure::NonFinite(combine(first, second)),
+            _ => EvaluationFailure::NoValue,
         }),
     }
 }
