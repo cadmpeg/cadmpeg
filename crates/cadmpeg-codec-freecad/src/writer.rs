@@ -323,7 +323,7 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
     Ok(result)
 }
 
-fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> {
+fn serialize_property(property: &PropertyRecord) -> Result<Cow<'_, [u8]>, CodecError> {
     let wrapped = format!("<Root>{}</Root>", property.xml.text());
     let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
         CodecError::malformed(format_args!("invalid retained property XML: {error}"))
@@ -352,7 +352,6 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
             property.id
         )));
     }
-    let mut replacement = property.xml.text().to_owned();
     let source_ranges = element
         .descendants()
         .filter(|node| node.is_element() && *node != element)
@@ -385,10 +384,14 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
             property.id
         )));
     }
+    if edits.is_empty() {
+        return Ok(Cow::Borrowed(property.xml.text().as_bytes()));
+    }
+    let mut replacement = property.xml.text().to_owned();
     for (start, end, serialized) in edits.into_iter().rev() {
         replacement.replace_range(start..end, &serialized);
     }
-    Ok(replacement.into_bytes())
+    Ok(Cow::Owned(replacement.into_bytes()))
 }
 
 fn serialize_value(value: &ValueRecord) -> Result<Cow<'_, str>, CodecError> {
@@ -402,15 +405,19 @@ fn serialize_value(value: &ValueRecord) -> Result<Cow<'_, str>, CodecError> {
         .ok_or_else(|| CodecError::Malformed("retained property value has no element".into()))?;
     let original_attributes = original
         .attributes()
-        .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
+        .map(|attribute| (attribute.name(), attribute.value()))
         .collect::<std::collections::BTreeMap<_, _>>();
     let original_text = original
         .children()
-        .find_map(|node| node.text())
-        .map(str::to_owned);
+        .find_map(|node| node.text());
     if original.tag_name().name() == value.tag
-        && original_attributes == value.attributes
-        && original_text == value.text
+        && original_attributes.len() == value.attributes.len()
+        && original_attributes.iter().zip(&value.attributes).all(
+            |((original_name, original_value), (name, content))| {
+                *original_name == name.as_str() && *original_value == content.as_str()
+            },
+        )
+        && original_text == value.text.as_deref()
     {
         return Ok(Cow::Borrowed(&value.raw_xml));
     }

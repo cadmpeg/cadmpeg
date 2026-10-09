@@ -48,7 +48,7 @@ fn transient_wrapper_preserves_utf8_and_exact_bytes() {
     let xml = r#"<!-- leading --><_Property name="Values" type="App::PropertyStringList" status="8" custom="λ"/><!-- trailing -->"#;
     let mut property = property(xml, PropertyBody::Transient);
     property.status = Some(8);
-    assert_eq!(serialize_property(&property).expect("unchanged transient"), xml.as_bytes());
+    assert_eq!(serialize_property(&property).expect("unchanged transient").as_ref(), xml.as_bytes());
 }
 
 #[test]
@@ -71,11 +71,11 @@ fn nested_values_preserve_descendant_order_and_utf8_byte_ranges() {
     let mut property = property(&xml, PropertyBody::Persisted {
         values, links: Vec::new(), side_entries: Vec::new(), dynamic: None,
     });
-    assert_eq!(serialize_property(&property).expect("unchanged nested values"), xml.as_bytes());
+    assert_eq!(serialize_property(&property).expect("unchanged nested values").as_ref(), xml.as_bytes());
     property.values_mut().expect("persisted property")[1]
         .attributes.insert("value".into(), "edited".into());
     let expected = r#"<Property name="Values" type="App::PropertyStringList"><List marker="λ"><String value="edited"/></List></Property>"#;
-    assert_eq!(serialize_property(&property).expect("edited nested leaf"), expected.as_bytes());
+    assert_eq!(serialize_property(&property).expect("edited nested leaf").as_ref(), expected.as_bytes());
 }
 
 #[test]
@@ -127,4 +127,33 @@ fn unchanged_value_xml_borrows_its_source_and_edits_own_output() {
     };
     assert!(matches!(serialize_value(&nested).expect("unchanged nested value"),
         std::borrow::Cow::Borrowed(raw) if raw == nested.raw_xml));
+}
+
+#[test]
+fn unchanged_property_borrow_keeps_ordered_attributes_and_decoded_text() {
+    let raw = r#"<String z="2" a="λ">λ &amp; 𐀀</String>"#;
+    let value = ValueRecord {
+        tag: "String".into(), order: 0,
+        attributes: [("a".into(), "λ".into()), ("z".into(), "2".into())].into(),
+        text: Some("λ & 𐀀".into()), raw_xml: raw.into(),
+    };
+    assert!(matches!(serialize_value(&value).expect("same semantic attributes and text"),
+        std::borrow::Cow::Borrowed(bytes) if bytes == raw));
+    let xml = format!(r#"<Property name="Values" type="App::PropertyStringList">{raw}</Property>"#);
+    let mut property = property(&xml, PropertyBody::Persisted {
+        values: vec![value], links: Vec::new(), side_entries: Vec::new(), dynamic: None,
+    });
+    let serialized = serialize_property(&property).expect("unchanged property");
+    let std::borrow::Cow::Borrowed(bytes) = serialized else {
+        panic!("unchanged property retains its actual source borrow");
+    };
+    assert_eq!(bytes, xml.as_bytes());
+    assert_eq!(bytes.as_ptr(), property.xml.text().as_ptr());
+    property.values_mut().expect("persisted value")[0].text = Some("edited & λ".into());
+    let serialized = serialize_property(&property).expect("edited text");
+    let std::borrow::Cow::Owned(bytes) = serialized else {
+        panic!("edited property owns its output");
+    };
+    let expected = r#"<Property name="Values" type="App::PropertyStringList"><String a="λ" z="2">edited &amp; λ</String></Property>"#;
+    assert_eq!(bytes, expected.as_bytes());
 }
