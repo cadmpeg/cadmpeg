@@ -786,3 +786,5 @@ fn copious_duplicate_index_queries_refuse_work() {
         },
     );
 }
+
+mod local_limits;
