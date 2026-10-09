@@ -2698,10 +2698,9 @@ fn historical_mirror_plane_in_state(
         return Ok(None);
     }
     let history = &histories[history_index];
-    let Some(state_index) = unique_history_state_in(decode, history, state_id)? else {
+    let Some(state) = unique_history_state_in(decode, history, state_id)? else {
         return Ok(None);
     };
-    let state = &history.states[state_index];
     let Some(topology) = state.topology() else {
         return Ok(None);
     };
@@ -2724,10 +2723,9 @@ fn historical_mirror_plane_for_face_slot(
     state_id: i64,
     history: &AsmHistory,
 ) -> Result<Option<HistoricalMirrorPlane>, cadmpeg_core::CodecError> {
-    let Some(state_index) = unique_history_state_in(decode, history, state_id)? else {
+    let Some(state) = unique_history_state_in(decode, history, state_id)? else {
         return Ok(None);
     };
-    let state = &history.states[state_index];
     let Some(topology) = state.topology() else {
         return Ok(None);
     };
@@ -3064,10 +3062,9 @@ pub(super) fn entity_selection_face_candidates(
         while let Some(state_id) =
             decode.next_charged(&mut history_source, "scan F3D selection identity states")?
         {
-            let Some(state_index) = unique_history_state_in(decode, history, *state_id)? else {
+            let Some(state) = unique_history_state_in(decode, history, *state_id)? else {
                 continue 'histories;
             };
-            let state = &history.states[state_index];
             let Some(topology) = state.topology() else {
                 continue 'histories;
             };
@@ -3384,18 +3381,16 @@ pub(crate) fn bind_edge_identity_history(
         let Some(history) = bound_history else {
             continue;
         };
-        let Some(previous_state_index) =
+        let Some(previous_state) =
             unique_history_state_in(decode, history, previous_state_id)?
         else {
             continue;
         };
-        let previous_state = &history.states[previous_state_index];
         let Some(topology) = previous_state.topology() else {
             continue;
         };
         if let Some(current_state_id) = current_state_id {
-            let current_state = unique_history_state_in(decode, history, current_state_id)?
-                .map(|index| &history.states[index]);
+            let current_state = unique_history_state_in(decode, history, current_state_id)?;
             let current_reaches_previous = match current_state {
                 Some(state) => history_state_reaches(decode, history, state, previous_state_id)?,
                 None => false,
