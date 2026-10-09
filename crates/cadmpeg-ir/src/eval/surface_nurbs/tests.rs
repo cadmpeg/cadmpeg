@@ -44,11 +44,11 @@ fn actual_quartic_fourth_follows_full_polynomial_laws() {
     let surface = quartic();
     for (u, v) in [(0.0, 0.0), (0.3, 0.4)] {
         let scratch = Scratch::new(EvaluationAdmission::Standard);
-        let result = crate::eval::nurbs_surface_requested_jet(&scratch, &surface, u, v, SurfaceRequest::Fourth).unwrap();
+        let result = crate::eval::surface_nurbs::nurbs_surface_requested_jet(&scratch, &surface, u, v, SurfaceRequest::Fourth).unwrap();
         for (actual, expected) in result.higher.fourth().unwrap().into_iter().zip([24.0, 12.0, 12.0, 24.0, 120.0]) {
             close(actual.get(), Vector3::new(0.0, 0.0, expected));
         }
-        let lower = crate::eval::nurbs_surface_requested_jet(&scratch, &surface, u, v, SurfaceRequest::Third).unwrap();
+        let lower = crate::eval::surface_nurbs::nurbs_surface_requested_jet(&scratch, &surface, u, v, SurfaceRequest::Third).unwrap();
         assert_eq!(result.jet.point, lower.jet.point);
         assert_eq!(result.jet.first, lower.jet.first);
         assert_eq!(result.jet.second, lower.jet.second);
@@ -65,7 +65,7 @@ fn actual_rational_bilinear_fourth_keeps_pure_and_mixed_quotient_terms() {
         vec![vec![1.0, 1.0], vec![2.0, 2.0]],
     );
     let scratch = Scratch::new(EvaluationAdmission::Standard);
-    let result = crate::eval::nurbs_surface_requested_jet(&scratch, &pure, 0.5, 0.25, SurfaceRequest::Fourth).unwrap();
+    let result = crate::eval::surface_nurbs::nurbs_surface_requested_jet(&scratch, &pure, 0.5, 0.25, SurfaceRequest::Fourth).unwrap();
     let fourth = result.higher.fourth().unwrap();
     close(fourth[0].get(), Vector3::new(-48.0 / 1.5_f64.powi(5), 0.0, 0.0));
     for actual in &fourth[1..] { close(actual.get(), Vector3::new(0.0, 0.0, 0.0)); }
@@ -77,7 +77,7 @@ fn actual_rational_bilinear_fourth_keeps_pure_and_mixed_quotient_terms() {
             vec![Point3::new(0.5, 0.0, 0.0), Point3::new(1.0 / 3.0, 1.0 / 3.0, 0.0)]],
         vec![vec![1.0, 2.0], vec![2.0, 3.0]],
     );
-    let result = crate::eval::nurbs_surface_requested_jet(&scratch, &mixed, 0.0, 0.0, SurfaceRequest::Fourth).unwrap();
+    let result = crate::eval::surface_nurbs::nurbs_surface_requested_jet(&scratch, &mixed, 0.0, 0.0, SurfaceRequest::Fourth).unwrap();
     for (actual, (x, y)) in result.higher.fourth().unwrap().into_iter().zip([
         (-24.0, 0.0), (-18.0, -6.0), (-12.0, -12.0), (-6.0, -18.0), (0.0, -24.0),
     ]) { close(actual.get(), Vector3::new(x, y, 0.0)); }
@@ -94,15 +94,15 @@ fn actual_fourth_reuses_third_state_with_exact_additional_pole_visits() {
     ).collect()).collect();
     let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), axis(), axis(),
         NurbsSurfaceLanes::new(poles, None), false).unwrap().unwrap();
-    assert_eq!(crate::eval::surface_nurbs_higher::fourth_evaluation_cost([3, 3]), Some(48));
-    assert_eq!(crate::eval::surface_nurbs_higher::fourth_evaluation_cost([4, 4]), Some(153));
-    assert_eq!(crate::eval::surface_nurbs_higher::fourth_evaluation_cost([1, 1]), Some(0));
+    assert_eq!(crate::eval::surface_nurbs::fourth_evaluation_cost([3, 3]), Some(48));
+    assert_eq!(crate::eval::surface_nurbs::fourth_evaluation_cost([4, 4]), Some(153));
+    assert_eq!(crate::eval::surface_nurbs::fourth_evaluation_cost([1, 1]), Some(0));
     for cap in [47, 48] {
         let policy = DecodePolicy::service();
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let scratch = Scratch::new(&ctx);
-        let local = crate::eval::nurbs_surface_local(&scratch, &surface, 0.0, 0.0).unwrap();
+        let local = crate::eval::surface_nurbs::nurbs_surface_local(&scratch, &surface, 0.0, 0.0).unwrap();
         let first = local.first(&scratch).unwrap();
         let second = local.second(&scratch, &first).unwrap();
         let third = local.third(&scratch, &first, &second).unwrap();
@@ -133,7 +133,7 @@ fn actual_fourth_reuses_third_state_with_exact_additional_pole_visits() {
         let budget = WorkBudget::new(cap);
         let result = EvaluationAdmission::Standard.within_work_slice(&budget, |admission| {
             let scratch = Scratch::new(admission);
-            crate::eval::nurbs_surface_requested_jet(&scratch, &surface, 0.0, 0.0, SurfaceRequest::Fourth)
+            crate::eval::surface_nurbs::nurbs_surface_requested_jet(&scratch, &surface, 0.0, 0.0, SurfaceRequest::Fourth)
         }).unwrap();
         assert!(result.jet.first.is_ok() && result.jet.second.is_ok() && result.higher.third().is_ok());
         if cap == 241 { assert_eq!(result.higher.fourth(), Err(EvaluationFailure::NoValue)); }

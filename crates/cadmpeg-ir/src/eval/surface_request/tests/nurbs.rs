@@ -30,7 +30,7 @@ fn requested_rational_bilinear_third_keeps_nonzero_quotient_corrections() {
         Some(vec![vec![1.0, 1.0], vec![2.0, 2.0]]),
     ), false).unwrap().unwrap();
     let scratch = Scratch::new(EvaluationAdmission::Standard);
-    let result = crate::eval::nurbs_surface_requested_jet(&scratch, &surface, 0.5, 0.25, SurfaceRequest::Third).unwrap();
+    let result = crate::eval::surface_nurbs::nurbs_surface_requested_jet(&scratch, &surface, 0.5, 0.25, SurfaceRequest::Third).unwrap();
     // S=(2u/(1+u),v,0): S_uuu=(12/(1+u)^4,0,0).
     let third = result.higher.third().unwrap();
     assert!((third[0].x - 12.0 / 1.5_f64.powi(4)).abs() <= EPS_THIRD_QUOTIENT);
@@ -45,7 +45,7 @@ fn requested_rational_bilinear_third_keeps_nonzero_quotient_corrections() {
 fn requested_cubic_mixed_third_and_offset_second_follow_polynomial_coefficients() {
     let surface = cubic();
     let scratch = Scratch::new(EvaluationAdmission::Standard);
-    let requested = crate::eval::nurbs_surface_requested_jet(&scratch, &surface, 0.0, 0.0, SurfaceRequest::Third).unwrap();
+    let requested = crate::eval::surface_nurbs::nurbs_surface_requested_jet(&scratch, &surface, 0.0, 0.0, SurfaceRequest::Third).unwrap();
     let third = requested.higher.third().unwrap();
     for (actual, expected) in third.into_iter().zip([6.0, 4.0, 6.0, 24.0]) {
         assert!((actual.z - expected).abs() <= EPS_THIRD_QUOTIENT);
@@ -73,8 +73,8 @@ fn requested_third_charges_only_real_additional_basis_and_pole_visits() {
     let surface = cubic();
     // Third adds two recurrence rows (2+3+4 each), then four exact
     // sums with one visit per pole. No old homogeneous sum is changed.
-    assert_eq!(crate::eval::nurbs_surface_third_evaluation_cost([3, 3]), Some(82));
-    assert_eq!(crate::eval::nurbs_surface_third_evaluation_cost([1, 1]), Some(0));
+    assert_eq!(crate::eval::surface_nurbs::nurbs_surface_third_evaluation_cost([3, 3]), Some(82));
+    assert_eq!(crate::eval::surface_nurbs::nurbs_surface_third_evaluation_cost([1, 1]), Some(0));
     // The initial five-pass estimate omitted product_sum replay and terminal
     // iterator probes. Retain its 556 cap as a refusal, rather than raise it.
     for request in [SurfaceRequest::Second, SurfaceRequest::Third] {
@@ -83,13 +83,13 @@ fn requested_third_charges_only_real_additional_basis_and_pole_visits() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let scratch = Scratch::new(&ctx);
-        let Err(EvaluationFailure::ResourceLimit(original)) = crate::eval::nurbs_surface_requested_jet(&scratch, &surface, 0.0, 0.0, request) else {
+        let Err(EvaluationFailure::ResourceLimit(original)) = crate::eval::surface_nurbs::nurbs_surface_requested_jet(&scratch, &surface, 0.0, 0.0, request) else {
             panic!("existing homogeneous pole traversal must refuse");
         };
         assert_eq!(original.operation, "IR homogeneous pole traversal");
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!((original.limit, original.used, original.additional), (556, 556, 1));
-        assert!(matches!(crate::eval::nurbs_surface_requested_jet(&scratch, &surface, f64::NAN, 0.0, request), Err(EvaluationFailure::ResourceLimit(limit)) if limit == original));
+        assert!(matches!(crate::eval::surface_nurbs::nurbs_surface_requested_jet(&scratch, &surface, f64::NAN, 0.0, request), Err(EvaluationFailure::ResourceLimit(limit)) if limit == original));
         drop(scratch);
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
     }
@@ -100,7 +100,7 @@ fn requested_third_charges_only_real_additional_basis_and_pole_visits() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let scratch = Scratch::new(&ctx);
-        let local = crate::eval::nurbs_surface_local(&scratch, &surface, 0.0, 0.0).unwrap();
+        let local = crate::eval::surface_nurbs::nurbs_surface_local(&scratch, &surface, 0.0, 0.0).unwrap();
         let first = local.first(&scratch).unwrap();
         let second = local.second(&scratch, &first).unwrap();
         let budget = ctx.work_budget(cap);
@@ -142,7 +142,7 @@ fn requested_third_charges_only_real_additional_basis_and_pole_visits() {
         let budget = WorkBudget::new(cap);
         let result = EvaluationAdmission::Standard.within_work_slice(&budget, |admission| {
             let scratch = Scratch::new(admission);
-            crate::eval::nurbs_surface_requested_jet(&scratch, &surface, 0.0, 0.0, SurfaceRequest::Third)
+            crate::eval::surface_nurbs::nurbs_surface_requested_jet(&scratch, &surface, 0.0, 0.0, SurfaceRequest::Third)
         }).unwrap();
         assert!(result.jet.first.is_ok());
         assert!(result.jet.second.is_ok());
@@ -183,7 +183,7 @@ fn requested_nurbs_first_preserves_point_and_partials_below_second_work_refusal(
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let scratch = Scratch::new(&ctx);
-    let first = crate::eval::nurbs_surface_requested_jet(
+    let first = crate::eval::surface_nurbs::nurbs_surface_requested_jet(
         &scratch, &surface, 0.0, 0.0, SurfaceRequest::First,
     ).unwrap().jet.first_order().partials().unwrap();
     // S=(u,v,u^3+2u^2v+3uv^2+4v^3) at zero.

@@ -2,7 +2,8 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-use crate::eval::{decode::Scratch, nurbs_surface_local, EvaluationFailure};
+use crate::eval::{decode::Scratch, EvaluationFailure};
+use crate::eval::surface_nurbs::nurbs_surface_local;
 use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 use crate::math::Point3;
 
