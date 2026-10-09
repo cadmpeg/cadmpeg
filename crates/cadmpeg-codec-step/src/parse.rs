@@ -299,6 +299,36 @@ impl PartialEq for EntityIndex {
     }
 }
 
+/// A single index list is replayed by borrow; multiple lists own their merged identifiers.
+/// The owned iterator drops its backing before its reservation.
+enum EntityIds<'source, 'ctx> {
+    Borrowed(std::iter::Copied<std::slice::Iter<'source, u64>>),
+    Scoped {
+        values: std::vec::IntoIter<u64>,
+        _storage: ScopedReservation<'ctx>,
+    },
+}
+
+impl Iterator for EntityIds<'_, '_> {
+    type Item = u64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Borrowed(values) => values.next(),
+            Self::Scoped { values, .. } => values.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::Borrowed(values) => values.size_hint(),
+            Self::Scoped { values, .. } => values.size_hint(),
+        }
+    }
+}
+
+impl ExactSizeIterator for EntityIds<'_, '_> {}
+
 impl EntityIndex {
     fn build(
         records: &BTreeMap<u64, RawRecord>,
@@ -331,14 +361,19 @@ impl EntityIndex {
         }
         Ok(Self(Arc::new(index)))
     }
-    fn ordered_ids<'ctx>(
-        lists: &[&[u64]],
+    fn ordered_ids<'source, 'ctx>(
+        lists: &[&'source [u64]],
         ctx: &'ctx DecodeContext<'_>,
-    ) -> Result<(Vec<u64>, ScopedReservation<'ctx>), CodecError> {
-        let (mut ids, mut storage) =
-            ctx.temporary_vec(0, "STEP entity union identifier storage")?;
-        let mut visited_items = (lists).iter();
+    ) -> Result<EntityIds<'source, 'ctx>, CodecError> {
         ctx.charge_work(0, "STEP entity union list traversal")?;
+        match lists {
+            [] => return Ok(EntityIds::Borrowed([].iter().copied())),
+            [ids] => return Ok(EntityIds::Borrowed(ids.iter().copied())),
+            _ => {}
+        }
+        let mut storage = ctx.reserve_scoped(0, "STEP entity union identifier storage")?;
+        let mut ids = Vec::new();
+        let mut visited_items = lists.iter();
         for _ in 0..visited_items.len() {
             let list = ctx.next_charged(&mut visited_items, "STEP entity union list traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
@@ -346,17 +381,17 @@ impl EntityIndex {
                 ctx.extend_from_slice(&mut ids, list, "STEP entity union identifier copies")
             })?;
         }
-        // Index lists follow record order and contain each record once.
-        if lists.len() > 1 {
-            ctx.sort_unstable_by(
-                &mut ids,
-                |id| id,
-                Ord::cmp,
-                "STEP entity union identifier sort",
-            )?;
-            ctx.dedup_vec(&mut ids, "STEP entity union identifier deduplication")?;
-        }
-        Ok((ids, storage))
+        ctx.sort_unstable_by(
+            &mut ids,
+            |id| id,
+            Ord::cmp,
+            "STEP entity union identifier sort",
+        )?;
+        ctx.dedup_vec(&mut ids, "STEP entity union identifier deduplication")?;
+        Ok(EntityIds::Scoped {
+            values: ids.into_iter(),
+            _storage: storage,
+        })
     }
 }
 
@@ -476,7 +511,8 @@ impl Exchange {
         ctx: &'a DecodeContext<'a>,
         matches: impl Fn(&str) -> bool + 'a,
     ) -> Result<impl Iterator<Item = Result<u64, CodecError>> + 'a, CodecError> {
-        let (mut lists, mut list_storage) = ctx.temporary_vec(0, "STEP matching entity lists")?;
+        let mut list_storage = ctx.reserve_scoped(0, "STEP matching entity lists")?;
+        let mut lists = Vec::new();
         let mut visited_items = (self.entity_ids()).iter();
         ctx.charge_work(0, "STEP matching entity name traversal")?;
         for _ in 0..visited_items.len() {
@@ -491,12 +527,10 @@ impl Exchange {
                 )?;
             }
         }
-        let (ids, storage) = EntityIndex::ordered_ids(&lists, ctx)?;
-        let mut ids = ids.into_iter();
+        let mut ids = EntityIndex::ordered_ids(&lists, ctx)?;
         let mut failed = false;
         Ok(std::iter::from_fn(move || {
-            let _live_storage = &storage;
-            if failed || ids.as_slice().is_empty() {
+            if failed || ids.len() == 0 {
                 return None;
             }
             let result = ctx
@@ -548,7 +582,8 @@ impl Exchange {
         names: &'a [&str],
     ) -> Result<impl Iterator<Item = Result<(u64, &'a RawRecord), CodecError>> + 'a, CodecError>
     {
-        let (mut lists, mut list_storage) = ctx.temporary_vec(0, "STEP entity union lists")?;
+        let mut list_storage = ctx.reserve_scoped(0, "STEP entity union lists")?;
+        let mut lists = Vec::new();
         let mut visited_items = (names).iter();
         ctx.charge_work(0, "STEP entity union name traversal")?;
         for _ in 0..visited_items.len() {
@@ -565,12 +600,10 @@ impl Exchange {
                 )?;
             }
         }
-        let (ids, storage) = EntityIndex::ordered_ids(&lists, ctx)?;
-        let mut ids = ids.into_iter();
+        let mut ids = EntityIndex::ordered_ids(&lists, ctx)?;
         let mut failed = false;
         Ok(std::iter::from_fn(move || {
-            let _live_storage = &storage;
-            if failed || ids.as_slice().is_empty() {
+            if failed || ids.len() == 0 {
                 return None;
             }
             let result = ctx
