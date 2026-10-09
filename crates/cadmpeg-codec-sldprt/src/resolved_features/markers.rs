@@ -459,6 +459,8 @@ impl<'a, 'ctx> SpatialLaneIndex<'a, 'ctx> {
         declared_spatial: bool,
     ) -> Result<Vec<(&'a str, Point3, usize)>, CodecError> {
         const RANGES: &str = "scan SLDPRT active spatial relation ranges";
+        let mut active_ranges_storage =
+            ctx.reserve_scoped(0, "SLDPRT active spatial relation range workspace")?;
         let mut active_ranges = Vec::new();
         if let Some(offsets) = ctx.get_hash_map(
             &self.scalar_offsets,
@@ -473,11 +475,13 @@ impl<'a, 'ctx> SpatialLaneIndex<'a, 'ctx> {
                     |offset| Ok(*offset > start && *offset < end),
                     "scan SLDPRT spatial scalars",
                 )? {
-                    ctx.push_vec(
-                        &mut active_ranges,
-                        (start, end),
-                        "collect SLDPRT active spatial relation ranges",
-                    )?;
+                    active_ranges_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut active_ranges,
+                            (start, end),
+                            "collect SLDPRT active spatial relation ranges",
+                        )
+                    })?;
                 }
             }
         }
