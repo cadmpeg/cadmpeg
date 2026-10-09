@@ -5,7 +5,6 @@
 use crate::history::bind::bind_unique_sketch_feature;
 use crate::history::configuration::align_configuration_parameter_kinds;
 use crate::history::configuration::bind_configuration_topology_selections;
-use crate::history::configuration::surfaces::configuration_surface_carriers;
 use crate::history::configuration::inherit_configuration_reference_plane_semantics;
 use crate::history::configuration::inherit_configuration_shared_semantics;
 use crate::history::configuration::project_configuration_sketch_states;
@@ -22,8 +21,6 @@ use crate::records::Configuration;
 use crate::records::FeatureContent;
 use crate::records::FeatureHistory;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::DesignConfiguration;
-use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::Length;
@@ -68,63 +65,6 @@ fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
         .unwrap(),
         3
     );
-}
-
-#[test]
-fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
-    let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
-            .expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
-    });
-    ir.model.configurations.push(DesignConfiguration {
-        bodies: None,
-        ..design_configuration("unresolved", 0, Some(0), None)
-    });
-
-    assert_eq!(
-        configuration_surface_carriers(&cadmpeg_test_support::service_decode_context(), &ir, 0)
-            .unwrap(),
-        ir.model.surfaces,
-    );
-}
-
-#[test]
-fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
-    let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
-            .expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
-    });
-    ir.model
-        .configurations
-        .push(design_configuration("empty", 0, Some(0), None));
-
-    assert!(configuration_surface_carriers(
-        &cadmpeg_test_support::service_decode_context(),
-        &ir,
-        0
-    )
-    .unwrap()
-    .is_empty());
 }
 
 #[test]

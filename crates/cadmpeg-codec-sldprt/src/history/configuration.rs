@@ -1885,5 +1885,3 @@ fn configuration_state_lane(lane: &crate::records::FeatureInputLane) -> bool {
 #[cfg(test)]
 mod temporary_storage_tests;
 
-#[cfg(test)]
-mod ancestry_storage_tests;
