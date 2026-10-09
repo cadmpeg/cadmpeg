@@ -295,20 +295,20 @@ fn enforce_sparse_endpoint_membership(
             if budget.is_some_and(|budget| !budget.charge_by(work)) {
                 return Ok(false);
             }
-            let (allowed, _allowed_storage) =
-                ctx.with_scoped_storage("catia_sparse_allowed_points", || {
-                    let mut allowed = ctx.collect_vec(
-                        candidates.iter().flatten().copied(),
-                        "catia_sparse_allowed_points",
-                    )?;
-                    ctx.sort_unstable_by(
-                        &mut allowed,
-                        |point| point,
-                        Ord::cmp,
-                        "catia_sparse_allowed_points",
-                    )?;
-                    Ok::<_, CodecError>(allowed)
-                })?;
+            let mut allowed_storage = ctx.reserve_scoped(0, "catia_sparse_allowed_points")?;
+            let allowed = allowed_storage.with_storage(|| {
+                let mut allowed = ctx.collect_vec(
+                    candidates.iter().flatten().copied(),
+                    "catia_sparse_allowed_points",
+                )?;
+                ctx.sort_unstable_by(
+                    &mut allowed,
+                    |point| point,
+                    Ord::cmp,
+                    "catia_sparse_allowed_points",
+                )?;
+                Ok::<_, CodecError>(allowed)
+            })?;
             let roots = if right == left {
                 &[left][..]
             } else {
@@ -792,16 +792,16 @@ impl<'storage> MeshCoordinateRootDomains<'storage> {
         point_count: usize,
         budget: Option<&WorkBudget<'_>>,
     ) -> Result<Option<Vec<usize>>, CodecError> {
-        let (roots_by_point, _roots_storage) =
-            ctx.with_scoped_storage("catia_quotient_roots_by_point", || {
-                Self::roots_by_point(
-                    ctx,
-                    domains,
-                    point_count,
-                    "catia_quotient_roots_by_point",
-                    "catia_quotient_roots_by_point_entries",
-                )
-            })?;
+        let mut roots_storage = ctx.reserve_scoped(0, "catia_quotient_roots_by_point")?;
+        let roots_by_point = roots_storage.with_storage(|| {
+            Self::roots_by_point(
+                ctx,
+                domains,
+                point_count,
+                "catia_quotient_roots_by_point",
+                "catia_quotient_roots_by_point_entries",
+            )
+        })?;
         if ctx.any_by(
             &roots_by_point,
             |roots| Ok(roots.is_empty()),
@@ -2095,28 +2095,28 @@ impl PointAssignmentSearch<'_> {
         let mut propagated = Vec::new();
         let branch = loop {
             ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
-            let (mut values, _row_storage) =
-                ctx.with_scoped_storage("catia_point_assignment_values", || {
-                    let mut values = Vec::new();
-                    for (root, slot) in ctx.admit_iter(&*assigned, Self::OPERATION)?.enumerate() {
-                        if slot.is_none() {
-                            let (value, storage) = ctx
-                                .with_scoped_storage("catia_point_assignment_values", || {
-                                    self.values_for(ctx, root, assigned, used)
-                                })?;
-                            let candidates = ScopedValue {
-                                value,
-                                storage: Some(storage),
-                            };
-                            ctx.push_vec(
-                                &mut values,
-                                (root, candidates),
-                                "catia_point_assignment_value_rows",
-                            )?;
-                        }
+            let mut row_storage = ctx.reserve_scoped(0, "catia_point_assignment_values")?;
+            let mut values = row_storage.with_storage(|| {
+                let mut values = Vec::new();
+                for (root, slot) in ctx.admit_iter(&*assigned, Self::OPERATION)?.enumerate() {
+                    if slot.is_none() {
+                        let (value, storage) = ctx
+                            .with_scoped_storage("catia_point_assignment_values", || {
+                                self.values_for(ctx, root, assigned, used)
+                            })?;
+                        let candidates = ScopedValue {
+                            value,
+                            storage: Some(storage),
+                        };
+                        ctx.push_vec(
+                            &mut values,
+                            (root, candidates),
+                            "catia_point_assignment_value_rows",
+                        )?;
                     }
-                    Ok::<_, CodecError>(values)
-                })?;
+                }
+                Ok::<_, CodecError>(values)
+            })?;
             if values.is_empty() {
                 break Some(None);
             }
@@ -2350,6 +2350,7 @@ fn partial_compact_assignment_viable(
                 .map_or(&[][..], Vec::as_slice))
         };
         let mut closed_components = Vec::new();
+        let mut seen_storage = ctx.reserve_scoped(0, "catia coordinate seen edges")?;
         let mut seen_edges = HashSet::new();
         for &first in ctx.admit_iter(&selected_edges, "catia coordinate component walk")? {
             if ctx.contains_hash_set(&seen_edges, &first, "catia coordinate seen edges")? {
@@ -2367,11 +2368,13 @@ fn partial_compact_assignment_viable(
                         &mut std::iter::from_fn(|| stack.pop()),
                         "catia coordinate component walk",
                     )? {
-                        if !ctx.insert_hash_set(
-                            &mut seen_edges,
-                            edge,
-                            "catia coordinate seen edges",
-                        )? {
+                        if !seen_storage.with_storage(|| {
+                            ctx.insert_hash_set(
+                                &mut seen_edges,
+                                edge,
+                                "catia coordinate seen edges",
+                            )
+                        })? {
                             continue;
                         }
                         component_storage.with_storage(|| {
@@ -2450,10 +2453,11 @@ fn partial_compact_assignment_viable(
                     .admit_iter(&mut compatible, "catia_deferred_compatible_rows")?
                     .zip(&closed_components)
                 {
-                    let (incidence, _incidence_storage) = ctx
-                        .with_scoped_storage("catia coordinate incidence scratch", || {
-                            incidence_cycles(ctx, component, &edge_points)
-                        })?;
+                    let mut incidence_storage =
+                        ctx.reserve_scoped(0, "catia coordinate incidence scratch")?;
+                    let incidence = incidence_storage.with_storage(|| {
+                        incidence_cycles(ctx, component, &edge_points)
+                    })?;
                     let Some([incidence]) = incidence.as_deref() else {
                         return Ok(false);
                     };
@@ -3573,16 +3577,17 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     "catia_coordinate_closure_support_domains",
                 )
             })?;
-            let (coverage_matching, _matching_storage) =
-                ctx.with_scoped_storage("catia_coordinate_coverage_matching", || {
-                    distinct_domain_matching_with_budget(
-                        ctx,
-                        support_domains.iter().copied(),
-                        assigned.len(),
-                        matching_budget.as_ref(),
-                        None,
-                    )
-                })?;
+            let mut matching_storage =
+                ctx.reserve_scoped(0, "catia_coordinate_coverage_matching")?;
+            let coverage_matching = matching_storage.with_storage(|| {
+                distinct_domain_matching_with_budget(
+                    ctx,
+                    support_domains.iter().copied(),
+                    assigned.len(),
+                    matching_budget.as_ref(),
+                    None,
+                )
+            })?;
             let mut matching_forced = None;
             let mut unsupported_matches = HashSet::new();
             if let Some(matching) = &coverage_matching {
@@ -3982,22 +3987,22 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         exhausted,
     } = inputs;
 
-    let ((roots, root_indices), _root_storage) =
-        ctx.with_scoped_storage("catia_coordinate_closure_roots", || {
-            let mut roots = Vec::new();
-            let mut root_indices = ctx.alloc_filled(
-                quotient.union.len(),
-                None,
-                "catia_coordinate_closure_root_indices",
-            )?;
-            for node in ctx.admit_iter(0..quotient.union.len(), "catia_coordinate_closure_roots")? {
-                if quotient.union.find(ctx, node)? == node {
-                    root_indices[node] = Some(roots.len());
-                    ctx.push_vec(&mut roots, node, "catia_coordinate_closure_roots")?;
-                }
+    let mut root_storage = ctx.reserve_scoped(0, "catia_coordinate_closure_roots")?;
+    let (roots, root_indices) = root_storage.with_storage(|| {
+        let mut roots = Vec::new();
+        let mut root_indices = ctx.alloc_filled(
+            quotient.union.len(),
+            None,
+            "catia_coordinate_closure_root_indices",
+        )?;
+        for node in ctx.admit_iter(0..quotient.union.len(), "catia_coordinate_closure_roots")? {
+            if quotient.union.find(ctx, node)? == node {
+                root_indices[node] = Some(roots.len());
+                ctx.push_vec(&mut roots, node, "catia_coordinate_closure_roots")?;
             }
-            Ok::<_, CodecError>((roots, root_indices))
-        })?;
+        }
+        Ok::<_, CodecError>((roots, root_indices))
+    })?;
     if roots.len() < point_count {
         return Ok(None);
     }
@@ -4565,6 +4570,53 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use std::collections::HashMap;
+
+    #[test]
+    fn compact_coordinate_components_keep_seen_edges_through_later_walks() {
+        use super::PartialCompactAssignmentViableInputs;
+
+        let deferred = MeshFaceBoundaryDomain::DeferredValidation(MeshDeferredFaceBoundary {
+            cycles: vec![
+                MeshDeferredBoundaryCycle { length: 3, exact_uses: Vec::new() },
+                MeshDeferredBoundaryCycle { length: 3, exact_uses: Vec::new() },
+            ],
+            missing_edges: vec![0, 1, 2, 3, 4, 5],
+        });
+        let unordered = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3, 4, 5]);
+        let edge_by_id = HashMap::from([(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)]);
+        let edges = [[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [10, 11]];
+        let assigned = [Some(0), Some(1), Some(1), Some(2), Some(2), Some(0),
+            Some(3), Some(4), Some(4), Some(5), Some(5), Some(3)];
+        let run = |ctx: &DecodeContext<'_>, domain| {
+            partial_compact_assignment_viable(ctx, PartialCompactAssignmentViableInputs {
+                domain,
+                local_edge_by_id: &edge_by_id,
+                edges: &edges,
+                global_edge_count: 6,
+                assigned: &assigned,
+                candidate: (0, 0),
+                budget: None,
+            })
+        };
+        crate::test_support::with_retained_limit(0, |ctx| {
+            assert!(run(ctx, &deferred).expect("two separate deferred cycles close"));
+            assert!(!run(ctx, &unordered).expect("two cycles cannot close one full cycle"));
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+        let refused = crate::test_support::with_work_refusal("catia coordinate seen edges", |ctx| {
+            let result = run(ctx, &deferred);
+            let Err(CodecError::ResourceLimit(limit)) = &result else {
+                panic!("component set refusal");
+            };
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+            assert!(matches!(ctx.charge_work(0, "after component refusal"),
+                Err(CodecError::ResourceLimit(later)) if later == *limit));
+            result
+        });
+        assert!(matches!(refused, Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "catia coordinate seen edges"));
+    }
 
     #[test]
     fn deferred_coordinate_boundary_refuses_edge_point_collection_limit() {
