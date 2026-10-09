@@ -2859,11 +2859,15 @@ fn parse_material(
         if writer_version.is_some_and(|version| version < 200_912_010) {
             transparent = diffuse;
         } else if writer_version.is_none() && diffuse != transparent {
-            push_scoped_presentation_loss(
+            losses.push_with_storage_admitted(
                 ctx,
-                losses,
-                RhinoLossCode::SourceWriterStampUnverified,
-                format_args!("legacy material at offset {source_offset} kept its stored transparent color instead of the pre-2009 diffuse substitution because the archive has no writer-version stamp"),
+                || crate::wire::admitted_loss(
+                    ctx,
+                    RhinoLossCode::SourceWriterStampUnverified,
+                    format_args!("legacy material at offset {source_offset} kept its stored transparent color instead of the pre-2009 diffuse substitution because the archive has no writer-version stamp"),
+                    "Rhino material writer-stamp loss text",
+                ),
+                "Rhino material writer-stamp losses",
             )
             .map_err(crate::chunks::FramingError::from)?;
         }
@@ -5138,11 +5142,15 @@ fn parse_text_style(
             ctx.copy_retained_text(&description, "Rhino legacy PostScript name")?
         } else {
             if named_description && !apple_runtime && writer_version.is_none() {
-                push_scoped_presentation_loss(
+                losses.push_with_storage_admitted(
                     ctx,
-                    losses,
-                    RhinoLossCode::SourceWriterStampUnverified,
-                    format_args!("legacy text style at offset {source_offset} dropped the PostScript font name \"{description}\" because the archive has no writer-version stamp"),
+                    || crate::wire::admitted_loss(
+                        ctx,
+                        RhinoLossCode::SourceWriterStampUnverified,
+                        format_args!("legacy text style at offset {source_offset} dropped the PostScript font name \"{description}\" because the archive has no writer-version stamp"),
+                        "Rhino text style writer-stamp loss text",
+                    ),
+                    "Rhino text style writer-stamp losses",
                 )
                 .map_err(crate::chunks::FramingError::from)?;
             }
