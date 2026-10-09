@@ -557,7 +557,17 @@ fn section_scan_normalizes_decorated_names_once() {
 
 #[test]
 fn toc_section_deduplication_refuses_work() {
-    let data = one_toc_section("Body", "Body");
+let mut data = one_toc_section("Body", "Body");
+// A second directory repeats the original bounded section.
+data.extend_from_slice(b"\n");
+data.extend_from_slice(format!("{:<80}\n", "#UGC_TOC 2 1 81 17").as_bytes());
+data.extend_from_slice(format!("{:<80}\n", "Body a2 9 0").as_bytes());
+let sections = crate::decode::with_test_decode_ctx(|ctx|
+super::super::toc_sections(ctx, &data, 0)).expect("duplicate directory witness");
+assert_eq!(sections.len(), 1);
+assert_eq!(sections[0].section.raw_name(), "Body");
+assert_eq!(sections[0].section.offset(), 162);
+assert_eq!(sections[0].region, b"#Body\nabc");
     let error = crate::test_support::last_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
@@ -573,7 +583,21 @@ fn toc_section_deduplication_refuses_work() {
 
 #[test]
 fn legacy_toc_section_deduplication_refuses_work() {
-    let data = one_legacy_toc_section();
+let mut data = b"#Pro/ENGINEER  TM  Version H-01-21\n@Toc 52 0\n0 52 ->\n\
+@entry 53 10\n1 53 [2]\n".to_vec();
+let row_len = b"2 53 BasicData 00000000 0000000e 0 983####\n".len();
+let offset = data.len() + 2 * row_len;
+let row = format!("2 53 BasicData {offset:08x} 0000000e 0 983####\n");
+data.extend_from_slice(row.as_bytes());
+data.extend_from_slice(row.as_bytes());
+assert_eq!(data.len(), offset);
+data.extend_from_slice(b"#BasicData\nabc");
+let sections = crate::decode::with_test_decode_ctx(|ctx|
+super::super::legacy_toc_sections(ctx, &data, 0)).expect("duplicate legacy witness");
+assert_eq!(sections.len(), 1);
+assert_eq!(sections[0].section.raw_name(), "BasicData");
+assert_eq!(sections[0].section.offset(), offset);
+assert_eq!(sections[0].region, b"#BasicData\nabc");
     let error = crate::test_support::last_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,

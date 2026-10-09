@@ -117,13 +117,20 @@ fn legacy_toc_count_prefix_refuses_work() {
 #[test]
 fn loop_array_section_deduplication_refuses_work() {
     let data = b"loop_array\0";
-    let sections =
+let sections =
         [Section::scan_for_test("VisibGeom".into(), 0, data.len(), None, data).expect("section")];
+let selected = crate::decode::with_test_decode_ctx(|ctx|
+super::super::loop_array_sections(ctx, &sections, &sections, &[]))
+.expect("two identical loop section witnesses");
+assert_eq!(selected.len(), 1);
+assert_eq!(selected[0].section.raw_name(), "VisibGeom");
+assert_eq!(selected[0].section.offset(), 0);
+assert_eq!(selected[0].region, data);
     let error = crate::test_support::last_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo loop array sections selected deduplication",
-        |ctx| super::super::loop_array_sections(ctx, &sections, &[], &[]),
+        |ctx| super::super::loop_array_sections(ctx, &sections, &sections, &[]),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -148,12 +155,16 @@ fn appended_topology_row_deduplication_refuses_work() {
                 next_edges: [0; 2],
                 offset: 0,
             }];
+            let original = rows.clone();
+            rows.push(rows[0].clone());
             super::super::append_topology_rows(
                 ctx,
                 &mut rows,
                 ctx.admit_iter([], "creo topology row append traversal")?,
                 "creo test topology aggregation",
-            )
+            )?;
+            assert_eq!(rows, original);
+            Ok::<_, CodecError>(())
         },
     );
     assert!(
@@ -178,7 +189,12 @@ fn appended_legacy_pcurve_deduplication_refuses_work() {
                 face_1_endpoints: [[0.0; 2]; 2],
                 offset: 0,
             }];
-            super::super::append_legacy_curve_witnesses(ctx, &mut topology, &mut pcurves, &[], &[])
+            let original = pcurves.clone();
+            pcurves.push(pcurves[0].clone());
+            super::super::append_legacy_curve_witnesses(ctx, &mut topology, &mut pcurves, &[], &[])?;
+            assert!(topology.is_empty());
+            assert_eq!(pcurves, original);
+            Ok::<_, CodecError>(())
         },
     );
     assert!(
