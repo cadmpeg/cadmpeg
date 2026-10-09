@@ -50,3 +50,56 @@ fn empty_implicit_bounds_preserve_original_refusal() {
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(refusal)) if refusal == original));
     });
 }
+
+fn polyline_domain_fixture(count: u32, parameterized: bool) -> cadmpeg_ir::geometry::SolvedCurveGeometry {
+    use cadmpeg_ir::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+    use cadmpeg_ir::math::Point3;
+    let samples = if parameterized {
+        PolylineSamples::Parameterized {
+            vertices: (0..count).map(|index| PolylineVertex {
+                parameter: f64::from(index) * 2.0 - 7.0,
+                point: Point3::new(f64::from(index), 0.0, 0.0),
+            }).collect::<Vec<_>>().try_into().expect("at least two vertices"),
+        }
+    } else {
+        PolylineSamples::Unparameterized {
+            points: (0..count).map(|index| Point3::new(f64::from(index), 0.0, 0.0))
+                .collect::<Vec<_>>().try_into().expect("at least two points"),
+        }
+    };
+    let setup = cadmpeg_test_support::service_decode_context();
+    cadmpeg_ir::geometry::SolvedCurveGeometry::Polyline(
+        PolylineCurve::new(samples, 0.0, &setup)
+            .expect("fixture resources").expect("finite ordered sample lane"),
+    )
+}
+
+#[test]
+fn parameterized_polyline_domain_uses_first_and_last_source_parameters() {
+    for count in [2, 257] {
+        let geometry = polyline_domain_fixture(count, true);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The existing geometry-node admission is independent of sample count.
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let domain = super::super::curve_selection_parameter_domain_from_geometry(&geometry, &ctx)
+            .expect("endpoint access requires no sample scan");
+        assert_eq!(domain, Some([-7.0, f64::from(count - 1) * 2.0 - 7.0]));
+        assert_eq!(ctx.resource_refusal(), None);
+        ctx.finish_session().expect("no scratch remains");
+    }
+}
+
+#[test]
+fn unparameterized_polyline_domain_does_not_synthesize_sample_index_parameters() {
+    let geometry = polyline_domain_fixture(257, false);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert_eq!(super::super::curve_selection_parameter_domain_from_geometry(&geometry, &ctx)
+        .expect("unparameterized sample lane"), None);
+    assert_eq!(ctx.resource_refusal(), None);
+    ctx.finish_session().expect("no scratch remains");
+}
