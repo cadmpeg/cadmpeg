@@ -149,7 +149,7 @@ fn pcurve_path_mapping_propagates_evaluator_refusal() {
         super::map_pcurve_paths(
             ctx,
             &model(),
-            [(NonZeroU32::new(7), ENDPOINTS)],
+            [Some((NonZeroU32::new(7), ENDPOINTS)), None],
             &SourceUnitCarriers::default(),
             &super::SurfaceIndex::new(
                 &cadmpeg_test_support::service_decode_context(),
