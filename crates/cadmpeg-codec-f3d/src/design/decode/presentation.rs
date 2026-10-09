@@ -12,7 +12,7 @@ use cadmpeg_core::CodecError;
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
 use crate::design::decode::reference_runs::admit_reference_values;
 
-use crate::bytes::{is_guid_prefix, lp_utf16_bytes, take_reference};
+use crate::bytes::{is_guid_prefix, take_reference};
 use crate::design::decode::meta::{guid_matches, has_base_type, TypedFrameSource};
 use crate::design::decode::sketch::{
     parse_genesis_entity_header, parse_settled_entity_header, NamedEntityHeader,
@@ -29,6 +29,28 @@ use crate::design::presentation::{
 use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
 
 const MAX_ENVELOPE_GAP: usize = 8;
+
+const LP_GUID_MARKER_BYTES: usize = 4 + GUID_LEN * 2;
+
+const fn guid_marker(guid: &str) -> [u8; LP_GUID_MARKER_BYTES] {
+    let ascii = guid.as_bytes();
+    assert!(GUID_LEN == 36 && ascii.len() == GUID_LEN);
+    let mut marker = [0; LP_GUID_MARKER_BYTES];
+    marker[0] = 36;
+    let mut index = 0;
+    while index < GUID_LEN {
+        assert!(ascii[index].is_ascii());
+        marker[4 + index * 2] = ascii[index];
+        index += 1;
+    }
+    marker
+}
+
+const PHYSICAL_MARKER: [u8; LP_GUID_MARKER_BYTES] = guid_marker(PHYSICAL_MATERIAL_LIBRARY_ID);
+const MODERN_MARKER: [u8; LP_GUID_MARKER_BYTES] = guid_marker(MODERN_APPEARANCE_LIBRARY_IDS[0]);
+const MODERN_TRAILER: [u8; LP_GUID_MARKER_BYTES] = guid_marker(MODERN_APPEARANCE_LIBRARY_IDS[1]);
+const LEGACY_MARKER: [u8; LP_GUID_MARKER_BYTES] = guid_marker(APPEARANCE_LIBRARY_ID);
+const ENVELOPE_MARKER: [u8; LP_GUID_MARKER_BYTES] = guid_marker(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID);
 
 /// The registered type GUID and record version of one Design entity.
 type EntityType<'a> = (&'a crate::records::mesh::DesignRelaxedGuidText, u32);
@@ -405,8 +427,6 @@ fn presentation_material(
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
     };
-    let markers = MaterialMarkers::new()?;
-    let legacy_marker = lp_utf16_bytes(APPEARANCE_LIBRARY_ID)?;
     let envelope = PresentationEnvelope {
         bytes,
         start,
@@ -420,14 +440,14 @@ fn presentation_material(
         bytes,
         search_at,
         end,
-        &[&markers.physical],
+        &[&PHYSICAL_MARKER],
         "find F3D physical material marker",
     )? {
-        search_at = physical_at + markers.physical.len();
+        search_at = physical_at + PHYSICAL_MARKER.len();
         let storage;
         let (material, held_storage) = ctx
             .with_scoped_storage("f3d body presentation material candidates", || {
-                envelope.named_material_at(ctx, &markers, &legacy_marker, entity_types, physical_at)
+                envelope.named_material_at(ctx, entity_types, physical_at)
             })?;
         storage = held_storage;
         let Some(material) = material else {
@@ -444,24 +464,6 @@ fn presentation_material(
     storage.commit_value(Some(material))
 }
 
-/// The counted UTF-16LE library identifiers both material envelope forms
-/// store.
-struct MaterialMarkers {
-    physical: Vec<u8>,
-    modern: Vec<u8>,
-    modern_trailer: Vec<u8>,
-}
-
-impl MaterialMarkers {
-    fn new() -> Result<Self, CodecError> {
-        Ok(Self {
-            physical: lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?,
-            modern: lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?,
-            modern_trailer: lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?,
-        })
-    }
-}
-
 /// The bytes of one body-presentation frame that hold its material envelope:
 /// `bytes[start..end]`, owned by the entity `entity_suffix`.
 struct PresentationEnvelope<'a> {
@@ -473,13 +475,11 @@ struct PresentationEnvelope<'a> {
 
 impl PresentationEnvelope<'_> {
     /// The material envelope of a named owner whose physical-library marker
-    /// opens at `physical_at`. The visual record ends with `legacy_marker` or
+    /// opens at `physical_at`. The visual record ends with `LEGACY_MARKER` or
     /// with the modern marker pair.
     fn named_material_at(
         &self,
         ctx: &DecodeContext<'_>,
-        markers: &MaterialMarkers,
-        legacy_marker: &[u8],
         entity_types: &HashMap<u64, EntityType<'_>>,
         physical_at: usize,
     ) -> Result<Option<PresentationMaterial>, CodecError> {
@@ -516,7 +516,7 @@ impl PresentationEnvelope<'_> {
         {
             return Ok(None);
         }
-        let Some(token_at) = skip_zeros(bytes, physical_at + markers.physical.len(), end) else {
+        let Some(token_at) = skip_zeros(bytes, physical_at + PHYSICAL_MARKER.len(), end) else {
             return Ok(None);
         };
         let Some((physical_token, after_token)) =
@@ -576,18 +576,18 @@ impl PresentationEnvelope<'_> {
             return Ok(None);
         };
         let (after_visual_marker, legacy) =
-            if needle_at(bytes, visual_marker_at, end, &[legacy_marker]) {
-                (visual_marker_at + legacy_marker.len(), true)
-            } else if needle_at(bytes, visual_marker_at, end, &[&markers.modern]) {
+            if needle_at(bytes, visual_marker_at, end, &[&LEGACY_MARKER]) {
+                (visual_marker_at + LEGACY_MARKER.len(), true)
+            } else if needle_at(bytes, visual_marker_at, end, &[&MODERN_MARKER]) {
                 let Some(trailer_at) =
-                    skip_zeros(bytes, visual_marker_at + markers.modern.len(), end)
+                    skip_zeros(bytes, visual_marker_at + MODERN_MARKER.len(), end)
                 else {
                     return Ok(None);
                 };
-                if !needle_at(bytes, trailer_at, end, &[&markers.modern_trailer]) {
+                if !needle_at(bytes, trailer_at, end, &[&MODERN_TRAILER]) {
                     return Ok(None);
                 }
-                (trailer_at + markers.modern_trailer.len(), false)
+                (trailer_at + MODERN_TRAILER.len(), false)
             } else {
                 return Ok(None);
             };
@@ -627,7 +627,6 @@ impl PresentationEnvelope<'_> {
     fn bare_material_at(
         &self,
         ctx: &DecodeContext<'_>,
-        markers: &MaterialMarkers,
         marker_at: usize,
         marker_len: usize,
     ) -> Result<Option<PresentationMaterial>, CodecError> {
@@ -706,14 +705,14 @@ impl PresentationEnvelope<'_> {
         let Some(visual_marker_at) = skip_zeros(bytes, after_visual, end) else {
             return Ok(None);
         };
-        if !needle_at(bytes, visual_marker_at, end, &[&markers.modern]) {
+        if !needle_at(bytes, visual_marker_at, end, &[&MODERN_MARKER]) {
             return Ok(None);
         }
-        let Some(trailer_at) = skip_zeros(bytes, visual_marker_at + markers.modern.len(), end)
+        let Some(trailer_at) = skip_zeros(bytes, visual_marker_at + MODERN_MARKER.len(), end)
         else {
             return Ok(None);
         };
-        if !needle_at(bytes, trailer_at, end, &[&markers.modern_trailer]) {
+        if !needle_at(bytes, trailer_at, end, &[&MODERN_TRAILER]) {
             return Ok(None);
         }
         Ok(Some(PresentationMaterial {
@@ -741,10 +740,8 @@ fn bare_presentation_material(
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
     };
-    let envelope_marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)?;
-    let markers = MaterialMarkers::new()?;
-    let marker: [&[u8]; 2] = [&envelope_marker, &markers.physical];
-    let marker_len = envelope_marker.len() + markers.physical.len();
+    let marker: [&[u8]; 2] = [&ENVELOPE_MARKER, &PHYSICAL_MARKER];
+    let marker_len = ENVELOPE_MARKER.len() + PHYSICAL_MARKER.len();
     let envelope = PresentationEnvelope {
         bytes,
         start,
@@ -765,7 +762,7 @@ fn bare_presentation_material(
         let storage;
         let (material, held_storage) = ctx
             .with_scoped_storage("f3d body presentation material candidates", || {
-                envelope.bare_material_at(ctx, &markers, marker_at, marker_len)
+                envelope.bare_material_at(ctx, marker_at, marker_len)
             })?;
         storage = held_storage;
         let Some(material) = material else {
@@ -867,24 +864,25 @@ fn next_match(
     needle: &[&[u8]],
     operation: &'static str,
 ) -> Result<Option<usize>, CodecError> {
+    ctx.charge_work(0, operation)?;
     let Some(&first) = needle.iter().find_map(|part| part.first()) else {
         return Ok(None);
     };
-    let mut cursor = from;
-    loop {
-        let Some(range) = bytes.get(cursor..end) else {
-            return Ok(None);
-        };
-        let Some(relative) = ctx.position_by(range, |byte| Ok(*byte == first), operation)? else {
-            return Ok(None);
+    let Some(range) = bytes.get(from..end) else {
+        return Ok(None);
+    };
+    let mut source = range.iter().enumerate();
+    while source.len() != 0 {
+        let Some((relative, byte)) = ctx.next_charged(&mut source, operation)? else {
+            break;
         };
         // `relative` indexes `range`, so the sum stays within `end`.
-        let at = cursor + relative;
-        if needle_at(bytes, at, end, needle) {
+        let at = from + relative;
+        if *byte == first && needle_at(bytes, at, end, needle) {
             return Ok(Some(at));
         }
-        cursor = at + 1;
     }
+    Ok(None)
 }
 
 fn skip_zeros(bytes: &[u8], start: usize, end: usize) -> Option<usize> {
@@ -973,6 +971,91 @@ mod tests {
     use crate::design::test_support::{design_type, primary_record};
     use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
     use crate::test_support::{lp_ascii, lp_utf16, push_reference_u64};
+
+    #[test]
+    fn material_markers_preserve_fixed_counted_utf16_guid_bytes() {
+        for (guid, marker) in [
+            (PHYSICAL_MATERIAL_LIBRARY_ID, &super::PHYSICAL_MARKER),
+            (MODERN_APPEARANCE_LIBRARY_IDS[0], &super::MODERN_MARKER),
+            (MODERN_APPEARANCE_LIBRARY_IDS[1], &super::MODERN_TRAILER),
+            (APPEARANCE_LIBRARY_ID, &super::LEGACY_MARKER),
+            (BODY_PRESENTATION_MATERIAL_ENVELOPE_ID, &super::ENVELOPE_MARKER),
+        ] {
+            assert_eq!(&marker[..4], &[36, 0, 0, 0]);
+            assert_eq!(marker.as_slice(), lp_utf16_bytes(guid).unwrap());
+        }
+    }
+
+    #[test]
+    fn next_match_known_empty_ranges_are_free_and_keep_original_fuse() {
+        use cadmpeg_core::decode::DecodePolicy;
+        use cadmpeg_core::CodecError;
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            for (bytes, from, end, needle) in [
+                (&b""[..], 0, 0, &b"ab"[..]),
+                (&b"abc"[..], 3, 3, &b"ab"[..]),
+                (&b"abc"[..], 2, 1, &b"ab"[..]),
+                (&b"abc"[..], 0, 3, &b""[..]),
+            ] {
+                assert_eq!(next_match(ctx, bytes, from, end, &[needle], "test F3D marker").unwrap(), None);
+                assert_eq!(ctx.resource_refusal(), None);
+            }
+            let CodecError::ResourceLimit(original) = next_match(ctx, b"a", 0, 1, &[b"ab"], "test F3D marker").unwrap_err() else {
+                panic!("actual marker source refusal");
+            };
+            assert_eq!(original.used, 0);
+            assert_eq!(original.additional, 1);
+            for needle in [b"ab".as_slice(), b"".as_slice()] {
+                let CodecError::ResourceLimit(sticky) = next_match(ctx, b"", 0, 0, &[needle], "test F3D marker").unwrap_err() else {
+                    panic!("sticky marker source refusal");
+                };
+                assert_eq!(sticky, original);
+            }
+        });
+    }
+
+    #[test]
+    fn next_match_finishes_at_the_last_byte_without_an_extra_source_probe() {
+        use cadmpeg_core::decode::DecodePolicy;
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 3;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert_eq!(next_match(ctx, b"aaa", 0, 3, &[b"ab"], "test F3D marker").unwrap(), None);
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+        policy.limits.max_work_units = 2;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = next_match(ctx, b"aaa", 0, 3, &[b"ab"], "test F3D marker").unwrap_err() else {
+                panic!("the third reached byte must refuse");
+            };
+            assert_eq!(limit.used, 2);
+            assert_eq!(limit.additional, 1);
+            assert_eq!(limit.operation, "test F3D marker");
+        });
+    }
+
+    #[test]
+    fn next_match_first_marker_leaves_the_remaining_source_unread() {
+        let mut bytes = b"ab".to_vec();
+        bytes.extend_from_slice(&[0; 4096]);
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert_eq!(next_match(ctx, &bytes, 0, bytes.len(), &[b"ab"], "test F3D marker").unwrap(), Some(0));
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+    }
 
     fn bare_presentation_material(
         bytes: &[u8],
