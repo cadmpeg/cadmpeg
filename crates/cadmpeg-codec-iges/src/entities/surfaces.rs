@@ -1907,11 +1907,9 @@ pub(super) fn project<'ctx>(
         let frame = OrthonormalFrame3::from_units(normal, u_axis).ok_or_else(|| {
             CodecError::malformed("PlaneSurface.normal/u_axis must form an orthonormal frame")
         })?;
-        sequences.record_surface(
-            &crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
-            entry.sequence,
-            ctx,
-        )?;
+        let surface_id =
+            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+        sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         ctx.reserve_vec(
             &mut ir.model.surfaces,
             1,
@@ -1919,7 +1917,7 @@ pub(super) fn project<'ctx>(
         )?;
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
-            id: crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
+            id: surface_id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
             )),
