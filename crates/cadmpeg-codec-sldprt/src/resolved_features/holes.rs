@@ -1,5 +1,6 @@
 //! Hole construction, bore topology and hole axis projection.
 
+mod bore_solutions;
 mod thread_history;
 
 use super::compact_reference_planes::{
@@ -6667,7 +6668,7 @@ fn match_marker_loci_to_bore_axes(
             ctx.push_btree_group(lines, point_key, (origin, axis), OPERATION, OPERATION)
         })?;
     }
-    let mut solutions = BTreeMap::new();
+    let mut solutions = bore_solutions::BoreSolutions::new(ctx)?;
     'lines: for (_, lines) in ctx.admit_iter(&grouped, OPERATION)? {
         let mut candidate_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut candidates = Vec::new();
@@ -6718,9 +6719,7 @@ fn match_marker_loci_to_bore_axes(
                 &(0..candidates.len()),
                 "retain SLDPRT bore pattern solution",
             )?;
-            if storage
-                .with_storage(|| retain_bore_solution(ctx, &candidates, indices, &mut solutions))?
-            {
+            if solutions.retain(&candidates, indices)? {
                 return Ok(None);
             }
             continue;
@@ -6741,67 +6740,17 @@ fn match_marker_loci_to_bore_axes(
             let indices = ctx
                 .admit_iter(subset, "retain SLDPRT bore pattern solution")?
                 .copied();
-            if storage
-                .with_storage(|| retain_bore_solution(ctx, &candidates, indices, &mut solutions))?
-            {
+            if solutions.retain(&candidates, indices)? {
                 return Ok(None);
             }
         }
     }
-    if solutions.len() != 1 {
-        return Ok(None);
-    }
-    let Some((_, owner)) = ctx.next_charged(&mut solutions.into_iter(), OPERATION)? else {
-        return Ok(None);
-    };
-    let _solution_storage = owner.1;
-    let solution = owner.0;
-    Ok(Some(
-        ctx.try_collect_vec(
-            solution
-                .iter()
-                .map(|placement| placement.try_clone_for_decode(ctx, OPERATION)),
-            OPERATION,
-        )?,
-    ))
-}
-
-fn retain_bore_solution<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    candidates: &[([GridCoordinate; 3], FinitePoint3, FeatureDirection3)],
-    indices: impl Iterator<Item = usize>,
-    solutions: &mut BTreeMap<
-        Vec<[GridCoordinate; 6]>,
-        (
-            Vec<HolePlacement>,
-            cadmpeg_core::decode::ScopedReservation<'ctx>,
-        ),
-    >,
-) -> Result<bool, CodecError> {
-    const OPERATION: &str = "retain SLDPRT bore pattern solution";
-    let quantize_scalar = |value: f64| GridCoordinate::new(value, EPS_HOLE_POSITION);
-    let ((key, placements), storage) =
-        ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
-            let mut placements = Vec::new();
-            let mut key = Vec::new();
-            for index in indices {
-                let (_, origin, axis) = candidates[index];
-                ctx.reserve_vec(&mut placements, 1, OPERATION)?;
-                ctx.reserve_vec(&mut key, 1, OPERATION)?;
-                placements.push(HolePlacement::Axis { origin, axis });
-                key.push([
-                    quantize_scalar(origin.x),
-                    quantize_scalar(origin.y),
-                    quantize_scalar(origin.z),
-                    quantize_scalar(axis.x),
-                    quantize_scalar(axis.y),
-                    quantize_scalar(axis.z),
-                ]);
-            }
-            Ok((key, placements))
-        })?;
-    ctx.insert_btree_map(solutions, key, (placements, storage), OPERATION)?;
-    Ok(solutions.len() > 1)
+    drop(grouped);
+    drop(storage);
+    solutions
+        .into_single()?
+        .map(bore_solutions::BoreSolution::into_output)
+        .transpose()
 }
 
 /// The sign that moves `axis` into the canonical hemisphere: the sign of its
