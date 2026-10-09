@@ -172,6 +172,9 @@ fn outline_scalars(
     payload: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<[DecodedField<Option<f64>>; 6], CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut cursor = 0;
     let mut fields = std::array::from_fn(|_| DecodedField {
         value: None,
@@ -1165,6 +1168,9 @@ fn complete_bucket_frame(
     declared_count: Option<u32>,
     buckets: &[FeatureTrimBucket],
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if declared_count.is_some_and(|count| usize::try_from(count).ok() != Some(buckets.len())) {
         return Ok(false);
     }
@@ -1572,6 +1578,9 @@ impl DimensionValue {
         value: Option<f64>,
         body: &[u8],
     ) -> Result<Self, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         Ok(match value {
             Some(value) => Self::Resolved(value),
             None => match body {
@@ -1910,6 +1919,9 @@ impl<T: HasOffset> SolverSubtable<T> {
         ctx: &DecodeContext<'_>,
         delta: usize,
     ) -> Result<(), CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let rows = match self {
             Self::Declared { header, rows } => {
                 header.offset += delta;
@@ -2655,6 +2667,9 @@ fn decode_variable_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<(ScalarLane, usize), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(&prefix) = payload.get(offset).filter(|_| offset < end) else {
         return Ok((ScalarLane::Undefined, offset));
     };
@@ -2748,6 +2763,9 @@ fn decode_section_coordinate_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<(ScalarLane, usize), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     match payload.get(offset) {
         Some(0x00 | 0x34) if offset + 3 <= end => return Ok((ScalarLane::Undefined, offset + 3)),
         Some(0x01) if offset + 4 <= end => return Ok((ScalarLane::Undefined, offset + 4)),
@@ -2770,6 +2788,9 @@ fn decode_variable_guess(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<(ScalarLane, usize), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if payload.get(offset) == Some(&0x18) {
         let mut trailing = offset + 1;
         let complete_suffix = (0..3).all(|_| {
@@ -3311,6 +3332,9 @@ pub(crate) fn equation_table(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureEquationTable>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if start > end || end > payload.len() {
         return Ok(None);
     }
@@ -3553,6 +3577,9 @@ impl PlacementInstructions<'_> {
         &mut self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<FeaturePlacementInstruction>, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let Some(table_class) = self.table_class else {
             return Ok(None);
         };
@@ -3823,6 +3850,9 @@ fn segment_table_body(
     end: usize,
     prototype_row: PrototypeRow,
 ) -> Result<Option<FeatureSegmentTable>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let has_elided_prototype = prototype_row == PrototypeRow::Elided;
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
         return Ok(None);
@@ -5048,6 +5078,9 @@ fn positional_dimension(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<FeatureDimension>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (dimension_type, cursor) = segment_int(payload, start);
     let Some(dimension_type) = dimension_type else {
         return Ok(None);
@@ -5688,6 +5721,9 @@ fn find_class_close(
     prefix: u8,
     class: &[u8],
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if payload.get(start..end).is_none() {
         return Ok(None);
     }
@@ -6867,6 +6903,9 @@ fn saved_named_scalars<const N: usize>(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<[Option<f64>; N]>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(window) = payload.get(start..end) else {
         return Ok(None);
     };
@@ -7008,6 +7047,9 @@ fn saved_positional_generated_entities(
     topology: Option<SavedEntityTopology<'_>>,
     entities: &mut Vec<FeatureSavedEntity>,
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     const HEADER_WINDOW: usize = 24;
     let Some(SavedEntityTopology {
         order_table,
@@ -9211,6 +9253,9 @@ fn unique_trimmed_external_ids<'a>(
     ctx: &DecodeContext<'_>,
     definition: &'a FeatureDefinition,
 ) -> Result<&'a [u32], CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     Ok(match definition.trim_entities.as_ref() {
         Some(table) if table.has_unique_external_ids(ctx)? => table.solved_external_ids.as_slice(),
         _ => &[],
