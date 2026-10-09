@@ -215,6 +215,26 @@ fn dimension_recipe_edge_id_refuses_collection_and_retained_limits() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = collection_limit;
         policy.limits.max_retained_bytes = retained_limit;
+        if dimension == ResourceDimension::CollectionItems {
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut ids = Vec::new();
+            let error = ctx
+                .push_formatted_retained(
+                    &mut ids,
+                    format_args!("{}", id),
+                    "f3d dimension recipe edge IDs",
+                    "f3d dimension recipe edge ID text",
+                )
+                .unwrap_err();
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("expected original collection refusal");
+            };
+            assert_eq!(limit.dimension, dimension);
+            assert_eq!(limit.operation, operation);
+            assert_eq!(limit.limit, collection_limit);
+            assert!(ids.is_empty());
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
         let refusal_cap =
             match cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -1183,6 +1203,19 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_collection_items = items;
         policy.limits.max_retained_bytes = retained;
+        if items != u64::MAX {
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .unwrap();
+            let error = annotation_frame(&ctx, &bytes, 0, Some(383)).unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("expected original collection refusal");
+            };
+            assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+            assert_eq!(limit.operation, operation);
+            assert_eq!(limit.limit, items);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
         let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             operation,
@@ -1346,6 +1379,19 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_collection_items = items;
         policy.limits.max_retained_bytes = retained;
+        if items != u64::MAX {
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .unwrap();
+            let error = presentation_frame(&ctx, &bytes, 0, &[306, 331]).unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("expected original collection refusal");
+            };
+            assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+            assert_eq!(limit.operation, operation);
+            assert_eq!(limit.limit, items);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
         let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             operation,
