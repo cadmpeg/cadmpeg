@@ -1970,16 +1970,15 @@ pub(crate) struct NurbsCurve2d {
 /// stack holds. `NestedCurve2d`, `NestedCurve` and `NestedSurface` own this
 /// count: every recursive field of `TextCurve2d`, `TextCurve` and `TextSurface`
 /// is one of them, and each refuses a record whose own count is already the
-/// bound. No deeper tree exists to parse, deserialize or walk, so
-/// `census_surface`, `append_text_surface`, `append_text_curve`,
-/// `surface_parameter_affine` and `pcurve_geometry` hold no budget of their
-/// own. An extrusion or revolution directrix spends the same count as its
+/// bound. No deeper native tree can be constructed. An extrusion or
+/// revolution directrix spends the same count as its
 /// surface, so the count is the records in one table entry, not per type.
 ///
 /// The six parsers restate the number because their recursion descends before
-/// any record is constructed: the parser guard bounds the parse stack, these
-/// carriers bound the value. One table entry therefore costs at most
-/// `MAX_GEOMETRY_NESTING_DEPTH + 1` parse frames on either route.
+/// any record is constructed. A successful table entry has at most
+/// `MAX_GEOMETRY_NESTING_DEPTH + 1` parser frames on either route. Each
+/// attempted parser frame also holds the original caller's depth guard; the
+/// grammar bound does not replace the caller's selected resource ceiling.
 ///
 /// The native trees are not neutral carriers. `MAX_GEOMETRY_NESTING` bounds the
 /// neutral chain separately, in the carrier constructors `topology_transfer`
@@ -3856,6 +3855,7 @@ fn parse_binary_surface(
     cursor: &mut BinaryCursor<'_, '_, '_>,
     depth: usize,
 ) -> Result<TextSurface, CodecError> {
+    let _nesting = cursor.ctx.enter_nested("FreeCAD binary surface parse nesting")?;
     if depth > MAX_GEOMETRY_NESTING_DEPTH {
         return Err(CodecError::malformed(format_args!(
             "binary surface nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
@@ -4074,6 +4074,7 @@ fn parse_binary_curve(
     cursor: &mut BinaryCursor<'_, '_, '_>,
     depth: usize,
 ) -> Result<TextCurve, CodecError> {
+    let _nesting = cursor.ctx.enter_nested("FreeCAD binary curve parse nesting")?;
     if depth > MAX_GEOMETRY_NESTING_DEPTH {
         return Err(CodecError::malformed(format_args!(
             "binary 3D curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
@@ -4236,6 +4237,7 @@ fn parse_binary_curve2d(
     cursor: &mut BinaryCursor<'_, '_, '_>,
     depth: usize,
 ) -> Result<TextCurve2d, CodecError> {
+    let _nesting = cursor.ctx.enter_nested("FreeCAD binary parameter-curve parse nesting")?;
     if depth > MAX_GEOMETRY_NESTING_DEPTH {
         return Err(CodecError::malformed(format_args!(
             "binary parameter-curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
@@ -4664,6 +4666,7 @@ fn parse_curve2d(
     depth: usize,
     table_index: usize,
 ) -> Result<TextCurve2d, CodecError> {
+    let _nesting = cursor.ctx.enter_nested("FreeCAD text parameter-curve parse nesting")?;
     if depth > MAX_GEOMETRY_NESTING_DEPTH {
         return Err(CodecError::malformed(format_args!(
             "text B-rep 2D curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
@@ -5649,6 +5652,7 @@ fn parse_surface(
     depth: usize,
     table_index: usize,
 ) -> Result<TextSurface, CodecError> {
+    let _nesting = cursor.ctx.enter_nested("FreeCAD text surface parse nesting")?;
     if depth > MAX_GEOMETRY_NESTING_DEPTH {
         return Err(CodecError::malformed(format_args!(
             "text B-rep surface nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
@@ -6159,6 +6163,7 @@ fn parse_curve(
     depth: usize,
     table_index: usize,
 ) -> Result<TextCurve, CodecError> {
+    let _nesting = cursor.ctx.enter_nested("FreeCAD text curve parse nesting")?;
     if depth > MAX_GEOMETRY_NESTING_DEPTH {
         return Err(CodecError::malformed(format_args!(
             "text B-rep 3D curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
