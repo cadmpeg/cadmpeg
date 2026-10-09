@@ -69,3 +69,57 @@ fn feature_parameter_key_transfer_keeps_exact_live_storage_under_ambient_parent(
         }
     }
 }
+
+#[test]
+fn returned_feature_parameter_text_transfers_only_surviving_duplicate_keys() {
+    let mut scan = crate::test_support::empty_container_scan();
+    for value in [3, 4] {
+        scan.features.choice_fields.push(crate::feature::rows::FeatureChoiceField {
+            feature_id: 40,
+            choice_label: "C".into(),
+            name: "value".into(),
+            type_byte: 1,
+            value: crate::feature::rows::FeatureFieldValue::CompactInt(value),
+            offset: 0,
+        });
+    }
+    let first_key = "choice.C.value";
+    let second_key = "choice.C.value#2";
+    let text_bytes = u64::try_from(first_key.len() + second_key.len() + 2)
+        .expect("two surviving keys and one digit per value");
+    for cap in 0..=text_bytes {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let parts = super::super::feature_parameters(&ctx, &scan, 40)
+            .expect("parameter text and nodes are scoped");
+        let text_storage = parts.1;
+        let node_storage = parts.2;
+        let parameters = parts.0;
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters.get(first_key).map(String::as_str), Some("3"));
+        assert_eq!(parameters.get(second_key).map(String::as_str), Some("4"));
+        let result = text_storage.commit_value(parameters);
+        if cap == text_bytes {
+            let parameters = result.expect("exact surviving text bound");
+            let original = ctx.charge_retained_limit(1, "after retained parameter map")
+                .expect_err("exact surviving text remains retained");
+            assert_eq!((original.dimension, original.used, original.additional),
+                (ResourceDimension::RetainedBytes, text_bytes, 1));
+            assert_eq!(parameters.get(first_key).map(String::as_str), Some("3"));
+            assert_eq!(parameters.get(second_key).map(String::as_str), Some("4"));
+            drop((parameters, node_storage));
+        } else {
+            let original = ctx.resource_refusal().expect("retained text refusal");
+            assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+            assert_eq!((original.dimension, original.limit, original.used,
+                original.additional, original.operation),
+                (ResourceDimension::RetainedBytes, cap, 0, text_bytes,
+                    "creo feature parameter text"));
+            drop(node_storage);
+            assert!(matches!(super::super::feature_parameters(&ctx, &scan, 40),
+                Err(CodecError::ResourceLimit(actual)) if actual == original));
+        }
+    }
+}

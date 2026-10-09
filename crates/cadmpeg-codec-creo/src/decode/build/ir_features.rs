@@ -405,10 +405,9 @@ pub(super) fn emit_model_features(
         let current_operation =
             current_feature_operation(ctx, &scan.features.operations, operation.feature_id)?;
         let outputs = feature_output_bodies(ctx, scan, ir, operation.feature_id)?;
-        let (source_property_nodes, source_properties) =
-            feature_source_properties(ctx, scan, operation.feature_id)?;
-        let mut source_property_nodes = source_property_nodes;
-        let mut source_properties = source_properties;
+        let source_property_storage = feature_source_properties(ctx, scan, operation.feature_id)?;
+        let mut source_property_nodes = source_property_storage.1;
+        let mut source_properties = source_property_storage.0;
         if let Some(prefix) = current_operation
             .and_then(crate::feature::operations::FeatureOperation::stored_name_prefix)
         {
@@ -420,11 +419,10 @@ pub(super) fn emit_model_features(
                 char::from(prefix),
             )?;
         }
-        let (parameter_text_storage, parameter_node_storage, parameters) =
-            feature_parameters(ctx, scan, operation.feature_id)?;
-        let mut parameter_text_storage = Some(parameter_text_storage);
-        let mut parameter_node_storage = Some(parameter_node_storage);
-        let mut parameters = parameters;
+        let parameter_storage = feature_parameters(ctx, scan, operation.feature_id)?;
+        let mut parameter_text_storage = Some(parameter_storage.1);
+        let mut parameter_node_storage = Some(parameter_storage.2);
+        let mut parameters = parameter_storage.0;
         let schema_class = feature_schema_class(ctx, scan, operation.feature_id)?;
         let definition = schema_class.map_or_else(
             || {
@@ -476,7 +474,7 @@ pub(super) fn emit_model_features(
                             )?
                             .into();
                         if let Some(text_storage) = parameter_text_storage.take() {
-                            text_storage.commit()?;
+                            parameters = text_storage.commit_value(std::mem::take(&mut parameters))?;
                         }
                         let parameters = cadmpeg_core::text::named_entries_for_decode(
                             ctx,
@@ -763,15 +761,13 @@ pub(super) fn emit_model_features(
             "schema_feature_operation",
             Exactness::ByteExact,
         )?;
-        let (parameter_text_storage, parameter_node_storage, parameters) =
-            feature_parameters(ctx, scan, feature_id)?;
-        let mut parameter_text_storage = Some(parameter_text_storage);
-        let mut parameter_node_storage = Some(parameter_node_storage);
-        let mut parameters = parameters;
-        let (source_property_nodes, source_properties) =
-            feature_source_properties(ctx, scan, feature_id)?;
-        let mut source_property_nodes = source_property_nodes;
-        let mut source_properties = source_properties;
+        let parameter_storage = feature_parameters(ctx, scan, feature_id)?;
+        let mut parameter_text_storage = Some(parameter_storage.1);
+        let mut parameter_node_storage = Some(parameter_storage.2);
+        let mut parameters = parameter_storage.0;
+        let source_property_storage = feature_source_properties(ctx, scan, feature_id)?;
+        let mut source_property_nodes = source_property_storage.1;
+        let mut source_properties = source_property_storage.0;
         let definition = schema_class.map_or_else(
             || match match named_feature_definition(
                 ctx,
@@ -792,7 +788,7 @@ pub(super) fn emit_model_features(
                         .copy_retained_text(kind, "creo native row Feature kind")?
                         .into();
                     if let Some(text_storage) = parameter_text_storage.take() {
-                        text_storage.commit()?;
+                        parameters = text_storage.commit_value(std::mem::take(&mut parameters))?;
                     }
                     let parameters = cadmpeg_core::text::named_entries_for_decode(
                         ctx,
