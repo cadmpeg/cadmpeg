@@ -1,0 +1,119 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::bezier::HomogeneousBezierSpan;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, WeightedPole3};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::NonZeroReal;
+use std::mem::size_of;
+
+fn rail(y: f64, weights: Option<Vec<f64>>) -> NurbsCurve {
+    NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, y, 0.0), Point3::new(1.0, y, 0.0)],
+        weights,
+        false,
+    ).unwrap().unwrap()
+}
+
+#[test]
+fn ruled_pairing_releases_consumed_rows_before_output_knots() {
+    let first = rail(0.0, None);
+    let second = rail(1.0, None);
+    let weights = [NonZeroReal::new(0.5).unwrap(); 2];
+    // Exact collection capacities: two source point rows and weight rows,
+    // each with two controls, then two output weighted rows. The current
+    // aggregate source reservation lasts until pairing returns. Check both
+    // row admission boundaries and its release before the output knot copies.
+    let source = 2 * size_of::<Vec<FinitePoint3>>() + 4 * size_of::<FinitePoint3>()
+        + 2 * size_of::<Vec<NonZeroReal>>() + 4 * size_of::<NonZeroReal>();
+    let output_outer = 2 * size_of::<Vec<WeightedPole3<FinitePoint3>>>();
+    let output_row = 2 * size_of::<WeightedPole3<FinitePoint3>>();
+    let used = u64_from_index(source + output_outer + output_row);
+    let first_used = u64_from_index(source + output_outer);
+    let additional = u64_from_index(output_row);
+    let peak = used + additional;
+    for (cap, refusal_used) in [
+        (first_used + additional - 1, Some(first_used)),
+        (peak - 1, Some(used)),
+        (peak, None),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut output_storage = ctx.reserve_scoped(0, "test ruled output owner").unwrap();
+        let result = output_storage.with_storage(|| {
+            super::super::same_basis_ruled_surface(&first, &second, &weights, &ctx)
+        });
+        if let Some(used) = refusal_used {
+            let error = result.unwrap_err();
+            let CodecError::ResourceLimit(first) = error else {
+                panic!("expected actual weighted-row allocation refusal");
+            };
+            assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(first.operation, "iges ruled same-basis weighted row controls");
+            assert_eq!((first.limit, first.used, first.additional), (cap, used, additional));
+            drop(output_storage);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        } else {
+            let surface = result.unwrap();
+            assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
+            assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
+            assert_eq!(surface.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(surface.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+            for u in 0..2 {
+                for v in 0..2 {
+                    assert_eq!(surface.pole(u, v).unwrap().get(), Point3::new(f64::from(u32::try_from(u).unwrap()), f64::from(u32::try_from(v).unwrap()), 0.0));
+                    assert_eq!(surface.weight(u, v).unwrap().get(), 0.5);
+                }
+            }
+            drop(surface);
+            drop(output_storage);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn closure_extraction_releases_source_points_and_weights_before_bezier_working_lanes() {
+    let curve = rail(0.0, Some(vec![1.0, 0.5]));
+    // Positive controls use two exact slots. Bezier working controls, span
+    // slots and each span's controls grow from empty to the core minimum
+    // of four slots. Both four-knot copies remain live at the last span
+    // allocation. Source point and weight copies have already been destroyed.
+    let used = u64_from_index(
+        2 * size_of::<[f64; 4]>() + 4 * size_of::<f64>()
+        + 4 * size_of::<[f64; 4]>() + 4 * size_of::<f64>()
+        + 4 * size_of::<HomogeneousBezierSpan>(),
+    );
+    let additional = u64_from_index(4 * size_of::<[f64; 4]>());
+    let peak = used + additional;
+    for cap in [peak - 1, peak] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::super::homogeneous_bezier_spans(&ctx, &curve);
+        if cap < peak {
+            let CodecError::ResourceLimit(first) = result.unwrap_err() else {
+                panic!("expected actual Bezier span allocation refusal");
+            };
+            assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(first.operation, "Bezier span controls");
+            assert_eq!((first.limit, first.used, first.additional), (cap, used, additional));
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        } else {
+            let spans = result.unwrap().unwrap();
+            assert_eq!(spans.len(), 1);
+            assert_eq!(spans[0].domain, [0.0, 1.0]);
+            assert_eq!(spans[0].controls, [[0.0, 0.0, 0.0, 1.0], [0.5, 0.0, 0.0, 0.5]]);
+            drop(spans);
+            ctx.finish_session().unwrap();
+        }
+    }
+}

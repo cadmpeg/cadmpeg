@@ -580,6 +580,9 @@ fn homogeneous_bezier_spans<'ctx>(
     else {
         return Ok(None);
     };
+    drop(points);
+    drop(weights);
+    drop(scratch);
     Ok(homogeneous_spans(ctx, degree, curve.knots(), &controls)?)
 }
 
@@ -984,8 +987,9 @@ fn same_basis_ruled_surface(
         weight_rows,
         "iges ruled same-basis weighted rows",
         "iges ruled same-basis weighted row controls",
-    )?
-    .map_err(CodecError::malformed)?;
+    )?;
+    drop(lane_storage);
+    let poles = poles.map_err(CodecError::malformed)?;
     let u_knots = ctx.copy_slice(first.knots(), "iges ruled same-basis u knots")?;
     let mut v_knots = ctx.collection_vec(4, "iges ruled same-basis v knots")?;
     v_knots.extend([0.0, 0.0, 1.0, 1.0]);
@@ -1239,6 +1243,8 @@ fn ruled_surface_span_lanes<'ctx>(
     if homogeneous.len() != pole_count || u_knots.len() != u_count + degree + 1 {
         return Ok(None);
     }
+    drop(spans);
+    drop(span_storage);
     let mut lane_storage = ctx.reserve_scoped(0, "iges ruled surface lane scratch")?;
     let mut control_points = lane_storage
         .with_storage(|| ctx.collection_vec(pole_count, "iges ruled surface controls"))?;
@@ -1264,6 +1270,8 @@ fn ruled_surface_span_lanes<'ctx>(
         control_points.push(point);
         weights.push(weight);
     }
+    drop(homogeneous);
+    drop(_homogeneous_storage);
     let weights = if ctx.all_by(
         &weights,
         |weight| Ok(weight.get() == 1.0),
@@ -2634,6 +2642,7 @@ pub(super) fn project<'ctx>(
             "iges tabulated weighted rows",
             "iges tabulated weighted row controls",
         )?;
+        drop(row_storage);
         let construction = match paired {
             Err(error) => Err(error),
             Ok(poles) => NurbsSurface::new(
@@ -3102,11 +3111,12 @@ pub(super) fn project<'ctx>(
                 cadmpeg_core::decode::u64_from_index(surface_pole_count),
             ));
         }
-        let mut lane_storage = ctx.reserve_scoped(0, "iges revolution lane scratch")?;
-        let mut control_points = lane_storage.with_storage(|| {
+        let mut control_storage = ctx.reserve_scoped(0, "iges revolution lane scratch")?;
+        let mut control_points = control_storage.with_storage(|| {
             ctx.collection_vec(surface_pole_count, "iges revolution surface controls")
         })?;
-        let mut weights = lane_storage.with_storage(|| {
+        let mut weight_storage = ctx.reserve_scoped(0, "iges revolution lane scratch")?;
+        let mut weights = weight_storage.with_storage(|| {
             ctx.collection_vec(surface_pole_count, "iges revolution surface weights")
         })?;
         for u_index in ctx.admit_iter(0..generatrix_count, "iges revolution generatrix poles")? {
@@ -3134,7 +3144,8 @@ pub(super) fn project<'ctx>(
             }
         }
         let u_knots = ctx.copy_slice(generatrix.knots(), "iges revolution surface u knots")?;
-        let pole_rows = lane_storage.with_storage(|| {
+        let mut row_storage = ctx.reserve_scoped(0, "iges revolution lane scratch")?;
+        let pole_rows = row_storage.with_storage(|| {
             ctx.copy_rows(
                 &control_points,
                 angular_controls.len(),
@@ -3142,7 +3153,9 @@ pub(super) fn project<'ctx>(
                 "iges revolution pole row controls",
             )
         })?;
-        let weight_rows = lane_storage.with_storage(|| {
+        drop(control_points);
+        drop(control_storage);
+        let weight_rows = row_storage.with_storage(|| {
             ctx.copy_rows(
                 &weights,
                 angular_controls.len(),
@@ -3150,6 +3163,10 @@ pub(super) fn project<'ctx>(
                 "iges revolution weight row controls",
             )
         })?;
+        drop(weights);
+        drop(weight_storage);
+        drop(angular_controls);
+        drop(_angular_storage);
         let surface_id =
             crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         let paired = pair_admitted_surface_poles(
@@ -3159,6 +3176,7 @@ pub(super) fn project<'ctx>(
             "iges revolution weighted rows",
             "iges revolution weighted row controls",
         )?;
+        drop(row_storage);
         let construction = match paired {
             Err(error) => Err(error),
             Ok(poles) => NurbsSurface::new(
@@ -3824,6 +3842,8 @@ pub(super) fn project<'ctx>(
             }
             NurbsPoleGrid::Rational { rows }
         };
+        drop(native_weights);
+        drop(native_weight_storage);
         let construction = NurbsSurface::new(
             ctx,
             NurbsSurfaceAxis::new(u_degree, u_knots, flags[3] == Some(1)),
