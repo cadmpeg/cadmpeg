@@ -1732,6 +1732,7 @@ pub fn nurbs_surface_parameter_within_tolerance_with_budget(
     tolerance: f64,
     budget: &WorkBudget<'_>,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
+    ctx.charge_work_limit(0, "IR surface tolerance parameter boundary")?;
     let Some(tolerance) = NonNegativeReal::new(tolerance) else {
         return Ok(None);
     };
@@ -1789,6 +1790,7 @@ pub fn nurbs_curve_point_at_with_basis(
     t: f64,
     basis: &mut [f64],
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    ctx.charge_work_limit(0, "IR caller basis curve evaluation boundary")?;
     let poles = curve.pole_rows();
     let degree = usize::try_from(curve.degree()).map_err(|_| EvaluationFailure::NoValue)?;
     if Some(basis.len()) != degree.checked_add(1) {
@@ -1956,6 +1958,7 @@ pub fn nurbs_curve_parameter_near_point(
     tolerance: f64,
     seed: f64,
 ) -> Result<Option<FiniteReal>, CodecError> {
+    ctx.charge_work_limit(0, "IR NURBS curve inverse boundary")?;
     let Some(tolerance) = NonNegativeLength::new(tolerance) else {
         return Ok(None);
     };
@@ -2544,6 +2547,8 @@ pub fn fitted_nurbs_offset_frame_distance(
 ) -> Result<Option<FiniteReal>, ResourceLimit> {
     use crate::sketches::SketchGeometryDefinition;
 
+    ctx.charge_work_limit(0, "IR fitted NURBS offset boundary")?;
+
     if !linear_tolerance.is_finite() || linear_tolerance < 0.0 {
         return Ok(None);
     }
@@ -2863,6 +2868,7 @@ pub fn nurbs_pcurve_contains_point(
     point: Point2,
     tolerance: f64,
 ) -> Result<Option<bool>, ResourceLimit> {
+    ctx.charge_work_limit(0, "IR NURBS pcurve containment boundary")?;
     let Some(degree_usize) = usize::try_from(degree).ok() else {
         return Ok(None);
     };
@@ -5338,6 +5344,7 @@ pub fn model_curve_parameter_near_point_in_index_with_tolerance(
     seed: f64,
     tolerance: f64,
 ) -> Result<Option<FiniteReal>, CodecError> {
+    ctx.charge_work_limit(0, "IR model curve tolerance inverse boundary")?;
     let Some(tolerance) = NonNegativeLength::new(tolerance) else {
         return Ok(None);
     };
@@ -5701,6 +5708,7 @@ pub(crate) fn curve_parameter_near_point(
     seed: f64,
     tolerance: f64,
 ) -> Result<Option<FiniteReal>, CodecError> {
+    ctx.charge_work_limit(0, "IR direct curve inverse boundary")?;
     let Some(geometry) = geometry.solved() else {
         return Ok(None);
     };
