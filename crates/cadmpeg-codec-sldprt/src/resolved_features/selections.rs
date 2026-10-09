@@ -3991,9 +3991,15 @@ pub(crate) fn surface_selection_terminal_feature_at(
     features: &FeaturesBySource<'_, '_>,
 ) -> Result<Option<String>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT surface selection terminal";
-    if let Some(source) = compact_single_face_reference_record_at(ctx, payload, marker)?
-        .and_then(|ComponentPathReference(_, source)| source)
-    {
+    let source = {
+        let _reference_storage;
+        let reference;
+        (reference, _reference_storage) = ctx.with_scoped_storage(OPERATION, || {
+            compact_single_face_reference_record_at(ctx, payload, marker)
+        })?;
+        reference.and_then(|ComponentPathReference(_, source)| source)
+    };
+    if let Some(source) = source {
         let found = features.source(ctx, source, OPERATION)?;
         if let Some(feature) = found {
             return Ok(Some(ctx.copy_retained_text(&feature.id, OPERATION)?));
