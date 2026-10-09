@@ -390,6 +390,9 @@ pub(crate) fn reference_names(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<FeatureReferenceName>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut names = Vec::new();
     let Some(last) = payload.len().checked_sub(2) else {
         return Ok(names);
@@ -506,10 +509,16 @@ fn inline_recipe_resolution(
     ctx: &DecodeContext<'_>,
     record: &[u8],
 ) -> Result<RecipeState, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut found = None;
     for (name, recipe) in FEATURE_RECIPES {
         let mut windows = record.windows(name.len());
-        while let Some(window) = ctx.next_charged(&mut windows, "creo inline recipe scan")? {
+        while windows.len() != 0 {
+            let Some(window) = ctx.next_charged(&mut windows, "creo inline recipe scan")? else {
+                break;
+            };
             if window != *name {
                 continue;
             }
@@ -954,6 +963,7 @@ pub(crate) fn operations(
 mod tests {
     mod decode_cost;
     mod resource_limits;
+    mod admission_visits;
 
     use super::reference_names;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

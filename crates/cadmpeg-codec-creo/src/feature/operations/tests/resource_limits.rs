@@ -307,7 +307,14 @@ fn operation_scans_refuse_at_work_boundaries() {
             "creo operation state consensus",
             "creo feature operation kind comparison",
         ],
-        |ctx| super::super::operations(ctx, CONFLICTING_DISPLAYS),
+        |ctx| {
+            let operations = super::super::operations(ctx, CONFLICTING_DISPLAYS)?;
+            // Both display records have empty recipe slices. Exercise an actual
+            // recipe window after preserving the original projection route.
+            assert_eq!(super::super::inline_recipe_resolution(ctx, b"protextrude\0")?,
+                super::super::RecipeState::Resolved(super::super::FeatureRecipe::ProtrudeExtrude));
+            Ok(operations)
+        },
     );
 }
 
