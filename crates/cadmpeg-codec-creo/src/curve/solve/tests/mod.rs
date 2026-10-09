@@ -3,3 +3,4 @@
 mod admission;
 mod dimensions;
 mod matrix;
+mod admission_visits;
