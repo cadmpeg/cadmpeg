@@ -1925,17 +1925,18 @@ impl NurbsCurve {
         edit: impl FnOnce(&mut [f64]),
     ) -> Result<Result<(), NurbsError>, CodecError> {
         admitted::finish((|| {
-            let (mut values, storage) = ctx
+            let candidate = ctx
                 .copy_temporary_slice(self.knots.as_slice(), "IR NURBS edited knots")
                 .map_err(CodecError::from)?;
+            let storage = candidate.1;
+            let mut values = candidate.0;
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(values.len()),
                 "IR NURBS knot edit",
             )?;
             edit(&mut values);
             let knots = build_raw_knots(ctx, values, "")?;
-            storage.commit()?;
-            self.knots = knots;
+            self.knots = storage.commit_value(knots)?;
             Ok(())
         })())
     }
