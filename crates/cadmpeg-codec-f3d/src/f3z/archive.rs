@@ -58,10 +58,10 @@ struct DesignObjectReference {
 /// Classifies every member once and retains the lightweight scans needed by
 /// inspect, root decode, and recursive XREF merge.
 pub(super) struct ArchiveSession<'a, 'ctx> {
-    pub(super) _members_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     pub(super) members: BTreeMap<String, ClassifiedMember<'a>>,
     pub(super) layers: DialectLayers,
     pub(super) losses: Vec<LossNote>,
+    pub(super) _members_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 pub(super) enum ClassifiedMember<'a> {

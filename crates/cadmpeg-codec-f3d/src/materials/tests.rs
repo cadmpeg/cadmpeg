@@ -463,12 +463,14 @@ fn definition_catalog_uses_asset_and_schema_identity() {
 fn material_owner_rejects_more_than_one_pair_for_its_entity_suffix() {
     let body_map = [raw_body_map_pair(25, 100), raw_body_map_pair(41, 100)];
     let Err(error) = crate::test_support::with_decode_context(|ctx| {
-        let (by_suffix, _storage) = ctx.unique_index(
+        let _storage;
+        let (by_suffix, held_storage) = ctx.unique_index(
             body_map
                 .iter()
                 .map(|binding| (binding.entity_suffix, binding)),
             "index F3D body-map pairs by entity",
         )?;
+        _storage = held_storage;
         super::unique_body_map_pair(ctx, &by_suffix, 100, "material assignment").map(|_| ())
     }) else {
         panic!("one Design entity must not select two map pairs")
@@ -1661,8 +1663,10 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
         let policy = cadmpeg_core::decode::DecodePolicy::default();
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let (visibility, _storage) =
+        let _storage;
+        let (visibility, held_storage) =
             crate::design::decode::body::decode_all_body_visibility(&ctx, scan).unwrap();
+        _storage = held_storage;
         assert_eq!(
             visibility
                 .get(&("BREP.synthetic.smbh".into(), 3))

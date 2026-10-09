@@ -1158,7 +1158,8 @@ fn form_cage_serializers(
         let Some(raw_name) = bytes.get(name_at + 4..after_name) else {
             continue;
         };
-        let (entry_name, name_reservation) = match ctx.utf16le_scoped_text(
+        let name_reservation;
+        let (entry_name, held_storage) = match ctx.utf16le_scoped_text(
             raw_name,
             name_units,
             false,
@@ -1168,6 +1169,7 @@ fn form_cage_serializers(
             Err(CodecError::Malformed(_)) => continue,
             Err(error) => return Err(error),
         };
+        name_reservation = held_storage;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(entry_name.len()),
             "validate f3d form serializer entry name",

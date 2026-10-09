@@ -419,10 +419,12 @@ pub(crate) fn project_configurations(
     }
     // A rule activates its target only when exactly one variant carries the
     // target name.
-    let (variants_by_name, _variants_by_name_storage) = ctx.unique_index(
+    let _variants_by_name_storage;
+    let (variants_by_name, held_storage) = ctx.unique_index(
         variant_names.iter().copied(),
         "index F3D configuration variant names",
     )?;
+    _variants_by_name_storage = held_storage;
     for rule in ctx.admit_iter(native, "f3d configuration rules")? {
         let Some(payload) = rule.rule() else {
             continue;
@@ -475,12 +477,14 @@ pub(crate) fn bind_configuration_parameter_overrides(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     parameters: &[cadmpeg_ir::features::DesignParameter],
 ) -> Result<(), CodecError> {
-    let (parameters_by_name, _parameters_by_name_storage) = ctx.unique_index(
+    let _parameters_by_name_storage;
+    let (parameters_by_name, held_storage) = ctx.unique_index(
         parameters
             .iter()
             .map(|parameter| (parameter.name.as_str(), parameter)),
         "index F3D configuration parameter names",
     )?;
+    _parameters_by_name_storage = held_storage;
     for configuration in ctx.admit_iter(configurations, "f3d configuration parameter targets")? {
         let overrides = &mut configuration.parameter_overrides;
         ctx.retain_btree_map(
@@ -526,12 +530,14 @@ pub(crate) fn bind_configuration_suppressed_features(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     features: &[cadmpeg_ir::features::Feature],
 ) -> Result<(), CodecError> {
-    let (features_by_name, _features_by_name_storage) = ctx.unique_index(
+    let _features_by_name_storage;
+    let (features_by_name, held_storage) = ctx.unique_index(
         features
             .iter()
             .map(|feature| (feature.name.as_deref(), feature)),
         "index F3D configuration feature names",
     )?;
+    _features_by_name_storage = held_storage;
     for configuration in ctx.admit_iter(configurations, "f3d configuration suppression targets")? {
         let feature_states = &mut configuration.feature_states;
         ctx.retain_btree_map(

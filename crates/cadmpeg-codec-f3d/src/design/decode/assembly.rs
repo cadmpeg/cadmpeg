@@ -282,7 +282,8 @@ pub(super) fn exact_legacy_as_built_421_operands(
     recipes: &[ConstructionRecipe],
     solved_frame: &DesignAssemblySolvedFrame,
 ) -> Result<Option<DesignAssemblyLegacyOperands>, cadmpeg_core::CodecError> {
-    let (operands, storage) =
+    let storage;
+    let (operands, held_storage) =
         ctx.with_scoped_storage("f3d legacy AsBuilt operand candidates", || {
             legacy_as_built_421_operands(
                 ctx,
@@ -294,6 +295,7 @@ pub(super) fn exact_legacy_as_built_421_operands(
                 solved_frame,
             )
         })?;
+    storage = held_storage;
     if operands.is_some() {
         storage.commit_value(operands)
     } else {
@@ -504,7 +506,9 @@ fn exact_legacy_as_built_face_selection(
     let Some(first) = ctx.position_by(
         offsets,
         |byte_offset| {
-            let (selection, storage) = selection_at(*byte_offset)?;
+            let storage;
+            let (selection, held_storage) = selection_at(*byte_offset)?;
+            storage = held_storage;
             found = selection.map(|selection| (selection, storage));
             Ok(found.is_some())
         },

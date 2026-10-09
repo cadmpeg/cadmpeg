@@ -674,9 +674,11 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
 
     match design_folders.len() {
         1 => {
-            let (name, reservation) = design_folders
+            let reservation;
+            let (name, held_storage) = design_folders
                 .pop()
                 .ok_or_else(|| CodecError::malformed("missing admitted Design asset folder"))?;
+            reservation = held_storage;
             reservation.commit_value(name)
         }
         0 => Err(parse_malformed(

@@ -1365,7 +1365,9 @@ fn diagnostic_targets<'ctx>(
     run: LocalReferenceRun<'_>,
     operation: &'static str,
 ) -> Result<(Vec<u32>, ScopedReservation<'ctx>), CodecError> {
-    let (mut targets, reservation) = ctx.scoped_vector_storage(run.len(), operation)?;
+    let reservation;
+    let (mut targets, held_storage) = ctx.scoped_vector_storage(run.len(), operation)?;
+    reservation = held_storage;
     for target in run.targets(ctx, operation)? {
         ctx.push_vec(&mut targets, target, operation)?;
     }
@@ -1472,30 +1474,38 @@ impl<'a> MeshGraph<'a> {
         collection: &MeshCollectionRecord<'a>,
         candidate: Option<u32>,
     ) -> Result<CodecError, CodecError> {
-        let (collection_bodies, _collection_storage) = diagnostic_targets(
+        let _collection_storage;
+        let (collection_bodies, held_storage) = diagnostic_targets(
             ctx,
             collection.body_records,
             "f3d mesh diagnostic collection bodies",
         )?;
+        _collection_storage = held_storage;
         let candidate_scope = match candidate {
             Some(scope_index) => ctx.get_hash_map(&self.scopes, &scope_index, GRAPH_LOOKUP)?,
             None => None,
         };
-        let (scope_bodies, _scope_storage) = match candidate_scope {
+        let _scope_storage;
+        let (scope_bodies, held_storage) = match candidate_scope {
             Some(scope) => {
-                let (bodies, storage) = diagnostic_targets(
+                let storage;
+                let (bodies, held_storage) = diagnostic_targets(
                     ctx,
                     scope.body_records,
                     "f3d mesh diagnostic scope bodies",
                 )?;
+                storage = held_storage;
                 (Some(bodies), Some(storage))
             }
             None => (None, None),
         };
-        let (mut body_links, _links_storage) = ctx.scoped_vector_storage(
+        _scope_storage = held_storage;
+        let _links_storage;
+        let (mut body_links, held_storage) = ctx.scoped_vector_storage(
             collection.body_records.len(),
             "f3d mesh diagnostic body links",
         )?;
+        _links_storage = held_storage;
         for body_index in collection
             .body_records
             .targets(ctx, "f3d mesh diagnostic body links")?
@@ -1778,8 +1788,10 @@ where
     let mut storage = ctx.reserve_scoped(0, "f3d mesh graph records")?;
     // The primary frames are resolved once for every record type of the graph.
     let mut typed = TypedFrameSource::new(bytes, meta);
-    let (collection_frames, _collection_frames_storage) =
+    let _collection_frames_storage;
+    let (collection_frames, held_storage) =
         typed.frames(ctx, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
+    _collection_frames_storage = held_storage;
     let mut collections = Vec::new();
     for frame in ctx.admit_iter(&collection_frames, "parse F3D mesh collections")? {
         let collection = parse_mesh_collection_record(ctx, bytes, meta, *frame)?;
@@ -1831,7 +1843,9 @@ where
         "mesh-wrapper",
         |frame| parse_mesh_wrapper_record(ctx, bytes, frame).map(Some),
     )?;
-    let (records, _records_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
+    let _records_storage;
+    let (records, held_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
+    _records_storage = held_storage;
     let scopes = record_map(
         ctx,
         &mut storage,

@@ -150,8 +150,10 @@ fn archived_active_record_count(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     states: &[AsmDeltaState],
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    let (archived, _storage) =
+    let _storage;
+    let (archived, held_storage) =
         archived_revision_ids(ctx, states, "collect F3D archived revisions")?;
+    _storage = held_storage;
     archived_active_count(ctx, &archived)
 }
 
@@ -231,8 +233,10 @@ pub(super) fn bind_historical_entity_versions(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     states: &mut [AsmDeltaState],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (archived_ids, _archived_ids_storage) =
+    let _archived_ids_storage;
+    let (archived_ids, held_storage) =
         archived_revision_ids(ctx, states, "index F3D archived revision IDs")?;
+    _archived_ids_storage = held_storage;
     let active_count = match archived_active_count(ctx, &archived_ids)? {
         Some(count) => Some(count),
         None => insert_only_active_record_count(ctx, states)?,
@@ -444,7 +448,8 @@ pub(super) fn bind_complete_record_tables(
     };
     let active_limit =
         cadmpeg_asm::asm_header::solved_record_limit(ctx, bytes)?.unwrap_or(bytes.len());
-    let (framed, _framed_storage) =
+    let _framed_storage;
+    let (framed, held_storage) =
         ctx.with_scoped_storage("frame F3D active history records", || {
             Ok::<_, cadmpeg_core::CodecError>(cadmpeg_asm::sab::frame(
                 ctx,
@@ -455,6 +460,7 @@ pub(super) fn bind_complete_record_tables(
                 None,
             ))
         })?;
+    _framed_storage = held_storage;
     let framed = match framed {
         Ok(records) => records,
         Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
@@ -557,7 +563,8 @@ pub(super) fn bind_complete_record_tables(
             complete = false;
             break;
         };
-        let (decoded, _decoded_storage) =
+        let _decoded_storage;
+        let (decoded, held_storage) =
             ctx.with_scoped_storage("decode F3D historical topology source", || {
                 Ok::<_, cadmpeg_core::CodecError>(crate::brep::decode_history_topology(
                     ctx,
@@ -566,6 +573,7 @@ pub(super) fn bind_complete_record_tables(
                     crate::ids::ID_FORMAT,
                 ))
             })?;
+        _decoded_storage = held_storage;
         let decoded = match decoded {
             Ok(decoded) => decoded,
             Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
@@ -922,12 +930,16 @@ fn historical_transition(
     let previous_topology = previous
         .and_then(|state| state.topology())
         .unwrap_or(&empty);
-    let (current_versions, _current_versions_storage) =
+    let _current_versions_storage;
+    let (current_versions, held_storage) =
         historical_version_map(ctx, &current.entity_versions)?;
-    let (previous_versions, _previous_versions_storage) = historical_version_map(
+    _current_versions_storage = held_storage;
+    let _previous_versions_storage;
+    let (previous_versions, held_storage) = historical_version_map(
         ctx,
         previous.map_or(&[][..], |state| state.entity_versions.as_slice()),
     )?;
+    _previous_versions_storage = held_storage;
     let versions = (&current_versions, &previous_versions);
     let mut record_key_storage = ctx.reserve_scoped(0, "collect F3D transition version keys")?;
     let current_record_keys = record_key_storage.with_storage(|| {
@@ -945,8 +957,12 @@ fn historical_transition(
         )
     })?;
     let delta = |current: &[i64], previous: &[i64]| {
-        let (current, _current_storage) = sorted_transition_entities(ctx, current)?;
-        let (previous, _previous_storage) = sorted_transition_entities(ctx, previous)?;
+        let _current_storage;
+        let (current, held_storage) = sorted_transition_entities(ctx, current)?;
+        _current_storage = held_storage;
+        let _previous_storage;
+        let (previous, held_storage) = sorted_transition_entities(ctx, previous)?;
+        _previous_storage = held_storage;
         entity_delta(ctx, &current, &previous, versions)
     };
     Ok(Some(AsmHistoricalTransition {
@@ -1010,9 +1026,11 @@ fn sorted_transition_entities<'ctx>(
     ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     entities: &[i64],
 ) -> Result<(Vec<i64>, cadmpeg_core::decode::ScopedReservation<'ctx>), cadmpeg_core::CodecError> {
-    let (mut sorted, storage) = ctx
+    let storage;
+    let (mut sorted, held_storage) = ctx
         .copy_temporary_slice(entities, "copy F3D transition entities")
         .map_err(cadmpeg_core::CodecError::ResourceLimit)?;
+    storage = held_storage;
     ctx.sort_unstable_by(
         &mut sorted,
         |entity| entity,
@@ -1181,7 +1199,8 @@ pub(super) fn decode_bulletin_boards(
     state_id: &str,
     width: RefWidth,
 ) -> Result<Option<(Vec<AsmBulletinBoard>, usize)>, cadmpeg_core::CodecError> {
-    let (output, storage) = ctx.with_scoped_storage(
+    let storage;
+    let (output, held_storage) = ctx.with_scoped_storage(
         "retain F3D ASM bulletin boards",
         || -> Result<_, cadmpeg_core::CodecError> {
             if bytes.get(position) == Some(&0x11) {
@@ -1266,6 +1285,7 @@ pub(super) fn decode_bulletin_boards(
             Ok(Some((boards, position)))
         },
     )?;
+    storage = held_storage;
     if output.is_some() {
         storage.commit_value(output)
     } else {

@@ -59,11 +59,13 @@ pub(crate) fn project_local_components(
                 let Some(guid) = path.occurrence_guids().first() else {
                     continue;
                 };
-                let (key, reservation) = temporary_lowercase_component_key(
+                let reservation;
+                let (key, held_storage) = temporary_lowercase_component_key(
                     ctx,
                     guid.value.as_str(),
                     "f3d component assembly occurrence lookup",
                 )?;
+                reservation = held_storage;
                 let root = ctx
                     .get_btree_map(
                         &native_by_guid,
@@ -330,11 +332,13 @@ fn project_occurrence(
                 ctx.copy_retained_text(occurrence_id.as_str(), "f3d component occurrence map key")?;
             Ok(key)
         })?;
-        let (native_key, reservation) = temporary_lowercase_component_key(
+        let reservation;
+        let (native_key, held_storage) = temporary_lowercase_component_key(
             ctx,
             occurrence_guid.as_str(),
             "f3d component native occurrence lookup",
         )?;
+        reservation = held_storage;
         let native_ref = ctx
             .get_btree_map(
                 native_by_guid,

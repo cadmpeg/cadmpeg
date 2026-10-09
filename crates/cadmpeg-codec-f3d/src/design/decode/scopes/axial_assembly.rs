@@ -417,12 +417,14 @@ fn exact_assembly_axial_component_operand<'bytes>(
     let ambiguous = ctx.position_by(
         offsets.get(first..).unwrap_or(&[]),
         |&start| {
-            let (operand, _storage) =
+            let _storage;
+            let (operand, held_storage) =
                 ctx.with_scoped_storage("f3d axial component candidate", || {
                     exact_assembly_axial_component_operand_at(
                         ctx, bytes, records, scope, frame, start,
                     )
                 })?;
+            _storage = held_storage;
             if operand.is_none() {
                 return Ok(false);
             }

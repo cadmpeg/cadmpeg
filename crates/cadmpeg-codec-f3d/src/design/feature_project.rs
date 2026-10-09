@@ -1781,10 +1781,12 @@ face_operands,
         }
         parameter.dependencies.clear();
         for identifier in expression_identifiers(&parameter.expression) {
-            let (identifier, _identifier_reservation) = ctx.format_scoped(
+            let _identifier_reservation;
+            let (identifier, held_storage) = ctx.format_scoped(
                 format_args!("{identifier}"),
                 "f3d expression identifier lookup",
             )?;
+            _identifier_reservation = held_storage;
             let alias_key = (scope, identifier);
             let preceding_owned = || {
                 let consumer = parameter.owner.as_ref()?;
@@ -1804,10 +1806,12 @@ face_operands,
                 let owner_key = owner_storage.with_storage(|| {
                     (owner).try_clone_for_decode(ctx, "f3d expression owner lookup")
                 })?;
-                let (feature_identifier, _feature_identifier_reservation) = ctx.format_scoped(
+                let _feature_identifier_reservation;
+                let (feature_identifier, held_storage) = ctx.format_scoped(
                     format_args!("{}", alias_key.1),
                     "f3d expression feature identifier lookup",
                 )?;
+                _feature_identifier_reservation = held_storage;
                 match feature_aliases.get(&(scope, owner_key, feature_identifier)) {
                     Some(None) => None,
                     Some(Some(local)) => Some(local),
@@ -3810,9 +3814,11 @@ fn selected_work_plane<'a>(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &'a [DesignParameterScope],
 ) -> Result<Option<&'a DesignParameterScope>, CodecError> {
-    let (planes, _plane_storage) = ctx.with_scoped_storage("F3D work plane rows", || {
+    let _plane_storage;
+    let (planes, held_storage) = ctx.with_scoped_storage("F3D work plane rows", || {
         selected_work_planes(ctx, scope, group, entity_selection_operands, scopes)
     })?;
+    _plane_storage = held_storage;
     let Some(planes) = planes else {
         return Ok(None);
     };

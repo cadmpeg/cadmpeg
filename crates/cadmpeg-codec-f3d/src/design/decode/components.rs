@@ -40,10 +40,12 @@ pub(crate) fn decode_component_occurrences(
             // A header offset indexes `bytes`, so the successor stays in range.
             let next = next_indexed_record_header(ctx, bytes, header.offset + 1, |_| true)?;
             if let Some(end) = next.map(|next| next.offset) {
-                let (occurrence, storage) = ctx
+                let storage;
+                let (occurrence, held_storage) = ctx
                     .with_scoped_storage("f3d decoded component occurrence", || {
                         exact_component_occurrence(ctx, bytes, &header, end, &scope)
                     })?;
+                storage = held_storage;
                 if let Some(occurrence) = occurrence {
                     ctx.push_scoped_vec(
                         &mut scratch,

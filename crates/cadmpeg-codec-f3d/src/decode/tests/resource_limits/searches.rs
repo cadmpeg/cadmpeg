@@ -16,8 +16,10 @@ fn model_brep_basename_lookup_preserves_work_refusal() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     assert!(!blob_names.is_empty());
-    let (candidates, _storage) =
+    let _storage;
+    let (candidates, held_storage) =
         super::super::super::model_brep_candidates(&ctx, &scan, &blob_names).unwrap();
+    _storage = held_storage;
     assert_eq!(candidates.len(), blob_names.len());
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,

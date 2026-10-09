@@ -67,10 +67,12 @@ pub(crate) fn project_canvas_images(
         else {
             continue;
         };
-        let (feature_id, _feature_id_storage) = ctx
+        let _feature_id_storage;
+        let (feature_id, held_storage) = ctx
             .with_scoped_storage("f3d Canvas neutral feature ID", || {
                 crate::design::identity::neutral_feature_id(ctx, scope)
             })?;
+        _feature_id_storage = held_storage;
         let Some(feature_index) = ctx.position_by(
             &*features,
             |feature| {

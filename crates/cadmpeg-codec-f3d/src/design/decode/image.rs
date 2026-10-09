@@ -155,9 +155,11 @@ pub(super) fn decode_scoped_images<T>(
                 Some(records) => records,
                 slot @ None => slot.insert(IndexedRecordOffsets::build_scoped(ctx, bytes)?),
             };
-            let (image, storage) = ctx.with_scoped_storage("f3d scoped image records", || {
+            let storage;
+            let (image, held_storage) = ctx.with_scoped_storage("f3d scoped image records", || {
                 parse(ctx, bytes, records, &entry.name, scope)
             })?;
+            storage = held_storage;
             if let Some(image) = image {
                 ctx.push_scoped_vec(
                     &mut scratch,

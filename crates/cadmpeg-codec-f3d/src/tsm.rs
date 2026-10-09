@@ -76,10 +76,12 @@ fn compact_half_edges<'ctx>(
     edge_roots: &mut [Option<usize>],
     vertex_roots: &mut [Option<(usize, SubdGripDirection)>],
 ) -> Result<(Vec<HalfEdge>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
-    let (mut map, _map_storage) = ctx
+    let _map_storage;
+    let (mut map, held_storage) = ctx
         .with_scoped_storage("map T-spline half-edge slots", || {
             ctx.alloc_filled(slots.len(), None, "map T-spline half-edge slots")
         })?;
+    _map_storage = held_storage;
     let mut dense_storage = ctx.reserve_scoped(0, "collect T-spline live half-edges")?;
     let mut output_storage = ctx.reserve_scoped(0, "collect T-spline compact half-edges")?;
     let mut dense = Vec::new();
@@ -345,10 +347,12 @@ pub(crate) fn subd_id(
     name: &str,
     source_key: &str,
 ) -> Result<cadmpeg_ir::ids::SubdId, CodecError> {
-    let (key_text, _key_storage) = ctx
+    let _key_storage;
+    let (key_text, held_storage) = ctx
         .with_scoped_storage("stage T-spline identity key", || {
             ctx.copy_retained_text(source_key, "retain T-spline identity key")
         })?;
+    _key_storage = held_storage;
     let key = cadmpeg_ir::ids::IdentityKey::try_new(key_text)
         .map_err(|error| malformed(ctx, name, format_args!("invalid subd identity: {error}")))?;
     let text = ctx.format_retained(
@@ -972,10 +976,12 @@ fn build_secondary_layouts<'ctx>(
         .admit_iter(vertex_ir, "count T-spline live vertices")?
         .flatten()
         .count();
-    let (mut layouts, layouts_storage) = ctx
+    let layouts_storage;
+    let (mut layouts, held_storage) = ctx
         .with_scoped_storage("f3d subd secondary layouts", || {
             ctx.collect_indexed_vec(live_vertices, "f3d subd secondary layouts", |_| Ok(None))
         })?;
+    layouts_storage = held_storage;
     let mut scratch = ctx.reserve_scoped(0, "stage T-spline secondary layout indexes")?;
     let mut has_cg = scratch.with_storage(|| {
         ctx.alloc_filled(
@@ -1013,7 +1019,9 @@ fn build_secondary_layouts<'ctx>(
             .copied()
             .flatten()
             .ok_or_else(|| malformed(ctx, name, "derived-grip vertex has no root direction"))?;
-        let (fan, _fan_storage) = build_fan(ctx, name, vertex, root, half_edges, face_live)?;
+        let _fan_storage;
+        let (fan, held_storage) = build_fan(ctx, name, vertex, root, half_edges, face_live)?;
+        _fan_storage = held_storage;
         if connectivity.spoke_lengths.len() != fan.len() {
             return Err(malformed(
                 ctx,
@@ -2032,7 +2040,8 @@ fn parse<'ctx>(
     {
         return Err(malformed(ctx, name, "control cage is incomplete"));
     }
-    let (half_edges, _half_edges_storage) = compact_half_edges(
+    let _half_edges_storage;
+    let (half_edges, held_storage) = compact_half_edges(
         ctx,
         name,
         &half_edges,
@@ -2040,6 +2049,7 @@ fn parse<'ctx>(
         &mut edge_roots,
         &mut vertex_roots,
     )?;
+    _half_edges_storage = held_storage;
 
     let face_live = scratch.with_storage(|| {
         ctx.collect_vec(
@@ -2082,7 +2092,8 @@ fn parse<'ctx>(
             ));
         }
     }
-    let (typed_symmetry_blocks, _typed_blocks_storage) = ctx.try_collect_scoped_vec(
+    let _typed_blocks_storage;
+    let (typed_symmetry_blocks, held_storage) = ctx.try_collect_scoped_vec(
         ctx.admit_iter(symmetry_blocks, "scan T-spline symmetry blocks")?
             .map(|block| -> Result<_, CodecError> {
                 let plane = block
@@ -2168,6 +2179,7 @@ fn parse<'ctx>(
             }),
         "type T-spline symmetry blocks",
     )?;
+    _typed_blocks_storage = held_storage;
     let mut grip_owners = scratch.with_storage(|| {
         ctx.alloc_filled(grip_vertices.len(), None, "f3d subd secondary-grip owners")
     })?;
@@ -2275,14 +2287,20 @@ fn parse<'ctx>(
     }
 
     // Slot indices address the program; IR indices address only populated slots.
-    let (vertex_ir, _vertex_ir_storage) = ctx
+    let _vertex_ir_storage;
+    let (vertex_ir, held_storage) = ctx
         .with_scoped_storage("compact T-spline vertex slots", || {
             compact(ctx, &vertex_live)
         })?;
-    let (edge_ir, _edge_ir_storage) =
+    _vertex_ir_storage = held_storage;
+    let _edge_ir_storage;
+    let (edge_ir, held_storage) =
         ctx.with_scoped_storage("compact T-spline edge slots", || compact(ctx, &edge_live))?;
-    let (face_ir, _face_ir_storage) =
+    _edge_ir_storage = held_storage;
+    let _face_ir_storage;
+    let (face_ir, held_storage) =
         ctx.with_scoped_storage("compact T-spline face slots", || compact(ctx, &face_live))?;
+    _face_ir_storage = held_storage;
     let symmetries = ctx.try_collect_vec(
         ctx.admit_iter(typed_symmetry_blocks, "scan T-spline typed symmetry blocks")?
             .map(|block| -> Result<_, CodecError> {
@@ -2440,7 +2458,8 @@ fn parse<'ctx>(
         return Err(malformed(ctx, name, "edge knot interval map is incomplete"));
     }
 
-    let (mut secondary_layouts, _secondary_layouts_storage) = build_secondary_layouts(
+    let _secondary_layouts_storage;
+    let (mut secondary_layouts, held_storage) = build_secondary_layouts(
         ctx,
         &SecondaryLayoutContext {
             name,
@@ -2456,6 +2475,7 @@ fn parse<'ctx>(
         },
         &derived_grips,
     )?;
+    _secondary_layouts_storage = held_storage;
 
     let mut faces = Vec::new();
     for (face_slot, start) in ctx
@@ -3108,8 +3128,10 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             face: None,
         }];
         crate::test_support::with_decode_context(|ctx| {
-            let (fan, _fan_storage) =
+            let _fan_storage;
+            let (fan, held_storage) =
                 super::build_fan(ctx, "synthetic.tsm", 0, 0, &half_edges, &[]).unwrap();
+            _fan_storage = held_storage;
             assert_eq!(fan.len(), 4);
             assert!(matches!(
                 fan[0],

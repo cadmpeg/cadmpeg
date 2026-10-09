@@ -81,7 +81,9 @@ fn scoped_record_offsets_retain_nothing() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let (records, _storage) = IndexedRecordOffsets::build_scoped(&ctx, &bytes).unwrap();
+    let _storage;
+    let (records, held_storage) = IndexedRecordOffsets::build_scoped(&ctx, &bytes).unwrap();
+    _storage = held_storage;
     assert_eq!(records.offsets(7), &[0, 11]);
     let mut cache = crate::design::decode::sketch::RecordOffsetCache::new(&ctx).unwrap();
     assert_eq!(

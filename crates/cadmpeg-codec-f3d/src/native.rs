@@ -99,9 +99,11 @@ fn group_by_owner<'ctx, T, K: std::borrow::Borrow<str> + Eq + std::hash::Hash>(
     id: impl Fn(&T) -> &str,
     owner: impl Fn(&T) -> &str,
 ) -> Result<(Vec<Vec<T>>, ScopedReservation<'ctx>), cadmpeg_ir::NativeConvertError> {
-    let (mut grouped, storage) = ctx.with_scoped_storage("group F3D native owners", || {
+    let storage;
+    let (mut grouped, held_storage) = ctx.with_scoped_storage("group F3D native owners", || {
         ctx.collect_indexed_vec(owner_count, "group F3D native owners", |_| Ok(Vec::new()))
     })?;
+    storage = held_storage;
     for record in ctx
         .admit_iter(records, "scan F3D native owner children")
         .map_err(cadmpeg_core::CodecError::from)?
@@ -1575,9 +1577,12 @@ impl F3dNative {
             read_arena!("asm_entity_changes");
         let records: Vec<crate::history_records::AsmHistoryRecord> =
             read_arena!("asm_history_records");
-        let (board_indices, board_index_storage) =
+        let board_index_storage;
+        let (board_indices, held_storage) =
             owner_indices(ctx, &boards, |board| board.id.as_str())?;
-        let (changes_by_board, changes_by_board_storage) = group_by_owner(
+        board_index_storage = held_storage;
+        let changes_by_board_storage;
+        let (changes_by_board, held_storage) = group_by_owner(
             ctx,
             changes,
             &board_indices,
@@ -1585,6 +1590,7 @@ impl F3dNative {
             |change| &change.id,
             |change| &change.parent,
         )?;
+        changes_by_board_storage = held_storage;
         drop(board_indices);
         drop(board_index_storage);
         let attached_boards = ctx.try_collect_vec(
@@ -1602,9 +1608,12 @@ impl F3dNative {
         )?;
         drop(changes_by_board_storage);
         let boards = attached_boards;
-        let (state_indices, state_index_storage) =
+        let state_index_storage;
+        let (state_indices, held_storage) =
             owner_indices(ctx, &states, |state| state.id.as_str())?;
-        let (boards_by_state, boards_by_state_storage) = group_by_owner(
+        state_index_storage = held_storage;
+        let boards_by_state_storage;
+        let (boards_by_state, held_storage) = group_by_owner(
             ctx,
             boards,
             &state_indices,
@@ -1612,7 +1621,9 @@ impl F3dNative {
             |board| &board.id,
             |board| &board.parent,
         )?;
-        let (records_by_state, records_by_state_storage) = group_by_owner(
+        boards_by_state_storage = held_storage;
+        let records_by_state_storage;
+        let (records_by_state, held_storage) = group_by_owner(
             ctx,
             records,
             &state_indices,
@@ -1620,6 +1631,7 @@ impl F3dNative {
             |record| &record.id,
             |record| &record.parent,
         )?;
+        records_by_state_storage = held_storage;
         drop(state_indices);
         drop(state_index_storage);
         let attached_states = ctx.try_collect_vec(
@@ -1643,9 +1655,12 @@ impl F3dNative {
         drop(boards_by_state_storage);
         drop(records_by_state_storage);
         let states = attached_states;
-        let (history_indices, history_index_storage) =
+        let history_index_storage;
+        let (history_indices, held_storage) =
             owner_indices(ctx, &native.asm_histories, |history| history.id.as_str())?;
-        let (states_by_history, states_by_history_storage) = group_by_owner(
+        history_index_storage = held_storage;
+        let states_by_history_storage;
+        let (states_by_history, held_storage) = group_by_owner(
             ctx,
             states,
             &history_indices,
@@ -1653,6 +1668,7 @@ impl F3dNative {
             |state| &state.id,
             |state| &state.parent,
         )?;
+        states_by_history_storage = held_storage;
         drop(history_indices);
         drop(history_index_storage);
         for (history, states) in ctx

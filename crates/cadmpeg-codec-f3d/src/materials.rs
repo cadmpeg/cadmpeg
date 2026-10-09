@@ -878,7 +878,8 @@ pub(crate) fn decode_with_body_bindings<'a>(
             cadmpeg_protein::framing::record_frames_admitted(ctx, instance.window())?;
         let (_catalog_storage, catalog) = definition_catalog(ctx, protein)?;
         let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
-        let (mut appearances, _appearances_storage) = if let Some(mut schema_catalog) =
+        let _appearances_storage;
+        let (mut appearances, held_storage) = if let Some(mut schema_catalog) =
             schema_catalog
         {
             let outcome = cadmpeg_protein::decode_frames_admitted(
@@ -897,8 +898,10 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 ctx.push_vec(&mut notes, note, "collect F3D protein rejection notes")?;
             }
             let records = outcome.records;
-            let (mut decoded, untyped_count, mut decoded_storage) =
+            let mut decoded_storage;
+            let (mut decoded, untyped_count, held_storage) =
                 appearances_from_schema_records(ctx, &records)?;
+            decoded_storage = held_storage;
             untyped_distance_properties = untyped_distance_properties
                 .checked_add(untyped_count)
                 .ok_or_else(|| {
@@ -917,8 +920,10 @@ pub(crate) fn decode_with_body_bindings<'a>(
                     "index F3D schema appearance IDs",
                 )
             })?;
-            let (mut fixed, _fixed_storage) =
+            let _fixed_storage;
+            let (mut fixed, held_storage) =
                 decode_fixed_logical_records(ctx, record_frames.frames())?;
+            _fixed_storage = held_storage;
             ctx.retain_vec(
                 &mut fixed,
                 |appearance| {
@@ -937,6 +942,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         } else {
             decode_fixed_logical_records(ctx, record_frames.frames())?
         };
+        _appearances_storage = held_storage;
         for appearance in ctx.admit_iter(&mut appearances, "bind F3D appearance catalog entries")? {
             let Some(name) = appearance.name.as_deref() else {
                 continue;
@@ -1078,10 +1084,12 @@ pub(crate) fn decode_with_body_bindings<'a>(
         if !appearance_token_is_complete(ctx, guid)? {
             continue;
         }
-        let (key, _key_storage) = ctx
+        let _key_storage;
+        let (key, held_storage) = ctx
             .with_scoped_storage("f3d visual token assignment search", || {
                 ctx.to_ascii_lowercase(guid, "f3d visual token assignment search")
             })?;
+        _key_storage = held_storage;
         if let Some(assignment) = ctx.get_btree_map(
             &first_assignment,
             key.as_str(),
@@ -1219,8 +1227,10 @@ fn appearances_from_schema_records<'ctx>(
     >::new();
     let mut untyped_distance_properties = 0usize;
     for record in ctx.admit_iter(records, "scan F3D schema appearance records")? {
-        let (outcome, texture_storage) =
+        let texture_storage;
+        let (outcome, held_storage) =
             ctx.with_scoped_storage("stage F3D texture asset", || texture_asset(ctx, record))?;
+        texture_storage = held_storage;
         let texture = match outcome {
             TextureAssetResult::NotTexture => continue,
             TextureAssetResult::UnknownDistanceUnit { count } => {
@@ -1314,7 +1324,8 @@ fn appearances_from_schema_records<'ctx>(
             Ord::cmp,
             "sort F3D connected textures",
         )?;
-        let (properties, _property_slots_storage) = ctx.try_collect_scoped_vec(
+        let _property_slots_storage;
+        let (properties, held_storage) = ctx.try_collect_scoped_vec(
             ctx.admit_iter(properties, "scan F3D neutral appearance properties")?
                 .map(|(key, value)| {
                     Ok::<_, CodecError>((
@@ -1324,6 +1335,7 @@ fn appearances_from_schema_records<'ctx>(
                 }),
             "collect F3D neutral appearance properties",
         )?;
+        _property_slots_storage = held_storage;
         let base_color = appearance_base_color(ctx, record)?;
         let appearance = Appearance {
             id: crate::ids::appearance_id(ctx, &record.guid)?,
@@ -1493,13 +1505,13 @@ pub(crate) struct FaceAppearanceAssignment {
 
 /// Material records read from every Design `BulkStream`.
 pub(crate) struct StreamMaterials<'bindings, 'ctx> {
-    _overrides_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     /// Named body presentations joined to their exact body-map pair.
     pub(crate) assignments: Vec<DesignMaterialAssignment>,
     /// Browser and bare-owner body appearances joined to a solved body.
     overrides: Vec<BodyAppearanceOverride<'bindings>>,
     /// Per-face assignments awaiting the BREP face-attribute join.
     face_assignments: Vec<FaceAppearanceAssignment>,
+    _overrides_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 /// Read every material record a Design `BulkStream` carries in one pass over
@@ -1531,15 +1543,19 @@ pub(crate) fn decode_stream_materials<'bindings, 'ctx>(
         else {
             continue;
         };
-        let (body_map, _body_map_storage) =
+        let _body_map_storage;
+        let (body_map, held_storage) =
             crate::design::decode::body::body_bindings(ctx, bytes, &metadata)?;
+        _body_map_storage = held_storage;
         // A body-map pair is selected by its entity suffix; a repeated suffix
         // is kept as ambiguous and refused when a record names it.
-        let (map_by_suffix, _map_by_suffix_storage) = ctx.unique_index(
+        let _map_by_suffix_storage;
+        let (map_by_suffix, held_storage) = ctx.unique_index(
             ctx.admit_iter(&body_map, "scan F3D indexed material body-map pairs")?
                 .map(|binding| (binding.entity_suffix, binding)),
             "index F3D body-map pairs by entity",
         )?;
+        _map_by_suffix_storage = held_storage;
         let mut browser =
             overrides_storage.with_storage(|| browser_body_appearances(ctx, bytes))?;
         for presentation in ctx.admit_iter(
@@ -1619,7 +1635,8 @@ pub(crate) fn decode_stream_materials<'bindings, 'ctx>(
             else {
                 continue;
             };
-            let (binding_id, _binding_id_storage) =
+            let _binding_id_storage;
+            let (binding_id, held_storage) =
                 ctx.with_scoped_storage("stage F3D override body-map identity", || {
                     crate::ids::native_design_body_binding_id(
                         ctx,
@@ -1627,6 +1644,7 @@ pub(crate) fn decode_stream_materials<'bindings, 'ctx>(
                         map_pair.asm_key_offset,
                     )
                 })?;
+            _binding_id_storage = held_storage;
             let Some(body) = pairs.body(
                 ctx,
                 &binding_id,
@@ -1709,8 +1727,10 @@ fn face_appearance_assignments_in_frame(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
-    let (strings, _strings_storage) =
+    let _strings_storage;
+    let (strings, held_storage) =
         ctx.with_scoped_storage("stage F3D UTF-16 strings", || lp_utf16_strings(ctx, bytes))?;
+    _strings_storage = held_storage;
     let mut out = legacy_face_appearance_assignments(ctx, bytes, &strings)?;
     ctx.append_vec(
         &mut out,
@@ -2039,10 +2059,14 @@ fn browser_body_appearances(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<(u64, DesignVisualToken)>, CodecError> {
-    let (nodes, _nodes_storage) =
+    let _nodes_storage;
+    let (nodes, held_storage) =
         crate::design::decode::body::scanned_browser_node_entities(ctx, bytes)?;
-    let (strings, _strings_storage) =
+    _nodes_storage = held_storage;
+    let _strings_storage;
+    let (strings, held_storage) =
         ctx.with_scoped_storage("stage F3D UTF-16 strings", || lp_utf16_strings(ctx, bytes))?;
+    _strings_storage = held_storage;
     let mut seen_storage = ctx.reserve_scoped(0, "index F3D unique browser appearances")?;
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
@@ -2327,10 +2351,12 @@ impl<'ctx> AppearanceIndex<'ctx> {
         token: &DesignVisualToken,
         fallback_name: Option<&str>,
     ) -> Result<Option<&'a Appearance>, CodecError> {
-        let (key, _key_storage) = ctx
+        let _key_storage;
+        let (key, held_storage) = ctx
             .with_scoped_storage("find F3D appearance visual token", || {
                 ctx.to_ascii_lowercase(token, "find F3D appearance visual token")
             })?;
+        _key_storage = held_storage;
         match ctx
             .get_btree_map(
                 &self.tokens,
@@ -2412,7 +2438,8 @@ impl<'a, 'ctx> BodyPairIndex<'a, 'ctx> {
     ) -> Result<Self, CodecError> {
         // Pairs whose id names no stream cannot match an owner; they are kept
         // under the absent key, which no lookup asks for.
-        let (pairs, storage) = ctx.unique_index(
+        let storage;
+        let (pairs, held_storage) = ctx.unique_index(
             ctx.admit_iter(body_bindings, "scan F3D indexed material body bindings")?
                 .map(|binding| {
                     let key = crate::ids::native_stream(binding.id()).map(|stream| {
@@ -2428,6 +2455,7 @@ impl<'a, 'ctx> BodyPairIndex<'a, 'ctx> {
                 }),
             "index F3D material body-map pairs",
         )?;
+        storage = held_storage;
         Ok(Self {
             pairs,
             _storage: storage,

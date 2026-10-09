@@ -803,7 +803,9 @@ fn scope_placement(
     else {
         return Ok(None);
     };
-    let (referenced, _referenced_storage) = marked_record_indices(ctx, frame)?;
+    let _referenced_storage;
+    let (referenced, held_storage) = marked_record_indices(ctx, frame)?;
+    _referenced_storage = held_storage;
     let mut only = None;
     let mut ambiguous = false;
     for &record_index in
@@ -1515,7 +1517,8 @@ fn collect_member_run(
     first: Option<crate::records::identity::Located<u32>>,
     operation: &'static str,
 ) -> Result<Option<Vec<crate::records::identity::Located<u32>>>, CodecError> {
-    let ((members, malformed), storage) = ctx.with_scoped_storage(operation, || {
+    let storage;
+    let ((members, malformed), held_storage) = ctx.with_scoped_storage(operation, || {
         let mut members = Vec::new();
         ctx.reserve_capacity(
             &mut members,
@@ -1549,6 +1552,7 @@ fn collect_member_run(
         )?;
         Ok::<_, CodecError>((members, malformed))
     })?;
+    storage = held_storage;
     if malformed.is_some() {
         return Ok(None);
     }
@@ -1867,7 +1871,9 @@ pub(crate) fn decode_entity_headers(
         };
         sorted_distinct(ctx, candidates, "order F3D legacy sketch candidates")?;
         sorted_distinct(ctx, &mut existing, "order F3D existing entity indices")?;
-        let (records, _records_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
+        let _records_storage;
+        let (records, held_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
+        _records_storage = held_storage;
         for (entity_suffix, offsets) in records.records(ctx)? {
             if ctx
                 .binary_search(
@@ -2248,10 +2254,12 @@ pub(crate) fn decode_sketch_relations(
             continue;
         };
         // The parse is temporary: the relation copies what it keeps.
-        let (parsed, _parse_storage) = ctx
+        let _parse_storage;
+        let (parsed, held_storage) = ctx
             .with_scoped_storage("f3d sketch relation parse", || {
                 parse_classed_sketch_relation(ctx, payload, class)
             })?;
+        _parse_storage = held_storage;
         let Some(parsed) = parsed else {
             continue;
         };
@@ -2535,9 +2543,11 @@ fn decode_sketch_points_from_stream(
     meta: &crate::metastream::MetaStream,
     stream: &str,
 ) -> Result<Vec<SketchPoint>, CodecError> {
-    let (frames, _frames_storage) = ctx.with_scoped_storage("f3d sketch point frames", || {
+    let _frames_storage;
+    let (frames, held_storage) = ctx.with_scoped_storage("f3d sketch point frames", || {
         design_primary_frames(ctx, bytes, meta)
     })?;
+    _frames_storage = held_storage;
     // The last frame of each entity, for reference targets.
     let mut frames_storage = ctx.reserve_scoped(0, "f3d sketch point frame index")?;
     let mut frames_by_entity = HashMap::new();
@@ -2824,9 +2834,11 @@ fn decode_sketch_texts_from_stream(
     stream: &str,
 ) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
-    let (frames, _frames_storage) = ctx.with_scoped_storage("f3d sketch text frames", || {
+    let _frames_storage;
+    let (frames, held_storage) = ctx.with_scoped_storage("f3d sketch text frames", || {
         design_primary_frames(ctx, bytes, meta)
     })?;
+    _frames_storage = held_storage;
     for frame in ctx.admit_iter(&frames, "scan F3D sketch text frames")? {
         let type_guid = frame.design_type.type_guid.as_str();
         if !SKETCH_TEXT_TYPE_GUIDS
@@ -2840,7 +2852,8 @@ fn decode_sketch_texts_from_stream(
         let payload = &bytes[frame.start..frame.end];
         // A record that no layout closes is dropped, so its copies stay
         // scoped until it decodes.
-        let (text, text_storage) = ctx.with_scoped_storage("f3d sketch text record", || {
+        let text_storage;
+        let (text, held_storage) = ctx.with_scoped_storage("f3d sketch text record", || {
             let class_tag = frame
                 .class_tag
                 .try_clone_for_decode(ctx, "copy F3D sketch text class tag")?;
@@ -2854,6 +2867,7 @@ fn decode_sketch_texts_from_stream(
                 frame.start,
             )
         })?;
+        text_storage = held_storage;
         if let Some(text) = text {
             let text = text_storage.commit_value(text)?;
             ctx.push_vec(&mut out, text, "f3d sketch text records")?;
@@ -4178,9 +4192,11 @@ fn decode_sketch_curve_identities_from_stream(
     stream: &str,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let mut out = Vec::new();
-    let (frames, _frames_storage) = ctx.with_scoped_storage("f3d sketch curve frames", || {
+    let _frames_storage;
+    let (frames, held_storage) = ctx.with_scoped_storage("f3d sketch curve frames", || {
         design_primary_frames(ctx, bytes, meta)
     })?;
+    _frames_storage = held_storage;
     for frame in ctx.admit_iter(&frames, "scan F3D sketch curve frames")? {
         let payload = &bytes[frame.start..frame.end];
         let Some((primary_id, secondary_id, geometry_shift, entity_genesis)) =
@@ -4201,7 +4217,8 @@ fn decode_sketch_curve_identities_from_stream(
         // Geometry that does not decode is dropped, so its storage stays
         // scoped until it is kept.
         let parsed_geometry = if let Some(curve_class) = curve_class {
-            let (parsed, geometry_storage) =
+            let geometry_storage;
+            let (parsed, held_storage) =
                 ctx.with_scoped_storage("f3d sketch curve geometry", || {
                     decode_sketch_curve_geometry(
                         ctx,
@@ -4212,6 +4229,7 @@ fn decode_sketch_curve_identities_from_stream(
                         frame.start,
                     )
                 })?;
+            geometry_storage = held_storage;
             if parsed.is_some() {
                 geometry_storage.commit_value(parsed)?
             } else {
@@ -4383,7 +4401,8 @@ fn parse_sketch_surface(
     };
     // The source coordinates and scaled points are temporaries; the knots
     // and control-point rows are the surface's own storage.
-    let (coordinates, _coordinate_storage) =
+    let _coordinate_storage;
+    let (coordinates, held_storage) =
         ctx.with_scoped_storage("f3d sketch surface coordinates", || {
             charged_sketch_scalar_values(
                 ctx,
@@ -4393,6 +4412,7 @@ fn parse_sketch_surface(
                 "f3d sketch surface scalar values",
             )
         })?;
+    _coordinate_storage = held_storage;
     let Some(coordinates) = coordinates else {
         return Ok(None);
     };
@@ -4488,10 +4508,12 @@ pub(crate) fn decode_sketch_surfaces(
             let payload = &bytes[record_at..];
             // A record that does not form a surface drops what its parse
             // built, so that storage stays scoped until the surface is kept.
-            let (surface, surface_storage) = ctx
+            let surface_storage;
+            let (surface, held_storage) = ctx
                 .with_scoped_storage("f3d sketch surface parse", || {
                     parse_sketch_surface(ctx, payload, record_at)
                 })?;
+            surface_storage = held_storage;
             let Some(surface) = surface else {
                 continue;
             };
@@ -5210,7 +5232,8 @@ fn decode_nurbs_lanes(
     };
     // The source coordinates are a temporary; the control points are the
     // curve's own storage.
-    let (coordinates, _coordinate_storage) =
+    let _coordinate_storage;
+    let (coordinates, held_storage) =
         ctx.with_scoped_storage("f3d sketch NURBS coordinates", || {
             charged_sketch_scalar_values(
                 ctx,
@@ -5220,6 +5243,7 @@ fn decode_nurbs_lanes(
                 operation,
             )
         })?;
+    _coordinate_storage = held_storage;
     let Some(coordinates) = coordinates else {
         return Ok(None);
     };
