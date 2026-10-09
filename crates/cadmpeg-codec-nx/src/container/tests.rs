@@ -884,6 +884,25 @@ fn external_reference_paths_refuse_retained_string_limit() {
 
 #[test]
 fn external_reference_paths_refuse_work_limit() {
+    let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
+    let container = external_reference_path_container(payload);
+    let error = crate::test_support::resource_refusal_at(
+        payload,
+        ResourceDimension::WorkUnits,
+        "project NX external reference paths",
+        |ctx| {
+            container
+                .external_reference_paths(ctx)
+                .map(|(paths, _storage)| paths)
+        },
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "project NX external reference paths")
+    );
+}
+
+#[test]
+fn external_reference_paths_refuse_before_visiting_the_unselected_suffix() {
     let payload = b"prefix\x01\x02\x00\x00\x00\x09\x00child.prt\x0c\x00nested/b.prt";
     let container = external_reference_path_container(payload);
     let error = crate::test_support::resource_refusal_at(
