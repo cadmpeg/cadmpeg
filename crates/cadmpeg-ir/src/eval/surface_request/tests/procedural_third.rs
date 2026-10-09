@@ -112,7 +112,7 @@ fn native_revolution_third_maps_angular_scale_and_transposition() {
 }
 
 #[test]
-fn missing_nurbs_curve_third_keeps_real_surface_lower_orders() {
+fn degree_one_nurbs_curve_third_keeps_real_surface_lower_orders() {
     use crate::geometry::nurbs::NurbsCurve;
     let mut ir = CadIr::empty();
     let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1,
@@ -125,10 +125,45 @@ fn missing_nurbs_curve_third_keeps_real_surface_lower_orders() {
     close(third.jet.point.get().vector_from(Point3::new(2.0 / 3.0, 0.0, 0.25)), Vector3::new(0.0, 0.0, 0.0));
     assert!(third.jet.first.is_ok());
     assert!(third.jet.second.is_ok());
-    assert_eq!(third.higher.third(), Err(EvaluationFailure::NoValue));
+    // C(u)=2u/(1+u), so C'''(1/2)=12/(3/2)^4=64/27.
+    let [uuu, uuv, uvv, vvv] = third.higher.third().unwrap();
+    close(uuu.get(), Vector3::new(64.0 / 27.0, 0.0, 0.0));
+    for mixed in [uuv, uvv, vvv] {
+        close(mixed.get(), Vector3::new(0.0, 0.0, 0.0));
+    }
     let shifted = offset(&mut ir, "rational-offset", surface, 1.0);
     let result = evaluate(&ir, &shifted, 0.5, 0.25, SurfaceRequest::Second);
     close(result.point.get().vector_from(Point3::new(2.0 / 3.0, -1.0, 0.25)), Vector3::new(0.0, 0.0, 0.0));
+    assert!(result.first.is_ok());
+    // The chart normal is constant. Offset retains C''(1/2)=-4/(3/2)^3.
+    let [uu, uv, vv] = result.second.unwrap();
+    close(uu.get(), Vector3::new(-32.0 / 27.0, 0.0, 0.0));
+    for mixed in [uv, vv] {
+        close(mixed.get(), Vector3::new(0.0, 0.0, 0.0));
+    }
+}
+
+#[test]
+fn missing_higher_degree_rational_third_preserves_actual_lower_orders() {
+    use crate::geometry::nurbs::NurbsCurve;
+    let mut ir = CadIr::empty();
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        Some(vec![1.0, 1.0, 2.0]), false).unwrap().unwrap();
+    let directrix = add_curve(&mut ir, "higher-rational-line", SolvedCurveGeometry::Nurbs(curve));
+    let surface = procedural(&mut ir, "higher-rational-extrusion", ProceduralSurfaceDefinition::LinearSweep(
+        LinearSweepSurfaceConstruction::try_new(directrix, Vector3::new(0.0, 0.0, 1.0)).unwrap()));
+    let third = requested(&ir, &surface, 0.5, 0.25);
+    let second = evaluate(&ir, &surface, 0.5, 0.25, SurfaceRequest::Second);
+    assert_eq!(third.jet.point, second.point);
+    assert_eq!(third.jet.first, second.first);
+    assert_eq!(third.jet.second, second.second);
+    assert!(third.jet.first.is_ok());
+    assert!(third.jet.second.is_ok());
+    assert_eq!(third.higher.third(), Err(EvaluationFailure::NoValue));
+    let shifted = offset(&mut ir, "higher-rational-offset", surface, 1.0);
+    let result = evaluate(&ir, &shifted, 0.5, 0.25, SurfaceRequest::Second);
     assert!(result.first.is_ok());
     assert_eq!(result.second, Err(EvaluationFailure::NoValue));
 }

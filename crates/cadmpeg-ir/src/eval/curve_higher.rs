@@ -8,6 +8,13 @@ use crate::geometry::{ProceduralCurveDefinition, SolvedCurveGeometry};
 use crate::math::sum::ExactSignedSum;
 use crate::scalar::FiniteReal;
 
+// Analytic tangent laws already refer to the final placed frame. The NURBS
+// analytic law starts in its own frame and must cross each stored placement.
+enum ThirdFrame {
+    Final(FiniteVector3),
+    Local(FiniteVector3),
+}
+
 /// The final placed tangent is already evaluated by this curve's owner.
 /// Affine placement preserves C'''=-C' for circles/ellipses and C'''=C'
 /// for hyperbolas. Follow each stored placement once to establish that law;
@@ -17,26 +24,40 @@ use crate::scalar::FiniteReal;
 pub(super) fn stored_third(
     scratch: &Scratch<'_, '_>,
     geometry: &SolvedCurveGeometry,
+    parameter: FiniteReal,
     tangent: Result<FiniteVector3, EvaluationFailure<()>>,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    stored_third_frame(scratch, geometry, parameter, tangent).map(|frame| match frame {
+        ThirdFrame::Final(value) | ThirdFrame::Local(value) => value,
+    })
+}
+
+fn stored_third_frame(
+    scratch: &Scratch<'_, '_>,
+    geometry: &SolvedCurveGeometry,
+    parameter: FiniteReal,
+    tangent: Result<FiniteVector3, EvaluationFailure<()>>,
+) -> Result<ThirdFrame, EvaluationFailure<()>> {
     scratch.unless_refused()?;
     let _depth = scratch.enter().ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
     let result = match geometry {
-        SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Parabola(_) => Ok(FiniteVector3::ZERO),
-        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => tangent.map(FiniteVector3::negated),
-        SolvedCurveGeometry::Hyperbola(_) => tangent,
-        SolvedCurveGeometry::Polyline(_) => tangent.map(|_| FiniteVector3::ZERO),
+        SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Parabola(_) => Ok(ThirdFrame::Final(FiniteVector3::ZERO)),
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => tangent.map(FiniteVector3::negated).map(ThirdFrame::Final),
+        SolvedCurveGeometry::Hyperbola(_) => tangent.map(ThirdFrame::Final),
+        SolvedCurveGeometry::Polyline(_) => tangent.map(|_| ThirdFrame::Final(FiniteVector3::ZERO)),
         SolvedCurveGeometry::Transformed(placed) => {
             scratch.admission.independent_cost(Some(1))?;
             scratch.work(1, "IR curve higher source traversal")
                 .ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
-            stored_third(scratch, placed.basis(), tangent)
+            stored_third_frame(scratch, placed.basis(), parameter, tangent).and_then(|frame| match frame {
+                ThirdFrame::Final(value) => Ok(ThirdFrame::Final(value)),
+                ThirdFrame::Local(value) => super::placed_derivative(*placed.transform(), Ok(value)).map(ThirdFrame::Local),
+            })
         }
-        // The rational curve third needs its genuine local homogeneous state,
-        // basis recurrences and scaled-span fallback. Existing lower orders
-        // remain available; this owner does not assert a polynomial zero.
-        SolvedCurveGeometry::Nurbs(_)
-        | SolvedCurveGeometry::Degenerate(_)
+        SolvedCurveGeometry::Nurbs(curve) => super::curve_nurbs::linear_third(scratch, curve, parameter).map(ThirdFrame::Local),
+        // Higher-degree rational curves still need genuine scaled local rows
+        // and extended quotient corrections. Keep their lower orders intact.
+        SolvedCurveGeometry::Degenerate(_)
         | SolvedCurveGeometry::Composite { .. }
         | SolvedCurveGeometry::Unknown { .. } => Err(EvaluationFailure::NoValue),
     };

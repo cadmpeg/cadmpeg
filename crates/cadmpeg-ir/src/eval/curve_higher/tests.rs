@@ -8,6 +8,8 @@ use crate::transform::Transform;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+mod nurbs_linear;
+
 #[test]
 fn stored_analytic_third_follows_the_actual_curve_law() {
     let origin = Point3::new(0.0, 0.0, 0.0);
@@ -21,7 +23,7 @@ fn stored_analytic_third_follows_the_actual_curve_law() {
         (SolvedCurveGeometry::Hyperbola(HyperbolaCurve::try_new(origin, z, x, 2.0, 3.0).unwrap()), FiniteVector3::new(Vector3::new(0.0, 3.0, 0.0)).unwrap()),
     ] {
         let tangent = crate::eval::curve_derivative_evaluation(&scratch, &geometry, 0.0, crate::eval::CurveDerivative::First);
-        assert_eq!(stored_third(&scratch, &geometry, tangent), Ok(expected));
+        assert_eq!(stored_third(&scratch, &geometry, FiniteReal::ZERO, tangent), Ok(expected));
     }
 }
 
@@ -44,13 +46,13 @@ fn stored_third_admits_each_real_placement_walk_and_preserves_the_original_fuse(
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let scratch = Scratch::new(&ctx);
-        let result = stored_third(&scratch, &geometry, tangent);
+        let result = stored_third(&scratch, &geometry, FiniteReal::ZERO, tangent);
         let refused = if cap < 2 {
             let Err(EvaluationFailure::ResourceLimit(original)) = result else { panic!("next actual source walk must refuse") };
             assert_eq!(original.operation, "IR curve higher source traversal");
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             assert_eq!((original.limit, original.used, original.additional), (cap, cap, 1));
-            assert_eq!(stored_third(&scratch, &geometry, Err(EvaluationFailure::NoValue)), Err(EvaluationFailure::ResourceLimit(original)));
+            assert_eq!(stored_third(&scratch, &geometry, FiniteReal::ZERO, Err(EvaluationFailure::NoValue)), Err(EvaluationFailure::ResourceLimit(original)));
             Some(original)
         } else {
             assert_eq!(result, tangent.map(FiniteVector3::negated));
