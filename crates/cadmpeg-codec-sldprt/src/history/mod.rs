@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `SolidWorks` Keywords XML feature history.
 
+mod attributes;
+mod dimensions;
+
 pub(crate) mod bind;
 pub(crate) mod classify;
 pub(crate) mod configuration;
@@ -13,7 +16,9 @@ pub(crate) mod project;
 pub(crate) mod selections;
 pub(crate) mod write;
 
+use self::attributes::keyed_attributes;
 use self::classify::classless_builtin_node;
+use self::dimensions::DimensionCandidates;
 
 use crate::container::ContainerScan;
 use crate::records::FeatureSource;
@@ -23,79 +28,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::Exactness;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 const HISTORY_OPERATION: &str = "decode SLDPRT history XML";
-
-/// Keys one source element's attributes, charging every key the reader cannot
-/// key.
-///
-/// The element is still transferred. A key holding no non-whitespace character
-/// cannot be asked for, and a key the element states twice is already taken, so
-/// the charge names the element and, for a restated key, the key itself.
-/// Attributes named in `excluded` are not properties.
-fn keyed_attributes(
-    ctx: &DecodeContext<'_>,
-    losses: &mut Vec<LossNote>,
-    record: &str,
-    node: roxmltree::Node<'_, '_>,
-    excluded: &[&str],
-) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
-    let mut kept = BTreeMap::new();
-    let mut attributes = node.attributes();
-    while let Some(attribute) =
-        ctx.next_charged(&mut attributes, "scan SLDPRT element attributes")?
-    {
-        let (name, value) = (attribute.name(), attribute.value());
-        if excluded.contains(&name) {
-            continue;
-        }
-        if ctx.all_by(
-            name.chars(),
-            |character| Ok(character.is_whitespace()),
-            "scan SLDPRT property name characters",
-        )? {
-            report_unkeyed_property(ctx, losses, record, None)?;
-            continue;
-        }
-        if ctx.contains_key_btree_map(&kept, name, "test SLDPRT map key")? {
-            report_unkeyed_property(ctx, losses, record, Some(name))?;
-            continue;
-        }
-        let name = ctx.copy_retained_text(name, "retain SLDPRT history property name")?;
-        let value = ctx.copy_retained_text(value, "retain SLDPRT history property value")?;
-        if let Some(name) =
-            cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")?
-        {
-            ctx.insert_btree_map(&mut kept, name, value, "index SLDPRT history properties")?;
-        }
-    }
-    Ok(kept)
-}
-
-fn report_unkeyed_property(
-    ctx: &DecodeContext<'_>,
-    losses: &mut Vec<LossNote>,
-    record: &str,
-    duplicate: Option<&str>,
-) -> Result<(), CodecError> {
-    const OPERATION: &str = "retain SLDPRT history property loss";
-    const BLANK: &str = " states a property with a blank key; the property is not transferred";
-    const RESTATED_BEFORE: &str = " states the property ";
-    const RESTATED_AFTER: &str = " a second time; the property is not transferred";
-    let message = match duplicate {
-        Some(key) => ctx.format_retained(
-            format_args!("{record}{RESTATED_BEFORE}{key}{RESTATED_AFTER}"),
-            OPERATION,
-        )?,
-        None => ctx.format_retained(format_args!("{record}{BLANK}"), OPERATION)?,
-    };
-    ctx.push_vec(
-        losses,
-        crate::loss::SldprtLossCode::SourcePropertyKeyBlank.note(message),
-        "collect SLDPRT history property losses",
-    )
-}
 
 /// The text of a text node without surrounding whitespace, when any remains.
 fn trimmed_text<'a>(
@@ -368,8 +303,7 @@ fn feature(
         &["id", "Name", "Type", "Suppressed"],
     )?;
     let mut content = Vec::new();
-    let mut dimension_properties = BTreeMap::new();
-    let mut parameters = BTreeMap::new();
+    let mut dimensions = DimensionCandidates::new(ctx)?;
     let mut has_element_child = false;
     let mut children = node.children();
     while let Some(child) = ctx.next_charged(&mut children, HISTORY_OPERATION)? {
@@ -386,14 +320,7 @@ fn feature(
         } else if child.tag_name().name() == "Dimension" {
             let name = ctx.xml_attribute(child, "Name", HISTORY_OPERATION)?;
             if let Some(name) = name {
-                dimension(
-                    ctx,
-                    losses,
-                    child,
-                    name,
-                    &mut dimension_properties,
-                    &mut parameters,
-                )?;
+                dimensions.record(losses, child, name)?;
             }
             name.map(|name| {
                 ctx.copy_retained_text(name, "retain SLDPRT feature dimension content")
@@ -412,6 +339,7 @@ fn feature(
             ctx.push_vec(&mut content, item, "collect SLDPRT feature content")?;
         }
     }
+    let (dimension_properties, parameters) = dimensions.into_retained()?;
     let text = if has_element_child {
         None
     } else {
@@ -481,65 +409,6 @@ fn feature(
         text,
         content,
     })
-}
-
-/// Record one named dimension child: its value as a parameter and its other
-/// attributes as dimension properties. A later dimension of the same name
-/// replaces an earlier one.
-fn dimension(
-    ctx: &DecodeContext<'_>,
-    losses: &mut Vec<LossNote>,
-    node: roxmltree::Node<'_, '_>,
-    name: &str,
-    dimension_properties: &mut BTreeMap<
-        String,
-        BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    >,
-    parameters: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-) -> Result<(), CodecError> {
-    let properties = keyed_attributes(ctx, losses, name, node, &["Name"])?;
-    if !properties.is_empty() {
-        if let Some(previous) = ctx.get_mut_btree_map(
-            dimension_properties,
-            name,
-            "look up mutable SLDPRT ordered key",
-        )? {
-            *previous = properties;
-        } else {
-            let name = ctx.copy_retained_text(name, "retain SLDPRT dimension property name")?;
-            ctx.insert_btree_map(
-                dimension_properties,
-                name,
-                properties,
-                "index SLDPRT dimension properties",
-            )?;
-        }
-    }
-    if ctx.all_by(
-        name.chars(),
-        |character| Ok(character.is_whitespace()),
-        "scan SLDPRT dimension name characters",
-    )? {
-        return Ok(());
-    }
-    let value = match node.text() {
-        Some(text) => ctx.trim_text(text, "trim SLDPRT history text")?,
-        None => "",
-    };
-    if let Some(previous) =
-        ctx.get_mut_btree_map(parameters, name, "look up mutable SLDPRT ordered key")?
-    {
-        *previous = ctx.copy_retained_text(value, "retain SLDPRT parameter value")?;
-        return Ok(());
-    }
-    let name = ctx.copy_retained_text(name, "retain SLDPRT parameter name")?;
-    let value = ctx.copy_retained_text(value, "retain SLDPRT parameter value")?;
-    if let Some(name) =
-        cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")?
-    {
-        ctx.insert_btree_map(parameters, name, value, "index SLDPRT parameters")?;
-    }
-    Ok(())
 }
 
 pub(crate) fn enrich_scene_classes(
