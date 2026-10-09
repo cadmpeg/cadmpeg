@@ -696,20 +696,22 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     changed = true;
                 }
                 drop(cache);
-                if let (Some((key, key_storage)), Some(equations)) = (key, common) {
+                if let (Some(key_owner), Some(equations)) = (key, common) {
                     let mut cache = self.face_equation_cache.borrow_mut();
                     if cache.len() < MAX_FACE_EQUATION_CACHE_ENTRIES {
-                        self.memo_storage.borrow_mut().with_storage(|| {
-                            self.ctx.insert_hash_map(
+                        let entry = self.memo_storage.borrow_mut().with_storage(|| {
+                            self.ctx.entry_hash_map(
                                 &mut cache,
-                                key,
-                                CachedFaceEquations {
-                                    equations,
-                                    _key_storage: Some(key_storage),
-                                },
+                                key_owner.0,
                                 "catia_forced_equation_cache",
                             )
                         })?;
+                        if let std::collections::hash_map::Entry::Vacant(entry) = entry {
+                            entry.insert(CachedFaceEquations {
+                                equations,
+                                _key_storage: key_owner.1,
+                            });
+                        }
                     }
                 }
                 if !changed {
