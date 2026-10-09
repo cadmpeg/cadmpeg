@@ -785,7 +785,9 @@ fn unique_entry_by<'v, T>(
         let Some(value) = ctx.next_charged(&mut source, operation)? else {
             break;
         };
-        if matches(value)? {
+        let matched = matches(value);
+        ctx.charge_work(0, operation)?;
+        if matched? {
             if found.is_some() {
                 return Ok(UniqueLookup::Repeated);
             }
@@ -892,7 +894,9 @@ where
             let Some(value) = ctx.next_charged(&mut source, self.operation)? else {
                 break;
             };
-            let Some(key) = (self.key)(ctx, value)? else {
+            let key = (self.key)(ctx, value);
+            ctx.charge_work(0, self.operation)?;
+            let Some(key) = key? else {
                 continue;
             };
             if let Some(indexed) = ctx.get_mut_hash_map(&mut table, &key, self.operation)? {
@@ -1205,6 +1209,7 @@ impl<'a, 'ctx> BodySelectionIndex<'a, 'ctx> {
         &self,
         ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<&ExternalBodies<'a, 'ctx>, cadmpeg_core::CodecError> {
+        ctx.charge_work(0, "index F3D external bodies")?;
         if let Some(external) = self.external.get() {
             return Ok(external);
         }
@@ -1221,6 +1226,7 @@ impl<'a, 'ctx> BodySelectionIndex<'a, 'ctx> {
         &self,
         ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<&PersistentBodyLinks<'a, 'ctx>, cadmpeg_core::CodecError> {
+        ctx.charge_work(0, "index F3D persistent body links")?;
         if let Some(links) = self.links.get() {
             return Ok(links);
         }
@@ -4492,7 +4498,7 @@ pub(crate) fn bind_edge_treatment_vertex_history(
         let Some(topology) = previous.topology() else {
             continue;
         };
-        let index = recipe_index.of(topology, || recipe_topology_index(decode, topology))?;
+        let index = recipe_index.of(decode, topology, || recipe_topology_index(decode, topology))?;
         for reference in decode.admit_iter(
             &mut operand.recipe.recipe_references,
             "scan F3D edge treatment vertex recipe references",
@@ -6090,14 +6096,21 @@ impl<T> Default for RecentTopologyValue<T> {
 impl<T> RecentTopologyValue<T> {
     fn of(
         &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         topology: &AsmHistoricalTopology,
         build: impl FnOnce() -> Result<T, cadmpeg_core::CodecError>,
     ) -> Result<&T, cadmpeg_core::CodecError> {
+        let operation = "query F3D recent topology value";
+        ctx.charge_work(0, operation)?;
         let address = std::ptr::from_ref(topology).addr();
         let value = match self.value.take() {
             Some(value) if self.topology == address => value,
-            _ => {
-                let value = build()?;
+            old => {
+                drop(old);
+                ctx.charge_work(0, operation)?;
+                let built = build();
+                ctx.charge_work(0, operation)?;
+                let value = built?;
                 self.topology = address;
                 value
             }
@@ -6398,7 +6411,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         let Some(topology) = previous.topology() else {
             continue;
         };
-        let recipe_tags = recipe_index.of(topology, || recipe_topology_index(decode, topology))?;
+        let recipe_tags = recipe_index.of(decode, topology, || recipe_topology_index(decode, topology))?;
         for reference in decode.admit_iter(
             &mut operand.recipe_references,
             "scan F3D face operand recipe references",
@@ -7686,12 +7699,12 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         let Some(source) = historical_brep_source(decode, &previous.id)? else {
             continue;
         };
-        let (faces, _) = topology_faces.of(topology, || {
+        let (faces, _) = topology_faces.of(decode, topology, || {
             decode.with_scoped_storage("index F3D topology faces", || {
                 decode.collect_hash_set(topology.faces.iter().copied(), "index F3D topology faces")
             })
         })?;
-        let closures = closures.of(topology, || topology::body_closures(decode, topology))?;
+        let closures = closures.of(decode, topology, || topology::body_closures(decode, topology))?;
         {
             let mut bindings = operand.reference_bindings_mut();
             while let Some(reference) =
@@ -7889,7 +7902,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         let Some(topology) = previous.topology() else {
             continue;
         };
-        let index = body_faces.of(topology, || topology::body_face_index(decode, topology))?;
+        let index = body_faces.of(decode, topology, || topology::body_face_index(decode, topology))?;
         let Some(faces) = topology::complete_body_face_slots(decode, index, body_slot)? else {
             continue;
         };
@@ -8860,7 +8873,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         else {
             continue;
         };
-        let recipe_tags = recipe_index.of(topology, || recipe_topology_index(decode, topology))?;
+        let recipe_tags = recipe_index.of(decode, topology, || recipe_topology_index(decode, topology))?;
         for reference in decode.admit_iter(
             &mut operand.recipe_references,
             "scan F3D edge operand recipe references",
