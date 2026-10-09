@@ -188,7 +188,12 @@ fn take_record_index(
     if view.seek(records_at).is_none() {
         return Ok(None);
     }
-    for _ in ctx.admit_iter(&(0..count), "visit F3D MetaStream record index")? {
+    let mut record_rows = 0..count;
+    ctx.charge_work(0, "visit F3D MetaStream record index")?;
+    while !record_rows.is_empty() {
+        let Some(_) = ctx.next_charged(&mut record_rows, "visit F3D MetaStream record index")? else {
+            break;
+        };
         let Some(entity_id) = view.u64_le() else {
             return Ok(None);
         };
@@ -333,10 +338,12 @@ fn take_version_context(
             offset: count_at,
         }));
     }
-    for _ in ctx
-        .admit_iter(&(0..count), "visit F3D MetaStream version contexts")
-        .map_err(CodecError::from)?
-    {
+    let mut version_rows = 0..count;
+    ctx.charge_work(0, "visit F3D MetaStream version contexts")?;
+    while !version_rows.is_empty() {
+        let Some(_) = ctx.next_charged(&mut version_rows, "visit F3D MetaStream version contexts")? else {
+            break;
+        };
         let token_end = require(at.checked_add(8), "version-context token", *at)?;
         require(bytes.get(*at..token_end), "version-context token", *at)?;
         *at = token_end;
@@ -462,10 +469,12 @@ fn parse_inner(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<MetaStream, Pars
     let count_usize = usize::try_from(count)
         .map_err(|_| ctx.refuse_codec_limit("parse F3D MetaStream types", 0, u64::from(count)))?;
     ctx.reserve_vec(&mut types, count_usize, "parse F3D MetaStream types")?;
-    for _ in ctx
-        .admit_iter(&(0..count), "visit F3D MetaStream type rows")
-        .map_err(CodecError::from)?
-    {
+    let mut type_rows = 0..count;
+    ctx.charge_work(0, "visit F3D MetaStream type rows")?;
+    while !type_rows.is_empty() {
+        let Some(_) = ctx.next_charged(&mut type_rows, "visit F3D MetaStream type rows")? else {
+            break;
+        };
         let entry_at = at;
         let type_guid_offset = require(at.checked_add(4), "type GUID", at)?;
         let (type_guid, next) = require(
@@ -529,10 +538,12 @@ fn parse_inner(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<MetaStream, Pars
         )?;
         let mut id_view = View::over_retained(bytes);
         require(id_view.seek(ids_at), "type entity ids", ids_at)?;
-        for index in ctx
-            .admit_iter(&(0..id_count), "visit F3D MetaStream type entity IDs")
-            .map_err(CodecError::from)?
-        {
+        let mut entity_rows_source = 0..id_count;
+        ctx.charge_work(0, "visit F3D MetaStream type entity IDs")?;
+        while !entity_rows_source.is_empty() {
+            let Some(index) = ctx.next_charged(&mut entity_rows_source, "visit F3D MetaStream type entity IDs")? else {
+                break;
+            };
             let value = require(id_view.u64_le(), "type entity ids", id_view.position())?;
             let offset = ids_at
                 .checked_add(index.checked_mul(8).ok_or(ParseFailure {
@@ -602,10 +613,12 @@ fn parse_inner(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<MetaStream, Pars
         if at < bytes.len() {
             let properties = require(View::u32_le_at(bytes, at), "property count", at)?;
             at = require(at.checked_add(4), "property count", at)?;
-            for _ in ctx
-                .admit_iter(&(0..properties), "visit F3D MetaStream properties")
-                .map_err(CodecError::from)?
-            {
+            let mut property_rows = 0..properties;
+            ctx.charge_work(0, "visit F3D MetaStream properties")?;
+            while !property_rows.is_empty() {
+                let Some(_) = ctx.next_charged(&mut property_rows, "visit F3D MetaStream properties")? else {
+                    break;
+                };
                 let (_, next) = require(
                     lp_graphic_charged(ctx, bytes, at, 0..=256)?,
                     "property name",
@@ -642,6 +655,7 @@ pub(crate) fn parse(
 mod tests {
     mod index_storage;
     mod reached_frames;
+    mod reached_rows;
     use cadmpeg_core::decode::u64_from_index;
 
     use super::{MetaStream, RecordIndexEntry};
