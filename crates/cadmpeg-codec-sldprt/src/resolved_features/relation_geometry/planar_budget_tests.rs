@@ -359,7 +359,7 @@ fn solved_line_projection_refuses_operand_vector_materialized_bytes() {
     let slot_bytes = std::mem::size_of::<(
         &FeatureInputOperand,
         [&crate::records::SketchInputEntity; 2],
-        cadmpeg_ir::sketches::SketchEntity,
+        cadmpeg_ir::sketches::SketchGeometry,
     )>();
     // Core amortized growth starts an empty vector at its inline-size minimum.
     let capacity = match slot_bytes {

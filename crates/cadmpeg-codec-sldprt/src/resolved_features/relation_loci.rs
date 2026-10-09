@@ -580,7 +580,7 @@ pub(super) fn relation_constraint_is_inactive_in(
                         let Some(line) = entity(line)? else {
                             return Ok(None);
                         };
-                        Ok(point_line_distance_value(point, line))
+                        Ok(point_line_distance_value(point, &line.geometry))
                     };
                 match point_line(first, second)? {
                     Some(value) => Some(value),
@@ -624,7 +624,7 @@ pub(super) fn relation_constraint_is_inactive_in(
             let (Some(first), Some(second)) = (entity(first)?, entity(second)?) else {
                 return Ok(false);
             };
-            line_line_distance(first, second)
+            line_line_distance(&first.geometry, &second.geometry)
                 .is_some_and(|measured| !same_relation_dimension_length(measured, expected.get()))
         }
         SketchConstraintDefinitionInput::Angle { first, second, .. } => {
@@ -636,7 +636,7 @@ pub(super) fn relation_constraint_is_inactive_in(
             let (Some(first), Some(second)) = (entity(first)?, entity(second)?) else {
                 return Ok(false);
             };
-            line_line_angle(first, second)
+            line_line_angle(&first.geometry, &second.geometry)
                 .is_some_and(|measured| !same_dimension_angle(measured, expected.get()))
         }
         SketchConstraintDefinitionInput::Radius { entity: id, .. }
@@ -1056,7 +1056,7 @@ pub(super) fn relation_definition(
                             known,
                             entities,
                             |known, candidate| {
-                                line_line_distance(known, candidate).is_some_and(|measured| {
+                                line_line_distance(&known.geometry, &candidate.geometry).is_some_and(|measured| {
                                     same_relation_dimension_length(measured, expected.get())
                                 })
                             },
@@ -1384,7 +1384,7 @@ pub(super) fn relation_definition(
             };
             let point_position = resolved_or_none!(locus_point(&point)?);
             let line_entity = resolved_or_none!(entities.entity(ctx, &line, ENTITY)?);
-            if !point_line_distance_value(point_position, line_entity)
+            if !point_line_distance_value(point_position, &line_entity.geometry)
                 .is_some_and(|measured| same_relation_dimension_length(measured, expected.get()))
             {
                 if dynamic {
@@ -1485,7 +1485,7 @@ pub(super) fn relation_definition(
             };
             let first_line = resolved_or_none!(entities.entity(ctx, &first, ENTITY)?);
             let second_line = resolved_or_none!(entities.entity(ctx, &second, ENTITY)?);
-            if !line_line_distance(first_line, second_line)
+            if !line_line_distance(&first_line.geometry, &second_line.geometry)
                 .is_some_and(|measured| same_relation_dimension_length(measured, expected.get()))
             {
                 if dynamic {
@@ -1541,9 +1541,9 @@ pub(super) fn relation_definition(
             let first_line = resolved_or_none!(entities.entity(ctx, &first, ENTITY)?);
             let second_line = resolved_or_none!(entities.entity(ctx, &second, ENTITY)?);
             let angle = if dynamic {
-                unoriented_line_line_angle(first_line, second_line)
+                unoriented_line_line_angle(&first_line.geometry, &second_line.geometry)
             } else {
-                line_line_angle(first_line, second_line)
+                line_line_angle(&first_line.geometry, &second_line.geometry)
             };
             if !angle.is_some_and(|measured| same_dimension_angle(measured, expected.get())) {
                 if dynamic {
@@ -2371,7 +2371,7 @@ fn unique_profile_line_distance_entity(
         return Ok(None);
     };
     unique_profile_matched_entity(ctx, sketch, known, entities, |known, candidate| {
-        line_line_distance(known, candidate)
+        line_line_distance(&known.geometry, &candidate.geometry)
             .is_some_and(|measured| same_dimension_length(measured, distance.get()))
     })
 }
@@ -2405,7 +2405,7 @@ fn unique_marker_line_distance_entity(
     unique_profile_matched_entity(ctx, sketch, known, index.entities, |known, candidate| {
         is_line(candidate)
             && sketch_entity_contains_point(candidate, marker_point)
-            && line_line_distance(known, candidate)
+            && line_line_distance(&known.geometry, &candidate.geometry)
                 .is_some_and(|measured| same_dimension_length(measured, distance.get()))
     })
 }
@@ -2421,7 +2421,7 @@ fn unique_profile_line_distance_pair(
         return Ok(None);
     };
     unique_profile_matched_line_pair(ctx, sketch, entities, |first, second| {
-        line_line_distance(first, second)
+        line_line_distance(&first.geometry, &second.geometry)
             .is_some_and(|measured| same_dimension_length(measured, distance.get()))
     })
 }
@@ -2439,18 +2439,18 @@ fn unique_repaired_profile_line_distance_pair(
     })
 }
 
-pub(super) fn line_line_distance(first: &SketchEntity, second: &SketchEntity) -> Option<f64> {
+pub(super) fn line_line_distance(first: &SketchGeometry, second: &SketchGeometry) -> Option<f64> {
     let SketchGeometryDefinition::Line {
         start: first_start,
         end: first_end,
-    } = first.geometry.definition()
+    } = first.definition()
     else {
         return None;
     };
     let SketchGeometryDefinition::Line {
         start: second_start,
         end: second_end,
-    } = second.geometry.definition()
+    } = second.definition()
     else {
         return None;
     };
@@ -2474,7 +2474,7 @@ fn unique_profile_line_angle_entity(
         return Ok(None);
     };
     unique_profile_matched_entity(ctx, sketch, known, entities, |known, candidate| {
-        line_line_angle(known, candidate)
+        line_line_angle(&known.geometry, &candidate.geometry)
             .is_some_and(|measured| same_dimension_angle(measured, angle.get()))
     })
 }
@@ -2591,7 +2591,7 @@ fn unique_dynamic_marker_line_angle_pair(
         index.entities,
         LinePairOrdering::Operand,
         |first, second| {
-            unoriented_line_line_angle(first, second)
+            unoriented_line_line_angle(&first.geometry, &second.geometry)
                 .is_some_and(|measured| same_dimension_angle(measured, expected.get()))
         },
     )
@@ -2609,7 +2609,7 @@ fn unique_dynamic_profile_line_angle_entity(
         return Ok(None);
     };
     unique_profile_matched_entity(ctx, sketch, known, entities, |known, candidate| {
-        unoriented_line_line_angle(known, candidate)
+        unoriented_line_line_angle(&known.geometry, &candidate.geometry)
             .is_some_and(|measured| same_dimension_angle(measured, expected.get()))
     })
 }
@@ -2625,7 +2625,7 @@ fn unique_dynamic_roster_line_angle_pair(
         return Ok(None);
     };
     unique_profile_matched_line_pair(ctx, sketch, entities, |first, second| {
-        unoriented_line_line_angle(first, second)
+        unoriented_line_line_angle(&first.geometry, &second.geometry)
             .is_some_and(|measured| same_dimension_angle(measured, expected.get()))
     })
 }
@@ -3029,7 +3029,7 @@ fn unique_dynamic_roster_point_line_pair(
             else {
                 return Ok(None);
             };
-            Ok(point_line_distance_value(position, line_entity)
+            Ok(point_line_distance_value(position, &line_entity.geometry)
                 .is_some_and(|measured| same_dimension_length(measured, distance.get()))
                 .then_some((point, line)))
         }
@@ -3084,7 +3084,7 @@ fn unique_point_line_candidate_pair(
                     let Some(line_entity) = entities.entity(ctx, line, OPERATION)? else {
                         return Ok(false);
                     };
-                    if !point_line_distance_value(point_position, line_entity).is_some_and(
+                    if !point_line_distance_value(point_position, &line_entity.geometry).is_some_and(
                         |measured| same_relation_dimension_length(measured, expected.get()),
                     ) {
                         return Ok(true);
@@ -3140,7 +3140,7 @@ fn unique_dynamic_marker_line_distance_pair(
         index.entities,
         LinePairOrdering::Identity,
         |first, second| {
-            line_line_distance(first, second)
+            line_line_distance(&first.geometry, &second.geometry)
                 .is_some_and(|measured| same_relation_dimension_length(measured, expected.get()))
         },
     )
@@ -3472,7 +3472,7 @@ fn unique_profile_line_angle_pair(
         return Ok(None);
     };
     unique_profile_matched_line_pair(ctx, sketch, entities, |first, second| {
-        line_line_angle(first, second)
+        line_line_angle(&first.geometry, &second.geometry)
             .is_some_and(|measured| same_dimension_angle(measured, angle.get()))
     })
 }
@@ -3490,18 +3490,18 @@ fn unique_repaired_profile_line_angle_pair(
     })
 }
 
-pub(super) fn line_line_angle(first: &SketchEntity, second: &SketchEntity) -> Option<f64> {
+pub(super) fn line_line_angle(first: &SketchGeometry, second: &SketchGeometry) -> Option<f64> {
     let SketchGeometryDefinition::Line {
         start: first_start,
         end: first_end,
-    } = first.geometry.definition()
+    } = first.definition()
     else {
         return None;
     };
     let SketchGeometryDefinition::Line {
         start: second_start,
         end: second_end,
-    } = second.geometry.definition()
+    } = second.definition()
     else {
         return None;
     };
@@ -3515,8 +3515,8 @@ pub(super) fn line_line_angle(first: &SketchEntity, second: &SketchEntity) -> Op
 }
 
 pub(super) fn unoriented_line_line_angle(
-    first: &SketchEntity,
-    second: &SketchEntity,
+    first: &SketchGeometry,
+    second: &SketchGeometry,
 ) -> Option<f64> {
     let angle = line_line_angle(first, second)?;
     Some(angle.min(std::f64::consts::PI - angle))
@@ -3599,7 +3599,7 @@ fn select_profile_point_line_pairs(
             if !ctx.all_by(
                 lines.iter().copied(),
                 |line| {
-                    if !point_line_distance_value(*point, line)
+                    if !point_line_distance_value(*point, &line.geometry)
                         .is_some_and(|measured| same_dimension_length(measured, distance.get()))
                     {
                         return Ok(true);
@@ -3654,7 +3654,7 @@ fn unique_profile_point_line_entity(
     if !ctx.all_by(
         entities.in_sketch(ctx, sketch, OPERATION)?.iter().copied(),
         |line| {
-            if !point_line_distance_value(point, line)
+            if !point_line_distance_value(point, &line.geometry)
                 .is_some_and(|measured| same_dimension_length(measured, distance.get()))
             {
                 return Ok(true);
@@ -3698,7 +3698,7 @@ fn unique_profile_line_point_locus(
     if !ctx.all_by(
         &loci,
         |(point, locus)| {
-            if !point_line_distance_value(*point, line)
+            if !point_line_distance_value(*point, &line.geometry)
                 .is_some_and(|measured| same_dimension_length(measured, distance.get()))
             {
                 return Ok(true);
@@ -3840,8 +3840,8 @@ fn canonicalize_physical_loci(
     Ok(())
 }
 
-pub(super) fn point_line_distance_value(point: Point2, line: &SketchEntity) -> Option<f64> {
-    let SketchGeometryDefinition::Line { start, end } = line.geometry.definition() else {
+pub(super) fn point_line_distance_value(point: Point2, line: &SketchGeometry) -> Option<f64> {
+    let SketchGeometryDefinition::Line { start, end } = line.definition() else {
         return None;
     };
     let direction = [end.u - start.u, end.v - start.v];
@@ -5771,3 +5771,6 @@ pub(super) fn marker_accepts_locus(kind: SketchInputKind, geometry: &SketchGeome
 
 #[cfg(test)]
 mod relation_loci_tests;
+
+#[cfg(test)]
+mod geometry_metrics_tests;

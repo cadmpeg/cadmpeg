@@ -1545,7 +1545,7 @@ impl BinaryRelation {
             Perpendicular => line_relation_value(first, second, |_cross, dot, lengths| {
                 dot.abs() <= SKETCH_POINT_TOLERANCE * lengths
             }),
-            Collinear => line_line_distance(first, second)
+            Collinear => line_line_distance(&first.geometry, &second.geometry)
                 .is_some_and(|distance| same_dimension_length(distance, 0.0)),
             Concentric => centered_geometry(first)
                 .zip(centered_geometry(second))
@@ -1682,13 +1682,13 @@ fn tangent_geometry(first: &SketchEntity, second: &SketchEntity) -> bool {
                 .powi(2)
                 + (radii.minor().get() * (normal[0] * minor[0] + normal[1] * minor[1])).powi(2))
             .sqrt();
-            return point_line_distance_value(center.get(), line)
+            return point_line_distance_value(center.get(), &line.geometry)
                 .is_some_and(|distance| same_dimension_length(distance, support));
         }
         centered_geometry(circle)
             .zip(circular_radius(circle))
             .and_then(|(center, radius)| {
-                point_line_distance_value(center, line).map(|distance| (distance, radius))
+                point_line_distance_value(center, &line.geometry).map(|distance| (distance, radius))
             })
             .is_some_and(|(distance, radius)| same_dimension_length(distance, radius))
     };
