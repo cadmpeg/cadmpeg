@@ -1246,3 +1246,5 @@ fn display_vertex_staging_refuses_materialized_storage() {
         matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::MaterializedBytes && resource.operation == "creo display tessellation positions")
     );
 }
+
+mod admission_visits;

@@ -118,6 +118,9 @@ pub(super) fn pattern_kind_has_unresolved_operands<
     ctx: &DecodeContext<'_>,
     pattern: &PatternKind<C>,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     Ok(match pattern.definition() {
         PatternTransform::Unresolved { .. } => true,
         PatternTransform::Linear { direction, .. }
@@ -131,11 +134,21 @@ pub(super) fn pattern_kind_has_unresolved_operands<
                 cadmpeg_ir::features::patterns::PatternScaleCenter::Native(_)
             )
         }
-        PatternTransform::Composite { stages } => ctx.any_by(
-            stages.stages(),
-            |stage| pattern_kind_has_unresolved_operands(ctx, &stage.pattern),
-            "creo pattern composite stage traversal",
-        )?,
+        PatternTransform::Composite { stages } => {
+            let mut stages = stages.stages().iter();
+            while !stages.as_slice().is_empty() {
+                let Some(stage) = ctx.next_charged(
+                    &mut stages,
+                    "creo pattern composite stage traversal",
+                )? else {
+                    break;
+                };
+                if pattern_kind_has_unresolved_operands(ctx, &stage.pattern)? {
+                    return Ok(true);
+                }
+            }
+            false
+        },
         PatternTransform::Circular { .. }
         | PatternTransform::CircularAngles { .. }
         | PatternTransform::Mirror { .. } => false,
@@ -533,10 +546,16 @@ fn admitted_display_strips<V>(
     vertices: Vec<V>,
     spans: &[u32],
 ) -> Result<Option<Strips<V>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut remaining = vertices.into_iter();
     let mut strips = Vec::new();
     let mut spans = spans.iter();
-    while let Some(span) = ctx.next_charged(&mut spans, "creo display strip span traversal")? {
+    while !spans.as_slice().is_empty() {
+        let Some(span) = ctx.next_charged(&mut spans, "creo display strip span traversal")? else {
+            break;
+        };
         let Ok(count) = usize::try_from(*span) else {
             return Ok(None);
         };
@@ -556,7 +575,7 @@ fn admitted_display_strips<V>(
         };
         ctx.push_vec(&mut strips, strip, "creo display tessellation strip rows")?;
     }
-    if remaining.next().is_some() {
+    if remaining.len() != 0 {
         return Ok(None);
     }
     Ok(Strips::new(strips))
@@ -568,14 +587,21 @@ fn transfer_display_tessellations(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let length_scale = scan
         .framing
         .principal_unit
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     let mut source_strips = scan.primitives.triangle_strips.iter();
-    while let Some(strip) =
-        ctx.next_charged(&mut source_strips, "creo display triangle strip traversal")?
-    {
+    while !source_strips.as_slice().is_empty() {
+        let Some(strip) = ctx.next_charged(
+            &mut source_strips,
+            "creo display triangle strip traversal",
+        )? else {
+            break;
+        };
         let id: TessellationId = crate::identity::compose_checked(
             ctx,
             &cadmpeg_ir::identity_namespace!("creo", "solid_primdata", "tessellation"),
@@ -600,8 +626,8 @@ fn transfer_display_tessellations(
                 (&[][..], rows.as_slice(), rows.len())
             }
         };
-        let mut positions = Vec::new();
         let mut vertex_storage = ctx.reserve_scoped(0, "creo display vertex staging storage")?;
+        let mut positions = Vec::new();
         ctx.reserve_scoped_vec(
             &mut vertex_storage,
             &mut positions,
@@ -616,7 +642,11 @@ fn transfer_display_tessellations(
         let mut source_positions = unshaded
             .iter()
             .chain(shaded.iter().map(|row| &row.position));
-        while let Some(position) = ctx.next_charged(&mut source_positions, position_operation)? {
+        // Exactly one lane is present, so the lower bound is its remaining row count.
+        while source_positions.size_hint().0 != 0 {
+            let Some(position) = ctx.next_charged(&mut source_positions, position_operation)? else {
+                break;
+            };
             let mut point = Point3::from(position.get());
             if let Some(scale) = length_scale {
                 point = Point3::new(
@@ -653,9 +683,13 @@ fn transfer_display_tessellations(
                 "creo display tessellation shaded rows",
             )?;
             let mut source_rows = positions.iter().copied().zip(normals);
-            while let Some((position, normal)) =
-                ctx.next_charged(&mut source_rows, "creo display shaded position assembly")?
-            {
+            while source_rows.len() != 0 {
+                let Some((position, normal)) = ctx.next_charged(
+                    &mut source_rows,
+                    "creo display shaded position assembly",
+                )? else {
+                    break;
+                };
                 let Some(normal) = FiniteVector3::new(Vector3::from(normal.get())) else {
                     return Err(display_strip_error(
                         ctx,
@@ -933,7 +967,7 @@ pub(in super::super) fn build_ir<'ctx>(
         &mut annotations,
         &mut source_carriers,
     )?;
-    let (brep_diagnostics, brep_diagnostic_storage) = transfer_and_record_scanned_geometry(
+    let brep_parts = transfer_and_record_scanned_geometry(
         ctx,
         scan,
         &mut ir,
@@ -942,6 +976,8 @@ pub(in super::super) fn build_ir<'ctx>(
         &mut transfer_losses,
         &mut source_carriers,
     )?;
+    let brep_diagnostic_storage = brep_parts.1;
+    let brep_diagnostics = brep_parts.0;
     let geometry_generator_feature_count =
         emit_model_features(ctx, scan, &mut ir, &mut annotations, &source_carriers)?;
     let (feature_result_topology_count, feature_result_edge_count) = finish_feature_transfers(
