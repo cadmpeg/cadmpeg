@@ -921,12 +921,11 @@ fn face_attribute_attempt(
         &exchange,
         &mut std::collections::BTreeSet::new(),
         &mut cache,
-        &ctx,
     )?;
     if let super::super::FaceResolution::Resolved(info) = info {
         super::super::claim_face_ancestors(
             info.parent,
-            &cache.completed,
+            &cache,
             (
                 &mut std::collections::BTreeSet::new(),
                 &mut ctx.reserve_scoped(0, "test claims")?,
@@ -935,7 +934,6 @@ fn face_attribute_attempt(
                 &mut std::collections::BTreeSet::new(),
                 &mut ctx.reserve_scoped(0, "test ancestry")?,
             ),
-            &ctx,
         )?;
     }
     Ok(())
