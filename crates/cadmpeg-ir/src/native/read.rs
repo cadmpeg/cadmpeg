@@ -42,6 +42,7 @@
 use std::cell::Cell;
 use std::io;
 
+use cadmpeg_core::decode::admission::{Admission, StandardAdmission};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use serde::de::value::BorrowedStrDeserializer;
 use serde::de::{
@@ -61,34 +62,41 @@ const RAW_VALUE_TOKEN: &str = "$serde_json::private::RawValue";
 
 /// The budget account a typed read draws on.
 #[derive(Clone, Copy)]
-pub(super) struct Account<'a> {
-    ctx: &'a DecodeContext<'a>,
-    /// Bytes the value being read keeps in place: its scalars and the
-    /// headers of its containers, not what those containers own.
-    kept: &'a Cell<u64>,
+pub(super) enum Account<'a> {
+    Decode {
+        ctx: &'a DecodeContext<'a>,
+        /// Inline bytes kept by the current value, excluding owned children.
+        kept: &'a Cell<u64>,
+    },
+    Standard,
 }
 
 impl<'a> Account<'a> {
     pub(super) fn new(ctx: &'a DecodeContext<'a>, kept: &'a Cell<u64>) -> Self {
-        Self { ctx, kept }
+        Self::Decode { ctx, kept }
     }
 
     /// Admit `work`, `inline` bytes kept in place and `owned` bytes kept
     /// behind a pointer.
     fn admit_parts(self, work: usize, inline: usize, owned: usize) -> Result<(), Error> {
-        let work = u64_from_index(work);
-        let inline = u64_from_index(inline);
-        let kept = inline
-            .checked_add(u64_from_index(owned))
-            .ok_or_else(refused)?;
-        self.ctx
-            .charge_work(work, TYPED_READ)
-            .and_then(|()| self.ctx.charge_retained(kept, TYPED_READ))
-            .map_err(|_| refused())?;
-        // Every kept byte was charged first, so the total stays within the
-        // retained counter.
-        self.kept
-            .set(self.kept.get().checked_add(inline).ok_or_else(refused)?);
+        match self {
+            Self::Decode { ctx, kept: inline_kept } => {
+                let work = u64_from_index(work);
+                let inline = u64_from_index(inline);
+                let kept = inline
+                    .checked_add(u64_from_index(owned))
+                    .ok_or_else(refused)?;
+                ctx.charge_work(work, TYPED_READ)
+                    .and_then(|()| ctx.charge_retained(kept, TYPED_READ))
+                    .map_err(|_| refused())?;
+                // Every kept byte was charged before the inline count changes.
+                inline_kept.set(inline_kept.get().checked_add(inline).ok_or_else(refused)?);
+            }
+            Self::Standard => match StandardAdmission.charge_work(u64_from_index(work), TYPED_READ) {
+                Ok(()) => {},
+                Err(never) => match never {},
+            },
+        }
         Ok(())
     }
 
@@ -109,14 +117,32 @@ impl<'a> Account<'a> {
     /// Read a container's contents: what they keep in place belongs to the
     /// container, not to the value that holds the container's header.
     fn contents<T>(self, read: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
-        let outer = self.kept.get();
-        let read = read();
-        self.kept.set(outer);
-        read
+        match self {
+            Self::Decode { kept, .. } => {
+                let outer = kept.get();
+                let read = read();
+                kept.set(outer);
+                read
+            }
+            Self::Standard => read(),
+        }
     }
 
-    fn enter(self) -> Result<cadmpeg_core::decode::DepthGuard<'a>, Error> {
-        self.ctx.enter_nested(TYPED_READ).map_err(|_| refused())
+    fn enter(self) -> Result<Option<cadmpeg_core::decode::DepthGuard<'a>>, Error> {
+        match self {
+            Self::Decode { ctx, .. } => ctx.enter_nested(TYPED_READ).map(Some).map_err(|_| refused()),
+            Self::Standard => match StandardAdmission.enter_nested(TYPED_READ) {
+                Ok(()) => Ok(None),
+                Err(never) => match never {},
+            },
+        }
+    }
+
+    fn inline_bytes(self) -> u64 {
+        match self {
+            Self::Decode { kept, .. } => kept.get(),
+            Self::Standard => 0,
+        }
     }
 }
 
@@ -343,6 +369,9 @@ impl<'a> de::Deserializer<'a> for Reader<'a> {
         visitor: V,
     ) -> Result<V::Value, Error> {
         if name == RAW_VALUE_TOKEN {
+            if matches!(self.account, Account::Standard) {
+                return self.value.deserialize_newtype_struct(name, visitor);
+            }
             // The stored value is written out as the raw text the reader keeps.
             let mut text = CountedText {
                 account: self.account,
@@ -465,17 +494,16 @@ impl<'a> SeqAccess<'a> for Elements<'a> {
         let Some(item) = self.items.next() else {
             return Ok(None);
         };
-        self.account
-            .ctx
-            .charge_collection_items(1, TYPED_READ)
-            .map_err(|_| refused())?;
-        let before = self.account.kept.get();
+        if let Account::Decode { ctx, .. } = self.account {
+            ctx.charge_collection_items(1, TYPED_READ).map_err(|_| refused())?;
+        }
+        let before = self.account.inline_bytes();
         let element = seed.deserialize(Reader {
             account: self.account,
             value: item,
         })?;
         // The element is moved into the reader's vector once it returns.
-        let moved = self.account.kept.get() - before;
+        let moved = self.account.inline_bytes() - before;
         self.account
             .admit(usize::try_from(moved).map_err(|_| refused())?, 0)?;
         Ok(Some(element))
@@ -523,7 +551,9 @@ impl<'a, I> Members<'a, I> {
     /// Admits one more map entry: its slot, its share of node storage and the
     /// key comparisons that place it, at most eleven per node on its path.
     fn admit_entry(&mut self, key: &str) -> Result<(), Error> {
-        let ctx = self.account.ctx;
+        let Account::Decode { ctx, .. } = self.account else {
+            return Ok(());
+        };
         ctx.admit_btree_node_storage::<String, Value>(self.stored, TYPED_READ)
             .and_then(|()| ctx.charge_collection_items(1, TYPED_READ))
             .map_err(|_| refused())?;

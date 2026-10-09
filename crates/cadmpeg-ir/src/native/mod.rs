@@ -503,6 +503,23 @@ impl NativeRecord {
         self.fields.get(name).cloned()
     }
 
+    fn to_typed_standard<T: DeserializeOwned>(&self) -> Result<T, NativeConvertError> {
+        let id = Value::String(self.id.as_str().to_owned());
+        #[cfg(test)]
+        TYPED_RECORD_READ_COUNT.with(|count| count.set(count.get() + 1));
+        let members = std::iter::once(("id", &id))
+            .chain(self.fields.iter().map(|(key, value)| (key.as_str(), value)));
+        T::deserialize(read::Record {
+            account: read::Account::Standard,
+            members,
+            len: self.fields.len() + 1,
+        })
+        .map_err(|source| NativeConvertError::ReadRecord {
+            id: self.id.clone(),
+            source,
+        })
+    }
+
     /// Read the record as a codec-owned type.
     ///
     /// The reader borrows the stored value; each of its requests is admitted
@@ -751,10 +768,7 @@ impl NativeNamespace {
         T: DeserializeOwned,
         C: TryFrom<Vec<T>, Error = NativeConvertError>,
     {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        self.arena_as_collection_for_decode(&ctx, name)
+        C::try_from(self.arena_as(name)?)
     }
 
     /// Admits a typed collection using the caller's decode budget.
@@ -772,10 +786,7 @@ impl NativeNamespace {
 
     /// Deserialize an arena into codec-owned typed records.
     pub fn arena_as<T: DeserializeOwned>(&self, name: &str) -> Result<Vec<T>, NativeConvertError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        self.arena_as_for_decode(&ctx, name)
+        self.arena_iter_as(name).collect()
     }
 
     /// Deserialize one arena with admission before each retained typed copy.
@@ -811,10 +822,10 @@ impl NativeNamespace {
             .into_iter()
             .flat_map(|(name, records)| {
                 records.iter().map(move |record| {
-                    let arena = cadmpeg_core::decode::DecodeArena::new();
-                    let policy = cadmpeg_core::decode::DecodePolicy::default();
-                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                    read_record(&ctx, name, record)
+                    record.to_typed_standard().map_err(|source| NativeConvertError::Arena {
+                        arena: name.clone(),
+                        source: Box::new(source),
+                    })
                 })
             })
     }
@@ -899,3 +910,5 @@ impl Native {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod standard_read_tests;
