@@ -2944,8 +2944,9 @@ fn decode_sketch_texts_from_stream<'ctx>(
         })?;
         text_storage = held_storage;
         if let Some(text) = text {
+            ctx.reserve_scoped_vec(&mut output_storage, &mut out, 1, "f3d sketch text records")?;
             let text = text_storage.commit_value(text)?;
-            ctx.push_scoped_vec(&mut output_storage, &mut out, text, "f3d sketch text records")?;
+            out.push(text);
         }
     }
     Ok((out, output_storage))
