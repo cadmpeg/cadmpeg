@@ -46,67 +46,11 @@ enum TerminationVote {
     },
 }
 
-/// A lane reference with its fallback or a resolved consensus reference.
+/// A lane reference with its cross-lane fallback.
 #[cfg_attr(test, derive(Clone))]
-enum FaceReference {
-    Lane {
-        reference: String,
-        canonical: Option<String>,
-    },
-    Canonical(String),
-    Unresolved,
-}
-
-impl FaceReference {
-    fn as_str(&self) -> Option<&str> {
-        match self {
-            Self::Lane { reference, .. } | Self::Canonical(reference) => Some(reference),
-            Self::Unresolved => None,
-        }
-    }
-
-    fn canonical(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(match self {
-            Self::Lane {
-                canonical: Some(reference),
-                ..
-            }
-            | Self::Canonical(reference) => {
-                Self::Canonical(ctx.copy_retained_text(reference, operation)?)
-            }
-            Self::Lane {
-                canonical: None, ..
-            }
-            | Self::Unresolved => Self::Unresolved,
-        })
-    }
-
-    fn copy_charged(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(match self {
-            Self::Lane {
-                reference,
-                canonical,
-            } => Self::Lane {
-                reference: ctx.copy_retained_text(reference, operation)?,
-                canonical: canonical
-                    .as_deref()
-                    .map(|text| ctx.copy_retained_text(text, operation))
-                    .transpose()?,
-            },
-            Self::Canonical(reference) => {
-                Self::Canonical(ctx.copy_retained_text(reference, operation)?)
-            }
-            Self::Unresolved => Self::Unresolved,
-        })
-    }
+struct FaceReference {
+    reference: String,
+    canonical: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -116,33 +60,6 @@ enum FaceCondition {
 }
 
 impl TerminationVote {
-    fn copy_charged(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(match self {
-            Self::Blind { depth_m } => Self::Blind { depth_m: *depth_m },
-            Self::BlindSecondThroughAll => Self::BlindSecondThroughAll,
-            Self::Symmetric => Self::Symmetric,
-            Self::ThroughAllBoth => Self::ThroughAllBoth,
-            Self::ThroughAll => Self::ThroughAll,
-            Self::ThroughNext => Self::ThroughNext,
-            Self::ToVertex { reference } => Self::ToVertex {
-                reference: ctx.copy_retained_text(reference, operation)?,
-            },
-            Self::Face {
-                condition,
-                reference,
-                identity,
-            } => Self::Face {
-                condition: *condition,
-                reference: reference.copy_charged(ctx, operation)?,
-                identity: ctx.copy_retained_text(identity, operation)?,
-            },
-        })
-    }
-
     fn condition(&self) -> &'static str {
         match self {
             Self::Blind { .. } | Self::BlindSecondThroughAll => "Blind",
@@ -165,7 +82,7 @@ impl TerminationVote {
     fn reference(&self) -> Option<&str> {
         match self {
             Self::ToVertex { reference } => Some(reference),
-            Self::Face { reference, .. } => reference.as_str(),
+            Self::Face { reference, .. } => Some(&reference.reference),
             _ => None,
         }
     }
@@ -518,9 +435,10 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let Some(votes) = ctx.get_hash_map(&terminations, &feature.id, OPERATION)? else {
                 continue;
             };
-            let Some(vote) = consensus_termination_vote(ctx, votes)? else {
+            let Some(consensus) = consensus_termination_vote(ctx, votes)? else {
                 continue;
             };
+            let vote = consensus.vote;
             insert_termination_field(
                 ctx,
                 &mut feature.properties,
@@ -531,6 +449,10 @@ pub(crate) fn enrich_history_extrusion_terminations(
             match vote {
                 TerminationVote::ToVertex { reference } => {
                     if !ctx.contains_key_btree_map(&feature.properties, "Vertex", OPERATION)? {
+                        let reference = ctx.copy_retained_text(
+                            reference,
+                            "agree SLDPRT extrusion terminations",
+                        )?;
                         insert_termination_field(
                             ctx,
                             &mut feature.properties,
@@ -540,12 +462,15 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         )?;
                     }
                 }
-                TerminationVote::Face {
-                    reference:
-                        FaceReference::Lane { reference, .. } | FaceReference::Canonical(reference),
-                    ..
-                } => {
+                TerminationVote::Face { .. } => {
+                    let Some(reference) = consensus.reference else {
+                        continue;
+                    };
                     if !ctx.contains_key_btree_map(&feature.properties, "Face", OPERATION)? {
+                        let reference = ctx.copy_retained_text(
+                            reference,
+                            "agree SLDPRT extrusion terminations",
+                        )?;
                         insert_termination_field(
                             ctx,
                             &mut feature.properties,
@@ -601,10 +526,16 @@ fn insert_termination_field(
     Ok(())
 }
 
-fn consensus_termination_vote(
+/// An agreed vote and the reference chosen for publication, borrowed from votes.
+struct TerminationConsensus<'v> {
+    vote: &'v TerminationVote,
+    reference: Option<&'v str>,
+}
+
+fn consensus_termination_vote<'v>(
     ctx: &DecodeContext<'_>,
-    votes: &[Option<TerminationVote>],
-) -> Result<Option<TerminationVote>, cadmpeg_core::CodecError> {
+    votes: &'v [Option<TerminationVote>],
+) -> Result<Option<TerminationConsensus<'v>>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "agree SLDPRT extrusion terminations";
     let Some(first) = votes.first().and_then(Option::as_ref) else {
         return Ok(None);
@@ -619,8 +550,11 @@ fn consensus_termination_vote(
     )? {
         return Ok(None);
     }
-    let mut consensus = first.copy_charged(ctx, OPERATION)?;
-    if let TerminationVote::Face { reference, .. } = &mut consensus {
+    let mut reference = first.reference();
+    if let TerminationVote::Face {
+        reference: face, ..
+    } = first
+    {
         let same_reference = ctx.all_by(
             votes,
             |vote| {
@@ -636,10 +570,13 @@ fn consensus_termination_vote(
             OPERATION,
         )?;
         if !same_reference {
-            *reference = reference.canonical(ctx, OPERATION)?;
+            reference = face.canonical.as_deref();
         }
     }
-    Ok(Some(consensus))
+    Ok(Some(TerminationConsensus {
+        vote: first,
+        reference,
+    }))
 }
 
 fn compact_termination_face_vote(
@@ -692,7 +629,7 @@ fn compact_termination_face_vote(
     };
     Ok(TerminationVote::Face {
         condition,
-        reference: FaceReference::Lane {
+        reference: FaceReference {
             reference,
             canonical: canonical_reference,
         },
