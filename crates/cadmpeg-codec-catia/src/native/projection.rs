@@ -422,11 +422,11 @@ pub(super) fn consolidated_revolutions(
 ) -> Result<Vec<CatiaConsolidatedRevolution>, CodecError> {
     let mut temporary = ctx.reserve_scoped(0, "catia native revolution workspace")?;
     let mut resolved_profiles = HashMap::new();
-    let (resolved, _resolved_storage) = ctx
+    let resolved = ctx
         .with_scoped_storage("catia native revolution profiles", || {
             crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, bytes, records)
         })?;
-    for resolved in ctx.admit_iter(&resolved, "catia_native_resolved_revolution_visits")? {
+    for resolved in ctx.admit_iter(&resolved.0, "catia_native_resolved_revolution_visits")? {
         temporary.with_storage(|| {
             ctx.insert_hash_map(
                 &mut resolved_profiles,
@@ -1621,11 +1621,11 @@ pub(crate) fn preview_views(
 ) -> Result<Vec<CatiaPreviewImage>, cadmpeg_core::CodecError> {
     let mut views = Vec::new();
     for segment in ctx.admit_iter(segments, "catia_native_preview_segment_visits")? {
-        let (previews, _storage) = ctx
+        let previews = ctx
             .with_scoped_storage("catia_native_preview_scratch", || {
                 container::preview_images(ctx, &segment.data)
             })?;
-        for preview in ctx.admit_iter(&previews, "catia_native_preview_item_visits")? {
+        for preview in ctx.admit_iter(&previews.0, "catia_native_preview_item_visits")? {
             let Some(byte_offset) = segment
                 .byte_offset
                 .checked_add(u64_from_index(preview.range.start))
@@ -1704,7 +1704,7 @@ pub(crate) fn resolve_alias_surface_tags(
     rows: &mut [CatiaAliasRow],
 ) -> Result<(), CodecError> {
     // The stored tag of each group, or `None` when several rows store one.
-    let (stored_by_group, _storage) = ctx.unique_index(
+    let stored_by_group = ctx.unique_index(
         ctx.admit_iter(&*rows, "catia_native_alias_tag_read_visits")?
             .filter_map(|row| {
                 let group = row.group.as_ref()?;
@@ -1719,7 +1719,7 @@ pub(crate) fn resolve_alias_surface_tags(
             AliasLead::NonSurfaceAlias => match row.group.as_ref() {
                 Some(group) => ctx
                     .get_hash_map(
-                        &stored_by_group,
+                        &stored_by_group.0,
                         &(group.prototype, group.group_id),
                         "catia_alias_group_index",
                     )?
@@ -1738,14 +1738,14 @@ pub(crate) fn resolve_owner_chart_support_aliases(
     packets: &mut [CatiaConsolidatedOwnerPacket],
     aliases: &[CatiaAliasRow],
 ) -> Result<(), CodecError> {
-    let (unique_by_tag, _storage) = ctx.unique_index(
+    let unique_by_tag = ctx.unique_index(
         aliases.iter().map(|row| (row.tag(), row)),
         "catia_owner_alias_index",
     )?;
     let resolve = |reference: &mut CatiaOwnerChartBridgeReference| -> Result<(), CodecError> {
         if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
             *alias = if let Some(row) = ctx
-                .get_hash_map(&unique_by_tag, &reference.value, "catia_owner_alias_index")?
+                .get_hash_map(&unique_by_tag.0, &reference.value, "catia_owner_alias_index")?
                 .copied()
                 .flatten()
             {
@@ -1927,12 +1927,12 @@ impl CatiaValueBlock {
             "catia_value_block_id",
         )?;
         // The tokenized fields are dropped once the selections are built.
-        let (fields, _fields_storage) = ctx
+        let fields = ctx
             .with_scoped_storage("catia_value_block_fields", || {
                 value_block::tokenize_charged(ctx, &block.payload)
             })?;
         let byte_offset = u64_from_index(block.pos);
-        let schema_selections = value_schema_selections(ctx, &id, byte_offset, &fields, catalog)?;
+        let schema_selections = value_schema_selections(ctx, &id, byte_offset, &fields.0, catalog)?;
         Ok(Self {
             id,
             byte_offset,
@@ -2541,14 +2541,15 @@ mod design_limit_tests {
             .iter()
             .filter(|record| record.owner_entity_id() == Some(owner))
             .collect::<Vec<_>>();
-        let record_index = crate::test_support::with_service_context(|ctx| {
-            super::super::GraphRecordIndex::new(
-                ctx,
-                &mut ctx.reserve_scoped(0, "test record index")?,
-                &graph.records,
-            )
-        })
-        .expect("service profile admits record index");
+        let index_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &index_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("record index preparation fits the service profile");
+        let mut index_storage = index_ctx.reserve_scoped(0, "test record index")
+            .expect("record index preparation storage");
+        let record_index = super::super::GraphRecordIndex::new(
+            &index_ctx, &mut index_storage, &graph.records,
+        ).expect("service profile admits record index");
         let refused = crate::test_support::with_collection_limit(2, |ctx| {
             super::design_parallel_reference_table(ctx, &fields, graph, &record_index)
         });
