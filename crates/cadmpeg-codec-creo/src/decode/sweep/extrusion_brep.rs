@@ -360,13 +360,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let mut unprojectable = false;
         let mut entity_index = 0;
         let mut profile_rows = profiles.iter();
-        'probe: while let Some(profile) =
-            ctx.next_charged(&mut profile_rows, "creo extrusion probe profile rows")?
-        {
+        'probe: while !profile_rows.as_slice().is_empty() {
+            let Some(profile) = ctx.next_charged(&mut profile_rows, "creo extrusion probe profile rows")? else {
+                break;
+            };
             let mut entities = profile.entities().iter();
-            while let Some(entity) =
-                ctx.next_charged(&mut entities, "creo extrusion probe profile entities")?
-            {
+            while !entities.as_slice().is_empty() {
+                let Some(entity) = ctx.next_charged(&mut entities, "creo extrusion probe profile entities")? else {
+                    break;
+                };
                 let (sketch_geometry, _geometry_storage) = ctx
                     .with_scoped_storage("creo extrusion side probe sketch", || {
                         entity.geometry().to_sketch(ctx)
@@ -1061,9 +1063,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
 
             let forward_sides = validated.area() > 0.0;
             let mut entities = profile.iter().enumerate();
-            while let Some((index, entity)) =
-                ctx.next_charged(&mut entities, "creo extrusion profile entity traversal")?
-            {
+            while entities.len() > 0 {
+                let Some((index, entity)) = ctx.next_charged(&mut entities, "creo extrusion profile entity traversal")? else {
+                    break;
+                };
                 let geometry = entity.geometry();
                 let (sketch_geometry, _sketch_storage) = ctx
                     .with_scoped_storage("creo extrusion profile sketch scratch", || {

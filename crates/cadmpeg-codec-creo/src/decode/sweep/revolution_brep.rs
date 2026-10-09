@@ -159,9 +159,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let mut surfaces = Vec::new();
         let mut complete = true;
         let mut candidates = profile.iter().enumerate();
-        while let Some((index, entity)) =
-            ctx.next_charged(&mut candidates, "creo revolution surface scan")?
-        {
+        while candidates.len() > 0 {
+            let Some((index, entity)) = ctx.next_charged(&mut candidates, "creo revolution surface scan")? else {
+                break;
+            };
             let (geometry, _geometry_storage) = ctx
                 .with_scoped_storage("creo revolution surface sketch", || {
                     entity.geometry().to_sketch(ctx)
@@ -207,9 +208,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let mut boundary_rows = Vec::new();
         let mut complete = true;
         let mut candidates = profile.iter().enumerate();
-        while let Some((index, segment)) =
-            ctx.next_charged(&mut candidates, "creo revolution boundary scan")?
-        {
+        while candidates.len() > 0 {
+            let Some((index, segment)) = ctx.next_charged(&mut candidates, "creo revolution boundary scan")? else {
+                break;
+            };
             let next = (index + 1) % profile.len();
             if vertex_curves[index].is_none() && vertex_curves[next].is_none() {
                 complete = false;
@@ -294,9 +296,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let mut _failed_sense_storage = None;
         let mut complete = true;
         let mut candidates = profile.iter().zip(&surface_geometries).enumerate();
-        while let Some((index, (segment, surface))) =
-            ctx.next_charged(&mut candidates, "creo revolution face sense scan")?
-        {
+        while candidates.len() > 0 {
+            let Some((index, (segment, surface))) = ctx.next_charged(&mut candidates, "creo revolution face sense scan")? else {
+                break;
+            };
             let (sense, sense_storage) =
                 ctx.with_scoped_storage("creo revolution face sense scratch", || {
                     revolution_face_sense(

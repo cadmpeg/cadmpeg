@@ -457,7 +457,10 @@ pub(in super::super) fn revolved_nurbs_surface(
     let mut control_points = Vec::new();
     let mut weights = Vec::new();
     let mut poles = 0..directrix.pole_count();
-    while let Some(index) = ctx.next_charged(&mut poles, "creo revolved NURBS pole projection")? {
+    while poles.len() > 0 {
+        let Some(index) = ctx.next_charged(&mut poles, "creo revolved NURBS pole projection")? else {
+            break;
+        };
         let Some(point) = directrix.pole_rows().point_at(index) else {
             return Ok(None);
         };
