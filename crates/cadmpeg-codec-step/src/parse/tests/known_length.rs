@@ -9,7 +9,7 @@ use cadmpeg_core::CodecError;
 use super::super::{
     schema_names_for_matching, schema_object_identifier_diagnostics, try_clone_value,
     validate_header_data_references, AdmittedSchemaIdentifier, EntityIndex, ParseError,
-    ValidationError, Value,
+    ValidationError, Value, EntityIds,
 };
 
 fn empty_policy(work: u64) -> DecodePolicy {
@@ -62,13 +62,12 @@ fn empty_value_copy_preserves_original_refusal() {
 fn empty_entity_union_has_no_terminal_visit_or_storage() {
     let policy = empty_policy(0);
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let (ids, storage) = EntityIndex::ordered_ids(&[], ctx)
+        let ids = EntityIndex::ordered_ids(&[], ctx)
             .expect("an empty union needs no visits or backing");
-        assert!(ids.is_empty());
-        assert_eq!(ids.capacity(), 0);
+        assert_eq!(ids.len(), 0);
+        assert!(matches!(&ids, EntityIds::Borrowed(_)));
         assert!(ctx.resource_refusal().is_none());
         drop(ids);
-        drop(storage);
     });
 }
 
