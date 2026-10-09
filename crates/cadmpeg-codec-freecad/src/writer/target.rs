@@ -22,7 +22,7 @@ pub(super) struct Resolution<'a> {
     ir: &'a CadIr,
     namespace: &'a cadmpeg_ir::native::NativeNamespace,
     document: DocumentFacts,
-    schema_version: String,
+    schema_version: &'a str,
     target: DialectId,
 }
 
@@ -40,7 +40,7 @@ impl<'a> Resolution<'a> {
     }
 
     pub(super) fn schema_version(&self) -> &str {
-        &self.schema_version
+        self.schema_version
     }
 
     pub(super) const fn target(&self) -> &DialectId {
@@ -105,21 +105,22 @@ fn resolve<'a>(ir: &'a CadIr, resolved: &ResolvedWrite<'_>) -> Result<Resolution
 /// `target` carries the identity selected by source dialect resolution.
 pub(super) fn retained_baseline<'a>(ir: &'a CadIr, target: &DialectId) -> Option<Resolution<'a>> {
     let namespace = ir.native.namespace("fcstd")?;
-    let documents = namespace.arena_as::<DocumentFacts>("document").ok()?;
-    let [document] = documents.as_slice() else {
-        return None;
-    };
+    let [document]: [DocumentFacts; 1] = namespace
+        .arena_as::<DocumentFacts>("document")
+        .ok()?
+        .try_into()
+        .ok()?;
     let schema_version = ir
         .source
         .as_ref()?
         .dialect()?
         .declared()
         .get(crate::dialect::DECLARED_SCHEMA_VERSION)?
-        .clone();
+        .as_str();
     Some(Resolution {
         ir,
         namespace,
-        document: document.clone(),
+        document,
         schema_version,
         target: target.clone(),
     })
