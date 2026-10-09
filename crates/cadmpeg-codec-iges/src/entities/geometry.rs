@@ -1156,6 +1156,7 @@ impl ProjectionOutcome<'_> {
                 ctx.insert_btree_set(decoded, sequence, "iges merged decoded sequences")
             })?;
         }
+        drop(source_values);
         drop(source_decoded_storage);
         ctx.extend_vec(losses, source_losses, "iges merged loss slots")?;
         drop(loss_slots_storage);
