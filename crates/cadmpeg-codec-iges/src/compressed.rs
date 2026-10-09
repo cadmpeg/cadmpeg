@@ -229,8 +229,11 @@ fn hollerith_at(
     start: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(usize, usize)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
     let mut cursor = start;
-    loop {
+    while cursor < bytes.len() {
         ctx.charge_work(1, "iges compressed Global Hollerith digits")?;
         if !bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
             break;
