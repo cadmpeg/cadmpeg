@@ -1075,21 +1075,20 @@ pub(crate) fn b2_owner_identity_targets_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2OwnerIdentityTarget>, CodecError> {
-    let (packets, _packet_storage) =
-        ctx.with_scoped_storage("catia_b2_owner_identity_packets", || {
-            let mut packets = BTreeMap::new();
-            for packet in b2_owner_packets_from_records(ctx, data, records)? {
-                ctx.insert_btree_map(
-                    &mut packets,
-                    (packet.source_index, packet.pos),
-                    packet,
-                    "catia_b2_owner_identity_packets",
-                )?;
-            }
-            Ok::<_, CodecError>(packets)
-        })?;
-    let mut allocation = Vec::<usize>::new();
+    let packets = ctx.with_scoped_storage("catia_b2_owner_identity_packets", || {
+        let mut packets = BTreeMap::new();
+        for packet in b2_owner_packets_from_records(ctx, data, records)? {
+            ctx.insert_btree_map(
+                &mut packets,
+                (packet.source_index, packet.pos),
+                packet,
+                "catia_b2_owner_identity_packets",
+            )?;
+        }
+        Ok::<_, CodecError>(packets)
+    })?;
     let mut allocation_storage = ctx.reserve_scoped(0, "catia_b2_owner_identity_allocations")?;
+    let mut allocation = Vec::<usize>::new();
     let mut targets = Vec::new();
     for (index, record) in ctx
         .admit_iter(records, "catia_b2_owner_identity_records")?
@@ -1124,7 +1123,7 @@ pub(crate) fn b2_owner_identity_targets_from_records(
             )?;
         }
         let Some(packet) = ctx.get_btree_map(
-            &packets,
+            &packets.0,
             &(record.source_index(), record.byte_offset()),
             "catia_b2_owner_identity_packet_lookup",
         )?
@@ -3265,36 +3264,36 @@ pub(crate) fn b2_resolved_revolutions_from_records(
 ) -> Result<Vec<B2ResolvedRevolution>, CodecError> {
     // Profile circles are indexed once by record identity and by the exact
     // bits of their stored interval; each revolution looks both up.
-    let ((circles, by_identity, by_interval), _circle_storage) =
-        ctx.with_scoped_storage("catia_b2_revolution_profiles", || {
-            let circles = ctx.collect_vec(
-                ctx.admit_iter(records, "catia_b2_family_record_scan")?
-                    .filter_map(|record| b2_circle_from_record(data, record)),
-                "catia_b2_revolution_profiles",
+    let profiles = ctx.with_scoped_storage("catia_b2_revolution_profiles", || {
+        let circles = ctx.collect_vec(
+            ctx.admit_iter(records, "catia_b2_family_record_scan")?
+                .filter_map(|record| b2_circle_from_record(data, record)),
+            "catia_b2_revolution_profiles",
+        )?;
+        let mut by_identity = BTreeMap::new();
+        let mut by_interval = BTreeMap::new();
+        for (index, circle) in ctx
+            .admit_iter(&circles, "catia_b2_revolution_profile_index")?
+            .enumerate()
+        {
+            ctx.push_btree_group(
+                &mut by_identity,
+                circle.record_id,
+                index,
+                "catia_b2_revolution_identity_profiles",
+                "catia_b2_revolution_identity_profile_members",
             )?;
-            let mut by_identity = BTreeMap::new();
-            let mut by_interval = BTreeMap::new();
-            for (index, circle) in ctx
-                .admit_iter(&circles, "catia_b2_revolution_profile_index")?
-                .enumerate()
-            {
-                ctx.push_btree_group(
-                    &mut by_identity,
-                    circle.record_id,
-                    index,
-                    "catia_b2_revolution_identity_profiles",
-                    "catia_b2_revolution_identity_profile_members",
-                )?;
-                ctx.push_btree_group(
-                    &mut by_interval,
-                    interval_bits(circle.range),
-                    index,
-                    "catia_b2_revolution_interval_profiles",
-                    "catia_b2_revolution_interval_profile_members",
-                )?;
-            }
-            Ok::<_, CodecError>((circles, by_identity, by_interval))
-        })?;
+            ctx.push_btree_group(
+                &mut by_interval,
+                interval_bits(circle.range),
+                index,
+                "catia_b2_revolution_interval_profiles",
+                "catia_b2_revolution_interval_profile_members",
+            )?;
+        }
+        Ok::<_, CodecError>((circles, by_identity, by_interval))
+    })?;
+    let (circles, by_identity, by_interval) = &profiles.0;
     ctx.try_collect_vec(
         b2_revolutions_from_records(ctx, data, records)?
             .enumerate()
