@@ -6,6 +6,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 mod quadratic;
+mod general;
 
 fn line(count: u32, rational: bool) -> SolvedCurveGeometry {
     // Greville abscissae reproduce C(t)=(t,0,0) for a degree2 open basis.

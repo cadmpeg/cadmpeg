@@ -185,7 +185,9 @@ fn unsupported_rational_shapes_keep_true_lower_orders() {
     let scratch = decode::Scratch::new(EvaluationAdmission::Standard);
     for curve in geometries {
         let geometry = SolvedCurveGeometry::Nurbs(curve);
-        assert_eq!(third(&scratch, &geometry, 0.25), Err(EvaluationFailure::NoValue));
+        // Every pole in the complete active support is zero. This actual
+        // source identity proves Third0 across the selected span.
+        assert_eq!(third(&scratch, &geometry, 0.25), Ok(FiniteVector3::ZERO));
         assert!(crate::eval::decode::curve_point_solved(EvaluationAdmission::Standard, &geometry, 0.25).is_ok());
         assert!(crate::eval::curve_tangent_solved(EvaluationAdmission::Standard, &geometry, 0.25).is_ok());
         assert!(crate::eval::curve_second_derivative_solved(EvaluationAdmission::Standard, &geometry, 0.25).is_ok());

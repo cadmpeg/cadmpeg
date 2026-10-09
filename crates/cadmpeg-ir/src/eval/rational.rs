@@ -98,6 +98,50 @@ impl Homogeneous {
         Some(lanes)
     }
 
+    /// Complete selected-support H/W orders. All support poles participate in
+    /// the constant-coordinate theorem, including poles with zero basis at t.
+    pub(super) fn curve_third(
+        scratch: &decode::Scratch<'_, '_>,
+        poles: &crate::geometry::nurbs::NurbsPoles3<FinitePoint3>,
+        first: usize,
+        rows: &[[f64; 4]],
+        width: ScaledValue,
+    ) -> Result<Option<[Result<FiniteReal, f64>; 3]>, super::EvaluationFailure<()>> {
+        scratch.unless_refused()?;
+        let mut sums: [[ExactSignedSum; 4]; 4] =
+            std::array::from_fn(|_| std::array::from_fn(|_| ExactSignedSum::default()));
+        let mut constant = [None; 3];
+        for (local, orders) in rows.iter().enumerate() {
+            if rows.len() > 4 {
+                scratch.admission.independent_cost::<()>(Some(1))?;
+                scratch.admission.work(1, "IR requested curve homogeneous support")?;
+            }
+            let Some(index) = first.checked_add(local) else { return Ok(None); };
+            let Some(point) = poles.point_at(index) else { return Ok(None); };
+            let weight = poles.weight_at(index).unwrap_or(1.0);
+            for (axis, coordinate) in point.coordinates().into_iter().enumerate() {
+                if local == 0 { constant[axis] = Some(coordinate); }
+                else if constant[axis] != Some(coordinate) { constant[axis] = None; }
+            }
+            for (lanes, coefficient) in sums.iter_mut().zip(orders) {
+                for (sum, coordinate) in lanes.iter_mut().zip([point.x, point.y, point.z, 1.0]) {
+                    sum.add_factors([*coefficient, weight, coordinate]);
+                }
+            }
+        }
+        let orders = sums.map(|lanes| lanes.map(ExactSignedSum::finish));
+        if orders[0][3].is_none() { return Ok(None); }
+        let w = orders.map(|lanes| lanes[3]);
+        let mut lanes = [Ok(FiniteReal::ZERO); 3];
+        for (axis, lane) in lanes.iter_mut().enumerate() {
+            if constant[axis].is_some() { continue; }
+            let Some(value) = crate::math::sum::quotient_third::quotient_third(
+                orders.map(|lanes| lanes[axis]), w, width) else { return Ok(None); };
+            *lane = value;
+        }
+        Ok(Some(lanes))
+    }
+
     /// The identically zero homogeneous derivative of a polynomial whose
     /// degree is lower than the requested derivative order.
     pub(super) fn zero() -> Self {

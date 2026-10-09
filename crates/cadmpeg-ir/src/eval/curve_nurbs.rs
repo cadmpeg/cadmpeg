@@ -369,39 +369,54 @@ pub(super) fn polynomial_third(
     scratch.settle(result)
 }
 
-/// The clamped single-span rational quadratic Third. The actual fixed
-/// carrier shape supplies actual Bernstein orders. The complete extended
-/// numerator cancels before the final weight and span divisions.
-pub(super) fn quadratic_third(
+/// Requested rational Third. Fixed linear and clamped quadratic owners keep
+/// their extended coefficients; other shapes use one joint local basis row.
+pub(super) fn rational_third(
     scratch: &decode::Scratch<'_, '_>,
     curve: &crate::geometry::nurbs::NurbsCurve,
     parameter: FiniteReal,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
     use super::rational::Homogeneous;
     scratch.unless_refused()?;
+    if curve.degree() == 1 { return linear_third(scratch, curve, parameter); }
     let result = (|| {
         let no_value = EvaluationFailure::NoValue;
         let NurbsPoles3::Rational { points } = curve.pole_rows() else { return Err(no_value); };
-        let poles: &[_; 3] = points.as_slice().try_into().map_err(|_| no_value)?;
-        let [a, a1, a2, b, b1, b2] = curve.knots().as_slice() else { return Err(no_value); };
-        if curve.degree() != 2 || a != a1 || a != a2 || b != b1 || b != b2 || a >= b {
-            return Err(no_value);
-        }
         let parameter = super::map_nurbs_curve_parameter(curve, parameter).ok_or(no_value)?;
-        // Equal source weights make this exact carrier polynomial. This
-        // theorem does not depend on a sampled homogeneous derivative.
-        if poles[0].weight == poles[1].weight && poles[0].weight == poles[2].weight {
-            return Ok(FiniteVector3::ZERO);
+        if curve.degree() == 2 {
+            if let (Ok(poles), [a, a1, a2, b, b1, b2]) = (
+                <&[_; 3]>::try_from(points.as_slice()), curve.knots().as_slice())
+            {
+                if a == a1 && a == a2 && b == b1 && b == b2 && a < b {
+                    // Equal actual weights make this exact carrier polynomial.
+                    if poles[0].weight == poles[1].weight && poles[0].weight == poles[2].weight {
+                        return Ok(FiniteVector3::ZERO);
+                    }
+                    let [a, b] = FiniteReal::array([*a, *b]).ok_or(no_value)?;
+                    let local = difference_quotient(parameter, a, b, a)
+                        .map_err(|failure| failure.map(|_| ()))?;
+                    let mut width = ExactSignedSum::default();
+                    width.add_factors([b.get()]);
+                    width.add_factors([-a.get()]);
+                    let width = width.finish().ok_or(no_value)?;
+                    let [x, y, z] = finite_lanes(Homogeneous::quadratic_third(poles, local, width)
+                        .ok_or(no_value)?).map_err(|_| EvaluationFailure::NonFinite(()))?;
+                    return Ok(FiniteVector3::from_components(x, y, z));
+                }
+            }
         }
-        let [a, b] = FiniteReal::array([*a, *b]).ok_or(no_value)?;
-        let local = difference_quotient(parameter, a, b, a)
-            .map_err(|failure| failure.map(|_| ()))?;
+        let degree = usize::try_from(curve.degree()).map_err(|_| no_value)?;
+        let span = basis::bspline_span_requested(scratch.admission, curve.knots(), degree,
+            points.len(), parameter.get(), true)?.ok_or(no_value)?;
         let mut width = ExactSignedSum::default();
-        width.add_factors([b.get()]);
-        width.add_factors([-a.get()]);
+        width.add_factors([curve.knots()[span + 1]]);
+        width.add_factors([-curve.knots()[span]]);
         let width = width.finish().ok_or(no_value)?;
-        let [x, y, z] = finite_lanes(Homogeneous::quadratic_third(poles, local, width)
-            .ok_or(no_value)?).map_err(|_| EvaluationFailure::NonFinite(()))?;
+        let rows = basis::requested_third::rows(scratch, curve.knots(), degree, span, parameter, width)
+            .ok_or_else(|| scratch.failure(no_value))?;
+        let lanes = Homogeneous::curve_third(scratch, curve.pole_rows(), span - degree,
+            rows.as_slice(), width)?.ok_or(no_value)?;
+        let [x, y, z] = finite_lanes(lanes).map_err(|_| EvaluationFailure::NonFinite(()))?;
         Ok(FiniteVector3::from_components(x, y, z))
     })();
     scratch.settle(result)
