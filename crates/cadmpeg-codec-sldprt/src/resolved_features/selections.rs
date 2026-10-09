@@ -376,9 +376,10 @@ pub(crate) fn compact_edge_reference_list_for_feature(
         })?;
     let references = references.filter(|references| references.len() == count);
     if references.is_some() {
-        storage.commit()?;
+        storage.commit_value(references)
+    } else {
+        Ok(references)
     }
-    Ok(references)
 }
 
 pub(super) fn compact_edge_selections(
@@ -2093,8 +2094,7 @@ fn component_face_reference_at_impl(
             continue;
         };
         if !include_compact_frame {
-            storage.commit()?;
-            return Ok(Some((marker, components)));
+            return storage.commit_value(Some((marker, components)));
         }
         if candidate.is_some() {
             return Ok(None);
@@ -2107,8 +2107,7 @@ fn component_face_reference_at_impl(
             let components;
             let marker;
             (marker, components, storage) = owned;
-            storage.commit()?;
-            Ok(Some((marker, components)))
+            storage.commit_value(Some((marker, components)))
         }
         None => Ok(None),
     }
@@ -2192,8 +2191,7 @@ pub(super) fn component_face_reference_in_record(
             let storage;
             let reference;
             (reference, storage) = owned;
-            storage.commit()?;
-            Ok(Some(reference))
+            storage.commit_value(Some(reference))
         }
         None => Ok(None),
     }
@@ -2265,9 +2263,10 @@ fn compact_sketch_surface_component_path_at(
         },
     )?;
     if result.is_some() {
-        storage.commit()?;
+        storage.commit_value(result)
+    } else {
+        Ok(result)
     }
-    Ok(result)
 }
 
 fn compact_surface_selection_at(
@@ -2338,9 +2337,10 @@ fn compact_surface_selection_at(
         },
     )?;
     if result.is_some() {
-        storage.commit()?;
+        storage.commit_value(result)
+    } else {
+        Ok(result)
     }
-    Ok(result)
 }
 
 fn flatten_surface_references(
@@ -2571,8 +2571,7 @@ pub(super) fn component_vector_path_at(
         )
     })?;
     if let Some((components, _)) = exact {
-        exact_storage.commit()?;
-        return Ok(Some(components));
+        return exact_storage.commit_value(Some(components));
     }
     drop(exact_storage);
     // An exact count states the boundary; shorter root-slot paths need continuation checks.
@@ -2629,8 +2628,7 @@ pub(super) fn component_vector_path_at(
             let storage;
             let components;
             ((components, _), storage) = owned;
-            storage.commit()?;
-            Ok(Some(components))
+            storage.commit_value(Some(components))
         }
         None => Ok(None),
     }
@@ -2754,9 +2752,10 @@ pub(super) fn compact_mixed_component_path(
         },
     )?;
     if result.is_some() {
-        storage.commit()?;
+        storage.commit_value(result)
+    } else {
+        Ok(result)
     }
-    Ok(result)
 }
 
 fn counted_surface_component_path_at(
@@ -2816,8 +2815,7 @@ fn counted_surface_component_path_at(
             let storage;
             let components;
             ((components, _), storage) = owned;
-            storage.commit()?;
-            Ok(Some(components))
+            storage.commit_value(Some(components))
         }
         None => Ok(None),
     }
@@ -3037,9 +3035,10 @@ fn inline_surface_reference_at(
         },
     )?;
     if result.is_some() {
-        storage.commit()?;
+        storage.commit_value(result)
+    } else {
+        Ok(result)
     }
-    Ok(result)
 }
 
 /// Decode persistent surface identities declared by `*SurfIdRep_c` classes.
@@ -3353,8 +3352,7 @@ pub(crate) fn compact_edge_selection_at(
             let storage;
             let ids;
             (ids, storage) = owned;
-            storage.commit()?;
-            Ok(Some(ids))
+            storage.commit_value(Some(ids))
         }
         None => Ok(None),
     }
@@ -3532,9 +3530,10 @@ fn compact_component_reference_list(
             },
         )?;
     if result.is_some() {
-        storage.commit()?;
+        storage.commit_value(result)
+    } else {
+        Ok(result)
     }
-    Ok(result)
 }
 
 #[derive(Debug)]
@@ -3650,8 +3649,7 @@ pub(super) fn variable_fillet_control_references(
     if result.is_empty() {
         return Ok(None);
     }
-    result_storage.commit()?;
-    Ok(Some(result))
+    result_storage.commit_value(Some(result))
 }
 
 pub(crate) fn variable_fillet_dimension_index_for_feature(
@@ -3771,8 +3769,7 @@ fn compact_edge_component_path(
     let storage;
     let candidate;
     (candidate, storage) = owned;
-    storage.commit()?;
-    Ok(Some(candidate))
+    storage.commit_value(Some(candidate))
 }
 
 fn compact_edge_component_path_candidates<'ctx>(
@@ -4078,9 +4075,10 @@ fn compact_homogeneous_edge_ids(
         },
     )?;
     if result.is_some() {
-        storage.commit()?;
+        storage.commit_value(result)
+    } else {
+        Ok(result)
     }
-    Ok(result)
 }
 
 pub(super) fn compact_heterogeneous_component_path(
@@ -4183,9 +4181,10 @@ fn compact_component_path_with_layout(
         },
     )?;
     if result.is_some() {
-        storage.commit()?;
+        storage.commit_value(result)
+    } else {
+        Ok(result)
     }
-    Ok(result)
 }
 
 fn compact_component_separator(payload: &[u8], cursor: usize, gap: usize) -> bool {
@@ -4332,9 +4331,10 @@ fn compact_sparse_component_path(
         },
     )?;
     if result.is_some() {
-        storage.commit()?;
+        storage.commit_value(result)
+    } else {
+        Ok(result)
     }
-    Ok(result)
 }
 
 fn compact_u16_edge_ids(
@@ -4381,9 +4381,10 @@ fn compact_u16_edge_ids(
         },
     )?;
     if result.is_some() {
-        storage.commit()?;
+        storage.commit_value(result)
+    } else {
+        Ok(result)
     }
-    Ok(result)
 }
 
 fn compact_body_selection_vector(
@@ -4636,8 +4637,7 @@ pub(super) fn component_reference_curve_path_at(
     let exact;
     (exact, exact_storage) = ctx.with_scoped_storage(OPERATION, || parse(count))?;
     if let Some((components, _)) = exact {
-        exact_storage.commit()?;
-        return Ok(Some(components));
+        return exact_storage.commit_value(Some(components));
     }
     drop(exact_storage);
     if count <= 1 {
@@ -4652,8 +4652,7 @@ pub(super) fn component_reference_curve_path_at(
     if payload.get(end..end + 12) != Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0xf8, 0x2a, 0, 0]) {
         return Ok(None);
     }
-    shorter_storage.commit()?;
-    Ok(Some(components))
+    shorter_storage.commit_value(Some(components))
 }
 
 pub(super) fn unique_marker_candidate<'a>(
