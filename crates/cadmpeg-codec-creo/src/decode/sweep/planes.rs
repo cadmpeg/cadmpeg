@@ -62,7 +62,8 @@ pub(in super::super) fn feature_plane_equations<'ctx>(
     let mut outlines = None;
     let mut local_systems = None;
     let mut plane_ids = ids.iter();
-    while let Some(id) = ctx.next_charged(&mut plane_ids, "creo feature plane local ID scan")? {
+    while plane_ids.len() != 0 {
+        let Some(id) = ctx.next_charged(&mut plane_ids, "creo feature plane local ID scan")? else { break; };
         if scan.surfaces.rows.unique(*id).is_none() {
             return Ok(None);
         }
@@ -118,7 +119,8 @@ pub(in super::super) fn feature_plane_equations<'ctx>(
     let mut equation_storage = ctx.reserve_scoped(0, "creo feature plane equation scratch")?;
     let mut equations = Vec::new();
     let mut plane_ids = ids.into_iter();
-    while let Some(id) = ctx.next_charged(&mut plane_ids, "creo feature plane equation ID scan")? {
+    while plane_ids.len() != 0 {
+        let Some(id) = ctx.next_charged(&mut plane_ids, "creo feature plane equation ID scan")? else { break; };
         let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, id)?
         else {
             return Ok(None);
@@ -145,37 +147,28 @@ pub(in super::super) fn feature_outline_plane(
     feature_id: u32,
     surface_id: u32,
 ) -> Result<Option<FeatureOutlinePlane>, CodecError> {
+    if let Some(error) = ctx.resource_refusal() {
+        return Err(error.into());
+    }
     let Some(row) = scan.surfaces.rows.unique(surface_id) else {
         return Ok(None);
     };
     if row.feature_id != feature_id || row.kind != crate::surface::SurfaceKind::Plane {
         return Ok(None);
     }
-    let outline_index = ctx.position_by(
-        &scan.planes.outlines,
-        |plane| Ok(plane.surface_id == surface_id),
-        "creo feature outline plane search",
-    )?;
-    if let Some(index) = outline_index {
-        if ctx.any_by(
-            &scan.planes.outlines[index + 1..],
-            |plane| Ok(plane.surface_id == surface_id),
-            "creo feature outline plane search",
-        )? {
+    let mut outline_index = None;
+    let mut outlines = scan.planes.outlines.iter().enumerate();
+    while outlines.len() != 0 {
+        let Some((index, plane)) = ctx.next_charged(&mut outlines, "creo feature outline plane search")? else { break; };
+        if plane.surface_id == surface_id && outline_index.replace(index).is_some() {
             return Ok(None);
         }
     }
-    let positional_index = ctx.position_by(
-        &scan.planes.positional_frames,
-        |plane| Ok(plane.surface_id == surface_id),
-        "creo feature positional plane search",
-    )?;
-    if let Some(index) = positional_index {
-        if ctx.any_by(
-            &scan.planes.positional_frames[index + 1..],
-            |plane| Ok(plane.surface_id == surface_id),
-            "creo feature positional plane search",
-        )? {
+    let mut positional_index = None;
+    let mut positional_frames = scan.planes.positional_frames.iter().enumerate();
+    while positional_frames.len() != 0 {
+        let Some((index, plane)) = ctx.next_charged(&mut positional_frames, "creo feature positional plane search")? else { break; };
+        if plane.surface_id == surface_id && positional_index.replace(index).is_some() {
             return Ok(None);
         }
     }
@@ -223,11 +216,14 @@ pub(in super::super) fn feature_outline_planes<'ctx>(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Result<Option<ScopedPlanes<'ctx, FeatureOutlinePlane>>, CodecError> {
-    let (mut planes, mut storage) = ctx.temporary_vec(0, "creo feature outline planes")?;
+    let planes_owned_storage = ctx.temporary_vec(0, "creo feature outline planes")?;
+    let mut storage = planes_owned_storage.1;
+    let mut planes = planes_owned_storage.0;
     let mut index_storage = ctx.reserve_scoped(0, "creo feature outline carrier scratch")?;
     let mut carriers = None;
     let mut rows = scan.surfaces.rows.iter();
-    while let Some(row) = ctx.next_charged(&mut rows, "creo feature outline row scan")? {
+    while rows.len() != 0 {
+        let Some(row) = ctx.next_charged(&mut rows, "creo feature outline row scan")? else { break; };
         if row.feature_id != feature_id || row.kind != crate::surface::SurfaceKind::Plane {
             continue;
         }
@@ -273,6 +269,9 @@ pub(in super::super) fn generated_arc_cylinder_extent(
     definition: &crate::feature::definitions::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
+    if let Some(error) = ctx.resource_refusal() {
+        return Err(error.into());
+    }
     let Some(feature_id) = definition.identity.owner_feature_id() else {
         return Ok(None);
     };
@@ -286,12 +285,14 @@ pub(in super::super) fn generated_arc_cylinder_extent(
     let mut id_storage = ctx.reserve_scoped(0, "creo generated arc ID scratch")?;
     let mut surface_ids = BTreeSet::new();
     let mut tables = scan.features.entity_tables.iter();
-    while let Some(table) = ctx.next_charged(&mut tables, "creo generated arc table scan")? {
+    while tables.len() != 0 {
+        let Some(table) = ctx.next_charged(&mut tables, "creo generated arc table scan")? else { break; };
         if table.feature_id != feature_id {
             continue;
         }
         let mut entries = table.entries.iter();
-        while let Some(entry) = ctx.next_charged(&mut entries, "creo generated arc entry scan")? {
+        while entries.len() != 0 {
+        let Some(entry) = ctx.next_charged(&mut entries, "creo generated arc entry scan")? else { break; };
             if !ctx.contains_btree_set(
                 table.unique_surface_ids(),
                 &entry.entity_id,
@@ -336,35 +337,36 @@ pub(in super::super) fn generated_arc_cylinder_extent(
             })?;
         }
     }
-    let (frame_records, _frame_storage) =
-        ctx.with_scoped_storage("creo generated arc frame scratch", || {
+    let frame_records_owned_storage = ctx.with_scoped_storage("creo generated arc frame scratch", || {
             unique_available_positional_cylinder_frame_records(
                 ctx,
                 &surface_ids,
                 &scan.surfaces.parameters,
             )
         })?;
+    let _frame_storage = frame_records_owned_storage.1;
+    let frame_records = frame_records_owned_storage.0;
     let Some(frame_records) = frame_records else {
         return Ok(None);
     };
     if frame_records.is_empty() {
         return Ok(None);
     }
-    let (geometries, _geometry_storage) = ctx
+    let geometries_owned_storage = ctx
         .with_scoped_storage("creo generated arc surface index scratch", || {
             super::extent::source_surface_geometries(ctx, ir, source_carriers)
         })?;
-    if !ctx.all_by(
-        &(frame_records)[..],
-        |(surface_id, frame)| -> Result<bool, cadmpeg_core::CodecError> {
-            Ok(cylinder_frame_agrees_with_geometry(
-                super::extent::unique_source_surface_geometry(&geometries, *surface_id),
-                frame,
-            ))
-        },
-        "creo numbered identity candidate scan",
-    )? {
-        return Ok(None);
+    let _geometry_storage = geometries_owned_storage.1;
+    let geometries = geometries_owned_storage.0;
+    let mut records = frame_records.iter();
+    while records.len() != 0 {
+        let Some((surface_id, frame)) = ctx.next_charged(&mut records, "creo numbered identity candidate scan")? else { break; };
+        if !cylinder_frame_agrees_with_geometry(
+            super::extent::unique_source_surface_geometry(&geometries, *surface_id),
+            frame,
+        ) {
+            return Ok(None);
+        }
     }
     agreed_generated_cylinder_extent(ctx, transform, frame_records.iter().map(|(_, frame)| frame))
 }
@@ -472,7 +474,8 @@ pub(in super::super) fn generated_cap_plane_extent(
     let mut end_id = None;
     let mut side_count = 0_usize;
     let mut entries = table.entries.iter();
-    while let Some(entry) = ctx.next_charged(&mut entries, "creo generated cap entry scan")? {
+    while entries.len() != 0 {
+        let Some(entry) = ctx.next_charged(&mut entries, "creo generated cap entry scan")? else { break; };
         match (entry.class_id(), entry.source_entity_id()) {
             (204, None) if start_id.replace(entry.entity_id).is_none() => {}
             (203, None) if end_id.replace(entry.entity_id).is_none() => {}
@@ -497,8 +500,9 @@ pub(in super::super) fn generated_cap_plane_extent(
     {
         return Ok(None);
     }
-    let (local_planes, _local_plane_storage) =
-        ctx.with_scoped_storage("creo cap local plane scratch", || placed_planes(ctx, scan))?;
+    let local_planes_owned_storage = ctx.with_scoped_storage("creo cap local plane scratch", || placed_planes(ctx, scan))?;
+    let _local_plane_storage = local_planes_owned_storage.1;
+    let local_planes = local_planes_owned_storage.0;
     let plane = |surface_id: u32| -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError> {
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id) else {
             return Ok(None);
@@ -518,11 +522,13 @@ pub(in super::super) fn unique_available_positional_cylinder_frame_records(
     surface_ids: &BTreeSet<u32>,
     parameters: &crate::surface::SurfaceParameters,
 ) -> Result<Option<Vec<(u32, crate::surface::PositionalCylinderFrame)>>, CodecError> {
+    if let Some(error) = ctx.resource_refusal() {
+        return Err(error.into());
+    }
     let mut frames = Vec::new();
     let mut ids = surface_ids.iter();
-    while let Some(surface_id) =
-        ctx.next_charged(&mut ids, "creo positional cylinder frame ID scan")?
-    {
+    while ids.len() != 0 {
+        let Some(surface_id) = ctx.next_charged(&mut ids, "creo positional cylinder frame ID scan")? else { break; };
         let record = match parameters.unique(*surface_id) {
             Some(record) => record,
             None if parameters.contains_id(*surface_id) => return Ok(None),
@@ -542,10 +548,15 @@ pub(in super::super) fn unique_available_positional_cylinder_frame_records(
 pub(in super::super) fn agreed_generated_cylinder_extent<'a>(
     ctx: &DecodeContext<'_>,
     transform: &crate::placement::FeatureSectionTransform,
-    frames: impl IntoIterator<Item = &'a crate::surface::PositionalCylinderFrame>,
+    mut frames: impl ExactSizeIterator<Item = &'a crate::surface::PositionalCylinderFrame>,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
+    if let Some(error) = ctx.resource_refusal() {
+        return Err(error.into());
+    }
     let normal = transform.normal();
-    let mut frames = frames.into_iter();
+    if frames.len() == 0 {
+        return Ok(None);
+    }
     let Some(first) = ctx.next_charged(&mut frames, "creo generated cylinder frame scan")? else {
         return Ok(None);
     };
@@ -575,14 +586,14 @@ pub(in super::super) fn agreed_generated_cylinder_extent<'a>(
                 0.0,
             )
     };
-    if !agrees(&first)
-        || !ctx.all_by(
-            frames,
-            |frame| Ok(agrees(frame)),
-            "creo generated cylinder frame agreement",
-        )?
-    {
+    if !agrees(&first) {
         return Ok(None);
+    }
+    while frames.len() != 0 {
+        let Some(frame) = ctx.next_charged(&mut frames, "creo generated cylinder frame agreement")? else { break; };
+        if !agrees(frame) {
+            return Ok(None);
+        }
     }
     if !close(dot(direction, normal).abs(), 1.0) {
         return Ok(None);
