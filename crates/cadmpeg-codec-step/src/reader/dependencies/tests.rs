@@ -1123,3 +1123,5 @@ fn external_resource_metadata_does_not_collapse_uri_references() {
         "https://example.invalid/model.p21#shape,https://example.invalid/./model.p21#shape,https://example.invalid/model.p21?revision=2#shape"
     );
 }
+
+mod prefix_admission;
