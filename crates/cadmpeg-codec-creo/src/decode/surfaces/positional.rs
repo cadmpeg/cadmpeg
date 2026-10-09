@@ -139,12 +139,14 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             continue;
         };
         for row in [first_row, second_row] {
-            let (id, id_storage) = crate::identity::compose_scoped::<SurfaceId>(
+            let id_parts = crate::identity::compose_scoped::<SurfaceId>(
                 ctx,
                 &crate::identity::VISIBGEOM_SURFACE,
                 row.id,
                 "creo decoded model identity",
             )?;
+            let id_storage = id_parts.1;
+            let id = id_parts.0;
             let identity_present = surfaces_index
                 .lookup(
                     ctx,
@@ -164,7 +166,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             ) else {
                 continue;
             };
-            id_storage.commit()?;
+            let id = id_storage.commit_value(id)?;
             annotate(
                 ctx,
                 annotations,
@@ -285,12 +287,14 @@ pub(in super::super) fn transfer_positional_tori(
         let Some(frame) = record.positional_torus_frame() else {
             continue;
         };
-        let (id, id_storage) = crate::identity::compose_scoped::<SurfaceId>(
+        let id_parts = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             row.id,
             "creo decoded model identity",
         )?;
+        let id_storage = id_parts.1;
+        let id = id_parts.0;
         let identity_present = surfaces_index
             .lookup(
                 ctx,
@@ -329,7 +333,7 @@ pub(in super::super) fn transfer_positional_tori(
                 cadmpeg_ir::geometry::analytic::SphereSurface::new(center, placement, minor_radius),
             ))
         };
-        id_storage.commit()?;
+        let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
             annotations,
@@ -420,12 +424,14 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         ) else {
             continue;
         };
-        let (surface_id, surface_id_storage) = crate::identity::compose_scoped::<SurfaceId>(
+        let surface_id_parts = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             record.surface_id,
             "creo decoded model identity",
         )?;
+        let surface_id_storage = surface_id_parts.1;
+        let surface_id = surface_id_parts.0;
         let identity_present = surfaces_index
             .lookup(
                 ctx,
@@ -437,19 +443,23 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         if identity_present {
             continue;
         }
-        let (curve_id, curve_id_storage) = crate::identity::compose_scoped::<CurveId>(
+        let curve_id_parts = crate::identity::compose_scoped::<CurveId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE_DIRECTRIX,
             record.surface_id,
             "creo positional directrix identity",
         )?;
-        let (procedural_id, procedural_id_storage) =
+        let curve_id_storage = curve_id_parts.1;
+        let curve_id = curve_id_parts.0;
+        let procedural_id_parts =
             crate::identity::compose_scoped::<ProceduralSurfaceId>(
                 ctx,
                 &crate::identity::VISIBGEOM_SURFACE_EXTRUSION,
                 record.surface_id,
                 "creo positional extrusion identity",
             )?;
+        let procedural_id_storage = procedural_id_parts.1;
+        let procedural_id = procedural_id_parts.0;
         let Ok(line_curve) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::from(frame.directrix[0]),
             Vector3::from(u_axis),
@@ -463,9 +473,9 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         ) else {
             continue;
         };
-        curve_id_storage.commit()?;
-        procedural_id_storage.commit()?;
-        surface_id_storage.commit()?;
+        let curve_id = curve_id_storage.commit_value(curve_id)?;
+        let procedural_id = procedural_id_storage.commit_value(procedural_id)?;
+        let surface_id = surface_id_storage.commit_value(surface_id)?;
         annotate(
             ctx,
             annotations,
@@ -735,18 +745,22 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             )?;
             continue;
         };
-        let (curve_id, curve_id_storage) = crate::identity::compose_scoped::<CurveId>(
+        let curve_id_parts = crate::identity::compose_scoped::<CurveId>(
             ctx,
             &crate::identity::VISIBGEOM_TABULATED_DIRECTRIX,
             replay.surface_id,
             "creo tabulated directrix identity",
         )?;
-        let (surface_id, surface_id_storage) = crate::identity::compose_scoped::<SurfaceId>(
+        let curve_id_storage = curve_id_parts.1;
+        let curve_id = curve_id_parts.0;
+        let surface_id_parts = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             replay.surface_id,
             "creo decoded model identity",
         )?;
+        let surface_id_storage = surface_id_parts.1;
+        let surface_id = surface_id_parts.0;
         let identity_present = surfaces_index
             .lookup(
                 ctx,
@@ -758,17 +772,19 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         if identity_present {
             continue;
         }
-        let (procedural_id, procedural_id_storage) =
+        let procedural_id_parts =
             crate::identity::compose_scoped::<ProceduralSurfaceId>(
                 ctx,
                 &crate::identity::VISIBGEOM_TABULATED_EXTRUSION,
                 replay.surface_id,
                 "creo tabulated extrusion identity",
             )?;
+        let procedural_id_storage = procedural_id_parts.1;
+        let procedural_id = procedural_id_parts.0;
         geometry_storage.commit()?;
-        curve_id_storage.commit()?;
-        procedural_id_storage.commit()?;
-        surface_id_storage.commit()?;
+        let curve_id = curve_id_storage.commit_value(curve_id)?;
+        let procedural_id = procedural_id_storage.commit_value(procedural_id)?;
+        let surface_id = surface_id_storage.commit_value(surface_id)?;
         annotate(
             ctx,
             annotations,
