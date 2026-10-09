@@ -1155,7 +1155,7 @@ pub(crate) fn positional_conics(
             let Ok((entity_id, after_id)) = crate::psb::reference_id(payload, close + 1) else {
                 continue;
             };
-            if !matching_row_id(payload, close, entity_id) {
+            if !matching_row_id(ctx, payload, close, entity_id)? {
                 continue;
             }
             let (type_id, after_type) = crate::psb::compact_int(payload, after_id);
@@ -1382,27 +1382,40 @@ fn line3d_fields(
         .then_some((first, second, stored_length)))
 }
 
-fn matching_row_id(payload: &[u8], close: usize, id: u32) -> bool {
+fn matching_row_id(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    close: usize,
+    id: u32,
+) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(prefix) = payload.get(..close) else {
-        return false;
+        return Ok(false);
     };
-    prefix
-        .iter()
-        .enumerate()
-        .rev()
-        .take(8)
-        .any(|(candidate, _)| {
-            let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
-                return false;
-            };
-            if previous != id {
-                return false;
-            }
-            after == close
-                || (payload.get(after) == Some(&crate::psb::token::ENTITY_REF)
-                    && crate::psb::reference_id(payload, after + 1)
-                        .is_ok_and(|(_, reference_end)| reference_end == close))
-        })
+    let mut candidates = prefix.iter().enumerate().rev().take(8);
+    while candidates.len() != 0 {
+        let Some((candidate, _)) =
+            ctx.next_charged(&mut candidates, "creo matching row prefix scan")?
+        else {
+            break;
+        };
+        let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
+            continue;
+        };
+        if previous != id {
+            continue;
+        }
+        if after == close
+            || (payload.get(after) == Some(&crate::psb::token::ENTITY_REF)
+                && crate::psb::reference_id(payload, after + 1)
+                    .is_ok_and(|(_, reference_end)| reference_end == close))
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Decode complete positional `line3d` rows whose endpoint distance equals
@@ -1450,7 +1463,7 @@ pub(crate) fn line3d_lines(
             let Ok((id, after_id)) = crate::psb::reference_id(payload, close + 1) else {
                 continue;
             };
-            if !matching_row_id(payload, close, id) {
+            if !matching_row_id(ctx, payload, close, id)? {
                 continue;
             }
             let (_, body_start) = crate::psb::compact_int(payload, after_id);
@@ -1657,7 +1670,7 @@ pub(crate) fn arc_z_circles(
             let Ok((id, after_id)) = crate::psb::reference_id(payload, close + 1) else {
                 continue;
             };
-            if !matching_row_id(payload, close, id) {
+            if !matching_row_id(ctx, payload, close, id)? {
                 continue;
             }
             let (_, body_start) = crate::psb::compact_int(payload, after_id);
@@ -1705,3 +1718,6 @@ pub(crate) fn arc_z_circles(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod prefix_visits;

@@ -8635,22 +8635,33 @@ pub(crate) fn depdb_definitions(
 
 fn s2d_replay_starts(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Vec<usize>, CodecError> {
     const PREFIX: &[u8] = b"\xe3S2D";
-    let candidates = ctx
-        .admit_iter(
-            0..payload.len().saturating_sub(PREFIX.len() - 1),
-            "creo replay marker traversal",
-        )?
-        .filter_map(|offset| {
-            let window = &payload[offset..offset + PREFIX.len()];
-            if window != PREFIX {
-                return None;
-            }
-            let suffix = payload.get(offset + PREFIX.len()..)?;
-            let nul = suffix.iter().take(12).position(|byte| *byte == 0)?;
-            (nul > 0 && suffix[..nul].iter().all(u8::is_ascii_digit)).then_some(offset)
-        });
     let mut starts = Vec::new();
-    for offset in candidates {
+    for offset in ctx.admit_iter(
+        0..payload.len().saturating_sub(PREFIX.len() - 1),
+        "creo replay marker traversal",
+    )? {
+        if &payload[offset..offset + PREFIX.len()] != PREFIX {
+            continue;
+        }
+        let mut suffix = payload[offset + PREFIX.len()..].iter().take(12).enumerate();
+        let mut terminated = false;
+        while suffix.len() != 0 {
+            let Some((index, byte)) =
+                ctx.next_charged(&mut suffix, "creo replay name prefix scan")?
+            else {
+                break;
+            };
+            if *byte == 0 {
+                terminated = index > 0;
+                break;
+            }
+            if !byte.is_ascii_digit() {
+                break;
+            }
+        }
+        if !terminated {
+            continue;
+        }
         ctx.reserve_vec(&mut starts, 1, "creo S2D replay starts")?;
         starts.push(offset);
     }
@@ -9258,3 +9269,6 @@ mod tests;
 
 #[cfg(test)]
 mod selection_tests;
+
+#[cfg(test)]
+mod prefix_visits;
