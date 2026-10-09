@@ -889,6 +889,44 @@ impl<'t, I: Iterator<Item = usize>> Iterator for CommaFields<'t, I> {
     }
 }
 
+/// Decoded reference text dies before the reservation for its backing.
+struct ReferenceText<'ctx> {
+    value: String,
+    _storage: ScopedReservation<'ctx>,
+}
+
+/// A complete numeric tail owns its actual vector until publication or drop.
+struct ReferenceTail<'ctx> {
+    values: Vec<u32>,
+    storage: ScopedReservation<'ctx>,
+}
+
+fn numeric_reference_tail<'ctx, 'text>(
+    ctx: &'ctx DecodeContext<'_>,
+    fields: &mut std::iter::Peekable<impl Iterator<Item = &'text str>>,
+) -> Result<Option<ReferenceTail<'ctx>>, cadmpeg_core::CodecError> {
+    const PARSE: &str = "parse display-list reference text";
+    let mut storage = ctx.reserve_scoped(0, "decode display-list reference fields")?;
+    let mut values = Vec::new();
+    // The numeric tail is kept only when every trailing field is an
+    // `i32`; a blank last field is not a field.
+    while let Some(field) = fields.next() {
+        if fields.peek().is_none() && ctx.trim_text(field, PARSE)?.is_empty() {
+            break;
+        }
+        let Ok(value) = ctx.parse_text::<i32>(field, PARSE)? else {
+            return Ok(None);
+        };
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut values,
+            u32::from_ne_bytes(value.to_ne_bytes()),
+            "decode display-list reference fields",
+        )?;
+    }
+    Ok(Some(ReferenceTail { values, storage }))
+}
+
 fn persistent_surface_references(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -919,20 +957,20 @@ fn persistent_surface_references(
             continue;
         };
         at = end;
-        let (text, _text_reservation) = match ctx.utf16le_scoped_text(
+        let text = match ctx.utf16le_scoped_text(
             raw,
             count,
             false,
             "decode display-list reference text",
         ) {
-            Ok(text) => text,
+            Ok((value, storage)) => ReferenceText { value, _storage: storage },
             Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
             Err(error) => return Err(error),
         };
-        let text = ctx.trim_text(&text, PARSE)?;
+        let trimmed = ctx.trim_text(&text.value, PARSE)?;
         let mut fields = CommaFields {
-            text,
-            commas: ctx.find_bytes_iter(text.as_bytes(), b",", PARSE)?,
+            text: trimmed,
+            commas: ctx.find_bytes_iter(trimmed.as_bytes(), b",", PARSE)?,
             start: Some(0),
         }
         .peekable();
@@ -960,36 +998,19 @@ fn persistent_surface_references(
         else {
             continue;
         };
-        // The numeric tail is kept only when every trailing field is an
-        // `i32`; a blank last field is not a field.
-        let mut tail = ctx.reserve_scoped(0, "decode display-list reference fields")?;
-        let mut trailing_fields = Some(Vec::new());
-        while let Some(field) = fields.next() {
-            if fields.peek().is_none() && ctx.trim_text(field, PARSE)?.is_empty() {
-                break;
-            }
-            let Ok(value) = ctx.parse_text::<i32>(field, PARSE)? else {
-                trailing_fields = None;
-                break;
-            };
-            if let Some(values) = &mut trailing_fields {
-                ctx.push_scoped_vec(
-                    &mut tail,
-                    values,
-                    u32::from_ne_bytes(value.to_ne_bytes()),
-                    "decode display-list reference fields",
-                )?;
-            }
-        }
+        let trailing_fields = numeric_reference_tail(ctx, &mut fields)?;
+        drop(fields);
+        drop(text);
         ctx.reserve_vec(&mut references, 1, "collect display-list references")?;
         references.push(match trailing_fields {
             Some(trailing_fields) => {
-                tail.commit()?;
-                PersistentSurfaceReference::Complete(PersistentFaceIdentity {
-                    feature_source_id,
-                    local_id: local_surface_id,
-                    trailing_fields,
-                })
+                PersistentSurfaceReference::Complete(trailing_fields.storage.commit_value(
+                    PersistentFaceIdentity {
+                        feature_source_id,
+                        local_id: local_surface_id,
+                        trailing_fields: trailing_fields.values,
+                    },
+                )?)
             }
             None => PersistentSurfaceReference::SourceOnly {
                 feature_source_id,
