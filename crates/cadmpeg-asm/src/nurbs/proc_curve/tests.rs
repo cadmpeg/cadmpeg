@@ -8,6 +8,81 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use std::mem::size_of;
 
 #[test]
+fn construction_name_is_retained_only_in_the_selected_unknown_output() {
+    let cache_bytes = u64_from_index(4 * size_of::<f64>() + 2 * size_of::<FinitePoint3>());
+    for (name, cap, refused) in [
+        ("exactcur", cache_bytes, false),
+        ("helix_int_cur", cache_bytes, false),
+        ("arbitrary", cache_bytes + u64_from_index("arbitrary".len()) - 1, true),
+        ("arbitrary", cache_bytes + u64_from_index("arbitrary".len()), false),
+    ] {
+        let mut tokens = vec![Token::SubtypeOpen, Token::Ident(name.into())];
+        if name == "helix_int_cur" {
+            tokens.extend([
+                Token::Long(23_100), Token::Double(0.0), Token::Double(std::f64::consts::TAU),
+                Token::Position([1.0, 2.0, 3.0]),
+                Token::Vector3([1.0, 0.0, 0.0]), Token::Vector3([0.0, 1.0, 0.0]),
+                Token::Vector3([0.0, 0.0, 2.0]), Token::Double(0.0), Token::Vector3([0.0, 0.0, 1.0]),
+            ]);
+        }
+        tokens.extend([
+            Token::Ident("nubs".into()), Token::Long(1), Token::Enum(0), Token::Long(2),
+            Token::Double(0.0), Token::Long(1), Token::Double(1.0), Token::Long(1),
+            Token::Double(0.0), Token::Double(0.0), Token::Double(0.0),
+            Token::Double(1.0), Token::Double(0.0), Token::Double(0.0),
+            Token::SubtypeClose,
+        ]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let table = crate::nurbs::toks::SubtypeTable::from_records(&ctx, &[]).unwrap();
+        let result = super::procedural_curve_resolving_refs(&ctx, &tokens, &table).transpose();
+        if refused {
+            let first = match result {
+                Err(CodecError::ResourceLimit(first)) => first,
+                _ => panic!("expected selected unknown name retention refusal"),
+            };
+            assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(first.operation, "ASM construction subtype name");
+            assert_eq!((first.limit, first.used, first.additional),
+                (cap, cache_bytes, u64_from_index(name.len())));
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        } else {
+            let decoded = result.unwrap().unwrap();
+            assert_eq!(decoded.curve.degree(), 1);
+            assert_eq!(decoded.curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(decoded.curve.pole_count(), 2);
+            assert_eq!(decoded.curve.pole_rows().point_at(0).unwrap().get(), Point3::new(0.0, 0.0, 0.0));
+            assert_eq!(decoded.curve.pole_rows().point_at(1).unwrap().get(), Point3::new(10.0, 0.0, 0.0));
+            if name == "exactcur" {
+                assert!(matches!(decoded.construction, super::ProceduralCurveConstruction::Exact));
+            } else if name == "helix_int_cur" {
+                let super::ProceduralCurveConstruction::Helix(helix) = &decoded.construction else {
+                    panic!("expected the native helix construction");
+                };
+                assert_eq!(helix.angle_range, [0.0, std::f64::consts::TAU]);
+                assert_eq!(helix.center, Point3::new(10.0, 20.0, 30.0));
+                assert_eq!(helix.major, Vector3::new(10.0, 0.0, 0.0));
+                assert_eq!(helix.minor, Vector3::new(0.0, 10.0, 0.0));
+                assert_eq!(helix.pitch, Vector3::new(0.0, 0.0, 20.0));
+                assert_eq!(helix.apex_factor, 0.0);
+                assert_eq!(helix.axis, Vector3::new(0.0, 0.0, 1.0));
+            } else {
+                let super::ProceduralCurveConstruction::Unknown(kind) = &decoded.construction else {
+                    panic!("expected the native unknown construction name");
+                };
+                assert_eq!(kind, name);
+                assert!(matches!(&tokens[1], Token::Ident(original)
+                    if kind.as_ptr() != original.as_ptr()));
+            }
+            drop(decoded);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
 fn vector_offset_cache_releases_failed_candidates_and_preserves_its_source() {
     let mut tokens = vec![Token::SubtypeOpen, Token::Ident("offset_int_cur".into()), Token::True];
     // The wrapper owns an independent source curve before its solved cache.

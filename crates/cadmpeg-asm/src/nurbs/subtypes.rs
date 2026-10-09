@@ -394,8 +394,7 @@ mod ownership_tests {
                         .expect("valid single-record byte fixture")
                 )
                 .transpose()
-                .unwrap()
-                .as_deref(),
+                .unwrap(),
                 Some("defm_int_cur")
             );
         }

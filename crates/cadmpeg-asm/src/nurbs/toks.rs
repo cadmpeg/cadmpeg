@@ -441,10 +441,10 @@ pub(super) fn find_owned_subtype_marker<'n>(
 
 /// The construction `toks` is, under its modern name: the first subtype
 /// definition `toks` owns other than `ref`, canonicalized.
-pub fn owned_construction_subtype(
+pub fn owned_construction_subtype<'tokens>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-) -> Option<Result<String, cadmpeg_core::CodecError>> {
+    toks: &'tokens [Token],
+) -> Option<Result<&'tokens str, cadmpeg_core::CodecError>> {
     let mut depth = 0usize;
     let mut first = None;
     let walked = ctx.find_map(
@@ -477,12 +477,7 @@ pub fn owned_construction_subtype(
     match walked {
         Err(error) => Some(Err(error)),
         Ok(Some(false)) => None,
-        Ok(_) => first.map(|name| {
-            ctx.copy_retained_text(
-                canonical_intcurve_kind(name),
-                "ASM construction subtype name",
-            )
-        }),
+        Ok(_) => first.map(|name| Ok(canonical_intcurve_kind(name))),
     }
 }
 
@@ -966,7 +961,7 @@ mod tests {
         with_ctx(|ctx| owned_marker_positions_ctx(ctx, toks).transpose().unwrap())
     }
 
-    fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
+    fn owned_construction_subtype(toks: &[Token]) -> Option<&str> {
         with_ctx(|ctx| {
             owned_construction_subtype_ctx(ctx, toks)
                 .transpose()
@@ -975,21 +970,40 @@ mod tests {
     }
 
     #[test]
-    fn owned_construction_subtype_refuses_retained_string_limit() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let tokens = [
-            Token::SubtypeOpen,
-            Token::Ident("arbitrary".into()),
-            Token::SubtypeClose,
-        ];
-        let limit = crate::test_support::resource_limit_at(
-            &[],
-            ResourceDimension::RetainedBytes,
-            "ASM construction subtype name",
-            |ctx| owned_construction_subtype_ctx(ctx, &tokens).expect("subtype exists"),
-        );
-        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(limit.operation, "ASM construction subtype name");
+    fn construction_name_inspection_borrows_with_zero_storage_and_preserves_scan_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        for (name, canonical) in [("exactcur", "exact_int_cur"), ("arbitrary", "arbitrary")] {
+            let tokens = [Token::SubtypeOpen, Token::Ident(name.into()), Token::SubtypeClose];
+            // Three tokens plus the original end probe. Inspection owns no backing.
+            for cap in [3, 4] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_collection_items = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = owned_construction_subtype_ctx(&ctx, &tokens).unwrap();
+                if cap == 3 {
+                    let Err(CodecError::ResourceLimit(first)) = result else {
+                        panic!("expected original construction-name end-probe refusal");
+                    };
+                    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(first.operation, "scan ASM construction name");
+                    assert_eq!((first.limit, first.used, first.additional), (3, 3, 1));
+                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                } else {
+                    let selected = result.unwrap();
+                    assert_eq!(selected, canonical);
+                    if name == "arbitrary" {
+                        assert!(matches!(&tokens[1], Token::Ident(original)
+                            if selected.as_ptr() == original.as_ptr()));
+                    }
+                    ctx.finish_session().unwrap();
+                }
+            }
+        }
     }
 
     fn cache_scope(toks: &[Token]) -> Option<&[Token]> {
@@ -1303,7 +1317,7 @@ mod tests {
         ];
         assert_eq!(
             owned_construction_subtype(&toks),
-            Some("exact_int_cur".to_string())
+            Some("exact_int_cur")
         );
         assert_eq!(
             subtype_span(&toks, 2).map(|scope| scope.tokens()),

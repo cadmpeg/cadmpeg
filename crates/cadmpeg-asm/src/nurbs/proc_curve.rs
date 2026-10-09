@@ -1066,15 +1066,17 @@ fn procedural_curve_recursive(
             .or_else(|| compound.map(ProceduralCurveConstruction::Compound).map(Ok))
             .unwrap_or_else(|| {
                 let native_kind = crate::nurbs::toks::owned_construction_subtype(ctx, toks)
-                    .transpose()?
-                    .unwrap_or_else(|| "intcurve".to_string());
-                if native_kind == "exact_int_cur" {
+                    .transpose()?;
+                if native_kind == Some("exact_int_cur") {
                     Ok(ProceduralCurveConstruction::Exact)
+                } else if let Some(helix) = helix_definition(ctx, toks).transpose()? {
+                    Ok(ProceduralCurveConstruction::Helix(helix))
                 } else {
-                    Ok(helix_definition(ctx, toks)
-                        .transpose()?
-                        .map(ProceduralCurveConstruction::Helix)
-                        .unwrap_or(ProceduralCurveConstruction::Unknown(native_kind)))
+                    let native_kind = match native_kind {
+                        Some(kind) => ctx.copy_retained_text(kind, "ASM construction subtype name")?,
+                        None => "intcurve".to_string(),
+                    };
+                    Ok(ProceduralCurveConstruction::Unknown(native_kind))
                 }
             });
         let construction = match construction {
