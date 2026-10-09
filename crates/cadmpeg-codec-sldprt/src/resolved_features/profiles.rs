@@ -1422,6 +1422,8 @@ pub(crate) fn project_marker_backed_sketches(
                     object_markers.push(marker);
                 }
             }
+            let object_markers =
+                super::endpoints::coordinate_rosters::CoordinateRosters::new(ctx, object_markers)?;
             let context_start = object_index
                 .checked_sub(1)
                 .and_then(|index| objects.get(index))

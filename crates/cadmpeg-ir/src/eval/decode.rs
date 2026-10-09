@@ -15,9 +15,16 @@ use crate::math::{Point2, Point3};
 use crate::scalar::FiniteReal;
 use crate::units::FinitePoint2;
 
-/// A basis or pole window with fixed storage through cubic spans.
+/// Inline spline support through degree 15; larger windows use admitted backing.
+pub(super) const INLINE_SUPPORT: usize = 16;
+
+/// A basis or pole window with bounded inline storage.
+#[derive(Debug, PartialEq)]
 pub(super) enum SupportValues<T> {
-    Inline { values: [T; 4], len: usize },
+    Inline {
+        values: [T; INLINE_SUPPORT],
+        len: usize,
+    },
     Heap(Vec<T>),
 }
 
@@ -149,7 +156,7 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         Some(output)
     }
 
-    /// Collect a local spline window without heap backing through cubic order.
+    /// Collect a local spline window without heap backing through degree 15.
     pub(super) fn support_values<T: Copy + Default>(
         &self,
         values: impl ExactSizeIterator<Item = Option<T>>,
@@ -157,14 +164,14 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         work_operation: &'static str,
     ) -> Option<SupportValues<T>> {
         let len = values.len();
-        if len > 4 {
+        if len > INLINE_SUPPORT {
             return self
                 .collect(values, operation, work_operation)
                 .map(SupportValues::Heap);
         }
         self.work(0, work_operation)?;
         let mut output = SupportValues::Inline {
-            values: [T::default(); 4],
+            values: [T::default(); INLINE_SUPPORT],
             len,
         };
         for (index, value) in values.enumerate() {
@@ -444,7 +451,7 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
         let (basis, storage) = if support <= 4 {
             (
                 SupportValues::Inline {
-                    values: [0.0; 4],
+                    values: [0.0; INLINE_SUPPORT],
                     len: support,
                 },
                 None,

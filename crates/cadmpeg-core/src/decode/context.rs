@@ -331,6 +331,7 @@ impl<'a> DecodeContext<'a> {
         value: &[u8],
         operation: &'static str,
     ) -> Result<String, CodecError> {
+        self.charge_work(u64_from_index(value.len()), operation)?;
         let mut remaining = value;
         let mut length = 0usize;
         loop {
@@ -354,6 +355,8 @@ impl<'a> DecodeContext<'a> {
             }
         }
         let mut text = String::new();
+        self.charge_work(u64_from_index(value.len()), operation)?;
+        self.charge_work(u64_from_index(length), operation)?;
         self.try_reserve_retained_text(&mut text, length, operation)?;
         let mut remaining = value;
         loop {
@@ -364,6 +367,7 @@ impl<'a> DecodeContext<'a> {
                 }
                 Err(error) => {
                     let valid_len = error.valid_up_to();
+                    self.charge_work(u64_from_index(valid_len), operation)?;
                     text.push_str(
                         std::str::from_utf8(&remaining[..valid_len])
                             .map_err(|_| CodecError::malformed("valid UTF-8 prefix changed"))?,
@@ -379,8 +383,8 @@ impl<'a> DecodeContext<'a> {
         Ok(text)
     }
 
-    /// Allocates `count` copies of `value` after charging collection items and
-    /// reserving without panicking on allocator refusal.
+    /// Allocates `count` copies of `value` after charging slots, backing bytes
+    /// and fill work, with fallible storage admission.
     ///
     /// Prefer this over `vec![value; parsed_count]` for attacker-influenced sizes.
     pub fn alloc_filled<T: Clone>(
@@ -389,8 +393,8 @@ impl<'a> DecodeContext<'a> {
         value: T,
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
-        self.charge_collection_items(u64_from_index(count), operation)?;
-        let mut values = Self::admitted_vec(count, operation)?;
+        self.charge_work(u64_from_index(count), operation)?;
+        let mut values = self.collection_vec(count, operation)?;
         values.resize(count, value);
         Ok(values)
     }
@@ -728,6 +732,7 @@ impl<'a> DecodeContext<'a> {
                 "cannot concatenate an empty view list".into(),
             ));
         }
+        self.charge_work(u64_from_index(inputs.len()), "concat_views")?;
         let total = inputs.iter().try_fold(0usize, |total, view| {
             total.checked_add(view.window().len()).ok_or_else(|| {
                 self.budget.refuse(
@@ -740,6 +745,7 @@ impl<'a> DecodeContext<'a> {
                 )
             })
         })?;
+        self.charge_work(u64_from_index(total), "concat_views")?;
         let reservation = self.reserve_scoped(u64_from_index(total), "concat_views")?;
         let mut buffer = Vec::new();
         buffer.try_reserve_exact(total).map_err(|_| {

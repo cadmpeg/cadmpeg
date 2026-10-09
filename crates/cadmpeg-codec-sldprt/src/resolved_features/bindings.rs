@@ -2119,6 +2119,7 @@ fn bind_resolved_curve_vertices(
             markers_by_id.insert(marker.id(), marker);
         }
         let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
+        let markers = super::endpoints::coordinate_rosters::CoordinateRosters::new(ctx, markers)?;
         let mut selected = HashSet::new();
         for curve in markers.iter().copied().filter(|curve| {
             index_from_u64(curve.offset()).is_some_and(|offset| {
@@ -2157,6 +2158,7 @@ fn bind_resolved_curve_vertices(
             markers_by_id.insert(marker.id(), marker);
         }
         let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
+        let markers = super::endpoints::coordinate_rosters::CoordinateRosters::new(ctx, markers)?;
         let mut resolved_curves = HashSet::new();
         let mut resolved_endpoints = HashSet::new();
         for curve in markers.iter().copied().filter(|marker| {

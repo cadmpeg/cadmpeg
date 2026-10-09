@@ -860,23 +860,6 @@ impl DecodeContext<'_> {
         })
     }
 
-    /// Allocates the fixed vector used by the context's aggregate fill operation.
-    pub(crate) fn admitted_vec<T>(
-        count: usize,
-        operation: &'static str,
-    ) -> Result<Vec<T>, CodecError> {
-        let mut values = Vec::new();
-        values.try_reserve_exact(count).map_err(|_| {
-            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                ResourceDimension::CollectionItems,
-                u64::MAX,
-                u64_from_index(count),
-                operation,
-            ))
-        })?;
-        Ok(values)
-    }
-
     /// Creates a charged vector only when the source is present.
     pub fn optional_collection_vec<T>(
         &self,

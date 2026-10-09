@@ -63,9 +63,13 @@ pub(super) fn bspline_basis(
     t: f64,
 ) -> Option<decode::SupportValues<f64>> {
     let support = degree.checked_add(1)?;
-    let mut values = if support <= 4 {
+    let mut values = if support <= decode::INLINE_SUPPORT {
+        // Preserve initialization work for support that required filled backing.
+        if support > 4 {
+            scratch.work(support, "IR B-spline basis work")?;
+        }
         decode::SupportValues::Inline {
-            values: [0.0; 4],
+            values: [0.0; decode::INLINE_SUPPORT],
             len: support,
         }
     } else {
@@ -268,7 +272,7 @@ pub(super) fn bspline_basis_second_derivative(
 ) -> Option<decode::SupportValues<f64>> {
     if degree <= 1 {
         return Some(decode::SupportValues::Inline {
-            values: [0.0; 4],
+            values: [0.0; decode::INLINE_SUPPORT],
             len: degree + 1,
         });
     }
@@ -327,8 +331,8 @@ pub(super) fn bspline_basis_second_derivative(
 /// the original parameter would exceed binary64 range.
 #[derive(Debug, PartialEq)]
 pub(super) struct ScaledBasisDerivatives {
-    pub(super) first: Vec<f64>,
-    pub(super) second: Vec<f64>,
+    pub(super) first: decode::SupportValues<f64>,
+    pub(super) second: decode::SupportValues<f64>,
 }
 
 pub(super) fn bspline_basis_scaled_derivatives(
@@ -341,15 +345,13 @@ pub(super) fn bspline_basis_scaled_derivatives(
 ) -> Option<ScaledBasisDerivatives> {
     if degree == 0 {
         return Some(ScaledBasisDerivatives {
-            first: scratch.filled(
-                1,
-                0.0,
+            first: scratch.support_values(
+                std::iter::once(Some(0.0)),
                 "IR scaled B-spline first basis",
                 "IR scaled B-spline derivative work",
             )?,
-            second: scratch.filled(
-                1,
-                0.0,
+            second: scratch.support_values(
+                std::iter::once(Some(0.0)),
                 "IR scaled B-spline second basis",
                 "IR scaled B-spline derivative work",
             )?,
@@ -358,9 +360,8 @@ pub(super) fn bspline_basis_scaled_derivatives(
     let lower = bspline_basis(scratch, knots, degree - 1, span, t)?;
     let first = bspline_basis_scaled_derivative_level(scratch, knots, degree, span, scale, &lower)?;
     let second = if degree == 1 {
-        scratch.filled(
-            2,
-            0.0,
+        scratch.support_values(
+            std::iter::repeat_n(Some(0.0), 2),
             "IR scaled B-spline second basis",
             "IR scaled B-spline derivative work",
         )?
@@ -386,10 +387,10 @@ fn bspline_basis_scaled_derivative_level(
     span: usize,
     scale: PositiveReal,
     lower: &[f64],
-) -> Option<Vec<f64>> {
+) -> Option<decode::SupportValues<f64>> {
     let degree_real = f64_from_index(degree)?;
     let lower_start = span - (degree - 1);
-    scratch.collect(
+    scratch.support_values(
         (0..degree.checked_add(1)?).map(|local| {
             let index = span - degree + local;
             let lower_at = |values: &[f64], global: usize| {

@@ -1004,22 +1004,56 @@ pub(super) fn complete_duplicate_face_slots(
     {
         return Ok(None);
     }
-    let free_faces = |&edge: &usize| {
+    let (mut keyed, key_storage) = ctx
+        .with_scoped_storage("catia standard duplicate free-face keys", || {
+            ctx.collection_vec(unresolved.len(), "catia standard duplicate free-face keys")
+        })?;
+    for &edge in &unresolved {
         let [start, end] = edge_points[edge];
-        degrees
-            .iter()
-            .filter(|face| {
-                duplicate_degree(face, start).unwrap_or_default() + 1 + u8::from(start == end) <= 2
-                    && (start == end || duplicate_degree(face, end).unwrap_or_default() < 2)
-            })
-            .count()
-    };
+        let mut free_faces = 0usize;
+        for face in &degrees {
+            ctx.charge_work(1, "catia standard duplicate free-face keys")?;
+            let degree = |point| -> Result<u8, CodecError> {
+                let mut refusal = None;
+                let found = face.binary_search_by(|value| {
+                    if refusal.is_some() {
+                        return std::cmp::Ordering::Equal;
+                    }
+                    match ctx.charge_work(1, "catia standard duplicate free-face keys") {
+                        Ok(()) => value.0.cmp(&point),
+                        Err(error) => {
+                            refusal = Some(error);
+                            std::cmp::Ordering::Equal
+                        }
+                    }
+                });
+                if let Some(error) = refusal {
+                    return Err(error);
+                }
+                Ok(found.ok().map_or(0, |index| face[index].1))
+            };
+            if degree(start)? + 1 + u8::from(start == end) <= 2
+                && (start == end || degree(end)? < 2)
+            {
+                free_faces += 1;
+            }
+        }
+        keyed.push((edge, free_faces));
+    }
     ctx.stable_sort_by(
-        &mut unresolved,
-        |left, right| free_faces(left).cmp(&free_faces(right)),
+        &mut keyed,
+        |left, right| left.1.cmp(&right.1),
         |_| 0,
         "catia standard duplicate unresolved edges sort",
     )?;
+    ctx.charge_work(
+        u64_from_index(unresolved.len()),
+        "catia standard duplicate edge order",
+    )?;
+    for (edge, (ordered, _)) in unresolved.iter_mut().zip(keyed) {
+        *edge = ordered;
+    }
+    drop(key_storage);
 
     let mut solutions = Vec::new();
     let mut operations = 0;
