@@ -275,7 +275,7 @@ pub(super) fn project(
             .ok()
             .filter(|count| *count > cadmpeg_core::decode::u64_from_index(MAX_COPIOUS_TUPLES))
         {
-            return Err(refuse_local_limit(
+            return Err(ctx.refuse_codec_limit(
                 "iges_copious_tuples",
                 cadmpeg_core::decode::u64_from_index(MAX_COPIOUS_TUPLES),
                 observed,
