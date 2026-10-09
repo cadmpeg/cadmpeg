@@ -20,3 +20,5 @@ mod relations;
 mod surface;
 mod text;
 mod visibility;
+
+mod grouped_session;

@@ -41,12 +41,12 @@ fn companion_session_preserves_native_interval_and_input_order_then_releases_sto
     assert_eq!(intervals.interval(&stream, &companion(), 300).unwrap(), Some((58, 100)));
     assert_eq!(intervals.interval("f3d:missing", &companion(), 300).unwrap(), Some((58, 300)));
     let mut actual_owners = intervals.owners_of(&stream, "test companion owner input order").unwrap();
-    assert!(std::ptr::eq(actual_owners.next().unwrap(), &owners[0]));
-    assert!(std::ptr::eq(actual_owners.next().unwrap(), &owners[1]));
+    assert!(std::ptr::eq(actual_owners.next().unwrap().unwrap(), &owners[0]));
+    assert!(std::ptr::eq(actual_owners.next().unwrap().unwrap(), &owners[1]));
     assert!(actual_owners.next().is_none());
     drop(actual_owners);
     let mut actual_scopes = intervals.scopes_of(&stream, "test companion scope identity").unwrap();
-    assert!(std::ptr::eq(actual_scopes.next().unwrap(), &scopes[0]));
+    assert!(std::ptr::eq(actual_scopes.next().unwrap().unwrap(), &scopes[0]));
     assert!(actual_scopes.next().is_none());
     drop(actual_scopes);
     drop(intervals);
