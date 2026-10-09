@@ -1845,3 +1845,5 @@ mod rectangles;
 mod resource_operations;
 
 mod frame_deduplication;
+
+mod lane_candidate_storage;

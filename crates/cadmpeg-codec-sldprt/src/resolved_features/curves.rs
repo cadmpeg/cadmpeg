@@ -1878,7 +1878,8 @@ pub(super) fn sketch_plane_frames(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
 ) -> Result<HashMap<u32, SketchPlaneFrame>, CodecError> {
-    let (entries, _entry_storage) = ctx.with_scoped_storage("hold SLDPRT plane entries", || {
+    let mut entry_storage = ctx.reserve_scoped(0, "hold SLDPRT plane entries")?;
+    let entries = entry_storage.with_storage(|| {
         sketch_plane_frame_entries(ctx, features, histories)
     })?;
     frames_from_entries(ctx, &entries)
@@ -2055,7 +2056,8 @@ impl<'h> LaneFrameIndex<'h> {
         histories: &'h [crate::records::FeatureHistory],
     ) -> Result<Self, CodecError> {
         const OPERATION: &str = "index SLDPRT lane sketch plane candidates";
-        let (by_native, _native_storage) = ctx.with_scoped_storage(OPERATION, || {
+        let mut native_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let by_native = native_storage.with_storage(|| {
             first_model_feature_by_native(ctx, features, OPERATION)
         })?;
         let mut stated_by_native = HashMap::new();
@@ -2087,6 +2089,7 @@ impl<'h> LaneFrameIndex<'h> {
     ) -> Result<HashMap<u32, SketchPlaneFrame>, CodecError> {
         const OPERATION: &str = "index SLDPRT lane sketch plane candidates";
         let mut frames = frames_from_entries(ctx, &self.entries)?;
+        let mut candidate_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut lane_candidates = BTreeMap::<u32, Vec<SketchPlaneFrame>>::new();
         for history in ctx.admit_iter(histories, OPERATION)? {
             for native in ctx.admit_iter(&history.features, OPERATION)? {
@@ -2102,13 +2105,15 @@ impl<'h> LaneFrameIndex<'h> {
                 else {
                     continue;
                 };
-                ctx.push_btree_group(
-                    &mut lane_candidates,
-                    source,
-                    frame,
-                    OPERATION,
-                    "collect SLDPRT lane sketch plane candidates",
-                )?;
+                candidate_storage.with_storage(|| {
+                    ctx.push_btree_group(
+                        &mut lane_candidates,
+                        source,
+                        frame,
+                        OPERATION,
+                        "collect SLDPRT lane sketch plane candidates",
+                    )
+                })?;
             }
         }
         for (source, mut candidates) in ctx.admit_iter(lane_candidates, OPERATION)? {
@@ -2144,10 +2149,10 @@ pub(super) fn lane_sketch_plane_frames(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Result<HashMap<u32, SketchPlaneFrame>, CodecError> {
-    let (index, _index_storage) = ctx
-        .with_scoped_storage("hold SLDPRT lane plane index", || {
-            LaneFrameIndex::new(ctx, features, histories)
-        })?;
+    let mut index_storage = ctx.reserve_scoped(0, "hold SLDPRT lane plane index")?;
+    let index = index_storage.with_storage(|| {
+        LaneFrameIndex::new(ctx, features, histories)
+    })?;
     index.lane_frames(ctx, histories, &ObjectNames::new(ctx, lane)?)
 }
 
