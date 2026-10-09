@@ -720,11 +720,21 @@ fn lines_deduplication_refuses_work() {
             \x18\xdf\x1d\x84\xe8\xb0\xed\x7b\x2d\x19\x87\x25\xdc\x17\x53\xfa\
             \x18\x2d\x43\x23\xb0\x9d\x16\x1d\xaf\x2d\x19\x87\x25\xdc\x17\x53\xfa\xe3\
             \xe0\x00entity(text)\0";
+    let original = lines(payload);
+    assert_eq!(original.len(), 1);
+    let mut doubled = payload.to_vec();
+    doubled.extend_from_slice(b"\xe0\x00");
+    doubled.extend_from_slice(payload);
+    let mut expected = original.clone();
+    let mut second = original[0].clone();
+    second.offset += payload.len() + 2;
+    expected.push(second);
+    assert_eq!(lines(&doubled), expected);
     let error = crate::test_support::last_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo lines result deduplication",
-        |ctx| super::lines(ctx, payload),
+        |ctx| super::lines(ctx, &doubled),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -740,11 +750,21 @@ fn positional_conics_deduplication_refuses_work() {
             \xe4\x0f\x0f\x43\xf0\x00\x0f\x0f\x0f\x11\x43\xf0\x00\xe4\
             \xe4\x0f\x0f\x0f\xe4\x0f\x0f\x0f\xe4\x43\xf0\x00\x0f\x0f\
             \xe2\x2c\xf7\x10\xe3\xe0\x00ent_list(text)\0";
+    let original = positional_conics(payload);
+    assert_eq!(original.len(), 1);
+    let mut doubled = payload.to_vec();
+    doubled.extend_from_slice(b"\xe0\x00");
+    doubled.extend_from_slice(payload);
+    let mut expected = original.clone();
+    let mut second = original[0].clone();
+    second.offset += payload.len() + 2;
+    expected.push(second);
+    assert_eq!(positional_conics(&doubled), expected);
     let error = crate::test_support::last_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo positional conics result deduplication",
-        |ctx| super::positional_conics(ctx, payload),
+        |ctx| super::positional_conics(ctx, &doubled),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -757,11 +777,21 @@ fn positional_conics_deduplication_refuses_work() {
 fn line3d_lines_deduplication_refuses_work() {
     let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\x00\
             \x0f\x0f\x0f\xe4\x0f\x0f\xe4";
+    let original = line3d_lines(payload);
+    assert_eq!(original.len(), 1);
+    let mut doubled = payload.to_vec();
+    doubled.extend_from_slice(b"\xe0\x00");
+    doubled.extend_from_slice(payload);
+    let mut expected = original.clone();
+    let mut second = original[0].clone();
+    second.offset += payload.len() + 2;
+    expected.push(second);
+    assert_eq!(line3d_lines(&doubled), expected);
     let error = crate::test_support::last_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo line3d lines result deduplication",
-        |ctx| super::line3d_lines(ctx, payload),
+        |ctx| super::line3d_lines(ctx, &doubled),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)

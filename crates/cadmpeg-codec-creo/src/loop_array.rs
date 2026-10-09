@@ -385,11 +385,17 @@ fn parse_frame(
 
 /// Retain structurally complete `lo_array` frames and positional rows.
 pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut result = LoopArrayScan::default();
     let mut search = 0;
-    while let Some(offset) =
-        ctx.find_bytes_from(data, LO_ARRAY_LABEL, search, "creo loop array discovery")?
-    {
+    while data.len().saturating_sub(search) >= LO_ARRAY_LABEL.len() {
+        let Some(offset) =
+            ctx.find_bytes_from(data, LO_ARRAY_LABEL, search, "creo loop array discovery")?
+        else {
+            break;
+        };
         let Some(next_search) = offset.checked_add(LO_ARRAY_LABEL.len()) else {
             break;
         };
@@ -407,18 +413,22 @@ pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan
         result.records.extend(records);
         search = search.max(result.frames.last().map_or(search, |frame| frame.end));
     }
-    ctx.stable_sort_by(
-        result.frames.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo scan result frames ordering",
-    )?;
-    ctx.stable_sort_by(
-        result.records.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo scan result records ordering",
-    )?;
+    if result.frames.len() > 1 {
+        ctx.stable_sort_by(
+            result.frames.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo scan result frames ordering",
+        )?;
+    }
+    if result.records.len() > 1 {
+        ctx.stable_sort_by(
+            result.records.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo scan result records ordering",
+        )?;
+    }
     Ok(result)
 }
 

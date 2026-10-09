@@ -67,3 +67,75 @@ fn arc_trials_admit_two_present_offset_passes_without_a_terminal_visit() {
         }
     }
 }
+
+#[test]
+fn empty_reference_outputs_are_free_and_keep_original_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    for refused in [false, true] {
+        if refused { ctx.charge_work_limit(1, "empty reference seed").expect_err("zero cap"); }
+        let results = [
+            super::super::named_conics(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::positional_conics(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::lines(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::line3d_lines(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::arc_z_circles(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::ellipse_carriers(&ctx, &[]).map(|v| v.is_empty()),
+        ];
+        for result in results {
+            if refused {
+                let original = ctx.resource_refusal().expect("original seed");
+                assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+            } else { assert!(result.expect("empty output")); }
+        }
+        assert_eq!(ctx.resource_refusal().is_some(), refused);
+    }
+}
+
+#[test]
+fn singleton_reference_ellipse_admits_only_its_source_visit() {
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
+    use cadmpeg_ir::units::{FiniteVector, UnitVector3};
+    let conic = super::super::ReferenceConic {
+        entity_id: 7, type_id: super::super::ConicType::Ellipse, flip: 1,
+        start: FinitePoint3::new([-1.0, 0.0, 0.0].into()).expect("start"),
+        end: FinitePoint3::new([1.0, 0.0, 0.0].into()).expect("end"),
+        parameter_start: None, parameter_end: None,
+        coefficient_1: FiniteReal::ONE, coefficient_2: FiniteReal::ONE,
+        local_system: FiniteVector::new([1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0]),
+        body: Vec::new(), offset: 12,
+    };
+    let expected = super::super::ReferenceEllipse::try_new(7,
+        FinitePoint3::new([0.0; 3].into()).expect("center"), UnitVector3::Z_AXIS,
+        UnitVector3::X_AXIS.reversed(), [PositiveLength::new(1.0).expect("radius"); 2], 12)
+        .expect("circle is an ellipse");
+    for cap in 0..=1 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let parse = || super::super::ellipse_carriers(&ctx, std::slice::from_ref(&conic));
+        let original = if cap == 1 {
+            assert_eq!(parse().expect("one source visit"), [expected.clone()]);
+            let r = ctx.charge_work_limit(1, "after singleton ellipse").expect_err("exact cap");
+            assert_eq!((r.used, r.additional), (1, 1));
+            r
+        } else {
+            let Err(CodecError::ResourceLimit(r)) = parse() else { panic!("present source visit"); };
+            assert_eq!(r.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(r.operation, "creo reference conic traversal");
+            assert_eq!((r.used, r.additional), (0, 1));
+            r
+        };
+        assert!(matches!(parse(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+    }
+}
