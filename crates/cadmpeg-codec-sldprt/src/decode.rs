@@ -6771,23 +6771,28 @@ fn build_container_report(
             .count();
     let payload_sources = scan.blocks.len() + scan.compound_streams.len();
 
-    let mut losses = vec![
+    let mut losses = ctx.collection_vec(3, "retain SLDPRT container report losses")?;
+    losses.push(
         SldprtLossCode::GeometryParasolidNotTransferred.note(format!(
             "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved \
              into a topology graph. {payload_sources} payload source(s) were enumerated, \
              {parasolid_sources} carrying Parasolid streams."
         )),
+    );
+    losses.push(
         SldprtLossCode::TopologyGraphNotTransferred.note(
             "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
              for this file."
                 .to_string(),
         ),
+    );
+    losses.push(
         SldprtLossCode::MaterialMetadataNotTransferred.note(
             "Body-bound appearances and tessellation were not transferred because no body graph \
              exists."
                 .to_string(),
         ),
-    ];
+    );
 
     if !container::has_parasolid_body_stream(ctx, scan)? {
         ctx.reserve_vec(&mut losses, 1, "append SLDPRT container loss")?;
