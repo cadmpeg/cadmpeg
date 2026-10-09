@@ -1945,3 +1945,5 @@ mod loci;
 mod stream_runs;
 
 mod lazy_loci;
+
+mod stream_index_session;
