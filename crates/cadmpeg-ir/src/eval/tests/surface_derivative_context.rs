@@ -47,6 +47,7 @@ fn surface_derivatives_use_the_existing_scratch_context() {
         local
             .second(&source_scratch, &first)
             .expect("finite second partials")
+            .lanes
             .map(|row| row.map(crate::scalar::FiniteReal::get)),
         [[0.0, 0.0, 2.0], [0.0, 0.0, 0.0], [0.0, 0.0, 2.0]]
     );

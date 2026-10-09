@@ -326,6 +326,84 @@ pub(super) fn bspline_basis_second_derivative(
     Some(Cow::Owned(basis))
 }
 
+/// Third derivatives of the active polynomial basis. Only the three
+/// derivative recurrence rows and the degree-3 base row are constructed.
+/// Degrees below three have exact zero polynomial derivatives.
+pub(super) fn bspline_basis_third_derivative(
+    scratch: &decode::Scratch<'_, '_>,
+    knots: &[f64],
+    degree: usize,
+    span: usize,
+    t: f64,
+) -> Option<Cow<'static, [f64]>> {
+    scratch.work(0, "IR B-spline third derivative work")?;
+    match degree {
+        0 => return Some(Cow::Borrowed(&[0.0])),
+        1 => return Some(Cow::Borrowed(&[0.0, 0.0])),
+        2 => return Some(Cow::Borrowed(&[0.0, 0.0, 0.0])),
+        _ => {}
+    }
+    let base_degree = degree - 3;
+    let base = bspline_basis(scratch, knots, base_degree, span, t)?;
+    let mut lower: Cow<'_, [f64]> = Cow::Borrowed(&base);
+    for row_degree in base_degree + 1..=degree {
+        let degree_real = f64_from_index(row_degree)?;
+        let lower_start = span - (row_degree - 1);
+        let basis = scratch.collect(
+            (0..=row_degree).map(|local| {
+                let index = span - row_degree + local;
+                let lower_at = |global: usize| global.checked_sub(lower_start)
+                    .and_then(|at| lower.get(at)).copied().unwrap_or(0.0);
+                use crate::math::sum::ExactSignedSum;
+                let [left_end, left_start, right_end, right_start] = [
+                    knots[index + row_degree], knots[index], knots[index + row_degree + 1], knots[index + 1],
+                ];
+                let left_active = left_end != left_start;
+                let right_active = right_end != right_start;
+                if !left_active && !right_active { return Some(0.0); }
+                let left = if left_active { lower_at(index) } else { 0.0 };
+                let right = if right_active { lower_at(index + 1) } else { 0.0 };
+                if FiniteReal::array([left, right, left_end, left_start, right_end, right_start]).is_none() {
+                    return Some(f64::NAN);
+                }
+                let mut numerator = ExactSignedSum::default();
+                let mut denominator = ExactSignedSum::default();
+                if left_active && right_active {
+                    // p*(a/dr_left-b/dr_right), with both exact differences.
+                    // Expand the common denominator before rounding or division;
+                    // no binary64 product or individual quotient must fit first.
+                    numerator.add_factors([degree_real, left, right_end]);
+                    numerator.add_factors([-degree_real, left, right_start]);
+                    numerator.add_factors([-degree_real, right, left_end]);
+                    numerator.add_factors([degree_real, right, left_start]);
+                    denominator.add_product(left_end, right_end);
+                    denominator.add_product(-left_end, right_start);
+                    denominator.add_product(-left_start, right_end);
+                    denominator.add_product(left_start, right_start);
+                } else if left_active {
+                    numerator.add_product(degree_real, left);
+                    denominator.add_product(left_end, 1.0);
+                    denominator.add_product(left_start, -1.0);
+                } else {
+                    numerator.add_product(-degree_real, right);
+                    denominator.add_product(right_end, 1.0);
+                    denominator.add_product(right_start, -1.0);
+                }
+                Some(match (numerator.finish(), denominator.finish()) {
+                    (None, Some(_)) => 0.0,
+                    (Some(numerator), Some(denominator)) => numerator.quotient(denominator)
+                        .map_or_else(|overflow| overflow, FiniteReal::get),
+                    _ => f64::NAN,
+                })
+            }),
+            "IR B-spline third derivative basis",
+            "IR B-spline third derivative work",
+        )?;
+        lower = Cow::Owned(basis);
+    }
+    Some(Cow::Owned(lower.into_owned()))
+}
+
 /// Basis derivatives with respect to a local coordinate whose unit is the
 /// active knot span. This keeps the coefficients finite when derivatives in
 /// the original parameter would exceed binary64 range.
