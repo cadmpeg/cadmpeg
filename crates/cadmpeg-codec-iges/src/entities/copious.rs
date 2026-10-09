@@ -110,6 +110,9 @@ fn has_forbidden_form_63_duplicate(
     resolution: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if points.len() == 2 {
         return Ok(true);
     }

@@ -1866,3 +1866,5 @@ fn noncoplanar_section_boundary_skips_island_geometry_work() {
     drop(geometry);
     ctx.finish_session().unwrap();
 }
+
+mod entry_refusal;

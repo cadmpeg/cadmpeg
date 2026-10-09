@@ -30,6 +30,9 @@ fn admit_analytic<T>(
     slots: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<T>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     match result {
         Ok(value) => Ok(Some(value)),
         Err(message) => {
@@ -180,6 +183,12 @@ fn required_direction(
     records: &[ParameterRecord],
     ctx: &DecodeContext<'_>,
 ) -> Result<UnitVector3, AnalyticDirectionError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(AnalyticDirectionError::Pointed {
+            role,
+            reason: DirectionError::Decode(refusal.into()),
+        });
+    }
     let sequence = pointer(record, index).ok_or(AnalyticDirectionError::MissingPointer(role))?;
     direction(sequence, entries, records, ctx)
         .map_err(|reason| AnalyticDirectionError::Pointed { role, reason })
@@ -210,6 +219,12 @@ fn form_reference_direction(
     sources: (&[DirectoryEntry], &[ParameterRecord]),
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<UnitVector3>, AnalyticDirectionError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(AnalyticDirectionError::Pointed {
+            role,
+            reason: DirectionError::Decode(refusal.into()),
+        });
+    }
     if form == 0 {
         Ok(None)
     } else {
