@@ -34,7 +34,9 @@ pub(crate) fn decode_component_occurrences(
             continue;
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
+        let _scope_reservation;
+        let (scope, held_scope_storage) = native_scope_scoped(ctx, &entry.name)?;
+        _scope_reservation = held_scope_storage;
         let mut current = next_indexed_record_header(ctx, bytes, 0, |_| true)?;
         while let Some(header) = current {
             // A header offset indexes `bytes`, so the successor stays in range.

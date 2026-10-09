@@ -340,7 +340,7 @@ pub(in crate::design) fn native_scope_charged(
 pub(in crate::design) fn native_scope_scoped<'a>(
     ctx: &'a DecodeContext<'_>,
     name: &str,
-) -> Result<(cadmpeg_core::decode::ScopedReservation<'a>, String), CodecError> {
+) -> Result<(String, cadmpeg_core::decode::ScopedReservation<'a>), CodecError> {
     let encoded_len = native_scope_encoded_len(ctx, name)?;
 
     let mut reservation = ctx.reserve_scoped(0, "f3d scoped native stream key")?;
@@ -352,7 +352,7 @@ pub(in crate::design) fn native_scope_scoped<'a>(
         "f3d scoped native stream key",
     )?;
     append_native_scope(ctx, name, &mut out)?;
-    Ok((reservation, out))
+    Ok((out, reservation))
 }
 
 fn native_scope_encoded_len(ctx: &DecodeContext<'_>, name: &str) -> Result<usize, CodecError> {
@@ -558,7 +558,9 @@ pub(crate) fn decode_sketch_placements(
             "f3d sketch placement stream index",
         )?;
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let (scope_storage, scope) = native_scope_scoped(ctx, &entry.name)?;
+        let scope_storage;
+        let (scope, held_scope_storage) = native_scope_scoped(ctx, &entry.name)?;
+        scope_storage = held_scope_storage;
         let records = storage.with_storage(|| IndexedRecordOffsets::build(ctx, bytes))?;
         streams.push(SketchStream {
             name: &entry.name,
@@ -1780,7 +1782,9 @@ pub(crate) fn decode_entity_headers(
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
         // Modules come from the type table of this stream's own `MetaStream`.
-        let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
+        let _scope_reservation;
+        let (scope, held_scope_storage) = native_scope_scoped(ctx, &entry.name)?;
+        _scope_reservation = held_scope_storage;
         let stream_modules = match scope.strip_suffix(BULK_STREAM_FILE) {
             Some(prefix) => ctx.get_hash_map(&entity_modules, prefix, "find F3D entity modules")?,
             None => None,
@@ -2100,7 +2104,9 @@ fn decode_headers_for_indices(
             continue;
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
+        let _scope_reservation;
+        let (scope, held_scope_storage) = native_scope_scoped(ctx, &entry.name)?;
+        _scope_reservation = held_scope_storage;
         let Some(indices) =
             ctx.get_mut_hash_map(wanted, scope.as_str(), "find F3D wanted record indices")?
         else {
@@ -2211,7 +2217,9 @@ pub(crate) fn decode_sketch_relations(
         if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
             continue;
         }
-        let (scope_storage, scope) = native_scope_scoped(ctx, &entry.name)?;
+        let scope_storage;
+        let (scope, held_scope_storage) = native_scope_scoped(ctx, &entry.name)?;
+        scope_storage = held_scope_storage;
         let segment_types = match scope.strip_suffix(BULK_STREAM_FILE) {
             Some(prefix) => types_by_segment.run(ctx, prefix)?,
             None => &[],

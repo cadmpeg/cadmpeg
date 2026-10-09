@@ -1721,7 +1721,9 @@ pub(crate) fn bind_body_bounds(
         };
         let mut ids = Vec::new();
         for binding in ctx.admit_iter(candidates, "scan F3D body bounds bindings")? {
-            let (_scope_storage, scope) = native_scope_scoped(ctx, binding.stream())?;
+            let _scope_storage;
+            let (scope, held_scope_storage) = native_scope_scoped(ctx, binding.stream())?;
+            _scope_storage = held_scope_storage;
             if !ctx.equal_bytes(
                 scope.as_bytes(),
                 stream.as_bytes(),

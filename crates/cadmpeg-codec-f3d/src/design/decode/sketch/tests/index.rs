@@ -210,7 +210,9 @@ fn scoped_native_scope_key_refuses_materialized_limit() {
 
     policy.limits.max_materialized_bytes = u64_from_index(expected.len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (_reservation, actual) = native_scope_scoped(&ctx, "a:b").unwrap();
+    let _reservation;
+    let (actual, held_scope_storage) = native_scope_scoped(&ctx, "a:b").unwrap();
+    _reservation = held_scope_storage;
     assert_eq!(actual, expected);
 }
 
@@ -412,16 +414,17 @@ fn native_scope_encoder_preserves_each_iteration_work_refusal() {
             ResourceDimension::WorkUnits,
             operation,
             skip,
-            |ctx| native_scope_scoped(ctx, name).map(|(_, text)| text),
+            |ctx| native_scope_scoped(ctx, name).map(|(text, _)| text),
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == operation
                 && limit.additional == additional));
     }
-    let (_, text) =
+    let (text, _) =
         native_scope_scoped(&cadmpeg_test_support::service_decode_context(), name).unwrap();
     assert_eq!(text, "f3d:A%3AB");
 }
 
 mod session;
+mod scope_storage;
