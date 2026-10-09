@@ -7,6 +7,8 @@ use std::fmt::Write as _;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::CadIr;
 
+mod ownership;
+
 fn exchange(records: &str) -> crate::parse::Exchange {
     let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;");
     crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
