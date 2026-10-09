@@ -208,7 +208,7 @@ fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
         assert!(
             !crate::entities::directed_cycle(1, &mut visited, decode_ctx, |sequence| {
                 Ok(decode_ctx.get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
-                    .into_iter().flatten().copied())
+                    .map_or(&[][..], Vec::as_slice).iter().copied())
             })
             .unwrap()
         );
@@ -221,7 +221,7 @@ fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
             decode_ctx,
             |sequence| {
                 Ok(decode_ctx.get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
-                    .into_iter().flatten().copied())
+                    .map_or(&[][..], Vec::as_slice).iter().copied())
             }
         )
         .unwrap());
@@ -250,7 +250,7 @@ fn directed_cycle_refuses_stack_and_tree_nodes_before_allocation() {
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 crate::entities::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| {
                     Ok(ctx.get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
-                        .into_iter().flatten().copied())
+                        .map_or(&[][..], Vec::as_slice).iter().copied())
                 })
             },
         );
@@ -261,7 +261,7 @@ fn directed_cycle_refuses_stack_and_tree_nodes_before_allocation() {
     assert!(
         !crate::entities::directed_cycle(1, &mut visited, &ctx, |sequence| {
             Ok(ctx.get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
-                .into_iter().flatten().copied())
+                .map_or(&[][..], Vec::as_slice).iter().copied())
         },)
         .unwrap()
     );
@@ -305,7 +305,7 @@ fn directed_cycle_lookup_refusals_preserve_the_session() {
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let result = super::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| {
                     Ok(ctx.get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
-                        .into_iter().flatten().copied())
+                        .map_or(&[][..], Vec::as_slice).iter().copied())
                 });
                 if let Err(CodecError::ResourceLimit(ref limit)) = result {
                     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual))

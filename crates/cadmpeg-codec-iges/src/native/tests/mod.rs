@@ -107,7 +107,7 @@ fn native_entity_id_builder_steps_sparse_and_unfiltered_sources() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let id_bytes = u64::try_from("iges:entity:directory#2".len()).unwrap();
-    let sparse_work = 4 + 2 * id_bytes;
+    let sparse_work = 3 + 2 * id_bytes;
     let arena = DecodeArena::new();
     let mut sparse_policy = DecodePolicy::service();
     sparse_policy.limits.max_work_units = sparse_work - 1;
@@ -144,7 +144,7 @@ fn native_entity_id_builder_steps_sparse_and_unfiltered_sources() {
         ["iges:entity:directory#2"]
     );
 
-    let full_work = 4 + 6 * id_bytes;
+    let full_work = 3 + 6 * id_bytes;
     let arena = DecodeArena::new();
     let mut full_policy = DecodePolicy::service();
     full_policy.limits.max_work_units = full_work - 1;
@@ -159,7 +159,7 @@ fn native_entity_id_builder_steps_sparse_and_unfiltered_sources() {
     .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "iges native full link scan"
+            && limit.operation == "iges native linked entity id"
             && limit.used == full_policy.limits.max_work_units
             && limit.additional == 1));
 
@@ -752,3 +752,5 @@ fn absent_native_parameter_record_keeps_empty_wire_fields() {
         })
     );
 }
+
+mod source_visits;

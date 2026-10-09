@@ -537,7 +537,8 @@ pub(crate) fn layout_global_cards(
     let mut cards = Vec::new();
     let mut card = ctx.vector_storage(72, "iges global layout card bytes")?;
     let mut field_spans = fields.iter();
-    while let Some(range) = ctx.next_charged(&mut field_spans, "iges global layout field spans")? {
+    while field_spans.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(range) = ctx.next_charged(&mut field_spans, "iges global layout field spans")? else { break; };
         let field = &bytes[range.clone()];
         let leading = ctx
             .position_by(

@@ -37,7 +37,8 @@ fn profile_closed(
     };
     let mut result = None;
     let mut edges = edges.iter();
-    while let Some(edge) = ctx.next_charged(&mut edges, "iges solid profile edges")? {
+    while edges.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(edge) = ctx.next_charged(&mut edges, "iges solid profile edges")? else { break; };
         let Some(start) = point(&edge.start)? else {
             return Ok(None);
         };
@@ -135,7 +136,8 @@ fn boolean_tree_is_valid(
         let mut has_direct_brep = false;
         let mut operands_valid = true;
         let mut terms = terms.iter();
-        while let Some(term) = ctx.next_charged(&mut terms, "iges boolean term validation")? {
+        while terms.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(term) = ctx.next_charged(&mut terms, "iges boolean term validation")? else { break; };
             let target = match term {
                 BooleanTerm::Operand(sequence) => ctx.get_btree_map(
                     entries, sequence, "iges boolean operand directory lookup",
@@ -518,9 +520,8 @@ pub(super) fn project<'ctx>(
                 let mut storage = ctx.reserve_scoped(0, "iges solid profile edge groups")?;
                 let mut groups = BTreeMap::new();
                 let mut edges = ir.model.edges.iter();
-                while let Some(edge) =
-                    ctx.next_charged(&mut edges, "iges solid profile edge indexing")?
-                {
+                while edges.len() != 0 || ctx.resource_refusal().is_some() {
+                    let Some(edge) = ctx.next_charged(&mut edges, "iges solid profile edge indexing")? else { break; };
                     if let Some(curve) = edge.curve() {
                         ctx.push_scoped_btree_group(
                             &mut storage, &mut groups, curve.as_str(), || edge, 0,
@@ -629,7 +630,8 @@ pub(super) fn project<'ctx>(
         terms_storage = result_terms_storage;
         let mut terms_valid = true;
         let mut indices = 0..count;
-        while let Some(index) = ctx.next_charged(&mut indices, "iges Boolean postfix parsing")? {
+        while !indices.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(&mut indices, "iges Boolean postfix parsing")? else { break; };
             let term = (|| {
                 let value = record.integer(2 + index)?;
                 if value < 0 {

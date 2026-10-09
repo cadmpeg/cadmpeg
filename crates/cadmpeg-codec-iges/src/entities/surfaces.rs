@@ -99,9 +99,8 @@ fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
     }
     let mut paired = ctx.collection_vec(rows.len(), outer_operation)?;
     let mut row_pairs = rows.into_iter().zip(weights);
-    while let Some((row, weight_row)) =
-        ctx.next_charged(&mut row_pairs, "iges surface weighted row traversal")?
-    {
+    while row_pairs.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((row, weight_row)) = ctx.next_charged(&mut row_pairs, "iges surface weighted row traversal")? else { break; };
         if row.len() != weight_row.len() {
             return Ok(Err(NurbsError::WeightLaneLength {
                 field: ctx.format_retained(
@@ -114,9 +113,8 @@ fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
         }
         let mut paired_row = ctx.collection_vec(row.len(), inner_operation)?;
         let mut poles = row.into_iter().zip(weight_row).enumerate();
-        while let Some((index, (point, weight))) =
-            ctx.next_charged(&mut poles, "iges surface weighted pole traversal")?
-        {
+        while poles.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some((index, (point, weight))) = ctx.next_charged(&mut poles, "iges surface weighted pole traversal")? else { break; };
             let weight = match weight.admit(index, ctx)? {
                 Ok(weight) => weight,
                 Err(error) => return Ok(Err(error)),
@@ -377,7 +375,8 @@ fn interval_certified_linear_bezier(
         ctx.temporary_vec(control_count, "iges ruled linear interval controls")?;
     _interval_storage = result_interval_storage;
     let mut controls = 0..control_count;
-    while let Some(control) = ctx.next_charged(&mut controls, "iges ruled linear intervals")? {
+    while !controls.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(control) = ctx.next_charged(&mut controls, "iges ruled linear intervals")? else { break; };
         let mut coordinates = [DeclaredInterval::around(0.0, 0.0); 3];
         for (coordinate, interval) in coordinates.iter_mut().enumerate() {
             let Some((_, _, source)) = source_coordinate(control, coordinate) else {
@@ -391,14 +390,12 @@ fn interval_certified_linear_bezier(
         let mut lower = f64::NEG_INFINITY;
         let mut upper = f64::INFINITY;
         let mut first_controls = 0..control_count;
-        while let Some(first) =
-            ctx.next_charged(&mut first_controls, "iges ruled linear first controls")?
-        {
+        while !first_controls.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(first) = ctx.next_charged(&mut first_controls, "iges ruled linear first controls")? else { break; };
             let first_interval = intervals[first][coordinate];
             let mut second_controls = first + 1..control_count;
-            while let Some(second) =
-                ctx.next_charged(&mut second_controls, "iges ruled linear second controls")?
-            {
+            while !second_controls.is_empty() || ctx.resource_refusal().is_some() {
+                let Some(second) = ctx.next_charged(&mut second_controls, "iges ruled linear second controls")? else { break; };
                 let second_interval = intervals[second][coordinate];
                 let Some(span) = cadmpeg_core::convert::f64_from_index(second - first) else {
                     return Ok(false);
@@ -545,9 +542,8 @@ fn homogeneous_bezier_spans<'ctx>(
         let mut weights =
             scratch.with_storage(|| ctx.collection_vec(count, "iges_surface_closure_weights"))?;
         let mut indices = 0..count;
-        while let Some(index) =
-            ctx.next_charged(&mut indices, "iges surface closure weight traversal")?
-        {
+        while !indices.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(&mut indices, "iges surface closure weight traversal")? else { break; };
             let Some(weight) = curve
                 .pole_rows()
                 .weight_at(index)
@@ -597,7 +593,8 @@ fn bernstein_binomial(
     let k = k.min(n - k);
     let mut value = 1.0;
     let mut factors = 1..=k;
-    while let Some(factor) = ctx.next_charged(&mut factors, "iges Bernstein binomial factors")? {
+    while !factors.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(factor) = ctx.next_charged(&mut factors, "iges Bernstein binomial factors")? else { break; };
         let (Some(numerator), Some(denominator)) = (
             cadmpeg_core::convert::f64_from_index(n - k + factor),
             cadmpeg_core::convert::f64_from_index(factor),
@@ -636,9 +633,8 @@ fn homogeneous_product_control(
     let mut control = [0.0; 4];
     if lower <= upper {
         let mut indices = lower..=upper;
-        while let Some(vector_index) =
-            ctx.next_charged(&mut indices, "iges Bernstein product controls")?
-        {
+        while !indices.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(vector_index) = ctx.next_charged(&mut indices, "iges Bernstein product controls")? else { break; };
             let scalar_index = index - vector_index;
             let Some(vector_coefficient) = bernstein_binomial(vector_degree, vector_index, ctx)?
             else {
@@ -701,12 +697,12 @@ fn split_homogeneous_bezier_span(
     left.push(current[0]);
     right.push(current[degree]);
     let mut levels = 1..=degree;
-    while let Some(level) = ctx.next_charged(&mut levels, "iges span split levels traversal")? {
+    while !levels.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(level) = ctx.next_charged(&mut levels, "iges span split levels traversal")? else { break; };
         let remaining = degree + 1 - level;
         let mut indices = 0..remaining;
-        while let Some(index) =
-            ctx.next_charged(&mut indices, "iges span split level controls traversal")?
-        {
+        while !indices.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(&mut indices, "iges span split level controls traversal")? else { break; };
             let control: [f64; 4] = std::array::from_fn(|axis| {
                 (1.0 - parameter) * current[index][axis] + parameter * current[index + 1][axis]
             });
@@ -746,7 +742,8 @@ fn normalized_span_boundaries(
     };
     let mut boundaries = ctx.collection_vec(capacity, "iges span normalized boundaries")?;
     let mut source_spans = spans.iter();
-    while let Some(span) = ctx.next_charged(&mut source_spans, "iges span traversal")? {
+    while source_spans.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(span) = ctx.next_charged(&mut source_spans, "iges span traversal")? else { break; };
         for value in span.domain {
             let Some(normalized) = span_fraction(value, domain) else {
                 return Ok(None);
@@ -779,7 +776,8 @@ fn partition_homogeneous_spans(
 ) -> Result<Option<Vec<HomogeneousBezierSpan>>, CodecError> {
     let mut partitioned = Vec::new();
     let mut source_spans = spans.iter();
-    while let Some(span) = ctx.next_charged(&mut source_spans, "iges span traversal")? {
+    while source_spans.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(span) = ctx.next_charged(&mut source_spans, "iges span traversal")? else { break; };
         let Some(start) = span_fraction(span.domain[0], domain) else {
             return Ok(None);
         };
@@ -805,9 +803,8 @@ fn partition_homogeneous_spans(
             controls,
         };
         let mut interior = boundaries[first..last].iter().copied();
-        while let Some(boundary) =
-            ctx.next_charged(&mut interior, "iges span interior boundaries")?
-        {
+        while interior.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(boundary) = ctx.next_charged(&mut interior, "iges span interior boundaries")? else { break; };
             let Some(cut) = cadmpeg_ir::math::interpolate(domain[0], domain[1], boundary)
                 .map(cadmpeg_ir::scalar::FiniteReal::get)
             else {
@@ -1202,9 +1199,8 @@ fn ruled_surface_span_lanes<'ctx>(
     };
     let mut u_knots = ctx.collection_vec(knot_count, "iges ruled homogeneous knots")?;
     let mut span_pairs = spans.iter().enumerate();
-    while let Some((span_index, (first_span, second_span))) =
-        ctx.next_charged(&mut span_pairs, "iges ruled span traversal")?
-    {
+    while span_pairs.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((span_index, (first_span, second_span))) = ctx.next_charged(&mut span_pairs, "iges ruled span traversal")? else { break; };
         if first_span.controls.len() != first_control_count
             || second_span.controls.len() != second_control_count
         {
@@ -1223,7 +1219,8 @@ fn ruled_surface_span_lanes<'ctx>(
         }
         let start = usize::from(span_index > 0);
         let mut products = start..=degree;
-        while let Some(index) = ctx.next_charged(&mut products, "iges ruled product traversal")? {
+        while !products.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(&mut products, "iges ruled product traversal")? else { break; };
             let Some(first_times_second) = homogeneous_product_control(
                 &first_span.controls,
                 &second_span.controls,
@@ -1263,9 +1260,8 @@ fn ruled_surface_span_lanes<'ctx>(
     let mut weights = weight_storage
         .with_storage(|| ctx.collection_vec(pole_count, "iges ruled surface weights"))?;
     let mut homogeneous = homogeneous.into_iter();
-    while let Some(control) =
-        ctx.next_charged(&mut homogeneous, "iges ruled Euclidean pole traversal")?
-    {
+    while homogeneous.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(control) = ctx.next_charged(&mut homogeneous, "iges ruled Euclidean pole traversal")? else { break; };
         let weight = control[3];
         let Some(weight) = PositiveReal::new(weight) else {
             return Ok(None);
@@ -1340,9 +1336,8 @@ fn homogeneous_curve_boundary_matches(
         return Ok(None);
     }
     let mut span_pairs = first_spans.iter().zip(second_spans);
-    while let Some((first_span, second_span)) =
-        ctx.next_charged(&mut span_pairs, "iges surface closure spans")?
-    {
+    while span_pairs.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((first_span, second_span)) = ctx.next_charged(&mut span_pairs, "iges surface closure spans")? else { break; };
         if first_span.domain[1] <= range[0] || first_span.domain[0] >= range[1] {
             continue;
         }
@@ -2614,7 +2609,8 @@ pub(super) fn project<'ctx>(
         };
         let mut finite_poles = true;
         let mut indices = 0..pole_count;
-        while let Some(index) = ctx.next_charged(&mut indices, "iges tabulated pole traversal")? {
+        while !indices.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(&mut indices, "iges tabulated pole traversal")? else { break; };
             let point = placed_directrix
                 .pole_rows()
                 .point_at(index)
@@ -3639,7 +3635,8 @@ pub(super) fn project<'ctx>(
             };
             let mut values = ctx.collection_vec(count, operation)?;
             let mut indices = start..end;
-            while let Some(index) = ctx.next_charged(&mut indices, operation)? {
+            while !indices.is_empty() || ctx.resource_refusal().is_some() {
+                let Some(index) = ctx.next_charged(&mut indices, operation)? else { break; };
                 let Some(value) = record.number(index).and_then(FiniteReal::new) else {
                     return Ok(None);
                 };

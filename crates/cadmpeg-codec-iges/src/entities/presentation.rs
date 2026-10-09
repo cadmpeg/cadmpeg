@@ -395,6 +395,7 @@ pub(super) fn project<'ctx>(
         let mut active = BTreeSet::new();
         let mut next_sequence = Some(entry.sequence);
         let cyclic = loop {
+            if next_sequence.is_none() && ctx.resource_refusal().is_none() { break false; }
             let mut current = next_sequence.into_iter();
             let Some(sequence) = ctx.next_charged(&mut current, "iges font cycle traversal")? else {
                 break false;
@@ -1071,9 +1072,8 @@ pub(super) fn project<'ctx>(
         let mut first: Option<(u32, &str)> = None;
         let mut conflicting = false;
         let mut properties = groups.properties().iter();
-        while let Some(pointer) =
-            ctx.next_charged(&mut properties, "iges body property traversal")?
-        {
+        while properties.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(pointer) = ctx.next_charged(&mut properties, "iges body property traversal")? else { break; };
             let Some(entry) = ctx.get_btree_map(
                 entries,
                 pointer,

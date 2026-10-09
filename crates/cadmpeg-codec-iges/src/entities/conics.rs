@@ -137,9 +137,8 @@ pub(super) fn project<'ctx>(
     let mut wire_edges = Vec::new();
 
     let mut directory_entries = directory.iter();
-    while let Some(entry) =
-        ctx.next_charged(&mut directory_entries, "iges conic directory traversal")?
-    {
+    while directory_entries.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(&mut directory_entries, "iges conic directory traversal")? else { break; };
         if entry.entity_type != 104 || !(0..=3).contains(&entry.form) {
             continue;
         }

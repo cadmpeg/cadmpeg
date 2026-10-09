@@ -664,7 +664,8 @@ fn analyze_trailing_pointer_groups_from_end(
         let mut invalid = [0_usize; 2];
         prefix.push(invalid);
         let mut token_indices = 0..record.tokens.len();
-        while let Some(index) = ctx.next_charged(&mut token_indices, "iges pointer class classification")? {
+        while !token_indices.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(&mut token_indices, "iges pointer class classification")? else { break; };
             let sequence = record
                 .raw_integer(index)
                 .and_then(|value| u32::try_from(value).ok())
@@ -1510,10 +1511,9 @@ fn fem_result_primary_end(
     }
     let mut cursor = item_start;
     let mut steps = 0..item_count;
-    while ctx
+    while (!steps.is_empty() || ctx.resource_refusal().is_some()) && ctx
         .next_charged(&mut steps, "iges parameter primary layout")?
-        .is_some()
-    {
+        .is_some() {
         let Some(report_location_count_index) = cursor.checked_add(5) else {
             return Ok(record.tokens.len());
         };
@@ -1576,10 +1576,9 @@ fn text_font_primary_end(
 
     let mut cursor = 6_usize;
     let mut steps = 0..character_count;
-    while ctx
+    while (!steps.is_empty() || ctx.resource_refusal().is_some()) && ctx
         .next_charged(&mut steps, "iges parameter primary layout")?
-        .is_some()
-    {
+        .is_some() {
         let Some(motion_count) = cursor
             .checked_add(3)
             .and_then(|index| record.integer(index))
@@ -1677,7 +1676,8 @@ fn tabular_data_primary_end(
     let mut independent_value_count = 0_usize;
     let mut point_count = 1_usize;
     let mut steps = 0..independent_count;
-    while let Some(offset) = ctx.next_charged(&mut steps, "iges parameter primary layout")? {
+    while !steps.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(offset) = ctx.next_charged(&mut steps, "iges parameter primary layout")? else { break; };
         let Some(count_index) = count_start.checked_add(offset) else {
             return Ok(record.tokens.len());
         };
@@ -2046,10 +2046,9 @@ fn associativity_definition_primary_end(
 
     let mut cursor = 2_usize;
     let mut steps = 0..class_count;
-    while ctx
+    while (!steps.is_empty() || ctx.resource_refusal().is_some()) && ctx
         .next_charged(&mut steps, "iges parameter primary layout")?
-        .is_some()
-    {
+        .is_some() {
         let Some(item_count_index) = cursor.checked_add(2) else {
             return Ok(record.tokens.len());
         };
@@ -2136,10 +2135,9 @@ fn attribute_table_definition_primary_end(
     };
     let mut cursor = 4_usize;
     let mut steps = 0..attribute_count;
-    while ctx
+    while (!steps.is_empty() || ctx.resource_refusal().is_some()) && ctx
         .next_charged(&mut steps, "iges parameter primary layout")?
-        .is_some()
-    {
+        .is_some() {
         let Some(value_count) = record
             .integer_or(cursor + 2, 1)
             .and_then(|value| usize::try_from(value).ok())
@@ -2175,9 +2173,8 @@ fn attribute_table_definition_values_per_row(
     let mut cursor = 4_usize;
     let mut values_per_row = 0_usize;
     let mut steps = 0..attribute_count;
-    while let Some(attribute_index) =
-        ctx.next_charged(&mut steps, "iges parameter primary layout")?
-    {
+    while !steps.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(attribute_index) = ctx.next_charged(&mut steps, "iges parameter primary layout")? else { break; };
         let step = (|| {
             let count_index = cursor.checked_add(2)?;
             record.tokens.get(cursor)?;
@@ -2393,10 +2390,9 @@ fn loop_primary_end(
     };
     let mut index: usize = 2;
     let mut steps = 0..use_count;
-    while ctx
+    while (!steps.is_empty() || ctx.resource_refusal().is_some()) && ctx
         .next_charged(&mut steps, "iges parameter primary layout")?
-        .is_some()
-    {
+        .is_some() {
         let Some(parameter_curve_count_index) = index.checked_add(4) else {
             return Ok(record.tokens.len());
         };
@@ -2580,10 +2576,9 @@ fn boundary_primary_end(
     };
     let mut index = 5;
     let mut steps = 0..segment_count;
-    while ctx
+    while (!steps.is_empty() || ctx.resource_refusal().is_some()) && ctx
         .next_charged(&mut steps, "iges parameter primary layout")?
-        .is_some()
-    {
+        .is_some() {
         let Some(pcurve_count) = record
             .integer(index + 2)
             .and_then(|value| usize::try_from(value).ok())
@@ -2692,9 +2687,8 @@ fn structural_pointer_group_candidates_with_context(
     let non_integer_prefix = prefix_storage.with_storage(|| non_integer_prefix(record, ctx))?;
     let mut candidates = Vec::new();
     let mut candidate_starts = 1..record.tokens.len();
-    while let Some(association_count_index) =
-        ctx.next_charged(&mut candidate_starts, "iges pointer candidate starts")?
-    {
+    while !candidate_starts.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(association_count_index) = ctx.next_charged(&mut candidate_starts, "iges pointer candidate starts")? else { break; };
         if let Some(candidate) = pointer_group_candidate_with_prefix(
             record,
             association_count_index,
@@ -2742,7 +2736,8 @@ fn groups_for_candidate_with_context(
             }
             let mut pointers = ctx.collection_vec(range.len(), "iges trailing pointer entries")?;
             let mut pointer_indices = range;
-            while let Some(token_index) = ctx.next_charged(&mut pointer_indices, "iges trailing pointer entries")? {
+            while pointer_indices.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(token_index) = ctx.next_charged(&mut pointer_indices, "iges trailing pointer entries")? else { break; };
                 let Some(raw_pointer) = record.raw_integer(token_index) else {
                     return Ok(None);
                 };
@@ -3090,7 +3085,8 @@ pub(crate) fn layout_parameter_cards(
     let mut cards = Vec::new();
     let mut card = ctx.vector_storage(64, "iges parameter layout card bytes")?;
     let mut source_fields = fields.iter();
-    while let Some(range) = ctx.next_charged(&mut source_fields, "iges parameter layout fields")? {
+    while source_fields.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(range) = ctx.next_charged(&mut source_fields, "iges parameter layout fields")? else { break; };
         let field = &bytes[range.clone()];
         let leading = ctx
             .position_by(
@@ -3117,7 +3113,8 @@ pub(crate) fn layout_parameter_cards(
             card = ctx.vector_storage(64, "iges parameter layout card bytes")?;
         }
         let mut field_bytes = field.iter();
-        while let Some(byte) = ctx.next_charged(&mut field_bytes, "iges parameter layout card bytes")? {
+        while field_bytes.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(byte) = ctx.next_charged(&mut field_bytes, "iges parameter layout card bytes")? else { break; };
             if card.len() == 64 {
                 ctx.reserve_vec(&mut cards, 1, "iges parameter layout cards")?;
                 cards.push(std::mem::take(&mut card));
@@ -3128,7 +3125,8 @@ pub(crate) fn layout_parameter_cards(
     }
 
     let mut comment_bytes = bytes[cursor..].iter();
-    while let Some(byte) = ctx.next_charged(&mut comment_bytes, "iges parameter layout comment bytes")? {
+    while comment_bytes.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(byte) = ctx.next_charged(&mut comment_bytes, "iges parameter layout comment bytes")? else { break; };
         if card.len() == 64 {
             ctx.reserve_vec(&mut cards, 1, "iges parameter layout cards")?;
             cards.push(std::mem::take(&mut card));
@@ -3440,7 +3438,8 @@ fn macro_keyword(
     };
     let mut expected = keyword.iter();
     let mut value = value.iter();
-    while let Some(byte) = ctx.next_charged(&mut value, "iges macro keyword")? {
+    while value.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(byte) = ctx.next_charged(&mut value, "iges macro keyword")? else { break; };
         if matches!(byte, b' ' | b'\t') {
             continue;
         }
@@ -3645,9 +3644,9 @@ fn tokenize_macro(
         });
     }
     let mut statement_spans = data.statement_spans.iter().enumerate();
-    while let Some((index, span)) = ctx.next_charged(&mut statement_spans, "iges macro statement tokens")
-        .map_err(TokenizeFailure::Refusal)?
-    {
+    while statement_spans.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((index, span)) = ctx.next_charged(&mut statement_spans, "iges macro statement tokens")
+        .map_err(TokenizeFailure::Refusal)? else { break; };
         if index == 0 {
             continue;
         }
@@ -3692,7 +3691,8 @@ fn decimal_shape(text: &[u8], ctx: &DecodeContext<'_>) -> Result<Option<DecimalS
     let mut exponent: Option<(i64, i64, usize)> = None;
     let mut double_precision = false;
     let mut numeric_bytes = digits.iter();
-    while let Some(byte) = ctx.next_charged(&mut numeric_bytes, "iges numeric real shape")? {
+    while numeric_bytes.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(byte) = ctx.next_charged(&mut numeric_bytes, "iges numeric real shape")? else { break; };
         if let Some((sign, value, count)) = exponent.as_mut() {
             match byte {
                 b'+' | b'-' if *count == 0 && *sign == 0 => {
@@ -4063,7 +4063,8 @@ fn declared_range(entry: &DirectoryEntry, census: &Range<u32>) -> DeclaredRange 
 fn contiguous_run(cards: &[u32], ctx: &DecodeContext<'_>) -> Result<Vec<u32>, CodecError> {
     let mut run = Vec::<u32>::new();
     let mut cards = cards.iter();
-    while let Some(sequence) = ctx.next_charged(&mut cards, "iges contiguous parameter cards")? {
+    while cards.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(sequence) = ctx.next_charged(&mut cards, "iges contiguous parameter cards")? else { break; };
         if run
             .last()
             .is_some_and(|last| last.checked_add(1) != Some(*sequence))
@@ -4102,9 +4103,8 @@ fn overlapping_ranges(
     let mut highest_end = 0_u32;
     let mut highest_owner = None;
     let mut ordered_ranges = ordered.into_iter();
-    while let Some((start, end, sequence)) =
-        ctx.next_charged(&mut ordered_ranges, "iges declared parameter range sweep")?
-    {
+    while ordered_ranges.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((start, end, sequence)) = ctx.next_charged(&mut ordered_ranges, "iges declared parameter range sweep")? else { break; };
         if start < highest_end {
             ctx.insert_btree_set(
                 &mut overlapping,
@@ -4139,7 +4139,8 @@ fn owned_bytes<'ctx>(
     let mut byte_count = 0_usize;
     let mut card_count = 0_usize;
     let mut source_cards = cards.iter();
-    while let Some(sequence) = ctx.next_charged(&mut source_cards, "iges owned parameter cards")? {
+    while source_cards.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(sequence) = ctx.next_charged(&mut source_cards, "iges owned parameter cards")? else { break; };
         let Some(line) = lines.line(*sequence) else {
             continue;
         };
@@ -4185,7 +4186,8 @@ fn quarantine(
 ) -> Result<QuarantinedParameterRecord, CodecError> {
     let mut byte_count = 0_usize;
     let mut source_cards = cards.iter();
-    while let Some(sequence) = ctx.next_charged(&mut source_cards, "iges quarantined parameter cards")? {
+    while source_cards.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(sequence) = ctx.next_charged(&mut source_cards, "iges quarantined parameter cards")? else { break; };
         let Some(line) = lines.line(*sequence) else {
             continue;
         };
@@ -4195,6 +4197,7 @@ fn quarantine(
     }
     let mut source_cards = cards.iter();
     let first = loop {
+        if source_cards.len() == 0 && ctx.resource_refusal().is_none() { break None; }
         match ctx.next_charged(&mut source_cards, "iges quarantined parameter bytes")? {
             Some(sequence) => {
                 if let Some(line) = lines.line(*sequence) {
@@ -4214,7 +4217,8 @@ fn quarantine(
             let mut bytes = ctx.vector_storage(byte_count, "iges quarantined parameter bytes")?;
 
             bytes.extend_from_slice(line.payload);
-            while let Some(sequence) = ctx.next_charged(&mut source_cards, "iges quarantined parameter bytes")? {
+            while source_cards.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(sequence) = ctx.next_charged(&mut source_cards, "iges quarantined parameter bytes")? else { break; };
                 let Some(line) = lines.line(*sequence) else {
                     continue;
                 };
@@ -4317,7 +4321,8 @@ fn resolve_ownership<'a, 'ctx>(
     let mut typed = BTreeSet::new();
     let mut candidates = Vec::new();
     let mut owner_candidates = directory.iter();
-    while let Some(entry) = ctx.next_charged(&mut owner_candidates, "iges parameter owner candidates")? {
+    while owner_candidates.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(&mut owner_candidates, "iges parameter owner candidates")? else { break; };
         phase_storage.with_storage(|| ctx.insert_btree_set(&mut typed, entry.sequence, "iges typed parameter owners"))?;
         if !(entry.entity_type == 0 && entry.parameter_line_count == 0) {
             phase_storage.with_storage(|| ctx.reserve_vec(&mut candidates, 1, "iges parameter owner candidates"))?;
@@ -4327,7 +4332,8 @@ fn resolve_ownership<'a, 'ctx>(
     let census = lines.census();
     let mut named_by = BTreeMap::<u32, Vec<u32>>::new();
     let mut named_cards = lines.cards.iter().enumerate();
-    while let Some((index, card)) = ctx.next_charged(&mut named_cards, "iges named parameter owners")? {
+    while named_cards.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((index, card)) = ctx.next_charged(&mut named_cards, "iges named parameter owners")? else { break; };
         let sequence = card.sequence;
         let pointer = &lines.back_pointers[index];
         if let Some(owner) = pointer {
@@ -4343,7 +4349,8 @@ fn resolve_ownership<'a, 'ctx>(
     let mut declared = BTreeMap::<u32, Range<u32>>::new();
     let mut card_missing = BTreeSet::<u32>::new();
     let mut declared_candidates = candidates.iter();
-    while let Some(entry) = ctx.next_charged(&mut declared_candidates, "iges declared parameter owners")? {
+    while declared_candidates.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(&mut declared_candidates, "iges declared parameter owners")? else { break; };
         match declared_range(entry, &census) {
             DeclaredRange::Usable(range) => {
                 phase_storage.with_storage(|| ctx.insert_btree_map(
@@ -4368,12 +4375,14 @@ fn resolve_ownership<'a, 'ctx>(
     // Ranges that do not conflict are disjoint and lie in the census, so these
     // claims visit each card at most once.
     let mut declared_owners = declared.iter();
-    while let Some((sequence, range)) = ctx.next_charged(&mut declared_owners, "iges claimed parameter cards")? {
+    while declared_owners.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((sequence, range)) = ctx.next_charged(&mut declared_owners, "iges claimed parameter cards")? else { break; };
         if ctx.contains_btree_set(&conflicted, sequence, "iges conflicting parameter owner lookup")? {
             continue;
         }
         let mut claimed_cards = range.clone();
-        while let Some(card) = ctx.next_charged(&mut claimed_cards, "iges claimed parameter cards")? {
+        while claimed_cards.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(card) = ctx.next_charged(&mut claimed_cards, "iges claimed parameter cards")? else { break; };
             phase_storage.with_storage(|| ctx.insert_btree_map(
                 &mut claimed,
                 card,
@@ -4383,7 +4392,8 @@ fn resolve_ownership<'a, 'ctx>(
         }
     }
     let mut claimed_owners = claimed.iter();
-    while let Some((card, owner)) = ctx.next_charged(&mut claimed_owners, "iges claimed parameter owners")? {
+    while claimed_owners.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((card, owner)) = ctx.next_charged(&mut claimed_owners, "iges claimed parameter owners")? else { break; };
         match lines.back_pointer(*card) {
             Some(pointer) if pointer == *owner => {}
             Some(pointer) if pointer % 2 == 1 && ctx.contains_btree_set(&typed, &pointer, "iges typed parameter owner lookup")? => {
@@ -4398,7 +4408,8 @@ fn resolve_ownership<'a, 'ctx>(
         }
     }
     let mut claimed_owners = claimed.iter();
-    while let Some((card, owner)) = ctx.next_charged(&mut claimed_owners, "iges claimed parameter owners")? {
+    while claimed_owners.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((card, owner)) = ctx.next_charged(&mut claimed_owners, "iges claimed parameter owners")? else { break; };
         if ctx.contains_btree_set(&conflicted, owner, "iges conflicting parameter owner lookup")? {
             continue;
         }
@@ -4418,7 +4429,8 @@ fn resolve_ownership<'a, 'ctx>(
     }
     let mut resolved = Vec::new();
     let mut resolved_candidates = candidates.into_iter();
-    while let Some(entry) = ctx.next_charged(&mut resolved_candidates, "iges resolved parameter ownership")? {
+    while resolved_candidates.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(&mut resolved_candidates, "iges resolved parameter ownership")? else { break; };
         let range = ctx.get_btree_map(&declared, &entry.sequence, "iges declared parameter owner lookup")?.cloned();
         let run = || {
             let cards = ctx.get_btree_map(
@@ -4513,7 +4525,8 @@ pub(crate) fn assemble_with_context<'ctx>(
     let mut index_storage = ctx.reserve_scoped(0, "iges parameter directory index")?;
     let mut entries = BTreeMap::new();
     let mut source_entries = directory.iter();
-    while let Some(entry) = ctx.next_charged(&mut source_entries, "iges parameter directory entries")? {
+    while source_entries.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(&mut source_entries, "iges parameter directory entries")? else { break; };
         if entry.entity_type == 0 && entry.parameter_line_count == 0 {
             continue;
         }
@@ -4533,7 +4546,8 @@ pub(crate) fn assemble_with_context<'ctx>(
     let mut quarantine_storage = ctx.reserve_scoped(0, "iges parameter source quarantine")?;
     let mut quarantined = Vec::new();
     let mut owned_records = ownership.records.iter();
-    while let Some(owned) = ctx.next_charged(&mut owned_records, "iges parameter records")? {
+    while owned_records.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(owned) = ctx.next_charged(&mut owned_records, "iges parameter records")? else { break; };
         let entry = owned.entry;
         if let Some(defect) = owned.quarantine {
             quarantine_storage.with_storage(|| ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records"))?;
@@ -4627,7 +4641,8 @@ pub(crate) fn assemble_with_context<'ctx>(
         let mut record_index_storage = ctx.reserve_scoped(0, "iges parameter record index")?;
         let mut record_by_directory = BTreeMap::new();
         let mut indexed_records = records.iter();
-        while let Some(record) = ctx.next_charged(&mut indexed_records, "iges parameter record index")? {
+        while indexed_records.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(record) = ctx.next_charged(&mut indexed_records, "iges parameter record index")? else { break; };
             record_index_storage.with_storage(|| ctx.insert_btree_map(
                 &mut record_by_directory,
                 record.directory_sequence,
@@ -4636,7 +4651,8 @@ pub(crate) fn assemble_with_context<'ctx>(
             ))?;
         }
         let mut analyzed_records = records.iter();
-        while let Some(record) = ctx.next_charged(&mut analyzed_records, "iges trailing parameter pointers")? {
+        while analyzed_records.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(record) = ctx.next_charged(&mut analyzed_records, "iges trailing parameter pointers")? else { break; };
             let analysis = analysis_storage.with_storage(|| analyze_trailing_pointer_groups_with_records_for_global_table(
                 record,
                 &entries,
@@ -4655,7 +4671,8 @@ pub(crate) fn assemble_with_context<'ctx>(
     drop(entries);
     drop(index_storage);
     let mut finalized_records = records.iter_mut();
-    while let Some(record) = ctx.next_charged(&mut finalized_records, "iges parameter record ends")? {
+    while finalized_records.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(record) = ctx.next_charged(&mut finalized_records, "iges parameter record ends")? else { break; };
         record.parameter_end = ctx.get_btree_map(
             &trailing_pointer_analysis,
             &record.directory_sequence,
@@ -4670,9 +4687,11 @@ pub(crate) fn assemble_with_context<'ctx>(
     let mut accounting_storage = ctx.reserve_scoped(0, "iges parameter card accounting")?;
     let mut accounted = BTreeSet::new();
     let mut accounted_owners = ownership.records.iter();
-    while let Some(owned) = ctx.next_charged(&mut accounted_owners, "iges accounted parameter cards")? {
+    while accounted_owners.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(owned) = ctx.next_charged(&mut accounted_owners, "iges accounted parameter cards")? else { break; };
         let mut owned_cards = owned.cards.iter();
-        while let Some(sequence) = ctx.next_charged(&mut owned_cards, "iges accounted parameter cards")? {
+        while owned_cards.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(sequence) = ctx.next_charged(&mut owned_cards, "iges accounted parameter cards")? else { break; };
             accounting_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut accounted, *sequence, "iges accounted parameter cards")
             })?;
@@ -4686,7 +4705,8 @@ pub(crate) fn assemble_with_context<'ctx>(
         )
     })?;
     let mut unclaimed_cards = lines.cards.iter().enumerate();
-    while let Some((index, card)) = ctx.next_charged(&mut unclaimed_cards, "iges unclaimed parameter cards")? {
+    while unclaimed_cards.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((index, card)) = ctx.next_charged(&mut unclaimed_cards, "iges unclaimed parameter cards")? else { break; };
         let (sequence, line, pointer) = (&card.sequence, &card.line, lines.back_pointers[index]);
         if ctx.contains_btree_set(&accounted, sequence, "iges accounted parameter card lookup")? {
             continue;

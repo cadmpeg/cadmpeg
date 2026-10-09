@@ -48,10 +48,10 @@ fn native_token_copy_first_payload_refusal_does_not_admit_the_tail() {
 }
 
 #[test]
-fn native_token_copy_admits_each_visit_and_the_end_probe_once() {
+fn native_token_copy_admits_each_actual_visit_once() {
     let tokens = tokens();
-    // 1,024 yielded tokens, one end probe, and three copied string bytes.
-    const WORK: u64 = 1024 + 1 + 3;
+    // 1,024 token visits and three copied string bytes.
+    const WORK: u64 = 1024 + 3;
     for limit in [WORK - 1, WORK] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

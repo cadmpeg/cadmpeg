@@ -1259,11 +1259,10 @@ fn embedded_deformable(
                     Err(error) => return Some(Err(error)),
                 };
             let mut visits = 0..count;
-            while propagate_resource!(
+            while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(
                 ctx.next_charged(&mut visits, "ASM embedded deformable entries")
             )
-            .is_some()
-            {
+            .is_some() {
                 parameter_pairs.push([cur.take_f64()?, cur.take_f64()?]);
             }
             EmbeddedDeformableData::VectorField {
@@ -1438,9 +1437,8 @@ fn embedded_law_curve(
     let mut additional =
         propagate_resource!(ctx.collection_vec(count, "ASM law curve additional formulas"));
     let mut visits = 0..count;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM embedded law curve entries"))
-        .is_some()
-    {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM embedded law curve entries"))
+        .is_some() {
         additional.push(propagate_resource!(law_formula(ctx, &mut cur)?));
     }
     Some(Ok(EmbeddedLawCurve {
@@ -1720,11 +1718,10 @@ pub fn compound_patch_layout(
             ctx.collection_vec(component_count, "ASM compound patch component parameters")
         );
         let mut visits = 0..component_count;
-        while propagate_resource!(
+        while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(
             ctx.next_charged(&mut visits, "ASM compound patch component parameters")
         )
-        .is_some()
-        {
+        .is_some() {
             component_parameters.push(take_double_payload(bytes, &mut position)?);
         }
         Some(Ok(CompoundPatchLayout {
@@ -4007,9 +4004,8 @@ fn compound_definition(
         propagate_resource!(ctx.temporary_vec(count, "ASM compound curve parameters"));
     _parameter_storage = result_parameter_storage;
     let mut visits = 0..count;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM compound definition entries"))
-        .is_some()
-    {
+    while (!visits.is_empty() || ctx.resource_refusal().is_some()) && propagate_resource!(ctx.next_charged(&mut visits, "ASM compound definition entries"))
+        .is_some() {
         component_parameters.push(cur.take_f64()?);
     }
     if !matches!(cur.peek(), Some(Token::True | Token::False)) {

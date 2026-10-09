@@ -82,7 +82,8 @@ pub(crate) fn elliptical_arc_nurbs(
     let mut knots = ctx.collection_vec(spans * 2 + 4, "iges analytic arc knots")?;
     let mut poles = ctx.collection_vec(spans * 2 + 1, "iges analytic arc weighted poles")?;
     let mut span_iter = 0..spans;
-    while let Some(span) = ctx.next_charged(&mut span_iter, "iges analytic arc span traversal")? {
+    while !span_iter.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(span) = ctx.next_charged(&mut span_iter, "iges analytic arc span traversal")? else { break; };
         let start = if span == 0 {
             interval[0]
         } else {

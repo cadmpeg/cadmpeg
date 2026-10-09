@@ -162,9 +162,8 @@ fn composite_point_adjacency_valid(
     let mut previous_is_point = false;
     let mut next_is_point = None;
     let mut adjacent_children = child_sequences.iter().enumerate();
-    while let Some((position, sequence)) =
-        ctx.next_charged(&mut adjacent_children, "iges composite point adjacency")?
-    {
+    while adjacent_children.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((position, sequence)) = ctx.next_charged(&mut adjacent_children, "iges composite point adjacency")? else { break; };
         let is_point = match next_is_point.take() {
             Some(value) => value,
             None => context.is_point(*sequence)?,
@@ -643,10 +642,11 @@ fn homogeneous_control_points<'ctx>(
         ctx.temporary_vec(control_count, "iges composite homogeneous control points")?;
     storage = result_storage;
     let mut homogeneous_indices = 0..control_count;
-    while let Some(index) = ctx.next_charged(
+    while !homogeneous_indices.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(index) = ctx.next_charged(
         &mut homogeneous_indices,
         "iges composite homogeneous control traversal",
-    )? {
+    )? else { break; };
         let Some(point) = curve.pole_rows().point_at(index) else {
             return Ok(None);
         };
@@ -698,10 +698,11 @@ fn euclidean_control_points<'ctx>(
         None => build()?,
     };
     let mut euclidean_poles = homogeneous.iter();
-    while let Some(&[weight, x, y, z]) = ctx.next_charged(
+    while euclidean_poles.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(&[weight, x, y, z]) = ctx.next_charged(
         &mut euclidean_poles,
         "iges composite Euclidean control traversal",
-    )? {
+    )? else { break; };
         let Some(weight) = PositiveReal::new(weight) else {
             return Ok(None);
         };
@@ -746,13 +747,12 @@ fn elevate_bezier_homogeneous<'ctx>(
     storage = result_storage;
     let mut degree = source_degree;
     let mut elevation_degrees = source_degree..target_degree;
-    while ctx
+    while (!elevation_degrees.is_empty() || ctx.resource_refusal().is_some()) && ctx
         .next_charged(
             &mut elevation_degrees,
             "iges composite Bezier degree elevation",
         )?
-        .is_some()
-    {
+        .is_some() {
         let Some(next_degree) = degree.checked_add(1) else {
             return Ok(None);
         };
@@ -765,10 +765,11 @@ fn elevate_bezier_homogeneous<'ctx>(
         next_storage = result_next_storage;
         next.push(elevated[0]);
         let mut elevated_indices = 1..=degree;
-        while let Some(index) = ctx.next_charged(
+        while !elevated_indices.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(
             &mut elevated_indices,
             "iges composite Bezier elevated controls",
-        )? {
+        )? else { break; };
             let Some(index_real) = cadmpeg_core::convert::f64_from_index(index) else {
                 return Ok(None);
             };
@@ -886,9 +887,8 @@ fn reverse_nurbs(
     let mut knots = admitted_knots.into_values();
     ctx.reverse(&mut knots, "iges reversed NURBS knot reversal")?;
     let mut knot_iter = knots.iter_mut();
-    while let Some(knot) =
-        ctx.next_charged(&mut knot_iter, "iges reversed NURBS knot reflection")?
-    {
+    while knot_iter.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(knot) = ctx.next_charged(&mut knot_iter, "iges reversed NURBS knot reflection")? else { break; };
         let finite = FiniteReal::new(*knot).ok_or(
             CompositeCurveError::ReversedChildReflectionNonFinite {
                 domain_start,
@@ -1001,9 +1001,8 @@ fn insert_homogeneous_knot<'ctx>(
         )
     })?;
     let mut inserted_indices = 0..inserted_count;
-    while let Some(index) =
-        ctx.next_charged(&mut inserted_indices, "iges composite inserted controls")?
-    {
+    while !inserted_indices.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(index) = ctx.next_charged(&mut inserted_indices, "iges composite inserted controls")? else { break; };
         let point = if index <= left_end {
             control_points[index]
         } else if index > tail_start {
@@ -1118,10 +1117,9 @@ fn trim_nurbs_lanes<'ctx>(
             "iges composite trim knot multiplicity",
         )?;
         let mut trim_insertions = upper - lower..target_multiplicity;
-        while ctx
+        while (!trim_insertions.is_empty() || ctx.resource_refusal().is_some()) && ctx
             .next_charged(&mut trim_insertions, "iges composite trim knot insertions")?
-            .is_some()
-        {
+            .is_some() {
             let Some(InsertedKnotNet {
                 control_points: new_homogeneous,
                 knots: new_knots,
@@ -1539,9 +1537,8 @@ fn elevate_nurbs_to_degree(
         }
     }
     let mut internal_knots = internal_values.into_iter();
-    while let Some(value) =
-        ctx.next_charged(&mut internal_knots, "iges composite internal values")?
-    {
+    while internal_knots.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(value) = ctx.next_charged(&mut internal_knots, "iges composite internal values")? else { break; };
         let lower = ctx.partition_point(
             &knots,
             |knot| Ok(*knot < value),
@@ -1562,13 +1559,12 @@ fn elevate_nurbs_to_degree(
             .into());
         }
         let mut elevation_insertions = multiplicity..source_degree;
-        while ctx
+        while (!elevation_insertions.is_empty() || ctx.resource_refusal().is_some()) && ctx
             .next_charged(
                 &mut elevation_insertions,
                 "iges composite elevation knot insertions",
             )?
-            .is_some()
-        {
+            .is_some() {
             let Some(InsertedKnotNet {
                 control_points: new_points,
                 knots: new_knots,
@@ -1602,9 +1598,8 @@ fn elevate_nurbs_to_degree(
     let mut piece_storage = ctx.reserve_scoped(0, "iges composite elevated span storage")?;
     let mut pieces = Vec::new();
     let mut elevation_spans = source_degree..=refined_count;
-    while let Some(span) =
-        ctx.next_charged(&mut elevation_spans, "iges composite elevation spans")?
-    {
+    while !elevation_spans.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(span) = ctx.next_charged(&mut elevation_spans, "iges composite elevation spans")? else { break; };
         let start = knots[span];
         let end = knots[span + 1];
         if !start.is_finite() || !end.is_finite() || start >= end {
@@ -1746,10 +1741,11 @@ fn concatenate_nurbs<'ctx, T>(
     let mut elevation_storage = ctx.reserve_scoped(0, "iges composite elevated child storage")?;
     let mut children = children;
     let mut children_to_elevate = children.iter_mut();
-    while let Some((curve, interval, _)) = ctx.next_charged(
+    while children_to_elevate.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((curve, interval, _)) = ctx.next_charged(
         &mut children_to_elevate,
         "iges composite child elevation traversal",
-    )? {
+    )? else { break; };
         if curve.degree() < degree {
             elevation_storage.with_storage(|| {
                 elevate_nurbs_to_degree(ctx, curve, *interval, degree, join_tolerance)
@@ -1757,10 +1753,11 @@ fn concatenate_nurbs<'ctx, T>(
         }
     }
     let mut child_intervals = children.iter().enumerate();
-    while let Some((child, (curve, interval, _))) = ctx.next_charged(
+    while child_intervals.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((child, (curve, interval, _))) = ctx.next_charged(
         &mut child_intervals,
         "iges composite child interval traversal",
-    )? {
+    )? else { break; };
         let (Some(first_knot), Some(last_knot)) = (curve.knots().first(), curve.knots().last())
         else {
             return Err(CompositeCurveError::ChildKnotsEmpty { child });
@@ -1866,9 +1863,8 @@ fn concatenate_nurbs<'ctx, T>(
         last,
         _storage: segment_storage,
     };
-    while let Some(child) =
-        ctx.next_charged(&mut children, "iges composite child lane traversal")?
-    {
+    while children.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(child) = ctx.next_charged(&mut children, "iges composite child lane traversal")? else { break; };
         let (shifted_knots, child_poles, next) = prepare_child(child, segments.end())?;
         let Some(child_start) = child_poles.point_at(0) else {
             return Ok(None);
@@ -1943,9 +1939,8 @@ fn concatenate_nurbs<'ctx, T>(
             }
             NurbsPoles3::Rational { points } => {
                 let mut poles_iter = points.into_iter().enumerate();
-                while let Some((position, pole)) =
-                    ctx.next_charged(&mut poles_iter, "iges composite joined rational poles")?
-                {
+                while poles_iter.len() != 0 || ctx.resource_refusal().is_some() {
+                    let Some((position, pole)) = ctx.next_charged(&mut poles_iter, "iges composite joined rational poles")? else { break; };
                     if position < pole_skip {
                         continue;
                     }
@@ -1972,10 +1967,11 @@ fn concatenate_nurbs<'ctx, T>(
         let mut weighted =
             ctx.collection_vec(control_points.len(), "iges composite joined weighted poles")?;
         let mut points_weights = control_points.into_iter().zip(weights).enumerate();
-        while let Some((index, (point, weight))) = ctx.next_charged(
+        while points_weights.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some((index, (point, weight))) = ctx.next_charged(
             &mut points_weights,
             "iges composite joined point conversion",
-        )? {
+        )? else { break; };
             let Some(admitted_weight) = NonZeroReal::new(weight) else {
                 let field = ctx
                     .format_retained(format_args!("poles"), "iges composite weight error field")?;
@@ -2143,10 +2139,11 @@ fn bounded_nurbs_for_id(
             ctx.temporary_vec(segments.len(), "iges composite nested children")?;
         child_storage = result_child_storage;
         let mut nested_segments = segments.iter();
-        while let Some(segment) = ctx.next_charged(
+        while nested_segments.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(segment) = ctx.next_charged(
             &mut nested_segments,
             "iges composite nested segment traversal",
-        )? {
+        )? else { break; };
             let Some(child) = child_storage.with_storage(|| {
                 bounded_nurbs_for_id(
                     ir,
@@ -2503,10 +2500,11 @@ fn project_native_composite(
         ctx.collection_vec(child_curves.len(), "iges composite native endpoints")
     })?;
     let mut endpoint_curves = child_curves.iter();
-    while let Some(curve_id) = ctx.next_charged(
+    while endpoint_curves.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(curve_id) = ctx.next_charged(
         &mut endpoint_curves,
         "iges composite native endpoint traversal",
-    )? {
+    )? else { break; };
         let Some(endpoint) = curve_endpoints(ctx, ir, curve_id, index, join_tolerance)? else {
             return Ok(None);
         };
@@ -2840,9 +2838,8 @@ fn project_with_type_130_policy<'ctx>(
     let join_tolerance = global.minimum_resolution_mm();
 
     let mut directory_entries = directory.iter();
-    while let Some(entry) =
-        ctx.next_charged(&mut directory_entries, "iges composite directory traversal")?
-    {
+    while directory_entries.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(entry) = ctx.next_charged(&mut directory_entries, "iges composite directory traversal")? else { break; };
         if entry.entity_type != 102 || entry.form != 0 {
             continue;
         }
@@ -2937,10 +2934,11 @@ fn project_with_type_130_policy<'ctx>(
         _pointer_storage = result_pointer_storage;
         let mut valid_child_pointers = true;
         let mut pointer_indices = 0..child_count;
-        while let Some(index) = ctx.next_charged(
+        while !pointer_indices.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(
             &mut pointer_indices,
             "iges composite child pointer traversal",
-        )? {
+        )? else { break; };
             let Some(sequence) = record
                 .integer(index + 2)
                 .and_then(|value| u32::try_from(value).ok())
@@ -3077,9 +3075,8 @@ fn project_with_type_130_policy<'ctx>(
         let mut curve_ids = Vec::new();
         let mut missing_curve = false;
         let mut sequence_iter = child_sequences.iter();
-        while let Some(sequence) =
-            ctx.next_charged(&mut sequence_iter, "iges composite child curve traversal")?
-        {
+        while sequence_iter.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(sequence) = ctx.next_charged(&mut sequence_iter, "iges composite child curve traversal")? else { break; };
             if !is_curve_sequence(sequence)? {
                 continue;
             }
@@ -3133,10 +3130,11 @@ fn project_with_type_130_policy<'ctx>(
         child_storage = result_child_storage;
         let mut child_refusal = None;
         let mut projected_curves = curve_ids.iter();
-        while let Some(curve_id) = ctx.next_charged(
+        while projected_curves.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(curve_id) = ctx.next_charged(
             &mut projected_curves,
             "iges composite projected child traversal",
-        )? {
+        )? else { break; };
             match child_storage
                 .with_storage(|| bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx))
             {

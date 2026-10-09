@@ -82,7 +82,7 @@ fn quarantine_loss_payload_refusal_does_not_precharge_unvisited_records() {
     for (status, parameters, visited_steps, operation) in [
         ("0000 201", "116,1,2,3,0;", 1,
             "iges directory quarantine loss message"),
-        ("00000000", "116,1,2,3x4,0;", 2,
+        ("00000000", "116,1,2,3x4,0;", 1,
             "iges parameter quarantine loss message"),
     ] {
         let entities = (0..17).map(|_| OwnedTestEntity {
@@ -96,7 +96,7 @@ fn quarantine_loss_payload_refusal_does_not_precharge_unvisited_records() {
         let parse = crate::reader::PhysicalParse::run(&bytes, &parse_ctx,
             crate::reader::ParseMode::Inspect).unwrap();
         let mut policy = DecodePolicy::service();
-        // Parameter losses first inspect the empty Directory quarantine iterator.
+        // Empty sources are free. Only the first quarantine record is visited.
         policy.limits.max_work_units = visited_steps;
         policy.limits.max_retained_bytes = 0;
         let arena = DecodeArena::new();

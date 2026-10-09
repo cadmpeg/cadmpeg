@@ -129,9 +129,8 @@ fn has_forbidden_form_63_duplicate(
     let mut cells = HashMap::new();
     let cell_size = resolution * 0.5;
     let mut input = points.iter().copied().enumerate();
-    while let Some((index, point)) =
-        ctx.next_charged(&mut input, "iges copious duplicate points")?
-    {
+    while input.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((index, point)) = ctx.next_charged(&mut input, "iges copious duplicate points")? else { break; };
         if cell_size <= 0.0 {
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
             let previous = storage.with_storage(|| {
@@ -449,7 +448,8 @@ pub(super) fn project<'ctx>(
         let mut tuples_valid = true;
         let mut positions_valid = true;
         let mut indices = (tuple_start..tuple_end).step_by(tuple_width);
-        while let Some(start) = ctx.next_charged(&mut indices, "iges copious tuple traversal")? {
+        while indices.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some(start) = ctx.next_charged(&mut indices, "iges copious tuple traversal")? else { break; };
             let mut tuple = [FiniteReal::ZERO; 6];
             for (offset, value) in tuple.iter_mut().enumerate().take(tuple_width) {
                 let Some(number) = record.number(start + offset).and_then(FiniteReal::new) else {

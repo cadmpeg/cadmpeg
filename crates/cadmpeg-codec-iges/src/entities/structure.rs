@@ -92,7 +92,8 @@ fn network_connect_points(
     };
     let mut points = Vec::new();
     let mut input = 0..count;
-    while let Some(index) = ctx.next_charged(&mut input, operation)? {
+    while !input.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(index) = ctx.next_charged(&mut input, operation)? else { break; };
         let value = if matches!(global_table, GlobalTable::V4_0) {
             record.integer(first_pointer_index + index)
         } else {
@@ -446,7 +447,8 @@ fn array_mask_valid(
     let mut storage = ctx.reserve_scoped(0, "iges array mask scratch")?;
     let mut positions = BTreeSet::new();
     let mut input = 0..count;
-    while let Some(index) = ctx.next_charged(&mut input, "iges structure list traversal")? {
+    while !input.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(index) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
         let Some(position) = record
             .integer(first_position_index + index)
             .and_then(|value| usize::try_from(value).ok())
@@ -865,7 +867,8 @@ fn unit_values_valid(
     let mut units_valid = count.is_some_and(|count| record.parameter_end() == 2 + count * 3);
     if let Some(count) = count.filter(|_| units_valid) {
         let mut input = 0..count;
-        while let Some(offset) = ctx.next_charged(&mut input, "iges structure list traversal")? {
+        while !input.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(offset) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
             let start = 2 + offset * 3;
             let valid = if let Some((unit_type, value)) =
                 record.string(start).zip(record.string(start + 1))
@@ -1192,9 +1195,8 @@ fn property_fields_valid(
             )?;
             let mut counts = Some((0_usize, 1_usize));
             let mut offsets = 0..independent_count;
-            while let Some(offset) =
-                ctx.next_charged(&mut offsets, "iges property independent counts")?
-            {
+            while !offsets.is_empty() || ctx.resource_refusal().is_some() {
+                let Some(offset) = ctx.next_charged(&mut offsets, "iges property independent counts")? else { break; };
                 counts = counts.and_then(|(sum, product)| {
                     let count = record
                         .integer(5 + independent_count + offset)
@@ -1893,7 +1895,8 @@ fn linear_nurbs_boundary_points(
         return Ok(None);
     }
     let mut interior = knots.iter();
-    while let Some(knot) = ctx.next_charged(&mut interior, "iges plane NURBS interior knots")? {
+    while interior.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some(knot) = ctx.next_charged(&mut interior, "iges plane NURBS interior knots")? else { break; };
         if parameter_range[0] < *knot && *knot < parameter_range[1] && !append_sample(*knot)? {
             return Ok(None);
         }
@@ -1979,10 +1982,10 @@ fn bounded_plane_curve_is_simple(
                 return Ok(false);
             }
             let mut input = segments.iter();
-            while let Some(segment) = context
+            while input.len() != 0 || context.ctx.resource_refusal().is_some() {
+                let Some(segment) = context
                 .ctx
-                .next_charged(&mut input, "iges plane boundary segment traversal")?
-            {
+                .next_charged(&mut input, "iges plane boundary segment traversal")? else { break; };
                 let Some(curve) = context.index.curves(segment.curve.as_str(), context.ctx)? else {
                     return Ok(false);
                 };
@@ -2364,9 +2367,8 @@ fn plane_face_draft(
         "iges legacy plane loop IDs",
     )?;
     let mut input = boundary_edges.into_iter().enumerate();
-    while let Some((boundary_index, edge)) =
-        ctx.next_charged(&mut input, "iges structure list traversal")?
-    {
+    while input.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((boundary_index, edge)) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
         let edge_id = edge
             .id
             .try_clone_for_decode(ctx, "iges structure identity copy")?;
@@ -2556,7 +2558,8 @@ fn legacy_single_parent_face<'ir, 'ctx>(
     let mut children_are_type_108 = true;
     let mut children_have_negative_physical_status = true;
     let mut input = 0..child_count;
-    while let Some(offset) = ctx.next_charged(&mut input, "iges structure list traversal")? {
+    while !input.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(offset) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
         let Some((child_sequence, child_entry)) =
             existing_pointer(record, 4 + offset, entries, ctx)?
         else {
@@ -2612,9 +2615,8 @@ fn legacy_single_parent_face<'ir, 'ctx>(
         .chain(children.iter().copied())
         .zip(boundary_sequences.iter().copied())
         .enumerate();
-    while let Some((boundary_index, (plane_sequence, boundary_sequence))) =
-        ctx.next_charged(&mut input, "iges structure list traversal")?
-    {
+    while input.size_hint().0 != 0 || ctx.resource_refusal().is_some() {
+        let Some((boundary_index, (plane_sequence, boundary_sequence))) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
         let plane = plane_carrier(index, plane_sequence, ctx)?
             .ok_or("legacy single-parent child plane was not projected")?;
         if !planes_are_coplanar(parent_plane, plane, resolution) {
@@ -2703,7 +2705,7 @@ fn read_flow_required_pointers(
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut pointers = ctx.collection_vec(count, operation)?;
     let mut input = 0..count;
-    while ctx.next_charged(&mut input, operation)?.is_some() {
+    while (!input.is_empty() || ctx.resource_refusal().is_some()) && ctx.next_charged(&mut input, operation)?.is_some() {
         let Some(FlowPointer::Sequence(sequence)) =
             read_flow_pointer(record, entries, cursor, false, ctx)?
         else {
@@ -2723,10 +2725,9 @@ fn read_flow_optional_pointers(
 ) -> Result<Option<Vec<Option<u32>>>, CodecError> {
     let mut pointers = ctx.collection_vec(count, "iges flow continuation pointers")?;
     let mut input = 0..count;
-    while ctx
+    while (!input.is_empty() || ctx.resource_refusal().is_some()) && ctx
         .next_charged(&mut input, "iges structure list traversal")?
-        .is_some()
-    {
+        .is_some() {
         let Some(pointer) = read_flow_pointer(record, entries, cursor, true, ctx)? else {
             return Ok(None);
         };
@@ -2747,7 +2748,8 @@ fn definition_members(
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut members = ctx.collection_vec(count, operation)?;
     let mut input = 0..count;
-    while let Some(index) = ctx.next_charged(&mut input, operation)? {
+    while !input.is_empty() || ctx.resource_refusal().is_some() {
+        let Some(index) = ctx.next_charged(&mut input, operation)? else { break; };
         let Some(sequence) = record
             .integer(4 + index)
             .and_then(|value| u32::try_from(value).ok())
@@ -2847,10 +2849,9 @@ fn flow_associativity(
         return Ok(None);
     };
     let mut input = 0..counts[3];
-    while ctx
+    while (!input.is_empty() || ctx.resource_refusal().is_some()) && ctx
         .next_charged(&mut input, "iges structure list traversal")?
-        .is_some()
-    {
+        .is_some() {
         if record.string(cursor).is_none_or(<[u8]>::is_empty) {
             return Ok(None);
         }
@@ -3727,9 +3728,8 @@ pub(super) fn project<'ctx>(
         let mut values_per_row = shape.map(|_| 0_usize);
         if let Some(shape) = shape {
             let mut descriptors = shape.descriptors.iter();
-            while let Some((_, count)) =
-                ctx.next_charged(&mut descriptors, "iges attribute row width")?
-            {
+            while descriptors.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some((_, count)) = ctx.next_charged(&mut descriptors, "iges attribute row width")? else { break; };
                 values_per_row = values_per_row.and_then(|total| total.checked_add(*count));
                 if values_per_row.is_none() {
                     break;
@@ -4260,9 +4260,8 @@ pub(super) fn project<'ctx>(
         let targets = scratch.with_storage(|| -> Result<Vec<u32>, CodecError> {
             let mut targets = Vec::new();
             let mut input = flow.continuations.iter();
-            while let Some(slot) =
-                ctx.next_charged(&mut input, "iges flow graph continuation slots")?
-            {
+            while input.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some(slot) = ctx.next_charged(&mut input, "iges flow graph continuation slots")? else { break; };
                 let Some(target) = slot else {
                     continue;
                 };
@@ -4344,7 +4343,7 @@ pub(super) fn project<'ctx>(
                     &sequence,
                     "iges flow graph successor lookup",
                 )?;
-                Ok(adjacent.into_iter().flatten().copied())
+                Ok(adjacent.map_or(&[][..], Vec::as_slice).iter().copied())
             })
         })?;
         if flow_targets_valid && !cyclic {
@@ -4786,7 +4785,8 @@ pub(super) fn project<'ctx>(
             candidate_storage.with_storage(|| ctx.collection_vec(count, "iges solid assembly items"))?;
         let mut items_valid = true;
         let mut input = 0..count;
-        while let Some(index) = ctx.next_charged(&mut input, "iges structure list traversal")? {
+        while !input.is_empty() || ctx.resource_refusal().is_some() {
+            let Some(index) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
             let Some(item) = (|| {
                 let item = record.integer(2 + index).and_then(|value| {
                     let sequence = u32::try_from(value).ok()?;
@@ -4840,7 +4840,8 @@ pub(super) fn project<'ctx>(
         let targets = scratch.with_storage(|| -> Result<Vec<u32>, CodecError> {
             let mut targets = Vec::new();
             let mut input = definition.items.iter();
-            while let Some((item, _)) = ctx.next_charged(&mut input, "iges assembly graph items")? {
+            while input.len() != 0 || ctx.resource_refusal().is_some() {
+                let Some((item, _)) = ctx.next_charged(&mut input, "iges assembly graph items")? else { break; };
                 if ctx.contains_key_btree_map(
                     &assemblies,
                     item,
@@ -4862,9 +4863,8 @@ pub(super) fn project<'ctx>(
     }
     let mut visited = BTreeSet::new();
     let mut input = assemblies.iter();
-    while let Some((sequence, assembly)) =
-        ctx.next_charged(&mut input, "iges structure list traversal")?
-    {
+    while input.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((sequence, assembly)) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
         let entry = ctx
             .get_btree_map(entries, sequence, "iges assembly directory lookup")?
             .ok_or_else(|| {
@@ -4875,9 +4875,8 @@ pub(super) fn project<'ctx>(
         let mut has_brep = false;
         let mut items_valid = true;
         let mut input = assembly.items.iter();
-        while let Some((item, transformation)) =
-            ctx.next_charged(&mut input, "iges structure list traversal")?
-        {
+        while input.len() != 0 || ctx.resource_refusal().is_some() {
+            let Some((item, transformation)) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
             let item_entry = ctx.get_btree_map(
                 entries,
                 item,
@@ -4930,7 +4929,7 @@ pub(super) fn project<'ctx>(
                     &sequence,
                     "iges assembly graph successor lookup",
                 )?;
-                Ok(adjacent.into_iter().flatten().copied())
+                Ok(adjacent.map_or(&[][..], Vec::as_slice).iter().copied())
             })
         })?;
         let own_transform_valid =
@@ -5422,9 +5421,8 @@ pub(super) fn project<'ctx>(
     }
 
     let mut input = definitions.iter();
-    while let Some((sequence, definition)) =
-        ctx.next_charged(&mut input, "iges structure list traversal")?
-    {
+    while input.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((sequence, definition)) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
         let entry = ctx
             .get_btree_map(entries, sequence, "iges subfigure definition directory lookup")?
             .ok_or_else(|| {
@@ -5585,9 +5583,8 @@ pub(super) fn project<'ctx>(
         }
     }
     let mut input = network_definitions.iter();
-    while let Some((sequence, definition)) =
-        ctx.next_charged(&mut input, "iges structure list traversal")?
-    {
+    while input.len() != 0 || ctx.resource_refusal().is_some() {
+        let Some((sequence, definition)) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
         let entry = ctx
             .get_btree_map(entries, sequence, "iges network definition directory lookup")?
             .ok_or_else(|| {

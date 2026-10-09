@@ -158,10 +158,10 @@ impl<'ctx, 'policy> AnnotationValidation<'ctx, 'policy> {
         let mut total = Some(0_i64);
         if let Some(strings) = note.count(1) {
             let mut offsets = 0..strings;
-            while let Some(offset) = self
+            while !offsets.is_empty() || self.ctx.resource_refusal().is_some() {
+                let Some(offset) = self
                 .ctx
-                .next_charged(&mut offsets, "iges flag note width sum")?
-            {
+                .next_charged(&mut offsets, "iges flag note width sum")? else { break; };
                 total = total.and_then(|total| {
                     total.checked_add(note.integer(2 + offset * 12).unwrap_or_default())
                 });
