@@ -197,7 +197,8 @@ pub(crate) fn decode(
             continue;
         }
         match parse(ctx, &entry.name, scan.entry_bytes(ctx, &entry.name)?) {
-            Ok((parsed, _unknown_storage)) => {
+            Ok(parsed) => {
+                let (_unknown_storage, parsed) = (parsed.1, parsed.0);
                 if !parsed.unknown_record_kinds.is_empty() {
                     let count = ctx
                         .admit_iter(
@@ -2657,7 +2658,8 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default())
             .expect("test decode context");
-        super::parse(&ctx, "synthetic.tsm", bytes).map(|(parsed, _)| parsed)
+        super::parse(&ctx, "synthetic.tsm", bytes)
+            .and_then(|(parsed, storage)| storage.commit_value(parsed))
     }
 
     fn compact_half_edge_limit(limit: u64) -> cadmpeg_core::CodecError {
