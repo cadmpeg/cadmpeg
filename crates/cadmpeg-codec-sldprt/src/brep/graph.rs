@@ -4798,18 +4798,36 @@ where
     Ok(objective(parameter)?.map(|distance| (parameter, distance)))
 }
 
+/// Candidate pair backing lives through scalar inverse selection.
+struct InverseCandidates<'ctx, 'arena> {
+    context: &'ctx DecodeContext<'arena>,
+    values: Vec<(f64, f64)>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl InverseCandidates<'_, '_> {
+    fn resolve(self, tolerance: f64, domain: [f64; 2])
+        -> Result<InverseResolution<f64>, cadmpeg_core::CodecError>
+    {
+        // The remaining lease stays live until the consumed values have been
+        // destroyed inside selection, including any refusal or unwind.
+        unique_inverse_parameter(self.context, self.values, tolerance, domain)
+    }
+}
+
 /// Find one representative for every sampled local minimum of an objective on
 /// each nonzero knot span. Endpoints are always retained, so a candidate at a
 /// knot is not lost when adjacent spans share it.
-fn sampled_parameter_minima<F>(
-    ctx: &DecodeContext<'_>,
+fn sampled_parameter_minima<'ctx, 'arena, F>(
+    ctx: &'ctx DecodeContext<'arena>,
     knots: &[f64],
     domain: [f64; 2],
     mut objective: F,
-) -> Result<Option<Vec<(f64, f64)>>, cadmpeg_core::CodecError>
+) -> Result<Option<InverseCandidates<'ctx, 'arena>>, cadmpeg_core::CodecError>
 where
     F: FnMut(f64) -> Result<Option<f64>, cadmpeg_core::CodecError>,
 {
+    let (candidates, storage) = ctx.with_scoped_storage("hold Parasolid inverse candidates", || {
     let mut candidates = Vec::new();
     for span in ctx
         .admit_iter(knots, "sample Parasolid inverse knot spans")?
@@ -4874,7 +4892,9 @@ where
             }
         }
     }
-    Ok(Some(candidates))
+    Ok::<_, cadmpeg_core::CodecError>(Some(candidates))
+    })?;
+    Ok(candidates.map(|values| InverseCandidates { context: ctx, values, _storage: storage }))
 }
 
 fn unique_inverse_parameter(
@@ -4965,7 +4985,7 @@ fn nurbs_parameter_at_point(
             )?
         }
     };
-    unique_inverse_parameter(ctx, candidates, tolerance, domain)
+    candidates.resolve(tolerance, domain)
 }
 
 fn quadratic_nurbs_has_constant_radius(
@@ -6400,18 +6420,20 @@ fn nurbs_homogeneous_controls(
     Ok(Some(controls))
 }
 
-struct HomogeneousCurveLanes {
+struct HomogeneousCurveLanes<'ctx> {
     knots: Vec<f64>,
     controls: Vec<[f64; 4]>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
-fn insert_nurbs_homogeneous_knot(
-    ctx: &DecodeContext<'_>,
+fn insert_nurbs_homogeneous_knot<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     degree: usize,
     knots: &[f64],
     controls: &[[f64; 4]],
     value: f64,
-) -> Result<Option<HomogeneousCurveLanes>, cadmpeg_core::CodecError> {
+) -> Result<Option<HomogeneousCurveLanes<'ctx>>, cadmpeg_core::CodecError> {
+    if let Some(limit) = ctx.resource_refusal() { return Err(limit.into()); }
     let Some(expected_knots) = controls
         .len()
         .checked_add(degree)
@@ -6460,6 +6482,7 @@ fn insert_nurbs_homogeneous_knot(
     if multiplicity > degree {
         return Ok(None);
     }
+    let (generation, storage) = ctx.with_scoped_storage("hold inserted homogeneous NURBS lanes", || {
     let mut inserted_knots = Vec::new();
     ctx.extend_from_slice(
         &mut inserted_knots,
@@ -6516,10 +6539,9 @@ fn insert_nurbs_homogeneous_knot(
         &controls[suffix_start..],
         "insert homogeneous NURBS control lane",
     )?;
-    Ok(Some(HomogeneousCurveLanes {
-        knots: inserted_knots,
-        controls: inserted_controls,
-    }))
+    Ok::<_, cadmpeg_core::CodecError>(Some((inserted_knots, inserted_controls)))
+    })?;
+    Ok(generation.map(|(knots, controls)| HomogeneousCurveLanes { knots, controls, _storage: storage }))
 }
 
 /// The knots, control points and weights of one clamped NURBS segment, before
@@ -6534,6 +6556,7 @@ fn clamp_nurbs_curve_to_domain_lanes(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     domain: [f64; 2],
 ) -> Result<Option<ClampedCurveLanes>, cadmpeg_core::CodecError> {
+    if let Some(limit) = ctx.resource_refusal() { return Err(limit.into()); }
     if curve.periodic()
         || !domain[0].is_finite()
         || !domain[1].is_finite()
@@ -6551,16 +6574,19 @@ fn clamp_nurbs_curve_to_domain_lanes(
     if domain[0] < original_domain[0] || domain[1] > original_domain[1] {
         return Ok(None);
     }
-    let mut knots = ctx.copy_slice(curve.knots(), "copy NURBS knots for clamping")?;
-    let Some(mut controls) = nurbs_homogeneous_controls(ctx, curve)? else {
-        return Ok(None);
-    };
+    let (generation, storage) = ctx.with_scoped_storage("hold initial homogeneous NURBS lanes", || {
+        let knots = ctx.copy_slice(curve.knots(), "copy NURBS knots for clamping")?;
+        let Some(controls) = nurbs_homogeneous_controls(ctx, curve)? else { return Ok(None); };
+        Ok::<_, cadmpeg_core::CodecError>(Some((knots, controls)))
+    })?;
+    let Some((knots, controls)) = generation else { return Ok(None); };
+    let mut current = HomogeneousCurveLanes { knots, controls, _storage: storage };
     let Some(full_multiplicity) = degree.checked_add(1) else {
         return Ok(None);
     };
     for value in domain {
         let multiplicity = ctx
-            .admit_iter(&knots, "count clamped NURBS knot multiplicity")?
+            .admit_iter(&current.knots, "count clamped NURBS knot multiplicity")?
             .filter(|knot| **knot == value)
             .count();
         if multiplicity > full_multiplicity {
@@ -6571,27 +6597,26 @@ fn clamp_nurbs_curve_to_domain_lanes(
             "insert clamped NURBS knots",
         )? {
             let Some(inserted) =
-                insert_nurbs_homogeneous_knot(ctx, degree, &knots, &controls, value)?
+                insert_nurbs_homogeneous_knot(ctx, degree, &current.knots, &current.controls, value)?
             else {
                 return Ok(None);
             };
-            knots = inserted.knots;
-            controls = inserted.controls;
+            current = inserted;
         }
     }
     let (Some(start), Some(end), Some(end_last)) = (
         ctx.position_by(
-            &knots,
+            &current.knots,
             |knot| Ok(*knot == domain[0]),
             "find clamped NURBS domain start",
         )?,
         ctx.position_by(
-            &knots,
+            &current.knots,
             |knot| Ok(*knot == domain[1]),
             "find clamped NURBS domain end",
         )?,
         ctx.rposition_by(
-            &knots,
+            &current.knots,
             |knot| Ok(*knot == domain[1]),
             "find clamped NURBS domain end",
         )?,
@@ -6602,7 +6627,7 @@ fn clamp_nurbs_curve_to_domain_lanes(
         return Ok(None);
     }
     let (Some(control_slice), Some(knot_slice)) =
-        (controls.get(start..end), knots.get(start..=end_last))
+        (current.controls.get(start..end), current.knots.get(start..=end_last))
     else {
         return Ok(None);
     };
@@ -6866,11 +6891,20 @@ enum NurbsPcurveResolution {
     Ambiguous,
 }
 
-fn nurbs_curve_sample_parameters(
-    ctx: &DecodeContext<'_>,
+/// Parameter samples remain temporary through fit and deviation checks.
+struct CurveSampleParameters<'ctx> {
+    values: Vec<f64>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+fn nurbs_curve_sample_parameters<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Result<Option<Vec<f64>>, NurbsPcurveFailure> {
+) -> Result<Option<CurveSampleParameters<'ctx>>, NurbsPcurveFailure> {
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(limit.into());
+    }
     let Some(domain) = nurbs_curve_parameter_domain(curve) else {
         return Ok(None);
     };
@@ -6883,7 +6917,11 @@ fn nurbs_curve_sample_parameters(
     {
         return Ok(None);
     }
-    let mut parameters = vec![range[0], range[1]];
+    let mut storage = ctx.reserve_scoped(0, "hold NURBS sample parameters")?;
+    let mut parameters = storage.with_storage(|| {
+        ctx.collection_vec(2, "collect NURBS sample endpoints")
+    })?;
+    parameters.extend_from_slice(&range);
     for span in ctx
         .admit_iter(
             curve.knots().as_slice(),
@@ -6908,7 +6946,9 @@ fn nurbs_curve_sample_parameters(
                 return Ok(None);
             };
             ctx.charge_work(1, "sample NURBS curve span")?;
-            ctx.reserve_vec(&mut parameters, 1, "collect NURBS sample parameters")?;
+            storage.with_storage(|| {
+                ctx.reserve_vec(&mut parameters, 1, "collect NURBS sample parameters")
+            })?;
             parameters.push(parameter.get());
         }
     }
@@ -6920,7 +6960,10 @@ fn nurbs_curve_sample_parameters(
     )?;
     // Every distinct sample participates in the fit bound, including tiny spans.
     ctx.dedup_vec(&mut parameters, "deduplicate NURBS sample parameters")?;
-    Ok((!parameters.is_empty()).then_some(parameters))
+    Ok((!parameters.is_empty()).then_some(CurveSampleParameters {
+        values: parameters,
+        _storage: storage,
+    }))
 }
 
 fn nurbs_edge_endpoint_parameters(
@@ -6979,7 +7022,7 @@ fn nurbs_curve_surface_deviation(
     };
     let mut seed = None;
     let mut maximum = 0.0_f64;
-    for parameter in ctx.admit_iter(parameters, "measure NURBS curve surface deviation")? {
+    for &parameter in ctx.admit_iter(&parameters.values, "measure NURBS curve surface deviation")? {
         let Some(point) = super::evaluation::nurbs_curve_point(ctx, curve, parameter)? else {
             return Ok(None);
         };
@@ -7070,7 +7113,7 @@ fn nurbs_degree_one_cache_lanes(
         return Ok(None);
     };
     let mut fit_tolerance = 0.0_f64;
-    for parameter in ctx.admit_iter(parameters, "measure NURBS cache pcurve fit")? {
+    for &parameter in ctx.admit_iter(&parameters.values, "measure NURBS cache pcurve fit")? {
         let Some(model_point) = super::evaluation::nurbs_curve_point(ctx, curve, parameter)? else {
             return Ok(None);
         };
@@ -7293,9 +7336,7 @@ fn ruled_surface_line_pcurve(
     else {
         return Ok(InverseResolution::NoMatch);
     };
-    let resolution = unique_inverse_parameter(
-        ctx,
-        candidates,
+    let resolution = candidates.resolve(
         inverse_coordinate_tolerance(
             ctx,
             surface_poles(ctx, surface)?
@@ -8301,3 +8342,12 @@ mod numerical_range_tests;
 
 #[cfg(test)]
 mod evaluation_admission_tests;
+
+#[cfg(test)]
+mod inverse_candidate_tests;
+
+#[cfg(test)]
+mod sample_parameter_tests;
+
+#[cfg(test)]
+mod homogeneous_generation_tests;

@@ -92,11 +92,11 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
             .unwrap()
             .get(),
         );
-        println!("SW d{d:e} samples{samples:?} uv{uv:?} reported_error={error} actual_midpoint_error={observed}");
+        println!("SW d{d:e} samples{:?} uv{uv:?} reported_error={error} actual_midpoint_error={observed}", samples.values);
         assert_eq!(error, observed);
-        assert_eq!(samples.len(), 9);
-        assert_eq!(samples.first(), Some(&0.0));
-        assert_eq!(samples.last(), Some(&d));
+        assert_eq!(samples.values.len(), 9);
+        assert_eq!(samples.values.first(), Some(&0.0));
+        assert_eq!(samples.values.last(), Some(&d));
     }
 }
 
