@@ -1926,3 +1926,6 @@ mod utf16;
 mod case_equality;
 
 mod searches;
+
+mod uuid_prefix;
+mod userdata_search;
