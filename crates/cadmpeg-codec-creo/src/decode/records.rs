@@ -2778,12 +2778,14 @@ pub(super) fn curve_parameter_records<'a, 'ctx>(
     CodecError,
 > {
     ctx.with_scoped_storage("creo native projection storage", || {
-        let (counts, _count_storage) = curve_id_counts(
+        let counts_parts = curve_id_counts(
             ctx,
             ctx.admit_iter(parameters, "creo curve parameter count traversal")?
                 .map(|record| record.curve_id),
             "creo native curve parameter count nodes",
         )?;
+        let _count_storage = counts_parts.1;
+        let counts = counts_parts.0;
         let mut records = Vec::new();
         for record in ctx.admit_iter(parameters, "creo native record traversal")? {
             let id = ctx.format_retained(
@@ -2832,7 +2834,7 @@ pub(super) fn cross_section_curve_row_records<'a, 'ctx>(
     CodecError,
 > {
     ctx.with_scoped_storage("creo native projection storage", || {
-        let (counts, _count_storage) = curve_id_counts(
+        let counts_parts = curve_id_counts(
             ctx,
             ctx.admit_iter(
                 &scan.curves.cross_section_rows,
@@ -2841,6 +2843,8 @@ pub(super) fn cross_section_curve_row_records<'a, 'ctx>(
             .map(|row| row.id),
             "creo native cross section curve count nodes",
         )?;
+        let _count_storage = counts_parts.1;
+        let counts = counts_parts.0;
         let mut records = Vec::new();
         for row in ctx.admit_iter(
             &scan.curves.cross_section_rows,
@@ -2891,12 +2895,14 @@ pub(super) fn curve_topology_row_records<'a, 'ctx>(
     CodecError,
 > {
     ctx.with_scoped_storage("creo native projection storage", || {
-        let (counts, _count_storage) = curve_id_counts(
+        let counts_parts = curve_id_counts(
             ctx,
             ctx.admit_iter(rows, "creo curve topology count traversal")?
                 .map(|row| row.id),
             "creo native curve topology count nodes",
         )?;
+        let _count_storage = counts_parts.1;
+        let counts = counts_parts.0;
         let mut records = Vec::new();
         for row in ctx.admit_iter(rows, "creo native record traversal")? {
             let id = ctx.format_retained(
@@ -3651,7 +3657,7 @@ pub(super) fn sketch_records<'a, 'ctx>(
                 opaque_segments,
             ))
         })?;
-        let table_headers = sketch_table_headers(ctx, definition)?;
+        let table_headers = storage.with_storage(|| sketch_table_headers(ctx, definition))?;
         let section_points = sketch_section_point_records(ctx, definition, &mut storage)?;
         let solved_external_ids = storage.with_storage(|| {
             ctx.collect_vec(
@@ -3667,9 +3673,11 @@ pub(super) fn sketch_records<'a, 'ctx>(
             )
         })?;
         let variables = {
-            let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
-            let resolved_radii = resolved_section_radii(ctx, definition)?;
-            let resolved_scalars = resolved_section_scalar_values(ctx, definition)?;
+            let mut resolution_storage =
+                ctx.reserve_scoped(0, "creo native sketch resolved variable storage")?;
+            let mut resolved_coordinates = None;
+            let mut resolved_radii = None;
+            let mut resolved_scalars = None;
             storage.with_storage(|| {
                 ctx.try_collect_vec(
                     (ctx.admit_iter(
@@ -3697,34 +3705,53 @@ pub(super) fn sketch_records<'a, 'ctx>(
                             homogeneity: row.homogeneity,
                             uvar_id: row.uvar_id,
                             resolved_value: match row.variable_type {
-                                VariableType::U => ctx
-                                    .get_btree_map(
-                                        &resolved_coordinates,
+                                VariableType::U | VariableType::V => {
+                                    let coordinates = match &mut resolved_coordinates {
+                                        Some(coordinates) => coordinates,
+                                        slot => slot.insert(resolution_storage.with_storage(|| {
+                                            resolved_section_coordinates(ctx, definition)
+                                        })?),
+                                    };
+                                    let coordinate = if row.variable_type == VariableType::U {
+                                        0
+                                    } else {
+                                        1
+                                    };
+                                    ctx.get_btree_map(
+                                        coordinates,
                                         &row.key,
                                         "creo sketch coordinate lookup",
                                     )?
-                                    .and_then(|point| point[0]),
-                                VariableType::V => ctx
-                                    .get_btree_map(
-                                        &resolved_coordinates,
-                                        &row.key,
-                                        "creo sketch coordinate lookup",
-                                    )?
-                                    .and_then(|point| point[1]),
-                                VariableType::Radius => ctx
-                                    .get_btree_map(
-                                        &resolved_radii,
+                                    .and_then(|point| point[coordinate])
+                                }
+                                VariableType::Radius => {
+                                    let radii = match &mut resolved_radii {
+                                        Some(radii) => radii,
+                                        slot => slot.insert(resolution_storage.with_storage(|| {
+                                            resolved_section_radii(ctx, definition)
+                                        })?),
+                                    };
+                                    ctx.get_btree_map(
+                                        radii,
                                         &row.key,
                                         "creo sketch radius lookup",
                                     )?
-                                    .copied(),
-                                _ => ctx
-                                    .get_btree_map(
-                                        &resolved_scalars,
+                                    .copied()
+                                }
+                                _ => {
+                                    let scalars = match &mut resolved_scalars {
+                                        Some(scalars) => scalars,
+                                        slot => slot.insert(resolution_storage.with_storage(|| {
+                                            resolved_section_scalar_values(ctx, definition)
+                                        })?),
+                                    };
+                                    ctx.get_btree_map(
+                                        scalars,
                                         &(row.variable_type, row.key),
                                         "creo sketch scalar lookup",
                                     )?
-                                    .copied(),
+                                    .copied()
+                                }
                             },
                             offset: row.offset,
                         })
@@ -4108,7 +4135,7 @@ pub(super) fn feature_definition_records<'a, 'ctx>(
         if scan.features.definitions.is_empty() {
             return Ok(Vec::new());
         }
-        let (counts, _count_storage) = curve_id_counts(
+        let counts_parts = curve_id_counts(
             ctx,
             ctx.admit_iter(
                 &scan.features.definitions,
@@ -4117,6 +4144,8 @@ pub(super) fn feature_definition_records<'a, 'ctx>(
             .map(|definition| definition.identity.id()),
             "creo native feature definition identity nodes",
         )?;
+        let _count_storage = counts_parts.1;
+        let counts = counts_parts.0;
         let mut records = Vec::new();
         for definition in
             ctx.admit_iter(&scan.features.definitions, "creo native record traversal")?

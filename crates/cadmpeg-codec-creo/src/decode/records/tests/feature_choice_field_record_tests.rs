@@ -103,8 +103,10 @@ fn borrowed_feature_choice_field_values_preserve_json() {
     let policy = DecodePolicy::service();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let (records, _records_storage) =
+    let records_parts =
         feature_choice_field_records(&ctx, &scan).expect("records are admitted");
+    let _records_storage = records_parts.1;
+    let records = records_parts.0;
     let values = records
         .iter()
         .map(|record| serde_json::to_value(&record.value).expect("value serializes"))

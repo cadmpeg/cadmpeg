@@ -251,9 +251,11 @@ fn surface_named_values_preserve_json_without_copying() {
     let policy = DecodePolicy::service();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let (records, _records_storage) =
+    let records_parts =
         surface_prototype_records(&ctx, &scan, &scan.surfaces.prototype_records, "visibgeom")
             .expect("prototype is admitted");
+    let _records_storage = records_parts.1;
+    let records = records_parts.0;
     let values = records[0]
         .parameters
         .iter()

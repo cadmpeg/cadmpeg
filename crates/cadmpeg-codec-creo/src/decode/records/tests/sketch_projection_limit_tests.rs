@@ -196,7 +196,9 @@ fn borrowed_sketch_section_frames_preserve_json() {
     let policy = DecodePolicy::service();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let (records, _storage) = sketch_records(&ctx, &scan).expect("sketch projection is admitted");
+    let records_parts = sketch_records(&ctx, &scan).expect("sketch projection is admitted");
+    let _storage = records_parts.1;
+    let records = records_parts.0;
     let value = serde_json::to_value(&records[0]).expect("record serializes");
     assert_eq!(
         value["section_3d"]["reference_plane_entity_ids"],
@@ -235,8 +237,10 @@ fn sketch_variable_body_refuses_materialized_limit() {
     let policy = DecodePolicy::service();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let (records, _storage) =
+    let records_parts =
         sketch_records(&ctx, &scan).expect("service profile admits one variable");
+    let _storage = records_parts.1;
+    let records = records_parts.0;
     let value = serde_json::to_value(&records[0]).expect("record serializes");
     assert_eq!(
         value["variables"][0]["value_body"],
@@ -290,14 +294,18 @@ fn sketch_projection_storage_releases_after_serialization() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = cap;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let (records, storage) = sketch_records(&ctx, &scan).expect("scratch projection");
+    let records_parts = sketch_records(&ctx, &scan).expect("scratch projection");
+    let storage = records_parts.1;
+    let records = records_parts.0;
     let value = serde_json::to_value(&records[0]).expect("record serializes");
     assert_eq!(value["section_3d"]["dimension_ids"], serde_json::json!([4]));
     assert!(ctx.reserve_scoped(cap, "live sketch projection").is_err());
     drop((records, storage));
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let (records, storage) = sketch_records(&ctx, &scan).expect("scratch projection");
+    let records_parts = sketch_records(&ctx, &scan).expect("scratch projection");
+    let storage = records_parts.1;
+    let records = records_parts.0;
     drop((records, storage));
     ctx.reserve_scoped(cap, "released sketch projection")
         .expect("all storage released");

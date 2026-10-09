@@ -138,7 +138,7 @@ fn borrowed_surface_parameter_preserves_nested_json() {
     let policy = DecodePolicy::service();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let (records, _records_storage) = surface_parameter_records(
+    let records_parts = surface_parameter_records(
         &ctx,
         &scan,
         &scan.surfaces.rows,
@@ -146,6 +146,8 @@ fn borrowed_surface_parameter_preserves_nested_json() {
         "visibgeom",
     )
     .expect("parameter record is admitted");
+    let _records_storage = records_parts.1;
+    let records = records_parts.0;
     let value = serde_json::to_value(&records[0]).expect("record serializes");
     assert_eq!(value["body"], serde_json::json!([249, 0]));
     assert_eq!(

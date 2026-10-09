@@ -185,12 +185,12 @@ fn native_reference_line_id_refuses_retained_limit() {
         Some("creo native reference line IDs"),
         |cap| {
             reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
-                reference_line_records(ctx, scan).map(|(records, _storage)| records.len())
+                reference_line_records(ctx, scan).map(|projection| projection.0.len())
             })
         },
     );
     let error = reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
-        reference_line_records(ctx, scan).map(|(records, _storage)| records.len())
+        reference_line_records(ctx, scan).map(|projection| projection.0.len())
     })
     .expect_err("line ID needs its full retained length");
     assert!(
@@ -207,12 +207,12 @@ fn native_reference_line_row_refuses_collection_limit() {
         Some("creo native reference line records"),
         |cap| {
             reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
-                reference_line_records(ctx, scan).map(|(records, _storage)| records.len())
+                reference_line_records(ctx, scan).map(|projection| projection.0.len())
             })
         },
     );
     let error = reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
-        reference_line_records(ctx, scan).map(|(records, _storage)| records.len())
+        reference_line_records(ctx, scan).map(|projection| projection.0.len())
     })
     .expect_err("one line record needs an output row");
     assert!(
@@ -222,7 +222,7 @@ fn native_reference_line_row_refuses_collection_limit() {
     );
     assert_eq!(
         reference_records_with_limits(u64::MAX, u64::MAX, |ctx, scan| {
-            reference_line_records(ctx, scan).map(|(records, _storage)| records.len())
+            reference_line_records(ctx, scan).map(|projection| projection.0.len())
         })
         .expect("one line record"),
         1
@@ -236,12 +236,12 @@ fn native_reference_circle_id_refuses_retained_limit() {
         Some("creo native reference circle IDs"),
         |cap| {
             reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
-                reference_circle_records(ctx, scan).map(|(records, _storage)| records.len())
+                reference_circle_records(ctx, scan).map(|projection| projection.0.len())
             })
         },
     );
     let error = reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
-        reference_circle_records(ctx, scan).map(|(records, _storage)| records.len())
+        reference_circle_records(ctx, scan).map(|projection| projection.0.len())
     })
     .expect_err("circle ID needs its full retained length");
     assert!(
@@ -258,12 +258,12 @@ fn native_reference_circle_row_refuses_collection_limit() {
         Some("creo native reference circle records"),
         |cap| {
             reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
-                reference_circle_records(ctx, scan).map(|(records, _storage)| records.len())
+                reference_circle_records(ctx, scan).map(|projection| projection.0.len())
             })
         },
     );
     let error = reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
-        reference_circle_records(ctx, scan).map(|(records, _storage)| records.len())
+        reference_circle_records(ctx, scan).map(|projection| projection.0.len())
     })
     .expect_err("one circle record needs an output row");
     assert!(
@@ -273,7 +273,7 @@ fn native_reference_circle_row_refuses_collection_limit() {
     );
     assert_eq!(
         reference_records_with_limits(u64::MAX, u64::MAX, |ctx, scan| {
-            reference_circle_records(ctx, scan).map(|(records, _storage)| records.len())
+            reference_circle_records(ctx, scan).map(|projection| projection.0.len())
         })
         .expect("one circle record"),
         1
@@ -287,12 +287,12 @@ fn native_reference_conic_id_refuses_retained_limit() {
         Some("creo native reference conic IDs"),
         |cap| {
             reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
-                reference_conic_records(ctx, scan).map(|(records, _storage)| records.len())
+                reference_conic_records(ctx, scan).map(|projection| projection.0.len())
             })
         },
     );
     let error = reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
-        reference_conic_records(ctx, scan).map(|(records, _storage)| records.len())
+        reference_conic_records(ctx, scan).map(|projection| projection.0.len())
     })
     .expect_err("conic ID needs its full retained length");
     assert!(
@@ -309,12 +309,12 @@ fn native_reference_conic_row_refuses_collection_limit() {
         Some("creo native reference conic records"),
         |cap| {
             reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
-                reference_conic_records(ctx, scan).map(|(records, _storage)| records.len())
+                reference_conic_records(ctx, scan).map(|projection| projection.0.len())
             })
         },
     );
     let error = reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
-        reference_conic_records(ctx, scan).map(|(records, _storage)| records.len())
+        reference_conic_records(ctx, scan).map(|projection| projection.0.len())
     })
     .expect_err("one conic record needs an output row");
     assert!(
@@ -324,7 +324,7 @@ fn native_reference_conic_row_refuses_collection_limit() {
     );
     assert_eq!(
         reference_records_with_limits(u64::MAX, u64::MAX, |ctx, scan| {
-            reference_conic_records(ctx, scan).map(|(records, _storage)| records.len())
+            reference_conic_records(ctx, scan).map(|projection| projection.0.len())
         })
         .expect("one conic record"),
         1
@@ -338,12 +338,12 @@ fn native_reference_ellipse_id_refuses_retained_limit() {
         Some("creo native reference ellipse IDs"),
         |cap| {
             reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
-                reference_ellipse_records(ctx, scan).map(|(records, _storage)| records.len())
+                reference_ellipse_records(ctx, scan).map(|projection| projection.0.len())
             })
         },
     );
     let error = reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
-        reference_ellipse_records(ctx, scan).map(|(records, _storage)| records.len())
+        reference_ellipse_records(ctx, scan).map(|projection| projection.0.len())
     })
     .expect_err("ellipse ID needs its full retained length");
     assert!(
@@ -360,12 +360,12 @@ fn native_reference_ellipse_source_id_refuses_retained_limit() {
         Some("creo native reference ellipse source IDs"),
         |cap| {
             reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
-                reference_ellipse_records(ctx, scan).map(|(records, _storage)| records.len())
+                reference_ellipse_records(ctx, scan).map(|projection| projection.0.len())
             })
         },
     );
     let error = reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
-        reference_ellipse_records(ctx, scan).map(|(records, _storage)| records.len())
+        reference_ellipse_records(ctx, scan).map(|projection| projection.0.len())
     })
     .expect_err("source conic ID needs its full retained length");
     assert!(
@@ -382,12 +382,12 @@ fn native_reference_ellipse_row_refuses_collection_limit() {
         Some("creo native reference ellipse records"),
         |cap| {
             reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
-                reference_ellipse_records(ctx, scan).map(|(records, _storage)| records.len())
+                reference_ellipse_records(ctx, scan).map(|projection| projection.0.len())
             })
         },
     );
     let error = reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
-        reference_ellipse_records(ctx, scan).map(|(records, _storage)| records.len())
+        reference_ellipse_records(ctx, scan).map(|projection| projection.0.len())
     })
     .expect_err("one ellipse record needs an output row");
     assert!(
@@ -397,7 +397,7 @@ fn native_reference_ellipse_row_refuses_collection_limit() {
     );
     assert_eq!(
         reference_records_with_limits(u64::MAX, u64::MAX, |ctx, scan| {
-            reference_ellipse_records(ctx, scan).map(|(records, _storage)| records.len())
+            reference_ellipse_records(ctx, scan).map(|projection| projection.0.len())
         })
         .expect("one ellipse record"),
         1
@@ -475,7 +475,9 @@ fn operation_state_records_with_limits(
     policy.limits.max_collection_items = max_collection_items;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let (records, _records_storage) = feature_operation_state_records(&ctx, &scan)?;
+    let records_parts = feature_operation_state_records(&ctx, &scan)?;
+    let _records_storage = records_parts.1;
+    let records = records_parts.0;
     Ok(records
         .iter()
         .map(|record| serde_json::to_value(record).expect("record JSON"))
@@ -675,8 +677,10 @@ fn overlapping_feature_candidates_do_not_expose_short_headers() {
         .expect("root input is admitted");
     scan.features.rows = crate::feature::rows::rows(&ctx, &payload, &BTreeSet::from([1, 2]), 0)
         .expect("feature rows are admitted");
-    let (records, _records_storage) =
+    let records_parts =
         feature_row_records(&ctx, &scan).expect("feature row records are admitted");
+    let _records_storage = records_parts.1;
+    let records = records_parts.0;
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].owner_feature_id, 2);
     assert_eq!(records[0].header, [0, 0]);
@@ -719,7 +723,9 @@ fn native_projection_holds_scratch_storage_until_drop() {
         policy.limits.max_materialized_bytes = cap;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let (records, storage) = reference_ellipse_records(&ctx, &scan)?;
+        let records_parts = reference_ellipse_records(&ctx, &scan)?;
+        let storage = records_parts.1;
+        let records = records_parts.0;
         assert_eq!(records.len(), 1);
         if release {
             drop(records);

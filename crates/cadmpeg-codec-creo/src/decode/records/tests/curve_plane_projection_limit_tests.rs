@@ -237,14 +237,18 @@ fn borrowed_curve_and_plane_projection_preserves_json() {
     let policy = DecodePolicy::service();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let (fc, _fc_storage) = fc_curve_coordinate_records(&ctx, &scan).expect("record is admitted");
-    let (plane, _plane_storage) = plane_envelope_records(
+    let fc_parts = fc_curve_coordinate_records(&ctx, &scan).expect("record is admitted");
+    let _fc_storage = fc_parts.1;
+    let fc = fc_parts.0;
+    let plane_parts = plane_envelope_records(
         &ctx,
         &scan,
         &scan.planes.envelopes,
         "creo:surface:plane_envelope",
     )
     .expect("record is admitted");
+    let _plane_storage = plane_parts.1;
+    let plane = plane_parts.0;
     let fc = serde_json::to_value(&fc[0]).expect("record serializes");
     let plane = serde_json::to_value(&plane[0]).expect("record serializes");
     assert_eq!(fc["body"], serde_json::json!([0xfc, 1]));
