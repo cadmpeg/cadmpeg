@@ -3375,50 +3375,46 @@ fn depdb_recipe_rows(
             continue;
         }
         let payload = section.region;
-        let recipe_rows = feature::operations::operation_states(ctx, payload)?;
-        let recipe_operations = ctx
-            .admit_iter(recipe_rows, "creo DEPDB recipe source traversal")?
-            .filter_map(|operation| {
-                operation
-                    .recipe
-                    .candidate()
-                    .map(|recipe| (operation, recipe))
-            });
         let mut body_start = 0;
-        for (operation, recipe) in recipe_operations {
-            let name = match recipe {
-                FeatureRecipe::ProtrudeExtrude => b"protextrude\0".as_slice(),
-                FeatureRecipe::CutExtrude => b"cutextrude\0",
-                FeatureRecipe::ProtrudeRevolve => b"protrevolve\0",
-                FeatureRecipe::CutRevolve => b"cutrevolve\0",
-            };
-            let Some(body_end) = ctx
-                .find_bytes_from(payload, name, operation.offset, "find Creo recipe end")?
-                .and_then(|offset| offset.checked_add(name.len()))
-            else {
-                continue;
-            };
-            let Some(body_bytes) = payload
-                .get(body_start..body_end)
-                .filter(|bytes| bytes.len() >= 2)
-            else {
-                continue;
-            };
-            let body = ctx
-                .copy_retained(body_bytes, "creo DEPDB recipe row body")?
-                .try_into()
-                .map_err(CodecError::malformed)?;
-            ctx.reserve_vec(&mut rows, 1, "creo DEPDB recipe rows")?;
-            rows.push(FeatureRow {
-                feature_id: operation.feature_id,
-                root_schema_class: operation.root_schema_class(),
-                stream_offset: section.section.offset(),
-                body,
-                body_offset: section.section.offset() + body_start,
-                offset: section.section.offset() + operation.offset,
-            });
-            body_start = body_end;
-        }
+        feature::operations::for_each_recipe_state(
+            ctx,
+            payload,
+            |feature_id, root_schema_class, recipe, operation_offset| {
+                let name = match recipe {
+                    FeatureRecipe::ProtrudeExtrude => b"protextrude\0".as_slice(),
+                    FeatureRecipe::CutExtrude => b"cutextrude\0",
+                    FeatureRecipe::ProtrudeRevolve => b"protrevolve\0",
+                    FeatureRecipe::CutRevolve => b"cutrevolve\0",
+                };
+                let Some(body_end) = ctx
+                    .find_bytes_from(payload, name, operation_offset, "find Creo recipe end")?
+                    .and_then(|offset| offset.checked_add(name.len()))
+                else {
+                    return Ok(());
+                };
+                let Some(body_bytes) = payload
+                    .get(body_start..body_end)
+                    .filter(|bytes| bytes.len() >= 2)
+                else {
+                    return Ok(());
+                };
+                let body = ctx
+                    .copy_retained(body_bytes, "creo DEPDB recipe row body")?
+                    .try_into()
+                    .map_err(CodecError::malformed)?;
+                ctx.reserve_vec(&mut rows, 1, "creo DEPDB recipe rows")?;
+                rows.push(FeatureRow {
+                    feature_id,
+                    root_schema_class,
+                    stream_offset: section.section.offset(),
+                    body,
+                    body_offset: section.section.offset() + body_start,
+                    offset: section.section.offset() + operation_offset,
+                });
+                body_start = body_end;
+                Ok(())
+            },
+        )?;
     }
     if rows.len() > 1 {
         ctx.stable_sort_by(
