@@ -170,20 +170,11 @@ pub(super) fn sequential_tessellation(
             "SLDPRT display tessellation feature edges are not writable".into(),
         ));
     }
-    if matches!(
-        mesh.mesh(),
-        cadmpeg_ir::tessellation::TessellationMesh::Strips { .. }
-            | cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { .. }
-    ) {
+    let Some(source) = IndexedMesh::new(mesh.mesh()) else {
         return Ok(Cow::Borrowed(mesh));
-    }
-    let source_vertices = mesh.vertices();
-    let source_normals = mesh.vertex_normals();
-    let corner_normals = mesh.per_corner_normals();
-    let triangles = mesh.triangles();
-    let indices = triangles
-        .iter()
-        .flat_map(|triangle| triangle.iter().copied())
+    };
+    let indices = (0..source.triangle_count())
+        .flat_map(|index| source.triangle(index))
         .map(|index| {
             usize::try_from(index)
                 .map_err(|_| CodecError::Malformed("tessellation index is out of bounds".into()))
@@ -191,23 +182,18 @@ pub(super) fn sequential_tessellation(
         .collect::<Result<Vec<_>, _>>()?;
     let positions = indices
         .iter()
-        .map(|index| source_vertices[*index])
+        .map(|index| source.position(*index))
         .collect::<Vec<_>>();
-    let normals = if corner_normals.is_empty() {
-        if source_normals.is_empty() {
-            Vec::new()
-        } else {
-            indices
-                .iter()
-                .map(|index| source_normals[*index])
-                .collect::<Vec<_>>()
-        }
-    } else {
-        corner_normals
+    let normals = match &source {
+        IndexedMesh::Positions { .. } => Vec::new(),
+        IndexedMesh::Shaded { vertices, .. } => indices
+            .iter().map(|index| vertices[*index].normal).collect(),
+        IndexedMesh::CornerShaded { triangles, .. } => triangles
+            .iter().flat_map(|triangle| triangle.normals).collect(),
     };
     let mut channels = Vec::new();
     for channel in mesh.channels() {
-        if usize::try_from(channel.count()).ok() != Some(source_vertices.len()) {
+        if usize::try_from(channel.count()).ok() != Some(source.vertex_count()) {
             channels.push(channel.clone());
             continue;
         }
@@ -259,6 +245,65 @@ pub(super) fn sequential_tessellation(
         .with_mesh(rows, channels)
         .map(Cow::Owned)
         .map_err(|err| CodecError::Malformed(err.to_string()))
+}
+
+/// Borrow the three indexed forms. Sequential strips bypass expansion.
+enum IndexedMesh<'m> {
+    Positions {
+        vertices: &'m [cadmpeg_ir::features::FinitePoint3],
+        triangles: &'m [[u32; 3]],
+    },
+    Shaded {
+        vertices: &'m [cadmpeg_ir::tessellation::ShadedVertex<
+            cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::features::FiniteVector3,
+        >],
+        triangles: &'m [[u32; 3]],
+    },
+    CornerShaded {
+        vertices: &'m [cadmpeg_ir::features::FinitePoint3],
+        triangles: &'m [cadmpeg_ir::tessellation::ShadedTriangle<cadmpeg_ir::features::FiniteVector3>],
+    },
+}
+
+impl<'m> IndexedMesh<'m> {
+    fn new(mesh: &'m TessellationMesh<
+        cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::features::FiniteVector3,
+    >) -> Option<Self> {
+        match mesh {
+            TessellationMesh::List { vertices, triangles } => Some(Self::Positions { vertices, triangles }),
+            TessellationMesh::ShadedList { vertices, triangles } => Some(Self::Shaded { vertices, triangles }),
+            TessellationMesh::CornerShadedList { vertices, triangles } => Some(Self::CornerShaded { vertices, triangles }),
+            TessellationMesh::Strips { .. } | TessellationMesh::ShadedStrips { .. } => None,
+        }
+    }
+
+    fn vertex_count(&self) -> usize {
+        match self {
+            Self::Positions { vertices, .. } | Self::CornerShaded { vertices, .. } => vertices.len(),
+            Self::Shaded { vertices, .. } => vertices.len(),
+        }
+    }
+
+    fn triangle_count(&self) -> usize {
+        match self {
+            Self::Positions { triangles, .. } | Self::Shaded { triangles, .. } => triangles.len(),
+            Self::CornerShaded { triangles, .. } => triangles.len(),
+        }
+    }
+
+    fn triangle(&self, index: usize) -> [u32; 3] {
+        match self {
+            Self::Positions { triangles, .. } | Self::Shaded { triangles, .. } => triangles[index],
+            Self::CornerShaded { triangles, .. } => triangles[index].corners,
+        }
+    }
+
+    fn position(&self, index: usize) -> cadmpeg_ir::features::FinitePoint3 {
+        match self {
+            Self::Positions { vertices, .. } | Self::CornerShaded { vertices, .. } => vertices[index],
+            Self::Shaded { vertices, .. } => vertices[index].position,
+        }
+    }
 }
 
 /// Cut a corner-expanded vertex run into one three-vertex strip per triangle.
