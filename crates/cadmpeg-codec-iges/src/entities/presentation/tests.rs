@@ -1673,3 +1673,5 @@ fn repeated_body_name_properties_do_not_rescan_shared_text() {
     drop(outcome);
     ctx.finish_session().unwrap();
 }
+
+mod source_visits;
