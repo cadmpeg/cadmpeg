@@ -4190,7 +4190,8 @@ fn model_curve_differential_by_id_inner(
             } else { Err(EvaluationFailure::NoValue) },
         )?;
         if request == ModelCurveRequest::Third {
-            differential.third = curve_higher::stored_third(&scratch, solved, differential.tangent);
+            differential.third = curve_higher::stored_third(&scratch, solved,
+                FiniteReal::new(parameter).ok_or(EvaluationFailure::NoValue)?, differential.tangent);
             if let Err(EvaluationFailure::ResourceLimit(limit)) = differential.third {
                 return Err(EvaluationFailure::ResourceLimit(limit));
             }

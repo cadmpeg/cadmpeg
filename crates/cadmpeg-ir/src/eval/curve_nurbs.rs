@@ -240,5 +240,68 @@ pub(super) fn linear_derivative(
     ])
 }
 
+/// The degree-one rational law C'''=6 K D^2/(h^3 w^4), where
+/// K=w0*w1*(P1-P0), D=w1-w0 and w is the local homogeneous weight.
+/// Keep the actual knot width and factored values in their extended range;
+/// only the final coordinate converts to binary64. This fixed analytic law
+/// does not assert that a zero homogeneous third makes a rational third zero.
+pub(super) fn linear_third(
+    scratch: &decode::Scratch<'_, '_>,
+    curve: &crate::geometry::nurbs::NurbsCurve,
+    parameter: FiniteReal,
+) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    use crate::math::sum::{scaled_finite, ScaledValue};
+    scratch.unless_refused()?;
+    if curve.degree() != 1 {
+        return Err(EvaluationFailure::NoValue);
+    }
+    let result = (|| {
+        let parameter = super::map_nurbs_curve_parameter(curve, parameter)
+            .ok_or(EvaluationFailure::NoValue)?;
+        let poles = DerivativePoles::Stored(curve.pole_rows());
+        let span = scratch.admit(basis::bspline_span(scratch.admission,
+            curve.knots(), 1, poles.count(), parameter.get())).flatten()
+            .ok_or(EvaluationFailure::NoValue)?;
+        let values = basis::bspline_basis(scratch, curve.knots(), 1, span, parameter.get())
+            .ok_or(EvaluationFailure::NonFinite(()))?;
+        if !basis::all_finite(scratch, &values).ok_or(EvaluationFailure::NonFinite(()))? {
+            return Err(EvaluationFailure::NonFinite(()));
+        }
+        let first = poles.point_at(span - 1).ok_or(EvaluationFailure::NoValue)?;
+        let last = poles.point_at(span).ok_or(EvaluationFailure::NoValue)?;
+        let weight0 = poles.weight_at(span - 1).unwrap_or(1.0);
+        let weight1 = poles.weight_at(span).unwrap_or(1.0);
+        let mut width = ExactSignedSum::default();
+        width.add_factors([curve.knots()[span + 1]]);
+        width.add_factors([-curve.knots()[span]]);
+        let width = width.finish().ok_or(EvaluationFailure::NoValue)?;
+        let mut weight = ExactSignedSum::default();
+        weight.add_factors([values[0], weight0]);
+        weight.add_factors([values[1], weight1]);
+        let weight = weight.finish().ok_or(EvaluationFailure::NoValue)?;
+        let mut difference = ExactSignedSum::default();
+        difference.add_factors([weight1]);
+        difference.add_factors([-weight0]);
+        let Some(difference) = difference.finish() else {
+            return Ok(FiniteVector3::ZERO);
+        };
+        let six = scaled_finite(6.0).ok_or(EvaluationFailure::NoValue)?;
+        let coordinate = |left, right| {
+            let mut coefficient = ExactSignedSum::default();
+            coefficient.add_factors([weight0, weight1, right]);
+            coefficient.add_factors([-weight0, weight1, left]);
+            coefficient.finish().map_or(Ok(FiniteReal::ZERO), |coefficient| {
+                ScaledValue::product_quotient([six, coefficient, difference, difference],
+                    [width, width, width, weight, weight, weight, weight])
+            })
+        };
+        let [x, y, z] = finite_lanes([
+            coordinate(first.x, last.x), coordinate(first.y, last.y), coordinate(first.z, last.z),
+        ]).map_err(|_| EvaluationFailure::NonFinite(()))?;
+        Ok(FiniteVector3::from_components(x, y, z))
+    })();
+    scratch.settle(result)
+}
+
 #[cfg(test)]
 mod tests;

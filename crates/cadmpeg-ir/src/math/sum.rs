@@ -205,6 +205,32 @@ impl ScaledValue {
         super::scale_power_of_two(mantissa, exponent).ok_or(mantissa.signum() * f64::INFINITY)
     }
 
+    /// Multiply up to four normalized values and divide by up to seven
+    /// normalized values, then convert the result to binary64. This holds
+    /// the range of a factored rational derivative without constructing an
+    /// intermediate `ScaledValue` outside its exponent domain. The supplied
+    /// values and each mantissa operation retain their existing rounding.
+    ///
+    /// Four mantissa products stay at least 1/16; seven divisions stay below
+    /// 128. The sum of eleven bounded exponents stays within `i32`.
+    pub(crate) fn product_quotient<const N: usize, const D: usize>(
+        numerators: [Self; N],
+        denominators: [Self; D],
+    ) -> Result<FiniteReal, f64> {
+        const { assert!(N <= 4 && D <= 7) };
+        let mut mantissa = 1.0;
+        let mut exponent = 0;
+        for numerator in numerators {
+            mantissa *= numerator.sign * numerator.mantissa;
+            exponent += numerator.exponent.0;
+        }
+        for denominator in denominators {
+            mantissa /= denominator.sign * denominator.mantissa;
+            exponent -= denominator.exponent.0;
+        }
+        super::scale_power_of_two(mantissa, exponent).ok_or(mantissa.signum() * f64::INFINITY)
+    }
+
     /// `self / denominator` times `2^exponent_shift`, without rounding either
     /// operand into the binary64 range first: the ratio of the two mantissas
     /// lies in `(0.5, 2)`, and only the final scaling rounds. The caller

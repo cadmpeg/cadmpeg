@@ -167,3 +167,27 @@ fn a_nonzero_value_has_a_scaled_form_that_states_it_exactly() {
     assert!(scaled_finite(0.0).is_none());
     assert!(scaled_finite(f64::INFINITY).is_none());
 }
+
+#[test]
+fn factored_quotients_preserve_finite_ranges_signs_and_true_final_overflow() {
+    let scaled = |value| scaled_finite(value).unwrap();
+    for sign in [-1.0, 1.0] {
+        for exponent in [-900, 900] {
+            let numerator = scaled(2.0_f64.powi(exponent));
+            let denominator = scaled(2.0_f64.powi(exponent / 9 * 4));
+            // Four powers900 minus seven powers400 = power800, both signs.
+            let expected = sign * 2.0_f64.powi(exponent / 9 * 8);
+            assert_eq!(ScaledValue::product_quotient(
+                [scaled(sign * 2.0_f64.powi(exponent)), numerator, numerator, numerator],
+                [denominator; 7]).map(FiniteReal::get), Ok(expected));
+        }
+        assert_eq!(ScaledValue::product_quotient([scaled(sign * f64::MAX)], [scaled(0.5)]),
+            Err(sign * f64::INFINITY));
+        let minimum = f64::from_bits(1);
+        // Half a subnormal unit ties to zero; three halves tie to two units.
+        assert_eq!(ScaledValue::product_quotient([scaled(sign * minimum)], [scaled(2.0)])
+            .map(FiniteReal::get), Ok(sign * 0.0));
+        assert_eq!(ScaledValue::product_quotient([scaled(sign * minimum), scaled(3.0)], [scaled(2.0)])
+            .map(FiniteReal::get), Ok(sign * f64::from_bits(2)));
+    }
+}
