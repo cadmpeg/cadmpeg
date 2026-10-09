@@ -162,3 +162,5 @@ pub(super) fn configuration_surface_carriers(
     Ok(surfaces)
 }
 
+#[cfg(test)]
+mod tests;
