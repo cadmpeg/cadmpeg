@@ -182,7 +182,11 @@ fn logical_global_stream<'ctx>(
         ctx.scoped_vector_storage(length, "iges_compressed_global_digits")?;
     _digits_storage = result_digits_storage;
     let mut hollerith_remaining = 0_usize;
-    for card in ctx.admit_iter(cards, "iges_compressed_global_stream")? {
+    let mut cards = cards.iter();
+    while !cards.as_slice().is_empty() {
+        let Some(card) = ctx.next_charged(&mut cards, "iges_compressed_global_stream")? else {
+            break;
+        };
         for byte in card[..CARD_DATA_WIDTH].iter().copied() {
             if hollerith_remaining > 0 {
                 stream.push(byte);
@@ -798,7 +802,13 @@ fn parse_data_entity<'a>(
             .ok_or_else(|| malformed("Parameter Data lines end before the declared count"))?;
         let mut state = ParameterLexState::default();
         let mut terminated = false;
-        for line in ctx.admit_iter(source_lines, "iges_compressed_parameter_lines")? {
+        let mut parameter_source_lines = source_lines.iter();
+        while !parameter_source_lines.as_slice().is_empty() {
+            let Some(line) =
+                ctx.next_charged(&mut parameter_source_lines, "iges_compressed_parameter_lines")?
+            else {
+                break;
+            };
             if line.len() > PARAMETER_DATA_WIDTH {
                 return Err(malformed("Parameter Data line exceeds 64 columns"));
             }
@@ -837,14 +847,16 @@ fn append_parameter_cards(
     first_parameter_sequence: u32,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    for (index, line) in ctx
-        .admit_iter(
-            entity.parameter_lines,
-            "iges compressed Parameter Data cards",
-        )?
-        .copied()
-        .enumerate()
-    {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
+    let mut lines = entity.parameter_lines.iter().copied().enumerate();
+    while lines.len() != 0 {
+        let Some((index, line)) =
+            ctx.next_charged(&mut lines, "iges compressed Parameter Data cards")?
+        else {
+            break;
+        };
         let sequence = first_parameter_sequence
             .checked_add(
                 u32::try_from(index)
@@ -1021,7 +1033,13 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     let mut parameter_starts =
         ctx.collection_vec(entities.len(), "iges_compressed_parameter_starts")?;
     let mut parameter_sequence = 1_u32;
-    for entity in ctx.admit_iter(&entities, "iges_compressed_parameter_starts")? {
+    let mut start_entities = entities.iter();
+    while !start_entities.as_slice().is_empty() {
+        let Some(entity) =
+            ctx.next_charged(&mut start_entities, "iges_compressed_parameter_starts")?
+        else {
+            break;
+        };
         let parameter_start = if entity.parameter_lines.is_empty() {
             0
         } else {
@@ -1035,14 +1053,23 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
             )
             .ok_or_else(|| malformed("Parameter Data sequence overflows"))?;
     }
-    for (entity, parameter_start) in ctx
-        .admit_iter(&entities, "iges compressed Directory cards")?
-        .zip(parameter_starts)
-    {
+    let mut directory_entities = entities.iter().zip(parameter_starts);
+    while directory_entities.len() != 0 {
+        let Some((entity, parameter_start)) =
+            ctx.next_charged(&mut directory_entities, "iges compressed Directory cards")?
+        else {
+            break;
+        };
         append_directory_cards(&mut output, entity, parameter_start)?;
     }
     let mut parameter_sequence = 1_u32;
-    for entity in ctx.admit_iter(&entities, "iges compressed Parameter Data cards")? {
+    let mut parameter_entities = entities.iter();
+    while !parameter_entities.as_slice().is_empty() {
+        let Some(entity) =
+            ctx.next_charged(&mut parameter_entities, "iges compressed Parameter Data cards")?
+        else {
+            break;
+        };
         append_parameter_cards(&mut output, entity, parameter_sequence, ctx)?;
         parameter_sequence = parameter_sequence
             .checked_add(

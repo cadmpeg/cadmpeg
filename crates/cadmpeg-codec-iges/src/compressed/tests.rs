@@ -25,6 +25,7 @@ use std::io::Cursor;
 
 mod fixed_fields;
 mod global_storage;
+mod visited_sources;
 mod start_count;
 
 fn normalize_for_test(source: &[u8]) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
