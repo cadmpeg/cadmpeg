@@ -33,7 +33,7 @@ fn component(source: u32) -> FeatureInputComponentPathEntry {
     type_signature[4..8].copy_from_slice(&source.to_le_bytes());
     FeatureInputComponentPathEntry {
         instance: None,
-        type_signature,
+        type_signature: type_signature.into(),
         local_id: None,
     }
 }

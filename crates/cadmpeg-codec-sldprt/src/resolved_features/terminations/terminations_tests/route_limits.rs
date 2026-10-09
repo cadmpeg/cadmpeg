@@ -328,7 +328,7 @@ fn extrusion_delimiters_do_not_bill_unvisited_successors() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names,
         scalars: Vec::new(),

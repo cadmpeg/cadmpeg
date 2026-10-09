@@ -83,7 +83,7 @@ fn generated_surface_identity_duplicates_use_the_component_index() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -146,7 +146,7 @@ fn split_surface_queries_reuse_one_scoped_identity_parse() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![
             FeatureInputClass {
                 id: "surface-class".into(),

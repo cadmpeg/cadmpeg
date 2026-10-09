@@ -34,7 +34,7 @@ fn component_producers<'ctx, 'feature>(
         let mut by_source = HashMap::new();
         for component in components {
             ctx.charge_work(4, operation)?;
-            let Some(source) = View::u32_le_at(&component.type_signature, 4) else {
+            let Some(source) = View::u32_le_at(component.type_signature.as_ref(), 4) else {
                 continue;
             };
             ctx.insert_hash_map(
