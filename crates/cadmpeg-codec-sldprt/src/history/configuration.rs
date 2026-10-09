@@ -7,6 +7,7 @@ mod admission_tests;
 #[cfg(test)]
 mod lane_tests;
 
+mod parameter_overlay;
 mod surfaces;
 
 use crate::records::FeatureHistory;
@@ -857,25 +858,12 @@ pub(crate) fn project_configuration_sketch_states(
                     ));
             }
         }
-        let mut parameters = std::mem::take(&mut ir.model.parameters);
-        let mut saved_storage =
-            ctx.reserve_scoped(0, "overlay SLDPRT configuration parameter values")?;
-        let mut saved_values = Vec::new();
+        let parameters = parameter_overlay::ConfigurationParameterOverlay::new(
+            ctx,
+            &mut ir.model.parameters,
+            &ir.model.configurations[configuration_index].parameter_values,
+        )?;
         let result = (|| -> Result<(), cadmpeg_core::CodecError> {
-            const OPERATION: &str = "overlay SLDPRT configuration parameter values";
-            let values = &ir.model.configurations[configuration_index].parameter_values;
-            for (index, parameter) in ctx.admit_iter(&mut parameters, OPERATION)?.enumerate() {
-                let Some(value) =
-                    ctx.get_btree_map(values, &parameter.id, "look up SLDPRT ordered key")?
-                else {
-                    continue;
-                };
-                let copied =
-                    saved_storage.with_storage(|| value.try_clone_for_decode(ctx, OPERATION))?;
-                saved_storage.with_storage(|| ctx.reserve_vec(&mut saved_values, 1, OPERATION))?;
-                ctx.charge_work(1, "restore SLDPRT configuration parameter values")?;
-                saved_values.push((index, parameter.value.replace(copied)));
-            }
             crate::resolved_features::profiles::bind_sketch_profiles(
                 ctx,
                 &mut features,
@@ -885,7 +873,7 @@ pub(crate) fn project_configuration_sketch_states(
                     sketch_constraints: &mut ir.model.sketch_constraints,
                     annotations,
                 },
-                &parameters,
+                parameters.as_slice(),
                 histories,
                 scoped_lanes,
             )?;
@@ -953,7 +941,7 @@ pub(crate) fn project_configuration_sketch_states(
                 &ir.model.sketches,
                 &surfaces,
                 &features,
-                &parameters,
+                parameters.as_slice(),
                 scoped_lanes,
             )?;
             crate::resolved_features::dimensions::project_marker_dimensioned_circles(
@@ -961,7 +949,7 @@ pub(crate) fn project_configuration_sketch_states(
                 &mut ir.model.sketch_entities,
                 &mut ir.model.sketches,
                 &features,
-                &parameters,
+                parameters.as_slice(),
                 scoped_lanes,
             )?;
             crate::resolved_features::relation_geometry::project_relation_point_geometry(
@@ -975,7 +963,7 @@ pub(crate) fn project_configuration_sketch_states(
                 ctx,
                 &mut ir.model.sketch_entities,
                 &features,
-                &parameters,
+                parameters.as_slice(),
                 scoped_lanes,
             )?;
             crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
@@ -983,7 +971,7 @@ pub(crate) fn project_configuration_sketch_states(
                 &mut ir.model.sketch_entities,
                 &ir.model.sketches,
                 &features,
-                &parameters,
+                parameters.as_slice(),
                 scoped_lanes,
             )?;
             crate::resolved_features::relation_geometry::project_relation_solved_point_geometry(
@@ -991,7 +979,7 @@ pub(crate) fn project_configuration_sketch_states(
                 &mut ir.model.sketch_entities,
                 &ir.model.sketches,
                 &features,
-                &parameters,
+                parameters.as_slice(),
                 scoped_lanes,
             )?;
             crate::resolved_features::relation_geometry::project_relation_bindings(
@@ -1000,7 +988,7 @@ pub(crate) fn project_configuration_sketch_states(
                 &ir.model.sketches,
                 &features,
                 &ir.model.sketch_entities,
-                &parameters,
+                parameters.as_slice(),
                 scoped_lanes,
             )?;
             crate::resolved_features::holes::project_profiled_hole_constructions(
@@ -1062,7 +1050,7 @@ pub(crate) fn project_configuration_sketch_states(
                 &ir.model.sketches,
                 &features,
                 &ir.model.sketch_entities,
-                &parameters,
+                parameters.as_slice(),
                 scoped_lanes,
             )?;
             for feature in ctx.admit_iter(features, "scan SLDPRT configuration sketch features")? {
@@ -1078,11 +1066,7 @@ pub(crate) fn project_configuration_sketch_states(
             }
             Ok(())
         })();
-        // Restoring cannot refuse: each saved value was admitted when it was saved.
-        for (index, value) in saved_values {
-            parameters[index].value = value;
-        }
-        ir.model.parameters = parameters;
+        drop(parameters);
         result?;
     }
     let base = ConfigurationDefinitions::new(ctx, &ir.model.features)?;
