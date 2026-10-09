@@ -713,24 +713,28 @@ pub(in crate::decode) fn geometry_section_record(
     scan: &ContainerScan,
     offset: usize,
 ) -> Result<Option<UnknownId>, cadmpeg_core::CodecError> {
-    let Some(section) = ctx.find_by(
-        &scan.framing.sections,
-        |section| Ok(section.role() == SectionRole::PsbGeometry && section.contains(offset)),
-        "creo geometry section lookup",
-    )?
-    else {
-        return Ok(None);
-    };
-    let Some(namespace) = crate::identity::section_namespace(section.name()) else {
-        return Ok(None);
-    };
-    crate::identity::compose_checked(
-        ctx,
-        &namespace,
-        section.offset(),
-        "creo geometry section record identity",
-    )
-    .map(Some)
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut sections = scan.framing.sections.iter();
+    while sections.len() != 0 {
+        let Some(section) = ctx.next_charged(&mut sections, "creo geometry section lookup")? else {
+            break;
+        };
+        if section.role() != SectionRole::PsbGeometry || !section.contains(offset) {
+            continue;
+        }
+        let Some(namespace) = crate::identity::section_namespace(section.name()) else {
+            return Ok(None);
+        };
+        return crate::identity::compose_checked(
+            ctx,
+            &namespace,
+            section.offset(),
+            "creo geometry section record identity",
+        ).map(Some);
+    }
+    Ok(None)
 }
 
 #[cfg(test)]
