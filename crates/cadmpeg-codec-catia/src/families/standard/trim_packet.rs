@@ -11,6 +11,7 @@ use std::num::NonZeroUsize;
 #[derive(Debug, Clone)]
 pub(crate) struct TrimPacket {
     independent_count: usize,
+    triangle_count: usize,
     strip_lengths: Vec<usize>,
     fan_lengths: Vec<usize>,
     handles: Vec<u32>,
@@ -61,6 +62,7 @@ impl TrimPacket {
         let mut expected = independent_count
             .checked_mul(3)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let mut triangle_count = independent_count;
         for length in ctx
             .admit_iter(&strip_lengths, "catia_trim_packet_partition")?
             .chain(ctx.admit_iter(&fan_lengths, "catia_trim_packet_partition")?)
@@ -68,12 +70,16 @@ impl TrimPacket {
             expected = expected
                 .checked_add(*length)
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            triangle_count = triangle_count
+                .checked_add(length.saturating_sub(2))
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         }
         if expected != handles.len() {
             return Ok(None);
         }
         Ok(Some(Self {
             independent_count,
+            triangle_count,
             strip_lengths,
             fan_lengths,
             handles,
@@ -89,6 +95,7 @@ impl TrimPacket {
     ) -> Result<Self, CodecError> {
         Ok(Self {
             independent_count: self.independent_count,
+            triangle_count: self.triangle_count,
             strip_lengths: ctx.copy_slice(&self.strip_lengths, "catia_trim_clone_strip_lengths")?,
             fan_lengths: ctx.copy_slice(&self.fan_lengths, "catia_trim_clone_fan_lengths")?,
             handles: ctx.copy_slice(&self.handles, "catia_trim_clone_handles")?,
@@ -115,6 +122,7 @@ impl TrimPacket {
     }
 
     pub(crate) fn triangles(&self, ctx: &DecodeContext<'_>) -> Result<&[[u32; 3]], CodecError> {
+        ctx.charge_work(0, "catia_trim_triangles")?;
         if let Some(triangles) = self.triangles.get() {
             return Ok(triangles);
         }
@@ -130,18 +138,8 @@ impl TrimPacket {
 
     fn expand_triangles(&self, ctx: &DecodeContext<'_>) -> Result<Vec<[u32; 3]>, CodecError> {
         let operation = "catia_trim_expansion_work";
-        let triangle_count = ctx
-            .admit_iter(&self.strip_lengths, operation)?
-            .chain(ctx.admit_iter(&self.fan_lengths, operation)?)
-            .try_fold(self.independent_count, |count, &length| {
-                count.checked_add(match length {
-                    0 | 1 => 0,
-                    length => length - 2,
-                })
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         let mut triangles = Vec::new();
-        ctx.reserve_vec(&mut triangles, triangle_count, "catia_trim_triangles")?;
+        ctx.reserve_vec(&mut triangles, self.triangle_count, "catia_trim_triangles")?;
         let (independent, mut remaining) = self.handles.split_at(3 * self.independent_count);
         let Some(triple_width) = NonZeroUsize::new(3) else {
             return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
@@ -296,5 +294,47 @@ mod tests {
         assert!(matches!(refusal, CodecError::ResourceLimit(limit)
             if limit.operation == "catia_trim_triangles"));
         assert!(packet.triangles.get().is_none());
+    }
+
+    #[test]
+    fn trim_cache_hit_preserves_sticky_refusal_without_input_work() {
+        let packet = packet((1, vec![4], vec![4], (0..11).collect()));
+        crate::test_support::with_service_context(|ctx| {
+            packet.triangles(ctx).expect("warm real triangle cache");
+        });
+        crate::test_support::with_work_limit(0, |ctx| {
+            let cached = packet.triangles(ctx).expect("cache hit visits no input");
+            assert_eq!(
+                cached,
+                [[0, 1, 2], [3, 4, 5], [5, 4, 6], [7, 8, 9], [7, 9, 10]]
+            );
+            let CodecError::ResourceLimit(original) = ctx
+                .charge_work(1, "before cached triangle access")
+                .expect_err("zero work fuse")
+            else {
+                panic!("resource refusal");
+            };
+            let CodecError::ResourceLimit(actual) = packet
+                .triangles(ctx)
+                .expect_err("cached output preserves the original refusal")
+            else {
+                panic!("resource refusal");
+            };
+            assert_eq!(actual, original);
+            assert_eq!(ctx.resource_refusal(), Some(original));
+        });
+    }
+
+    #[test]
+    fn trim_expansion_reuses_validated_count_without_rescanning_lengths() {
+        let packet = packet((0, vec![4], vec![], vec![10, 11, 12, 13]));
+        // Expansion visits one strip length and four strip handles. The
+        // partition constructor has already derived the output length.
+        crate::test_support::with_work_limit(5, |ctx| {
+            assert_eq!(
+                packet.triangles(ctx).expect("five input visits"),
+                [[10, 11, 12], [12, 11, 13]]
+            );
+        });
     }
 }
