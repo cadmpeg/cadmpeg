@@ -1068,6 +1068,43 @@ fn unmatched_standard_gap_walk_refuses_before_placement_storage() {
 }
 
 #[test]
+fn gap_assignment_promotion_preserves_sticky_refusal() {
+    use cadmpeg_core::{decode::ResourceDimension, CodecError};
+
+    let mut bytes = standard_quad_topology_stream();
+    let header = bytes.windows(3).position(|window| window == [0x01, 0x01, 0x04])
+        .expect("edge table header");
+    let first_row = header + 3;
+    bytes[first_row + 1] = 4;
+    bytes.splice(first_row + 6..first_row + 6, 0x7ffe_u16.to_be_bytes());
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
+            ctx, &bytes, &[[0, 0]; 4], None, false,
+        )
+    };
+    let assignments = crate::test_support::with_service_context(run)
+        .expect("complete gap search").expect("one face");
+    assert_eq!(assignments[0].len(), 1);
+    assert_eq!(assignments[0][0][0].edge, 0);
+    assert_eq!(assignments[0][0][0].segment_count, 2);
+    let refused = crate::test_support::with_retained_refusal(
+        &bytes, "catia_gap_complete_assignments", |ctx| {
+            let result = run(ctx);
+            let Err(CodecError::ResourceLimit(limit)) = &result else {
+                panic!("actual gap-output promotion refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.operation, "catia_gap_complete_assignments");
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+            assert!(matches!(ctx.charge_work(0, "after gap promotion refusal"),
+                Err(CodecError::ResourceLimit(later)) if later == *limit));
+            result
+        },
+    );
+    assert!(matches!(refused, Err(CodecError::ResourceLimit(_))));
+}
+
+#[test]
 fn unmatched_fbb_complete_row_arity_fixes_trim_span() {
     catia_test_context!(ctx);
     let mut bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
