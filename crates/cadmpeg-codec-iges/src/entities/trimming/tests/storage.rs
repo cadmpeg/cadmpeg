@@ -830,3 +830,106 @@ fn source_curve_removal_refusal_destroys_path_before_its_receipt() {
         },
     );
 }
+
+fn native_composite_source_fixture(last_pointer: i64) -> (CadIr, CurveId, Vec<crate::directory::DirectoryEntry>, Vec<crate::parameter::ParameterRecord>) {
+    use crate::parameter::{ParameterRecord, Token, TokenValue};
+    use cadmpeg_ir::geometry::{CompositeCurveSegment, CompositeCurveTransition};
+    const CHILDREN: usize = 64;
+    let root = CurveId::mint("iges:model:curve#D1").unwrap();
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: root.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+            segments: vec![CompositeCurveSegment {
+                curve: root.clone(), same_sense: true,
+                transition: CompositeCurveTransition::Continuous,
+            }].try_into().unwrap(),
+            self_intersect: None,
+        }),
+        source_object: None,
+    });
+    let entries = vec![
+        crate::test_support::directory_target(1, 102),
+        crate::test_support::directory_target(3, 110),
+    ];
+    let mut values = vec![102, i64::try_from(CHILDREN).unwrap()];
+    values.extend(std::iter::repeat_n(3, CHILDREN - 1));
+    values.push(last_pointer);
+    let records = vec![ParameterRecord::from_test_tokens(1, 0..0, Vec::new(), values.len(),
+        values.into_iter().map(|value| Token { value: TokenValue::Integer(value), span: 0..0 }).collect(), Vec::new())];
+    (ir, root, entries, records)
+}
+
+fn assert_native_composite_child_storage(last_pointer: i64, refuse: bool) {
+    use cadmpeg_core::decode::ScopedReservation;
+    const CHILDREN: usize = 64;
+    const ATTEMPTS: usize = 16;
+    let (ir, root, entries, records) = native_composite_source_fixture(last_pointer);
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let root_bytes = source_path_node_bytes() + u64_from_index(root.as_str().len());
+    let slots = u64_from_index(CHILDREN * size_of::<(CurveId, ScopedReservation<'_>)>());
+    let child_bytes = u64_from_index("iges:model:curve#D3".len());
+    // All identities are built before the first child traversal. That child
+    // adds its active identity while every original tuple remains live.
+    let peak = root_bytes + slots + u64_from_index(CHILDREN) * child_bytes + child_bytes;
+    let caps = if refuse { vec![root_bytes + slots - 1, root_bytes + slots + child_bytes - 1] } else { vec![peak] };
+    for cap in caps {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut outer = ctx.reserve_scoped(0, "test native composite source scratch").unwrap();
+        let mut active = std::collections::BTreeSet::new();
+        let mut refusal = None;
+        for _ in 0..if refuse { 1 } else { ATTEMPTS } {
+            let result = outer.with_storage(|| super::super::source_curve_control_intervals(
+                &index, &root, (&entries, &records),
+                crate::global::RealPrecision { single_significance: 7, double_significance: 15 },
+                1.0, &mut active, &ctx,
+            ));
+            assert!(active.is_empty());
+            if refuse {
+                let first = match result.err().expect("expected native child allocation refusal") {
+                    CodecError::ResourceLimit(first) => first,
+                    _ => panic!("expected original resource refusal"),
+                };
+                assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+                let (operation, used, additional) = if cap < root_bytes + slots {
+                    ("iges source composite child IDs", root_bytes, slots)
+                } else {
+                    ("iges generated identity", root_bytes + slots, child_bytes)
+                };
+                assert_eq!(first.operation, operation);
+                assert_eq!((first.limit, first.used, first.additional), (cap, used, additional));
+                refusal = Some(first);
+                break;
+            }
+            assert!(result.unwrap().is_none());
+            let free = ctx.reserve_scoped(cap, "test native child IDs and slots destroyed").unwrap();
+            drop(free);
+        }
+        drop(active);
+        drop(outer);
+        if let Some(first) = refusal {
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        } else {
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn absent_native_composite_children_release_actual_ids_and_iterator_slots() {
+    assert_native_composite_child_storage(3, false);
+}
+
+#[test]
+fn invalid_last_native_composite_pointer_releases_earlier_ids_and_slots() {
+    assert_native_composite_child_storage(-1, false);
+}
+
+#[test]
+fn native_composite_child_allocation_refusals_preserve_original_error() {
+    assert_native_composite_child_storage(3, true);
+}

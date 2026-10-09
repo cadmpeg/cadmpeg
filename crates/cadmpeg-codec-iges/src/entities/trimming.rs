@@ -881,8 +881,11 @@ fn source_curve_control_intervals(
                 let Some(child_count) = record.count(1) else {
                     return Ok(None);
                 };
-                let mut child_ids =
-                    ctx.collection_vec(child_count, "iges source composite child IDs")?;
+                let mut child_slots_storage =
+                    ctx.reserve_scoped(0, "iges source composite child slots")?;
+                let mut child_ids = child_slots_storage.with_storage(|| {
+                    ctx.collection_vec(child_count, "iges source composite child IDs")
+                })?;
                 let mut child_offsets = 0..child_count;
                 while let Some(offset) =
                     ctx.next_charged(&mut child_offsets, "iges source composite children")?
@@ -894,12 +897,16 @@ fn source_curve_control_intervals(
                     else {
                         return Ok(None);
                     };
-                    let Some(child_id) =
-                        parameter_curve_carrier_id(child_sequence, entries, records, ctx)?
+                    let mut child_storage =
+                        ctx.reserve_scoped(0, "iges source composite child identity")?;
+                    let Some(child_id) = child_storage.with_storage(|| {
+                        parameter_curve_carrier_id(child_sequence, entries, records, ctx)
+                    })?
                     else {
                         return Ok(None);
                     };
-                    child_ids.push(child_id);
+                    // Tuple fields destroy the actual identity before its receipt.
+                    child_ids.push((child_id, child_storage));
                 }
                 let mut controls = Vec::new();
                 let mut child_ids = child_ids.into_iter();
@@ -907,13 +914,15 @@ fn source_curve_control_intervals(
                     ctx.next_charged(&mut child_ids, "iges source child control traversal")?
                 {
                     let Some(child) = source_curve_control_intervals(
-                        index, &child_id, tables, precision, factor, active, ctx,
+                        index, &child_id.0, tables, precision, factor, active, ctx,
                     )?
                     else {
                         return Ok(None);
                     };
                     ctx.extend_vec(&mut controls, child, "iges source composite controls")?;
                 }
+                drop(child_ids);
+                drop(child_slots_storage);
                 return Ok((!controls.is_empty()).then_some(controls));
             }
         }
