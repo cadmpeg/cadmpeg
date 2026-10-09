@@ -11,7 +11,7 @@ fn curve_attribute_lookup_preserves_carrier_scan_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-    let error = super::curve_by_attr(&ctx, &body, 10).unwrap_err();
+    let error = super::patch::curve_by_attr(&ctx, &body, 10).unwrap_err();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("carrier scan refusal");
     };
@@ -27,7 +27,7 @@ fn compact_attribute_patch_preserves_carrier_scan_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&original, &arena, &policy).unwrap();
-    let error = super::patch_compact_values(&ctx, &mut body, 10, &[0.0; 6]).unwrap_err();
+    let error = super::patch::patch_compact_values(&ctx, &mut body, 10, &[0.0; 6]).unwrap_err();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("carrier scan refusal");
     };
@@ -53,7 +53,7 @@ fn attribute_nurbs_patch_preserves_carrier_scan_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&original, &arena, &policy).unwrap();
-    let error = super::patch_nurbs_by_attr(&ctx, &mut body, 10, curve).unwrap_err();
+    let error = super::patch::patch_nurbs_by_attr(&ctx, &mut body, 10, curve).unwrap_err();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("carrier scan refusal");
     };
