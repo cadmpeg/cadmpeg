@@ -172,14 +172,11 @@ pub(super) fn keep_faces_and_carriers(
             )
         })?;
         if purpose == DecodePurpose::History {
-            let mut kind_storage = ctx.reserve_scoped(0, "ASM construction kind scratch")?;
-            let native_kind = kind_storage.with_storage(|| {
-                (surf_rec.head() == "spline")
-                    .then(|| nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens))
-                    .flatten()
-                    .transpose()
-            })?;
-            if match native_kind.as_deref() {
+            let native_kind = (surf_rec.head() == "spline")
+                .then(|| nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens))
+                .flatten()
+                .transpose()?;
+            if match native_kind {
                 Some(kind) => ctx.contains_text(kind, "blend", "ASM history surface kind")?,
                 None => false,
             } {
@@ -361,18 +358,15 @@ pub(super) fn keep_faces_and_carriers(
                 }
                 out.stats.mesh_surface_faces += 1;
             } else {
-                let mut kind_storage = ctx.reserve_scoped(0, "ASM construction kind scratch")?;
                 let native_kind = if surf_rec.head() == "spline" {
-                    kind_storage.with_storage(|| {
-                        nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens).transpose()
-                    })?
+                    nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens).transpose()?
                 } else {
                     None
                 };
                 count_kind(
                     ctx,
                     &mut out.stats.unknown_surface_kinds,
-                    native_kind.as_deref().unwrap_or_else(|| surf_rec.head()),
+                    native_kind.unwrap_or_else(|| surf_rec.head()),
                 )?;
             }
         }
