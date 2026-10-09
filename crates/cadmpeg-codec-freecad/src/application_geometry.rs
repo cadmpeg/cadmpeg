@@ -349,7 +349,8 @@ fn parse_points(
         let _ordinal_storage = ordinal.1;
         let ordinal = ordinal.0;
         let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
-        points.push(Point::new(
+        let mut storage = ctx.provisional_retained("FreeCAD point-cloud candidate")?;
+        let point = storage.with_storage(|| Ok::<_, CodecError>(Point::new(
             PointId::mint(crate::native::model_id_charged(
                 ctx,
                 "point",
@@ -359,7 +360,8 @@ fn parse_points(
             .map_err(CodecError::malformed)?,
             transform_point(transform, position)?,
             Some(association(ctx, property)?),
-        ));
+        )))?;
+        points.push(storage.commit_value(point)?);
     }
     reader.finish("point-cloud payload")?;
     Ok(())
@@ -587,6 +589,7 @@ impl<'a> Reader<'a> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod point_publication;
     use super::{association, parse_mesh, parse_points, ByteOrder, Reader};
     use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
     use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
