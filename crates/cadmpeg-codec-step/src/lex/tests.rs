@@ -7,6 +7,8 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+mod prefix_admission;
+
 #[test]
 fn binary_value_copy_refuses_collection_limit() {
     let value = super::BinaryValue {
