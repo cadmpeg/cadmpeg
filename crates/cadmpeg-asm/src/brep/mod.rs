@@ -268,13 +268,27 @@ pub fn collect_owned_ids(
             if let Some(id) = entity_id(ctx, value)? {
                 ctx.insert_string_set(out, id, "ASM owned ids")?;
             }
-            for (key, value) in ctx.admit_iter(fields, "ASM serialized map fields")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(fields);
+            while source_values.len() != 0 {
+                let Some((key, value)) = ctx.next_charged(&mut source_values, "ASM serialized map fields")? else {
+                    break;
+                };
                 collect_owned_ids(ctx, key, out)?;
                 collect_owned_ids(ctx, value, out)?;
             }
         }
         Value::Seq(items) => {
-            for item in ctx.admit_iter(items, "ASM serialized sequence items")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(items);
+            while source_values.len() != 0 {
+                let Some(item) = ctx.next_charged(&mut source_values, "ASM serialized sequence items")? else {
+                    break;
+                };
                 collect_owned_ids(ctx, item, out)?;
             }
         }
@@ -310,11 +324,25 @@ pub fn collect_entity_adjacency(
     let Value::Map(fields) = value else {
         return Ok(());
     };
-    for (_, value) in ctx.admit_iter(fields, "ASM adjacency root fields")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(fields);
+    while source_values.len() != 0 {
+        let Some((_, value)) = ctx.next_charged(&mut source_values, "ASM adjacency root fields")? else {
+            break;
+        };
         let Value::Seq(items) = value else {
             continue;
         };
-        for item in ctx.admit_iter(items, "ASM serialized sequence items")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(items);
+        while source_values.len() != 0 {
+            let Some(item) = ctx.next_charged(&mut source_values, "ASM serialized sequence items")? else {
+                break;
+            };
             let Some(id) = entity_id(ctx, item)? else {
                 continue;
             };
@@ -324,7 +352,14 @@ pub fn collect_entity_adjacency(
             reference_storage
                 .with_storage(|| collect_references(ctx, item, owned, &mut references))?;
             ctx.remove_btree_set(&mut references, id, "ASM adjacency self reference")?;
-            for reference in ctx.admit_iter(references, "ASM adjacency references")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(references);
+            while source_values.len() != 0 {
+                let Some(reference) = ctx.next_charged(&mut source_values, "ASM adjacency references")? else {
+                    break;
+                };
                 insert_adjacency(ctx, out, id, &reference)?;
                 insert_adjacency(ctx, out, &reference, id)?;
             }
@@ -390,12 +425,26 @@ pub fn collect_references(
             }
         }
         Value::Seq(items) => {
-            for item in ctx.admit_iter(items, "ASM serialized sequence items")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(items);
+            while source_values.len() != 0 {
+                let Some(item) = ctx.next_charged(&mut source_values, "ASM serialized sequence items")? else {
+                    break;
+                };
                 collect_references(ctx, item, owned, out)?;
             }
         }
         Value::Map(fields) => {
-            for (key, value) in ctx.admit_iter(fields, "ASM serialized map fields")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(fields);
+            while source_values.len() != 0 {
+                let Some((key, value)) = ctx.next_charged(&mut source_values, "ASM serialized map fields")? else {
+                    break;
+                };
                 collect_references(ctx, key, owned, out)?;
                 collect_references(ctx, value, owned, out)?;
             }
@@ -418,7 +467,14 @@ pub fn retain_root_entities(
     let Value::Map(fields) = value else {
         return Ok(());
     };
-    for (_, value) in ctx.admit_iter(fields, "ASM retained root fields")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(fields);
+    while source_values.len() != 0 {
+        let Some((_, value)) = ctx.next_charged(&mut source_values, "ASM retained root fields")? else {
+            break;
+        };
         if let Value::Seq(items) = value {
             ctx.retain_vec(
                 items,
@@ -449,13 +505,27 @@ pub fn remap_owned_ids(
             }
         }
         Value::Seq(items) => {
-            for item in ctx.admit_iter(items, "ASM serialized sequence items")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(items);
+            while source_values.len() != 0 {
+                let Some(item) = ctx.next_charged(&mut source_values, "ASM serialized sequence items")? else {
+                    break;
+                };
                 remap_owned_ids(ctx, item, replacements)?;
             }
         }
         Value::Map(fields) => {
             let entries = std::mem::take(fields);
-            for (mut key, mut item) in ctx.admit_iter(entries, "ASM remapped map fields")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(entries);
+            while source_values.len() != 0 {
+                let Some((mut key, mut item)) = ctx.next_charged(&mut source_values, "ASM remapped map fields")? else {
+                    break;
+                };
                 remap_owned_ids(ctx, &mut key, replacements)?;
                 remap_owned_ids(ctx, &mut item, replacements)?;
                 ctx.insert_btree_map(fields, key, item, "ASM remapped fields")?;

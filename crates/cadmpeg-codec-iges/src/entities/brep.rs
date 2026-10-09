@@ -1136,7 +1136,14 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         }
-        for (sequence, _) in ctx.admit_iter(&shell_uses, "iges B-rep shell reference traversal")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(&shell_uses);
+        while source_values.len() != 0 {
+            let Some((sequence, _)) = ctx.next_charged(&mut source_values, "iges B-rep shell reference traversal")? else {
+                break;
+            };
             definition_storage.with_storage(|| {
                 ctx.insert_btree_set(
                     &mut referenced_closed_shells,
@@ -1278,7 +1285,14 @@ pub(super) fn project<'ctx>(
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
     let mut edges_by_curve = BTreeMap::<String, Vec<usize>>::new();
     let mut indexed_edge_count = 0;
-    for definition in ctx.admit_iter(body_definitions, "iges B-rep body traversal")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(body_definitions);
+    while source_values.len() != 0 {
+        let Some(definition) = ctx.next_charged(&mut source_values, "iges B-rep body traversal")? else {
+            break;
+        };
         let ir = commit_session.document();
         let entry = definition.entry;
         let mut model_index = None;
@@ -1352,10 +1366,14 @@ pub(super) fn project<'ctx>(
                         .count();
                     let mut coedge_ids =
                         ctx.collection_vec(edge_use_count, "iges B-rep coedge ids")?;
-                    for (index, use_) in ctx
-                        .admit_iter(uses, "iges B-rep coedge identity traversal")?
-                        .enumerate()
-                    {
+                    if let Some(refusal) = ctx.resource_refusal() {
+                        return Err(refusal.into());
+                    }
+                    let mut source_values = IntoIterator::into_iter(uses).enumerate();
+                    while source_values.len() != 0 {
+                        let Some((index, use_)) = ctx.next_charged(&mut source_values, "iges B-rep coedge identity traversal")? else {
+                            break;
+                        };
                         if matches!(use_, LoopUse::Edge { .. }) {
                             coedge_ids.push(crate::ids::coedge_admitted(
                                 &shell_stem.child(loop_sequence).slot(index),
@@ -1887,10 +1905,14 @@ pub(super) fn project<'ctx>(
                     FaceLoopPointers::OuterFirst { outer, inner } => {
                         let mut inner_ids =
                             ctx.collection_vec(inner.len(), "iges B-rep face inner loop ids")?;
-                        for sequence in ctx
-                            .admit_iter(inner, "iges B-rep inner loop traversal")?
-                            .copied()
-                        {
+                        if let Some(refusal) = ctx.resource_refusal() {
+                            return Err(refusal.into());
+                        }
+                        let mut source_values = IntoIterator::into_iter(inner).copied();
+                        while source_values.len() != 0 {
+                            let Some(sequence) = ctx.next_charged(&mut source_values, "iges B-rep inner loop traversal")? else {
+                                break;
+                            };
                             inner_ids.push(loop_id_for(sequence)?);
                         }
                         cadmpeg_ir::topology::FaceLoops::classified(loop_id_for(*outer)?, inner_ids)
@@ -1906,10 +1928,14 @@ pub(super) fn project<'ctx>(
                         let mut loop_ids =
                             ctx.collection_vec(count, "iges B-rep face unspecified loop ids")?;
                         loop_ids.push(loop_id_for(*first)?);
-                        for sequence in ctx
-                            .admit_iter(rest, "iges B-rep unspecified loop traversal")?
-                            .copied()
-                        {
+                        if let Some(refusal) = ctx.resource_refusal() {
+                            return Err(refusal.into());
+                        }
+                        let mut source_values = IntoIterator::into_iter(rest).copied();
+                        while source_values.len() != 0 {
+                            let Some(sequence) = ctx.next_charged(&mut source_values, "iges B-rep unspecified loop traversal")? else {
+                                break;
+                            };
                             loop_ids.push(loop_id_for(sequence)?);
                         }
                         cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids)
@@ -2005,11 +2031,22 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         }
-        for (_, ring) in ctx.admit_iter(&radial, "iges B-rep radial ring traversal")? {
-            for (index, position) in ctx
-                .admit_iter(ring, "iges B-rep radial member traversal")?
-                .enumerate()
-            {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(&radial);
+        while source_values.len() != 0 {
+            let Some((_, ring)) = ctx.next_charged(&mut source_values, "iges B-rep radial ring traversal")? else {
+                break;
+            };
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(ring).enumerate();
+            while source_values.len() != 0 {
+                let Some((index, position)) = ctx.next_charged(&mut source_values, "iges B-rep radial member traversal")? else {
+                    break;
+                };
                 let next = candidate.model().coedges[ring[(index + 1) % ring.len()]]
                     .id
                     .try_clone_for_decode(ctx, "iges B-rep identity copy")?;

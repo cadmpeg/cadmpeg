@@ -1139,7 +1139,14 @@ pub(super) fn project(
             continue;
         };
         let mut rows = ctx.collection_vec(u_count, "iges spline surface pole rows")?;
-        for u_index in ctx.admit_iter(0..u_count, "iges spline surface pole row traversal")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(0..u_count);
+        while source_values.len() != 0 {
+            let Some(u_index) = ctx.next_charged(&mut source_values, "iges spline surface pole row traversal")? else {
+                break;
+            };
             let mut row = ctx.collection_vec(v_count, "iges spline surface pole row controls")?;
             for v_index in ctx.admit_iter(0..v_count, "iges spline surface pole traversal")? {
                 let point = grid[u_index * v_count + v_index].ok_or_else(|| {

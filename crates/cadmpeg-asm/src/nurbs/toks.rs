@@ -837,7 +837,14 @@ pub(crate) fn admit_subtype_references(
     records: &[crate::sab::Record],
     table: &SubtypeTable,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for record in ctx.admit_iter(records, "walk ASM subtype records")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut source_values, "walk ASM subtype records")? else {
+            break;
+        };
         let mut scratch = ctx.reserve_scoped(0, "walk ASM subtype references")?;
         let mut visited = std::collections::BTreeSet::new();
         let mut pending = Vec::new();

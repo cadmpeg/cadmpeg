@@ -146,7 +146,14 @@ pub(super) fn emit_annotation_records(
             "ASM annotation procedural IDs",
         )
     })?;
-    for record in ctx.admit_iter(records, "ASM annotation source records")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut source_values, "ASM annotation source records")? else {
+            break;
+        };
         let mut candidates = ctx.reserve_scoped(0, "ASM annotation candidate IDs")?;
         let index = i64::try_from(record.index).map_err(|_| {
             ctx.refuse_codec_limit(

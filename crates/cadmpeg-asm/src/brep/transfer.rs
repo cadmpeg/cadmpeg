@@ -128,14 +128,26 @@ pub fn transfer_into_ir<'ir>(
     ctx.extend_vec(&mut ir.model.surfaces, surfaces, "ASM transfer surfaces")?;
     ctx.extend_vec(&mut ir.model.curves, curves, "ASM transfer curves")?;
     ctx.extend_vec(&mut ir.model.pcurves, pcurves, "ASM transfer pcurves")?;
-    for (owner, procedural) in
-        ctx.admit_iter(procedural_surfaces, "ASM procedural surface transfer")?
-    {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(procedural_surfaces);
+    while source_values.len() != 0 {
+        let Some((owner, procedural)) = ctx.next_charged(&mut source_values, "ASM procedural surface transfer")? else {
+            break;
+        };
         ir.model
             .add_procedural_surface(ctx, &owner, procedural)?
             .map_err(|error| CodecError::malformed(error.to_string()))?;
     }
-    for (owner, procedural) in ctx.admit_iter(procedural_curves, "ASM procedural curve transfer")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(procedural_curves);
+    while source_values.len() != 0 {
+        let Some((owner, procedural)) = ctx.next_charged(&mut source_values, "ASM procedural curve transfer")? else {
+            break;
+        };
         ir.model
             .add_procedural_curve(ctx, &owner, procedural)?
             .map_err(|error| CodecError::malformed(error.to_string()))?;

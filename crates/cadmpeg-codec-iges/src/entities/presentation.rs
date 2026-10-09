@@ -418,7 +418,14 @@ pub(super) fn project<'ctx>(
                 )?
                 .and_then(|font| font.supersedes);
         };
-        for sequence in ctx.admit_iter(active, "iges font cycle result traversal")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(active);
+        while source_values.len() != 0 {
+            let Some(sequence) = ctx.next_charged(&mut source_values, "iges font cycle result traversal")? else {
+                break;
+            };
             scratch.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut cyclic_fonts,
@@ -922,7 +929,14 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for curve in ctx.admit_iter(&mut ir.model.curves, "iges curve display traversal")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&mut ir.model.curves);
+    while source_values.len() != 0 {
+        let Some(curve) = ctx.next_charged(&mut source_values, "iges curve display traversal")? else {
+            break;
+        };
         if let Some(source) = &mut curve.source_object {
             source.color = match sequences.curve(&curve.id, ctx)? {
                 Some(sequence) => match ctx.get_btree_map(
@@ -937,7 +951,14 @@ pub(super) fn project<'ctx>(
             };
         }
     }
-    for surface in ctx.admit_iter(&mut ir.model.surfaces, "iges surface display traversal")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&mut ir.model.surfaces);
+    while source_values.len() != 0 {
+        let Some(surface) = ctx.next_charged(&mut source_values, "iges surface display traversal")? else {
+            break;
+        };
         if let Some(source) = &mut surface.source_object {
             source.color = match sequences.surface(&surface.id, ctx)? {
                 Some(sequence) => match ctx.get_btree_map(
@@ -953,7 +974,14 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for index in ctx.admit_iter(0..ir.model.bodies.len(), "iges body display traversal")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(0..ir.model.bodies.len());
+    while source_values.len() != 0 {
+        let Some(index) = ctx.next_charged(&mut source_values, "iges body display traversal")? else {
+            break;
+        };
         let body = &ir.model.bodies[index];
         let Some(sequence) = sequences.body(&body.id, ctx)? else {
             continue;
@@ -1008,7 +1036,14 @@ pub(super) fn project<'ctx>(
     }
     let mut name_texts = PropertyTextIndex::new(ctx)?;
     let mut body_names = BTreeMap::<u32, Option<&str>>::new();
-    for body in ctx.admit_iter(&mut ir.model.bodies, "iges body name traversal")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&mut ir.model.bodies);
+    while source_values.len() != 0 {
+        let Some(body) = ctx.next_charged(&mut source_values, "iges body name traversal")? else {
+            break;
+        };
         if body.visible.is_none() {
             body.visible = match sequences.body(&body.id, ctx)? {
                 Some(sequence) => ctx
@@ -1139,7 +1174,14 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    for index in ctx.admit_iter(0..ir.model.faces.len(), "iges face display traversal")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(0..ir.model.faces.len());
+    while source_values.len() != 0 {
+        let Some(index) = ctx.next_charged(&mut source_values, "iges face display traversal")? else {
+            break;
+        };
         let face = &ir.model.faces[index];
         let Some(sequence) = sequences.face(&face.id, ctx)? else {
             continue;

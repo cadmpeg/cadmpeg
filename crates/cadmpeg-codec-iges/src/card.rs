@@ -518,7 +518,14 @@ fn physical_lines<'a>(
             1
         };
         let mut card_start = start;
-        for index in ctx.admit_iter(0..cards, "iges physical cards")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(0..cards);
+        while source_values.len() != 0 {
+            let Some(index) = ctx.next_charged(&mut source_values, "iges physical cards")? else {
+                break;
+            };
             let card_end = card_start
                 .checked_add(CARD_WIDTH)
                 .ok_or_else(|| CodecError::Malformed("IGES card offset overflow".into()))?
@@ -583,7 +590,14 @@ fn frame_sections<'a>(
     let mut section = None;
     let mut position = 1_usize;
     let mut terminated = false;
-    for raw in ctx.admit_iter(lines, "iges framed card traversal")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(lines);
+    while source_values.len() != 0 {
+        let Some(raw) = ctx.next_charged(&mut source_values, "iges framed card traversal")? else {
+            break;
+        };
         if terminated {
             ctx.push_vec(&mut trailing, raw.line, "iges post-Terminate records")?;
             continue;

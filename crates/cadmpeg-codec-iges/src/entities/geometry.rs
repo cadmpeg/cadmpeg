@@ -209,7 +209,14 @@ pub(super) fn linear_nurbs_parameters<'ctx>(
         "iges linear NURBS parameters",
     )?;
     let mut previous = range[0];
-    for &knot in ctx.admit_iter(knots, "iges linear NURBS parameter knots")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(knots);
+    while source_values.len() != 0 {
+        let Some(&knot) = ctx.next_charged(&mut source_values, "iges linear NURBS parameter knots")? else {
+            break;
+        };
         if knot > range[0] && knot < range[1] && previous != knot {
             ctx.push_scoped_vec(
                 &mut storage,
@@ -1085,7 +1092,14 @@ impl BoundaryVertexDerivation {
         storage.with_storage(|| {
             let mut source_endpoints =
                 ctx.collection_vec(members.len(), "iges boundary derivation endpoints")?;
-            for member in ctx.admit_iter(members, "iges boundary derivation member traversal")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(members);
+            while source_values.len() != 0 {
+                let Some(member) = ctx.next_charged(&mut source_values, "iges boundary derivation member traversal")? else {
+                    break;
+                };
                 let endpoint = &endpoints[*member];
                 source_endpoints.push(BoundaryVertexSourceEndpoint {
                     edge: ctx
@@ -1130,7 +1144,14 @@ impl ProjectionOutcome<'_> {
         } = self;
         source_decoded_storage = result_decoded_storage;
         loss_slots_storage = result_loss_slots_storage;
-        for sequence in ctx.admit_iter(source_decoded, "iges merged decoded traversal")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(source_decoded);
+        while source_values.len() != 0 {
+            let Some(sequence) = ctx.next_charged(&mut source_values, "iges merged decoded traversal")? else {
+                break;
+            };
             decoded_storage.with_storage(|| {
                 ctx.insert_btree_set(decoded, sequence, "iges merged decoded sequences")
             })?;
@@ -1164,7 +1185,14 @@ impl WireProjectionOutcome {
         wire_edges: &mut Vec<EdgeId>,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        for sequence in ctx.admit_iter(self.decoded, "iges merged decoded traversal")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(self.decoded);
+        while source_values.len() != 0 {
+            let Some(sequence) = ctx.next_charged(&mut source_values, "iges merged decoded traversal")? else {
+                break;
+            };
             decoded_storage.with_storage(|| {
                 ctx.insert_btree_set(decoded, sequence, "iges merged decoded sequences")
             })?;
@@ -1246,10 +1274,14 @@ fn consumed_support_sequences<'ctx>(
         let Some(count) = record.count(1) else {
             continue;
         };
-        for index in ctx.admit_iter(
-            0..count.min(record.parameter_end()),
-            "iges consumed-support assembly members",
-        )? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(0..count.min(record.parameter_end()));
+        while source_values.len() != 0 {
+            let Some(index) = ctx.next_charged(&mut source_values, "iges consumed-support assembly members")? else {
+                break;
+            };
             if let Some(sequence) = record
                 .integer(2 + count + index)
                 .and_then(positive_sequence)

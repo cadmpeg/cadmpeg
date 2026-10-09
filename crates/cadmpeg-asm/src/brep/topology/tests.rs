@@ -11,6 +11,7 @@ use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use std::collections::{HashMap, HashSet};
 
 mod shared_carrier;
+mod source_visits;
 
 fn ref_record(index: usize, name: &str, refs: &[i64]) -> Record {
     Record {

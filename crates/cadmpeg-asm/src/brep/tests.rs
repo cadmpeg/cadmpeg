@@ -1895,3 +1895,5 @@ fn inherited_attribute_queries_preserve_work_refusals() {
         );
     }
 }
+
+mod source_visits;
