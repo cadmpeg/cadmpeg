@@ -2345,27 +2345,40 @@ fn parse_light_record_attributes(
     }))
 }
 
-fn class_data_with_userdata(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+/// Temporary class metadata and its parse workspace. The userdata vector
+/// drops before the workspace lease; typed presentation output is separate.
+#[derive(Debug)]
+struct PresentationClassData<'ctx> {
+    range: Range<usize>,
+    userdata: Vec<UserdataDescriptor>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+fn class_data_with_userdata<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
     expected: Uuid,
-) -> Result<(Range<usize>, Vec<UserdataDescriptor>), FramingError> {
-    let (class, userdata) = parse_class_wrapper_with_userdata(
-        ctx,
-        data,
-        record.body(),
-        archive,
-        &mut Diagnostics::new(),
+) -> Result<PresentationClassData<'ctx>, FramingError> {
+    let ((class, userdata), storage) = ctx.with_scoped_storage(
+        "Rhino presentation class userdata scratch",
+        || parse_class_wrapper_with_userdata(
+            ctx, data, record.body(), archive, &mut Diagnostics::new(),
+        ),
     )?;
+    let parsed = PresentationClassData {
+        range: class.class_data_range,
+        userdata,
+        _storage: storage,
+    };
     if class.class_uuid != expected {
         return Err(FramingError::structural(
             record.range.start,
             "table record has the wrong class",
         ));
     }
-    Ok((class.class_data_range, userdata))
+    Ok(parsed)
 }
 
 fn optional_malformed<T>(value: Result<T, FramingError>) -> Result<Option<T>, CodecError> {
@@ -5504,17 +5517,18 @@ pub(crate) fn install<'ctx>(
                     }
                 }
             } else if table_type == MATERIAL_TABLE {
-                if let Some((range, userdata)) = optional_malformed(class_data_with_userdata(
+                if let Some(class) = optional_malformed(class_data_with_userdata(
                     ctx,
                     scan.data,
                     record,
                     scan.archive,
                     MATERIAL,
                 ))? {
+                    let range = class.range.clone();
                     let mut material_requires_opaque = false;
                     let legacy_rdk_instance_id =
-                        legacy_rdk_material_instance_id(ctx, scan.data, &userdata)?;
-                    if rdk_material_userdata_requires_opaque(ctx, scan.data, &userdata)? {
+                        legacy_rdk_material_instance_id(ctx, scan.data, &class.userdata)?;
+                    if rdk_material_userdata_requires_opaque(ctx, scan.data, &class.userdata)? {
                         material_requires_opaque = true;
                         push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
                             "RDK material userdata at offset {} could not be transferred: callback-owned or unsupported payload",
@@ -5523,7 +5537,7 @@ pub(crate) fn install<'ctx>(
                     }
                     let mut physically_based_userdata = None;
                     ctx.charge_work(0, "Rhino PBR userdata search")?;
-                    let mut source = userdata.iter();
+                    let mut source = class.userdata.iter();
                     for _ in 0..source.len() {
                         let raw = ctx.next_charged(&mut source, "Rhino PBR userdata search")?
                             .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
@@ -5533,10 +5547,12 @@ pub(crate) fn install<'ctx>(
                                 && (value.application_uuid.is_none()
                                     || value.application_uuid == Some(OPENNURBS6_APPLICATION))
                         }) {
-                            physically_based_userdata = Some(value);
+                            // Fixed userdata metadata has no allocated children.
+                            physically_based_userdata = Some(value.clone());
                             break;
                         }
                     }
+                    drop(class);
                     let physically_based = if let Some(value) = physically_based_userdata {
                         match parse_physically_based_material(
                             ctx,
@@ -5843,26 +5859,29 @@ attribute_losses.append_admitted(
                 };
                 if scan.archive.value() < 60 {
                     let mut extra_requires_opaque = false;
-                    if let Some((range, userdata)) = optional_malformed(class_data_with_userdata(
+                    if let Some(class) = optional_malformed(class_data_with_userdata(
                         ctx,
                         scan.data,
                         record,
                         scan.archive,
                         V5_DIMSTYLE,
                     ))? {
+                        let range = class.range.clone();
                         let mut extra = None;
                         ctx.charge_work(0, "Rhino dimension style userdata search")?;
-                        let mut source = userdata.iter();
+                        let mut source = class.userdata.iter();
                         for _ in 0..source.len() {
                             let raw = ctx.next_charged(&mut source, "Rhino dimension style userdata search")?
                                 .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
                             if let Some(value) = raw.known().filter(|value| {
                                 value.class_uuid == DIMSTYLE_EXTRA && value.item_uuid == DIMSTYLE_EXTRA
                             }) {
-                                extra = Some(value);
+                                // Fixed userdata metadata has no allocated children.
+                                extra = Some(value.clone());
                                 break;
                             }
                         }
+                        drop(class);
                         let mut extra_storage = None;
                         let extra = match extra {
                             Some(value) => {
@@ -5872,7 +5891,7 @@ attribute_losses.append_admitted(
                                         Ok::<_, CodecError>(parse_v5_dimension_style_extra(
                                             ctx,
                                             scan.data,
-                                            value,
+                                            &value,
                                             scan.archive,
                                             scale,
                                         ))
