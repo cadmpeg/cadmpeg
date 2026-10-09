@@ -1042,7 +1042,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 sketch_id.as_str(),
                 "find SLDPRT profile sketch",
             )? {
-                sketch_id_storage.commit()?;
+                let sketch_id = sketch_id_storage.commit_value(sketch_id)?;
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1198,7 +1198,7 @@ pub(crate) fn project_compact_sketch_profiles(
                     OPERATION,
                 )?;
                 sketch_fields_storage.commit()?;
-                sketch_id_storage.commit()?;
+                let sketch_id = sketch_id_storage.commit_value(sketch_id)?;
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1254,7 +1254,8 @@ pub(crate) fn project_compact_sketch_profiles(
                     let Ok(entity_id) = entity_id else {
                         continue;
                     };
-                    line_fields_storage.with_storage(|| id_storage.commit())?;
+                    let entity_id = line_fields_storage
+                        .with_storage(|| id_storage.commit_value(entity_id))?;
                     lines_storage.with_storage(|| {
                         ctx.reserve_vec(&mut lines, 1, OPERATION)?;
                         lines.push((entity_id, curve, vertex, start, end));
@@ -1429,7 +1430,7 @@ pub(crate) fn project_compact_sketch_profiles(
                     OPERATION,
                 )?;
                 sketch_fields_storage.commit()?;
-                sketch_id_storage.commit()?;
+                let sketch_id = sketch_id_storage.commit_value(sketch_id)?;
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1555,7 +1556,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 OPERATION,
             )?;
             sketch_fields_storage.commit()?;
-            sketch_id_storage.commit()?;
+            let sketch_id = sketch_id_storage.commit_value(sketch_id)?;
             features[feature_index].evaluation.set_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -2114,7 +2115,7 @@ pub(crate) fn project_marker_backed_sketches(
                         )?;
                         empty_sketch_storage.commit()?;
                     }
-                    sketch_id_storage.commit()?;
+                    let sketch_id = sketch_id_storage.commit_value(sketch_id)?;
                     features[feature_index].evaluation.set_definition(
                         cadmpeg_ir::features::FeatureDefinition::Operation(
                             cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -2132,7 +2133,7 @@ pub(crate) fn project_marker_backed_sketches(
                 sketch_id.as_str(),
                 "compare SLDPRT profile sketch identities",
             )? {
-                sketch_id_storage.commit()?;
+                let sketch_id = sketch_id_storage.commit_value(sketch_id)?;
                 features[feature_index]
                     .evaluation
                     .set_definition(if block_definition {
@@ -3270,7 +3271,7 @@ marker,
                 "append SLDPRT marker sketch",
             )?;
             sketch_fields_storage.commit()?;
-            sketch_id_storage.commit()?;
+            let sketch_id = sketch_id_storage.commit_value(sketch_id)?;
             profiles_storage.commit()?;
             resolved_fields_storage.commit()?;
             features[feature_index]
@@ -3822,13 +3823,28 @@ pub(crate) fn project_sketch_block_profiles(
                     sketch_id.as_str(),
                     "find SLDPRT assembled sketch",
                 )? {
-                    assembled.output_storage.commit()?;
+                    let output_storage;
+                    let entities_storage;
+                    let sketch;
+                    let entities;
+                    AssembledSketchBlockProfile {
+                        sketch,
+                        entities,
+                        _entities_storage: entities_storage,
+                        output_storage,
+                    } = assembled;
+                    let published_entity_shell;
+                    let published_sketch;
+                    let published_entities;
+                    (published_sketch, published_entities, published_entity_shell) =
+                        output_storage.commit_value((sketch, entities, entities_storage))?;
                     let first_entity = sketch_entities.len();
                     ctx.extend_vec(
                         sketch_entities,
-                        assembled.entities,
+                        published_entities,
                         "append SLDPRT sketch block entities",
                     )?;
+                    drop(published_entity_shell);
                     for position in ctx.admit_iter(
                         &(first_entity..sketch_entities.len()),
                         "append SLDPRT sketch block entities",
@@ -3847,11 +3863,11 @@ pub(crate) fn project_sketch_block_profiles(
                         sketches,
                         &mut sketch_positions,
                         &mut sketch_positions_storage,
-                        assembled.sketch,
+                        published_sketch,
                         "append SLDPRT assembled sketch block",
                     )?;
                 }
-                sketch_id_storage.commit()?;
+                let sketch_id = sketch_id_storage.commit_value(sketch_id)?;
                 features[profile_index]
                     .evaluation
                     .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -6729,3 +6745,6 @@ mod compact_cycle_tests;
 
 #[cfg(test)]
 mod leaf_handoffs;
+
+#[cfg(test)]
+mod identity_handoff_tests;
