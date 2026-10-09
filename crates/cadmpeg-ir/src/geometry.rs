@@ -3897,11 +3897,11 @@ pub enum LoftSubdata<R = f64> {
         /// The sole leading scalar pair.
         row: [R; 2],
     },
-    /// All other table types store rows of one shared column width.
+    /// A table payload stores rows of one shared column width.
     Table(LoftSubdataTable<R>),
 }
 
-/// Checked non-211 loft table payload.
+/// Checked loft table payload with one shared column width.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(into = "LoftSubdataTableWire<R>"))]
@@ -3983,7 +3983,7 @@ impl LoftSubdata {
         Self::Type211 { dimensions, row }
     }
 
-    /// Construct a non-211 table whose rows have one shared column width.
+    /// Construct a table whose rows have one shared column width.
     #[must_use]
     pub fn table(type_code: i64, rows: Vec<LoftSubdataRow>) -> Option<Self> {
         LoftSubdataTable::new(type_code, rows).ok().map(Self::Table)
@@ -4000,7 +4000,7 @@ impl<R> LoftSubdata<R> {
         }
     }
 
-    /// Native row header: a stored value for type 211, otherwise the row count.
+    /// Native row header: stored in `Type211`, computed from rows in `Table`.
     #[must_use]
     pub fn row_count(&self) -> i64 {
         match self {
@@ -4009,7 +4009,7 @@ impl<R> LoftSubdata<R> {
         }
     }
 
-    /// Native column header: stored for type 211, otherwise the shared row width.
+    /// Native column header: stored in `Type211`, computed from rows in `Table`.
     #[must_use]
     pub fn column_count(&self) -> i64 {
         match self {

@@ -753,10 +753,10 @@ impl FiniteReal {
     /// The value `units` times the least positive subnormal magnitude,
     /// negated when `negative` is set.
     ///
-    /// A `u64` converts to at most `2^64`, and `2^64` times `2^-1074` is
-    /// `2^-1010`, so the product is finite for every argument and nothing is
-    /// checked. Up to `2^53` units the conversion and the product are exact,
-    /// so the value is the one whose bit pattern is the sign bit and `units`.
+    /// Refuses a count with more than 53 significant bits after trailing zeros
+    /// are removed. Every admitted count converts exactly to at most `2^64`.
+    /// Its product with `2^-1074` is exact and finite, at most `2^-1010`.
+    /// Up to `2^53` units, the result's bit pattern is the sign bit and `units`.
     #[must_use]
     pub(crate) fn subnormal_units(negative: bool, units: u64) -> Option<Self> {
         let magnitude = cadmpeg_core::convert::f64_from_u64(units)? * f64::from_bits(1);
