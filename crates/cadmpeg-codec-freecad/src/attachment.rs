@@ -228,14 +228,14 @@ pub(crate) fn transfer(
         };
         let support = sole_named_property(ctx, "attachment", owned, "AttachmentSupport")?;
         let mode = sole_named_property(ctx, "attachment", owned, "MapMode")?;
-        let placement = placement_matrix(
-            ctx,
-            sole_named_property(ctx, "attachment", owned, "Placement")?,
-        )?;
-        let offset = placement_matrix(
-            ctx,
-            sole_named_property(ctx, "attachment", owned, "AttachmentOffset")?,
-        )?;
+        let placement = sole_named_property(ctx, "attachment", owned, "Placement")?
+            .map(|property| crate::placement::placement_matrix(ctx, property))
+            .transpose()?
+            .flatten();
+        let offset = sole_named_property(ctx, "attachment", owned, "AttachmentOffset")?
+            .map(|property| crate::placement::placement_matrix(ctx, property))
+            .transpose()?
+            .flatten();
         if support.is_none() && mode.is_none() && placement.is_none() && offset.is_none() {
             continue;
         }
@@ -272,16 +272,6 @@ pub(crate) fn effective_frame(
         (None, Some(offset)) => offset,
         (None, None) => IDENTITY,
     }
-}
-
-fn placement_matrix(
-    ctx: &DecodeContext<'_>,
-    property: Option<&PropertyRecord>,
-) -> Result<Option<crate::native::frame::FiniteFrame>, CodecError> {
-    let Some(property) = property else {
-        return Ok(None);
-    };
-    crate::placement::placement_matrix(ctx, property)
 }
 
 fn support_links(
