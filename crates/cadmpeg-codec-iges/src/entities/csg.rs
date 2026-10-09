@@ -611,7 +611,7 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
-        let terms_storage;
+        let mut terms_storage;
         let (mut terms, result_terms_storage) = ctx.temporary_vec(count, "iges Boolean postfix terms")?;
         terms_storage = result_terms_storage;
         let mut terms_valid = true;
@@ -683,9 +683,9 @@ pub(super) fn project<'ctx>(
                 entry.sequence,
                 terms,
                 "iges Boolean definition nodes",
-            )?;
-            terms_storage.commit()
+            )
         })?;
+        boolean_storage.absorb(&mut terms_storage)?;
     }
     let mut validation = BooleanValidation {
         path: BTreeSet::new(),

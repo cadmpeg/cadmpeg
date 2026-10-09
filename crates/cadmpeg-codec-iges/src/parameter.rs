@@ -731,10 +731,9 @@ fn analyze_trailing_pointer_groups_from_end(
     )? {
         Some(groups) => match groups.fully_valid_with_context(ctx)? {
             Some(resolved) => Ok(TrailingPointerAnalysis::Unambiguous(resolved)),
-            None => {
-                group_storage.commit()?;
-                Ok(TrailingPointerAnalysis::SingleInvalid(groups))
-            }
+            None => Ok(TrailingPointerAnalysis::SingleInvalid(
+                group_storage.commit_value(groups)?,
+            )),
         },
         None => Ok(TrailingPointerAnalysis::Ambiguous {
             candidates: 1,
@@ -4621,7 +4620,7 @@ pub(crate) fn assemble_with_context<'ctx>(
             double_precision_reals,
         };
         records_storage.with_storage(|| ctx.reserve_vec(&mut records, 1, "iges parameter records"))?;
-        records_storage.with_storage(|| record_storage.commit())?;
+        let record = records_storage.with_storage(|| record_storage.commit_value(record))?;
         records.push(record);
     }
     {
