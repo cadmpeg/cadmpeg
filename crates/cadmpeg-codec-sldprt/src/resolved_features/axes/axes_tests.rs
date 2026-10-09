@@ -217,7 +217,7 @@ fn revolution_profile_roster_refuses_collection_limit() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -766,7 +766,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -947,7 +947,7 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1031,7 +1031,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1294,7 +1294,7 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1361,7 +1361,7 @@ fn revolution_consumes_the_preceding_profile_object() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: vec![0; 256],
+        native_payload: vec![0; 256].into(),
         classes: Vec::new(),
         names: vec![
             FeatureInputName {

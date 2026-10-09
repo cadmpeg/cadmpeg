@@ -8,7 +8,7 @@ fn scene_node_path_limit_error(
         segment: "scene".into(),
         segment_type: 0,
         ordinal: 0,
-        object_type_id: [0; 16],
+        object_type_id: [0; 16].into(),
         object_base_type: 0,
         object_id: 7,
         body_byte_len: 0,
@@ -19,7 +19,7 @@ fn scene_node_path_limit_error(
     let base = crate::native::display_jt::DisplayJtBaseNodeData {
         id: "base".into(),
         element: compressed.id.clone(),
-        object_type_id: [0; 16],
+        object_type_id: [0; 16].into(),
         object_id: 7,
         version: 1,
         flags: 0,
@@ -104,7 +104,7 @@ fn jt_node_path_refuses_nesting_without_erasing_resource_error() {
     let base = crate::native::display_jt::DisplayJtBaseNodeData {
         id: "base".into(),
         element: "scene".into(),
-        object_type_id: [0; 16],
+        object_type_id: [0; 16].into(),
         object_id: 7,
         version: 1,
         flags: 0,

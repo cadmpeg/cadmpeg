@@ -170,21 +170,21 @@ mod tests {
     #[test]
     fn index_row_borrowed_bytes_and_limit() {
         bytes_and_limit::<DataBlockIndexRow, super::super::wire::DataBlockIndexRowWire>(
-            r#"{"id":"row","section_ordinal":0,"ordinal":0,"first_index":1,"raw_first_index":[1],"flag":3,"indices":[2,3,4,5],"raw_indices":[[2],[3],[4],[5]],"data_blocks":["a","b","c","d"],"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"first_index_source_offset":13,"index_source_offsets":[17,18,19,20]}"#,
+            r#"{"id":"row","section_ordinal":0,"ordinal":0,"first_index":1,"raw_first_index":"01","flag":3,"indices":[2,3,4,5],"raw_indices":["02","03","04","05"],"data_blocks":["a","b","c","d"],"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"first_index_source_offset":13,"index_source_offsets":[17,18,19,20]}"#,
         );
     }
 
     #[test]
     fn linked_row_borrowed_bytes_and_limit() {
         bytes_and_limit::<DataBlockLinkedIndexRow, super::super::wire::DataBlockLinkedIndexRowWire>(
-            r#"{"id":"row","section_ordinal":0,"ordinal":0,"first_index":1,"raw_first_index":[1],"discriminator":22,"target_index":2,"raw_target_index":[2],"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"data_blocks":["a","b","c","d"],"flag":3,"mode":4,"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"first_index_source_offset":12,"target_index_source_offset":16,"index_source_offsets":[21,22,23]}"#,
+            r#"{"id":"row","section_ordinal":0,"ordinal":0,"first_index":1,"raw_first_index":"01","discriminator":22,"target_index":2,"raw_target_index":"02","indices":[3,4,5],"raw_indices":["03","04","05"],"data_blocks":["a","b","c","d"],"flag":3,"mode":4,"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"first_index_source_offset":12,"target_index_source_offset":16,"index_source_offsets":[21,22,23]}"#,
         );
     }
 
     #[test]
     fn target_row_borrowed_bytes_and_limit() {
         bytes_and_limit::<DataBlockTargetIndexRow, super::super::wire::DataBlockTargetIndexRowWire>(
-            r#"{"id":"row","section_ordinal":0,"ordinal":0,"target_index":2,"raw_target_index":[2],"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"data_blocks":["a","b","c","d"],"mode":7,"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"target_index_source_offset":15,"index_source_offsets":[20,21,22]}"#,
+            r#"{"id":"row","section_ordinal":0,"ordinal":0,"target_index":2,"raw_target_index":"02","indices":[3,4,5],"raw_indices":["03","04","05"],"data_blocks":["a","b","c","d"],"mode":7,"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"target_index_source_offset":15,"index_source_offsets":[20,21,22]}"#,
         );
     }
 }

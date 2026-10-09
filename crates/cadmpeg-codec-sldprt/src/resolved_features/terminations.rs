@@ -2394,7 +2394,7 @@ impl LegacyFacePathSearch<'_, '_> {
             && signature[0..2] != [0, 0])
         .then(|| FeatureInputComponentPathEntry {
             instance: View::u16_le_at(instance, 0),
-            type_signature: signature,
+            type_signature: signature.into(),
             local_id: None,
         })
     }

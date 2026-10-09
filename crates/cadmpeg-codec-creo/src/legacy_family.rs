@@ -403,7 +403,9 @@ fn copy_string_value(
             text: ctx.copy_retained_text(text, "creo legacy family string value")?,
         }),
         legacy::StringValue::Bytes { bytes } => Ok(legacy::StringValue::Bytes {
-            bytes: ctx.copy_retained(bytes, "creo legacy family string value")?,
+            bytes: ctx
+                .copy_retained(bytes, "creo legacy family string value")?
+                .into(),
         }),
     }
 }
@@ -1211,7 +1213,9 @@ mod tests {
     fn legacy_family_byte_string_refuses_before_copy() {
         let mut fixture = complete_table();
         fixture.string_values[0].payload = StringPayload::Scalar {
-            value: legacy::StringValue::Bytes { bytes: vec![0xff] },
+            value: legacy::StringValue::Bytes {
+                bytes: vec![0xff].into(),
+            },
         };
         assert!(parse(&fixture).is_some());
         assert_limit_refusal(

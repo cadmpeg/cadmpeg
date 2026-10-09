@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed JSON wire views for consolidated CATIA native records.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
 use serde::Serialize;
@@ -28,8 +30,7 @@ enum CatiaOwnerPacketPayloadWireRef<'a> {
     },
     Counted {
         references: &'a [u32],
-        #[serde(with = "cadmpeg_ir::bytes")]
-        tail: &'a [u8],
+        tail: NativeBytes<&'a [u8]>,
     },
 }
 
@@ -78,7 +79,7 @@ impl Serialize for CatiaConsolidatedOwnerPacket {
             CatiaOwnerPacketPayload::Counted { references, tail } => (
                 CatiaOwnerPacketPayloadWireRef::Counted {
                     references,
-                    tail: tail.as_slice(),
+                    tail: tail.as_slice().into(),
                 },
                 &[][..],
                 None,

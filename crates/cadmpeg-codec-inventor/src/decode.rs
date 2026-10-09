@@ -2049,7 +2049,7 @@ fn project_ufrx_embedded_reference(
             &reference.display_name,
             "retain Inventor UFRx embedded display name",
         )?,
-        state_values: reference.state_values,
+        state_values: reference.state_values.into(),
         record_len: cadmpeg_core::decode::u64_from_index(reference.source.window().len()),
         record_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
             ctx,

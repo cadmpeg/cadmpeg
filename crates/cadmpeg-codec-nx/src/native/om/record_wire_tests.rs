@@ -85,7 +85,7 @@ fn control_class_native_limit_refuses_before_clone() {
 
 #[test]
 fn block_reference_borrowed_wire_preserves_bytes() {
-    let wire = r#"{"id":"nx:om:block-reference#0","data_block":"block","ordinal":0,"object_id":0,"raw_object_id":[0],"target_record":"record","target_expression_declaration":"declaration","source_offset":4}"#;
+    let wire = r#"{"id":"nx:om:block-reference#0","data_block":"block","ordinal":0,"object_id":0,"raw_object_id":"00","target_record":"record","target_expression_declaration":"declaration","source_offset":4}"#;
     let record = check::<DataBlockReference>(wire);
     assert_eq!(
         serde_json::to_vec(&record).unwrap(),
@@ -95,7 +95,7 @@ fn block_reference_borrowed_wire_preserves_bytes() {
 
 #[test]
 fn block_reference_native_limit_refuses_before_clone() {
-    let wire = r#"{"id":"nx:om:block-reference#0","data_block":"block","ordinal":0,"object_id":0,"raw_object_id":[0],"target_record":"record","target_expression_declaration":"declaration","source_offset":4}"#;
+    let wire = r#"{"id":"nx:om:block-reference#0","data_block":"block","ordinal":0,"object_id":0,"raw_object_id":"00","target_record":"record","target_expression_declaration":"declaration","source_offset":4}"#;
     let record = check::<DataBlockReference>(wire);
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,

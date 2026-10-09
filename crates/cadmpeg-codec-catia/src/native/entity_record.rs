@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Entity-table bodies and their resolved native productions.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use super::{
@@ -382,18 +384,15 @@ pub(super) struct CatiaEntityRecordWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_inline_body"
     )]
-    inline_body: Option<Vec<u8>>,
+    inline_body: Option<NativeBytes<Vec<u8>>>,
     definition_len: u64,
-    #[serde(with = "cadmpeg_ir::bytes")]
-    definition_prefix: Vec<u8>,
+    definition_prefix: NativeBytes<Vec<u8>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     definition_schema_selections: Vec<CatiaDefinitionSchemaSelection>,
     entity_id: u32,
-    #[serde(with = "cadmpeg_ir::bytes")]
-    definition_suffix: Vec<u8>,
+    definition_suffix: NativeBytes<Vec<u8>>,
     value_len: u64,
-    #[serde(with = "cadmpeg_ir::bytes")]
-    value_payload: Vec<u8>,
+    value_payload: NativeBytes<Vec<u8>>,
     #[serde(default)]
     value_fields: Vec<value_block::ValueField>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -474,8 +473,7 @@ pub(super) struct CatiaEntityRecordWire {
         deserialize_with = "deserialize_reference_signature"
     )]
     reference_signature: Option<CatiaReferenceSignatureWire>,
-    #[serde(with = "cadmpeg_ir::bytes")]
-    record_suffix: Vec<u8>,
+    record_suffix: NativeBytes<Vec<u8>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -668,14 +666,14 @@ impl CatiaEntityRecordWire {
             byte_offset: value.byte_offset,
             byte_len,
             lead: value.lead,
-            inline_body,
+            inline_body: (inline_body).map(Into::into),
             definition_len,
-            definition_prefix,
+            definition_prefix: (definition_prefix).into(),
             definition_schema_selections: value.definition_schema_selections,
             entity_id: value.entity_id,
-            definition_suffix,
+            definition_suffix: (definition_suffix).into(),
             value_len,
-            value_payload,
+            value_payload: (value_payload).into(),
             value_fields,
             value_schema_selections: value.value_schema_selections,
             relation_expression: relation_expression.map(|expression| {
@@ -695,7 +693,7 @@ impl CatiaEntityRecordWire {
             value_packets,
             numeric_pair,
             reference_signature,
-            record_suffix,
+            record_suffix: (record_suffix).into(),
             suffix_value,
             suffix_framing,
             suffix_schema_selection: value.suffix_schema_selection,
@@ -740,12 +738,12 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
                     "entity record cannot carry both an inline body and nested frames".to_owned(),
                 );
             }
-            (Some(bytes), false) => CatiaEntityRecordBody::Inline(bytes),
+            (Some(bytes), false) => CatiaEntityRecordBody::Inline(bytes.into_inner()),
             (None, _) => CatiaEntityRecordBody::Nested {
-                definition_prefix: wire.definition_prefix,
-                definition_suffix: wire.definition_suffix,
-                value_payload: wire.value_payload,
-                record_suffix: wire.record_suffix,
+                definition_prefix: wire.definition_prefix.into_inner(),
+                definition_suffix: wire.definition_suffix.into_inner(),
+                value_payload: wire.value_payload.into_inner(),
+                record_suffix: wire.record_suffix.into_inner(),
             },
         };
         let payload = match &body {
@@ -916,7 +914,11 @@ mod tests {
 }
 
 // Each optional key below names itself in whatever it refuses.
-cadmpeg_core::named_optional_field!(deserialize_inline_body, Vec<u8>, "inline_body");
+cadmpeg_core::named_optional_field!(
+    deserialize_inline_body,
+    cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
+    "inline_body"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_relation_expression,
     CatiaRelationExpressionWire,

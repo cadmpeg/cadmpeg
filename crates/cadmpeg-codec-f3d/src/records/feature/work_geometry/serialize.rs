@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed wire views for persistent work geometry.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::{
     DesignRecipeReference, DesignVertexRecipe, DesignWorkPlaneConstruction, DesignWorkPointInput,
     DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
@@ -19,8 +21,7 @@ struct VertexRecipeRef<'a> {
     recipe_record_byte_offset: u64,
     recipe_id: &'a str,
     recipe_prefix_offset: u64,
-    #[serde(serialize_with = "cadmpeg_ir::bytes::serialize")]
-    recipe_prefix_bytes: &'a [u8],
+    recipe_prefix_bytes: NativeBytes<&'a [u8]>,
     recipe_references: &'a [DesignRecipeReference],
     recipe_program_offset: u64,
     recipe_program: &'a [i32],
@@ -44,7 +45,7 @@ impl Serialize for DesignVertexRecipe {
             recipe_record_byte_offset: self.recipe_record_byte_offset,
             recipe_id: &self.recipe_id,
             recipe_prefix_offset: self.recipe_prefix_offset(),
-            recipe_prefix_bytes: &self.recipe_prefix_bytes,
+            recipe_prefix_bytes: (&self.recipe_prefix_bytes).into(),
             recipe_references: &self.recipe_references,
             recipe_program_offset: self.recipe_program_offset,
             recipe_program: &self.recipe_program,
@@ -228,7 +229,7 @@ mod tests {
             "recipe_record_byte_offset": 30,
             "recipe_id": "f3d:design:recipe#1",
             "recipe_prefix_offset": 41,
-            "recipe_prefix_bytes": "AP8=",
+            "recipe_prefix_bytes": "00ff",
             "recipe_references": [],
             "recipe_program_offset": 43,
             "recipe_program": [0],

@@ -18,7 +18,7 @@ use crate::IgesCodec;
 #[test]
 fn native_macro_instance_keeps_parameter_wire_fields() {
     let tokens = [crate::parameter::Token {
-        value: crate::parameter::TokenValue::String(b"abc".to_vec()),
+        value: crate::parameter::TokenValue::String(b"abc".to_vec().into()),
         span: 0..3,
     }];
     let instance = super::NativeMacroInstance {
@@ -42,7 +42,7 @@ fn native_macro_instance_keeps_parameter_wire_fields() {
             "parameters": [{
                 "start": 0,
                 "end": 3,
-                "value": {"kind": "string", "value": b"abc"},
+                "value": {"kind": "string", "value": cadmpeg_ir::native::bytes::NativeBytes::from(b"abc".as_slice())},
             }],
         })
     );
@@ -95,7 +95,7 @@ fn native_parameter_record_keeps_bytes_tokens_comment_and_line_wire_fields() {
         b"abc".to_vec(),
         1,
         vec![crate::parameter::Token {
-            value: crate::parameter::TokenValue::String(b"d".to_vec()),
+            value: crate::parameter::TokenValue::String(b"d".to_vec().into()),
             span: 0..1,
         }],
         b"e".to_vec(),
@@ -105,13 +105,13 @@ fn native_parameter_record_keeps_bytes_tokens_comment_and_line_wire_fields() {
         serde_json::json!({
             "parameter_line_start": 1,
             "parameter_line_end": 2,
-            "parameter_bytes": b"abc",
+            "parameter_bytes": cadmpeg_ir::native::bytes::NativeBytes::from(b"abc".as_slice()),
             "parameters": [{
                 "start": 0,
                 "end": 1,
-                "value": {"kind": "string", "value": b"d"},
+                "value": {"kind": "string", "value": cadmpeg_ir::native::bytes::NativeBytes::from(b"d".as_slice())},
             }],
-            "comment": b"e",
+            "comment": cadmpeg_ir::native::bytes::NativeBytes::from(b"e".as_slice()),
         })
     );
 }
@@ -629,9 +629,9 @@ fn absent_native_parameter_record_keeps_empty_wire_fields() {
         serde_json::json!({
             "parameter_line_start": null,
             "parameter_line_end": null,
-            "parameter_bytes": [],
+            "parameter_bytes": "",
             "parameters": [],
-            "comment": [],
+            "comment": "",
         })
     );
 }

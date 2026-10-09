@@ -205,7 +205,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
                 rotation: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
             }),
         },
-        raw_bytes: Vec::new(),
+        raw_bytes: Vec::new().into(),
     };
     let relation = SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
         id: "f3d:BulkStream.dat:relation#30".into(),

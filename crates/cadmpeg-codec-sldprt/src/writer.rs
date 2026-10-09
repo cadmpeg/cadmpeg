@@ -1569,7 +1569,7 @@ fn resolved_feature_payload(
         }
         payload.splice(start..end, replacement);
     }
-    Ok(payload)
+    Ok(payload.into_inner())
 }
 
 /// The record position a `sldprt:metadata:*` identifier carries: the ordinal of

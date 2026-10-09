@@ -1367,7 +1367,11 @@ fn native_namespace_retains_source_closed_owner_chart() {
     );
     let wire = serde_json::to_value(chart).expect("serialize owner chart");
     let controls: [u8; 6] =
-        serde_json::from_value(wire["bridge"]["controls"].clone()).expect("six bridge controls");
+        serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes<[u8; 6]>>(
+            wire["bridge"]["controls"].clone(),
+        )
+        .expect("six bridge controls")
+        .into_inner();
     assert_eq!(controls, [0x09, 0x05, 0x03, 0x05, 0x01, 0x05]);
     assert_eq!(construction_radius.get(), 1.0);
     assert!(chart.parameter_point_byte_offsets[3] < packet.byte_offset);

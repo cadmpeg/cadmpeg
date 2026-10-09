@@ -21,7 +21,7 @@ fn type406_form27_complete_counted_span_keeps_boundary_with_invalid_value_type()
     let values = vec![
         TokenValue::Integer(406),
         TokenValue::Integer(4),
-        TokenValue::String(b"PROPTEST".to_vec()),
+        TokenValue::String(b"PROPTEST".to_vec().into()),
         TokenValue::Integer(1),
         TokenValue::Integer(7),
         TokenValue::Integer(17),
@@ -77,7 +77,7 @@ fn type406_form27_malformed_np_or_value_count_does_not_enable_generic_recovery()
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(5),
-            TokenValue::String(b"PROPTEST".to_vec()),
+            TokenValue::String(b"PROPTEST".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(1),
             TokenValue::Integer(17),
@@ -89,7 +89,7 @@ fn type406_form27_malformed_np_or_value_count_does_not_enable_generic_recovery()
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(2),
-            TokenValue::String(b"PROPTEST".to_vec()),
+            TokenValue::String(b"PROPTEST".to_vec().into()),
             TokenValue::Integer(0),
             TokenValue::Integer(1),
             TokenValue::Integer(1),
@@ -99,7 +99,7 @@ fn type406_form27_malformed_np_or_value_count_does_not_enable_generic_recovery()
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(2),
-            TokenValue::String(b"PROPTEST".to_vec()),
+            TokenValue::String(b"PROPTEST".to_vec().into()),
             TokenValue::Integer(-1),
             TokenValue::Integer(1),
             TokenValue::Integer(1),
@@ -109,8 +109,8 @@ fn type406_form27_malformed_np_or_value_count_does_not_enable_generic_recovery()
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(2),
-            TokenValue::String(b"PROPTEST".to_vec()),
-            TokenValue::String(b"1".to_vec()),
+            TokenValue::String(b"PROPTEST".to_vec().into()),
+            TokenValue::String(b"1".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(17),
             TokenValue::Integer(1),
@@ -121,7 +121,7 @@ fn type406_form27_malformed_np_or_value_count_does_not_enable_generic_recovery()
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(4),
-            TokenValue::String(b"PROPTEST".to_vec()),
+            TokenValue::String(b"PROPTEST".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(1),
         ],
@@ -324,7 +324,7 @@ fn type402_form6_malformed_fields_do_not_enable_generic_recovery() {
         .collect::<Vec<_>>();
     values[0].value = TokenValue::Integer(402);
     values[1].value = TokenValue::Integer(1);
-    values[2].value = TokenValue::String(b"1".to_vec());
+    values[2].value = TokenValue::String(b"1".to_vec().into());
     values[3].value = TokenValue::Integer(3);
     values[4].value = TokenValue::Integer(7);
     values[5].value = TokenValue::Integer(1);
@@ -829,7 +829,8 @@ fn type402_external_reference_index_entity_table_boundary_follows_entry_pairs() 
             tokens[1].value = TokenValue::Integer(i64::try_from(entry_count).unwrap());
             for (offset, sequence) in [1_i64, 5].into_iter().take(entry_count).enumerate() {
                 let start = 2 + offset * 2;
-                tokens[start].value = TokenValue::String(format!("REF{}", offset + 1).into_bytes());
+                tokens[start].value =
+                    TokenValue::String(format!("REF{}", offset + 1).into_bytes().into());
                 tokens[start + 1].value = TokenValue::Integer(sequence);
             }
             tokens[expected_start].value = TokenValue::Integer(1);
@@ -876,7 +877,7 @@ fn type402_external_reference_index_malformed_counts_or_pairs_do_not_enable_gene
         vec![
             TokenValue::Integer(402),
             TokenValue::Integer(0),
-            TokenValue::String(b"REF".to_vec()),
+            TokenValue::String(b"REF".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(1),
             TokenValue::Integer(7),
@@ -885,7 +886,7 @@ fn type402_external_reference_index_malformed_counts_or_pairs_do_not_enable_gene
         vec![
             TokenValue::Integer(402),
             TokenValue::Integer(-1),
-            TokenValue::String(b"REF".to_vec()),
+            TokenValue::String(b"REF".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(1),
             TokenValue::Integer(7),
@@ -894,7 +895,7 @@ fn type402_external_reference_index_malformed_counts_or_pairs_do_not_enable_gene
         vec![
             TokenValue::Integer(402),
             TokenValue::Integer(i64::MAX),
-            TokenValue::String(b"REF".to_vec()),
+            TokenValue::String(b"REF".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(1),
             TokenValue::Integer(7),
@@ -904,13 +905,13 @@ fn type402_external_reference_index_malformed_counts_or_pairs_do_not_enable_gene
         vec![
             TokenValue::Integer(402),
             TokenValue::Integer(2),
-            TokenValue::String(b"REF".to_vec()),
+            TokenValue::String(b"REF".to_vec().into()),
             TokenValue::Integer(1),
         ],
         vec![
             TokenValue::Integer(402),
-            TokenValue::String(b"1".to_vec()),
-            TokenValue::String(b"REF".to_vec()),
+            TokenValue::String(b"1".to_vec().into()),
+            TokenValue::String(b"REF".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(1),
             TokenValue::Integer(7),
@@ -1067,7 +1068,7 @@ fn type402_form13_malformed_fields_do_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(402),
             TokenValue::Integer(1),
-            TokenValue::String(b"1".to_vec()),
+            TokenValue::String(b"1".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(1),
             TokenValue::Integer(9),

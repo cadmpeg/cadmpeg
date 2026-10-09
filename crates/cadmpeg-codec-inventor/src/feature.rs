@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed `PmDc` feature records and feature-list terminators.
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -233,17 +235,17 @@ pub(crate) struct PmDcLinkedHeader {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
-pub(crate) struct ClassId([u8; 16]);
+pub(crate) struct ClassId(NativeBytes<[u8; 16]>);
 
 impl std::fmt::Display for ClassId {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        cadmpeg_ir::hash::LowerHex(&self.0).fmt(formatter)
+        self.0.fmt(formatter)
     }
 }
 
 impl Serialize for ClassId {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
+        self.0.serialize(serializer)
     }
 }
 
@@ -266,13 +268,13 @@ impl TryFrom<String> for ClassId {
             };
             *byte = digit(digits[0]) * 16 + digit(digits[1]);
         }
-        Ok(Self(bytes))
+        Ok(Self(bytes.into()))
     }
 }
 
 impl From<ClassId> for String {
     fn from(value: ClassId) -> Self {
-        type_id_string(value.0)
+        type_id_string(value.0.into_inner())
     }
 }
 
@@ -1009,18 +1011,18 @@ fn parse_label(
     .map_err(CodecError::malformed)
 }
 
-const EXTRUSION_CLASS_ID: ClassId = ClassId([
+const EXTRUSION_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x31, 0x11, 0xa9, 0x0c, 0xd0, 0x11, 0x8b, 0x83, 0x00, 0x08, 0x19, 0xb0, 0x05, 0x24, 0xdc, 0x09,
-]);
-const FILLET_CLASS_ID: ClassId = ClassId([
+]));
+const FILLET_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0xdc, 0x15, 0xf7, 0xf1, 0xd1, 0x11, 0x42, 0x05, 0x00, 0x08, 0x30, 0xb0, 0x05, 0x24, 0xdc, 0x09,
-]);
-const CHAMFER_CLASS_ID: ClassId = ClassId([
+]));
+const CHAMFER_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x3f, 0x71, 0x00, 0xf9, 0xd2, 0x11, 0x8b, 0x6f, 0x60, 0x00, 0xf0, 0xa8, 0x9d, 0xcc, 0xef, 0xb0,
-]);
-const HOLE_CLASS_ID: ClassId = ClassId([
+]));
+const HOLE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x1a, 0x7d, 0x75, 0x1f, 0xd2, 0x11, 0x9c, 0x54, 0xa0, 0x00, 0x20, 0x80, 0x36, 0x03, 0xc8, 0xc9,
-]);
+]));
 
 #[derive(Clone, Copy)]
 pub(crate) enum FeatureFamily {
@@ -3919,7 +3921,10 @@ mod tests {
         });
         assert_eq!(parsed.name, "Extrude1");
         assert_eq!(parsed.participants.references().len(), 1);
-        assert_eq!(parsed.class_id, ClassId([0xab; 16]));
+        assert_eq!(
+            parsed.class_id,
+            ClassId(cadmpeg_ir::native::bytes::NativeBytes::new([0xab; 16]))
+        );
     }
 
     #[test]
@@ -3939,7 +3944,7 @@ mod tests {
             id: &'static str,
             value: &'a ClassId,
         }
-        let class_id = ClassId([0xab; 16]);
+        let class_id = ClassId(cadmpeg_ir::native::bytes::NativeBytes::new([0xab; 16]));
         let owned = String::from(class_id);
         assert_eq!(
             serde_json::to_vec(&class_id).expect("borrowed class id"),

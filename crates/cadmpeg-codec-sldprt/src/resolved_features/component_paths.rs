@@ -76,7 +76,7 @@ pub(super) fn component_path_features<'a>(
     let mut result: Vec<String> = Vec::new();
     for component in components {
         ctx.charge_work(1, OPERATION)?;
-        let Some(source_id) = View::u32_le_at(&component.type_signature, 4) else {
+        let Some(source_id) = View::u32_le_at(component.type_signature.as_ref(), 4) else {
             continue;
         };
         let Some(ComponentProducer::Unique(feature)) = by_source.get(&source_id) else {
@@ -226,7 +226,7 @@ pub(super) fn component_path_terminal_feature<'a>(
     let (by_source, _storage) = component_producers(ctx, components, features, OPERATION)?;
     for component in components.iter().rev() {
         ctx.charge_work(1, OPERATION)?;
-        let Some(source_id) = View::u32_le_at(&component.type_signature, 4) else {
+        let Some(source_id) = View::u32_le_at(component.type_signature.as_ref(), 4) else {
             continue;
         };
         match by_source.get(&source_id) {
@@ -280,7 +280,7 @@ pub(super) fn component_path_feature<'a>(
     };
     let candidate = |component: &'a FeatureInputComponentPathEntry| {
         ctx.charge_work(1, OPERATION)?;
-        let Some(source_id) = View::u32_le_at(&component.type_signature, 4) else {
+        let Some(source_id) = View::u32_le_at(component.type_signature.as_ref(), 4) else {
             return Ok(None);
         };
         if source_id >= owner_source {

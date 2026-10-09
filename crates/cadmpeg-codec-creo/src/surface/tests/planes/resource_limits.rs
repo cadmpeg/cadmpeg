@@ -582,7 +582,7 @@ fn scalar_frame_limit_error(
 ) -> cadmpeg_core::CodecError {
     let tokens = [crate::surface::SurfaceParameterScalar {
         value: Some(1.0),
-        raw: vec![0xe4],
+        raw: vec![0xe4].into(),
         offset: 0,
     }];
     with_surface_limits(&[0xe4], collection_limit, retained_limit, |ctx| {

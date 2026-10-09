@@ -477,7 +477,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload,
+        native_payload: native_payload.into(),
         classes: vec![FeatureInputClass {
             id: "line-reference".into(),
             parent: "lane".into(),
@@ -1223,7 +1223,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
     let lane = FeatureInputLane {
         id: "lane#test".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1431,7 +1431,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
     let lane = FeatureInputLane {
         id: "lane#test".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1636,7 +1636,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
     let lane = FeatureInputLane {
         id: "lane#test".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1810,7 +1810,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     let lane = FeatureInputLane {
         id: "lane#test".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),

@@ -39,12 +39,12 @@ fn component_path_type_identities_name_ordered_features() {
     let components = vec![
         FeatureInputComponentPathEntry {
             instance: Some(0x8032),
-            type_signature: signature,
+            type_signature: signature.into(),
             local_id: Some(7),
         },
         FeatureInputComponentPathEntry {
             instance: Some(0x803b),
-            type_signature: signature,
+            type_signature: signature.into(),
             local_id: Some(1),
         },
     ];
@@ -96,7 +96,7 @@ fn component_path_type_identities_name_ordered_features() {
         type_signature: {
             let mut signature = [0; 12];
             signature[4..8].copy_from_slice(&99u32.to_le_bytes());
-            signature
+            signature.into()
         },
         local_id: Some(5),
     });
@@ -116,7 +116,7 @@ fn component_path_type_identities_name_ordered_features() {
         type_signature: {
             let mut signature = [0; 12];
             signature[4..8].copy_from_slice(&44u32.to_le_bytes());
-            signature
+            signature.into()
         },
         local_id: Some(9),
     });
@@ -143,7 +143,7 @@ fn component_path_type_identities_name_ordered_features() {
             type_signature: {
                 let mut signature = [0; 12];
                 signature[4..8].copy_from_slice(&source.to_le_bytes());
-                signature
+                signature.into()
             },
             local_id: Some(1),
         })

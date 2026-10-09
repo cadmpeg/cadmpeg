@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! General Rhino text, leader, and text-dot annotations.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
@@ -118,7 +120,7 @@ struct V5TextExtraRecord {
     parent_text_uuid: Option<String>,
     draw_mask: bool,
     mask_color_source: i32,
-    mask_color: [u8; 4],
+    mask_color: NativeBytes<[u8; 4]>,
     border_offset_factor: FiniteReal,
 }
 
@@ -311,7 +313,7 @@ fn parse_v5_text_extra(
             .transpose()?,
         draw_mask,
         mask_color_source,
-        mask_color,
+        mask_color: (mask_color).into(),
         border_offset_factor,
     })
 }

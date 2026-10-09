@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stable JSON columns for checked body-write frames.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::FeatureOperationBodyWrite;
 use crate::om::body_write::{BodyImageTag, BodyWriteFrame, BodyWriteIndex};
 use serde::{Deserialize, Serialize};
@@ -26,7 +28,7 @@ pub(super) struct BodyWriteWire {
     /// Partition-local Parasolid GROUP node owned by this feature.
     group_node: u32,
     /// Exact serialized GROUP-node token.
-    raw_group_node: Vec<u8>,
+    raw_group_node: NativeBytes<Vec<u8>>,
     /// Absolute offset of the GROUP-node token.
     group_node_source_offset: u64,
     /// Tagged body-image field discriminator.
@@ -41,7 +43,7 @@ pub(super) struct BodyWriteWire {
     )]
     body_image_data_block: Option<String>,
     /// Exact serialized body-image object token.
-    raw_body_image_object_index: Vec<u8>,
+    raw_body_image_object_index: NativeBytes<Vec<u8>>,
     /// Absolute offset of the body-image object token.
     body_image_object_index_source_offset: u64,
     /// Exact serialized frame byte length.
@@ -59,13 +61,13 @@ struct BodyWriteRef<'a> {
     ordinal: u32,
     body_identity: u8,
     group_node: u32,
-    raw_group_node: &'a [u8],
+    raw_group_node: NativeBytes<&'a [u8]>,
     group_node_source_offset: u64,
     endpoint_tag: u8,
     body_image_object_index: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     body_image_data_block: Option<&'a str>,
-    raw_body_image_object_index: &'a [u8],
+    raw_body_image_object_index: NativeBytes<&'a [u8]>,
     body_image_object_index_source_offset: u64,
     byte_len: u64,
     source_offset: u64,
@@ -82,12 +84,12 @@ impl Serialize for FeatureOperationBodyWrite {
             ordinal: self.ordinal,
             body_identity: self.frame.body_identity(),
             group_node: group.value(),
-            raw_group_node: group.raw(),
+            raw_group_node: (group.raw()).into(),
             group_node_source_offset: self.frame.group_node_offset(),
             endpoint_tag: self.frame.endpoint_tag().code(),
             body_image_object_index: image.value(),
             body_image_data_block: self.body_image_data_block.as_deref(),
-            raw_body_image_object_index: image.raw(),
+            raw_body_image_object_index: (image.raw()).into(),
             body_image_object_index_source_offset: self.frame.body_image_offset(),
             byte_len: u64::from(self.frame.byte_len()),
             source_offset: self.frame.offset(),
@@ -106,12 +108,12 @@ impl From<FeatureOperationBodyWrite> for BodyWriteWire {
             ordinal: value.ordinal,
             body_identity: value.frame.body_identity(),
             group_node: value.frame.group_node().value(),
-            raw_group_node: value.frame.group_node().raw().to_vec(),
+            raw_group_node: (value.frame.group_node().raw().to_vec()).into(),
             group_node_source_offset: value.frame.group_node_offset(),
             endpoint_tag: value.frame.endpoint_tag().code(),
             body_image_object_index: value.frame.body_image().value(),
             body_image_data_block: value.body_image_data_block,
-            raw_body_image_object_index: value.frame.body_image().raw().to_vec(),
+            raw_body_image_object_index: (value.frame.body_image().raw().to_vec()).into(),
             body_image_object_index_source_offset: value.frame.body_image_offset(),
             byte_len: u64::from(value.frame.byte_len()),
             source_offset: value.frame.offset(),
@@ -164,7 +166,7 @@ mod tests {
     use super::super::FeatureOperationBodyWrite;
     use super::BodyWriteWire;
 
-    const WIRE: &str = r#"{"id":"write","operation_record":"record","ordinal":0,"body_identity":255,"group_node":0,"raw_group_node":[160,0,0],"group_node_source_offset":103,"endpoint_tag":21,"body_image_object_index":0,"body_image_data_block":"block","raw_body_image_object_index":[241,0,0],"body_image_object_index_source_offset":111,"byte_len":15,"source_offset":100}"#;
+    const WIRE: &str = r#"{"id":"write","operation_record":"record","ordinal":0,"body_identity":255,"group_node":0,"raw_group_node":"a00000","group_node_source_offset":103,"endpoint_tag":21,"body_image_object_index":0,"body_image_data_block":"block","raw_body_image_object_index":"f10000","body_image_object_index_source_offset":111,"byte_len":15,"source_offset":100}"#;
 
     #[test]
     fn body_write_borrowed_wire_matches_owned_bytes() {
@@ -193,10 +195,10 @@ mod tests {
         assert_eq!(serde_json::to_string(&write).unwrap(), WIRE);
         for (field, value) in [
             ("group_node", serde_json::json!(1)),
-            ("raw_group_node", serde_json::json!([128, 0])),
+            ("raw_group_node", serde_json::json!("8000")),
             ("endpoint_tag", serde_json::json!(17)),
             ("body_image_object_index", serde_json::json!(1)),
-            ("raw_body_image_object_index", serde_json::json!([255])),
+            ("raw_body_image_object_index", serde_json::json!("ff")),
             ("group_node_source_offset", serde_json::json!(104)),
             (
                 "body_image_object_index_source_offset",

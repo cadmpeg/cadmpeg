@@ -121,7 +121,7 @@ fn an_unreadable_literal_retains_the_other_fields_and_refuses_required_geometry(
     let native = result.ir().native.namespace("iges").unwrap();
     let entity = &native.arenas()["entities"][0];
     assert!(!entity.fields()["parameter_bytes"]
-        .as_array()
+        .as_str()
         .unwrap()
         .is_empty());
     assert_eq!(entity.fields()["parameters"].as_array().unwrap().len(), 5);
@@ -192,7 +192,7 @@ fn a_non_null_entity_declaring_zero_cards_gets_a_zero_card_quarantine_record() {
     assert_eq!(quarantined[0].id(), "iges:quarantine:parameter#3");
     let fields = quarantined[0].fields();
     assert_eq!(fields["cards"], 0);
-    assert!(fields["bytes"].as_array().unwrap().is_empty());
+    assert!(fields["bytes"].as_str().unwrap().is_empty());
     assert_eq!(fields["defect"], "declared-count-zero");
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(

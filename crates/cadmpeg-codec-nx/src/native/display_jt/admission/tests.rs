@@ -20,36 +20,36 @@ fn graph_wire() -> Value {
             "id": "nx:display-jt:document#0", "index_row": "nx:display-jt:row#0",
             "version_field": format!("{:<80}", "Version 9.5"),
             "format_major": 9, "format_minor": 5, "byte_order": 0,
-            "toc_offset": 105, "lsg_segment_id": vec![0; 16],
+            "toc_offset": 105, "lsg_segment_id": cadmpeg_ir::native::bytes::NativeBytes::from(vec![0; 16]),
             "toc_entries": [
-                {"id": "nx:display-jt:toc-entry#0", "ordinal": 0, "segment_id": vec![7; 16],
-                 "segment_offset": 200, "segment_byte_len": 64, "attributes": [0, 0, 0, 7], "source_offset": 209},
-                {"id": "nx:display-jt:toc-entry#1", "ordinal": 1, "segment_id": vec![31; 16],
-                 "segment_offset": 264, "segment_byte_len": 64, "attributes": [0, 0, 0, 31], "source_offset": 237}
+                {"id": "nx:display-jt:toc-entry#0", "ordinal": 0, "segment_id": cadmpeg_ir::native::bytes::NativeBytes::from(vec![7; 16]),
+                 "segment_offset": 200, "segment_byte_len": 64, "attributes": "00000007", "source_offset": 209},
+                {"id": "nx:display-jt:toc-entry#1", "ordinal": 1, "segment_id": cadmpeg_ir::native::bytes::NativeBytes::from(vec![31; 16]),
+                 "segment_offset": 264, "segment_byte_len": 64, "attributes": "0000001f", "source_offset": 237}
             ],
             "physical_byte_len": 328, "source_offset": 100
         }],
         "display_jt_segments": [
             {"id": "nx:display-jt:segment#0", "document": "nx:display-jt:document#0", "toc_entry": "nx:display-jt:toc-entry#0",
-             "segment_id": vec![7; 16], "segment_type": 7, "segment_byte_len": 64, "payload_sha256": cadmpeg_ir::hash::sha256_hex(b"payload"), "compression": null, "source_offset": 300},
+             "segment_id": cadmpeg_ir::native::bytes::NativeBytes::from(vec![7; 16]), "segment_type": 7, "segment_byte_len": 64, "payload_sha256": cadmpeg_ir::hash::sha256_hex(b"payload"), "compression": null, "source_offset": 300},
             {"id": "nx:display-jt:segment#1", "document": "nx:display-jt:document#0", "toc_entry": "nx:display-jt:toc-entry#1",
-             "segment_id": vec![31; 16], "segment_type": 31, "segment_byte_len": 64, "payload_sha256": cadmpeg_ir::hash::sha256_hex(b"payload"),
+             "segment_id": cadmpeg_ir::native::bytes::NativeBytes::from(vec![31; 16]), "segment_type": 31, "segment_byte_len": 64, "payload_sha256": cadmpeg_ir::hash::sha256_hex(b"payload"),
              "compression": {"flag": 2, "compressed_data_byte_len": 32, "algorithm": 2, "compressed_byte_len": 31, "inflated_sha256": cadmpeg_ir::hash::sha256_hex(b"inflated")}, "source_offset": 364}
         ],
         "display_jt_shape_lod_elements": [{
             "id": "nx:display-jt:shape-element#0", "segment": "nx:display-jt:segment#0", "ordinal": 0,
-            "object_type_id": vec![0; 16], "object_base_type": 4, "object_id": 1,
+            "object_type_id": cadmpeg_ir::native::bytes::NativeBytes::from(vec![0; 16]), "object_base_type": 4, "object_id": 1,
             "body_byte_len": 1, "body_sha256": cadmpeg_ir::hash::sha256_hex(b"body"), "source_offset": 324
         }],
         "display_jt_compressed_elements": [{
             "id": "nx:display-jt:compressed-element#0", "segment": "nx:display-jt:segment#1", "segment_type": 31,
-            "ordinal": 0, "object_type_id": vec![0; 16], "object_base_type": 1, "object_id": 2,
+            "ordinal": 0, "object_type_id": cadmpeg_ir::native::bytes::NativeBytes::from(vec![0; 16]), "object_base_type": 1, "object_id": 2,
             "body_byte_len": 1, "body_sha256": cadmpeg_ir::hash::sha256_hex(b"body"), "inflated_offset": 0, "source_offset": 388
         }],
         "display_jt_compressed_element_sequences": [{
             "id": "nx:display-jt:sequence#0", "segment": "nx:display-jt:segment#1", "segment_type": 31,
             "elements": ["nx:display-jt:compressed-element#0"], "framed_byte_len": 46,
-            "tail": [], "tail_sha256": cadmpeg_ir::hash::sha256_hex(&[]), "source_offset": 388
+            "tail": "", "tail_sha256": cadmpeg_ir::hash::sha256_hex(&[]), "source_offset": 388
         }]
     })
 }
@@ -289,7 +289,7 @@ fn aggregate_admission_rejects_missing_owners_and_repeated_field_disagreement() 
         ),
         (
             "/display_jt_segments/0/segment_id",
-            json!(vec![9; 16]),
+            json!(cadmpeg_ir::native::bytes::NativeBytes::from(vec![9; 16])),
             "segment_id",
         ),
         (

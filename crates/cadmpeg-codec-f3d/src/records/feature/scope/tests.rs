@@ -83,7 +83,7 @@ fn parameter_scope_nested_vertex_recipe_streams_without_cloning() {
         "recipe_record_byte_offset": 30,
         "recipe_id": "f3d:design:recipe#1",
         "recipe_prefix_offset": 41,
-        "recipe_prefix_bytes": "AP8=",
+        "recipe_prefix_bytes": "00ff",
         "recipe_references": [],
         "recipe_program_offset": 43,
         "recipe_program": [0],
@@ -301,7 +301,7 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
         "record_index": 2, "byte_offset": 10, "class_tag": "369", "paired_byte_offset": 20,
         "paired_class_tag": "261", "recipe_record_index": 5, "recipe_record_byte_offset": 30,
         "recipe_id": "f3d:design:recipe#1", "recipe_prefix_offset": 41,
-        "recipe_prefix_bytes": "AP8=", "recipe_references": [reference],
+        "recipe_prefix_bytes": "00ff", "recipe_references": [reference],
         "recipe_program_offset": 43, "recipe_program": [0], "next_record_index": 7, "next_byte_offset": 50
     })).unwrap();
     let plane = DesignWorkPlaneConstruction::try_new(

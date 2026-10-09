@@ -161,7 +161,7 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
                 span: 0..0,
             },
             Token {
-                value: TokenValue::String(b"1".to_vec()),
+                value: TokenValue::String(b"1".to_vec().into()),
                 span: 0..0,
             },
             Token {
@@ -217,7 +217,7 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
             span: 0..0,
         },
         Token {
-            value: TokenValue::String(b"1".to_vec()),
+            value: TokenValue::String(b"1".to_vec().into()),
             span: 0..0,
         },
         Token {
@@ -359,7 +359,7 @@ fn type406_form30_complete_counted_span_keeps_boundary_with_wrong_note_type() {
         TokenValue::Integer(0),
         TokenValue::Integer(12),
         TokenValue::Integer(1),
-        TokenValue::String(b"bad".to_vec()),
+        TokenValue::String(b"bad".to_vec().into()),
         TokenValue::Integer(1),
         TokenValue::Integer(1),
         TokenValue::Integer(1),
@@ -425,7 +425,7 @@ fn type406_form30_malformed_np_or_note_count_does_not_enable_generic_recovery() 
         ]),
         vec![
             integers(&[406, 14, 0, 1, 1, 3, 0, 0, 1, 0, 0, 0, 12]),
-            vec![TokenValue::String(b"1".to_vec())],
+            vec![TokenValue::String(b"1".to_vec().into())],
             integers(&[0, 1, 5]),
         ]
         .into_iter()
@@ -583,7 +583,7 @@ fn type406_form11_complete_nested_span_keeps_boundary_with_invalid_value() {
         TokenValue::Integer(5),
         TokenValue::Integer(1),
         TokenValue::Integer(0),
-        TokenValue::String(b"bad".to_vec()),
+        TokenValue::String(b"bad".to_vec().into()),
         TokenValue::Integer(1),
         TokenValue::Integer(1),
         TokenValue::Integer(1),
@@ -673,7 +673,7 @@ fn type406_form11_malformed_nested_counts_do_not_enable_generic_recovery() {
             TokenValue::Integer(7),
             TokenValue::Integer(5),
             TokenValue::Integer(1),
-            TokenValue::String(b"1".to_vec()),
+            TokenValue::String(b"1".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(33),
             TokenValue::Integer(46),
@@ -715,7 +715,7 @@ fn type406_form11_malformed_nested_counts_do_not_enable_generic_recovery() {
             TokenValue::Integer(1),
             TokenValue::Integer(1),
             TokenValue::Integer(1),
-            TokenValue::String(b"2".to_vec()),
+            TokenValue::String(b"2".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(1),
             TokenValue::Integer(1),
@@ -793,7 +793,7 @@ fn type406_form12_entity_table_boundary_follows_name_count() {
             vec![
                 TokenValue::Integer(406),
                 TokenValue::Integer(1),
-                TokenValue::String(b"BASE.IGS".to_vec()),
+                TokenValue::String(b"BASE.IGS".to_vec().into()),
                 TokenValue::Integer(1),
                 TokenValue::Integer(1),
                 TokenValue::Integer(1),
@@ -805,8 +805,8 @@ fn type406_form12_entity_table_boundary_follows_name_count() {
             vec![
                 TokenValue::Integer(406),
                 TokenValue::Integer(2),
-                TokenValue::String(b"BASE.IGS".to_vec()),
-                TokenValue::String(b"DETAIL.IGS".to_vec()),
+                TokenValue::String(b"BASE.IGS".to_vec().into()),
+                TokenValue::String(b"DETAIL.IGS".to_vec().into()),
                 TokenValue::Integer(1),
                 TokenValue::Integer(1),
                 TokenValue::Integer(1),
@@ -859,7 +859,7 @@ fn type406_form12_table_boundary_beats_generic_alternatives() {
     let tokens = [
         TokenValue::Integer(406),
         TokenValue::Integer(2),
-        TokenValue::String(b"BASE.IGS".to_vec()),
+        TokenValue::String(b"BASE.IGS".to_vec().into()),
         TokenValue::Integer(2),
         TokenValue::Integer(1),
         TokenValue::Integer(1),
@@ -936,7 +936,7 @@ fn type406_form12_malformed_count_or_name_list_do_not_enable_generic_recovery() 
         ],
         vec![
             TokenValue::Integer(406),
-            TokenValue::String(b"1".to_vec()),
+            TokenValue::String(b"1".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(1),
             TokenValue::Integer(0),
@@ -944,13 +944,13 @@ fn type406_form12_malformed_count_or_name_list_do_not_enable_generic_recovery() 
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(2),
-            TokenValue::String(b"BASE.IGS".to_vec()),
+            TokenValue::String(b"BASE.IGS".to_vec().into()),
         ],
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(1),
-            TokenValue::String(b"BASE.IGS".to_vec()),
-            TokenValue::String(b"EXTRA.IGS".to_vec()),
+            TokenValue::String(b"BASE.IGS".to_vec().into()),
+            TokenValue::String(b"EXTRA.IGS".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(1),
             TokenValue::Integer(0),
@@ -1006,7 +1006,7 @@ fn type406_form27_entity_table_boundary_follows_np_and_value_pair_count() {
             vec![
                 TokenValue::Integer(406),
                 TokenValue::Integer(4),
-                TokenValue::String(b"PROPTEST".to_vec()),
+                TokenValue::String(b"PROPTEST".to_vec().into()),
                 TokenValue::Integer(1),
                 TokenValue::Integer(1),
                 TokenValue::Integer(17),
@@ -1021,12 +1021,12 @@ fn type406_form27_entity_table_boundary_follows_np_and_value_pair_count() {
             vec![
                 TokenValue::Integer(406),
                 TokenValue::Integer(6),
-                TokenValue::String(b"PROPTEST".to_vec()),
+                TokenValue::String(b"PROPTEST".to_vec().into()),
                 TokenValue::Integer(2),
                 TokenValue::Integer(1),
                 TokenValue::Integer(17),
                 TokenValue::Integer(3),
-                TokenValue::String(b"HELLO".to_vec()),
+                TokenValue::String(b"HELLO".to_vec().into()),
                 TokenValue::Integer(1),
                 TokenValue::Integer(1),
                 TokenValue::Integer(1),

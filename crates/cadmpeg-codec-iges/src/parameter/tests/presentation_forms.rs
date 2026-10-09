@@ -18,8 +18,8 @@ fn type406_form32_table_boundary_precedes_generic_candidate() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(3),
-            TokenValue::String(b"JANE".to_vec()),
-            TokenValue::String(b"ENG".to_vec()),
+            TokenValue::String(b"JANE".to_vec().into()),
+            TokenValue::String(b"ENG".to_vec().into()),
             TokenValue::Integer(4),
             TokenValue::Integer(3),
             TokenValue::Integer(3),
@@ -68,9 +68,9 @@ fn type406_form32_malformed_np_or_span_does_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(406),
             TokenValue::real(3.0),
-            TokenValue::String(b"JANE".to_vec()),
-            TokenValue::String(b"ENG".to_vec()),
-            TokenValue::String(b"20260714.123456".to_vec()),
+            TokenValue::String(b"JANE".to_vec().into()),
+            TokenValue::String(b"ENG".to_vec().into()),
+            TokenValue::String(b"20260714.123456".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -78,9 +78,9 @@ fn type406_form32_malformed_np_or_span_does_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Omitted,
-            TokenValue::String(b"JANE".to_vec()),
-            TokenValue::String(b"ENG".to_vec()),
-            TokenValue::String(b"20260714.123456".to_vec()),
+            TokenValue::String(b"JANE".to_vec().into()),
+            TokenValue::String(b"ENG".to_vec().into()),
+            TokenValue::String(b"20260714.123456".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -88,9 +88,9 @@ fn type406_form32_malformed_np_or_span_does_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(0),
-            TokenValue::String(b"JANE".to_vec()),
-            TokenValue::String(b"ENG".to_vec()),
-            TokenValue::String(b"20260714.123456".to_vec()),
+            TokenValue::String(b"JANE".to_vec().into()),
+            TokenValue::String(b"ENG".to_vec().into()),
+            TokenValue::String(b"20260714.123456".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -98,9 +98,9 @@ fn type406_form32_malformed_np_or_span_does_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(2),
-            TokenValue::String(b"JANE".to_vec()),
-            TokenValue::String(b"ENG".to_vec()),
-            TokenValue::String(b"20260714.123456".to_vec()),
+            TokenValue::String(b"JANE".to_vec().into()),
+            TokenValue::String(b"ENG".to_vec().into()),
+            TokenValue::String(b"20260714.123456".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -108,8 +108,8 @@ fn type406_form32_malformed_np_or_span_does_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(3),
-            TokenValue::String(b"JANE".to_vec()),
-            TokenValue::String(b"ENG".to_vec()),
+            TokenValue::String(b"JANE".to_vec().into()),
+            TokenValue::String(b"ENG".to_vec().into()),
         ],
     ] {
         let record = token_parameter_record(1, values);
@@ -148,7 +148,7 @@ fn type406_form33_entity_table_boundary_follows_fixed_values() {
             TokenValue::Integer(406),
             TokenValue::Integer(2),
             TokenValue::Integer(2),
-            TokenValue::String(b"C".to_vec()),
+            TokenValue::String(b"C".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -156,8 +156,8 @@ fn type406_form33_entity_table_boundary_follows_fixed_values() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(2),
-            TokenValue::String(b"NO".to_vec()),
-            TokenValue::String(b"C".to_vec()),
+            TokenValue::String(b"NO".to_vec().into()),
+            TokenValue::String(b"C".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -218,7 +218,7 @@ fn type406_form33_table_boundary_precedes_generic_candidate() {
             TokenValue::Integer(406),
             TokenValue::Integer(2),
             TokenValue::Integer(2),
-            TokenValue::String(b"C".to_vec()),
+            TokenValue::String(b"C".to_vec().into()),
             TokenValue::Integer(5),
             TokenValue::Integer(3),
             TokenValue::Integer(3),
@@ -269,7 +269,7 @@ fn type406_form33_malformed_np_or_span_does_not_enable_generic_recovery() {
             TokenValue::Integer(406),
             TokenValue::real(2.0),
             TokenValue::Integer(2),
-            TokenValue::String(b"C".to_vec()),
+            TokenValue::String(b"C".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -278,7 +278,7 @@ fn type406_form33_malformed_np_or_span_does_not_enable_generic_recovery() {
             TokenValue::Integer(406),
             TokenValue::Omitted,
             TokenValue::Integer(2),
-            TokenValue::String(b"C".to_vec()),
+            TokenValue::String(b"C".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -287,7 +287,7 @@ fn type406_form33_malformed_np_or_span_does_not_enable_generic_recovery() {
             TokenValue::Integer(406),
             TokenValue::Integer(0),
             TokenValue::Integer(2),
-            TokenValue::String(b"C".to_vec()),
+            TokenValue::String(b"C".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -296,7 +296,7 @@ fn type406_form33_malformed_np_or_span_does_not_enable_generic_recovery() {
             TokenValue::Integer(406),
             TokenValue::Integer(-1),
             TokenValue::Integer(2),
-            TokenValue::String(b"C".to_vec()),
+            TokenValue::String(b"C".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -305,7 +305,7 @@ fn type406_form33_malformed_np_or_span_does_not_enable_generic_recovery() {
             TokenValue::Integer(406),
             TokenValue::Integer(3),
             TokenValue::Integer(2),
-            TokenValue::String(b"C".to_vec()),
+            TokenValue::String(b"C".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -319,7 +319,7 @@ fn type406_form33_malformed_np_or_span_does_not_enable_generic_recovery() {
             TokenValue::Integer(406),
             TokenValue::Integer(2),
             TokenValue::Integer(2),
-            TokenValue::String(b"C".to_vec()),
+            TokenValue::String(b"C".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
         ],
@@ -470,7 +470,7 @@ fn type406_form3_entity_table_boundary_follows_fixed_values() {
             TokenValue::Integer(406),
             TokenValue::Integer(2),
             TokenValue::Integer(17),
-            TokenValue::String(b"POWER".to_vec()),
+            TokenValue::String(b"POWER".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -539,7 +539,7 @@ fn type406_form3_malformed_np_or_span_does_not_enable_generic_recovery() {
             TokenValue::Integer(406),
             TokenValue::Integer(1),
             TokenValue::Integer(17),
-            TokenValue::String(b"POWER".to_vec()),
+            TokenValue::String(b"POWER".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -592,7 +592,10 @@ fn type406_form8_entity_table_boundary_follows_fixed_values() {
     source.form = 8;
     let association = directory_target(3, 212);
     let directory = BTreeMap::from([(1, &source), (3, &association)]);
-    for pin_number in [TokenValue::String(b"PA7".to_vec()), TokenValue::Integer(17)] {
+    for pin_number in [
+        TokenValue::String(b"PA7".to_vec().into()),
+        TokenValue::Integer(17),
+    ] {
         let record = token_parameter_record(
             1,
             vec![
@@ -667,7 +670,7 @@ fn type406_form8_malformed_np_or_span_does_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(2),
-            TokenValue::String(b"PA7".to_vec()),
+            TokenValue::String(b"PA7".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -709,7 +712,7 @@ fn type406_form9_entity_table_boundary_follows_fixed_values() {
     let association = directory_target(3, 212);
     let directory = BTreeMap::from([(1, &source), (3, &association)]);
     for first_number in [
-        TokenValue::String(b"GENERIC".to_vec()),
+        TokenValue::String(b"GENERIC".to_vec().into()),
         TokenValue::Integer(1),
     ] {
         let record = token_parameter_record(
@@ -718,9 +721,9 @@ fn type406_form9_entity_table_boundary_follows_fixed_values() {
                 TokenValue::Integer(406),
                 TokenValue::Integer(4),
                 first_number,
-                TokenValue::String(b"MIL123".to_vec()),
-                TokenValue::String(b"VEND42".to_vec()),
-                TokenValue::String(b"INT99".to_vec()),
+                TokenValue::String(b"MIL123".to_vec().into()),
+                TokenValue::String(b"VEND42".to_vec().into()),
+                TokenValue::String(b"INT99".to_vec().into()),
                 TokenValue::Integer(1),
                 TokenValue::Integer(3),
                 TokenValue::Integer(0),
@@ -759,9 +762,9 @@ fn type406_form9_table_boundary_precedes_generic_candidate() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(4),
-            TokenValue::String(b"GENERIC".to_vec()),
-            TokenValue::String(b"MIL123".to_vec()),
-            TokenValue::String(b"VEND42".to_vec()),
+            TokenValue::String(b"GENERIC".to_vec().into()),
+            TokenValue::String(b"MIL123".to_vec().into()),
+            TokenValue::String(b"VEND42".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -801,9 +804,9 @@ fn type406_form9_malformed_np_or_span_does_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(3),
-            TokenValue::String(b"GENERIC".to_vec()),
-            TokenValue::String(b"MIL123".to_vec()),
-            TokenValue::String(b"VEND42".to_vec()),
+            TokenValue::String(b"GENERIC".to_vec().into()),
+            TokenValue::String(b"MIL123".to_vec().into()),
+            TokenValue::String(b"VEND42".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -811,9 +814,9 @@ fn type406_form9_malformed_np_or_span_does_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(4),
-            TokenValue::String(b"GENERIC".to_vec()),
-            TokenValue::String(b"MIL123".to_vec()),
-            TokenValue::String(b"VEND42".to_vec()),
+            TokenValue::String(b"GENERIC".to_vec().into()),
+            TokenValue::String(b"MIL123".to_vec().into()),
+            TokenValue::String(b"VEND42".to_vec().into()),
         ],
     ] {
         let generic_count = crate::test_support::with_service_context(&[], |ctx| {
@@ -853,7 +856,7 @@ fn type406_form10_entity_table_boundary_follows_fixed_values() {
     for first_value in [
         TokenValue::Integer(1),
         TokenValue::Integer(2),
-        TokenValue::String(b"1".to_vec()),
+        TokenValue::String(b"1".to_vec().into()),
     ] {
         let record = token_parameter_record(
             1,
@@ -1008,7 +1011,7 @@ fn type406_form13_entity_table_boundary_follows_conditional_values() {
                 TokenValue::Integer(406),
                 TokenValue::Integer(2),
                 TokenValue::real(2.5),
-                TokenValue::String(b"AWG".to_vec()),
+                TokenValue::String(b"AWG".to_vec().into()),
                 TokenValue::Integer(1),
                 TokenValue::Integer(3),
                 TokenValue::Integer(0),
@@ -1021,8 +1024,8 @@ fn type406_form13_entity_table_boundary_follows_conditional_values() {
                 TokenValue::Integer(406),
                 TokenValue::Integer(3),
                 TokenValue::real(2.5),
-                TokenValue::String(b"AWG".to_vec()),
-                TokenValue::String(b"ANSI123".to_vec()),
+                TokenValue::String(b"AWG".to_vec().into()),
+                TokenValue::String(b"ANSI123".to_vec().into()),
                 TokenValue::Integer(1),
                 TokenValue::Integer(3),
                 TokenValue::Integer(0),
@@ -1034,8 +1037,8 @@ fn type406_form13_entity_table_boundary_follows_conditional_values() {
             vec![
                 TokenValue::Integer(406),
                 TokenValue::Integer(2),
-                TokenValue::String(b"2HNO".to_vec()),
-                TokenValue::String(b"AWG".to_vec()),
+                TokenValue::String(b"2HNO".to_vec().into()),
+                TokenValue::String(b"AWG".to_vec().into()),
                 TokenValue::Integer(1),
                 TokenValue::Integer(3),
                 TokenValue::Integer(0),
@@ -1088,7 +1091,7 @@ fn type406_form13_table_boundary_precedes_generic_candidate() {
             TokenValue::Integer(406),
             TokenValue::Integer(3),
             TokenValue::real(2.5),
-            TokenValue::String(b"AWG".to_vec()),
+            TokenValue::String(b"AWG".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -1143,7 +1146,7 @@ fn type406_form13_malformed_np_or_span_does_not_enable_generic_recovery() {
             TokenValue::Integer(406),
             TokenValue::Integer(4),
             TokenValue::real(2.5),
-            TokenValue::String(b"AWG".to_vec()),
+            TokenValue::String(b"AWG".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -1152,7 +1155,7 @@ fn type406_form13_malformed_np_or_span_does_not_enable_generic_recovery() {
             TokenValue::Integer(406),
             TokenValue::Integer(3),
             TokenValue::real(2.5),
-            TokenValue::String(b"AWG".to_vec()),
+            TokenValue::String(b"AWG".to_vec().into()),
         ],
     ] {
         let generic_count = crate::test_support::with_service_context(&[], |ctx| {

@@ -227,7 +227,7 @@ fn cosmetic_thread_retains_unique_cylinder_marker_without_component_path() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -313,7 +313,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
@@ -449,7 +449,7 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             id: "component-edge".into(),
             parent: "lane".into(),
@@ -538,7 +538,7 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![
             FeatureInputClass {
                 id: "component-edge".into(),
@@ -623,7 +623,7 @@ fn cosmetic_thread_reads_repeated_component_edge_reference_through_edge_ref_chil
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),

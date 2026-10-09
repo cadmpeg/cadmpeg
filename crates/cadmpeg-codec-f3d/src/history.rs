@@ -9374,7 +9374,7 @@ fn decode_history_records(
                         name: record.name,
                         entity_references,
                     },
-                    raw_bytes,
+                    raw_bytes: raw_bytes.into(),
                 });
             }
             Ok(decoded)
@@ -9403,7 +9403,7 @@ fn decode_history_records(
                 revision_id: None,
                 byte_offset: u64_from_index(start),
                 framing: crate::history_records::AsmHistoryRecordFraming::Opaque { error },
-                raw_bytes,
+                raw_bytes: raw_bytes.into(),
             });
             Ok(decoded)
         }

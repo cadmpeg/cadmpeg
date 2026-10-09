@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Wire adapters for closed scalar-pair framing.
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::{
     Deserialize, FeatureDatumCsysPayloadFixedPair, FeatureSketchPayloadFixedPair,
     FeatureSketchPayloadMixedPair, PairPosition, Serialize, SketchMixedScalars, SketchScaledAtom,
@@ -17,7 +19,7 @@ struct FixedPairRef<'a, T: Serialize> {
     ordinal: u32,
     #[serde(flatten)]
     values: T,
-    discriminator: &'a [u8],
+    discriminator: NativeBytes<&'a [u8]>,
     payload_offset: u64,
     value_payload_offsets: [u64; 2],
     source_offset: u64,
@@ -27,7 +29,7 @@ struct FixedPairRef<'a, T: Serialize> {
 #[derive(Serialize)]
 struct FixedValues {
     values: [f64; 2],
-    raw_values: [[u8; 7]; 2],
+    raw_values: [NativeBytes<[u8; 7]>; 2],
 }
 
 impl Serialize for FeatureDatumCsysPayloadFixedPair {
@@ -40,9 +42,9 @@ impl Serialize for FeatureDatumCsysPayloadFixedPair {
             ordinal: self.ordinal,
             values: FixedValues {
                 values: self.values.map(Q155::value),
-                raw_values: self.values.map(Q155::raw),
+                raw_values: (self.values.map(Q155::raw)).map(Into::into),
             },
-            discriminator: self.position.discriminator(),
+            discriminator: (self.position.discriminator()).into(),
             payload_offset: self.position.offset(),
             value_payload_offsets: self.position.value_offsets(),
             source_offset: self.source_offset,
@@ -62,9 +64,9 @@ impl Serialize for FeatureSketchPayloadFixedPair {
             ordinal: self.ordinal,
             values: FixedValues {
                 values: self.values.map(SketchScaledAtom::value),
-                raw_values: self.values.map(SketchScaledAtom::raw),
+                raw_values: (self.values.map(SketchScaledAtom::raw)).map(Into::into),
             },
-            discriminator: self.position.discriminator(),
+            discriminator: (self.position.discriminator()).into(),
             payload_offset: self.position.offset(),
             value_payload_offsets: self.position.value_offsets(),
             source_offset: self.source_offset,
@@ -83,7 +85,7 @@ impl Serialize for FeatureSketchPayloadMixedPair {
             construction_payload: Some(&self.construction_payload),
             ordinal: self.ordinal,
             values: &self.scalars,
-            discriminator: self.position.discriminator(),
+            discriminator: (self.position.discriminator()).into(),
             payload_offset: self.position.offset(),
             value_payload_offsets: self.position.value_offsets(),
             source_offset: self.source_offset,
@@ -107,7 +109,7 @@ pub(super) struct FeatureDatumCsysPayloadFixedPairWire {
     #[serde(flatten, with = "crate::om::fixed::pair_wire")]
     values: [Q155; 2],
     /// Exact discriminator selecting the pair branch.
-    discriminator: Vec<u8>,
+    discriminator: NativeBytes<Vec<u8>>,
     /// Payload-relative offset of the discriminator.
     payload_offset: u64,
     /// Payload-relative offsets of the two `30` atom markers.
@@ -148,7 +150,7 @@ impl From<FeatureDatumCsysPayloadFixedPair> for FeatureDatumCsysPayloadFixedPair
             values: value.values,
             source_offset: value.source_offset,
             value_source_offsets: value.value_source_offsets,
-            discriminator: value.position.discriminator().to_vec(),
+            discriminator: (value.position.discriminator().to_vec()).into(),
             payload_offset: value.position.offset(),
             value_payload_offsets: value.position.value_offsets(),
         }
@@ -169,7 +171,7 @@ pub(super) struct FeatureSketchPayloadFixedPairWire {
     #[serde(flatten, with = "crate::om::sketch_scalar::pair_wire")]
     values: [SketchScaledAtom; 2],
     /// Exact discriminator and branch prefix selecting the pair layout.
-    discriminator: Vec<u8>,
+    discriminator: NativeBytes<Vec<u8>>,
     /// Payload-relative offset of the discriminator.
     payload_offset: u64,
     /// Payload-relative offsets of the two atom markers.
@@ -210,7 +212,7 @@ impl From<FeatureSketchPayloadFixedPair> for FeatureSketchPayloadFixedPairWire {
             values: value.values,
             source_offset: value.source_offset,
             value_source_offsets: value.value_source_offsets,
-            discriminator: value.position.discriminator().to_vec(),
+            discriminator: (value.position.discriminator().to_vec()).into(),
             payload_offset: value.position.offset(),
             value_payload_offsets: value.position.value_offsets(),
         }
@@ -231,7 +233,7 @@ pub(super) struct FeatureSketchPayloadMixedPairWire {
     #[serde(flatten)]
     scalars: SketchMixedScalars,
     /// Exact discriminator selecting the mixed pair layout.
-    discriminator: Vec<u8>,
+    discriminator: NativeBytes<Vec<u8>>,
     /// Payload-relative offset of the discriminator.
     payload_offset: u64,
     /// Payload-relative offsets of the two atom markers.
@@ -272,7 +274,7 @@ impl From<FeatureSketchPayloadMixedPair> for FeatureSketchPayloadMixedPairWire {
             scalars: value.scalars,
             source_offset: value.source_offset,
             value_source_offsets: value.value_source_offsets,
-            discriminator: value.position.discriminator().to_vec(),
+            discriminator: (value.position.discriminator().to_vec()).into(),
             payload_offset: value.position.offset(),
             value_payload_offsets: value.position.value_offsets(),
         }
@@ -339,7 +341,7 @@ mod tests {
 
     #[test]
     fn sketch_mixed_pair_borrowed_wire_matches_owned_bytes_and_retained_limit() {
-        let scalars = serde_json::from_str(r#"{"fixed_value":0.5,"binary32_value":0.5,"fixed_raw_value":[0,0,0,0,0,0,0],"binary32_raw_value":[79,0,0,0]}"#).unwrap();
+        let scalars = serde_json::from_str(r#"{"fixed_value":0.5,"binary32_value":0.5,"fixed_raw_value":"00000000000000","binary32_raw_value":"4f000000"}"#).unwrap();
         let pair = FeatureSketchPayloadMixedPair {
             id: "nx:feature:sketch-mixed-pair#0".into(),
             operation_label: "operation".into(),
@@ -378,7 +380,7 @@ mod tests {
             pair
         );
         for (field, invalid) in [
-            ("discriminator", serde_json::json!([4])),
+            ("discriminator", serde_json::json!("04")),
             ("value_payload_offsets", serde_json::json!([28, 38])),
             ("payload_offset", serde_json::json!(u64::MAX)),
         ] {

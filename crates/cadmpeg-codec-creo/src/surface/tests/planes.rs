@@ -279,7 +279,7 @@ fn placed_outline_refuses_matrix_frame_id_node() {
 fn unique_positional_frame_fixture() -> (SurfaceParameterRecord, SurfaceRow) {
     let slot = |value, offset| SurfaceParameterScalar {
         value: Some(value),
-        raw: vec![u8::try_from(offset).expect("fixture value fits u8")],
+        raw: vec![u8::try_from(offset).expect("fixture value fits u8")].into(),
         offset,
     };
     let record = SurfaceParameterRecord {
@@ -375,7 +375,7 @@ fn positional_frame_refuses_output_vector() {
 fn derives_plane_from_auxiliary_corner_frame() {
     let slot = |value, offset, length| SurfaceParameterScalar {
         value: Some(value),
-        raw: vec![0; length],
+        raw: vec![0; length].into(),
         offset,
     };
     let record = SurfaceParameterRecord {
@@ -384,11 +384,11 @@ fn derives_plane_from_auxiliary_corner_frame() {
         scalar_tokens: Vec::new(),
         opaque_spans: vec![
             SurfaceParameterOpaqueSpan {
-                raw: vec![0; 3],
+                raw: vec![0; 3].into(),
                 offset: 0,
             },
             SurfaceParameterOpaqueSpan {
-                raw: vec![0; 8],
+                raw: vec![0; 8].into(),
                 offset: 10,
             },
         ],
@@ -443,19 +443,19 @@ fn derives_plane_from_auxiliary_corner_frame() {
     trailed.body[63..].copy_from_slice(&[0xf7, 0x0c]);
     trailed.opaque_spans = vec![
         SurfaceParameterOpaqueSpan {
-            raw: vec![0],
+            raw: vec![0].into(),
             offset: 0,
         },
         SurfaceParameterOpaqueSpan {
-            raw: vec![0; 4],
+            raw: vec![0; 4].into(),
             offset: 11,
         },
         SurfaceParameterOpaqueSpan {
-            raw: vec![0; 2],
+            raw: vec![0; 2].into(),
             offset: 16,
         },
         SurfaceParameterOpaqueSpan {
-            raw: vec![0xf7, 0x0c],
+            raw: vec![0xf7, 0x0c].into(),
             offset: 63,
         },
     ];
@@ -1091,16 +1091,16 @@ fn support_frame_maps_shortened_terminal_outline_coordinate() {
         },
         corner_coordinate_equal: [Some(false), None, None],
         scalar_tokens: vec![
-            vec![1],
-            vec![2],
-            vec![3],
-            vec![4],
-            vec![5],
-            vec![6],
-            vec![7],
-            vec![6],
-            Vec::new(),
-            Vec::new(),
+            vec![1].into(),
+            vec![2].into(),
+            vec![3].into(),
+            vec![4].into(),
+            vec![5].into(),
+            vec![6].into(),
+            vec![7].into(),
+            vec![6].into(),
+            Vec::new().into(),
+            Vec::new().into(),
         ],
         row_offset: 10,
         offset: 20,

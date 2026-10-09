@@ -770,36 +770,12 @@
             },
             {
               "id": "nx:om-entry-0:class#51",
-              "layout_prefix": [
-                129,
-                33
-              ],
+              "layout_prefix": "8121",
               "layout_terminal": 6,
               "name": "UGS::FEATURE_RECORD",
               "ordinal": 0,
-              "registry_suffix": [
-                129,
-                33,
-                1,
-                35,
-                69,
-                103,
-                137,
-                171,
-                205,
-                239,
-                6
-              ],
-              "schema_fingerprint": [
-                1,
-                35,
-                69,
-                103,
-                137,
-                171,
-                205,
-                239
-              ],
+              "registry_suffix": "81210123456789abcdef06",
+              "schema_fingerprint": "0123456789abcdef",
               "section_offset": 108,
               "source_entry": "/Root/UG_PART/UG_PART",
               "source_offset": 127,
@@ -909,10 +885,7 @@
               "object_index": 1,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 0,
-              "raw_object_index": [
-                240,
-                1
-              ],
+              "raw_object_index": "f001",
               "source_offset": 1203,
               "terminal": false
             },
@@ -923,10 +896,7 @@
               "object_index": 2,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 1,
-              "raw_object_index": [
-                240,
-                2
-              ],
+              "raw_object_index": "f002",
               "source_offset": 1205,
               "terminal": false
             },
@@ -937,10 +907,7 @@
               "object_index": 3,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 2,
-              "raw_object_index": [
-                240,
-                3
-              ],
+              "raw_object_index": "f003",
               "source_offset": 1207,
               "terminal": false
             },
@@ -951,10 +918,7 @@
               "object_index": 4,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 3,
-              "raw_object_index": [
-                240,
-                4
-              ],
+              "raw_object_index": "f004",
               "source_offset": 1209,
               "terminal": false
             },
@@ -965,10 +929,7 @@
               "object_index": 5,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 4,
-              "raw_object_index": [
-                240,
-                5
-              ],
+              "raw_object_index": "f005",
               "source_offset": 1211,
               "terminal": false
             },
@@ -979,10 +940,7 @@
               "object_index": 6,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 5,
-              "raw_object_index": [
-                240,
-                6
-              ],
+              "raw_object_index": "f006",
               "source_offset": 1213,
               "terminal": false
             },
@@ -992,10 +950,7 @@
               "object_index": 7,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 6,
-              "raw_object_index": [
-                240,
-                7
-              ],
+              "raw_object_index": "f007",
               "source_offset": 1215,
               "terminal": false
             },
@@ -1005,10 +960,7 @@
               "object_index": 8,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 7,
-              "raw_object_index": [
-                240,
-                8
-              ],
+              "raw_object_index": "f008",
               "source_offset": 1217,
               "terminal": false
             },
@@ -1018,10 +970,7 @@
               "object_index": 9,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 8,
-              "raw_object_index": [
-                240,
-                9
-              ],
+              "raw_object_index": "f009",
               "source_offset": 1219,
               "terminal": false
             },
@@ -1031,10 +980,7 @@
               "object_index": 10,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 9,
-              "raw_object_index": [
-                240,
-                10
-              ],
+              "raw_object_index": "f00a",
               "source_offset": 1221,
               "terminal": false
             },
@@ -1044,10 +990,7 @@
               "object_index": 11,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 10,
-              "raw_object_index": [
-                240,
-                11
-              ],
+              "raw_object_index": "f00b",
               "source_offset": 1223,
               "terminal": false
             },
@@ -1057,10 +1000,7 @@
               "object_index": 12,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 11,
-              "raw_object_index": [
-                240,
-                12
-              ],
+              "raw_object_index": "f00c",
               "source_offset": 1225,
               "terminal": false
             },
@@ -1070,10 +1010,7 @@
               "object_index": 13,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 12,
-              "raw_object_index": [
-                240,
-                13
-              ],
+              "raw_object_index": "f00d",
               "source_offset": 1227,
               "terminal": false
             },
@@ -1083,10 +1020,7 @@
               "object_index": 14,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 13,
-              "raw_object_index": [
-                240,
-                14
-              ],
+              "raw_object_index": "f00e",
               "source_offset": 1229,
               "terminal": false
             },
@@ -1096,10 +1030,7 @@
               "object_index": 15,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 14,
-              "raw_object_index": [
-                240,
-                15
-              ],
+              "raw_object_index": "f00f",
               "source_offset": 1231,
               "terminal": false
             },
@@ -1109,10 +1040,7 @@
               "object_index": 16,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 15,
-              "raw_object_index": [
-                240,
-                16
-              ],
+              "raw_object_index": "f010",
               "source_offset": 1233,
               "terminal": false
             },
@@ -1122,10 +1050,7 @@
               "object_index": 17,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 16,
-              "raw_object_index": [
-                240,
-                17
-              ],
+              "raw_object_index": "f011",
               "source_offset": 1235,
               "terminal": false
             },
@@ -1135,10 +1060,7 @@
               "object_index": 18,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 17,
-              "raw_object_index": [
-                240,
-                18
-              ],
+              "raw_object_index": "f012",
               "source_offset": 1237,
               "terminal": false
             },
@@ -1148,11 +1070,7 @@
               "object_index": 256,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
               "ordinal": 18,
-              "raw_object_index": [
-                241,
-                1,
-                0
-              ],
+              "raw_object_index": "f10100",
               "source_offset": 1240,
               "terminal": true
             }
@@ -2225,38 +2143,14 @@
               ],
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
               "raw_object_indices": [
-                [
-                  240,
-                  3
-                ],
-                [
-                  240,
-                  3
-                ],
-                [
-                  240,
-                  3
-                ],
-                [
-                  240,
-                  3
-                ],
-                [
-                  240,
-                  3
-                ],
-                [
-                  240,
-                  3
-                ],
-                [
-                  240,
-                  3
-                ],
-                [
-                  240,
-                  3
-                ]
+                "f003",
+                "f003",
+                "f003",
+                "f003",
+                "f003",
+                "f003",
+                "f003",
+                "f003"
               ],
               "source_offsets": [
                 419,
@@ -2278,195 +2172,10 @@
               "identity": "0123456789abcde0123456789abcde0",
               "identity_source_offset": 1734,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-              "prefix": [
-                3,
-                8,
-                80,
-                111,
-                105,
-                110,
-                116,
-                49,
-                0,
-                80,
-                89,
-                102,
-                88,
-                0,
-                48,
-                76,
-                147,
-                51,
-                51,
-                51,
-                51,
-                7,
-                80,
-                89,
-                102,
-                89,
-                0,
-                49,
-                76,
-                147,
-                51,
-                51,
-                51,
-                51,
-                7,
-                102,
-                50,
-                3,
-                8,
-                80,
-                111,
-                105,
-                110,
-                116,
-                50,
-                0,
-                4,
-                224,
-                72,
-                14,
-                2,
-                3,
-                128,
-                132,
-                48,
-                64,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                48,
-                192,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                102,
-                50,
-                3,
-                8,
-                80,
-                111,
-                105,
-                110,
-                116,
-                51,
-                0,
-                8,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3,
-                48,
-                64,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                48,
-                192,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                11,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3,
-                48,
-                64,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                48,
-                192,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                109,
-                0,
-                240,
-                8,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3,
-                48,
-                64,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                48,
-                192,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0
-              ],
+              "prefix": "0308506f696e7431005059665800304c9333333333075059665900314c93333333330766320308506f696e74320004e0480e0203808430400000000000000030c000000000000066320308506f696e743300080203010301c0450400808602000330400000000000000030c00000000000000b0203010301c0450400808602000330400000000000000030c00000000000006d00f0080203010301c0450400808602000330400000000000000030c000000000000000",
               "reference_ordinal": 5,
               "source_offset": 1552,
-              "suffix": [
-                0
-              ]
+              "suffix": "00"
             },
             {
               "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
@@ -2475,195 +2184,10 @@
               "identity": "0123456789abcde0123456789abcde0",
               "identity_source_offset": 1734,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-              "prefix": [
-                3,
-                8,
-                80,
-                111,
-                105,
-                110,
-                116,
-                49,
-                0,
-                80,
-                89,
-                102,
-                88,
-                0,
-                48,
-                76,
-                147,
-                51,
-                51,
-                51,
-                51,
-                7,
-                80,
-                89,
-                102,
-                89,
-                0,
-                49,
-                76,
-                147,
-                51,
-                51,
-                51,
-                51,
-                7,
-                102,
-                50,
-                3,
-                8,
-                80,
-                111,
-                105,
-                110,
-                116,
-                50,
-                0,
-                4,
-                224,
-                72,
-                14,
-                2,
-                3,
-                128,
-                132,
-                48,
-                64,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                48,
-                192,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                102,
-                50,
-                3,
-                8,
-                80,
-                111,
-                105,
-                110,
-                116,
-                51,
-                0,
-                8,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3,
-                48,
-                64,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                48,
-                192,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                11,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3,
-                48,
-                64,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                48,
-                192,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                109,
-                0,
-                240,
-                8,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3,
-                48,
-                64,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                48,
-                192,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0
-              ],
+              "prefix": "0308506f696e7431005059665800304c9333333333075059665900314c93333333330766320308506f696e74320004e0480e0203808430400000000000000030c000000000000066320308506f696e743300080203010301c0450400808602000330400000000000000030c00000000000000b0203010301c0450400808602000330400000000000000030c00000000000006d00f0080203010301c0450400808602000330400000000000000030c000000000000000",
               "reference_ordinal": 6,
               "source_offset": 1552,
-              "suffix": [
-                0
-              ]
+              "suffix": "00"
             },
             {
               "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
@@ -2672,240 +2196,23 @@
               "identity": "0123456789abcde0123456789abcde0",
               "identity_source_offset": 1734,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-              "prefix": [
-                3,
-                8,
-                80,
-                111,
-                105,
-                110,
-                116,
-                49,
-                0,
-                80,
-                89,
-                102,
-                88,
-                0,
-                48,
-                76,
-                147,
-                51,
-                51,
-                51,
-                51,
-                7,
-                80,
-                89,
-                102,
-                89,
-                0,
-                49,
-                76,
-                147,
-                51,
-                51,
-                51,
-                51,
-                7,
-                102,
-                50,
-                3,
-                8,
-                80,
-                111,
-                105,
-                110,
-                116,
-                50,
-                0,
-                4,
-                224,
-                72,
-                14,
-                2,
-                3,
-                128,
-                132,
-                48,
-                64,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                48,
-                192,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                102,
-                50,
-                3,
-                8,
-                80,
-                111,
-                105,
-                110,
-                116,
-                51,
-                0,
-                8,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3,
-                48,
-                64,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                48,
-                192,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                11,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3,
-                48,
-                64,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                48,
-                192,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                109,
-                0,
-                240,
-                8,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3,
-                48,
-                64,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                48,
-                192,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0
-              ],
+              "prefix": "0308506f696e7431005059665800304c9333333333075059665900314c93333333330766320308506f696e74320004e0480e0203808430400000000000000030c000000000000066320308506f696e743300080203010301c0450400808602000330400000000000000030c00000000000000b0203010301c0450400808602000330400000000000000030c00000000000006d00f0080203010301c0450400808602000330400000000000000030c000000000000000",
               "reference_ordinal": 7,
               "source_offset": 1552,
-              "suffix": [
-                0
-              ]
+              "suffix": "00"
             }
           ],
           "feature_datum_csys_payload_fixed_pairs": [
             {
               "datum_csys_payload": "nx:feature-history:datum-csys-payload#0000000000-0000000002",
-              "discriminator": [
-                11,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3
-              ],
+              "discriminator": "0b0203010301c04504008086020003",
               "id": "nx:feature-history:datum-csys-payload#0000000000-0000000002-fixed-pair-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
               "ordinal": 0,
               "payload_offset": 114,
               "raw_values": [
-                [
-                  64,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                [
-                  192,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ]
+                "40000000000000",
+                "c0000000000000"
               ],
               "source_offset": 1666,
               "value_payload_offsets": [
@@ -2923,46 +2230,14 @@
             },
             {
               "datum_csys_payload": "nx:feature-history:datum-csys-payload#0000000000-0000000002",
-              "discriminator": [
-                11,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3
-              ],
+              "discriminator": "0b0203010301c04504008086020003",
               "id": "nx:feature-history:datum-csys-payload#0000000000-0000000002-fixed-pair-0000000001",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
               "ordinal": 1,
               "payload_offset": 328,
               "raw_values": [
-                [
-                  64,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                [
-                  192,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ]
+                "40000000000000",
+                "c0000000000000"
               ],
               "source_offset": 1666,
               "value_payload_offsets": [
@@ -2982,48 +2257,14 @@
           "feature_datum_csys_payload_scalar_pairs": [
             {
               "datum_csys_payload": "nx:feature-history:datum-csys-payload#0000000000-0000000002",
-              "discriminator": [
-                8,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3
-              ],
+              "discriminator": "080203010301c04504008086020003",
               "id": "nx:feature-history:datum-csys-payload#0000000000-0000000002-scalar-pair-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
               "ordinal": 0,
               "payload_offset": 82,
               "raw_values": [
-                [
-                  48,
-                  64,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                [
-                  48,
-                  192,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ]
+                "3040000000000000",
+                "30c0000000000000"
               ],
               "source_offset": 1634,
               "value_payload_offsets": [
@@ -3041,48 +2282,14 @@
             },
             {
               "datum_csys_payload": "nx:feature-history:datum-csys-payload#0000000000-0000000002",
-              "discriminator": [
-                8,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3
-              ],
+              "discriminator": "080203010301c04504008086020003",
               "id": "nx:feature-history:datum-csys-payload#0000000000-0000000002-scalar-pair-0000000001",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
               "ordinal": 1,
               "payload_offset": 149,
               "raw_values": [
-                [
-                  48,
-                  64,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                [
-                  48,
-                  192,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ]
+                "3040000000000000",
+                "30c0000000000000"
               ],
               "source_offset": 1701,
               "value_payload_offsets": [
@@ -3100,48 +2307,14 @@
             },
             {
               "datum_csys_payload": "nx:feature-history:datum-csys-payload#0000000000-0000000002",
-              "discriminator": [
-                8,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3
-              ],
+              "discriminator": "080203010301c04504008086020003",
               "id": "nx:feature-history:datum-csys-payload#0000000000-0000000002-scalar-pair-0000000002",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
               "ordinal": 2,
               "payload_offset": 296,
               "raw_values": [
-                [
-                  48,
-                  64,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                [
-                  48,
-                  192,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ]
+                "3040000000000000",
+                "30c0000000000000"
               ],
               "source_offset": 1634,
               "value_payload_offsets": [
@@ -3159,48 +2332,14 @@
             },
             {
               "datum_csys_payload": "nx:feature-history:datum-csys-payload#0000000000-0000000002",
-              "discriminator": [
-                8,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3
-              ],
+              "discriminator": "080203010301c04504008086020003",
               "id": "nx:feature-history:datum-csys-payload#0000000000-0000000002-scalar-pair-0000000003",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
               "ordinal": 3,
               "payload_offset": 363,
               "raw_values": [
-                [
-                  48,
-                  64,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                [
-                  48,
-                  192,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ]
+                "3040000000000000",
+                "30c0000000000000"
               ],
               "source_offset": 1701,
               "value_payload_offsets": [
@@ -3225,16 +2364,7 @@
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
               "ordinal": 0,
               "payload_offset": 9,
-              "raw_value": [
-                48,
-                76,
-                147,
-                51,
-                51,
-                51,
-                51,
-                7
-              ],
+              "raw_value": "304c933333333307",
               "source_offset": 1561,
               "value": 57.149999999999686
             },
@@ -3245,16 +2375,7 @@
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
               "ordinal": 1,
               "payload_offset": 22,
-              "raw_value": [
-                49,
-                76,
-                147,
-                51,
-                51,
-                51,
-                51,
-                7
-              ],
+              "raw_value": "314c933333333307",
               "source_offset": 1574,
               "value": 3745382.3999999794
             },
@@ -3265,16 +2386,7 @@
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
               "ordinal": 2,
               "payload_offset": 223,
-              "raw_value": [
-                48,
-                76,
-                147,
-                51,
-                51,
-                51,
-                51,
-                7
-              ],
+              "raw_value": "304c933333333307",
               "source_offset": 1561,
               "value": 57.149999999999686
             },
@@ -3285,16 +2397,7 @@
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
               "ordinal": 3,
               "payload_offset": 236,
-              "raw_value": [
-                49,
-                76,
-                147,
-                51,
-                51,
-                51,
-                51,
-                7
-              ],
+              "raw_value": "314c933333333307",
               "source_offset": 1574,
               "value": 3745382.3999999794
             }
@@ -3509,17 +2612,7 @@
               "ordinal": 0,
               "schema_index": 3,
               "source_offset": 1767,
-              "suffix": [
-                63,
-                65,
-                3,
-                255,
-                2,
-                1,
-                68,
-                80,
-                100
-              ]
+              "suffix": "3f4103ff0201445064"
             }
           ],
           "feature_datum_plane_headers": [
@@ -3548,15 +2641,10 @@
               ],
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000003",
               "raw_descriptor_indices": [
-                [
-                  5
-                ]
+                "05"
               ],
               "raw_object_indices": [
-                [
-                  240,
-                  3
-                ]
+                "f003"
               ],
               "source_offset": 476
             }
@@ -3569,26 +2657,8 @@
               "ordinal": 0,
               "payload_offset": 146,
               "raw_values": [
-                [
-                  48,
-                  64,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                [
-                  48,
-                  192,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ]
+                "3040000000000000",
+                "30c0000000000000"
               ],
               "source_offset": 1698,
               "value_payload_offsets": [
@@ -3636,14 +2706,8 @@
               ],
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000005",
               "raw_indices": [
-                [
-                  128,
-                  148
-                ],
-                [
-                  130,
-                  73
-                ]
+                "8094",
+                "8249"
               ],
               "source_offsets": [
                 654,
@@ -3657,11 +2721,7 @@
               "object_index": 7036,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000005",
               "ordinal": 0,
-              "raw_object_index": [
-                241,
-                27,
-                124
-              ],
+              "raw_object_index": "f11b7c",
               "source_offset": 660
             },
             {
@@ -3669,11 +2729,7 @@
               "object_index": 7037,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000005",
               "ordinal": 1,
-              "raw_object_index": [
-                241,
-                27,
-                125
-              ],
+              "raw_object_index": "f11b7d",
               "source_offset": 665
             },
             {
@@ -3681,11 +2737,7 @@
               "object_index": 7038,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000005",
               "ordinal": 2,
-              "raw_object_index": [
-                241,
-                27,
-                126
-              ],
+              "raw_object_index": "f11b7e",
               "source_offset": 703
             },
             {
@@ -3693,11 +2745,7 @@
               "object_index": 7039,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000005",
               "ordinal": 3,
-              "raw_object_index": [
-                241,
-                27,
-                127
-              ],
+              "raw_object_index": "f11b7f",
               "source_offset": 710
             }
           ],
@@ -3714,21 +2762,11 @@
               ],
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000005",
               "raw_indices": [
-                [
-                  129,
-                  94
-                ],
-                [
-                  128,
-                  184
-                ]
+                "815e",
+                "80b8"
               ],
               "source_offset": 714,
-              "tail": [
-                41,
-                41,
-                12
-              ]
+              "tail": "29290c"
             }
           ],
           "feature_extrude_payload_headers": [
@@ -3736,26 +2774,8 @@
               "id": "nx:feature-history:extrude-payload-header#0000000000-0000000010",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000010",
               "raw_scalars": [
-                [
-                  47,
-                  164,
-                  122,
-                  225,
-                  71,
-                  174,
-                  20,
-                  123
-                ],
-                [
-                  47,
-                  163,
-                  116,
-                  188,
-                  106,
-                  126,
-                  249,
-                  219
-                ]
+                "2fa47ae147ae147b",
+                "2fa374bc6a7ef9db"
               ],
               "scalars": [
                 0.04,
@@ -3771,10 +2791,7 @@
               "object_index": 255,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000009",
               "ordinal": 0,
-              "raw_object_index": [
-                240,
-                255
-              ],
+              "raw_object_index": "f0ff",
               "source_offset": 1049,
               "witness_source_offset": 1060
             },
@@ -3784,11 +2801,7 @@
               "object_index": 256,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000009",
               "ordinal": 1,
-              "raw_object_index": [
-                241,
-                1,
-                0
-              ],
+              "raw_object_index": "f10100",
               "source_offset": 1051,
               "witness_source_offset": 1062
             }
@@ -3866,9 +2879,7 @@
               "input_slot": 0,
               "object_index": 1,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
-              "raw_object_index": [
-                1
-              ],
+              "raw_object_index": "01",
               "source_offset": 304
             },
             {
@@ -3877,9 +2888,7 @@
               "input_slot": 0,
               "object_index": 6,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-              "raw_object_index": [
-                6
-              ],
+              "raw_object_index": "06",
               "source_offset": 346
             },
             {
@@ -3888,9 +2897,7 @@
               "input_slot": 0,
               "object_index": 3,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-              "raw_object_index": [
-                3
-              ],
+              "raw_object_index": "03",
               "source_offset": 388
             },
             {
@@ -3899,9 +2906,7 @@
               "input_slot": 0,
               "object_index": 3,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000003",
-              "raw_object_index": [
-                3
-              ],
+              "raw_object_index": "03",
               "source_offset": 458
             },
             {
@@ -3910,9 +2915,7 @@
               "input_slot": 0,
               "object_index": 3,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000004",
-              "raw_object_index": [
-                3
-              ],
+              "raw_object_index": "03",
               "source_offset": 517
             },
             {
@@ -3921,9 +2924,7 @@
               "input_slot": 0,
               "object_index": 3,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000005",
-              "raw_object_index": [
-                3
-              ],
+              "raw_object_index": "03",
               "source_offset": 618
             },
             {
@@ -3932,9 +2933,7 @@
               "input_slot": 0,
               "object_index": 3,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
-              "raw_object_index": [
-                3
-              ],
+              "raw_object_index": "03",
               "source_offset": 748
             },
             {
@@ -3943,9 +2942,7 @@
               "input_slot": 0,
               "object_index": 3,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000007",
-              "raw_object_index": [
-                3
-              ],
+              "raw_object_index": "03",
               "source_offset": 861
             },
             {
@@ -3954,9 +2951,7 @@
               "input_slot": 0,
               "object_index": 3,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000008",
-              "raw_object_index": [
-                3
-              ],
+              "raw_object_index": "03",
               "source_offset": 925
             },
             {
@@ -3965,9 +2960,7 @@
               "input_slot": 0,
               "object_index": 3,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000009",
-              "raw_object_index": [
-                3
-              ],
+              "raw_object_index": "03",
               "source_offset": 1030
             },
             {
@@ -3976,9 +2969,7 @@
               "input_slot": 0,
               "object_index": 3,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000010",
-              "raw_object_index": [
-                3
-              ],
+              "raw_object_index": "03",
               "source_offset": 1082
             },
             {
@@ -3987,9 +2978,7 @@
               "input_slot": 0,
               "object_index": 3,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000011",
-              "raw_object_index": [
-                3
-              ],
+              "raw_object_index": "03",
               "source_offset": 1132
             },
             {
@@ -3998,9 +2987,7 @@
               "input_slot": 0,
               "object_index": 3,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
-              "raw_object_index": [
-                3
-              ],
+              "raw_object_index": "03",
               "source_offset": 1185
             },
             {
@@ -4009,9 +2996,7 @@
               "input_slot": 0,
               "object_index": 3,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000013",
-              "raw_object_index": [
-                3
-              ],
+              "raw_object_index": "03",
               "source_offset": 1273
             },
             {
@@ -4020,9 +3005,7 @@
               "input_slot": 0,
               "object_index": 3,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000014",
-              "raw_object_index": [
-                3
-              ],
+              "raw_object_index": "03",
               "source_offset": 1323
             }
           ],
@@ -4037,18 +3020,10 @@
               ],
               "ordinal": 0,
               "raw_object_indices": [
-                [
-                  1
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "01",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 308,
@@ -4065,18 +3040,10 @@
               ],
               "ordinal": 1,
               "raw_object_indices": [
-                [
-                  6
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "06",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 350,
@@ -4093,18 +3060,10 @@
               ],
               "ordinal": 2,
               "raw_object_indices": [
-                [
-                  3
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "03",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 392,
@@ -4120,18 +3079,10 @@
               ],
               "ordinal": 3,
               "raw_object_indices": [
-                [
-                  3
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "03",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 462,
@@ -4147,18 +3098,10 @@
               ],
               "ordinal": 4,
               "raw_object_indices": [
-                [
-                  3
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "03",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 521,
@@ -4174,18 +3117,10 @@
               ],
               "ordinal": 5,
               "raw_object_indices": [
-                [
-                  3
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "03",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 622,
@@ -4201,18 +3136,10 @@
               ],
               "ordinal": 6,
               "raw_object_indices": [
-                [
-                  3
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "03",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 752,
@@ -4228,18 +3155,10 @@
               ],
               "ordinal": 7,
               "raw_object_indices": [
-                [
-                  3
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "03",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 865,
@@ -4255,18 +3174,10 @@
               ],
               "ordinal": 8,
               "raw_object_indices": [
-                [
-                  3
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "03",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 929,
@@ -4282,18 +3193,10 @@
               ],
               "ordinal": 9,
               "raw_object_indices": [
-                [
-                  3
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "03",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 1034,
@@ -4309,18 +3212,10 @@
               ],
               "ordinal": 10,
               "raw_object_indices": [
-                [
-                  3
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "03",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 1086,
@@ -4336,18 +3231,10 @@
               ],
               "ordinal": 11,
               "raw_object_indices": [
-                [
-                  3
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "03",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 1136,
@@ -4363,18 +3250,10 @@
               ],
               "ordinal": 12,
               "raw_object_indices": [
-                [
-                  3
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "03",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 1189,
@@ -4390,18 +3269,10 @@
               ],
               "ordinal": 13,
               "raw_object_indices": [
-                [
-                  3
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "03",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 1277,
@@ -4417,18 +3288,10 @@
               ],
               "ordinal": 14,
               "raw_object_indices": [
-                [
-                  3
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ],
-                [
-                  255
-                ]
+                "03",
+                "ff",
+                "ff",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 1327,
@@ -4606,32 +3469,16 @@
           ],
           "feature_operation_terminal_discriminators": [
             {
-              "flags": [
-                1,
-                2,
-                1,
-                1
-              ],
+              "flags": "01020101",
               "id": "nx:feature-history:operation-terminal-discriminator#0000000000-0000000011",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000011",
               "raw_trailing_indices": [
-                [
-                  5
-                ],
-                [
-                  128,
-                  255
-                ]
+                "05",
+                "80ff"
               ],
               "raw_type_indices": [
-                [
-                  129,
-                  95
-                ],
-                [
-                  128,
-                  171
-                ]
+                "815f",
+                "80ab"
               ],
               "source_offset": 1146,
               "trailing_index_source_offsets": [
@@ -4659,12 +3506,8 @@
               "object_index": 0,
               "object_index_source_offset": 441,
               "operation_record": "nx:feature-history:operation-record#0000000000-0000000002",
-              "raw_local_ordinal": [
-                0
-              ],
-              "raw_object_index": [
-                0
-              ],
+              "raw_local_ordinal": "00",
+              "raw_object_index": "00",
               "source_offset": 439
             },
             {
@@ -4673,12 +3516,8 @@
               "object_index": 12,
               "object_index_source_offset": 731,
               "operation_record": "nx:feature-history:operation-record#0000000000-0000000005",
-              "raw_local_ordinal": [
-                41
-              ],
-              "raw_object_index": [
-                12
-              ],
+              "raw_local_ordinal": "29",
+              "raw_object_index": "0c",
               "source_offset": 729
             },
             {
@@ -4687,12 +3526,8 @@
               "object_index": 0,
               "object_index_source_offset": 1256,
               "operation_record": "nx:feature-history:operation-record#0000000000-0000000012",
-              "raw_local_ordinal": [
-                0
-              ],
-              "raw_object_index": [
-                0
-              ],
+              "raw_local_ordinal": "00",
+              "raw_object_index": "00",
               "source_offset": 1254
             },
             {
@@ -4701,12 +3536,8 @@
               "object_index": 125,
               "object_index_source_offset": 1306,
               "operation_record": "nx:feature-history:operation-record#0000000000-0000000013",
-              "raw_local_ordinal": [
-                2
-              ],
-              "raw_object_index": [
-                125
-              ],
+              "raw_local_ordinal": "02",
+              "raw_object_index": "7d",
               "source_offset": 1304
             }
           ],
@@ -4717,11 +3548,7 @@
               "object_index": 801,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000007",
               "ordinal": 0,
-              "raw_object_index": [
-                241,
-                3,
-                33
-              ],
+              "raw_object_index": "f10321",
               "source_offset": 890
             }
           ],
@@ -4736,27 +3563,12 @@
               "layout": "scalar_rows",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000008",
               "raw_selectors": [
-                [
-                  2
-                ],
-                [
-                  159,
-                  254
-                ]
+                "02",
+                "9ffe"
               ],
               "raw_values": [
-                [
-                  80,
-                  84,
-                  0,
-                  0
-                ],
-                [
-                  208,
-                  84,
-                  0,
-                  0
-                ]
+                "50540000",
+                "d0540000"
               ],
               "row_schema_index": 96,
               "selector_source_offsets": [
@@ -4793,11 +3605,7 @@
               "mode": 2,
               "object_index": 7311,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000004",
-              "raw_object_index": [
-                241,
-                28,
-                143
-              ],
+              "raw_object_index": "f11c8f",
               "source_offset": 536
             }
           ],
@@ -4807,11 +3615,7 @@
               "object_index": 712,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000013",
               "ordinal": 0,
-              "raw_object_index": [
-                241,
-                2,
-                200
-              ],
+              "raw_object_index": "f102c8",
               "source_offset": 1288
             },
             {
@@ -4819,11 +3623,7 @@
               "object_index": 713,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000013",
               "ordinal": 1,
-              "raw_object_index": [
-                241,
-                2,
-                201
-              ],
+              "raw_object_index": "f102c9",
               "source_offset": 1291
             },
             {
@@ -4831,11 +3631,7 @@
               "object_index": 714,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000013",
               "ordinal": 2,
-              "raw_object_index": [
-                241,
-                2,
-                202
-              ],
+              "raw_object_index": "f102ca",
               "source_offset": 1299
             }
           ],
@@ -4870,26 +3666,8 @@
               "id": "nx:feature-history:simple-hole-repeated-scalar-lane#0000000000-0000000014",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000014",
               "raw_values": [
-                [
-                  48,
-                  127,
-                  192,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                [
-                  48,
-                  67,
-                  12,
-                  204,
-                  204,
-                  204,
-                  204,
-                  205
-                ]
+                "307fc00000000000",
+                "30430ccccccccccd"
               ],
               "second_witness_offsets": [
                 1361,
@@ -5038,48 +3816,14 @@
           "feature_sketch_payload_coordinate_pairs": [
             {
               "construction_payload": "nx:feature-history:sketch-construction-payload#0000000000-0000000001",
-              "discriminator": [
-                8,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3
-              ],
+              "discriminator": "080203010301c04504008086020003",
               "id": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-coordinate-pair-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
               "ordinal": 0,
               "payload_offset": 82,
               "raw_values": [
-                [
-                  48,
-                  64,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                [
-                  48,
-                  192,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ]
+                "3040000000000000",
+                "30c0000000000000"
               ],
               "source_offset": 1889,
               "value_payload_offsets": [
@@ -5097,48 +3841,14 @@
             },
             {
               "construction_payload": "nx:feature-history:sketch-construction-payload#0000000000-0000000001",
-              "discriminator": [
-                8,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3
-              ],
+              "discriminator": "080203010301c04504008086020003",
               "id": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-coordinate-pair-0000000001",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
               "ordinal": 1,
               "payload_offset": 149,
               "raw_values": [
-                [
-                  48,
-                  64,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                [
-                  48,
-                  192,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ]
+                "3040000000000000",
+                "30c0000000000000"
               ],
               "source_offset": 1956,
               "value_payload_offsets": [
@@ -5158,39 +3868,14 @@
           "feature_sketch_payload_fixed_pairs": [
             {
               "construction_payload": "nx:feature-history:sketch-construction-payload#0000000000-0000000001",
-              "discriminator": [
-                4,
-                224,
-                72,
-                14,
-                2,
-                3,
-                128,
-                132
-              ],
+              "discriminator": "04e0480e02038084",
               "id": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
               "ordinal": 0,
               "payload_offset": 46,
               "raw_values": [
-                [
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                [
-                  8,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ]
+                "00000000000000",
+                "08000000000000"
               ],
               "source_offset": 1853,
               "value_payload_offsets": [
@@ -5208,46 +3893,14 @@
             },
             {
               "construction_payload": "nx:feature-history:sketch-construction-payload#0000000000-0000000001",
-              "discriminator": [
-                11,
-                2,
-                3,
-                1,
-                3,
-                1,
-                192,
-                69,
-                4,
-                0,
-                128,
-                134,
-                2,
-                0,
-                3
-              ],
+              "discriminator": "0b0203010301c04504008086020003",
               "id": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000001",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
               "ordinal": 1,
               "payload_offset": 114,
               "raw_values": [
-                [
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                [
-                  8,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ]
+                "00000000000000",
+                "08000000000000"
               ],
               "source_offset": 1921,
               "value_payload_offsets": [
@@ -5344,9 +3997,7 @@
               "ordinal": 1,
               "payload_leading": false,
               "payload_offset": 35,
-              "raw_type_code": [
-                50
-              ],
+              "raw_type_code": "32",
               "source_offset": 1842,
               "type_code": 50,
               "type_code_payload_offset": 36,
@@ -5360,9 +4011,7 @@
               "ordinal": 2,
               "payload_leading": false,
               "payload_offset": 71,
-              "raw_type_code": [
-                50
-              ],
+              "raw_type_code": "32",
               "source_offset": 1878,
               "type_code": 50,
               "type_code_payload_offset": 72,
@@ -5378,16 +4027,7 @@
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
               "ordinal": 0,
               "payload_offset": 9,
-              "raw_value": [
-                48,
-                76,
-                147,
-                51,
-                51,
-                51,
-                51,
-                7
-              ],
+              "raw_value": "304c933333333307",
               "source_offset": 1526,
               "value": 57.149999999999686
             },
@@ -5398,16 +4038,7 @@
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
               "ordinal": 1,
               "payload_offset": 22,
-              "raw_value": [
-                49,
-                76,
-                147,
-                51,
-                51,
-                51,
-                51,
-                7
-              ],
+              "raw_value": "314c933333333307",
               "source_offset": 1539,
               "value": 3745382.3999999794
             },
@@ -5418,16 +4049,7 @@
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
               "ordinal": 0,
               "payload_offset": 9,
-              "raw_value": [
-                48,
-                76,
-                147,
-                51,
-                51,
-                51,
-                51,
-                7
-              ],
+              "raw_value": "304c933333333307",
               "source_offset": 1816,
               "value": 57.149999999999686
             },
@@ -5438,16 +4060,7 @@
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
               "ordinal": 1,
               "payload_offset": 22,
-              "raw_value": [
-                49,
-                76,
-                147,
-                51,
-                51,
-                51,
-                51,
-                7
-              ],
+              "raw_value": "314c933333333307",
               "source_offset": 1829,
               "value": 3745382.3999999794
             }
@@ -5581,10 +4194,7 @@
               "object_index": 1,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
               "ordinal": 0,
-              "raw_object_index": [
-                240,
-                1
-              ],
+              "raw_object_index": "f001",
               "source_offset": 321,
               "terminal": false
             },
@@ -5595,10 +4205,7 @@
               "object_index": 2,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
               "ordinal": 1,
-              "raw_object_index": [
-                240,
-                2
-              ],
+              "raw_object_index": "f002",
               "source_offset": 325,
               "terminal": true
             },
@@ -5609,10 +4216,7 @@
               "object_index": 6,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
               "ordinal": 0,
-              "raw_object_index": [
-                240,
-                6
-              ],
+              "raw_object_index": "f006",
               "source_offset": 363,
               "terminal": false
             },
@@ -5623,10 +4227,7 @@
               "object_index": 4,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
               "ordinal": 1,
-              "raw_object_index": [
-                240,
-                4
-              ],
+              "raw_object_index": "f004",
               "source_offset": 367,
               "terminal": true
             }
@@ -5637,11 +4238,7 @@
               "object_index": 582,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 0,
-              "raw_object_index": [
-                241,
-                2,
-                70
-              ],
+              "raw_object_index": "f10246",
               "source_offset": 764
             },
             {
@@ -5649,11 +4246,7 @@
               "object_index": 583,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 1,
-              "raw_object_index": [
-                241,
-                2,
-                71
-              ],
+              "raw_object_index": "f10247",
               "source_offset": 767
             },
             {
@@ -5661,11 +4254,7 @@
               "object_index": 584,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 2,
-              "raw_object_index": [
-                241,
-                2,
-                72
-              ],
+              "raw_object_index": "f10248",
               "source_offset": 770
             },
             {
@@ -5673,11 +4262,7 @@
               "object_index": 585,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 3,
-              "raw_object_index": [
-                241,
-                2,
-                73
-              ],
+              "raw_object_index": "f10249",
               "source_offset": 785
             },
             {
@@ -5685,11 +4270,7 @@
               "object_index": 586,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 4,
-              "raw_object_index": [
-                241,
-                2,
-                74
-              ],
+              "raw_object_index": "f1024a",
               "source_offset": 788
             },
             {
@@ -5697,11 +4278,7 @@
               "object_index": 587,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 5,
-              "raw_object_index": [
-                241,
-                2,
-                75
-              ],
+              "raw_object_index": "f1024b",
               "source_offset": 791
             },
             {
@@ -5709,11 +4286,7 @@
               "object_index": 588,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 6,
-              "raw_object_index": [
-                241,
-                2,
-                76
-              ],
+              "raw_object_index": "f1024c",
               "source_offset": 794
             },
             {
@@ -5721,11 +4294,7 @@
               "object_index": 589,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 7,
-              "raw_object_index": [
-                241,
-                2,
-                77
-              ],
+              "raw_object_index": "f1024d",
               "source_offset": 797
             },
             {
@@ -5733,11 +4302,7 @@
               "object_index": 590,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 8,
-              "raw_object_index": [
-                241,
-                2,
-                78
-              ],
+              "raw_object_index": "f1024e",
               "source_offset": 800
             },
             {
@@ -5745,11 +4310,7 @@
               "object_index": 591,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 9,
-              "raw_object_index": [
-                241,
-                2,
-                79
-              ],
+              "raw_object_index": "f1024f",
               "source_offset": 803
             },
             {
@@ -5757,11 +4318,7 @@
               "object_index": 592,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 10,
-              "raw_object_index": [
-                241,
-                2,
-                80
-              ],
+              "raw_object_index": "f10250",
               "source_offset": 806
             },
             {
@@ -5769,11 +4326,7 @@
               "object_index": 598,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 11,
-              "raw_object_index": [
-                241,
-                2,
-                86
-              ],
+              "raw_object_index": "f10256",
               "source_offset": 820
             },
             {
@@ -5781,11 +4334,7 @@
               "object_index": 599,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 12,
-              "raw_object_index": [
-                241,
-                2,
-                87
-              ],
+              "raw_object_index": "f10257",
               "source_offset": 823
             },
             {
@@ -5793,11 +4342,7 @@
               "object_index": 600,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 13,
-              "raw_object_index": [
-                241,
-                2,
-                88
-              ],
+              "raw_object_index": "f10258",
               "source_offset": 826
             }
           ],
@@ -5808,10 +4353,7 @@
               "ordinal": 0,
               "registry_owner_class": 2,
               "registry_storage_code": 2,
-              "registry_suffix": [
-                1,
-                2
-              ],
+              "registry_suffix": "0102",
               "section_offset": 108,
               "source_entry": "/Root/UG_PART/UG_PART",
               "source_offset": 193,
@@ -5836,26 +4378,8 @@
               "id": "nx:offset-store:named-point#0-1",
               "name": "Point7",
               "raw_values": [
-                [
-                  48,
-                  76,
-                  147,
-                  51,
-                  51,
-                  51,
-                  51,
-                  7
-                ],
-                [
-                  49,
-                  76,
-                  147,
-                  51,
-                  51,
-                  51,
-                  51,
-                  7
-                ]
+                "304c933333333307",
+                "314c933333333307"
               ],
               "source_offset": 1517,
               "value_source_offsets": [
@@ -5874,26 +4398,8 @@
               "id": "nx:offset-store:named-point#0-3",
               "name": "Point1",
               "raw_values": [
-                [
-                  48,
-                  76,
-                  147,
-                  51,
-                  51,
-                  51,
-                  51,
-                  7
-                ],
-                [
-                  49,
-                  76,
-                  147,
-                  51,
-                  51,
-                  51,
-                  51,
-                  7
-                ]
+                "304c933333333307",
+                "314c933333333307"
               ],
               "source_offset": 1552,
               "value_source_offsets": [
@@ -5912,26 +4418,8 @@
               "id": "nx:offset-store:named-point#0-6",
               "name": "Point1",
               "raw_values": [
-                [
-                  48,
-                  76,
-                  147,
-                  51,
-                  51,
-                  51,
-                  51,
-                  7
-                ],
-                [
-                  49,
-                  76,
-                  147,
-                  51,
-                  51,
-                  51,
-                  51,
-                  7
-                ]
+                "304c933333333307",
+                "314c933333333307"
               ],
               "source_offset": 1807,
               "value_source_offsets": [

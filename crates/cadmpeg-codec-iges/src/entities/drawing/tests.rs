@@ -932,8 +932,14 @@ fn decode_types_drawing_view_placement_annotations_and_sheet_properties() {
     assert_eq!(drawing.fields()["size"][0], 210.0);
     assert_eq!(drawing.fields()["size"][1], 297.0);
     assert_eq!(drawing.fields()["units_flag"], 2);
-    assert_eq!(drawing.fields()["units_name"][0], 77);
-    assert_eq!(drawing.fields()["name"][0], 68);
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(&drawing.fields()["units_name"])[0]),
+        77
+    );
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(&drawing.fields()["name"])[0]),
+        68
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

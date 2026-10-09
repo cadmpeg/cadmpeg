@@ -18,7 +18,7 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
     FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),

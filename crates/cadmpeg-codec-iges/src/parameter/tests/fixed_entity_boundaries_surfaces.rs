@@ -169,7 +169,7 @@ fn analytic_surface_complete_wrong_fields_keep_boundary_and_truncated_spans_do_n
             .copied()
             .map(TokenValue::from)
             .collect::<Vec<_>>();
-        *wrong.last_mut().expect("primary field") = TokenValue::String(b"bad".to_vec());
+        *wrong.last_mut().expect("primary field") = TokenValue::String(b"bad".to_vec().into());
         wrong.extend([1.into(), 1.into(), 1.into(), 3.into()]);
         let analysis_record = token_parameter_record(7, wrong);
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -264,7 +264,7 @@ fn type304_forms_use_fixed_and_counted_boundaries() {
                 2.into(),
                 2.into(),
                 1.into(),
-                TokenValue::String(b"3".to_vec()),
+                TokenValue::String(b"3".to_vec().into()),
                 1.into(),
                 1.into(),
                 0.into(),
@@ -434,7 +434,7 @@ fn type304_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
                 1.into(),
                 9.into(),
                 2.into(),
-                TokenValue::String(b"bad-scale".to_vec()),
+                TokenValue::String(b"bad-scale".to_vec().into()),
                 1.into(),
                 1.into(),
                 0.into(),
@@ -456,12 +456,12 @@ fn type304_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             vec![
                 304.into(),
                 5.into(),
-                TokenValue::String(b"bad-length".to_vec()),
+                TokenValue::String(b"bad-length".to_vec().into()),
                 1.into(),
                 2.into(),
                 1.into(),
                 2.into(),
-                TokenValue::String(b"3".to_vec()),
+                TokenValue::String(b"3".to_vec().into()),
                 1.into(),
                 1.into(),
                 0.into(),
@@ -483,7 +483,7 @@ fn type304_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
                 2.into(),
                 1.into(),
                 2.into(),
-                TokenValue::String(b"3".to_vec()),
+                TokenValue::String(b"3".to_vec().into()),
                 1.into(),
                 1.into(),
             ],
@@ -556,7 +556,7 @@ fn type310_nested_boundary_follows_character_and_motion_counts() {
             vec![
                 310.into(),
                 1.into(),
-                TokenValue::String(b"A".to_vec()),
+                TokenValue::String(b"A".to_vec().into()),
                 0.into(),
                 10.into(),
                 1.into(),
@@ -574,7 +574,7 @@ fn type310_nested_boundary_follows_character_and_motion_counts() {
             vec![
                 310.into(),
                 1.into(),
-                TokenValue::String(b"A".to_vec()),
+                TokenValue::String(b"A".to_vec().into()),
                 0.into(),
                 10.into(),
                 1.into(),
@@ -598,7 +598,7 @@ fn type310_nested_boundary_follows_character_and_motion_counts() {
             vec![
                 310.into(),
                 1.into(),
-                TokenValue::String(b"A".to_vec()),
+                TokenValue::String(b"A".to_vec().into()),
                 0.into(),
                 10.into(),
                 2.into(),
@@ -666,7 +666,7 @@ fn type310_nested_boundary_precedes_valid_generic_alternative() {
         vec![
             310.into(),
             101.into(),
-            TokenValue::String(b"MAIN".to_vec()),
+            TokenValue::String(b"MAIN".to_vec().into()),
             (-9).into(),
             10.into(),
             2.into(),
@@ -749,9 +749,9 @@ fn type310_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
         vec![
             310.into(),
             101.into(),
-            TokenValue::String(b"MAIN".to_vec()),
+            TokenValue::String(b"MAIN".to_vec().into()),
             (-9).into(),
-            TokenValue::String(b"bad-scale".to_vec()),
+            TokenValue::String(b"bad-scale".to_vec().into()),
             2.into(),
             65.into(),
             8.into(),
@@ -809,7 +809,7 @@ fn type310_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
             vec![
                 310.into(),
                 101.into(),
-                TokenValue::String(b"MAIN".to_vec()),
+                TokenValue::String(b"MAIN".to_vec().into()),
                 0.into(),
                 10.into(),
                 0.into(),
@@ -824,7 +824,7 @@ fn type310_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
             vec![
                 310.into(),
                 101.into(),
-                TokenValue::String(b"MAIN".to_vec()),
+                TokenValue::String(b"MAIN".to_vec().into()),
                 0.into(),
                 10.into(),
                 1.into(),
@@ -842,7 +842,7 @@ fn type310_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
             vec![
                 310.into(),
                 101.into(),
-                TokenValue::String(b"MAIN".to_vec()),
+                TokenValue::String(b"MAIN".to_vec().into()),
                 0.into(),
                 10.into(),
                 1.into(),
@@ -857,7 +857,7 @@ fn type310_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
             vec![
                 310.into(),
                 101.into(),
-                TokenValue::String(b"MAIN".to_vec()),
+                TokenValue::String(b"MAIN".to_vec().into()),
                 0.into(),
                 10.into(),
                 2.into(),
@@ -882,7 +882,7 @@ fn type310_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
             vec![
                 310.into(),
                 101.into(),
-                TokenValue::String(b"MAIN".to_vec()),
+                TokenValue::String(b"MAIN".to_vec().into()),
                 0.into(),
                 10.into(),
                 2.into(),

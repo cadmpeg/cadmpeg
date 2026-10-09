@@ -4862,15 +4862,17 @@ fn represented_name_properties(
                 })
             }) && value
                 .as_ref()
-                .and_then(|value| value.as_array())
+                .and_then(|value| {
+                    <cadmpeg_ir::native::bytes::NativeBytes as serde::Deserialize>::deserialize(
+                        value,
+                    )
+                    .ok()
+                })
                 .is_some_and(|bytes| {
                     !bytes.is_empty()
-                        && bytes.iter().all(|byte| {
-                            byte.as_u64().is_some_and(|byte| {
-                                u8::try_from(byte)
-                                    .is_ok_and(|byte| byte.is_ascii_graphic() || byte == b' ')
-                            })
-                        })
+                        && bytes
+                            .iter()
+                            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
                 })
                 && record
                     .field("property_kind")

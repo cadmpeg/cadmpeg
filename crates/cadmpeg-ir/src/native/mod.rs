@@ -13,6 +13,7 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
+pub mod bytes;
 mod canon;
 pub mod catalogue;
 mod compare;

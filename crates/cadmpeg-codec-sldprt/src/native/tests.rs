@@ -99,7 +99,7 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
                 parent: parent.clone(),
                 ordinal: 0,
                 offset: 0,
-                type_prefix: *b"FACE",
+                type_prefix: (*b"FACE").into(),
                 feature_source_id: crate::brep::feature_source::FeatureSourceId::try_from(1_u32)
                     .unwrap(),
                 local_identity: 1,
@@ -541,7 +541,7 @@ fn native_surface_validation_collection_limit_refuses_before_candidates() {
     record.offset = u64::try_from(marker).unwrap();
     record.components = vec![crate::records::FeatureInputComponentPathEntry {
         instance: Some(0x8c20),
-        type_signature: signature,
+        type_signature: signature.into(),
         local_id: Some(12),
     }];
     let arena = DecodeArena::new();
@@ -675,7 +675,7 @@ fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
     let mut lane = crate::records::FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![crate::records::FeatureInputClass {
             id: "class".into(),
             parent: "lane".into(),
@@ -1687,15 +1687,11 @@ fn native_load_refuses_an_object_name_offset_the_payload_does_not_state() {
         )
         .unwrap();
     let original = serde_json::to_value(decoded.ir().native.namespace("sldprt").unwrap()).unwrap();
-    let payload_length = original["feature_input_lanes"][0]["native_payload"]
-        .as_str()
-        .map(str::len)
-        .or_else(|| {
-            original["feature_input_lanes"][0]["native_payload"]
-                .as_array()
-                .map(Vec::len)
-        })
-        .expect("a lane states its payload");
+    let payload_length = serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(
+        original["feature_input_lanes"][0]["native_payload"].clone(),
+    )
+    .expect("a lane states its payload")
+    .len();
     assert!(payload_length > 0);
 
     for forged in [

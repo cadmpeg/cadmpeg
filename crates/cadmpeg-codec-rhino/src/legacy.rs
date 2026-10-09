@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino V1 flat geometry and direct-record decoding.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
@@ -84,7 +86,7 @@ fn legacy_identity_key(value: impl Into<String>) -> Result<IdentityKey, CodecErr
 #[derive(Debug, Serialize)]
 struct V1String {
     text: String,
-    bytes: Vec<u8>,
+    bytes: NativeBytes<Vec<u8>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -352,7 +354,7 @@ fn v1_string(
     let bytes = ctx.copy_retained(source, "Rhino V1 source text")?;
     Ok(V1String {
         text: String::from_utf8_lossy(&bytes).into_owned(),
-        bytes,
+        bytes: (bytes).into(),
     })
 }
 

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native surface construction branches with derived reference positions.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::{
     charged_unique_offset_data_block, format_feature_history_id,
     visit_feature_history_operation_records,
@@ -61,7 +63,7 @@ struct SurfaceBranchWire {
     witnessed: bool,
     members: Vec<SurfaceReferenceWire>,
     terminal: SurfaceReferenceWire,
-    suffix: Vec<u8>,
+    suffix: NativeBytes<Vec<u8>>,
     source_offset: u64,
 }
 
@@ -100,7 +102,7 @@ impl From<FeatureSurfaceConstructionBranch> for SurfaceBranchWire {
                 data_block: branch.terminal().1.clone(),
                 source_offset: branch.terminal_offset(),
             },
-            suffix: branch.suffix().clone().into_vec(),
+            suffix: (branch.suffix().clone().into_vec()).into(),
             source_offset: branch.offset(),
         }
     }
@@ -134,7 +136,7 @@ impl TryFrom<SurfaceBranchWire> for FeatureSurfaceConstructionBranch {
             wire.witnessed,
             members,
             (wire.terminal.token, wire.terminal.data_block),
-            SurfaceSuffix::new(wire.suffix)?,
+            SurfaceSuffix::new(wire.suffix.into_inner())?,
         )?;
         for ((ordinal, source_offset), (expected_ordinal, expected_offset)) in positions
             .into_iter()
@@ -325,7 +327,7 @@ mod tests {
         );
     }
 
-    const WIRE: &str = r#"{"id":"branch","operation_label":"operation","ordinal":254,"family":80,"header_code":255,"mode":22,"declared_count":3,"witnessed":false,"members":[{"ordinal":0,"object_index":0,"raw_object_index":[240,0],"data_block":"zero","source_offset":103},{"ordinal":1,"object_index":256,"raw_object_index":[241,1,0],"source_offset":105}],"terminal":{"ordinal":2,"object_index":1,"raw_object_index":[240,1],"source_offset":116},"suffix":[0,255],"source_offset":100}"#;
+    const WIRE: &str = r#"{"id":"branch","operation_label":"operation","ordinal":254,"family":80,"header_code":255,"mode":22,"declared_count":3,"witnessed":false,"members":[{"ordinal":0,"object_index":0,"raw_object_index":"f000","data_block":"zero","source_offset":103},{"ordinal":1,"object_index":256,"raw_object_index":"f10100","source_offset":105}],"terminal":{"ordinal":2,"object_index":1,"raw_object_index":"f001","source_offset":116},"suffix":"00ff","source_offset":100}"#;
 
     #[test]
     fn surface_branch_positions_follow_token_widths_and_count_witness() {
@@ -370,10 +372,18 @@ mod tests {
                 "\"source_offset\":18446744073709551615",
                 "source_offset",
             ),
-            ("[240,0]", "[0]", "raw_object_index"),
+            (
+                "\"raw_object_index\":\"f000\"",
+                "\"raw_object_index\":\"00\"",
+                "raw_object_index",
+            ),
             ("\"family\":80", "\"family\":81", "family"),
-            ("\"suffix\":[0,255]", "\"suffix\":[]", "suffix"),
-            ("\"suffix\":[0,255]", "\"suffix\":[0,1,2,3,4,5]", "suffix"),
+            ("\"suffix\":\"00ff\"", "\"suffix\":\"\"", "suffix"),
+            (
+                "\"suffix\":\"00ff\"",
+                "\"suffix\":\"000102030405\"",
+                "suffix",
+            ),
         ] {
             let invalid = WIRE.replace(old, new);
             let error =

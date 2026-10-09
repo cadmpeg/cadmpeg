@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Entity-selection operands, their candidates and the loft legacy body carrier.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use super::body_recipe::AsmHistoricalEntityKind;
@@ -636,7 +638,7 @@ struct DesignLoftLegacyBodyCarrierRef<'a> {
     repeated_opaque_index_offset: u64,
     next_next_record_index: u32,
     next_next_reference_offset: u64,
-    flags: [u8; 2],
+    flags: NativeBytes<[u8; 2]>,
     flags_offset: u64,
     next_record_index: u32,
     next_reference_offset: u64,
@@ -671,7 +673,7 @@ impl Serialize for DesignLoftLegacyBodyCarrier {
             repeated_opaque_index_offset: self.repeated_opaque_index_offset,
             next_next_record_index: self.next_next_record_index,
             next_next_reference_offset: self.next_next_reference_offset,
-            flags: [0, 0],
+            flags: ([0, 0]).into(),
             flags_offset: self.flags_offset,
             next_record_index: self.next_record_index,
             next_reference_offset: self.next_reference_offset,
@@ -708,7 +710,7 @@ struct DesignLoftLegacyBodyCarrierSerde {
     repeated_opaque_index_offset: u64,
     next_next_record_index: u32,
     next_next_reference_offset: u64,
-    flags: [u8; 2],
+    flags: NativeBytes<[u8; 2]>,
     flags_offset: u64,
     next_record_index: u32,
     next_reference_offset: u64,
@@ -816,7 +818,7 @@ impl From<DesignLoftLegacyBodyCarrier> for DesignLoftLegacyBodyCarrierSerde {
             repeated_opaque_index_offset: carrier.repeated_opaque_index_offset,
             next_next_record_index: carrier.next_next_record_index,
             next_next_reference_offset: carrier.next_next_reference_offset,
-            flags: [0, 0],
+            flags: ([0, 0]).into(),
             flags_offset: carrier.flags_offset,
             next_record_index: carrier.next_record_index,
             next_reference_offset: carrier.next_reference_offset,

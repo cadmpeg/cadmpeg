@@ -213,7 +213,7 @@ fn native_object_wire_refuses_before_repeated_suffix_growth() {
             fields: vec![
                 atom(44, 0),
                 PayloadField::Blob {
-                    bytes: vec![0; 59],
+                    bytes: vec![0; 59].into(),
                     offset: 1,
                 },
                 atom(5, 65),

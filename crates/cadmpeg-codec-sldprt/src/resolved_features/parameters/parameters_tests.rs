@@ -41,7 +41,7 @@ fn parameter_limit_fixture() -> (Vec<FeatureHistory>, FeatureInputLane) {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
@@ -324,7 +324,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: vec![0; 136],
+        native_payload: vec![0; 136].into(),
         classes: Vec::new(),
         names: vec![
             FeatureInputName {

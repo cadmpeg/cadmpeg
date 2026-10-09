@@ -176,7 +176,7 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
                     terminal_feature_ref: None,
                     components: vec![crate::records::FeatureInputComponentPathEntry {
                         instance: Some(0x8c20),
-                        type_signature: signature,
+                        type_signature: signature.into(),
                         local_id: Some(12),
                     }],
                 });

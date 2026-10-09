@@ -77,7 +77,7 @@ fn pattern_fixture() -> (Vec<Feature>, FeatureHistory, FeatureInputLane) {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -98,7 +98,7 @@ fn pattern_fixture() -> (Vec<Feature>, FeatureHistory, FeatureInputLane) {
             terminal_feature_ref: Some("producer-native".into()),
             components: vec![FeatureInputComponentPathEntry {
                 instance: Some(0x8020),
-                type_signature: signature,
+                type_signature: signature.into(),
                 local_id: Some(7),
             }],
         }],

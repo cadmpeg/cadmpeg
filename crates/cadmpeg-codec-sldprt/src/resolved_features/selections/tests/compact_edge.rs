@@ -484,12 +484,12 @@ fn compact_edge_selection_accepts_heterogeneous_component_paths() {
         Some(vec![
             FeatureInputComponentPathEntry {
                 instance: Some(0x803d),
-                type_signature: [1; 12],
+                type_signature: [1; 12].into(),
                 local_id: Some(2),
             },
             FeatureInputComponentPathEntry {
                 instance: Some(0x804a),
-                type_signature: [2; 12],
+                type_signature: [2; 12].into(),
                 local_id: Some(3),
             },
         ])
@@ -852,7 +852,7 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
@@ -918,7 +918,7 @@ fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             id: "vertex-dimension-class".into(),
             parent: "lane".into(),
@@ -1166,7 +1166,7 @@ fn compact_reference_list_accepts_unframed_surface_cut_targets() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload.clone(),
+        native_payload: payload.clone().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1270,7 +1270,7 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             id: "vertex-dimension-class".into(),
             parent: "lane".into(),
@@ -1348,7 +1348,7 @@ fn scalar_binding_refuses_sparse_path_nesting_limit() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![
             FeatureInputName {

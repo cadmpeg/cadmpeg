@@ -613,8 +613,11 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
         );
         let wire = serde_json::to_value(native.consolidated_owner_packets[0].owner_chart())
             .expect("serialize owner chart");
-        let controls: [u8; 6] = serde_json::from_value(wire["bridge"]["controls"].clone())
-            .expect("six bridge controls");
+        let controls: [u8; 6] = serde_json::from_value::<
+            cadmpeg_ir::native::bytes::NativeBytes<[u8; 6]>,
+        >(wire["bridge"]["controls"].clone())
+        .expect("six bridge controls")
+        .into_inner();
         assert_eq!(controls, [carrier_selector, 0x05, 0x03, 0x05, 0x01, 0x05]);
         assert_eq!(construction_radius.get(), 1.0);
         assert_eq!(
@@ -699,11 +702,17 @@ fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let wire = serde_json::to_value(native.consolidated_owner_packets[0].owner_chart())
         .expect("serialize extended owner chart");
-    let controls: [u8; 4] = serde_json::from_value(wire["bridge"]["controls"].clone())
-        .expect("four extended bridge controls");
-    let terminal_controls: [u8; 2] =
-        serde_json::from_value(wire["bridge"]["terminal_controls"].clone())
-            .expect("two extended bridge terminal controls");
+    let controls: [u8; 4] =
+        serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes<[u8; 4]>>(
+            wire["bridge"]["controls"].clone(),
+        )
+        .expect("four extended bridge controls")
+        .into_inner();
+    let terminal_controls: [u8; 2] = serde_json::from_value::<
+        cadmpeg_ir::native::bytes::NativeBytes<[u8; 2]>,
+    >(wire["bridge"]["terminal_controls"].clone())
+    .expect("two extended bridge terminal controls")
+    .into_inner();
     assert_eq!(controls, [0x11, 0x09, 0x05, 0x05]);
     assert_eq!(terminal_controls, [0x01, 0x05]);
 }

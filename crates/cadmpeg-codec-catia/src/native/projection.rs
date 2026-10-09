@@ -139,7 +139,7 @@ pub(crate) fn consolidated_owner_packets(
                                 }
                             },
                             target: face_node.target,
-                            terminal: face_node.terminal,
+                            terminal: face_node.terminal.into(),
                         })
                     }),
                     edges: cycle.edges.map(|edge| CatiaOwnerBoundaryEdge {
@@ -295,7 +295,7 @@ pub(crate) fn consolidated_owner_packets(
                                 }
                             },
                             target: face_node.target,
-                            terminal: face_node.terminal,
+                            terminal: face_node.terminal.into(),
                         })
                     }),
             });
@@ -765,7 +765,7 @@ pub(crate) fn preview_views(
                     width: preview.width,
                     height: preview.height,
                     components: preview.components,
-                    data,
+                    data: data.into(),
                 },
                 "catia_native_preview_views",
             )?;
@@ -1061,7 +1061,7 @@ impl CatiaAliasRow {
             lead_raw: row.lead_raw,
             tag_raw: row.tag_raw,
             flag: row.flag,
-            f1: row.f1,
+            f1: row.f1.into(),
             object_graph: None,
             object_record: None,
             design_object: None,

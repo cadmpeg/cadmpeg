@@ -12,8 +12,10 @@ struct RawNullableIndex(Option<CompactIndexAtom>);
 impl Serialize for RawNullableIndex {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.0 {
-            Some(atom) => atom.raw().serialize(serializer),
-            None => [0xff_u8].serialize(serializer),
+            Some(atom) => {
+                cadmpeg_ir::native::bytes::NativeBytes::from(atom.raw()).serialize(serializer)
+            }
+            None => cadmpeg_ir::native::bytes::NativeBytes::from([0xff_u8]).serialize(serializer),
         }
     }
 }
@@ -99,7 +101,7 @@ mod tests {
 
     #[test]
     fn counted_lane_borrowed_bytes_and_limit() {
-        let json = r#"{"id":"nx:om-counted-lane:lane#0","data_block":"block","ordinal":0,"declared_count":3,"anchor_index":1,"raw_anchor_index":[1],"anchor_data_block":"anchor","member_indices":[2],"raw_member_indices":[[2]],"member_data_blocks":["member"],"source_offset":9,"anchor_source_offset":11,"member_source_offsets":[12]}"#;
+        let json = r#"{"id":"nx:om-counted-lane:lane#0","data_block":"block","ordinal":0,"declared_count":3,"anchor_index":1,"raw_anchor_index":"01","anchor_data_block":"anchor","member_indices":[2],"raw_member_indices":["02"],"member_data_blocks":["member"],"source_offset":9,"anchor_source_offset":11,"member_source_offsets":[12]}"#;
         let record: DataBlockCountedIndexLane = serde_json::from_str(json).unwrap();
         let borrowed = serde_json::to_vec(&record).unwrap();
         let owned = serde_json::to_vec(&super::super::wire::DataBlockCountedIndexLaneWire::from(

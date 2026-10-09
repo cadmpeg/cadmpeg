@@ -896,43 +896,43 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         if let Some(radius) = parameter {
             let first = crate::surface::SurfaceParameterScalar {
                 value: Some(1.0),
-                raw: vec![0],
+                raw: vec![0].into(),
                 offset: 1,
             };
             let second = crate::surface::SurfaceParameterScalar {
                 value: Some(1.0 + 2.0 * radius),
-                raw: vec![0],
+                raw: vec![0].into(),
                 offset: 3,
             };
             let extent = [
                 crate::surface::SurfaceParameterScalar {
                     value: Some(0.0),
-                    raw: vec![0],
+                    raw: vec![0].into(),
                     offset: 4,
                 },
                 crate::surface::SurfaceParameterScalar {
                     value: Some(0.0),
-                    raw: vec![0],
+                    raw: vec![0].into(),
                     offset: 5,
                 },
                 crate::surface::SurfaceParameterScalar {
                     value: Some(0.0),
-                    raw: vec![0],
+                    raw: vec![0].into(),
                     offset: 6,
                 },
                 crate::surface::SurfaceParameterScalar {
                     value: Some(2.0 * radius),
-                    raw: vec![0],
+                    raw: vec![0].into(),
                     offset: 7,
                 },
                 crate::surface::SurfaceParameterScalar {
                     value: Some(0.0),
-                    raw: vec![0],
+                    raw: vec![0].into(),
                     offset: 8,
                 },
                 crate::surface::SurfaceParameterScalar {
                     value: Some(0.0),
-                    raw: vec![0],
+                    raw: vec![0].into(),
                     offset: 9,
                 },
             ];

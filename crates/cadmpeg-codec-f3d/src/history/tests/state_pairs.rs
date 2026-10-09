@@ -836,7 +836,7 @@ fn snapshot_edge_identity_requires_one_edge_record_and_positive_revision() {
             name: name.into(),
             entity_references: Vec::new(),
         },
-        raw_bytes: Vec::new(),
+        raw_bytes: Vec::new().into(),
     };
     let history = |records| AsmHistory {
         id: "history".into(),

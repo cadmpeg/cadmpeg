@@ -8,13 +8,13 @@ fn construction_wires() -> Vec<serde_json::Value> {
     vec![
         json!({
             "body_entity_suffixes":[101], "body_entity_suffix_offsets":[22],
-            "body_entity_fields":[[0,0,1,0,0,0]],
+            "body_entity_fields":["000001000000"],
             "body_reference_records":[201], "body_reference_record_offsets":[52],
-            "body_reference_fields":[[0,0,1,0,0,0]],
-            "repeated_reference_fields":[[0,0,1,0,0,0]],
+            "body_reference_fields":["000001000000"],
+            "repeated_reference_fields":["000001000000"],
             "metadata_record":401, "metadata_record_offset":110,
-            "metadata_field":[0,0], "result_records":[301],
-            "result_record_offsets":[82], "result_fields":[[0,0,1,0,0,0]]
+            "metadata_field":"0000", "result_records":[301],
+            "result_record_offsets":[82], "result_fields":["000001000000"]
         }),
         json!({
             "body_entity_suffixes":[201], "body_entity_suffix_offsets":[22],
@@ -28,7 +28,7 @@ fn construction_wires() -> Vec<serde_json::Value> {
         json!({
             "form":"compact_one_body", "mode":0, "mode_offset":17,
             "body_entity_suffixes":[101], "body_entity_suffix_offsets":[22],
-            "body_entity_fields":[[0,0,1,0,0,0]],
+            "body_entity_fields":["000001000000"],
             "body_reference_records":[101], "body_reference_record_offsets":[22],
             "parameter_body_records":[301], "parameter_body_record_offsets":[50],
             "auxiliary_records":[303], "auxiliary_record_offsets":[70],
@@ -40,7 +40,7 @@ fn construction_wires() -> Vec<serde_json::Value> {
         json!({
             "form":"expanded_two_body",
             "body_entity_suffixes":[101,102], "body_entity_suffix_offsets":[22,37],
-            "body_entity_fields":[[0,0,1,0,0,0],[0,0,1,0,0,0]],
+            "body_entity_fields":["000001000000","000001000000"],
             "body_reference_records":[101,102], "body_reference_record_offsets":[22,37],
             "parameter_body_records":[301,302], "parameter_body_record_offsets":[50,60],
             "auxiliary_records":[303,304], "auxiliary_record_offsets":[70,80],
@@ -51,7 +51,7 @@ fn construction_wires() -> Vec<serde_json::Value> {
         }),
         json!({
             "body_entity_suffixes":[101,202], "body_entity_suffix_offsets":[22,37],
-            "body_entity_fields":[[1,2,3,4,5,6],[6,5,4,3,2,1]],
+            "body_entity_fields":["010203040506","060504030201"],
             "related_guids":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 "cccccccc-cccc-4ccc-8ccc-cccccccccccc"],

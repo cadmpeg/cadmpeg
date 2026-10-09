@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native state-journal group metadata and flat wire admission.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::om::journal_group::JournalGroup;
 use crate::om::state_journal::JournalRow;
 use serde::ser::SerializeSeq;
@@ -33,7 +35,7 @@ struct JournalGroupRef<'a> {
     id: &'a str,
     section_link: &'a str,
     ordinal: u32,
-    selector: [u8; 2],
+    selector: NativeBytes<[u8; 2]>,
     rows: JournalRows<'a>,
     source_entry: &'a str,
     source_offset: u64,
@@ -46,7 +48,7 @@ impl Serialize for OmOperationStateJournalGroup {
             id: &self.id,
             section_link: &self.section_link,
             ordinal: self.ordinal,
-            selector: self.frame.selector(),
+            selector: (self.frame.selector()).into(),
             rows: JournalRows(&self.frame),
             source_entry: &self.source_entry,
             source_offset: self.frame.offset(),
@@ -61,7 +63,7 @@ struct Wire {
     id: String,
     section_link: String,
     ordinal: u32,
-    selector: [u8; 2],
+    selector: NativeBytes<[u8; 2]>,
     rows: Vec<JournalRow>,
     source_entry: String,
     source_offset: u64,
@@ -75,7 +77,7 @@ impl From<OmOperationStateJournalGroup> for Wire {
             id: group.id,
             section_link: group.section_link,
             ordinal: group.ordinal,
-            selector: group.frame.selector(),
+            selector: (group.frame.selector()).into(),
             rows: group.frame.rows().iter().copied().collect(),
             source_entry: group.source_entry,
             source_offset: group.frame.offset(),
@@ -87,7 +89,7 @@ impl From<OmOperationStateJournalGroup> for Wire {
 impl TryFrom<Wire> for OmOperationStateJournalGroup {
     type Error = String;
     fn try_from(wire: Wire) -> Result<Self, Self::Error> {
-        let frame = JournalGroup::new(wire.selector, wire.source_offset, wire.rows)?;
+        let frame = JournalGroup::new(*wire.selector, wire.source_offset, wire.rows)?;
         if wire.end_offset != frame.end_offset() {
             return Err("end_offset: disagrees with final journal row".into());
         }
@@ -110,7 +112,7 @@ mod tests {
         for start in [4u64, 5] {
             let end = start + 11;
             let json = format!(
-                r#"{{"id":"group","section_link":"section","ordinal":0,"selector":[1,2],"rows":[{{"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"schema_id":0,"raw_schema_id":[0],"state_ordinal":0,"raw_state_ordinal":[0],"source_offset":{start},"end_offset":{end}}}],"source_entry":"om","source_offset":0,"end_offset":{end}}}"#
+                r#"{{"id":"group","section_link":"section","ordinal":0,"selector":"0102","rows":[{{"timestamp":0,"value_marker":160,"value":0,"raw_value":"a00000","schema_id":0,"raw_schema_id":"00","state_ordinal":0,"raw_state_ordinal":"00","source_offset":{start},"end_offset":{end}}}],"source_entry":"om","source_offset":0,"end_offset":{end}}}"#
             );
             let group: OmOperationStateJournalGroup = serde_json::from_str(&json).unwrap();
             assert_eq!(serde_json::to_string(&group).unwrap(), json);
@@ -158,7 +160,7 @@ mod tests {
 
     #[test]
     fn journal_group_native_limit_refuses_before_row_copy() {
-        let json = r#"{"id":"nx:om:state-journal-group#0","section_link":"section","ordinal":0,"selector":[1,2],"rows":[{"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"schema_id":0,"raw_schema_id":[0],"state_ordinal":0,"raw_state_ordinal":[0],"source_offset":4,"end_offset":15}],"source_entry":"om","source_offset":0,"end_offset":15}"#;
+        let json = r#"{"id":"nx:om:state-journal-group#0","section_link":"section","ordinal":0,"selector":"0102","rows":[{"timestamp":0,"value_marker":160,"value":0,"raw_value":"a00000","schema_id":0,"raw_schema_id":"00","state_ordinal":0,"raw_state_ordinal":"00","source_offset":4,"end_offset":15}],"source_entry":"om","source_offset":0,"end_offset":15}"#;
         let group: OmOperationStateJournalGroup = serde_json::from_str(json).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &group,

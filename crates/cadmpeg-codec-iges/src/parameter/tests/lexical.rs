@@ -256,7 +256,7 @@ fn a_hollerith_payload_may_cross_a_card_but_its_header_may_not() {
             decode_ctx,
         )
         .unwrap_or_else(|_| panic!("a Hollerith payload may cross its card boundary"));
-        assert!(matches!(tokens[2].value, TokenValue::String(ref value) if value == b"abcd"));
+        assert!(matches!(tokens[2].value, TokenValue::String(ref value) if **value == b"abcd"));
 
         let mut header_crosses = b"116,".to_vec();
         header_crosses.extend(std::iter::repeat_n(b'0', 57));
@@ -287,7 +287,7 @@ fn hollerith_string_bytes_follow_the_declared_dialect() {
             .unwrap_or_else(|_| panic!("IGES 4.0 permits ASCII control bytes in strings"));
         assert!(matches!(
             tokens[1].value,
-            TokenValue::String(ref value) if value == b"a\0c"
+            TokenValue::String(ref value) if **value == b"a\0c"
         ));
 
         assert!(matches!(

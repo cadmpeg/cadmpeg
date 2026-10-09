@@ -79,7 +79,7 @@ pub(crate) mod pair_wire {
     #[derive(Serialize, Deserialize)]
     struct Wire {
         values: [f64; 2],
-        raw_values: [[u8; 7]; 2],
+        raw_values: [cadmpeg_ir::native::bytes::NativeBytes<[u8; 7]>; 2],
     }
 
     pub(crate) fn serialize<S: Serializer>(
@@ -88,7 +88,7 @@ pub(crate) mod pair_wire {
     ) -> Result<S::Ok, S::Error> {
         Wire {
             values: values.map(Q155::value),
-            raw_values: values.map(Q155::raw),
+            raw_values: (values.map(Q155::raw)).map(Into::into),
         }
         .serialize(serializer)
     }
@@ -97,7 +97,7 @@ pub(crate) mod pair_wire {
         deserializer: D,
     ) -> Result<[Q155; 2], D::Error> {
         let wire = Wire::deserialize(deserializer)?;
-        let [a, b] = std::array::from_fn(|i| Q155::from_wire(wire.values[i], wire.raw_values[i]));
+        let [a, b] = std::array::from_fn(|i| Q155::from_wire(wire.values[i], *wire.raw_values[i]));
         Ok([
             a.map_err(serde::de::Error::custom)?,
             b.map_err(serde::de::Error::custom)?,

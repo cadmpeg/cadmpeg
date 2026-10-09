@@ -10,7 +10,11 @@ where
     assert_eq!(serde_json::to_string(&lane).unwrap(), json);
     for column in columns {
         let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
-        malformed[*column].as_array_mut().unwrap().pop();
+        if let serde_json::Value::String(bytes) = &mut malformed[*column] {
+            bytes.truncate(bytes.len() - 2);
+        } else {
+            malformed[*column].as_array_mut().unwrap().pop();
+        }
         assert!(serde_json::from_value::<T>(malformed).is_err(), "{column}");
     }
 }

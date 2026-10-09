@@ -228,7 +228,7 @@ mod admission_tests {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    const ROW: &str = r#"{"id":"relation","ordinal":0,"first_index":1,"raw_first_index":[128,1],"first_index_source_offset":8,"class_name":"UGS::RM_creation_display_data","class_definition":"definition","encoding":{"kind":"index","flag":3,"indices":[2,3,4,5],"raw_indices":[[2],[3],[4],[5]],"index_source_offsets":[13,14,15,16]},"source_entry":"entry","source_offset":5}"#;
+    const ROW: &str = r#"{"id":"relation","ordinal":0,"first_index":1,"raw_first_index":"8001","first_index_source_offset":8,"class_name":"UGS::RM_creation_display_data","class_definition":"definition","encoding":{"kind":"index","flag":3,"indices":[2,3,4,5],"raw_indices":["02","03","04","05"],"index_source_offsets":[13,14,15,16]},"source_entry":"entry","source_offset":5}"#;
 
     #[test]
     fn creation_display_relation_refuses_collection_limit() {
