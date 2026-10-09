@@ -147,6 +147,43 @@ fn normalized_projection_rejects_range_loss_and_preserves_exact_constants() {
 }
 
 #[test]
+fn quadratic_orders_keep_tiny_coefficients_and_weight_derivative_cancellation() {
+    use crate::geometry::nurbs::WeightedPole3;
+    use crate::scalar::{FiniteReal, NonZeroReal};
+    let s = 2.0_f64.powi(-600);
+    let q = 2.0_f64.powi(300);
+    assert_eq!(s * s, 0.0);
+    for exponent in [-900, 0, 900] {
+        for sign in [-1.0, 1.0] {
+            let common = sign * 2.0_f64.powi(exponent);
+            let poles = [(0.0, common), (0.0, common), (q, 2.0 * common)]
+                .map(|(x, weight)| WeightedPole3 {
+                    point: FinitePoint3::new(Point3::new(x, -0.0, 0.0)).unwrap(),
+                    weight: NonZeroReal::new(weight).unwrap(),
+                });
+            let [base, first, second] = Homogeneous::quadratic_orders(&poles,
+                FiniteReal::new(s).unwrap()).unwrap();
+            // W=common*(1+s²), W'=2*common*s, W''=2*common.
+            // The complete W rounds to common. Differencing rounded
+            // Bernstein coefficients would instead erase or double W'.
+            let weight = base.values[3].unwrap();
+            assert_eq!(first.values[3].unwrap().quotient(weight).unwrap().get(), 2.0 * s);
+            assert_eq!(second.values[3].unwrap().quotient(weight).unwrap().get(), 2.0);
+            // C=2q*s²/(1+s²). Its value and first two derivatives
+            // differ from these powers of two below binary64 resolution.
+            let point = base.project_normalized(base, &[]).unwrap();
+            assert_eq!(point[0].get(), 2.0_f64.powi(-899));
+            assert_eq!(point[1].get().to_bits(), (-0.0_f64).to_bits());
+            let tangent = first.project_normalized(base, &[(first, point)]).unwrap();
+            assert_eq!(tangent[0].get(), 2.0_f64.powi(-298));
+            let acceleration = second.project_normalized(base,
+                &[(second, point), (first, tangent), (first, tangent)]).unwrap();
+            assert_eq!(acceleration[0].get(), 2.0_f64.powi(302));
+        }
+    }
+}
+
+#[test]
 fn homogeneous_weights_admit_actual_scans_and_copies() {
     use crate::math::sum::scaled_finite;
     let normal = [

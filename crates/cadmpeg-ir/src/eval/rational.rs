@@ -42,20 +42,14 @@ enum ProjectedLane {
 
 impl Homogeneous {
     /// The three normalized orders of a quadratic Bezier carrier, in one
-    /// fixed three-pole walk. A nonzero coefficient lost below binary64
-    /// leaves this finite-coefficient route unavailable.
+    /// fixed three-pole walk. Accumulate the expanded Bernstein terms before
+    /// rounding; a tiny squared parameter remains an extended product.
     pub(super) fn quadratic_orders(
         poles: &[crate::geometry::nurbs::WeightedPole3<FinitePoint3>; 3],
         parameter: FiniteReal,
     ) -> Option<[Self; 3]> {
         let s = parameter.get();
         if !(0.0..=1.0).contains(&s) { return None; }
-        let left = 1.0 - s;
-        let base = [left * left, 2.0 * s * left, s * s];
-        if (left != 0.0 && base[0] == 0.0)
-            || (left != 0.0 && s != 0.0 && base[1] == 0.0)
-            || (s != 0.0 && base[2] == 0.0) { return None; }
-        let coefficients = [base, [-2.0 * left, 2.0 - 4.0 * s, 2.0 * s], [2.0, -4.0, 2.0]];
         let mut sums: [[ExactSignedSum; 4]; 3] =
             std::array::from_fn(|_| std::array::from_fn(|_| ExactSignedSum::default()));
         let mut constant = poles[0].point.coordinates().map(Some);
@@ -63,10 +57,25 @@ impl Homogeneous {
             for (axis, coordinate) in pole.point.coordinates().into_iter().enumerate() {
                 if constant[axis] != Some(coordinate) { constant[axis] = None; }
             }
-            for (order, lanes) in sums.iter_mut().enumerate() {
+            // B=[1-2s+s²,2s-2s²,s²], B'=[-2+2s,2-4s,2s].
+            // Every term has at most four finite factors, including weight
+            // and coordinate. The ordinal is bounded by the actual array3.
+            let (base, first, second): (&[[f64; 2]], &[[f64; 2]], f64) = match local {
+                0 => (&[[1.0, 1.0], [-s, 1.0], [-s, 1.0], [s, s]],
+                    &[[-2.0, 1.0], [2.0, s]], 2.0),
+                1 => (&[[s, 1.0], [s, 1.0], [-s, s], [-s, s]],
+                    &[[2.0, 1.0], [-4.0, s]], -4.0),
+                _ => (&[[s, s]], &[[2.0, s]], 2.0),
+            };
+            for (lanes, terms) in sums[..2].iter_mut().zip([base, first]) {
                 for (sum, coordinate) in lanes.iter_mut().zip([pole.point.x, pole.point.y, pole.point.z, 1.0]) {
-                    sum.add_factors([coefficients[order][local], pole.weight.get(), coordinate]);
+                    for [u, v] in terms {
+                        sum.add_factors([*u, *v, pole.weight.get(), coordinate]);
+                    }
                 }
+            }
+            for (sum, coordinate) in sums[2].iter_mut().zip([pole.point.x, pole.point.y, pole.point.z, 1.0]) {
+                sum.add_factors([second, pole.weight.get(), coordinate]);
             }
         }
         let [base, first, second] = sums.map(|lanes| Self {

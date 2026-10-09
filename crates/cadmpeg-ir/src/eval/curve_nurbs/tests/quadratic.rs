@@ -56,6 +56,35 @@ fn quadratic_rational_third_has_the_true_law_without_heap_or_variable_work() {
 }
 
 #[test]
+fn quadratic_third_retains_a_squared_coefficient_before_large_pole_amplification() {
+    let parameter = 2.0_f64.powi(-600);
+    let endpoint = 2.0_f64.powi(300);
+    assert_eq!(parameter * parameter, 0.0);
+    let geometry = curve([0.0, 1.0], endpoint, [1.0, 1.0, 2.0], false);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    // -48q*s*(1-s²)/(1+s²)^4 differs from -48*2^-300
+    // below binary64 resolution; all normalized geometric orders are normal.
+    let expected = -48.0 * 2.0_f64.powi(-300);
+    for admission in [EvaluationAdmission::Decode(&ctx), EvaluationAdmission::Standard] {
+        let actual = third(&decode::Scratch::new(admission), &geometry, parameter).unwrap().x;
+        assert!((actual - expected).abs() <= 32.0 * f64::EPSILON * expected.abs());
+    }
+    let budget = WorkBudget::new(0);
+    let actual = EvaluationAdmission::Standard.within_work_slice(&budget, |admission| {
+        third(&decode::Scratch::new(admission), &geometry, parameter)
+    }).unwrap().x;
+    assert!((actual - expected).abs() <= 32.0 * f64::EPSILON * expected.abs());
+    assert_eq!(budget.consumed(), 0);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
 fn quadratic_third_keeps_scaled_spans_and_separate_intermediate_limits() {
     let h = 2.0_f64.powi(-350);
     let tiny = curve([0.0, h], 2.0_f64.powi(-1000), [1.0, 1.0, 2.0], false);
