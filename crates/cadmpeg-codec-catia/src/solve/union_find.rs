@@ -48,7 +48,8 @@ impl UnionFind<'_> {
             cadmpeg_core::decode::u64_from_index(self.parents.len()),
             operation,
         )?;
-        let (parents, storage) = ctx.copy_temporary_slice(&self.parents, operation)?;
+        let (mut parents, storage) = ctx.scoped_vector_storage(self.parents.len(), operation)?;
+        parents.extend_from_slice(&self.parents);
         Ok(UnionFind {
             parents,
             _storage: Some(storage),

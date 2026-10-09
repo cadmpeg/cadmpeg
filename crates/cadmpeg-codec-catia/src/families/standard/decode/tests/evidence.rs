@@ -106,15 +106,16 @@ fn standard_evidence_store_refuses_each_collection_before_retaining_geometry() {
 }
 
 #[test]
-fn standard_population_object_copy_refuses_retained_limit() {
-    let stream = b5_closed_triangle_stream();
+fn standard_population_conflict_comparison_refuses_work_limit() {
+    let mut stream = Vec::new();
+    crate::test_support::test_b5::append_b5_record(&mut stream, 0x5f, 9, &[0x80]);
     let mut cap = 0;
     let mut reached = false;
     for _ in 0..128 {
-        let refusal = crate::test_support::with_retained_limit(cap, |ctx| {
+        let refusal = crate::test_support::with_work_limit(cap, |ctx| {
             standard_object_evidence_from_streams(
                 ctx,
-                [stream.clone()],
+                std::slice::from_ref(&stream),
                 &HashSet::new(),
                 &HashSet::new(),
                 &mut crate::nurbs::LaneRefusals::new(),
@@ -122,7 +123,7 @@ fn standard_population_object_copy_refuses_retained_limit() {
         });
         match refusal {
             Err(cadmpeg_core::CodecError::ResourceLimit(error))
-                if error.operation == "catia_standard_population_object_bytes" =>
+                if error.operation == "catia_standard_population_object_compare" =>
             {
                 reached = true;
                 break;
@@ -133,11 +134,11 @@ fn standard_population_object_copy_refuses_retained_limit() {
                     .checked_add(error.additional)
                     .expect("bounded fixture");
             }
-            Ok(_) => panic!("population copy admitted before its limit"),
-            Err(error) => panic!("unexpected population copy refusal: {error}"),
+            Ok(_) => panic!("population comparison admitted before its limit"),
+            Err(error) => panic!("unexpected population comparison refusal: {error}"),
         }
     }
-    assert!(reached, "population copy limit was not reached");
+    assert!(reached, "population comparison limit was not reached");
 }
 
 #[test]
@@ -146,7 +147,7 @@ fn standard_object_record_scan_refuses_caller_collection_limit() {
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
         standard_object_evidence_from_streams(
             ctx,
-            [stream],
+            &[stream],
             &HashSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
@@ -333,7 +334,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         standard_object_evidence_from_streams(
             ctx,
-            [stream.clone(), stream.clone()],
+            &[stream.clone(), stream.clone()],
             &HashSet::from([10]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
@@ -354,7 +355,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         standard_object_evidence_from_streams(
             ctx,
-            [stream, conflicting],
+            &[stream, conflicting],
             &HashSet::from([10]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
@@ -475,7 +476,7 @@ fn object_evidence_exports_revolution_cache_and_construction() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         standard_object_evidence_from_streams(
             ctx,
-            [stream],
+            &[stream],
             &HashSet::from([120]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),

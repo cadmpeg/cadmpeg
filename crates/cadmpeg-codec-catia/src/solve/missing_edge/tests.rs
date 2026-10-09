@@ -897,3 +897,34 @@ fn mesh_edge_run_materialization_refuses_before_occurrence_copy() {
 }
 
 mod ports_and_coverage;
+
+#[test]
+fn repeated_handle_index_charges_scan_and_preserves_face_order() {
+    let rows = vec![row(&[10, 10, 11, 11])];
+    let mut faces = vec![handles(&[10, 11]), handles(&[10, 11]), handles(&[10, 11])];
+    for handle in 100..1124 {
+        faces.push(handles(&[handle]));
+    }
+    let expected = vec![vec![1, 2]];
+    let membership_count = faces
+        .iter()
+        .map(std::collections::HashSet::len)
+        .sum::<usize>();
+    // One membership scan, a short row, and the small-sort bound for two usize values.
+    let work_limit = u64::try_from(
+        membership_count + rows[0].handles().len() * 2 + 16 + 2 * size_of::<usize>() * 3 * 8,
+    )
+    .expect("synthetic index and sort work fits u64");
+    let actual = crate::test_support::with_work_limit(work_limit, |ctx| {
+        repeated_edge_face_handle_candidates_from_sets(ctx, &rows, &faces, &[[0, 0]])
+    })
+    .expect("one membership index and shared postings fit the work allowance");
+    assert_eq!(actual, Some(expected));
+    let refused = crate::test_support::with_work_limit(5, |ctx| {
+        repeated_edge_face_handle_candidates_from_sets(ctx, &rows, &faces, &[[0, 0]])
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia repeated edge handle index scan")
+    );
+}

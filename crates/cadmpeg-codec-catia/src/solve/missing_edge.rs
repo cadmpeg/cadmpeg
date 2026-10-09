@@ -1000,6 +1000,10 @@ fn repeated_edge_face_handle_candidates_from_sets(
         return Ok(None);
     }
     for (row, faces) in edge_rows.iter().zip(serialized) {
+        ctx.charge_work(
+            u64_from_index(row.handles().len()),
+            "catia repeated edge owner handles",
+        )?;
         if !row
             .handles()
             .iter()
@@ -1013,26 +1017,66 @@ fn repeated_edge_face_handle_candidates_from_sets(
         Vec::new(),
         "catia_repeated_edge_handle_face_candidates",
     )?;
+    if !edge_rows
+        .iter()
+        .zip(serialized)
+        .any(|(row, faces)| faces[0] == faces[1] && row.handles().len() >= 2)
+    {
+        return Ok(Some(candidates));
+    }
+    let (face_index, _index_storage) =
+        ctx.with_scoped_storage("catia repeated edge handle index", || {
+            let mut index = HashMap::<u32, Vec<usize>>::new();
+            for (face, handles) in face_handles.iter().enumerate() {
+                for &handle in handles {
+                    ctx.charge_work(1, "catia repeated edge handle index scan")?;
+                    ctx.admit_hash_map_entry(
+                        &mut index,
+                        &handle,
+                        "catia repeated edge handle index keys",
+                    )?;
+                    ctx.push_vec(
+                        index.entry(handle).or_default(),
+                        face,
+                        "catia repeated edge handle index faces",
+                    )?;
+                }
+            }
+            Ok::<_, CodecError>(index)
+        })?;
     for (edge, (row, faces)) in edge_rows.iter().zip(serialized).enumerate() {
         if faces[0] != faces[1] || row.handles().len() < 2 {
             continue;
         }
-        let mut unique_handles = HashSet::new();
-        ctx.reserve_set(
-            &mut unique_handles,
-            row.handles().len(),
-            "catia repeated edge unique handles",
-        )?;
-        unique_handles.extend(row.handles().iter().copied());
+        let (unique_handles, _handle_storage) =
+            ctx.with_scoped_storage("catia repeated edge unique handles", || {
+                ctx.collect_hash_set(
+                    row.handles().iter().copied(),
+                    "catia repeated edge unique handles",
+                )
+            })?;
+        let (counts, _count_storage) =
+            ctx.with_scoped_storage("catia repeated edge overlap workspace", || {
+                let mut counts = HashMap::<usize, usize>::new();
+                for handle in &unique_handles {
+                    ctx.charge_work(1, "catia repeated edge handle lookup")?;
+                    for &face in face_index.get(handle).into_iter().flatten() {
+                        ctx.charge_work(1, "catia repeated edge shared handle")?;
+                        if face == faces[0] {
+                            continue;
+                        }
+                        ctx.admit_hash_map_entry(
+                            &mut counts,
+                            &face,
+                            "catia repeated edge overlap faces",
+                        )?;
+                        *counts.entry(face).or_default() += 1;
+                    }
+                }
+                Ok::<_, CodecError>(counts)
+            })?;
         let mut matching = Vec::new();
-        for (face, handles) in face_handles.iter().enumerate() {
-            if face == faces[0] {
-                continue;
-            }
-            let shared = unique_handles
-                .iter()
-                .filter(|handle| handles.contains(handle))
-                .count();
+        for (&face, &shared) in &counts {
             let qualifies = if unique_handles.len() >= 4 {
                 shared >= 3 && shared >= unique_handles.len().div_ceil(2)
             } else {
@@ -1042,6 +1086,12 @@ fn repeated_edge_face_handle_candidates_from_sets(
                 ctx.push_vec(&mut matching, face, "catia repeated edge matching faces")?;
             }
         }
+        ctx.sort_unstable_by(
+            &mut matching,
+            Ord::cmp,
+            |_| 0,
+            "catia repeated edge matching faces sort",
+        )?;
         if unique_handles.len() >= 4 && matching.len() != 1 {
             matching.clear();
         }
@@ -1081,14 +1131,10 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
             let mut face_handles =
                 ctx.collection_vec(trims.len(), "catia repeated edge face handles")?;
             for trim in trims {
-                let mut handles = HashSet::new();
-                ctx.reserve_set(
-                    &mut handles,
-                    trim.packet.handles().len(),
+                face_handles.push(ctx.collect_hash_set(
+                    trim.packet.handles().iter().copied(),
                     "catia repeated edge face handle set",
-                )?;
-                handles.extend(trim.packet.handles().iter().copied());
-                face_handles.push(handles);
+                )?);
             }
             Ok::<_, CodecError>(face_handles)
         })?;
@@ -2098,11 +2144,21 @@ fn mesh_face_coverage(
             )?;
         }
     }
+    let max_cycle_len = cycles.iter().flatten().map(Vec::len).max().unwrap_or(0);
+    let (mut covered_buffer, _covered_storage) = ctx
+        .with_scoped_storage("catia_mesh_cycle_coverage", || {
+            ctx.alloc_filled(max_cycle_len, false, "catia_mesh_cycle_coverage")
+        })?;
     let mut coverage = Vec::new();
     for (face, face_cycles) in cycles.iter().enumerate() {
         let mut gaps = Vec::new();
         for (cycle_index, cycle) in face_cycles.iter().enumerate() {
-            let mut covered = ctx.alloc_filled(cycle.len(), false, "catia_mesh_cycle_coverage")?;
+            ctx.charge_work(
+                u64_from_index(cycle.len()),
+                "catia_mesh_cycle_coverage_clear",
+            )?;
+            let covered = &mut covered_buffer[..cycle.len()];
+            covered.fill(false);
             for occurrence in &occurrences_by_cycle[face][cycle_index] {
                 let start = occurrence.start;
                 let segment_count = occurrence.segment_count;
@@ -3749,14 +3805,15 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
                             if coverage.iter().any(|count| *count != 1) {
                                 return Ok(None);
                             }
-                            let mut boundary = Vec::new();
-                            for (edge, _) in uses {
-                                ctx.push_vec(
-                                    &mut boundary,
-                                    edge,
-                                    "catia_mesh_completed_boundary_entries",
-                                )?;
-                            }
+                            let mut boundary = ctx.vector_storage(
+                                uses.len(),
+                                "catia_mesh_completed_boundary_entries",
+                            )?;
+                            ctx.charge_work(
+                                u64_from_index(uses.len()),
+                                "catia_mesh_completed_boundary_entries",
+                            )?;
+                            boundary.extend(uses.into_iter().map(|(edge, _)| edge));
                             ctx.push_vec(
                                 &mut completed,
                                 boundary,
@@ -4026,13 +4083,19 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
     };
     let point_count = vertex_points.len();
     let mut complete_domain = Vec::new();
-    for left in 0..point_count {
-        for right in (left + 1)..point_count {
-            ctx.push_vec(
-                &mut complete_domain,
-                [left, right],
-                "catia_prune_complete_point_pairs",
-            )?;
+    ctx.charge_work(
+        u64_from_index(edge_candidates.len()),
+        "catia_prune_missing_domain_scan",
+    )?;
+    if edge_candidates.iter().any(Vec::is_empty) {
+        for left in 0..point_count {
+            for right in (left + 1)..point_count {
+                ctx.push_vec(
+                    &mut complete_domain,
+                    [left, right],
+                    "catia_prune_complete_point_pairs",
+                )?;
+            }
         }
     }
     let mut candidates = Vec::new();

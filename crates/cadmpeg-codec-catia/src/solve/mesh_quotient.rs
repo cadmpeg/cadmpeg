@@ -7,7 +7,7 @@ use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 #[cfg(test)]
 use std::num::NonZeroUsize;
 
-use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{work_units, DecodeContext, ScopedReservation, WorkBudget};
 #[cfg(test)]
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -593,11 +593,23 @@ fn sparse_membership_refuses_before_incompatible_domains() {
     }
 }
 
-#[cfg_attr(test, derive(Clone))]
 pub(crate) struct MeshQuotient<'storage> {
     union: UnionFind<'storage>,
     domains: Vec<Arc<HashSet<usize>>>,
-    members: Vec<Vec<usize>>,
+    members: Vec<Option<Arc<Vec<usize>>>>,
+    _storage: Option<ScopedReservation<'storage>>,
+}
+
+#[cfg(test)]
+impl Clone for MeshQuotient<'_> {
+    fn clone(&self) -> Self {
+        Self {
+            union: self.union.clone(),
+            domains: self.domains.clone(),
+            members: self.members.clone(),
+            _storage: None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1427,7 +1439,6 @@ fn initial_quotient_union_and_merge_refuse_each_collection_limit() {
         "catia_quotient_members",
         "catia_quotient_member_nodes",
         "catia_quotient_intersection",
-        "catia_quotient_merged_members",
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
@@ -1512,24 +1523,29 @@ impl<'storage> MeshQuotient<'storage> {
         let union = self
             .union
             .clone_charged(ctx, "catia_quotient_clone_union")?;
-        let domains = ctx.try_collect_retained_with(
-            &self.domains,
-            "catia_quotient_clone_domains",
-            |domain| Ok::<_, CodecError>(Arc::clone(domain)),
-        )?;
-        let mut members = Vec::new();
-        ctx.reserve_vec(
-            &mut members,
-            self.members.len(),
-            "catia_quotient_clone_member_rows",
-        )?;
-        for row in &self.members {
-            members.push(ctx.copy_slice(row, "catia_quotient_clone_member_nodes")?);
-        }
+        let ((domains, members), storage) =
+            ctx.with_scoped_storage("catia_quotient_snapshot_tables", || {
+                let mut domains =
+                    ctx.vector_storage(self.domains.len(), "catia_quotient_clone_domains")?;
+                let mut members =
+                    ctx.vector_storage(self.members.len(), "catia_quotient_clone_member_rows")?;
+                ctx.charge_work(
+                    u64_from_index(self.domains.len()),
+                    "catia_quotient_clone_domains",
+                )?;
+                ctx.charge_work(
+                    u64_from_index(self.members.len()),
+                    "catia_quotient_clone_member_rows",
+                )?;
+                domains.extend(self.domains.iter().map(Arc::clone));
+                members.extend(self.members.iter().cloned());
+                Ok::<_, CodecError>((domains, members))
+            })?;
         Ok(Self {
             union,
             domains,
             members,
+            _storage: Some(storage),
         })
     }
 
@@ -1538,14 +1554,21 @@ impl<'storage> MeshQuotient<'storage> {
         domains: Vec<Arc<HashSet<usize>>>,
     ) -> Result<Self, CodecError> {
         let union = UnionFind::charged(ctx, domains.len(), "catia_quotient_union")?;
-        let mut members = ctx.alloc_filled(domains.len(), Vec::new(), "catia_quotient_members")?;
-        for (node, group) in members.iter_mut().enumerate() {
-            ctx.push_vec(group, node, "catia_quotient_member_nodes")?;
+        let mut members = ctx.collection_vec(domains.len(), "catia_quotient_members")?;
+        ctx.charge_work(u64_from_index(domains.len()), "catia_quotient_members")?;
+        for node in 0..domains.len() {
+            let row = ctx.copy_slice(&[node], "catia_quotient_member_nodes")?;
+            ctx.charge_retained(
+                u64_from_index(size_of::<Vec<usize>>() + 2 * size_of::<usize>()),
+                "catia_quotient_shared_members",
+            )?;
+            members.push(Some(Arc::new(row)));
         }
         Ok(Self {
             union,
             domains,
             members,
+            _storage: None,
         })
     }
 
@@ -1553,8 +1576,11 @@ impl<'storage> MeshQuotient<'storage> {
     pub(crate) fn new(domains: Vec<Arc<HashSet<usize>>>) -> Self {
         Self {
             union: UnionFind::new(domains.len()),
-            members: (0..domains.len()).map(|node| vec![node]).collect(),
+            members: (0..domains.len())
+                .map(|node| Some(Arc::new(vec![node])))
+                .collect(),
             domains,
+            _storage: None,
         }
     }
 
@@ -1579,7 +1605,7 @@ impl<'storage> MeshQuotient<'storage> {
     }
 
     fn members(&self, root: usize) -> &[usize] {
-        &self.members[root]
+        self.members[root].as_deref().map_or(&[], Vec::as_slice)
     }
 
     pub(super) fn coordinate_domain_preparation_limit(
@@ -1739,17 +1765,58 @@ impl<'storage> MeshQuotient<'storage> {
         if intersection.is_empty() {
             return Ok(None);
         }
-        let child_members = self.members[right].len();
-        ctx.reserve_vec(
-            &mut self.members[left],
-            child_members,
-            "catia_quotient_merged_members",
-        )?;
+        let right_members = self.members[right]
+            .as_ref()
+            .map(Arc::clone)
+            .ok_or_else(|| CodecError::malformed("quotient root has no member row"))?;
+        let replacement = if let Some(members) = self.members[left].as_mut().and_then(Arc::get_mut)
+        {
+            ctx.reserve_capacity_limit(
+                members,
+                right_members.len(),
+                "catia_quotient_merged_members",
+            )?;
+            ctx.charge_work(
+                u64_from_index(right_members.len()),
+                "catia_quotient_merged_members",
+            )?;
+            None
+        } else {
+            let member_count = self
+                .members(left)
+                .len()
+                .checked_add(right_members.len())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("catia_quotient_merged_members", u64::MAX - 1, u64::MAX)
+                })?;
+            let mut members = ctx.vector_storage(member_count, "catia_quotient_merged_members")?;
+            ctx.charge_work(
+                u64_from_index(member_count),
+                "catia_quotient_merged_members",
+            )?;
+            members.extend_from_slice(self.members(left));
+            members.extend_from_slice(&right_members);
+            ctx.charge_retained(
+                u64_from_index(size_of::<Vec<usize>>() + 2 * size_of::<usize>()),
+                "catia_quotient_shared_members",
+            )?;
+            Some(Arc::new(members))
+        };
         self.union.union(ctx, left, right)?;
         let root = self.union.find(ctx, left)?;
         self.domains[root] = Arc::new(intersection);
-        let child_members = std::mem::take(&mut self.members[right]);
-        self.members[root].extend(child_members);
+        if let Some(members) = replacement {
+            self.members[root] = Some(members);
+        } else {
+            self.members[root]
+                .as_mut()
+                .and_then(Arc::get_mut)
+                .ok_or_else(|| {
+                    CodecError::malformed("quotient member row became shared during merge")
+                })?
+                .extend_from_slice(&right_members);
+        }
+        self.members[right] = None;
         Ok(Some(root))
     }
 
@@ -1997,25 +2064,35 @@ impl<'storage> MeshQuotient<'storage> {
         budget: Option<&WorkBudget<'_>>,
     ) -> Result<bool, CodecError> {
         fn enqueue_component_edges(
+            ctx: &DecodeContext<'_>,
+            storage: &mut ScopedReservation<'_>,
             members: &[usize],
             edge_candidates: &[Vec<[usize; 2]>],
             queue: &mut VecDeque<usize>,
             queued: &mut HashSet<usize>,
-        ) {
+        ) -> Result<(), CodecError> {
             for edge in members.iter().map(|node| node / 2) {
-                if !edge_candidates[edge].is_empty() && queued.insert(edge) {
-                    queue.push_back(edge);
+                ctx.charge_work(1, "catia_quotient_enqueue_component")?;
+                if !edge_candidates[edge].is_empty() && !queued.contains(&edge) {
+                    storage.with_storage(|| {
+                        ctx.insert_hash_set(queued, edge, "catia_quotient_queued_edges")?;
+                        ctx.push_back(queue, edge, "catia_quotient_edge_queue")
+                    })?;
                 }
             }
+            Ok(())
         }
 
-        let (mut queue, _queue_reservation) =
-            ctx.temporary_queue(edge_candidates.len(), "catia_quotient_edge_queue")?;
-        let (mut queued, _queued_reservation) =
-            ctx.temporary_set(edge_candidates.len(), "catia_quotient_queued_edges")?;
+        let mut queue_storage = ctx.reserve_scoped(0, "catia_quotient_edge_queue")?;
+        let mut queue = VecDeque::new();
+        let mut queued = HashSet::new();
         for edge in edges {
-            if queued.insert(edge) {
-                queue.push_back(edge);
+            ctx.charge_work(1, "catia_quotient_enqueue_component")?;
+            if !queued.contains(&edge) {
+                queue_storage.with_storage(|| {
+                    ctx.insert_hash_set(&mut queued, edge, "catia_quotient_queued_edges")?;
+                    ctx.push_back(&mut queue, edge, "catia_quotient_edge_queue")
+                })?;
             }
         }
         while let Some(edge) = queue.pop_front() {
@@ -2030,85 +2107,101 @@ impl<'storage> MeshQuotient<'storage> {
             let start = self.union.find(ctx, edge * 2)?;
             let end = self.union.find(ctx, edge * 2 + 1)?;
             if start == end {
-                let (mut supported, _support_reservation) =
-                    ctx.temporary_set(candidates.len(), "catia_quotient_self_support")?;
+                let (mut supported, mut support_reservation) =
+                    ctx.temporary_set(0, "catia_quotient_self_support")?;
                 for pair in candidates {
                     ctx.charge_work(1, "catia quotient edge support")?;
                     if pair[0] == pair[1] && self.domains[start].contains(&pair[0]) {
-                        supported.insert(pair[0]);
+                        support_reservation.with_storage(|| {
+                            ctx.insert_hash_set(
+                                &mut supported,
+                                pair[0],
+                                "catia_quotient_self_support",
+                            )
+                        })?;
                     }
                 }
                 if supported.is_empty() {
                     return Ok(false);
                 }
                 if supported != *self.domains[start] {
-                    ctx.charge_collection_items(
-                        u64_from_index(supported.len()),
-                        "catia_quotient_domain_update",
-                    )?;
+                    support_reservation.commit()?;
                     self.domains[start] = Arc::new(supported);
                     enqueue_component_edges(
+                        ctx,
+                        &mut queue_storage,
                         self.members(start),
                         edge_candidates,
                         &mut queue,
                         &mut queued,
-                    );
+                    )?;
                 }
                 continue;
             }
 
             let starts = self.domains[start].clone();
             let ends = self.domains[end].clone();
-            let Some(support_capacity) = candidates.len().checked_mul(2) else {
-                return Err(ctx.refuse_codec_limit(
-                    "catia_quotient_pair_support",
-                    u64::MAX,
-                    u64::MAX,
-                ));
-            };
-            let (mut supported_starts, _start_reservation) =
-                ctx.temporary_set(support_capacity, "catia_quotient_start_support")?;
-            let (mut supported_ends, _end_reservation) =
-                ctx.temporary_set(support_capacity, "catia_quotient_end_support")?;
+            let (mut supported_starts, mut start_reservation) =
+                ctx.temporary_set(0, "catia_quotient_start_support")?;
+            let (mut supported_ends, mut end_reservation) =
+                ctx.temporary_set(0, "catia_quotient_end_support")?;
             for &[left, right] in candidates {
                 ctx.charge_work(1, "catia quotient edge support")?;
                 if starts.contains(&left) && ends.contains(&right) {
-                    supported_starts.insert(left);
-                    supported_ends.insert(right);
+                    start_reservation.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut supported_starts,
+                            left,
+                            "catia_quotient_start_support",
+                        )
+                    })?;
+                    end_reservation.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut supported_ends,
+                            right,
+                            "catia_quotient_end_support",
+                        )
+                    })?;
                 }
                 if starts.contains(&right) && ends.contains(&left) {
-                    supported_starts.insert(right);
-                    supported_ends.insert(left);
+                    start_reservation.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut supported_starts,
+                            right,
+                            "catia_quotient_start_support",
+                        )
+                    })?;
+                    end_reservation.with_storage(|| {
+                        ctx.insert_hash_set(&mut supported_ends, left, "catia_quotient_end_support")
+                    })?;
                 }
             }
             if supported_starts.is_empty() || supported_ends.is_empty() {
                 return Ok(false);
             }
             if supported_starts != *self.domains[start] {
-                ctx.charge_collection_items(
-                    u64_from_index(supported_starts.len()),
-                    "catia_quotient_domain_update",
-                )?;
+                start_reservation.commit()?;
                 self.domains[start] = Arc::new(supported_starts);
                 enqueue_component_edges(
+                    ctx,
+                    &mut queue_storage,
                     self.members(start),
                     edge_candidates,
                     &mut queue,
                     &mut queued,
-                );
+                )?;
             }
             if supported_ends != *self.domains[end] {
-                ctx.charge_collection_items(
-                    u64_from_index(supported_ends.len()),
-                    "catia_quotient_domain_update",
-                )?;
+                end_reservation.commit()?;
                 self.domains[end] = Arc::new(supported_ends);
                 enqueue_component_edges(
+                    ctx,
+                    &mut queue_storage,
                     self.members(end),
                     edge_candidates,
                     &mut queue,
                     &mut queued,
-                );
+                )?;
             }
         }
         Ok(true)
@@ -3592,27 +3685,83 @@ impl<'storage> MeshQuotient<'storage> {
 
 #[cfg(test)]
 #[test]
-fn quotient_clone_refuses_retained_domains_and_member_nodes() {
+fn quotient_snapshots_share_members_and_release_table_bytes() {
     let quotient = MeshQuotient::new(vec![Arc::new(HashSet::from([0usize]))]);
-    catia_test_context!(service_ctx);
-    assert_eq!(
-        quotient
-            .clone_charged(&service_ctx)
-            .expect("service budget")
-            .len(),
-        1
-    );
-    for operation in [
-        "catia_quotient_clone_domains",
-        "catia_quotient_clone_member_nodes",
+    let parent_bytes = size_of::<usize>();
+    let domain_bytes = size_of::<Arc<HashSet<usize>>>();
+    let member_bytes = size_of::<Option<Arc<Vec<usize>>>>();
+    let bytes = u64_from_index(parent_bytes + domain_bytes + member_bytes);
+    crate::test_support::with_collection_limit(0, |ctx| {
+        for _ in 0..128 {
+            let copy = quotient
+                .clone_charged(ctx)
+                .expect("existing nodes need no new logical slots");
+            assert!(Arc::ptr_eq(
+                quotient.members[0]
+                    .as_ref()
+                    .expect("source root member row"),
+                copy.members[0].as_ref().expect("snapshot root member row")
+            ));
+            assert!(Arc::ptr_eq(&quotient.domains[0], &copy.domains[0]));
+        }
+    });
+    crate::test_support::with_retained_limit(0, |ctx| {
+        for _ in 0..128 {
+            assert_eq!(quotient.clone_charged(ctx).expect("scoped tables").len(), 1);
+        }
+    });
+    crate::test_support::with_materialized_limit(bytes, |ctx| {
+        for _ in 0..128 {
+            assert_eq!(
+                quotient.clone_charged(ctx).expect("released tables").len(),
+                1
+            );
+        }
+        let first = quotient.clone_charged(ctx).expect("one live snapshot");
+        assert!(
+            matches!(quotient.clone_charged(ctx), Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "catia_quotient_clone_union")
+        );
+        assert_eq!(first.len(), 1);
+    });
+    for (cap, operation) in [
+        (parent_bytes, "catia_quotient_clone_domains"),
+        (
+            parent_bytes + domain_bytes,
+            "catia_quotient_clone_member_rows",
+        ),
     ] {
-        let refused = crate::test_support::with_retained_refusal(&[], operation, |ctx| {
+        let refused = crate::test_support::with_materialized_limit(u64_from_index(cap), |ctx| {
             quotient.clone_charged(ctx).map(|value| value.len())
         });
         assert!(
-            matches!(refused, Err(CodecError::ResourceLimit(error)) if error.operation == operation)
+            matches!(refused, Err(CodecError::ResourceLimit(limit)) if limit.operation == operation)
         );
     }
+}
+
+#[cfg(test)]
+#[test]
+fn quotient_merge_preserves_shared_snapshot_members() {
+    let domain = Arc::new(HashSet::from([0usize]));
+    let quotient = MeshQuotient::new(vec![domain; 3]);
+    catia_test_context!(ctx);
+    let mut copy = quotient.clone_charged(&ctx).expect("snapshot storage");
+    assert_eq!(
+        copy.merge_charged(&ctx, 0, 1).expect("merge storage"),
+        Some(0)
+    );
+    assert_eq!(copy.members(0), &[0, 1]);
+    assert_eq!(quotient.members(0), &[0]);
+    assert_eq!(quotient.members(1), &[1]);
+    assert!(copy.members(1).is_empty());
+    assert!(Arc::ptr_eq(
+        quotient.members[2]
+            .as_ref()
+            .expect("source root member row"),
+        copy.members[2].as_ref().expect("snapshot root member row")
+    ));
 }
 
 struct DeferredFaceQuotientOptions<'storage> {
@@ -14080,4 +14229,32 @@ mod pair_support_tests {
         assert!(assignments.iter().all(|choices| choices.len() == 1));
         assert!(candidates.iter().all(|pairs| pairs == &[[0, 0]]));
     }
+}
+
+#[cfg(test)]
+#[test]
+fn narrowed_quotient_domains_commit_their_temporary_backing() {
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        let domain = Arc::new(HashSet::from([0, 1]));
+        let mut quotient = MeshQuotient::new(vec![domain; 2]);
+        quotient.propagate_edge_domains(ctx, [0], &[vec![[0, 0]]], None)
+    });
+    assert!(matches!(refused, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "catia_quotient_start_support"));
+}
+
+#[cfg(test)]
+#[test]
+fn local_quotient_propagation_does_not_reserve_unrelated_edges() {
+    let candidates = (0..4096).map(|_| vec![[0, 1]; 128]).collect::<Vec<_>>();
+    crate::test_support::with_collection_limit(6, |ctx| {
+        let domain = Arc::new(HashSet::from([0, 1]));
+        let mut quotient = MeshQuotient::new(vec![domain; 2]);
+        assert!(quotient
+            .propagate_edge_domains(ctx, [0], &candidates, None)
+            .expect("one active edge and four unique support values"));
+        assert_eq!(quotient.domains[0].as_ref(), &HashSet::from([0, 1]));
+        assert_eq!(quotient.domains[1].as_ref(), &HashSet::from([0, 1]));
+    });
 }

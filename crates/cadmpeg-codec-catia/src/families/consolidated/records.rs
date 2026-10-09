@@ -1069,42 +1069,40 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedEdgeUseRun>, CodecError> {
-    let mut temporary = ctx.reserve_scoped(0, "catia edge resolution workspace")?;
-    let mut uses = BTreeMap::new();
-    for value in temporary.with_storage(|| b2_use_metadata_from_records(ctx, data, records))? {
-        temporary.with_storage(|| {
-            ctx.insert_btree_map(&mut uses, value.pos, value, "catia_edge_use_metadata_index")
-        })?;
-    }
-    let mut nodes = BTreeMap::new();
-    for value in b2_edge_nodes_from_records(data, records) {
-        temporary.with_storage(|| {
-            ctx.insert_btree_map(&mut nodes, value.pos, value, "catia_edge_use_node_index")
-        })?;
-    }
     let mut runs = Vec::new();
     for (index, window) in records.windows(3).enumerate() {
+        ctx.charge_work(1, "catia_edge_use_window_scan")?;
+        let [use0, use1, node_record] = window else {
+            continue;
+        };
+        if !records_are_contiguous(window)
+            || use0.family() != ConsolidatedFamily::B
+            || use0.class() != 0x06
+            || use1.family() != ConsolidatedFamily::B
+            || use1.class() != 0x06
+            || node_record.family() != ConsolidatedFamily::B
+            || node_record.class() != 0x5e
+        {
+            continue;
+        }
+        ctx.charge_work(
+            u64_from_index(node_record.source_range().len()),
+            "catia_edge_use_node_parse",
+        )?;
+        let Some(node_value) =
+            b2_edge_nodes_from_records(data, std::slice::from_ref(node_record)).next()
+        else {
+            continue;
+        };
+        let (parsed_uses, storage) = ctx.with_scoped_storage("catia_edge_use_chain", || {
+            b2_use_metadata_from_records(ctx, data, &window[..2])
+        })?;
         let candidate = (|| {
-            let [use0, use1, node] = window else {
+            let node = node_value;
+            let [first, second] = parsed_uses.as_slice() else {
                 return None;
             };
-            if !records_are_contiguous(window) {
-                return None;
-            }
-            if use0.family() != ConsolidatedFamily::B
-                || use0.class() != 0x06
-                || use1.family() != ConsolidatedFamily::B
-                || use1.class() != 0x06
-                || node.family() != ConsolidatedFamily::B
-                || node.class() != 0x5e
-            {
-                return None;
-            }
-            let node = *nodes.get(&node.byte_offset())?;
-            let uses = [
-                uses.get(&use0.byte_offset())?,
-                uses.get(&use1.byte_offset())?,
-            ];
+            let uses = [first, second];
             let identity_chain_consistent = node
                 .curve_ref
                 .checked_sub(2)
@@ -1123,9 +1121,9 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                         && record.family() == ConsolidatedFamily::B
                         && matches!(record.class(), 0x23..=0x25)
                 });
-            identity_chain_consistent.then_some((definition, uses, node))
+            identity_chain_consistent.then_some((definition, node))
         })();
-        let Some((definition_record, uses, node)) = candidate else {
+        let Some((definition_record, node)) = candidate else {
             continue;
         };
         let definition = match definition_record.and_then(|record| {
@@ -1138,7 +1136,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             Some((record, payload, class)) => Some(ConsolidatedEdgeDefinition {
                 frame: ConsolidatedRawFrame::from_record(
                     record,
-                    ctx.copy_slice(
+                    ctx.copy_retained(
                         &data[payload],
                         "catia_edge_use_preceding_definition_payload",
                     )?,
@@ -1147,7 +1145,10 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             }),
             None => None,
         };
-        let uses = [uses[0].clone_charged(ctx)?, uses[1].clone_charged(ctx)?];
+        storage.commit()?;
+        let uses = parsed_uses
+            .try_into()
+            .map_err(|_| CodecError::malformed("edge use chain must contain two uses"))?;
         ctx.push_vec(
             &mut runs,
             ConsolidatedEdgeUseRun {
@@ -1159,27 +1160,40 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
         )?;
     }
     for window in records.windows(4) {
+        ctx.charge_work(1, "catia_edge_use_window_scan")?;
+        let [node_record, definition_record, use0, use1] = window else {
+            continue;
+        };
+        if !records_are_contiguous(window)
+            || node_record.family() != ConsolidatedFamily::B
+            || node_record.class() != 0x5e
+            || definition_record.family() != ConsolidatedFamily::B
+            || definition_record.class() != 0x24
+            || use0.family() != ConsolidatedFamily::B
+            || use0.class() != 0x06
+            || use1.family() != ConsolidatedFamily::B
+            || use1.class() != 0x06
+        {
+            continue;
+        }
+        ctx.charge_work(
+            u64_from_index(node_record.source_range().len()),
+            "catia_edge_use_node_parse",
+        )?;
+        let Some(node_value) =
+            b2_edge_nodes_from_records(data, std::slice::from_ref(node_record)).next()
+        else {
+            continue;
+        };
+        let (parsed_uses, storage) = ctx.with_scoped_storage("catia_edge_use_chain", || {
+            b2_use_metadata_from_records(ctx, data, &window[2..])
+        })?;
         let candidate = (|| {
-            let [node_record, definition_record, use0, use1] = window else {
+            let node = node_value;
+            let [first, second] = parsed_uses.as_slice() else {
                 return None;
             };
-            if !records_are_contiguous(window)
-                || node_record.family() != ConsolidatedFamily::B
-                || node_record.class() != 0x5e
-                || definition_record.family() != ConsolidatedFamily::B
-                || definition_record.class() != 0x24
-                || use0.family() != ConsolidatedFamily::B
-                || use0.class() != 0x06
-                || use1.family() != ConsolidatedFamily::B
-                || use1.class() != 0x06
-            {
-                return None;
-            }
-            let node = *nodes.get(&node_record.byte_offset())?;
-            let uses = [
-                uses.get(&use0.byte_offset())?,
-                uses.get(&use1.byte_offset())?,
-            ];
+            let uses = [first, second];
             let payload = &data[definition_record.payload()?];
             if payload.first() != Some(&0x81) {
                 return None;
@@ -1200,9 +1214,9 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             if !identity_chain_consistent {
                 return None;
             }
-            Some((definition_record, uses, node))
+            Some((definition_record, node))
         })();
-        let Some((definition_record, uses, node)) = candidate else {
+        let Some((definition_record, node)) = candidate else {
             continue;
         };
         let Some(payload) = definition_record.payload() else {
@@ -1214,14 +1228,17 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
         let definition = Some(ConsolidatedEdgeDefinition {
             frame: ConsolidatedRawFrame::from_record(
                 definition_record,
-                ctx.copy_slice(
+                ctx.copy_retained(
                     &data[payload],
                     "catia_edge_use_succeeding_definition_payload",
                 )?,
             )?,
             class,
         });
-        let uses = [uses[0].clone_charged(ctx)?, uses[1].clone_charged(ctx)?];
+        storage.commit()?;
+        let uses = parsed_uses
+            .try_into()
+            .map_err(|_| CodecError::malformed("edge use chain must contain two uses"))?;
         ctx.push_vec(
             &mut runs,
             ConsolidatedEdgeUseRun {

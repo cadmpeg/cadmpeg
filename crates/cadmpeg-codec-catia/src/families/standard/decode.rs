@@ -3979,7 +3979,7 @@ fn standard_object_evidence(
 ) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
     let mut evidence = standard_object_evidence_from_streams(
         ctx,
-        container::logical_record_streams(ctx, scan)?,
+        &container::logical_record_streams(ctx, scan)?,
         tags,
         edge_tags,
         refusal,
@@ -4023,7 +4023,7 @@ fn merge_standard_limit_curves_from_records(
 
 pub(super) fn standard_object_evidence_from_streams(
     ctx: &DecodeContext<'_>,
-    streams: impl IntoIterator<Item = impl AsRef<[u8]>>,
+    streams: &[impl AsRef<[u8]>],
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -4057,11 +4057,11 @@ pub(super) fn standard_object_evidence_from_streams(
             )?;
         }
     }
-    let mut population_objects = HashMap::<u32, Option<Vec<u8>>>::new();
+    let mut population_objects = HashMap::<u32, Option<&[u8]>>::new();
     let mut seen_population_ids = HashSet::new();
     let mut repeated_population_ids = HashSet::new();
     for population in &populations {
-        let mut objects = HashMap::<u32, Option<Vec<u8>>>::new();
+        let mut objects = HashMap::<u32, Option<&[u8]>>::new();
         let scan_work = u64_from_index(population.len())
             .checked_mul(4)
             .ok_or_else(|| {
@@ -4069,10 +4069,15 @@ pub(super) fn standard_object_evidence_from_streams(
             })?;
         ctx.charge_work(scan_work, "catia_b5_object_frame_scan")?;
         for frame in crate::families::b5::graph::object_stream_frames(population) {
-            let bytes = ctx.copy_slice(
-                &population[frame.start..frame.end],
-                "catia_standard_population_object_bytes",
-            )?;
+            let bytes = &population[frame.start..frame.end];
+            let comparison_work = u64_from_index(bytes.len()).checked_mul(2).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "catia_standard_population_object_compare",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
+            ctx.charge_work(comparison_work, "catia_standard_population_object_compare")?;
             ctx.admit_hash_map_entry(
                 &mut objects,
                 &frame.object_id,
@@ -4129,7 +4134,10 @@ pub(super) fn standard_object_evidence_from_streams(
         }
     }
     for stream in populations {
-        let frames = crate::families::b5::graph::collect_object_stream_frames(ctx, &stream)?;
+        let (frames, _frame_storage) = ctx
+            .with_scoped_storage("catia_b5_frame_workspace", || {
+                crate::families::b5::graph::collect_object_stream_frames(ctx, &stream)
+            })?;
         let face_surfaces =
             crate::families::b5::graph::face_surface_references_from_frames(ctx, &stream, &frames)?;
         let mut surface_bindings = Vec::new();

@@ -119,6 +119,57 @@ fn record_ranges_service(scan: &ContainerScan<'_>) -> Vec<std::ops::Range<usize>
 }
 
 #[test]
+fn logical_stream_bytes_use_scoped_storage_without_collection_items() {
+    let descriptor = Descriptor {
+        extents: vec![
+            Extent {
+                phys_off: 1,
+                phys_len: 2,
+                flags: 0,
+            },
+            Extent {
+                phys_off: 4,
+                phys_len: 1,
+                flags: 0,
+            },
+        ],
+        ..test_descriptor("Data", 0, 0)
+    };
+    crate::test_support::with_collection_limit(0, |ctx| {
+        for _ in 0..128 {
+            let (stream, storage) = reconstruct_logical_stream(ctx, b"01234", &descriptor, 0)
+                .expect("bytes do not consume collection slots");
+            assert_eq!(stream, b"124");
+            drop((stream, storage));
+        }
+    });
+    crate::test_support::with_materialized_limit(3, |ctx| {
+        for _ in 0..128 {
+            let (stream, storage) = reconstruct_logical_stream(ctx, b"01234", &descriptor, 0)
+                .expect("previous stream storage is released");
+            assert_eq!(stream, b"124");
+            drop((stream, storage));
+        }
+    });
+    let refused = crate::test_support::with_materialized_limit(2, |ctx| {
+        reconstruct_logical_stream(ctx, b"01234", &descriptor, 0).map(|(stream, _)| stream)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+            && limit.operation == "catia_logical_stream_bytes")
+    );
+    let refused = crate::test_support::with_work_limit(4, |ctx| {
+        reconstruct_logical_stream(ctx, b"01234", &descriptor, 0).map(|(stream, _)| stream)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "catia_logical_stream_copy" && limit.additional == 3)
+    );
+}
+
+#[test]
 fn logical_stream_bytes_refuse_retained_limit() {
     let descriptor = test_descriptor("MainDataStream", 1, 3);
     let limited = crate::test_support::with_retained_limit(2, |ctx| {
@@ -1543,10 +1594,24 @@ fn empty_directory_candidate_scans_refuse_work() {
 
 #[test]
 fn outer_declarations_release_their_reconstructed_stream() {
-    let data = [0_u8; 64];
+    let data = [0_u8; 80];
     let directory = InnerDir {
         inner: 0,
-        descriptors: vec![test_descriptor("Data", 0, 64)],
+        descriptors: vec![Descriptor {
+            extents: vec![
+                Extent {
+                    phys_off: 0,
+                    phys_len: 32,
+                    flags: 0,
+                },
+                Extent {
+                    phys_off: 40,
+                    phys_len: 32,
+                    flags: 0,
+                },
+            ],
+            ..test_descriptor("Data", 0, 64)
+        }],
     };
     crate::test_support::with_retained_limit(0, |ctx| {
         assert!(super::outer_container_declarations(ctx, &data, &directory)
