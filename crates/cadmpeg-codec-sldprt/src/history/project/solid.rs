@@ -420,11 +420,15 @@ pub(super) fn project_hole(
     features_by_source: &BTreeMap<crate::records::FeatureSource, &Feature>,
     records: &RecordsById<'_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some((shape, profile)) = hole_shape_and_profile(ctx, feature, features_by_source, |id| {
-        Ok(ctx
-            .get_hash_map(records, id, "look up SLDPRT hole profile record")?
-            .copied()
-            .flatten())
+    let Some((shape, profile)) = hole_shape_and_profile(ctx, feature, |key| {
+        match key {
+            HoleProfileKey::Source(source) => Ok(ctx
+                .get_btree_map(features_by_source, &source, "look up SLDPRT feature source")?
+                .copied()),
+            HoleProfileKey::Record(id) => Ok(ctx
+                .get_hash_map(records, id, "look up SLDPRT hole profile record")?
+                .copied().flatten()),
+        }
     })?
     else {
         return Ok(None);
@@ -491,8 +495,7 @@ pub(super) fn project_hole(
 fn hole_shape_and_profile<'f>(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    features_by_source: &BTreeMap<crate::records::FeatureSource, &'f Feature>,
-    record: impl FnMut(&str) -> Result<Option<&'f Feature>, CodecError>,
+    lookup: impl FnMut(HoleProfileKey<'_>) -> Result<Option<&'f Feature>, CodecError>,
 ) -> Result<
     Option<(
         cadmpeg_ir::features::holes::HoleShape,
@@ -500,7 +503,7 @@ fn hole_shape_and_profile<'f>(
     )>,
     CodecError,
 > {
-    let profile = hole_profile_construction(ctx, feature, features_by_source, record)?;
+    let profile = hole_profile_construction(ctx, feature, lookup)?;
     let length = |name| -> Result<_, CodecError> {
         Ok(parameter_literal(ctx, feature, name)?.and_then(parse_positive_length_mm))
     };
@@ -588,21 +591,23 @@ fn hole_shape_and_profile<'f>(
     Ok(Some((shape, profile)))
 }
 
-/// The major diameter of a threaded hole. Dissection child identities resolve
-/// through the history's unique record index.
-pub(crate) fn threaded_hole_major_diameter(
+/// The first profile consumer selects its source or unique record index.
+pub(crate) enum HoleProfileKey<'text> {
+    Source(crate::records::FeatureSource),
+    Record(&'text str),
+}
+
+/// The major diameter of a threaded hole. Profile source lookup stays lazy
+/// until a parsed dissection child requires its source or record identity.
+pub(crate) fn threaded_hole_major_diameter<'f>(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    features_by_source: &BTreeMap<crate::records::FeatureSource, &Feature>,
-    records: &RecordsById<'_>,
+    lookup: impl FnMut(HoleProfileKey<'_>) -> Result<Option<&'f Feature>, CodecError>,
 ) -> Result<Option<f64>, CodecError> {
-    const OPERATION: &str = "find SLDPRT hole profile record";
     if classify(feature) != Some(FeatureClass::Hole) {
         return Ok(None);
     }
-    let Some((shape, _)) = hole_shape_and_profile(ctx, feature, features_by_source, |id| {
-        Ok(ctx.get_hash_map(records, id, OPERATION)?.copied().flatten())
-    })?
+    let Some((shape, _)) = hole_shape_and_profile(ctx, feature, lookup)?
     else {
         return Ok(None);
     };
@@ -632,8 +637,7 @@ fn hole_form(kind: HoleKind) -> HoleConstruction {
 fn hole_profile_construction<'f>(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    features_by_source: &BTreeMap<crate::records::FeatureSource, &'f Feature>,
-    mut record: impl FnMut(&str) -> Result<Option<&'f Feature>, CodecError>,
+    mut lookup: impl FnMut(HoleProfileKey<'_>) -> Result<Option<&'f Feature>, CodecError>,
 ) -> Result<Option<HoleProfileConstruction>, CodecError> {
     const OPERATION: &str = "scan SLDPRT hole profile children";
     let Some(children) = property_value(ctx, feature, "DissectableChildren")? else {
@@ -664,14 +668,12 @@ fn hole_profile_construction<'f>(
             "parse SLDPRT hole child source",
         )?;
         let by_source = match parsed_source {
-            Some(source) => ctx
-                .get_btree_map(features_by_source, &source, "look up SLDPRT feature source")?
-                .copied(),
+            Some(source) => lookup(HoleProfileKey::Source(source))?,
             None => None,
         };
         let profile = match by_source {
             Some(profile) => profile,
-            None => match record(source)? {
+            None => match lookup(HoleProfileKey::Record(source))? {
                 Some(profile) => profile,
                 None => continue,
             },
