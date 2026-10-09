@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::configuration_surface_carriers;
+use super::surfaces::configuration_surface_carriers;
 use crate::history::tests::design_configuration;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
