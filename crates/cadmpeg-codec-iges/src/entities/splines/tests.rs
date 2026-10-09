@@ -663,3 +663,5 @@ fn spline_projection_refuses_variable_work_and_scratch() {
 mod local_limits;
 
 mod parameter_index;
+
+mod identity_custody;
