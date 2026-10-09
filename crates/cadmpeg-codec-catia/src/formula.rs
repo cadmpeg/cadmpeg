@@ -842,9 +842,19 @@ pub(crate) fn transfer_parameters<'ctx>(
         "catia_formula_neutral_parameters",
     )?;
     for candidate in ctx.admit_iter(parameters, "catia_formula_neutral_parameter_visits")? {
-        ir.model
-            .parameters
-            .push(copy_design_parameter(ctx, &candidate.parameter)?);
+        let FormulaParameterCandidate {
+            parameter,
+            output,
+            storage,
+            ..
+        } = candidate;
+        // The fallback has its own lease and does not survive the transfer.
+        drop(output);
+        let parameter = match storage {
+            Some(storage) => storage.commit_value(parameter)?,
+            None => parameter,
+        };
+        ir.model.parameters.push(parameter);
     }
     let typed_parameter_count = transferred
         .checked_sub(legacy_transfer.parameters)
