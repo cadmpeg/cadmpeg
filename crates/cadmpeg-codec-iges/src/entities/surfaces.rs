@@ -945,10 +945,14 @@ fn same_basis_ruled_surface(
             ctx.collection_vec(first.pole_count(), "iges ruled same-basis pole rows")
         })?
     };
-    for index in ctx.admit_iter(
-        0..first.pole_count(),
-        "iges ruled same-basis pole traversal",
-    )? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(0..first.pole_count());
+    while source_values.len() != 0 {
+        let Some(index) = ctx.next_charged(&mut source_values, "iges ruled same-basis pole traversal")? else {
+            break;
+        };
         let first_point = first
             .pole_rows()
             .point_at(index)
@@ -972,7 +976,14 @@ fn same_basis_ruled_surface(
         let mut rows = lane_storage.with_storage(|| {
             ctx.collection_vec(weights.len(), "iges ruled same-basis weight rows")
         })?;
-        for weight in ctx.admit_iter(weights, "iges ruled weight row traversal")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(weights);
+        while source_values.len() != 0 {
+            let Some(weight) = ctx.next_charged(&mut source_values, "iges ruled weight row traversal")? else {
+                break;
+            };
             let mut row = lane_storage.with_storage(|| {
                 ctx.collection_vec(2, "iges ruled same-basis weight row controls")
             })?;
@@ -2638,7 +2649,14 @@ pub(super) fn project<'ctx>(
         let weights = if rational {
             let mut rows = row_storage
                 .with_storage(|| ctx.collection_vec(pole_count, "iges tabulated weight rows"))?;
-            for index in ctx.admit_iter(0..pole_count, "iges tabulated weight traversal")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(0..pole_count);
+            while source_values.len() != 0 {
+                let Some(index) = ctx.next_charged(&mut source_values, "iges tabulated weight traversal")? else {
+                    break;
+                };
                 let weight = placed_directrix
                     .pole_rows()
                     .weight_at(index)
@@ -3161,7 +3179,14 @@ pub(super) fn project<'ctx>(
         let mut weights = weight_storage.with_storage(|| {
             ctx.collection_vec(surface_pole_count, "iges revolution surface weights")
         })?;
-        for u_index in ctx.admit_iter(0..generatrix_count, "iges revolution generatrix poles")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(0..generatrix_count);
+        while source_values.len() != 0 {
+            let Some(u_index) = ctx.next_charged(&mut source_values, "iges revolution generatrix poles")? else {
+                break;
+            };
             let point = generatrix
                 .pole_rows()
                 .point_at(u_index)
@@ -3170,9 +3195,14 @@ pub(super) fn project<'ctx>(
             let axis_point = axis_origin.translated(axis_direction, delta.dot(axis_direction));
             let radial = point.vector_from(axis_point);
             let u_weight = generatrix.pole_rows().weight_at(u_index).unwrap_or(1.0);
-            for (angle, angular_weight) in
-                ctx.admit_iter(&angular_controls, "iges revolution angular pole traversal")?
-            {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(&angular_controls);
+            while source_values.len() != 0 {
+                let Some((angle, angular_weight)) = ctx.next_charged(&mut source_values, "iges revolution angular pole traversal")? else {
+                    break;
+                };
                 let rotated = rotate(radial, axis_direction, *angle);
                 let radial_control = rotated.scale(1.0 / angular_weight);
                 control_points.push(
@@ -3864,10 +3894,24 @@ pub(super) fn project<'ctx>(
         };
         let poles = if polynomial {
             let mut rows = ctx.collection_vec(u_count, "iges NURBS surface pole rows")?;
-            for u in ctx.admit_iter(0..u_count, "iges NURBS surface u poles")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(0..u_count);
+            while source_values.len() != 0 {
+                let Some(u) = ctx.next_charged(&mut source_values, "iges NURBS surface u poles")? else {
+                    break;
+                };
                 let mut row =
                     ctx.collection_vec(v_count, "iges NURBS surface pole row controls")?;
-                for v in ctx.admit_iter(0..v_count, "iges NURBS surface v poles")? {
+                if let Some(refusal) = ctx.resource_refusal() {
+                    return Err(refusal.into());
+                }
+                let mut source_values = IntoIterator::into_iter(0..v_count);
+                while source_values.len() != 0 {
+                    let Some(v) = ctx.next_charged(&mut source_values, "iges NURBS surface v poles")? else {
+                        break;
+                    };
                     row.push(point_at(u, v)?);
                 }
                 rows.push(row);
@@ -3875,10 +3919,24 @@ pub(super) fn project<'ctx>(
             NurbsPoleGrid::Polynomial { rows }
         } else {
             let mut rows = ctx.collection_vec(u_count, "iges NURBS surface weighted rows")?;
-            for u in ctx.admit_iter(0..u_count, "iges NURBS surface u poles")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(0..u_count);
+            while source_values.len() != 0 {
+                let Some(u) = ctx.next_charged(&mut source_values, "iges NURBS surface u poles")? else {
+                    break;
+                };
                 let mut row =
                     ctx.collection_vec(v_count, "iges NURBS surface weighted row controls")?;
-                for v in ctx.admit_iter(0..v_count, "iges NURBS surface v poles")? {
+                if let Some(refusal) = ctx.resource_refusal() {
+                    return Err(refusal.into());
+                }
+                let mut source_values = IntoIterator::into_iter(0..v_count);
+                while source_values.len() != 0 {
+                    let Some(v) = ctx.next_charged(&mut source_values, "iges NURBS surface v poles")? else {
+                        break;
+                    };
                     let weight = PositiveReal::new(native_weights[v * u_count + u])
                         .ok_or_else(|| CodecError::malformed("surface weight is not positive"))?;
                     row.push(WeightedPole3 {

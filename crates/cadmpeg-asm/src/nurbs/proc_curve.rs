@@ -4014,10 +4014,14 @@ fn compound_definition(
         Ok(components) => components,
         Err(error) => return Some(Err(error)),
     };
-    for parameter in propagate_resource!(ctx
-        .admit_iter(component_parameters, "ASM compound curve components")
-        .map_err(cadmpeg_core::CodecError::from))
-    {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
+    let mut source_values = IntoIterator::into_iter(component_parameters);
+    while source_values.len() != 0 {
+        let Some(parameter) = propagate_resource!(ctx.next_charged(&mut source_values, "ASM compound curve components")) else {
+            break;
+        };
         let (curve, end) = propagate_resource!(curve_block(ctx, toks, cur.pos())?);
         components.push(cadmpeg_ir::geometry::CompoundComponent {
             parameter,

@@ -58,7 +58,14 @@ impl CopiousProjectionOutcome {
         free_vertices: &mut Vec<VertexId>,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        for sequence in ctx.admit_iter(self.decoded, "iges copious merged sequences")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(self.decoded);
+        while source_values.len() != 0 {
+            let Some(sequence) = ctx.next_charged(&mut source_values, "iges copious merged sequences")? else {
+                break;
+            };
             ctx.insert_btree_set(decoded, sequence, "iges merged decoded sequences")?;
         }
         ctx.reserve_vec(losses, self.losses.len(), "iges merged loss slots")?;
@@ -497,10 +504,14 @@ pub(super) fn project(
             continue;
         }
         if projects_as_points {
-            for (index, position) in ctx
-                .admit_iter(positions, "iges copious point projection")?
-                .enumerate()
-            {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(positions).enumerate();
+            while source_values.len() != 0 {
+                let Some((index, position)) = ctx.next_charged(&mut source_values, "iges copious point projection")? else {
+                    break;
+                };
                 let point = crate::ids::point_admitted(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
                     ctx,

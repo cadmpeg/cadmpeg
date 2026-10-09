@@ -130,7 +130,14 @@ impl Stats {
             ),
             (&mut self.other_record_kinds, other.other_record_kinds),
         ] {
-            for (kind, count) in ctx.admit_iter(source, "ASM merge loss kind traversal")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(source);
+            while source_values.len() != 0 {
+                let Some((kind, count)) = ctx.next_charged(&mut source_values, "ASM merge loss kind traversal")? else {
+                    break;
+                };
                 ctx.admit_btree_entry(target, &kind, "ASM merge loss kinds")?;
                 *target.entry(kind).or_default() += count;
             }
@@ -265,6 +272,7 @@ impl<'de> Deserialize<'de> for Stats {
 
 #[cfg(test)]
 mod tests {
+    mod source_visits;
     use super::Stats;
 
     /// One stats document whose `missing_face_surface_kinds` map is `kinds`.

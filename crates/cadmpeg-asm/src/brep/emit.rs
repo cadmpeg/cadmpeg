@@ -124,10 +124,14 @@ fn map_law_formula(
         EmbeddedLawFormula::Null => Ok(cadmpeg_ir::geometry::LawFormula::Null {}),
         EmbeddedLawFormula::Named { name, variables } => {
             let mut mapped = ctx.collection_vec(variables.len(), "ASM law formula variables")?;
-            for (index, expression) in ctx
-                .admit_iter(variables, "ASM procedural members")?
-                .enumerate()
-            {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(variables).enumerate();
+            while source_values.len() != 0 {
+                let Some((index, expression)) = ctx.next_charged(&mut source_values, "ASM procedural members")? else {
+                    break;
+                };
                 mapped.push(map(index, expression)?);
             }
             Ok(cadmpeg_ir::geometry::LawFormula::Named {
@@ -634,10 +638,14 @@ fn emit_carrier_surface(
             )?,
         };
         if purpose == super::DecodePurpose::Model {
-            for surface in ctx.admit_iter(
-                &out.surfaces[support_start..],
-                "ASM support surface sources",
-            )? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(&out.surfaces[support_start..]);
+            while source_values.len() != 0 {
+                let Some(surface) = ctx.next_charged(&mut source_values, "ASM support surface sources")? else {
+                    break;
+                };
                 append_source_id(
                     ctx,
                     procedural_support_sources,
@@ -647,7 +655,14 @@ fn emit_carrier_surface(
                     "ASM procedural support sources",
                 )?;
             }
-            for curve in ctx.admit_iter(&out.curves[curve_start..], "ASM child curve sources")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(&out.curves[curve_start..]);
+            while source_values.len() != 0 {
+                let Some(curve) = ctx.next_charged(&mut source_values, "ASM child curve sources")? else {
+                    break;
+                };
                 append_source_id(
                     ctx,
                     procedural_curve_child_sources,
@@ -1900,10 +1915,14 @@ fn map_law_expression(
         },
         EmbeddedLawExpression::Algebraic { operator, operands } => {
             let mut mapped = ctx.collection_vec(operands.len(), "ASM law expression operands")?;
-            for (index, operand) in ctx
-                .admit_iter(operands, "ASM procedural members")?
-                .enumerate()
-            {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(operands).enumerate();
+            while source_values.len() != 0 {
+                let Some((index, operand)) = ctx.next_charged(&mut source_values, "ASM procedural members")? else {
+                    break;
+                };
                 mapped.push({
                     let mut path_copy_storage =
                         ctx.reserve_scoped(0, "ASM temporary identity key")?;
@@ -3339,10 +3358,14 @@ fn emit_vertex_blend_surface(
         construction.boundaries.len(),
         "ASM emitted vertex blend boundaries",
     )?;
-    for (boundary_index, boundary) in ctx
-        .admit_iter(construction.boundaries, "ASM procedural members")?
-        .enumerate()
-    {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(construction.boundaries).enumerate();
+    while source_values.len() != 0 {
+        let Some((boundary_index, boundary)) = ctx.next_charged(&mut source_values, "ASM procedural members")? else {
+            break;
+        };
         let prefix = brep_key!(i, ":vertex_boundary", boundary_index);
         let geometry = match boundary.geometry {
             EmbeddedVertexBlendBoundaryGeometry::Circle {
@@ -4775,7 +4798,14 @@ pub(super) fn emit_carrier_records(
         reversed_curve_refs,
         forward_curve_refs,
     } = senses;
-    for r in ctx.admit_iter(records, "ASM emitted record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -4833,7 +4863,14 @@ pub(super) fn emit_pcurves(
         pcurves: kept_pcurves,
         ..
     } = reach;
-    for r in ctx.admit_iter(records, "ASM emitted record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -4924,7 +4961,14 @@ pub(super) fn emit_points(
         points: kept_points,
         ..
     } = reach;
-    for r in ctx.admit_iter(records, "ASM emitted record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -4965,7 +5009,14 @@ pub(super) fn emit_vertices(
         points: kept_points,
         ..
     } = reach;
-    for r in ctx.admit_iter(records, "ASM emitted record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5128,7 +5179,14 @@ pub(super) fn emit_edges(
             CurveId::from(id(format, c))
         }
     };
-    for r in ctx.admit_iter(records, "ASM emitted record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5314,7 +5372,14 @@ pub(super) fn emit_coedges(
         pcurves: kept_pcurves,
         ..
     } = reach;
-    for r in ctx.admit_iter(records, "ASM emitted record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5479,7 +5544,14 @@ pub(super) fn emit_loops(
         coedges: kept_coedges,
         ..
     } = reach;
-    for r in ctx.admit_iter(records, "ASM emitted record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5530,7 +5602,14 @@ pub(super) fn emit_faces(
         subshell_storage.with_storage(|| subshell_ancestor_shells(ctx, records, by_index))?;
     let attribute_color = |entity: &Record| attribute_chain_color(ctx, entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(ctx, entity, by_index);
-    for r in ctx.admit_iter(records, "ASM emitted record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5664,7 +5743,14 @@ pub(super) fn emit_containers(
     } = wire;
     let attribute_color = |entity: &Record| attribute_chain_color(ctx, entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(ctx, entity, by_index);
-    for r in ctx.admit_iter(records, "ASM emitted record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5823,7 +5909,14 @@ pub(super) fn emit_containers(
             _ => {}
         }
     }
-    for &edge in ctx.admit_iter(saved_free_edges, "ASM saved edge containers")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(saved_free_edges);
+    while source_values.len() != 0 {
+        let Some(&edge) = ctx.next_charged(&mut source_values, "ASM saved edge containers")? else {
+            break;
+        };
         let body_id = brep_id!(format, BodyId, "saved-edge-body", edge);
         let region_id = brep_id!(format, RegionId, "saved-edge-region", edge);
         let shell_id = brep_id!(format, ShellId, "saved-edge-shell", edge);
@@ -5912,7 +6005,14 @@ pub(super) fn emit_attributes(
         )
     })?;
     let mut region_bodies = HashMap::new();
-    for region in ctx.admit_iter(&out.regions, "ASM attribute region owners")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&out.regions);
+    while source_values.len() != 0 {
+        let Some(region) = ctx.next_charged(&mut source_values, "ASM attribute region owners")? else {
+            break;
+        };
         if !ctx.contains_key_hash_map(
             &region_bodies,
             region.id.as_str(),
@@ -5928,7 +6028,14 @@ pub(super) fn emit_attributes(
             })?;
         }
     }
-    for record in ctx.admit_iter(records, "ASM attribute record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut source_values, "ASM attribute record pass")? else {
+            break;
+        };
         let index = i64::try_from(record.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -6003,7 +6110,14 @@ pub(super) fn emit_attributes(
         }
     }
 
-    for record in ctx.admit_iter(records, "ASM attribute record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut source_values, "ASM attribute record pass")? else {
+            break;
+        };
         let index = i64::try_from(record.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -6047,7 +6161,14 @@ pub(super) fn emit_passthrough_unknowns(
         cached_unknown_procedural_surfaces,
         ..
     } = reach;
-    for r in ctx.admit_iter(records, "ASM emitted record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -6119,7 +6240,14 @@ pub(super) fn count_other_records(
             "ASM pcurve intcurve references",
         )
     })?;
-    for r in ctx.admit_iter(records, "ASM emitted record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",

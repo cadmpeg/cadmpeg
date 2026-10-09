@@ -276,7 +276,14 @@ impl<'a> BitReader<'a> {
             }
 
             ctx.reserve_capacity(&mut output, count, "iges binary string payload")?;
-            for _ in ctx.admit_iter(0..count, "iges binary string payload")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(0..count);
+            while source_values.len() != 0 {
+                let Some(_) = ctx.next_charged(&mut source_values, "iges binary string payload")? else {
+                    break;
+                };
                 let byte = self.read_bits(8)?;
                 let byte =
                     u8::try_from(byte).map_err(|_| malformed("a Binary string byte overflows"))?;
@@ -792,10 +799,14 @@ fn parameter_text(
                 "Binary Macro Definition has no language statements",
             ));
         }
-        for (index, value) in ctx
-            .admit_iter(values, "iges binary parameter text")?
-            .enumerate()
-        {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(values).enumerate();
+        while source_values.len() != 0 {
+            let Some((index, value)) = ctx.next_charged(&mut source_values, "iges binary parameter text")? else {
+                break;
+            };
             if index > 0 {
                 ctx.extend_retained_bytes(&mut output, b";", "iges binary parameter text")?;
             }
@@ -810,7 +821,14 @@ fn parameter_text(
     }
     let entity_text = stack_text(format_args!("{entity_type}"))?;
     let mut output = ctx.copy_retained(entity_text.as_bytes(), "iges binary parameter text")?;
-    for value in ctx.admit_iter(values, "iges binary parameter text")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(values);
+    while source_values.len() != 0 {
+        let Some(value) = ctx.next_charged(&mut source_values, "iges binary parameter text")? else {
+            break;
+        };
         ctx.extend_retained_bytes(&mut output, b",", "iges binary parameter text")?;
         ctx.extend_retained_bytes(
             &mut output,
@@ -1113,7 +1131,14 @@ fn normalize_directory_and_parameters(
     let mut normalized =
         ctx.collection_vec(parameters.len(), "iges binary normalized parameters")?;
     let mut parameter_sequence = 1_u32;
-    for parameter in ctx.admit_iter(parameters, "iges binary normalized parameters")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(parameters);
+    while source_values.len() != 0 {
+        let Some(parameter) = ctx.next_charged(&mut source_values, "iges binary normalized parameters")? else {
+            break;
+        };
         let directory_pointer =
             positive_pointer(parameter.directory_pointer, "Parameter Directory")?;
         let directory_index = directory_at(directory, directory_pointer, ctx)?
@@ -1156,10 +1181,14 @@ fn normalize_directory_and_parameters(
         ctx.alloc_filled(directory.len(), 0_u32, "iges_binary_parameter_starts")?;
     let mut parameter_counts =
         ctx.alloc_filled(directory.len(), 0_usize, "iges_binary_parameter_counts")?;
-    for (directory_index, directory_record) in ctx
-        .admit_iter(directory, "iges binary Directory parameter pointers")?
-        .enumerate()
-    {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(directory).enumerate();
+    while source_values.len() != 0 {
+        let Some((directory_index, directory_record)) = ctx.next_charged(&mut source_values, "iges binary Directory parameter pointers")? else {
+            break;
+        };
         let pointer = directory_record.parameter_pointer();
         if pointer == 0 {
             continue;
@@ -1188,10 +1217,14 @@ fn normalize_directory_and_parameters(
         ));
     }
     let mut directory_sequence = 1_u32;
-    for (index, directory_record) in ctx
-        .admit_iter(directory, "iges binary Directory cards")?
-        .enumerate()
-    {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(directory).enumerate();
+    while source_values.len() != 0 {
+        let Some((index, directory_record)) = ctx.next_charged(&mut source_values, "iges binary Directory cards")? else {
+            break;
+        };
         let first_sequence = directory_sequence;
         let second_sequence = first_sequence
             .checked_add(1)
@@ -1292,8 +1325,22 @@ fn normalize_directory_and_parameters(
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
     }
     let mut parameter_sequence = 1_u32;
-    for parameter in ctx.admit_iter(&normalized, "iges binary Parameter Data cards")? {
-        for line in ctx.admit_iter(&parameter.lines, "iges binary Parameter Data cards")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&normalized);
+    while source_values.len() != 0 {
+        let Some(parameter) = ctx.next_charged(&mut source_values, "iges binary Parameter Data cards")? else {
+            break;
+        };
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(&parameter.lines);
+        while source_values.len() != 0 {
+            let Some(line) = ctx.next_charged(&mut source_values, "iges binary Parameter Data cards")? else {
+                break;
+            };
             render_parameter_line(
                 output,
                 line,
@@ -1416,7 +1463,14 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     .map_err(|_| malformed("a Binary Start count does not fit memory"))?;
     let mut global_sequence = 1_u32;
     let global_cards = crate::global::layout_global_cards(&global_text, ctx)?;
-    for card in ctx.admit_iter(&global_cards, "iges binary Global cards")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&global_cards);
+    while source_values.len() != 0 {
+        let Some(card) = ctx.next_charged(&mut source_values, "iges binary Global cards")? else {
+            break;
+        };
         render_cards(&mut output, card, b'G', &mut global_sequence, ctx)?;
     }
     let global_count = usize::try_from(
@@ -1440,6 +1494,8 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 
 #[cfg(test)]
 mod tests {
+    mod source_visits;
+
     #[test]
     fn binary_start_text_refuses_retained_limit_before_append() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

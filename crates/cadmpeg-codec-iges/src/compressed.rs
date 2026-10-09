@@ -1018,16 +1018,24 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 
     // The output charge above pays every byte the card writers below copy;
     // each loop also admits its own steps.
-    for line in ctx.admit_iter(
-        &lines[start_begin..global_begin],
-        "iges compressed Start cards",
-    )? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&lines[start_begin..global_begin]);
+    while source_values.len() != 0 {
+        let Some(line) = ctx.next_charged(&mut source_values, "iges compressed Start cards")? else {
+            break;
+        };
         append_source_card(&mut output, line, b'S')?;
     }
-    for line in ctx.admit_iter(
-        &lines[global_begin..data_begin],
-        "iges compressed Global cards",
-    )? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&lines[global_begin..data_begin]);
+    while source_values.len() != 0 {
+        let Some(line) = ctx.next_charged(&mut source_values, "iges compressed Global cards")? else {
+            break;
+        };
         append_source_card(&mut output, line, b'G')?;
     }
     let mut parameter_starts =

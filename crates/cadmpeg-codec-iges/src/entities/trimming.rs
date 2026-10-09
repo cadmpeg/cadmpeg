@@ -204,17 +204,22 @@ fn cluster_boundary_positions(
     let mut sizes = size_storage.with_storage(|| {
         ctx.alloc_filled(positions.len(), 1usize, "iges boundary cluster sizes")
     })?;
-    for (left_index, left) in ctx
-        .admit_iter(positions, "iges boundary clustering positions")?
-        .enumerate()
-    {
-        for (offset, right) in ctx
-            .admit_iter(
-                &positions[left_index + 1..],
-                "iges boundary clustering comparisons",
-            )?
-            .enumerate()
-        {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(positions).enumerate();
+    while source_values.len() != 0 {
+        let Some((left_index, left)) = ctx.next_charged(&mut source_values, "iges boundary clustering positions")? else {
+            break;
+        };
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(&positions[left_index + 1..]).enumerate();
+        while source_values.len() != 0 {
+            let Some((offset, right)) = ctx.next_charged(&mut source_values, "iges boundary clustering comparisons")? else {
+                break;
+            };
             let right_index = left_index + 1 + offset;
             if !close(left.get(), right.get(), tolerance) {
                 continue;
@@ -237,10 +242,14 @@ fn cluster_boundary_positions(
     }
     let mut root_storage = ctx.reserve_scoped(0, "iges boundary cluster roots")?;
     let mut members_by_root = BTreeMap::<usize, Vec<usize>>::new();
-    for index in ctx.admit_iter(
-        0..positions.len(),
-        "iges boundary cluster membership traversal",
-    )? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(0..positions.len());
+    while source_values.len() != 0 {
+        let Some(index) = ctx.next_charged(&mut source_values, "iges boundary cluster membership traversal")? else {
+            break;
+        };
         let root = find_cluster_root(&mut parents, index, ctx)?;
         root_storage.with_storage(|| {
             ctx.admit_btree_entry(&members_by_root, &root, "iges boundary cluster roots")
@@ -339,10 +348,14 @@ fn create_boundary_vertices<'ctx>(
     })?;
     let mut derivations = derivation_storage
         .with_storage(|| ctx.collection_vec(clusters.len(), "iges boundary vertex derivations"))?;
-    for (index, cluster) in ctx
-        .admit_iter(clusters, "iges boundary vertex cluster traversal")?
-        .enumerate()
-    {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(clusters).enumerate();
+    while source_values.len() != 0 {
+        let Some((index, cluster)) = ctx.next_charged(&mut source_values, "iges boundary vertex cluster traversal")? else {
+            break;
+        };
         let point_id = crate::ids::point_admitted(&stem.slot(boundary).slot(index), ctx)?;
         ctx.reserve_vec(&mut candidate.model_mut().points, 1, "iges boundary points")?;
         ctx.reserve_vec(
@@ -374,7 +387,14 @@ fn create_boundary_vertices<'ctx>(
             ctx,
             derivation_storage,
         )?);
-        for member in ctx.admit_iter(cluster.members, "iges boundary vertex member traversal")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(cluster.members);
+        while source_values.len() != 0 {
+            let Some(member) = ctx.next_charged(&mut source_values, "iges boundary vertex member traversal")? else {
+                break;
+            };
             vertex_ids[member] = Some(vertex_storage.with_storage(|| {
                 vertex_id.try_clone_for_decode(ctx, "iges trimming identity copy")
             })?);
@@ -1725,7 +1745,14 @@ fn split_homogeneous_pcurve(
     let mut right = ctx.collection_vec(controls.len(), "iges pcurve split right controls")?;
     left.push(current[0]);
     right.push(current[current.len() - 1]);
-    for _ in ctx.admit_iter(1..controls.len(), "iges pcurve split traversal")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(1..controls.len());
+    while source_values.len() != 0 {
+        let Some(_) = ctx.next_charged(&mut source_values, "iges pcurve split traversal")? else {
+            break;
+        };
         for index in ctx.admit_iter(0..current.len() - 1, "iges pcurve split interpolation")? {
             let pair = [current[index], current[index + 1]];
             current[index] = std::array::from_fn(|axis| {
@@ -3164,7 +3191,14 @@ pub(super) fn project<'ctx>(
                     items.len(),
                     "iges implicit boundary curve IDs",
                 )?;
-                for item in ctx.admit_iter(&items, "iges implicit boundary traversal")? {
+                if let Some(refusal) = ctx.resource_refusal() {
+                    return Err(refusal.into());
+                }
+                let mut source_values = IntoIterator::into_iter(&items);
+                while source_values.len() != 0 {
+                    let Some(item) = ctx.next_charged(&mut source_values, "iges implicit boundary traversal")? else {
+                        break;
+                    };
                     implicit_boundary_curves.push(
                         item.model_curve
                             .try_clone_for_decode(ctx, "iges implicit boundary curve ID text")?,
@@ -3228,10 +3262,14 @@ pub(super) fn project<'ctx>(
             let mut source_endpoints = boundary_storage.with_storage(|| {
                 ctx.collection_vec(endpoint_count, "iges trimming source endpoints")
             })?;
-            for (index, item) in ctx
-                .admit_iter(&items, "iges trimming endpoint traversal")?
-                .enumerate()
-            {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(&items).enumerate();
+            while source_values.len() != 0 {
+                let Some((index, item)) = ctx.next_charged(&mut source_values, "iges trimming endpoint traversal")? else {
+                    break;
+                };
                 coedge_ids.push(crate::ids::coedge_admitted(
                     &stem.slot(boundary_index).slot(index),
                     ctx,
@@ -3367,10 +3405,14 @@ pub(super) fn project<'ctx>(
                 }
                 let mut pcurve_uses =
                     ctx.collection_vec(item.pcurves.len(), "iges trimming coedge pcurve uses")?;
-                for (pcurve_index, (geometry, parameter_range)) in ctx
-                    .admit_iter(item.pcurves, "iges trimming pcurve use traversal")?
-                    .enumerate()
-                {
+                if let Some(refusal) = ctx.resource_refusal() {
+                    return Err(refusal.into());
+                }
+                let mut source_values = IntoIterator::into_iter(item.pcurves).enumerate();
+                while source_values.len() != 0 {
+                    let Some((pcurve_index, (geometry, parameter_range))) = ctx.next_charged(&mut source_values, "iges trimming pcurve use traversal")? else {
+                        break;
+                    };
                     let id = crate::ids::pcurve_admitted(
                         &stem
                             .slot(boundary_index)
@@ -3671,9 +3713,14 @@ pub(super) fn project<'ctx>(
     }
     drop(carrier_index);
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
-    for (entry, candidate, derivations) in
-        ctx.admit_iter(staged, "iges trimming commit traversal")?
-    {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(staged);
+    while source_values.len() != 0 {
+        let Some((entry, candidate, derivations)) = ctx.next_charged(&mut source_values, "iges trimming commit traversal")? else {
+            break;
+        };
         if commit_session.commit_model(candidate)?.is_err() {
             super::push_entity_loss_with_scoped_slots(
                 ctx,

@@ -569,7 +569,14 @@ fn select_composite_edge(
 ) -> Result<Option<CompositeEdge>, CodecError> {
     let mut first: Option<&CompositeEdge> = None;
     let mut agreement = true;
-    for edge in ctx.admit_iter(candidates, "iges composite edge candidates")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(candidates);
+    while source_values.len() != 0 {
+        let Some(edge) = ctx.next_charged(&mut source_values, "iges composite edge candidates")? else {
+            break;
+        };
         let Some(range) = edge.param_range else {
             continue;
         };
@@ -1511,7 +1518,14 @@ fn elevate_nurbs_to_degree(
         .map_err(DegreeElevationError::Allocation)?;
     let mut internal_storage = ctx.reserve_scoped(0, "iges composite internal knot storage")?;
     let mut internal_values = Vec::new();
-    for &knot in ctx.admit_iter(&knots, "iges composite internal knot traversal")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&knots);
+    while source_values.len() != 0 {
+        let Some(&knot) = ctx.next_charged(&mut source_values, "iges composite internal knot traversal")? else {
+            break;
+        };
         if knot > interval[0] && knot < interval[1] && internal_values.last().copied() != Some(knot)
         {
             ctx.reserve_scoped_vec(
@@ -2040,9 +2054,14 @@ fn bounded_edge_for_curve(
                 ),
                 None => {
                     let mut candidates = Vec::new();
-                    for edge in
-                        ctx.admit_iter(&ir.model.edges, "iges composite scanned edge traversal")?
-                    {
+                    if let Some(refusal) = ctx.resource_refusal() {
+                        return Err(refusal.into());
+                    }
+                    let mut source_values = IntoIterator::into_iter(&ir.model.edges);
+                    while source_values.len() != 0 {
+                        let Some(edge) = ctx.next_charged(&mut source_values, "iges composite scanned edge traversal")? else {
+                            break;
+                        };
                         let Some(carrier) = edge.curve() else {
                             continue;
                         };
@@ -2500,10 +2519,14 @@ fn project_native_composite(
         return Ok(None);
     };
     let mut segments = ctx.collection_vec(child_curves.len(), "iges composite native segments")?;
-    for (position, curve) in ctx
-        .admit_iter(child_curves, "iges composite native segment traversal")?
-        .enumerate()
-    {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(child_curves).enumerate();
+    while source_values.len() != 0 {
+        let Some((position, curve)) = ctx.next_charged(&mut source_values, "iges composite native segment traversal")? else {
+            break;
+        };
         segments.push(CompositeCurveSegment {
             curve: curve.try_clone_for_decode(ctx, "iges composite native segment curve ids")?,
             same_sense: true,
@@ -2998,10 +3021,14 @@ fn project_with_type_130_policy<'ctx>(
         };
         let mut carrier_storage = ctx.reserve_scoped(0, "iges composite child carrier storage")?;
         let mut curve_carriers = BTreeMap::new();
-        for sequence in ctx
-            .admit_iter(&child_sequences, "iges composite child carrier traversal")?
-            .copied()
-        {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(&child_sequences).copied();
+        while source_values.len() != 0 {
+            let Some(sequence) = ctx.next_charged(&mut source_values, "iges composite child carrier traversal")? else {
+                break;
+            };
             if !is_curve_sequence(&sequence)? {
                 continue;
             }

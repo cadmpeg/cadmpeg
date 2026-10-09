@@ -1425,3 +1425,5 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
 }
 
 mod tspline;
+
+mod source_visits;

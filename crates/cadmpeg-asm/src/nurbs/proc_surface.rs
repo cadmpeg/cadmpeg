@@ -3756,10 +3756,14 @@ fn comp_spl_sur(
     let mut components = propagate_resource!(
         ctx.collection_vec(parameters.len(), "ASM compound surface components")
     );
-    for parameter in propagate_resource!(ctx
-        .admit_iter(parameters, "ASM compound surface components")
-        .map_err(cadmpeg_core::CodecError::from))
-    {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
+    let mut source_values = IntoIterator::into_iter(parameters);
+    while source_values.len() != 0 {
+        let Some(parameter) = propagate_resource!(ctx.next_charged(&mut source_values, "ASM compound surface components")) else {
+            break;
+        };
         components.push(cadmpeg_ir::geometry::CompoundComponent {
             parameter,
             component: propagate_resource!(embedded_surface(ctx, &mut cur)?),

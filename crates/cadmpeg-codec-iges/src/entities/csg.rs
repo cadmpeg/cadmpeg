@@ -705,9 +705,14 @@ pub(super) fn project<'ctx>(
         memo: BTreeMap::new(),
         storage: ctx.reserve_scoped(0, "iges Boolean validation scratch")?,
     };
-    for (sequence, _) in
-        ctx.admit_iter(&boolean_definitions, "iges Boolean definition validation")?
-    {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&boolean_definitions);
+    while source_values.len() != 0 {
+        let Some((sequence, _)) = ctx.next_charged(&mut source_values, "iges Boolean definition validation")? else {
+            break;
+        };
         let entry = ctx.get_btree_map(entries, sequence, "iges boolean directory lookup")?
             .ok_or_else(|| CodecError::malformed("Boolean index has no directory entry"))?;
         let operands_valid = boolean_tree_is_valid(

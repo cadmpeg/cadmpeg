@@ -561,10 +561,14 @@ pub(crate) fn layout_global_cards(
             cards.push(std::mem::take(&mut card));
             card = ctx.vector_storage(72, "iges global layout card bytes")?;
         }
-        for byte in ctx
-            .admit_iter(field, "iges global layout field copy")?
-            .copied()
-        {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(field).copied();
+        while source_values.len() != 0 {
+            let Some(byte) = ctx.next_charged(&mut source_values, "iges global layout field copy")? else {
+                break;
+            };
             if card.len() == 72 {
                 ctx.reserve_vec(&mut cards, 1, "iges global layout cards")?;
                 cards.push(std::mem::take(&mut card));

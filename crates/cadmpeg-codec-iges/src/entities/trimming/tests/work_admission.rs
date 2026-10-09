@@ -9,6 +9,8 @@ use cadmpeg_core::{
 };
 use cadmpeg_ir::math::Point3;
 
+mod source_visits;
+
 fn square() -> Vec<[f64; 2]> {
     vec![[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0], [0.0, 0.0]]
 }

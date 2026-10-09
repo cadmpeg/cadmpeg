@@ -35,7 +35,14 @@ pub(super) fn decode_analytic_carriers(
     let mut surface_geo: HashMap<i64, SurfaceGeometry> = HashMap::new();
     let mut inward_normal_surfaces = HashSet::new();
     let mut curve_geo: HashMap<i64, CurveGeometry> = HashMap::new();
-    for r in ctx.admit_iter(records, "ASM topology record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM topology record pass")? else {
+            break;
+        };
         if is_analytic_surface(r.head()) {
             if let Some((geometry, inward)) = decode_surface(ctx, r).transpose()? {
                 if inward {
@@ -135,7 +142,14 @@ pub(super) fn keep_faces_and_carriers(
         undecoded_carriers,
         ..
     } = &mut *reach;
-    for r in ctx.admit_iter(records, "ASM topology record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM topology record pass")? else {
+            break;
+        };
         if r.head() != "face" {
             continue;
         }
@@ -422,7 +436,14 @@ pub(super) fn walk_reachable_topology(
     // Source order makes shared carrier resolution deterministic.
     let mut walked_face_storage = ctx.reserve_scoped(0, "ASM visited faces")?;
     let mut walked_faces = HashSet::new();
-    for face in ctx.admit_iter(records, "ASM reachable face walk")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(face) = ctx.next_charged(&mut source_values, "ASM reachable face walk")? else {
+            break;
+        };
         let face_idx = i64::try_from(face.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -772,7 +793,14 @@ pub(super) fn collect_wire_topology(
     let mut shell_edge_membership = HashSet::new();
     let mut shell_vertex_membership = HashSet::new();
     if let Some(limit) = saved_entity_limit {
-        for edge in ctx.admit_iter(records, "ASM saved edge record pass")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(records);
+        while source_values.len() != 0 {
+            let Some(edge) = ctx.next_charged(&mut source_values, "ASM saved edge record pass")? else {
+                break;
+            };
             let edge_index = i64::try_from(edge.index).map_err(|_| {
                 ctx.refuse_codec_limit(
                     "ASM record index",
@@ -807,7 +835,14 @@ pub(super) fn collect_wire_topology(
         let mut wire_guard = HashSet::new();
         let mut roots_storage = ctx.reserve_scoped(0, "ASM shell wire root storage")?;
         let roots = roots_storage.with_storage(|| shell_wire_roots(ctx, shell, by_index))?;
-        for root in ctx.admit_iter(roots, "ASM shell wire roots")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(roots);
+        while source_values.len() != 0 {
+            let Some(root) = ctx.next_charged(&mut source_values, "ASM shell wire roots")? else {
+                break;
+            };
             let mut wire_ref = Some(root);
             while let Some(wire_index) = wire_ref {
                 ctx.charge_work(1, "ASM shell wire chain walk")?;
@@ -1178,7 +1213,14 @@ pub(super) fn classify_edge_curve_senses(
     } = reach;
     let mut reversed_curve_refs: HashSet<i64> = HashSet::new();
     let mut forward_curve_refs: HashSet<i64> = HashSet::new();
-    for r in ctx.admit_iter(records, "ASM topology record pass")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM topology record pass")? else {
+            break;
+        };
         if !is_edge_record(r)
             || !kept_edges.contains(
                 &(i64::try_from(r.index).map_err(|_| {

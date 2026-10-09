@@ -14,6 +14,7 @@ use crate::IgesCodec;
 
 mod storage_lifetimes;
 mod framing_values;
+mod source_visits;
 
 #[test]
 fn framing_recovery_record_stores_values_before_final_loss_admission() {

@@ -60,7 +60,14 @@ pub(super) fn collect_carrier<'ctx>(
         vectors: Vec::new(),
         doubles: Vec::new(),
     };
-    for t in ctx.admit_iter(rec.tokens.as_ref(), "ASM analytic carrier tokens")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(rec.tokens.as_ref());
+    while source_values.len() != 0 {
+        let Some(t) = ctx.next_charged(&mut source_values, "ASM analytic carrier tokens")? else {
+            break;
+        };
         match t {
             Token::Position(p) => {
                 ctx.push_scoped_vec(
@@ -962,7 +969,14 @@ pub(super) fn rational_four_arc_circle(
         ctx.temporary_vec(points.len(), "ASM rational four-arc homogeneous poles")
     );
     _homogeneous_storage = result_homogeneous_storage;
-    for pole in propagate_resource!(ctx.admit_iter(points, "ASM rational homogeneous pole pass")) {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
+    let mut source_values = IntoIterator::into_iter(points);
+    while source_values.len() != 0 {
+        let Some(pole) = propagate_resource!(ctx.next_charged(&mut source_values, "ASM rational homogeneous pole pass")) else {
+            break;
+        };
         let point = pole.point;
         let weight = pole.weight.get() / weight_scale;
         let homogeneous_pole = [point.x * weight, point.y * weight, point.z * weight, weight];
@@ -1085,7 +1099,14 @@ fn reduce_homogeneous_bezier_to_quadratic(
                 ctx.temporary_vec(degree, "ASM rational four-arc degree reduction")?;
             reduced_storage = result_reduced_storage;
             reduced.push(control[0]);
-            for index in ctx.admit_iter(1..degree, "ASM rational reduction poles")? {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            let mut source_values = IntoIterator::into_iter(1..degree);
+            while source_values.len() != 0 {
+                let Some(index) = ctx.next_charged(&mut source_values, "ASM rational reduction poles")? else {
+                    break;
+                };
                 let (Some(index_value), Some(degree_value)) = (
                     cadmpeg_core::convert::f64_from_index(index),
                     cadmpeg_core::convert::f64_from_index(degree),
@@ -1164,7 +1185,14 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
             "ASM edge carrier domains",
         )
     })?;
-    for edge in ctx.admit_iter(&mut out.edges, "ASM edge range clamp")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&mut out.edges);
+    while source_values.len() != 0 {
+        let Some(edge) = ctx.next_charged(&mut source_values, "ASM edge range clamp")? else {
+            break;
+        };
         let Some([mut start, mut end]) = edge.param_range().map(FiniteVector::get) else {
             continue;
         };
@@ -1198,8 +1226,22 @@ pub(super) fn classify_body_kinds(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut storage = ctx.reserve_scoped(0, "ASM body classification storage")?;
     let mut shell_bodies = HashMap::new();
-    for region in ctx.admit_iter(&out.regions, "ASM body classification regions")? {
-        for shell in ctx.admit_iter(&region.shells, "ASM region shells")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&out.regions);
+    while source_values.len() != 0 {
+        let Some(region) = ctx.next_charged(&mut source_values, "ASM body classification regions")? else {
+            break;
+        };
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(&region.shells);
+        while source_values.len() != 0 {
+            let Some(shell) = ctx.next_charged(&mut source_values, "ASM region shells")? else {
+                break;
+            };
             storage.with_storage(|| {
                 ctx.insert_hash_map(&mut shell_bodies, shell, &region.body, "ASM shell bodies")
             })?;
@@ -1208,7 +1250,14 @@ pub(super) fn classify_body_kinds(
     let mut body_has_faces = HashSet::new();
     let mut body_has_wires = HashSet::new();
     let mut face_bodies = HashMap::new();
-    for shell in ctx.admit_iter(&out.shells, "ASM body classification shells")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&out.shells);
+    while source_values.len() != 0 {
+        let Some(shell) = ctx.next_charged(&mut source_values, "ASM body classification shells")? else {
+            break;
+        };
         let Some(body) = ctx
             .get_hash_map(&shell_bodies, &&shell.id, "ASM body owner lookup")?
             .copied()
@@ -1225,14 +1274,28 @@ pub(super) fn classify_body_kinds(
                 ctx.insert_hash_set(&mut body_has_faces, body, "ASM bodies with faces")
             })?;
         }
-        for face in ctx.admit_iter(shell.faces(), "ASM shell faces")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(shell.faces());
+        while source_values.len() != 0 {
+            let Some(face) = ctx.next_charged(&mut source_values, "ASM shell faces")? else {
+                break;
+            };
             storage.with_storage(|| {
                 ctx.insert_hash_map(&mut face_bodies, face, body, "ASM face bodies")
             })?;
         }
     }
     let mut loop_bodies = HashMap::new();
-    for face in ctx.admit_iter(&out.faces, "ASM body classification faces")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&out.faces);
+    while source_values.len() != 0 {
+        let Some(face) = ctx.next_charged(&mut source_values, "ASM body classification faces")? else {
+            break;
+        };
         let Some(body) = ctx
             .get_hash_map(&face_bodies, &&face.id, "ASM body owner lookup")?
             .copied()
@@ -1248,28 +1311,56 @@ pub(super) fn classify_body_kinds(
                 ctx.insert_hash_map(&mut loop_bodies, outer, body, "ASM loop bodies")
             })?;
         }
-        for loop_id in ctx.admit_iter(inner, "ASM face loops")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(inner);
+        while source_values.len() != 0 {
+            let Some(loop_id) = ctx.next_charged(&mut source_values, "ASM face loops")? else {
+                break;
+            };
             storage.with_storage(|| {
                 ctx.insert_hash_map(&mut loop_bodies, loop_id, body, "ASM loop bodies")
             })?;
         }
     }
     let mut coedge_bodies = HashMap::new();
-    for loop_ in ctx.admit_iter(&out.loops, "ASM body classification loops")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&out.loops);
+    while source_values.len() != 0 {
+        let Some(loop_) = ctx.next_charged(&mut source_values, "ASM body classification loops")? else {
+            break;
+        };
         let Some(body) = ctx
             .get_hash_map(&loop_bodies, &&loop_.id, "ASM body owner lookup")?
             .copied()
         else {
             continue;
         };
-        for coedge in ctx.admit_iter(loop_.coedges(), "ASM loop coedges")? {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut source_values = IntoIterator::into_iter(loop_.coedges());
+        while source_values.len() != 0 {
+            let Some(coedge) = ctx.next_charged(&mut source_values, "ASM loop coedges")? else {
+                break;
+            };
             storage.with_storage(|| {
                 ctx.insert_hash_map(&mut coedge_bodies, coedge, body, "ASM coedge bodies")
             })?;
         }
     }
     let mut edge_use_counts = HashMap::<_, std::collections::BTreeMap<&EdgeId, usize>>::new();
-    for coedge in ctx.admit_iter(&out.coedges, "ASM body classification coedges")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&out.coedges);
+    while source_values.len() != 0 {
+        let Some(coedge) = ctx.next_charged(&mut source_values, "ASM body classification coedges")? else {
+            break;
+        };
         if let Some(body) = ctx
             .get_hash_map(&coedge_bodies, &&coedge.id, "ASM body owner lookup")?
             .copied()
@@ -1284,7 +1375,14 @@ pub(super) fn classify_body_kinds(
             *counts.entry(&coedge.edge).or_default() += 1;
         }
     }
-    for body in ctx.admit_iter(&mut out.bodies, "ASM body classification bodies")? {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut source_values = IntoIterator::into_iter(&mut out.bodies);
+    while source_values.len() != 0 {
+        let Some(body) = ctx.next_charged(&mut source_values, "ASM body classification bodies")? else {
+            break;
+        };
         if !ctx.contains_hash_set(&body_has_faces, &&body.id, "ASM body face membership")? {
             body.kind = cadmpeg_ir::topology::BodyKind::Wire;
             continue;
@@ -1454,6 +1552,7 @@ mod sense_tests {
 #[cfg(test)]
 mod tests {
     mod budget;
+    mod source_visits;
     mod quadratic_storage;
     mod numerical_ranges;
     use super::Point3;
