@@ -357,7 +357,10 @@ fn bodies_containing_edges<'ir, 'ctx>(
     for shell in ctx.admit_iter(&ir.model.shells, "creo selected shell lookup")? {
         let mut has_selected_wire_edge = false;
         let mut edge_iter = shell.wire_edges().iter();
-        while let Some(edge) = ctx.next_charged(&mut edge_iter, "creo selected shell wire edges")? {
+        while edge_iter.len() != 0 {
+            let Some(edge) = ctx.next_charged(&mut edge_iter, "creo selected shell wire edges")? else {
+                break;
+            };
             if ctx.contains_btree_set(&selected, edge, "creo selected shell wire edge lookup")? {
                 has_selected_wire_edge = true;
                 break;
@@ -455,6 +458,9 @@ pub(in super::super) fn evaluated_sweep_body_kind(
     family: &str,
     feature_id: u32,
 ) -> Result<Option<BodyKind>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let prefix = match family {
         "extrusion" => "creo:feature:extrusion#",
         "revolution" => "creo:feature:revolution#",
@@ -483,9 +489,15 @@ pub(in super::super) fn new_sheet_output_surface_id(
     tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
 ) -> Result<Option<u32>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut selected = [None; 3];
     let mut rows = tables.iter();
-    while let Some(table) = ctx.next_charged(&mut rows, "creo new sheet entity tables")? {
+    while rows.len() != 0 {
+        let Some(table) = ctx.next_charged(&mut rows, "creo new sheet entity tables")? else {
+            break;
+        };
         if table.feature_id != feature_id {
             continue;
         }

@@ -412,6 +412,7 @@ fn evaluated_sweep_body_identity_comparison_refuses_at_work_boundary() {
     );
 }
 
+mod admission_recovery;
 mod generated;
 mod properties;
 mod selected_edges;
