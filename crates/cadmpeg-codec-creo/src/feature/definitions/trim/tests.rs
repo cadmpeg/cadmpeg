@@ -975,3 +975,5 @@ fn trim_parser_scans_refuse_at_work_boundaries() {
 
 mod numerical;
 mod range;
+
+mod admission_recovery;
