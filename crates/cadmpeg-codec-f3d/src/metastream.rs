@@ -48,12 +48,14 @@ pub(crate) fn primary_record_frames(
     bulk_len: usize,
 ) -> Result<Vec<PrimaryRecordFrame>, CodecError> {
     let mut frames = Vec::new();
-    let mut primary_by_entity = std::collections::HashMap::new();
     let mut primary_index_storage = ctx.reserve_scoped(0, "index F3D primary entities")?;
-    for (ordinal, record) in ctx
-        .admit_iter(&meta.records, "frame F3D primary records")?
-        .enumerate()
-    {
+    let mut primary_by_entity = std::collections::HashMap::new();
+    let mut records = meta.records.iter().enumerate();
+    while records.len() != 0 {
+        let Some((ordinal, record)) =
+            ctx.next_charged(&mut records, "frame F3D primary records")? else {
+                break;
+            };
         if primary_index_storage
             .with_storage(|| {
                 ctx.insert_hash_map(
@@ -99,9 +101,14 @@ pub(crate) fn primary_record_frames(
 
     let mut previous_secondary_offset = None;
 
-    let mut secondary_entities = std::collections::HashSet::new();
     let mut secondary_index_storage = ctx.reserve_scoped(0, "index F3D secondary entities")?;
-    for record in ctx.admit_iter(&meta.secondary_records, "index F3D secondary entities")? {
+    let mut secondary_entities = std::collections::HashSet::new();
+    let mut secondary_records = meta.secondary_records.iter();
+    while !secondary_records.as_slice().is_empty() {
+        let Some(record) =
+            ctx.next_charged(&mut secondary_records, "index F3D secondary entities")? else {
+                break;
+            };
         let secondary = usize::try_from(record.bulk_offset).map_err(|_| {
             CodecError::Malformed("F3D secondary record offset exceeds usize".into())
         })?;
@@ -633,6 +640,8 @@ pub(crate) fn parse(
 
 #[cfg(test)]
 mod tests {
+    mod index_storage;
+    mod reached_frames;
     use cadmpeg_core::decode::u64_from_index;
 
     use super::{MetaStream, RecordIndexEntry};
