@@ -206,12 +206,12 @@ fn line_scale_refusal(source: &[u8], collection_limit: u64, depth_limit: u64) ->
     policy.limits.max_recursion_depth = depth_limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    super::super::line_parameter_scale(
-        &exchange,
+    let mut index = super::super::LineParameterScaleIndex::new(&exchange, &ctx)
+        .expect("empty memo fits policy");
+    index.resolve(
         1,
         cadmpeg_ir::scalar::PositiveReal::new(1.0).expect("positive scale"),
         &mut Vec::new(),
-        &ctx,
     )
     .expect_err("line scale exceeds limit")
 }

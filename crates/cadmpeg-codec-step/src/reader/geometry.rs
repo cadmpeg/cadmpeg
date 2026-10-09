@@ -1538,6 +1538,7 @@ pub(super) fn decode<'ctx>(
     }
     let mut deferred_queue = VecDeque::from(deferred_ids);
     let mut waiting_on = DeferredDependencies::default();
+    let mut line_scale_index = LineParameterScaleIndex::new(exchange, ctx)?;
     while let Some(id) = deferred_queue.pop_front() {
         ctx.charge_work(1, "step deferred curve worklist")?;
         if ctx.contains_key_hash_map(&carrier_index.curves, &id, "step_geometry_lookup")? {
@@ -1717,12 +1718,10 @@ pub(super) fn decode<'ctx>(
                 )?
                 .copied()
                 .unwrap_or(0.0);
-            let linear_parameter_scale = line_parameter_scale(
-                exchange,
+            let linear_parameter_scale = line_scale_index.resolve(
                 basis_reference_step,
                 record_scale,
                 &mut losses,
-                ctx,
             )?;
             let (start, end) = {
                 let mut trim_context = TrimParameterContext {
@@ -2057,6 +2056,7 @@ pub(super) fn decode<'ctx>(
             )
         })?;
     }
+    drop(line_scale_index);
     for indexed_entity in exchange.entities(ctx, "CURVE_REPLICA")? {
         let (id, _) = indexed_entity?;
         if !ctx.contains_key_hash_map(&carrier_index.curves, &id, "step_geometry_lookup")? {
@@ -6126,13 +6126,134 @@ fn parameter_scale(
     }
 }
 
-fn line_parameter_scale(
-    exchange: &Exchange,
-    curve: u64,
-    length_scale: PositiveReal,
-    losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<PositiveReal, CodecError> {
+#[derive(Clone, Copy)]
+enum LineParameterRule {
+    Magnitude { line: u64, magnitude: PositiveReal },
+    UnresolvedLine(u64),
+    DocumentLength,
+}
+
+/// Cache the source rule; each requester supplies its own length unit.
+struct LineParameterScaleIndex<'records, 'ctx, 'bytes> {
+    rules: HashMap<u64, LineParameterRule>,
+    exchange: &'records Exchange,
+    ctx: &'ctx DecodeContext<'bytes>,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'records, 'ctx, 'bytes> LineParameterScaleIndex<'records, 'ctx, 'bytes> {
+    fn new(
+        exchange: &'records Exchange,
+        ctx: &'ctx DecodeContext<'bytes>,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            rules: HashMap::new(),
+            exchange,
+            ctx,
+            storage: ctx.reserve_scoped(0, "step line parameter scale memo storage")?,
+        })
+    }
+
+    fn resolve(
+        &mut self,
+        curve: u64,
+        length_scale: PositiveReal,
+        losses: &mut Vec<LossNote>,
+    ) -> Result<PositiveReal, CodecError> {
+        let mut active_storage = self.ctx.reserve_scoped(0, "step line parameter active storage")?;
+        let mut visiting = BTreeSet::new();
+        self.resolve_inner(curve, length_scale, losses, &mut visiting, &mut active_storage)
+            .map(|(scale, _)| scale)
+    }
+
+    fn resolve_inner(
+        &mut self,
+        curve: u64,
+        length_scale: PositiveReal,
+        losses: &mut Vec<LossNote>,
+        visiting: &mut BTreeSet<u64>,
+        active_storage: &mut ScopedReservation<'_>,
+    ) -> Result<(PositiveReal, LineParameterRule), CodecError> {
+        let ctx = self.ctx;
+        if ctx.contains_btree_set(visiting, &curve, "step_geometry_lookup")? {
+            return Ok((length_scale, LineParameterRule::DocumentLength));
+        }
+        let _depth = ctx.enter_nested("step_line_parameter_scale_walk")?;
+        if let Some(rule) = ctx
+            .get_hash_map(&self.rules, &curve, "step line parameter scale memo lookup")?
+            .copied()
+        {
+            return Ok((Self::apply_rule(rule, length_scale, losses, ctx)?, rule));
+        }
+        active_storage.with_storage(|| {
+            ctx.insert_btree_set(visiting, curve, "step_line_parameter_scale_active")
+        })?;
+        let record = ctx.get_btree_map(self.exchange.records(), &curve, "step_geometry_lookup")?;
+        let (scale, rule) = if let Some(record) = record {
+            if record.partial(ctx, "LINE")?.is_some() {
+                let magnitude = named_parameter(ctx, record, "LINE", 2)?
+                    .and_then(ValueExt::reference)
+                    .map(|vector| {
+                        ctx.get_btree_map(self.exchange.records(), &vector, "step_geometry_lookup")
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|record| -> Result<_, CodecError> {
+                        Ok(if record.partial(ctx, "VECTOR")?.is_some() {
+                            Some(record)
+                        } else {
+                            None
+                        })
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|record| named_parameter(ctx, record, "VECTOR", 2))
+                    .transpose()?
+                    .flatten()
+                    .and_then(ValueExt::number)
+                    .and_then(PositiveReal::new);
+                let rule = magnitude.map_or(LineParameterRule::UnresolvedLine(curve), |magnitude| {
+                    LineParameterRule::Magnitude { line: curve, magnitude }
+                });
+                (Self::apply_rule(rule, length_scale, losses, ctx)?, rule)
+            } else if let Some(parent) = Self::inherited_parent(ctx, record)? {
+                self.resolve_inner(parent, length_scale, losses, visiting, active_storage)?
+            } else {
+                (length_scale, LineParameterRule::DocumentLength)
+            }
+        } else {
+            (length_scale, LineParameterRule::DocumentLength)
+        };
+        ctx.remove_btree_set(visiting, &curve, "step_geometry_remove")?;
+        self.storage.with_storage(|| {
+            ctx.insert_hash_map(&mut self.rules, curve, rule, "step line parameter scale memo")
+        })?;
+        Ok((scale, rule))
+    }
+
+    fn apply_rule(
+        rule: LineParameterRule,
+        length_scale: PositiveReal,
+        losses: &mut Vec<LossNote>,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<PositiveReal, CodecError> {
+        let line = match rule {
+            LineParameterRule::Magnitude { line, magnitude } => {
+                if let Some(scale) = PositiveReal::new(magnitude.get() * length_scale.get()) {
+                    return Ok(scale);
+                }
+                line
+            }
+            LineParameterRule::UnresolvedLine(line) => line,
+            LineParameterRule::DocumentLength => return Ok(length_scale),
+        };
+        ctx.push_vec(losses, StepLossCode::LineParameterScaleUnresolved.note(ctx.format_retained(
+            format_args!("LINE #{line} parameter scale did not resolve; the document length scale was used"),
+            "step_geometry_loss_text",
+        )?), "step_line_parameter_scale_losses")?;
+        Ok(length_scale)
+    }
+
     fn inherited_parent(
         ctx: &DecodeContext<'_>,
         record: &RawRecord,
@@ -6166,76 +6287,6 @@ fn line_parameter_scale(
         }
         Ok(None)
     }
-
-    fn resolve(
-        exchange: &Exchange,
-        curve: u64,
-        length_scale: PositiveReal,
-        losses: &mut Vec<LossNote>,
-        visiting: &mut BTreeSet<u64>,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<PositiveReal, CodecError> {
-        if ctx.contains_btree_set(visiting, &curve, "step_geometry_lookup")? {
-            return Ok(length_scale);
-        }
-        let _depth = ctx.enter_nested("step_line_parameter_scale_walk")?;
-        let mut active_storage = ctx.reserve_scoped(0, "step line parameter active storage")?;
-        active_storage.with_storage(|| {
-            ctx.insert_btree_set(visiting, curve, "step_line_parameter_scale_active")
-        })?;
-        let Some(record) = ctx.get_btree_map(exchange.records(), &curve, "step_geometry_lookup")?
-        else {
-            ctx.remove_btree_set(visiting, &curve, "step_geometry_remove")?;
-            return Ok(length_scale);
-        };
-        let result = if record.partial(ctx, "LINE")?.is_some() {
-            if let Some(scale) = named_parameter(ctx, record, "LINE", 2)?
-                .and_then(ValueExt::reference)
-                .map(|vector| {
-                    ctx.get_btree_map(exchange.records(), &vector, "step_geometry_lookup")
-                })
-                .transpose()?
-                .flatten()
-                .map(|record| -> Result<_, CodecError> {
-                    Ok(if record.partial(ctx, "VECTOR")?.is_some() {
-                        Some(record)
-                    } else {
-                        None
-                    })
-                })
-                .transpose()?
-                .flatten()
-                .map(|record| named_parameter(ctx, record, "VECTOR", 2))
-                .transpose()?
-                .flatten()
-                .and_then(ValueExt::number)
-                .and_then(PositiveReal::new)
-                .and_then(|magnitude| PositiveReal::new(magnitude.get() * length_scale.get()))
-            {
-                Ok(scale)
-            } else {
-                ctx.push_vec(losses, StepLossCode::LineParameterScaleUnresolved.note(ctx.format_retained(format_args!(
-                        "LINE #{curve} parameter scale did not resolve; the document length scale was used"
-                    ), "step_geometry_loss_text")?), "step_line_parameter_scale_losses")?;
-                Ok(length_scale)
-            }
-        } else if let Some(parent) = inherited_parent(ctx, record)? {
-            resolve(exchange, parent, length_scale, losses, visiting, ctx)
-        } else {
-            Ok(length_scale)
-        };
-        ctx.remove_btree_set(visiting, &curve, "step_geometry_remove")?;
-        result
-    }
-
-    resolve(
-        exchange,
-        curve,
-        length_scale,
-        losses,
-        &mut BTreeSet::new(),
-        ctx,
-    )
 }
 
 fn orthogonal_reference(axis: UnitVector3, reference: UnitVector3) -> Option<UnitVector3> {

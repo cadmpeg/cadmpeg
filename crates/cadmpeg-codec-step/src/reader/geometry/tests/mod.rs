@@ -2,6 +2,7 @@
 mod admission_limits;
 pub(crate) mod analytic;
 mod known_length;
+mod line_parameter_scale;
 mod nurbs;
 mod parameters;
 mod pcurves;
