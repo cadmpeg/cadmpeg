@@ -673,10 +673,9 @@ fn parse_schema_program(
     catalog_offset: usize,
     directory_offset: Option<usize>,
 ) -> Result<Option<LegacySchemaProgram>, CodecError> {
-    let scan_len = data
-        .len()
-        .checked_sub(catalog_offset)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_legacy_schema_scan", u64::MAX, u64::MAX))?;
+    if catalog_offset > data.len() {
+        return Err(ctx.refuse_codec_limit("catia_legacy_schema_scan", u64::MAX, u64::MAX));
+    }
     ctx.charge_work(0, "catia_legacy_schema_scan")?;
     let Some(prefix_offset) = catalog_offset.checked_add(CATALOG_OPEN.len()) else {
         return Ok(None);
@@ -687,19 +686,29 @@ fn parse_schema_program(
     if data.get(prefix_offset..offset) != Some(SCHEMA_PROGRAM_PREFIX) {
         return Ok(None);
     }
-    charge_scan(ctx, scan_len, "catia_legacy_schema_scan")?;
+    let mut search_end = offset;
+    let mut footer_offset = None;
+    ctx.all_by_limit(
+        &data[offset..],
+        |byte| {
+            let suffix = &data[search_end..];
+            if suffix.starts_with(CATALOG_OPEN) {
+                return Ok(false);
+            }
+            if *byte == SCHEMA_PROGRAM_FOOTER[0]
+                && search_end > offset
+                && data[search_end - 1] == 0xfe
+                && suffix.starts_with(SCHEMA_PROGRAM_FOOTER)
+            {
+                footer_offset = Some(search_end);
+                return Ok(false);
+            }
+            search_end += 1;
+            Ok(true)
+        },
+        "catia_legacy_schema_scan",
+    )?;
     let Some((offset, boundary_offset, boundary, source)) = (|| {
-        let search_end = memchr::memmem::find(&data[offset..], CATALOG_OPEN)
-            .and_then(|relative| offset.checked_add(relative))
-            .unwrap_or(data.len());
-        let footer_offset =
-            memchr::memmem::find_iter(&data[offset..search_end], SCHEMA_PROGRAM_FOOTER).find_map(
-                |relative| {
-                    let footer_offset = offset.checked_add(relative)?;
-                    (footer_offset > offset && data.get(footer_offset - 1) == Some(&0xfe))
-                        .then_some(footer_offset)
-                },
-            );
         let (boundary_offset, boundary) = if let Some(footer_offset) = footer_offset {
             (footer_offset, LegacySchemaProgramBoundary::VendorFooter)
         } else {
