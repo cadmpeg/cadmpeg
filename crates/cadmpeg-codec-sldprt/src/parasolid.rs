@@ -402,8 +402,8 @@ fn inflate_zlib_frame_budgeted(
             if input_at != member.len() || output.written() != declared {
                 return Ok(None);
             }
-            reservation.commit()?;
-            return output.finalize_owned().map(Some);
+            let bytes = output.finalize_owned()?;
+            return reservation.commit_value(bytes).map(Some);
         }
         if consumed == 0 && produced == 0 {
             return Ok(None);
