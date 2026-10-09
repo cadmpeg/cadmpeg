@@ -795,16 +795,6 @@ fn unique_entry_by<'v, T>(
     Ok(found.map_or(UniqueLookup::Absent, UniqueLookup::Value))
 }
 
-/// The native stream prefix before the last identity delimiter.
-pub(super) fn native_stream_of<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    id: &'a str,
-) -> Result<Option<&'a str>, cadmpeg_core::CodecError> {
-    Ok(ctx
-        .rsplit_once(id, ":", "split F3D native stream")?
-        .map(|(stream, _)| stream))
-}
-
 type IndexKey<'a, K, T> = fn(
     &cadmpeg_core::decode::DecodeContext<'_>,
     &'a T,
@@ -960,8 +950,8 @@ fn scope_group<'a, 'ctx>(
         return Ok(None);
     }
     let same_stream = ctx.equal(
-        &native_stream_of(ctx, &group.id)?,
-        &native_stream_of(ctx, &scope.id)?,
+        &crate::ids::native_stream_charged(ctx, &group.id, "split F3D native stream")?,
+        &crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?,
         "compare F3D operand group stream",
     )?;
     Ok(same_stream.then_some(group))
@@ -978,11 +968,12 @@ fn member_operand_key<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     operand: &'a BodyRecipeOperand,
 ) -> Result<Option<MemberOperandKey<'a>>, cadmpeg_core::CodecError> {
+    ctx.charge_work(0, "split F3D native stream")?;
     let Some((group_record_index, ordinal)) = operand.owner.group() else {
         return Ok(None);
     };
     Ok(Some((
-        native_stream_of(ctx, &operand.id)?,
+        crate::ids::native_stream_charged(ctx, &operand.id, "split F3D native stream")?,
         group_record_index,
         ordinal,
         operand.record_index(),
@@ -993,6 +984,7 @@ fn scope_operand_key<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     operand: &'a BodyRecipeOperand,
 ) -> Result<Option<ScopeOperandKey<'a>>, cadmpeg_core::CodecError> {
+    ctx.charge_work(0, "split F3D native stream")?;
     if !matches!(
         operand.owner,
         crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference { .. }
@@ -1000,7 +992,7 @@ fn scope_operand_key<'a>(
         return Ok(None);
     }
     Ok(Some((
-        native_stream_of(ctx, &operand.id)?,
+        crate::ids::native_stream_charged(ctx, &operand.id, "split F3D native stream")?,
         operand.scope_record_index,
         operand.record_index(),
     )))
@@ -1723,7 +1715,7 @@ fn combine_history_tools<'a, 'ctx>(
     index: &BodySelectionIndex<'a, 'ctx>,
 ) -> Result<Option<cadmpeg_ir::features::BodySelection>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{BodyMembers, BodySelection, DistinctMembers};
-    let Some(stream) = native_stream_of(ctx, &input.scope.id)? else {
+    let Some(stream) = crate::ids::native_stream_charged(ctx, &input.scope.id, "split F3D native stream")? else {
         return Ok(None);
     };
     let Some(operation) = input.scope.combine_operation() else {
@@ -2084,7 +2076,7 @@ fn combine_recipe_family_tool_slots<'a, 'ctx>(
         };
         let recipe = required!(recipes.get(ctx, operand.recipe_id.as_str())?);
         if !ctx.equal(
-            &native_stream_of(ctx, &recipe.id)?,
+            &crate::ids::native_stream_charged(ctx, &recipe.id, "split F3D native stream")?,
             &Some(stream),
             "compare F3D Combine recipe streams",
         )? {
@@ -2335,7 +2327,7 @@ fn bind_pattern_body_selections<'ctx>(
                 return Ok(None);
             }
             Ok(Some((
-                native_stream_of(ctx, &group.id)?,
+                crate::ids::native_stream_charged(ctx, &group.id, "split F3D native stream")?,
                 group.scope_record_index,
             )))
         },
@@ -2356,7 +2348,7 @@ fn bind_pattern_body_selections<'ctx>(
         let Some(scope) = index.scopes.get(ctx, native_ref)? else {
             continue;
         };
-        let stream = native_stream_of(ctx, &scope.id)?;
+        let stream = crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?;
         let Some(group) = seed_groups.get(ctx, &(stream, scope.record_index))? else {
             continue;
         };
@@ -2536,7 +2528,7 @@ fn bind_body_recipe_body_selection<'a, 'ctx>(
             if group.members().is_empty() {
                 return Ok(None);
             }
-            let stream = native_stream_of(ctx, &scope.id)?;
+            let stream = crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?;
             let mut slots_storage = ctx.reserve_scoped(0, "collect F3D body recipe slots")?;
             let mut seen = HashSet::new();
             let mut body_slots = Vec::new();
@@ -2605,7 +2597,7 @@ fn bind_direct_body_recipe_body_selection<'a, 'ctx>(
         || -> Result<_, cadmpeg_core::CodecError> {
             use cadmpeg_ir::features::BodySelection;
 
-            let stream = native_stream_of(ctx, &scope.id)?;
+            let stream = crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?;
             let mut seen_storage =
                 ctx.reserve_scoped(0, "index F3D direct body recipe selections")?;
             let mut seen_bodies = HashSet::new();
@@ -2798,14 +2790,14 @@ fn body_recipe_link_candidate<'a, 'ctx>(
 ) -> Result<Option<&'a cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    let Some(stream) = native_stream_of(ctx, &operand.id)? else {
+    let Some(stream) = crate::ids::native_stream_charged(ctx, &operand.id, "split F3D native stream")? else {
         return Ok(None);
     };
     let Some(recipe) = index.recipes.get(ctx, operand.recipe_id.as_str())? else {
         return Ok(None);
     };
     if !ctx.equal(
-        &native_stream_of(ctx, &recipe.id)?,
+        &crate::ids::native_stream_charged(ctx, &recipe.id, "split F3D native stream")?,
         &Some(stream),
         "compare F3D body recipe stream",
     )? {
@@ -3171,7 +3163,7 @@ impl<'a, 'ctx> FaceSelectionIndex<'a, 'ctx> {
                 inputs.operands,
                 |ctx, operand| {
                     Ok(Some((
-                        native_stream_of(ctx, &operand.id)?,
+                        crate::ids::native_stream_charged(ctx, &operand.id, "split F3D native stream")?,
                         operand.scope_record_index,
                         operand.record_index(),
                     )))
@@ -3187,7 +3179,7 @@ impl<'a, 'ctx> FaceSelectionIndex<'a, 'ctx> {
                 inputs.entity_operands,
                 |ctx, operand| {
                     Ok(Some((
-                        native_stream_of(ctx, &operand.id)?,
+                        crate::ids::native_stream_charged(ctx, &operand.id, "split F3D native stream")?,
                         operand.scope_record_index,
                         operand.group_record_index,
                         operand.group_member_ordinal,
@@ -3219,7 +3211,7 @@ impl<'a, 'ctx> FaceSelectionIndex<'a, 'ctx> {
                     {
                         continue;
                     }
-                    let key = (native_stream_of(ctx, &group.id)?, group.scope_record_index);
+                    let key = (crate::ids::native_stream_charged(ctx, &group.id, "split F3D native stream")?, group.scope_record_index);
                     storage.with_storage(|| {
                         ctx.push_hash_group(&mut groups, key, group, operation, operation)
                     })?;
@@ -3593,7 +3585,7 @@ fn bind_surface_stitch_face_selection<'a, 'ctx>(
     if input_end == 0 || !input_end.is_multiple_of(2) {
         return Ok(());
     }
-    let stream = native_stream_of(ctx, &scope.id)?;
+    let stream = crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?;
     let candidates = index.stitch_groups(ctx, stream, scope.record_index)?;
     if candidates.len().checked_mul(2) != Some(input_end) {
         return Ok(());
@@ -3649,7 +3641,7 @@ fn bind_entity_face_groups<'a, 'ctx>(
     if groups.is_empty() {
         return Ok(());
     }
-    let stream = native_stream_of(ctx, &scope.id)?;
+    let stream = crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?;
     let mut selected_storage = ctx.reserve_scoped(0, "collect F3D entity face candidates")?;
     let mut seen = HashSet::new();
     let mut selected = Vec::<(&str, i64, bool)>::new();
@@ -3989,7 +3981,7 @@ fn path_operand_index<'ctx>(
         operands,
         |ctx, operand| {
             Ok(Some((
-                native_stream_of(ctx, &operand.id)?,
+                crate::ids::native_stream_charged(ctx, &operand.id, "split F3D native stream")?,
                 operand.group_record_index,
                 operand.group_member_ordinal,
                 operand.record_index(),
@@ -4022,7 +4014,7 @@ fn bind_entity_selection_path<'a, 'ctx>(
             if group.members().is_empty() {
                 return Ok(None);
             }
-            let stream = native_stream_of(ctx, &scope.id)?;
+            let stream = crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?;
             let (mut edge_slots, _edge_slots_storage) = ctx
                 .with_scoped_storage("collect F3D path edge slots", || {
                     ctx.collection_vec(group.members().len(), "collect F3D path edge slots")
@@ -4370,7 +4362,7 @@ fn vertex_recipe_input_states<'s>(
             )
         })?;
     let ordinal_of = |scope: &'s crate::records::feature::scope::DesignParameterScope| {
-        let stream = native_stream_of(ctx, &scope.id)?.unwrap_or(crate::ids::DEFAULT_STREAM);
+        let stream = crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?.unwrap_or(crate::ids::DEFAULT_STREAM);
         Ok::<_, cadmpeg_core::CodecError>(
             ctx.get_hash_map(
                 &source_ordinals,
@@ -5691,7 +5683,7 @@ pub(crate) fn bind_scope_histories(
         .enumerate()
     {
         let (Some(stream), Some(state_id)) = (
-            native_stream_of(decode, &scope.id)?,
+            crate::ids::native_stream_charged(decode, &scope.id, "split F3D native stream")?,
             scope.history_state_id(),
         ) else {
             continue;
@@ -5932,10 +5924,10 @@ impl<'s, 'ctx> ScopesByRecord<'s, 'ctx> {
         else {
             return Ok(None);
         };
-        let stream = native_stream_of(ctx, operand_id)?;
+        let stream = crate::ids::native_stream_charged(ctx, operand_id, "split F3D native stream")?;
         let same_stream = |scope: &&DesignScope| {
             ctx.equal(
-                &native_stream_of(ctx, &scope.id)?,
+                &crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?,
                 &stream,
                 "compare F3D operand scope stream",
             )
@@ -6003,7 +5995,7 @@ impl<'g, 'ctx> GroupsByRecord<'g, 'ctx> {
         let mut matches = |group: &&OperandGroup| {
             Ok(accept(group)
                 && ctx.equal(
-                    &native_stream_of(ctx, &group.id)?,
+                    &crate::ids::native_stream_charged(ctx, &group.id, "split F3D native stream")?,
                     &stream,
                     "compare F3D operand group stream",
                 )?)
@@ -6027,11 +6019,11 @@ fn exact_face_selection_group<'g>(
     scope: &DesignScope,
     groups: &GroupsByRecord<'g, '_>,
 ) -> Result<Option<&'g OperandGroup>, cadmpeg_core::CodecError> {
-    let Some(stream) = native_stream_of(ctx, &operand.id)? else {
+    let Some(stream) = crate::ids::native_stream_charged(ctx, &operand.id, "split F3D native stream")? else {
         return Ok(None);
     };
     if !ctx.equal(
-        &native_stream_of(ctx, &scope.id)?,
+        &crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?,
         &Some(stream),
         "compare F3D face selection group scope stream",
     )? {
@@ -6424,7 +6416,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         )?;
         operand.resolved_face_slots.clear();
         operand.resolved_active_face = None;
-        let stream = native_stream_of(decode, &operand.id)?;
+        let stream = crate::ids::native_stream_charged(decode, &operand.id, "split F3D native stream")?;
         let Some(scope) = scope_records.find(decode, &operand.id, operand.scope_record_index)?
         else {
             continue;
@@ -7870,7 +7862,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
     }
     let recipes_by_id = body_recipe_identity_index(recipes);
     let identity = |operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand| -> Result<Option<_>, cadmpeg_core::CodecError> {
-        let Some(stream) = native_stream_of(decode, &operand.id)? else { return Ok(None) };
+        let Some(stream) = crate::ids::native_stream_charged(decode, &operand.id, "split F3D native stream")? else { return Ok(None) };
         let Some(recipe) = recipes_by_id.get(decode, operand.recipe_id.as_str())? else {
             return Ok(None);
         };
@@ -7989,7 +7981,7 @@ fn body_recipe_operand_history_pair<'a>(
     scopes: &ScopesByRecord<'_, '_>,
     histories: &'a [AsmHistory],
 ) -> Result<Option<HistoryStatePair<'a>>, cadmpeg_core::CodecError> {
-    if native_stream_of(decode, &operand.id)?.is_none() {
+    if crate::ids::native_stream_charged(decode, &operand.id, "split F3D native stream")?.is_none() {
         return Ok(None);
     }
     let Some(scope) = scopes.find(decode, &operand.id, operand.scope_record_index)? else {
