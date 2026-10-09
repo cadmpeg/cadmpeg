@@ -272,6 +272,7 @@ fn transformed_pcurves_apply_the_map_to_all_differential_orders() {
         assert_eq!(
             differential
                 .acceleration
+                .finite()
                 .map(crate::units::FinitePoint2::get),
             Some(Point2::new(0.0, 2.0))
         );
