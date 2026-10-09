@@ -7087,6 +7087,7 @@ fn nurbs_curve(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<NurbsCurve>, CodecError> {
     let mut staging = ctx.reserve_scoped(0, "step rational curve lanes")?;
+    let mut pole_storage = ctx.reserve_scoped(0, "step polynomial curve poles")?;
     let definition = geometry_or_none!(nurbs_curve_definition(
         id,
         record,
@@ -7114,7 +7115,8 @@ fn nurbs_curve(
                 "step_nurbs_curve_control_points",
             )?;
         } else {
-            ctx.push_vec(
+            ctx.push_scoped_vec(
+                &mut pole_storage,
                 &mut control_points,
                 point,
                 "step_nurbs_curve_control_points",
@@ -7131,8 +7133,9 @@ fn nurbs_curve(
     )?;
     drop(staging);
     match curve {
-        Ok(curve) => Ok(Some(curve)),
+        Ok(curve) => Ok(Some(pole_storage.commit_value(curve)?)),
         Err(error) => {
+            drop(pole_storage);
             ctx.push_vec(
                 losses,
                 StepLossCode::DecodeWarning.note(ctx.format_retained(
@@ -8369,6 +8372,7 @@ fn polyline(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<NurbsCurve>, CodecError> {
     let values = geometry_or_none!(record.parameter(1).and_then(Value::list));
+    let mut storage = ctx.reserve_scoped(0, "step polynomial polyline lanes")?;
     let mut control_points = Vec::new();
     let mut values = values.iter();
     ctx.charge_work(0, "STEP polyline value traversal")?;
@@ -8383,7 +8387,7 @@ fn polyline(
             ))
             .transpose()?
             .flatten());
-        ctx.push_vec(&mut control_points, point, "step_polyline_points")?;
+        ctx.push_scoped_vec(&mut storage, &mut control_points, point, "step_polyline_points")?;
     }
     if control_points.len() < 2 {
         return Ok(None);
@@ -8392,16 +8396,16 @@ fn polyline(
         control_points.len() - 1
     ));
     let mut knots = Vec::new();
-    ctx.push_vec(&mut knots, 0.0, "step_polyline_knots")?;
+    ctx.push_scoped_vec(&mut storage, &mut knots, 0.0, "step_polyline_knots")?;
     let mut indices = 0..control_points.len();
     ctx.charge_work(0, "STEP polyline knot traversal")?;
     for _ in 0..indices.len() {
         let index = ctx.next_charged(&mut indices, "STEP polyline knot traversal")?
             .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
         let knot = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
-        ctx.push_vec(&mut knots, knot, "step_polyline_knots")?;
+        ctx.push_scoped_vec(&mut storage, &mut knots, knot, "step_polyline_knots")?;
     }
-    ctx.push_vec(&mut knots, last, "step_polyline_knots")?;
+    ctx.push_scoped_vec(&mut storage, &mut knots, last, "step_polyline_knots")?;
     match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         ctx,
         1,
@@ -8410,8 +8414,9 @@ fn polyline(
         None,
         false,
     )? {
-        Ok(curve) => Ok(Some(curve)),
+        Ok(curve) => Ok(Some(storage.commit_value(curve)?)),
         Err(error) => {
+            drop(storage);
             ctx.push_vec(
                 losses,
                 StepLossCode::DecodeWarning.note(ctx.format_retained(
@@ -8490,6 +8495,7 @@ fn nurbs_surface(
     }
     let rational_leaf = record.partial(ctx, "RATIONAL_B_SPLINE_SURFACE")?;
     let mut staging = ctx.reserve_scoped(0, "step rational surface lanes")?;
+    let mut pole_storage = ctx.reserve_scoped(0, "step polynomial surface poles")?;
     let mut control_points = Vec::new();
     let mut source_rows = rows.iter();
     ctx.charge_work(0, "STEP nurbs surface borrowed traversal")?;
@@ -8518,7 +8524,7 @@ fn nurbs_surface(
                     "step_nurbs_surface_control_points",
                 )?;
             } else {
-                ctx.push_vec(&mut decoded_row, point, "step_nurbs_surface_control_points")?;
+                ctx.push_scoped_vec(&mut pole_storage, &mut decoded_row, point, "step_nurbs_surface_control_points")?;
             }
         }
         if rational_leaf.is_some() {
@@ -8529,7 +8535,7 @@ fn nurbs_surface(
                 "step_nurbs_surface_rows",
             )?;
         } else {
-            ctx.push_vec(&mut control_points, decoded_row, "step_nurbs_surface_rows")?;
+            ctx.push_scoped_vec(&mut pole_storage, &mut control_points, decoded_row, "step_nurbs_surface_rows")?;
         }
     }
     let surface_name = entity_type(
@@ -8666,8 +8672,9 @@ fn nurbs_surface(
     )?;
     drop(staging);
     match surface {
-        Ok(surface) => Ok(Some(surface)),
+        Ok(surface) => Ok(Some(pole_storage.commit_value(surface)?)),
         Err(error) => {
+            drop(pole_storage);
             ctx.push_vec(
                 losses,
                 StepLossCode::DecodeWarning.note(ctx.format_retained(
