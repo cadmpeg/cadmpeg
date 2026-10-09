@@ -923,7 +923,7 @@ pub(crate) fn byte_coverage(
     let overflow = || CodecError::malformed("FCStd byte coverage total overflows");
     // Logical spans grouped by entry once; each entry then takes its own.
     let mut groups_storage = ctx.reserve_scoped(0, "FCStd entry logical spans")?;
-    let mut spans_by_entry = BTreeMap::<&str, Vec<&LogicalSpan>>::new();
+    let mut spans_by_entry = BTreeMap::<&str, ScopedData<'_, Vec<&LogicalSpan>>>::new();
     let mut opaque_names = BTreeSet::new();
     // Byte totals of the classifications present, by the wire order of their names.
     let mut totals: [Option<u64>; 3] = [None; 3];
@@ -951,14 +951,23 @@ pub(crate) fn byte_coverage(
                     "FCStd opaque coverage entries",
                 )?;
             }
-            let spans = ctx
-                .entry_btree_map(
-                    &mut spans_by_entry,
-                    span.entry.as_str(),
-                    "FCStd entry logical spans",
-                )?
-                .or_default();
-            ctx.push_vec(spans, span, "FCStd entry logical spans")
+            let spans = match ctx.entry_btree_map(
+                &mut spans_by_entry,
+                span.entry.as_str(),
+                "FCStd entry logical spans",
+            )? {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(ScopedData {
+                    data: Vec::new(),
+                    _storage: ctx.reserve_scoped(0, "FCStd entry logical spans")?,
+                }),
+            };
+            ctx.push_scoped_vec(
+                &mut spans._storage,
+                &mut spans.data,
+                span,
+                "FCStd entry logical spans",
+            )
         })?;
     }
     // At most three literal names: the map is constant-sized.
@@ -967,21 +976,26 @@ pub(crate) fn byte_coverage(
         .zip(totals)
         .filter_map(|(name, total)| Some((name.to_owned(), total?)))
         .collect::<BTreeMap<_, _>>();
-    let mut ordered_physical =
-        ctx.collection_vec(physical.len(), "FCStd ordered physical spans")?;
-    ordered_physical.extend(ctx.admit_iter(physical, "FCStd ordered physical spans")?);
-    ctx.stable_sort_by_key(
-        &mut ordered_physical,
-        |value| value.span.start(),
-        Ord::cmp,
-        "FCStd physical span sort",
-    )?;
-    let physical_exact = chain_is_exact(
-        ctx,
-        ordered_physical.iter().map(|span| &span.span),
-        physical_byte_len,
-        "FCStd physical span chain",
-    )?;
+    let physical_exact = {
+        let (data, storage) =
+            ctx.temporary_vec(physical.len(), "FCStd ordered physical spans")?;
+        let mut ordered_physical = ScopedData { data, _storage: storage };
+        ordered_physical.data.extend(
+            ctx.admit_iter(physical, "FCStd ordered physical spans")?,
+        );
+        ctx.stable_sort_by_key(
+            &mut ordered_physical.data,
+            |value| value.span.start(),
+            Ord::cmp,
+            "FCStd physical span sort",
+        )?;
+        chain_is_exact(
+            ctx,
+            ordered_physical.data.iter().map(|span| &span.span),
+            physical_byte_len,
+            "FCStd physical span chain",
+        )?
+    };
     let mut logical_exact = true;
     let mut logical_byte_len = 0_u64;
     let mut entries_iter = entries.iter();
@@ -996,25 +1010,31 @@ pub(crate) fn byte_coverage(
         if !logical_exact {
             continue;
         }
-        let mut spans = ctx
+        let spans = ctx
             .remove_btree_map(
                 &mut spans_by_entry,
                 entry.name(),
                 "FCStd entry logical spans",
-            )?
-            .unwrap_or_default();
+            )?;
+        let mut spans = match spans {
+            Some(spans) => spans,
+            None => ScopedData {
+                data: Vec::new(),
+                _storage: ctx.reserve_scoped(0, "FCStd entry logical spans")?,
+            },
+        };
         ctx.stable_sort_by_key(
-            &mut spans,
+            &mut spans.data,
             |value| value.span.start(),
             Ord::cmp,
             "FCStd entry logical span sort",
         )?;
         logical_exact = if entry.byte_len() == 0 {
-            spans.is_empty()
+            spans.data.is_empty()
         } else {
             chain_is_exact(
                 ctx,
-                spans.iter().map(|span| &span.span),
+                spans.data.iter().map(|span| &span.span),
                 entry.byte_len(),
                 "FCStd entry logical span chain",
             )?
