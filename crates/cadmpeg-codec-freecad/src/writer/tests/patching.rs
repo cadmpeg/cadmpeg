@@ -103,7 +103,7 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
             r#"<Property name="Values" type="App::PropertyStringList">{raw_value}{raw_value}</Property>"#
         ), 0).unwrap(),
     };
-    let output = String::from_utf8(serialize_property(&property).expect("required invariant"))
+    let output = String::from_utf8(serialize_property(&property).expect("required invariant").into_owned())
         .expect("required invariant");
     assert_eq!(output.matches(r#"value="same""#).count(), 1);
     assert_eq!(output.matches(r#"value="changed""#).count(), 1);
