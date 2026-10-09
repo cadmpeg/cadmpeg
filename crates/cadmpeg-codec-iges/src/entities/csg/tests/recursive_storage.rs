@@ -140,3 +140,81 @@ fn boolean_cycle_remains_invalid_without_losing_ancestor_cleanup() {
     drop(validation);
     ctx.finish_session().unwrap();
 }
+
+fn node_bytes<K, V>() -> u64 {
+    u64::try_from(11 * (std::mem::size_of::<K>() + std::mem::size_of::<V>())
+        + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<K>()
+            .max(std::mem::align_of::<V>()).max(std::mem::align_of::<usize>())).unwrap()
+}
+
+#[test]
+fn boolean_success_destroys_empty_root_and_keeps_only_actual_memo_storage() {
+    let input = nested_boolean_input();
+    let entries = input.directory.iter().map(|entry| (entry.sequence, entry)).collect();
+    let definitions = nested_boolean_definitions();
+    let path_node = node_bytes::<u32, ()>();
+    let memo_node = node_bytes::<u32, bool>();
+    // Both frames share one path node. Two memo keys need one memo node.
+    for cap in [path_node + memo_node - 1, path_node + memo_node] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 4;
+        policy.limits.max_recursion_depth = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut validation = BooleanValidation {
+            path: BTreeSet::new(), memo: BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "test Boolean memo storage").unwrap(),
+        };
+        let result = boolean_tree_is_valid(1, &entries, &definitions, &mut validation, &ctx);
+        assert!(validation.path.is_empty());
+        if cap == path_node + memo_node {
+            assert!(result.unwrap());
+            assert_eq!(validation.memo, BTreeMap::from([(1, true), (3, true)]));
+            let path_released = ctx.reserve_scoped(path_node, "test destroyed Boolean root").unwrap();
+            drop(path_released);
+            drop(validation);
+            let all_released = ctx.reserve_scoped(cap, "test destroyed Boolean memo").unwrap();
+            drop(all_released);
+            ctx.finish_session().unwrap();
+        } else {
+            let Err(CodecError::ResourceLimit(first)) = result else { panic!("expected child memo refusal") };
+            assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(first.operation, "iges boolean validity memo");
+            assert_eq!((first.limit, first.used, first.additional), (cap, path_node, memo_node));
+            assert!(validation.memo.is_empty());
+            drop(validation);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+}
+
+#[test]
+fn boolean_missing_entry_and_definition_destroy_empty_roots_without_memo() {
+    let input = nested_boolean_input();
+    let entries = input.directory.iter().map(|entry| (entry.sequence, entry)).collect();
+    let definitions = BTreeMap::new();
+    let node = node_bytes::<u32, ()>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = node;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 2;
+    policy.limits.max_recursion_depth = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut validation = BooleanValidation {
+        path: BTreeSet::new(), memo: BTreeMap::new(),
+        storage: ctx.reserve_scoped(0, "test absent Boolean memo").unwrap(),
+    };
+    // D99 is absent; D1 exists but has no definition. Each root is destroyed.
+    for sequence in [99, 1] {
+        assert!(!boolean_tree_is_valid(sequence, &entries, &definitions, &mut validation, &ctx).unwrap());
+        assert!(validation.path.is_empty());
+        assert!(validation.memo.is_empty());
+        let released = ctx.reserve_scoped(node, "test destroyed absent Boolean root").unwrap();
+        drop(released);
+    }
+    drop(validation);
+    ctx.finish_session().unwrap();
+}

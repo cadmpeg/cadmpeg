@@ -182,8 +182,8 @@ fn boolean_tree_is_valid(
         })?;
         Ok(valid)
     })();
-    if result.is_err() {
-        // Destroy the path before this frame's storage expires.
+    if result.is_err() || validation.path.is_empty() {
+        // Destroy the empty root or refused path before this frame's storage expires.
         drop(std::mem::take(&mut validation.path));
     }
     result
