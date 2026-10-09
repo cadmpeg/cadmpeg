@@ -99,6 +99,9 @@ impl<Shape> Scalars<Shape> {
         extent: ScalarExtent<Shape>,
         values: Vec<Option<f64>>,
     ) -> Result<Option<Self>, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         if values.len() != extent.len {
             return Ok(None);
         }
@@ -114,6 +117,9 @@ impl<Shape> Scalars<Shape> {
         extent: ScalarExtent<Shape>,
         slots: Vec<(Option<f64>, Vec<u8>)>,
     ) -> Result<Option<Self>, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         if slots.len() != extent.len {
             return Ok(None);
         }
@@ -341,5 +347,92 @@ mod tests {
         assert_eq!(array.fill_values(vec![Some(2.0)]), Some(()));
         assert_eq!(array.values(), &[Some(2.0)]);
         assert_eq!(array.tokens(), None);
+    }
+
+    #[test]
+    fn scalar_extent_mismatch_is_free_and_keeps_original_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        for refused in [false, true] {
+            if refused {
+                ctx.charge_work_limit(1, "scalar mismatch seed").expect_err("zero work cap");
+            }
+            for len in [0, 2] {
+                let extent = CountedScalars::extent(1).expect("extent");
+                let values = CountedScalars::from_values(&ctx, extent, vec![Some(f64::INFINITY); len]);
+                let tokens = CountedScalars::from_tokens(&ctx, extent, vec![(Some(f64::INFINITY), vec![0xe4]); len]);
+                if refused {
+                    let original = ctx.resource_refusal().expect("original refusal");
+                    assert!(matches!(values, Err(CodecError::ResourceLimit(actual)) if actual == original));
+                    assert!(matches!(tokens, Err(CodecError::ResourceLimit(actual)) if actual == original));
+                } else {
+                    assert_eq!(values.expect("fixed length comparison"), None);
+                    assert_eq!(tokens.expect("fixed length comparison"), None);
+                    assert_eq!(ctx.resource_refusal(), None);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn empty_scalar_extent_outputs_are_free_and_keep_original_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let counted = CountedScalars::extent(0).expect("count");
+        let dimensioned = DimensionedScalars::extent(0, 2).expect("shape");
+        let values = CountedScalars::from_values(&ctx, counted, Vec::new()).expect("zero work").expect("extent");
+        assert_eq!(values.count(), 0);
+        assert_eq!(values.values(), &[]);
+        assert_eq!(values.tokens(), None);
+        let tokens = CountedScalars::from_tokens(&ctx, counted, Vec::new()).expect("zero work").expect("extent");
+        assert_eq!(tokens.count(), 0);
+        assert_eq!(tokens.values(), &[]);
+        assert_eq!(tokens.tokens(), Some([].as_slice()));
+        let values = DimensionedScalars::from_values(&ctx, dimensioned, Vec::new()).expect("zero work").expect("extent");
+        assert_eq!((values.dimensions(), values.count()), (0, 2));
+        assert_eq!(values.values(), &[]);
+        assert_eq!(values.tokens(), None);
+        let tokens = DimensionedScalars::from_tokens(&ctx, dimensioned, Vec::new()).expect("zero work").expect("extent");
+        assert_eq!((tokens.dimensions(), tokens.count()), (0, 2));
+        assert_eq!(tokens.values(), &[]);
+        assert_eq!(tokens.tokens(), Some([].as_slice()));
+        assert_eq!(ctx.resource_refusal(), None);
+        let original = ctx.charge_work_limit(1, "empty scalar seed").expect_err("zero work cap");
+        assert!(matches!(CountedScalars::from_values(&ctx, counted, Vec::new()), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert!(matches!(CountedScalars::from_tokens(&ctx, counted, Vec::new()), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert!(matches!(DimensionedScalars::from_values(&ctx, dimensioned, Vec::new()), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert!(matches!(DimensionedScalars::from_tokens(&ctx, dimensioned, Vec::new()), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert_eq!(ctx.resource_refusal(), Some(original));
+    }
+
+    #[test]
+    fn scalar_token_mismatch_keeps_target_and_original_refusal() {
+        let mut array = CountedScalars::empty(1).expect("fixture extent");
+        let original_array = array.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(array.fill_tokens(&ctx, Vec::new()).expect("fixed length comparison"), None);
+        assert_eq!(array, original_array);
+        assert_eq!(ctx.resource_refusal(), None);
+        let original = ctx.charge_work_limit(1, "scalar fill seed").expect_err("zero work cap");
+        for slots in [Vec::new(), vec![(Some(1.0), vec![0xe4])]] {
+            assert!(matches!(array.fill_tokens(&ctx, slots), Err(CodecError::ResourceLimit(actual)) if actual == original));
+            assert_eq!(array, original_array);
+            assert_eq!(ctx.resource_refusal(), Some(original));
+        }
     }
 }
