@@ -2429,9 +2429,9 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
         // The paired header offset of each frame decoded in this stream, by
         // frame offset. A frame's parse depends only on the stream, so a later
         // interval that reaches the same frame reuses its extent.
-        let mut decoded = HashMap::new();
         let mut decoded_storage =
             ctx.reserve_scoped(0, "f3d dimension annotation decoded offsets")?;
+        let mut decoded = HashMap::new();
         for &(start, end, containing_companion_record_index) in
             ctx.admit_iter(&intervals, "scan F3D dimension annotation intervals")?
         {
