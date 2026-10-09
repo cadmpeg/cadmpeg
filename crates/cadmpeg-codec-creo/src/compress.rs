@@ -152,7 +152,9 @@ pub(crate) fn decode(
             ));
         }
         output.write(&[final_byte])?;
-        ctx.reverse(stack.as_mut_slice(), "creo LZW stack reversal")?;
+        if stack.len() > 1 {
+            ctx.reverse(stack.as_mut_slice(), "creo LZW stack reversal")?;
+        }
         output.write(&stack)?;
         stack.clear();
         written = next_written;
@@ -785,18 +787,53 @@ mod tests {
     #[test]
     fn lzw_stack_reversal_refuses_work() {
         let mut stream = vec![0x1f, 0x9d, 0x10];
-        stream.extend(codes(&[65, 66, 256]));
-        assert_eq!(decode(&stream, 4), Some(b"ABAB".to_vec()));
+        stream.extend(codes(&[65, 66, 256, 258]));
+        assert_eq!(decode(&stream, 7), Some(b"ABABABA".to_vec()));
         let error = crate::test_support::last_refusal_at(
             &[],
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
             "creo LZW stack reversal",
-            |ctx| super::decode(ctx, &stream, 4),
+            |ctx| super::decode(ctx, &stream, 7),
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
                 && resource.operation == "creo LZW stack reversal")
         );
+    }
+
+    #[test]
+    fn lzw_singleton_stack_has_no_reversal_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let mut stream = vec![0x1f, 0x9d, 0x09];
+        stream.extend(codes(&[65, 66, 256]));
+        // Two 512-slot fills, three codes, one dictionary-chain link,
+        // four output copies and exact growth moving one, two, three bytes.
+        const ACTUAL_WORK: u64 = 2 * (1 << 9) + 3 + 1 + 4 + 1 + 2 + 3;
+        for cap in [ACTUAL_WORK - 1, ACTUAL_WORK] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = super::decode(&ctx, &stream, 4);
+            let original = if cap == ACTUAL_WORK {
+                assert_eq!(result.expect("actual code, chain, copy and growth work"), Some(b"ABAB".to_vec()));
+                ctx.charge_work_limit(1, "after singleton-stack decode")
+                    .expect_err("exact work cap used")
+            } else {
+                let Err(CodecError::ResourceLimit(original)) = result else {
+                    panic!("last copied byte exceeds cap");
+                };
+                assert_eq!(original.operation, "expand_write copy");
+                original
+            };
+            assert_eq!((original.dimension, original.used, original.additional),
+                (ResourceDimension::WorkUnits, cap, 1));
+            assert!(matches!(super::decode(&ctx, &stream, 4),
+                Err(CodecError::ResourceLimit(actual)) if actual == original));
+            assert_eq!(ctx.resource_refusal(), Some(original));
+        }
     }
 }
