@@ -738,8 +738,7 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         .any(|surface| surface.id.as_str().contains("#11")));
 }
 
-#[test]
-fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
+pub(super) fn repeated_source_pcurve_graph() -> B5Graph {
     let mut graph = B5Graph {
         complete: true,
         faces: vec![B5Face {
@@ -862,6 +861,12 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         profiles: BTreeMap::new(),
     };
     graph.loops.get_mut(&2).expect("required loop").members[1].controls[2] = -1;
+    graph
+}
+
+#[test]
+fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
+    let graph = repeated_source_pcurve_graph();
     let mut ir = CadIr::empty();
 
     crate::test_support::with_service_context(|ctx| {

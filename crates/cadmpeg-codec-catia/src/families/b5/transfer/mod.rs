@@ -614,59 +614,67 @@ fn build_plan(
             {
                 return Ok(None);
             }
-            let Some(knots) = scratch.with_storage(|| pcurve_nurbs_knots(ctx, pcurve))? else {
-                return Ok(None);
-            };
-            let Some(parameter_range) = pcurve_parameter_domain(ctx, pcurve)? else {
-                return Ok(None);
-            };
-            let Some(surface) = ctx.get_btree_map(&graph.surfaces, &loop_.surface, LOOKUP)? else {
-                return Ok(None);
-            };
-            let cylinder_reparameterized = matches!(surface, B5Surface::Cylinder { .. });
-            let points = scratch.with_storage(|| {
-                ctx.collect_vec(
-                    pcurve
-                        .control_points
-                        .iter()
-                        .map(|point| neutral_pcurve_point(point.get(), surface)),
-                    "catia_b5_transfer_pcurve_points",
-                )
-            })?;
-            let weights = match pcurve.weights.as_ref() {
-                Some(weights) => Some(scratch.with_storage(|| {
-                    ctx.collect_vec(
-                        weights.iter().copied().map(PositiveReal::get),
-                        "catia_b5_transfer_pcurve_weights",
-                    )
-                })?),
-                None => None,
-            };
-            let nurbs = scratch.with_storage(|| {
-                PcurveNurbs::from_lanes(ctx, pcurve.degree, knots, points, weights, false)
-            })?;
-            let Some(nurbs) = crate::nurbs::note_refusal(
-                ctx,
-                nurbs,
-                refusal,
-                format_args!("b5 object-stream pcurve record #{}", pcurve.object_id),
-            )?
-            else {
-                return Ok(None);
-            };
-            scratch
-                .with_storage(|| {
-                    ctx.entry_btree_map(
-                        &mut pcurve_plan,
-                        pcurve_id,
-                        "catia_b5_transfer_pcurve_plan",
-                    )
-                })?
-                .or_insert((
-                    PcurveGeometry::Nurbs { nurbs },
-                    cylinder_reparameterized,
-                    parameter_range,
-                ));
+            let (parameter_range, surface) =
+                if let Some((_, _, range)) = ctx.get_btree_map(&pcurve_plan, &pcurve_id, LOOKUP)? {
+                    let Some(surface) = ctx.get_btree_map(&graph.surfaces, &loop_.surface, LOOKUP)? else {
+                        return Ok(None);
+                    };
+                    (*range, surface)
+                } else {
+                    let Some(knots) = scratch.with_storage(|| pcurve_nurbs_knots(ctx, pcurve))? else {
+                        return Ok(None);
+                    };
+                    let Some(parameter_range) = pcurve_parameter_domain(ctx, pcurve)? else {
+                        return Ok(None);
+                    };
+                    let Some(surface) = ctx.get_btree_map(&graph.surfaces, &loop_.surface, LOOKUP)? else {
+                        return Ok(None);
+                    };
+                    let cylinder_reparameterized = matches!(surface, B5Surface::Cylinder { .. });
+                    let points = scratch.with_storage(|| {
+                        ctx.collect_vec(
+                            pcurve
+                                .control_points
+                                .iter()
+                                .map(|point| neutral_pcurve_point(point.get(), surface)),
+                            "catia_b5_transfer_pcurve_points",
+                        )
+                    })?;
+                    let weights = match pcurve.weights.as_ref() {
+                        Some(weights) => Some(scratch.with_storage(|| {
+                            ctx.collect_vec(
+                                weights.iter().copied().map(PositiveReal::get),
+                                "catia_b5_transfer_pcurve_weights",
+                            )
+                        })?),
+                        None => None,
+                    };
+                    let nurbs = scratch.with_storage(|| {
+                        PcurveNurbs::from_lanes(ctx, pcurve.degree, knots, points, weights, false)
+                    })?;
+                    let Some(nurbs) = crate::nurbs::note_refusal(
+                        ctx,
+                        nurbs,
+                        refusal,
+                        format_args!("b5 object-stream pcurve record #{}", pcurve.object_id),
+                    )?
+                    else {
+                        return Ok(None);
+                    };
+                    scratch.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut pcurve_plan,
+                            pcurve_id,
+                            (
+                                PcurveGeometry::Nurbs { nurbs },
+                                cylinder_reparameterized,
+                                parameter_range,
+                            ),
+                            "catia_b5_transfer_pcurve_plan",
+                        )
+                    })?;
+                    (parameter_range, surface)
+                };
             let occurrence_parameters = edge_pcurve_parameters(ctx, graph, edge_id, pcurve_id)?;
             let support_range = occurrence_parameters
                 .and_then(|parameters| bounded_occurrence_range(parameters, parameter_range))
