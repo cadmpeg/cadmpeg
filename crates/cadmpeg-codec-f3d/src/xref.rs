@@ -21,9 +21,8 @@ use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, Proto
 
 use crate::bytes::utf16::Utf16View;
 use crate::bytes::{
-    is_guid_prefix, is_guid_relaxed, lp_ascii_filtered_view, lp_ascii_strict,
-    lp_ascii_strict_charged, lp_utf16_bounded_charged, lp_utf16_bounded_view, take_reference,
-    take_reference_charged,
+    is_guid_relaxed, lp_ascii_filtered_view, lp_ascii_strict, lp_ascii_strict_view,
+    lp_utf16_bounded_view, take_reference,
 };
 use crate::container::ContainerScan;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
@@ -1306,14 +1305,13 @@ fn repeated_target_occurrence_placement_details(
     }
     at += 4;
     for _ in 0..2 {
-        let (guid, next) = xref_some!(lp_utf16_bounded_charged(
+        let (guid, next) = xref_some!(lp_utf16_bounded_view(
             decode,
             body,
             at,
             36..=36,
-            "retain F3D UTF-16 string"
         )?);
-        if !is_guid_relaxed(&guid) {
+        if !guid.is_guid_relaxed() {
             return Ok(None);
         }
         at = next;
@@ -1323,14 +1321,13 @@ fn repeated_target_occurrence_placement_details(
     }
     at += METADATA_MARKER.len();
 
-    let (component_guid, next) = xref_some!(lp_utf16_bounded_charged(
+    let (component_guid, next) = xref_some!(lp_utf16_bounded_view(
         decode,
         body,
         at,
         36..=36,
-        "retain F3D UTF-16 string"
     )?);
-    if !is_guid_relaxed(&component_guid) {
+    if !component_guid.is_guid_relaxed() {
         return Ok(None);
     }
     at = next;
@@ -1338,20 +1335,19 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 1;
-    let (type_guid, next) = xref_some!(lp_ascii_strict_charged(decode, body, at, 36..=36)?);
-    if !is_guid_relaxed(&type_guid) {
+    let (type_guid, next) = xref_some!(lp_ascii_strict_view(decode, body, at, 36..=36)?);
+    if !is_guid_relaxed(type_guid) {
         return Ok(None);
     }
     at = next;
     let role_offset = at;
-    let (role, next) = xref_some!(lp_utf16_bounded_charged(
+    let (role, next) = xref_some!(lp_utf16_bounded_view(
         decode,
         body,
         at,
         36..=256,
-        "retain F3D UTF-16 string"
     )?);
-    if !is_guid_prefix(&role) {
+    if !role.is_guid_prefix() {
         return Ok(None);
     }
     at = next;
@@ -1377,18 +1373,13 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 4;
-    let (final_role, next) = xref_some!(lp_utf16_bounded_charged(
+    let (final_role, next) = xref_some!(lp_utf16_bounded_view(
         decode,
         body,
         at,
         36..=256,
-        "retain F3D UTF-16 string"
     )?);
-    if !decode.eq_ignore_ascii_case(
-        &final_role,
-        &role,
-        "compare F3D repeated-target placement roles",
-    )? {
+    if !final_role.eq_ignore_ascii_case(decode, role, "compare F3D repeated-target placement roles")? {
         return Ok(None);
     }
     at = next;
@@ -1396,19 +1387,17 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 1;
-    let reference = {
-        let ctx = decode;
-        take_reference_charged(ctx, body, &mut at)?
-    };
-    xref_some!(reference);
-    Ok(
-        (at == body.len()).then_some(RepeatedTargetPlacementDetails {
-            link_names,
-            transform,
-            role,
-            role_offset: role_offset + 4,
-        }),
-    )
+    xref_some!(take_reference(decode, body, &mut at)?);
+    if at != body.len() {
+        return Ok(None);
+    }
+    let role = role.to_retained(decode, "retain F3D UTF-16 string")?;
+    Ok(Some(RepeatedTargetPlacementDetails {
+        link_names,
+        transform,
+        role,
+        role_offset: role_offset + 4,
+    }))
 }
 
 /// Bind a repeated-target occurrence carrier to a Component Insert scope
@@ -1669,7 +1658,7 @@ fn grouped_component_insert_identity_with_layout<'a>(
         let (repeated_component_guid, next) =
             admitted_option!(lp_utf16_bounded_view(ctx, bytes, at, 36..=36));
         if !repeated_component_guid.is_guid_relaxed()
-            || !admitted_value!(repeated_component_guid.eq_ignore_ascii_case(ctx, component_guid))
+            || !admitted_value!(repeated_component_guid.eq_ignore_ascii_case(ctx, component_guid, "compare F3D UTF-16 text"))
         {
             return None;
         }
@@ -1691,7 +1680,7 @@ fn grouped_component_insert_identity_with_layout<'a>(
         at = next;
         let (repeated_role, next) =
             admitted_option!(lp_utf16_bounded_view(ctx, bytes, at, role_bounds.clone()));
-        if !admitted_value!(repeated_role.eq_ignore_ascii_case(ctx, role)) {
+        if !admitted_value!(repeated_role.eq_ignore_ascii_case(ctx, role, "compare F3D UTF-16 text")) {
             return None;
         }
         at = next;
@@ -1702,7 +1691,7 @@ fn grouped_component_insert_identity_with_layout<'a>(
 
         let (final_role, next) =
             admitted_option!(lp_utf16_bounded_view(ctx, bytes, at, role_bounds));
-        if !admitted_value!(final_role.eq_ignore_ascii_case(ctx, role)) {
+        if !admitted_value!(final_role.eq_ignore_ascii_case(ctx, role, "compare F3D UTF-16 text")) {
             return None;
         }
         at = next;
@@ -1862,9 +1851,9 @@ fn legacy_occurrence_prefix(
         };
     }
     let parsed = (|| {
-        let (_class_tag, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
+        let (_class_tag, after_tag) = admitted_option!(lp_ascii_strict_view(ctx, body, 0, 3..=3));
         let mut at = after_tag.checked_add(8)?;
-        let (_name, after_name) = lp_ascii_strict(body, at, 0..=256)?;
+        let (_name, after_name) = admitted_option!(lp_ascii_strict_view(ctx, body, at, 0..=256));
         at = after_name;
         if body.get(at) != Some(&1) {
             return None;
@@ -1942,21 +1931,13 @@ fn occurrence_path(
 ) -> Result<Option<(Vec<String>, usize)>, CodecError> {
     // Header: the LP-ASCII decimal class tag, the u64 entity ID, and the
     // LP-ASCII record name.
-    let class_tag = {
-        let ctx = decode;
-        lp_ascii_strict_charged(ctx, body, 0, 3..=3)?
-    };
-    let Some((_, after_tag)) = class_tag else {
+    let Some((_, after_tag)) = lp_ascii_strict_view(decode, body, 0, 3..=3)? else {
         return Ok(None);
     };
     let Some(mut at) = after_tag.checked_add(8) else {
         return Ok(None);
     };
-    let name = {
-        let ctx = decode;
-        lp_ascii_strict_charged(ctx, body, at, 0..=256)?
-    };
-    let Some((_, after_name)) = name else {
+    let Some((_, after_name)) = lp_ascii_strict_view(decode, body, at, 0..=256)? else {
         return Ok(None);
     };
     at = after_name;
@@ -1974,25 +1955,12 @@ fn occurrence_path(
     at += 4;
     let mut link_names = Vec::new();
     for _ in decode.admit_iter(&(0..count), "scan F3D xref occurrence links")? {
-        let element = {
-            let ctx = decode;
-            take_reference_charged(ctx, body, &mut at)?
-        };
-        let Some(element) = element else {
+        let Some(element) = take_reference(decode, body, &mut at)? else {
             return Ok(None);
         };
-        if let Some(link_name) = element.link_name() {
-            let name = {
-                let ctx = decode;
-                {
-                    ctx.copy_retained_text(link_name, "copy F3D xref placement link name")?
-                }
-            };
-            {
-                let ctx = decode;
-
-                ctx.reserve_vec(&mut link_names, 1, "collect F3D xref placement link names")?;
-            }
+        if let crate::bytes::Reference::CrossDocument { link_name, .. } = element {
+            let name = link_name.to_retained(decode, "copy F3D xref placement link name")?;
+            decode.reserve_vec(&mut link_names, 1, "collect F3D xref placement link names")?;
             link_names.push(name);
         }
         if View::u32_le_at(body, at).is_none() {
