@@ -14,6 +14,7 @@
 //! spun surface).
 
 use std::borrow::Cow;
+#[cfg(test)]
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -118,19 +119,27 @@ fn parse_sweep(bytes: &[u8], off: usize) -> Option<SweepCarrier> {
 }
 
 /// Scan a stream for swept/spun surface carriers, keyed by attribute.
+#[cfg(test)]
 pub(super) fn scan_sweep_carriers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<BTreeMap<u16, SweepCarrier>, cadmpeg_core::CodecError> {
-    let mut out = BTreeMap::new();
+    let mut values = BTreeMap::new();
+    scan_into(ctx, bytes, &mut super::index::publication::FixedSink::Retained(&mut values))?;
+    Ok(values)
+}
+
+pub(in crate::brep) fn scan_into(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8],
+    out: &mut super::index::publication::FixedSink<'_, '_, SweepCarrier>,
+) -> Result<(), cadmpeg_core::CodecError> {
     let starts = 0..bytes.len().checked_sub(20).map_or(0, |end| end);
     for off in ctx.admit_iter(starts, "scan SLDPRT sweep carriers")? {
         if let Some(carrier) = parse_sweep(bytes, off) {
-            ctx.entry_btree_map(&mut out, carrier.attr, "index SLDPRT sweep carriers")?
-                .or_insert(carrier);
+            out.keep_first(ctx, carrier.attr, carrier, "index SLDPRT sweep carriers")?;
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 /// Convert an exact analytic sweep profile to its exact rational NURBS form.

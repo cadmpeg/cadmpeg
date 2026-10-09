@@ -16,7 +16,8 @@
 //! directly. Untyped carriers use opaque IR geometry while resolvable topology
 //! remains available.
 
-use self::index::scan_carriers;
+use self::index::scan::scan_stream_carriers;
+use self::index::view::CarrierView;
 use self::spline::patch::patch_nurbs_curve;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -388,9 +389,9 @@ pub(crate) fn curve_by_attr(
     body: &[u8],
     attr: u16,
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
-    let (carriers, _carrier_storage) =
-        ctx.with_scoped_storage("hold SLDPRT patch carriers", || scan_carriers(ctx, body))?;
-    carriers
+    let carriers = scan_stream_carriers(ctx, body)?;
+    let view = CarrierView::Stream(&carriers);
+    view
         .curve(ctx, attr)?
         .map(|indexed| {
             indexed
@@ -408,9 +409,9 @@ pub(crate) fn patch_compact_values(
     attr: u16,
     values: &[f64],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let (carriers, _carrier_storage) =
-        ctx.with_scoped_storage("hold SLDPRT patch carriers", || scan_carriers(ctx, body))?;
-    let Some(indexed) = carriers.curve(ctx, attr)? else {
+    let carriers = scan_stream_carriers(ctx, body)?;
+    let view = CarrierView::Stream(&carriers);
+    let Some(indexed) = view.curve(ctx, attr)? else {
         return Ok(false);
     };
     let carrier = indexed.carrier();
@@ -440,9 +441,9 @@ pub(crate) fn patch_nurbs_by_attr(
     attr: u16,
     new: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let (carriers, _carrier_storage) =
-        ctx.with_scoped_storage("hold SLDPRT patch carriers", || scan_carriers(ctx, body))?;
-    let Some(indexed) = carriers.curve(ctx, attr)? else {
+    let carriers = scan_stream_carriers(ctx, body)?;
+    let view = CarrierView::Stream(&carriers);
+    let Some(indexed) = view.curve(ctx, attr)? else {
         return Ok(false);
     };
     let carrier = indexed.carrier();

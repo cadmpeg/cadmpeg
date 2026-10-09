@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{
-    blend, intersection, offset, parse_carrier, spline, subset, sweep, Carrier, CurveCarrier,
-    SurfaceCarrier,
-};
+use super::{intersection, CurveCarrier};
+#[cfg(test)]
+use super::{blend, offset, spline, subset, sweep, Carrier, SurfaceCarrier};
+#[cfg(test)]
 use cadmpeg_core::decode::DecodeContext;
+#[cfg(test)]
 use cadmpeg_ir::report::loss::LossNote;
+#[cfg(test)]
 use std::collections::{BTreeMap, BTreeSet};
+
+pub(in crate::brep) mod publication;
+pub(in crate::brep) mod scan;
+pub(in crate::brep) mod stream;
+pub(in crate::brep) mod view;
 
 /// An exact carrier or a derived intersection carrier.
 pub(super) enum IndexedCurve {
@@ -23,6 +30,7 @@ impl IndexedCurve {
     }
 }
 
+#[cfg(test)]
 #[derive(Default)]
 pub(super) struct CarrierIndex {
     curves: BTreeMap<u16, IndexedCurve>,
@@ -40,6 +48,7 @@ pub(super) struct CarrierIndex {
     pub(super) lane_refusals: Vec<LossNote>,
 }
 
+#[cfg(test)]
 impl CarrierIndex {
     pub(super) fn insert(
         &mut self,
@@ -203,6 +212,7 @@ impl CarrierIndex {
     }
 }
 
+#[cfg(test)]
 fn merge_missing_map<K: Ord + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &DecodeContext<'_>,
     target: &mut BTreeMap<K, V>,
@@ -224,19 +234,13 @@ fn merge_missing_map<K: Ord + cadmpeg_core::decode::cost::DecodeCost, V>(
 /// same identity. Cross-stream precedence is applied by [`CarrierIndex::merge_missing`]:
 /// the partition carrier remains authoritative and a deltas carrier fills only
 /// an absent identity.
+#[cfg(test)]
 pub(super) fn scan_carriers(
     ctx: &DecodeContext<'_>,
     body: &[u8],
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
     let mut out = CarrierIndex::default();
-    // Each start parses at most two fixed-width framings, so one unit per
-    // start pays for it.
-    let starts = 0..body.len().checked_sub(1).map_or(0, |end| end);
-    for i in ctx.admit_iter(starts, "scan SLDPRT analytic carriers")? {
-        if let Some(carrier) = parse_carrier(body, i) {
-            out.insert(ctx, carrier)?;
-        }
-    }
+    scan::scan_analytic_carriers(ctx, body, &mut scan::AnalyticSink::Retained(&mut out))?;
     let mut lane_refusals = Vec::new();
     for (_, carrier) in ctx.admit_iter(
         spline::scan_curve_carriers(ctx, body, &mut lane_refusals)?,
@@ -421,3 +425,6 @@ mod tests {
         assert_eq!(pair.intersection, 13);
     }
 }
+
+#[cfg(test)]
+mod composition_tests;

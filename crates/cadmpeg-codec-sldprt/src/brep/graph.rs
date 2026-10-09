@@ -40,7 +40,10 @@ use super::entity;
 use super::evaluation::{
     nurbs_surface_parameter_segment_chord_bound, nurbs_surface_parameter_within_tolerance,
 };
-use super::index::{scan_carriers, CarrierIndex, IndexedCurve};
+use super::index::scan::scan_stream_carriers;
+use super::index::stream::StreamCarrierIndex;
+use super::index::view::CarrierView;
+use super::index::IndexedCurve;
 use super::offset::OffsetCarrier;
 use super::sweep::{self, SweepKind};
 use super::topology;
@@ -890,7 +893,7 @@ struct SweepSurfaceResolution {
 
 fn resolve_sweep_surface(
     ctx: &DecodeContext<'_>,
-    carriers: &CarrierIndex,
+    carriers: &CarrierView<'_, '_>,
     tables: &topology::Tables,
     face: &WalkedFace,
     refusal: &mut crate::lane_refusal::LaneRefusals,
@@ -1097,7 +1100,7 @@ fn emit_offset_surface(
 fn support_is_acyclic(
     ctx: &DecodeContext<'_>,
     attr: u16,
-    carriers: &CarrierIndex,
+    carriers: &CarrierView<'_, '_>,
     resolving: &mut BTreeSet<u16>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let _depth = ctx.enter_nested("check Parasolid surface support")?;
@@ -1123,7 +1126,7 @@ fn support_is_acyclic(
 fn ensure_surface_support(
     sink: &mut BrepSink<'_, '_, '_>,
     attr: u16,
-    carriers: &CarrierIndex,
+    carriers: &CarrierView<'_, '_>,
     emitted_face_surface_by_carrier: &BTreeMap<u16, u16>,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
@@ -1544,7 +1547,7 @@ pub(crate) fn decode_bodies(
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     let mut index_storage = ctx.reserve_scoped(0, "hold Parasolid source indexes")?;
-    let mut carriers = CarrierIndex::default();
+    let mut carriers = StreamCarrierIndex::empty(ctx)?;
     let mut tables = topology::Tables::default();
     let mut facts = entity::FactsSource::empty(ctx)?;
     let mut typed_facts = typed::Facts::default();
@@ -1633,9 +1636,8 @@ pub(crate) fn decode_bodies(
             let typed_face_offsets = stream_storage.with_storage(|| {
                 selected_typed_face_offsets(ctx, stream_typed_facts, typed_bridge_attrs.as_ref())
             })?;
-            index_storage
-                .with_storage(|| carriers.merge_missing(ctx, scan_carriers(ctx, body)?))?;
-            let curve_attrs = stream_storage.with_storage(|| carriers.curve_attrs(ctx))?;
+            carriers.merge_missing(ctx, scan_stream_carriers(ctx, body)?)?;
+            let curve_attrs = stream_storage.with_storage(|| CarrierView::Stream(&carriers).curve_attrs(ctx))?;
             let scan_tables = || {
                 if is_deltas {
                     topology::scan_deltas_with_curve_attrs_excluding(
@@ -1687,7 +1689,7 @@ pub(crate) fn decode_bodies(
         }
     }
     drop((typed_streams, typed_streams_storage, ordered, ordered_storage));
-    decode_graph(ctx, &carriers, &tables, facts, &typed_facts, stream)
+    decode_graph(ctx, &CarrierView::Stream(&carriers), &tables, facts, &typed_facts, stream)
 }
 
 fn decode_body(
@@ -1696,8 +1698,8 @@ fn decode_body(
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     let mut index_storage = ctx.reserve_scoped(0, "hold Parasolid source indexes")?;
-    let carriers = index_storage.with_storage(|| scan_carriers(ctx, body))?;
-    let curve_attrs = index_storage.with_storage(|| carriers.curve_attrs(ctx))?;
+    let carriers = scan_stream_carriers(ctx, body)?;
+    let curve_attrs = index_storage.with_storage(|| CarrierView::Stream(&carriers).curve_attrs(ctx))?;
     let typed_facts = index_storage.with_storage(|| typed::scan(body, ctx))?;
     let typed_face_attrs =
         index_storage.with_storage(|| typed_facts.valid_ownership_face_attrs(ctx))?;
@@ -1708,7 +1710,7 @@ fn decode_body(
         topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets)
     })?;
     let entity_facts = entity::scan_metadata(ctx, body, false)?;
-    decode_graph(ctx, &carriers, &t, entity_facts, &typed_facts, stream)
+    decode_graph(ctx, &CarrierView::Stream(&carriers), &t, entity_facts, &typed_facts, stream)
 }
 
 fn admit_brep_entity(ctx: &DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError> {
@@ -2123,7 +2125,7 @@ fn bind_bridges(
 
 fn decode_graph(
     ctx: &DecodeContext<'_>,
-    carriers: &CarrierIndex,
+    carriers: &CarrierView<'_, '_>,
     t: &topology::Tables,
     entity_facts: entity::FactsSource<'_>,
     typed_facts: &typed::Facts,
@@ -2179,13 +2181,7 @@ fn decode_graph(
         edge_use_sequences,
         vertex_use_sequences,
         body_modifiers,
-        losses: ctx.try_collect_vec(
-            carriers
-                .lane_refusals
-                .iter()
-                .map(|note| note.try_clone_for_decode(ctx, "retain Parasolid carrier losses")),
-            "retain Parasolid carrier losses",
-        )?,
+        losses: carriers.clone_lane_refusals(ctx)?,
         stats: Stats {
             source_entity_records: entity_facts.entity_count,
             unresolved_face_colors: entity_facts.unresolved_face_colors + conflicting_face_colors,
