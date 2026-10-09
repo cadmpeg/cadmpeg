@@ -1,11 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Target resolution: what an `FCStd` write is allowed to be.
-//!
-//! The one gate on this codec's write law. [`Encoder::plan`] resolves here, and
-//! [`super::write_seekable`] then carries out what a
-//! [`Resolution`] settled without re-deciding any of it.
-//!
-//! [`Encoder::plan`]: cadmpeg_ir::codec::write::Encoder::plan
+//! Source dialect eligibility and retained document selection for `FCStd` writes.
 
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
@@ -17,16 +11,12 @@ use cadmpeg_ir::document::CadIr;
 use super::write;
 use crate::native::DocumentFacts;
 
-/// What resolving a [`cadmpeg_ir::codec::write::target::TargetRequest`] against the source decided.
+/// Native document and source declaration selected for a retained-entry write.
 ///
-/// This writer has one capability. It patches the retained
-/// `Document.xml` and regenerates none, so the only dialect it can deliver is
-/// the one the retained document already declares. Every other resolution is a
-/// refusal, not a degraded write: there is no synthesis path to degrade to.
-/// Only [`resolve`] builds one: its fields are private, so a `Resolution` in
-/// hand proves that the retained document graph delivers the options it carries.
-/// [`write_seekable`] takes that proof instead of raw options, which is why it
-/// needs no target gate of its own.
+/// The writer patches retained `Document.xml` and repacks the native entries.
+/// [`retained_baseline`] selects the native namespace, sole document record
+/// and source schema declaration. [`resolve`] first checks source dialect
+/// eligibility. The byte writer validates the resulting property patch.
 #[derive(Debug)]
 pub(super) struct Resolution<'a> {
     ir: &'a CadIr,
@@ -65,27 +55,13 @@ const TRANSCODE_UNAVAILABLE: &str =
     "the resolved target displaces the retained FCStd source dialect, and this writer \
      regenerates no Document.xml, so the target cannot be written";
 
-/// Resolve the request against the source, then plan the export it names.
+/// Plan the retained-entry export selected by source and target resolution.
 ///
-/// `Explicit(id)` refuses an id outside the synthesis catalog. It is otherwise
-/// the replay law's compare: the retained document is written back exactly when
-/// the retained graph can deliver `id`, and any other id is a transcode this
-/// writer cannot perform, refused by name with the catalog.
-///
-/// `Inherit` asks for preservation instead. This writer repacks the retained
-/// entry set and patches `Document.xml` inside it, which reproduces whatever
-/// schema the source declared — schema 2 and schema 3 included, neither of which
-/// is a synthesis target. Where the retained document graph cannot carry the
-/// source's dialect, `Inherit` refuses, naming that dialect and the catalog.
-/// There is no fall-through to the catalog default: a same-format conversion
-/// never silently changes what the file is. `fcstd:schema-2` is the canonical
-/// off-catalog preservation case. An explicit target can name a catalog row,
-/// but no request can override the retained graph's deliverability.
-///
-/// An `FCStd` source that records no dialect is refused too: there is nothing to
-/// preserve, and no identity to default to. A source of another format is also
-/// refused because this catalog intentionally has no cross-format default: the
-/// writer cannot synthesize the retained `FCStd` graph that its only row needs.
+/// [`resolve`] requires source-preservation eligibility. Native document
+/// selection requires the `fcstd` namespace, one document record and a source
+/// schema declaration. The selected schema controls written-property parsing.
+/// The byte writer validates the native declarations and property graph before
+/// it repacks the entries. The export reports independent patch consumption.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
@@ -123,13 +99,10 @@ fn resolve<'a>(ir: &'a CadIr, resolved: &ResolvedWrite<'_>) -> Result<Resolution
         .ok_or_else(|| resolved.unavailable(BASELINE_UNAVAILABLE))
 }
 
-/// The write options and dialect witnessed by the retained document graph.
+/// Retained native document and source schema selected for a target.
 ///
-/// The graph is the whole baseline: the writer never regenerates a
-/// `Document.xml`, so preservation is possible exactly when the retained
-/// document record is present. `target` is the dialect witness resolved from
-/// the source declaration; this adapter does not derive a second identity from
-/// the retained graph.
+/// Select the sole native document record and the source schema declaration.
+/// `target` carries the identity selected by source dialect resolution.
 pub(super) fn retained_baseline<'a>(ir: &'a CadIr, target: &DialectId) -> Option<Resolution<'a>> {
     let namespace = ir.native.namespace("fcstd")?;
     let documents = namespace.arena_as::<DocumentFacts>("document").ok()?;
