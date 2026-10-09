@@ -1,3 +1,5 @@
+mod admission;
+
 use cadmpeg_ir::features::NonEmptyMembers;
 
 use cadmpeg_core::decode::u64_from_index;
