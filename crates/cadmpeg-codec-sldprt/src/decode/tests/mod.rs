@@ -12,6 +12,7 @@ mod body_membership;
 mod configuration;
 mod configuration_completeness;
 mod configuration_sites;
+mod container_report;
 mod curves_and_loops;
 mod design_completeness;
 mod feature_degradation;
