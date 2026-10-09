@@ -387,3 +387,96 @@ fn split_object_without_source_does_not_search_split_classes() {
     .is_empty());
     assert!(classes.split_classes.get().is_none());
 }
+
+
+fn surface_terminal_path_storage_control(
+    count: u32,
+    expected: &str,
+    operation: &'static str,
+) {
+    use crate::records::{Feature, FeatureInputComponentPathEntry, FeatureSource};
+    use crate::resolved_features::component_paths::FeaturesBySource;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let feature = |id: &str, source| Feature {
+        id: id.into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(source),
+        ordinal: 0,
+        name: String::new(),
+        kind: String::new(),
+        input_class: None,
+        suppressed: false,
+        parameters: std::collections::BTreeMap::new(),
+        dimension_properties: std::collections::BTreeMap::new(),
+        properties: std::collections::BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let features = [feature("a", 32), feature("b", 101)];
+    let mut signature = [1; 12];
+    signature[4..8].copy_from_slice(&32u32.to_le_bytes());
+    let components = [FeatureInputComponentPathEntry {
+        instance: Some(0x8032),
+        type_signature: signature,
+        local_id: Some(7),
+    }];
+    let mut payload = vec![0; 74];
+    payload[..4].copy_from_slice(&count.to_le_bytes());
+    payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
+    payload[12..28].copy_from_slice(&super::super::COMPACT_EDGE_VECTOR_MARKER);
+    payload[30..32].copy_from_slice(&0x8032u16.to_le_bytes());
+    payload[34..46].copy_from_slice(&signature);
+    payload[46..50].copy_from_slice(&7u32.to_le_bytes());
+    payload[70..74].copy_from_slice(&101u32.to_le_bytes());
+    // The index and every decoded component path are scratch. Only the one-byte
+    // chosen native identity survives. The refusal is one byte below that output.
+    for retained in [1, 0] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = retained;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let index = FeaturesBySource::new(&ctx, &features).unwrap();
+        let result = super::super::surface_selection_terminal_feature_at(
+            &ctx, &payload, 12, &components, &index,
+        );
+        if retained == 1 {
+            assert_eq!(result.unwrap().as_deref(), Some(expected));
+            drop(index);
+            ctx.finish_session().unwrap();
+        } else {
+            let CodecError::ResourceLimit(limit) = result.unwrap_err() else {
+                panic!("retained identity refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.operation, operation);
+            assert_eq!(limit.used, 0);
+            assert_eq!(limit.additional, 1);
+            let CodecError::ResourceLimit(repeated) =
+                super::super::surface_selection_terminal_feature_at(
+                    &ctx, &payload, 12, &components, &index,
+                ).unwrap_err()
+            else {
+                panic!("original retained refusal");
+            };
+            assert_eq!(repeated, limit);
+            drop(index);
+            let CodecError::ResourceLimit(finished) = ctx.finish_session().unwrap_err() else {
+                panic!("sticky session refusal");
+            };
+            assert_eq!(finished, limit);
+        }
+    }
+}
+
+#[test]
+fn surface_terminal_explicit_owner_releases_path_storage() {
+    surface_terminal_path_storage_control(2, "b", "resolve SLDPRT surface selection terminal");
+}
+
+#[test]
+fn surface_terminal_fallback_releases_path_storage() {
+    surface_terminal_path_storage_control(1, "a", "resolve SLDPRT component path terminal");
+}
