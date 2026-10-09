@@ -649,10 +649,10 @@ fn curve_expression_source_text(
 ) -> Result<String, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "creo curve-expression source text scratch")?;
     let parts = storage.with_storage(|| {
-        ctx.collect_vec(
-            ctx.admit_iter(lines, "creo curve-expression source line traversal")?
-                .map(|line| line.text.as_str()),
+        ctx.collect_indexed_vec(
+            lines.len(),
             "creo curve-expression source text parts",
+            |index| Ok(lines[index].text.as_str()),
         )
     })?;
     ctx.join_retained(&parts, "\n", "creo curve-expression feature source text")
