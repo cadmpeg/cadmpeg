@@ -1,20 +1,125 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Completed invisibility queries and their publication boundary.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
-use super::super::{InvisibleIndex, InvisibleSummary};
+use super::super::{InvisibleIndex, InvisibleSummary, InvisibleWalk};
 use crate::{loss::StepLossCode, StepCodec};
 
 fn exchange(records: &str) -> crate::parse::Exchange {
     let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;");
     crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
         .expect("cache exchange").0
+}
+
+#[test]
+fn invisible_body_refusal_frees_the_failed_active_path() {
+    let exchange = exchange("#1=ITEM();");
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(b"", |_, setup| {
+        let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, setup).expect("index");
+        let mut topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, setup)
+            .expect("topology");
+        topology.value.body_by_root.insert(1, vec![cadmpeg_ir::ids::BodyId::from(
+            crate::ids::data(crate::ids::kind!("body"), 1),
+        )]);
+        let indices = BTreeMap::from([("step:data:body#1".to_owned(), 0)]);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+            let complete = BTreeMap::new();
+            let mut body_storage = ctx.reserve_scoped(0, "test selected bodies").expect("scope");
+            let mut bodies = BTreeMap::new();
+            let mut walk = InvisibleWalk {
+                active: BTreeSet::new(), complete: BTreeMap::new(), stage_complete: &complete,
+                storage: ctx.reserve_scoped(0, "test completion map").expect("scope"),
+            };
+            let result = body_storage.with_storage(|| super::super::collect_invisible_body_ids(
+                1, &exchange, &topology.value, &indices, &mut walk, &mut bodies, ctx,
+            ));
+            assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "step_presentation_invisible_body_ids"
+                    && limit.used == 1 && limit.additional == 1
+                    && ctx.resource_refusal() == Some(limit)));
+            assert!(walk.active.is_empty());
+            assert!(walk.complete.is_empty());
+            assert!(bodies.is_empty());
+        });
+    });
+}
+
+#[test]
+fn style_target_claim_refusal_frees_the_failed_active_path() {
+    let exchange = exchange("#1=GEOMETRIC_SET('',(#2));#2=ITEM();");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let mut claim_storage = ctx.reserve_scoped(0, "test target claims").expect("scope");
+        let mut claims = BTreeSet::new();
+        let mut active = BTreeSet::new();
+        let mut visited = 0;
+        let result = super::super::expand_style_targets(
+            1, &exchange, (&mut claims, &mut claim_storage), &mut active, (0, 128),
+            &mut |_| { visited += 1; Ok(()) }, ctx,
+        );
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "step_presentation_typed_claims"
+                && limit.used == 1 && limit.additional == 1
+                && ctx.resource_refusal() == Some(limit)));
+        assert!(active.is_empty());
+        assert!(claims.is_empty());
+        assert_eq!(visited, 0);
+    });
+}
+
+#[test]
+fn style_domain_child_refusal_frees_the_failed_active_path() {
+    let exchange = exchange("#1=GEOMETRIC_SET('',(#2));#2=ITEM();");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let mut storage = ctx.reserve_scoped(0, "test domain query").expect("scope");
+        let mut active = BTreeSet::new();
+        let mut pending = BTreeMap::new();
+        let complete = BTreeMap::new();
+        let result = storage.with_storage(|| super::super::style_domain_at(
+            1, &exchange, &mut active, &mut pending, &complete, ctx,
+        ));
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "step_presentation_style_domain_active"
+                && limit.used == 1 && limit.additional == 1
+                && ctx.resource_refusal() == Some(limit)));
+        assert!(active.is_empty());
+        assert!(pending.is_empty());
+    });
+}
+
+#[test]
+fn first_invisible_publication_preserves_a_caller_refusal() {
+    let exchange = exchange("#1=ITEM();");
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, ctx).expect("index");
+        let topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, ctx)
+            .expect("topology");
+        let indices = BTreeMap::from([("step:data:body#1".to_owned(), 0)]);
+        let mut index = InvisibleIndex::new(ctx).expect("index");
+        let prepared = index.prepare(1, &exchange, &topology.value, &indices).expect("prepare");
+        assert!(!prepared.pending.is_empty());
+        let CodecError::ResourceLimit(first) = ctx.charge_work(u64::MAX, "test caller refusal")
+            .expect_err("caller refuses before publication") else { panic!("resource refusal"); };
+        assert!(matches!(index.publish(prepared), Err(CodecError::ResourceLimit(limit)) if limit == first));
+        assert!(index.complete.is_empty());
+        assert_eq!(ctx.resource_refusal(), Some(first));
+    });
 }
 
 #[test]
@@ -164,4 +269,36 @@ fn invisible_prepared_body_entry_preserves_its_collection_refusal() {
             assert!(index.complete.is_empty());
         });
     });
+}
+
+#[test]
+fn empty_color_frame_visits_no_terminal_step() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let partials: [crate::parse::PartialRecord; 0] = [];
+    let parameters: [crate::parse::Value; 0] = [];
+    let mut frame = super::super::ColorFrame {
+        id: 1,
+        depth: 0,
+        partials: partials.iter(),
+        partial_operation: "test empty color partials",
+        transparency: None,
+        side_rank: super::super::SurfaceSideRank::NoUsage,
+        combine_children: true,
+        parameter_operation: "test empty color parameters",
+        parameters: Some(parameters.iter()),
+        references: None,
+        result: None,
+        _depth: ctx.enter_nested("test empty color frame").expect("frame depth"),
+    };
+    assert_eq!(super::super::next_color_reference(&mut frame, &ctx)
+        .expect("empty frame has no source work"), None);
+    drop(frame);
+    assert_eq!(ctx.resource_refusal(), None);
+    ctx.finish_session().expect("no terminal-step refusal");
 }
