@@ -420,7 +420,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
     }
 
     fn skip_trivia(&mut self) -> Result<bool, LexError> {
-        loop {
+        self.budget.charge_work(0, "STEP lexer cursor traversal")?;
+        while self.at < self.input.len() {
             self.budget.charge_work(1, "STEP lexer cursor traversal")?;
             while self.input.get(self.at).is_some_and(u8::is_ascii_control) {
                 self.budget.charge_work(1, "STEP lexer cursor traversal")?;
@@ -455,6 +456,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             };
             self.at += end + 2;
         }
+        Ok(false)
     }
 
     fn token(&mut self) -> Result<Token, LexError> {
@@ -706,13 +708,13 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         let start = self.at;
         self.at += 1;
         let mut bytes = Vec::new();
-        loop {
+        while self.at < self.input.len() {
             self.budget.charge_work(1, "STEP lexer cursor traversal")?;
             if self.at - start + 1 > MAX_STORED_STRING_OCTETS {
                 return Err(self.error(start, "string exceeds maximum stored length")?);
             }
-            match self.input.get(self.at).copied() {
-                Some(b'\'') => {
+            match self.input[self.at] {
+                b'\'' => {
                     if let Some(end) = self.match_exact_ignoring_controls(self.at, b"''")? {
                         self.extend_string_bytes(&mut bytes, b"''", start)?;
                         self.at = end;
@@ -721,10 +723,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                         return Ok(TokenKind::String(bytes));
                     }
                 }
-                Some(byte) if byte.is_ascii_control() => {
+                byte if byte.is_ascii_control() => {
                     self.at += 1;
                 }
-                Some(b'\\') => {
+                b'\\' => {
                     if let Some(end) = self.print_control_end(self.at)? {
                         if !self.allow_print_controls {
                             return Err(self.error(
@@ -747,13 +749,16 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                         self.at += 1;
                     }
                 }
-                Some(byte) => {
+                byte => {
                     self.extend_string_bytes(&mut bytes, &[byte], start)?;
                     self.at += 1;
                 }
-                None => return Err(self.error(start, "unterminated string")?),
             }
         }
+        if self.at - start + 1 > MAX_STORED_STRING_OCTETS {
+            return Err(self.error(start, "string exceeds maximum stored length")?);
+        }
+        Err(self.error(start, "unterminated string")?)
     }
 
     fn binary(&mut self) -> Result<TokenKind, LexError> {
@@ -958,7 +963,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         let collect = |operation| -> Result<String, CodecError> {
             let mut text = self.budget.retained_string(length, operation)?;
             let mut bytes = source.iter();
-            while let Some(byte) = self.budget.next_charged(&mut bytes, "STEP normalized traversal")? {
+            for _ in 0..bytes.len() {
+                let byte = self.budget.next_charged(&mut bytes, "STEP normalized traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP normalized source ended early"))?;
                 if !byte.is_ascii_control() {
                     self.budget.push_retained_char(&mut text, convert(*byte), operation)?;
                 }
