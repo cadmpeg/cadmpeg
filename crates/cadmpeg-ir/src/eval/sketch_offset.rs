@@ -200,6 +200,23 @@ mod tests {
                 },
             );
         }
+        // Four knots precede three weights and two tangents. Preserve the
+        // original final-weight and final-tangent budget witnesses.
+        for (cap, operation) in [
+            (6, "sketch NURBS endpoint weight scan"),
+            (8, "sketch NURBS endpoint tangent scan"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let original = super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve).unwrap_err();
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(original.operation, operation);
+            assert_eq!((original.limit, original.used, original.additional), (cap, cap, 1));
+            assert_eq!(super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve), Err(original));
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+        }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         // The two lower endpoint knots pass; the first upper endpoint knot refuses.
