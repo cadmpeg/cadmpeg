@@ -28,6 +28,7 @@ use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
 
 mod retention;
+mod payload_session;
 
 impl ParsedParameterOwner {
     /// Locate this owner in a test stream through the decode path.

@@ -1314,6 +1314,7 @@ pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     companions: Vec<DesignParameterCompanion>,
     inputs: &ParameterCompanionInputs<'_, S>,
 ) -> Result<Vec<DesignParameterCompanion>, CodecError> {
+    ctx.charge_work(0, "f3d bound parameter companions")?;
     if companions.is_empty() {
         return Ok(companions);
     }
@@ -1356,15 +1357,16 @@ pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
 }
 
 /// The records a companion payload is resolved against, grouped by stream.
-struct CompanionPayloadRecords<'a> {
+struct CompanionPayloadRecords<'a, 'ctx, 'arena> {
+    ctx: &'ctx DecodeContext<'arena>,
     /// The position in `streams` of each stream scope's records.
     slots: HashMap<&'a str, usize>,
-    streams: Vec<StreamPayloadRecords<'a>>,
+    streams: Vec<StreamPayloadRecords<'a, 'ctx, 'arena>>,
 }
 
 /// One stream's recipes, entity headers and sketch scopes.
-#[derive(Default)]
-struct StreamPayloadRecords<'a> {
+struct StreamPayloadRecords<'a, 'ctx, 'arena> {
+    ctx: &'ctx DecodeContext<'arena>,
     /// Construction recipes ascending by byte offset, in input order among
     /// equal offsets.
     recipes: Vec<&'a ConstructionRecipe>,
@@ -1375,14 +1377,16 @@ struct StreamPayloadRecords<'a> {
     last_sketch_scope: HashMap<u64, u64>,
 }
 
-impl<'a> CompanionPayloadRecords<'a> {
+impl<'a, 'ctx, 'arena> CompanionPayloadRecords<'a, 'ctx, 'arena> {
     /// Group `inputs` by the stream scope of each record identity, then order
     /// each stream's recipes and entity headers by byte offset.
     fn build<S: std::hash::BuildHasher>(
-        ctx: &DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'arena>,
         inputs: &ParameterCompanionInputs<'a, S>,
     ) -> Result<Self, CodecError> {
+        ctx.charge_work(0, "f3d companion payload streams")?;
         let mut records = Self {
+            ctx,
             slots: HashMap::new(),
             streams: Vec::new(),
         };
@@ -1390,7 +1394,7 @@ impl<'a> CompanionPayloadRecords<'a> {
             let Some(stream) = record_stream(ctx, &recipe.id)? else {
                 continue;
             };
-            let stream = records.stream_mut(ctx, stream)?;
+            let stream = records.stream_mut(stream)?;
             ctx.push_vec(&mut stream.recipes, recipe, "f3d companion owned recipes")?;
         }
         for entity in ctx.admit_iter(inputs.entities, "scan F3D companion preamble entities")? {
@@ -1400,7 +1404,7 @@ impl<'a> CompanionPayloadRecords<'a> {
             let Some(stream) = record_stream(ctx, &entity.id)? else {
                 continue;
             };
-            let stream = records.stream_mut(ctx, stream)?;
+            let stream = records.stream_mut(stream)?;
             ctx.push_vec(
                 &mut stream.entities,
                 (offset, entity.entity_id.suffix()),
@@ -1414,7 +1418,7 @@ impl<'a> CompanionPayloadRecords<'a> {
             let Some(stream) = record_stream(ctx, &scope.id)? else {
                 continue;
             };
-            let stream = records.stream_mut(ctx, stream)?;
+            let stream = records.stream_mut(stream)?;
             match ctx.entry_hash_map(
                 &mut stream.last_sketch_scope,
                 binding.entity_id.suffix(),
@@ -1453,9 +1457,9 @@ impl<'a> CompanionPayloadRecords<'a> {
     /// The records of `stream`, created empty on first use.
     fn stream_mut(
         &mut self,
-        ctx: &DecodeContext<'_>,
         stream: &'a str,
-    ) -> Result<&mut StreamPayloadRecords<'a>, CodecError> {
+    ) -> Result<&mut StreamPayloadRecords<'a, 'ctx, 'arena>, CodecError> {
+        let ctx = self.ctx;
         let slot =
             match ctx.entry_hash_map(&mut self.slots, stream, "f3d companion payload streams")? {
                 Entry::Occupied(slot) => *slot.get(),
@@ -1463,7 +1467,7 @@ impl<'a> CompanionPayloadRecords<'a> {
                     let index = self.streams.len();
                     ctx.push_vec(
                         &mut self.streams,
-                        StreamPayloadRecords::default(),
+                        StreamPayloadRecords::new(ctx),
                         "f3d companion payload streams",
                     )?;
                     *slot.insert(index)
@@ -1475,16 +1479,18 @@ impl<'a> CompanionPayloadRecords<'a> {
     /// The records of `stream`, if it holds any.
     fn stream(
         &self,
-        ctx: &DecodeContext<'_>,
         stream: &str,
-    ) -> Result<Option<&StreamPayloadRecords<'a>>, CodecError> {
-        Ok(ctx
+    ) -> Result<Option<&StreamPayloadRecords<'a, 'ctx, 'arena>>, CodecError> {
+        Ok(self.ctx
             .get_hash_map(&self.slots, stream, "find F3D companion payload stream")?
             .and_then(|slot| self.streams.get(*slot)))
     }
 }
 
-impl StreamPayloadRecords<'_> {
+impl<'a, 'ctx, 'arena> StreamPayloadRecords<'a, 'ctx, 'arena> {
+    fn new(ctx: &'ctx DecodeContext<'arena>) -> Self {
+        Self { ctx, recipes: Vec::new(), entities: Vec::new(), last_sketch_scope: HashMap::new() }
+    }
     /// The end of a companion's owned interval `start..end` after scope
     /// preambles are excluded.
     ///
@@ -1498,38 +1504,45 @@ impl StreamPayloadRecords<'_> {
     /// then stops at the first header that ends the interval.
     fn preamble_start(
         &self,
-        ctx: &DecodeContext<'_>,
         start: usize,
         end: usize,
     ) -> Result<usize, CodecError> {
+        let ctx = self.ctx;
+        ctx.charge_work(0, "find F3D companion preamble entity")?;
         let first = ctx.partition_point(
             &self.entities,
             |(offset, _)| Ok(*offset < start),
             "find F3D companion preamble entity",
         )?;
         let limit = u64_from_index(end);
-        let stop = ctx.find_by(
-            self.entities.get(first..).unwrap_or(&[]),
-            |(offset, suffix)| {
-                Ok(*offset >= end
-                    || self
-                        .last_sketch_scope
-                        .get(suffix)
-                        .is_some_and(|last| *last >= limit))
-            },
-            "find F3D companion preamble entity",
-        )?;
-        Ok(stop.map_or(end, |(offset, _)| (*offset).min(end)))
+        let mut entities = self.entities.get(first..).unwrap_or(&[]).iter();
+        while !entities.as_slice().is_empty() {
+            let Some((offset, suffix)) =
+                ctx.next_charged(&mut entities, "find F3D companion preamble entity")?
+            else {
+                break;
+            };
+            if *offset >= end
+                || self
+                    .last_sketch_scope
+                    .get(suffix)
+                    .is_some_and(|last| *last >= limit)
+            {
+                return Ok((*offset).min(end));
+            }
+        }
+        Ok(end)
     }
 
     /// The identities of the recipes in `start..end`, in byte order, copied
     /// into retained storage. Two bisections locate the range.
     fn owned_recipe_ids(
         &self,
-        ctx: &DecodeContext<'_>,
         start: usize,
         end: usize,
     ) -> Result<Vec<String>, CodecError> {
+        let ctx = self.ctx;
+        ctx.charge_work(0, "find F3D companion owned recipes")?;
         let (start, end) = (u64_from_index(start), u64_from_index(end));
         let first = ctx.partition_point(
             &self.recipes,
@@ -1558,7 +1571,7 @@ fn companion_payload<'a, S: std::hash::BuildHasher>(
     ctx: &DecodeContext<'_>,
     companion: &'a DesignParameterCompanion,
     inputs: &ParameterCompanionInputs<'_, S>,
-    records: &CompanionPayloadRecords<'_>,
+    records: &CompanionPayloadRecords<'_, '_, '_>,
     intervals: &mut CompanionIntervals<'a, '_, '_>,
 ) -> Result<Option<crate::records::parameters::DesignCompanionPayload>, CodecError> {
     let Some(stream) = record_stream(ctx, companion.id())? else {
@@ -1577,10 +1590,10 @@ fn companion_payload<'a, S: std::hash::BuildHasher>(
     let Some((start, end)) = intervals.interval(stream, companion, stream_length)? else {
         return Ok(None);
     };
-    let (end, owned_ids) = match records.stream(ctx, stream)? {
+    let (end, owned_ids) = match records.stream(stream)? {
         Some(records) => {
-            let end = records.preamble_start(ctx, start, end)?;
-            (end, records.owned_recipe_ids(ctx, start, end)?)
+            let end = records.preamble_start(start, end)?;
+            (end, records.owned_recipe_ids(start, end)?)
         }
         None => (end, Vec::new()),
     };
