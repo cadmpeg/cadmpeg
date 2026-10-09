@@ -2296,8 +2296,8 @@ pub(crate) fn decode_mesh_container(
     let (registry, held_storage) = mesh_registry(ctx, message)?;
     _registry_storage = held_storage;
     let mut at = header.protobuf.end;
-    let mut state = MeshChunkState::AwaitNameTable;
     let mut streams_storage = ctx.reserve_scoped(0, "stage paramesh streams")?;
+    let mut state = MeshChunkState::AwaitNameTable;
     let mut streams = Vec::new();
     while at < bytes.len() {
         ctx.charge_work(1, "scan paramesh container chunks")?;
@@ -2809,6 +2809,7 @@ fn registry_texture_ids(
 
 #[cfg(test)]
 mod tests {
+    mod storage;
     use cadmpeg_core::convert::f32_from_f64;
     use cadmpeg_core::decode::u64_from_index;
 
