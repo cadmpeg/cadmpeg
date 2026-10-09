@@ -534,17 +534,32 @@ fn field_i64(
 }
 
 fn fixed_number(value: i64) -> Result<[u8; 8], CodecError> {
-    crate::directory::render_field(value.to_string().as_bytes())
+    // The longest i64 spelling is the sign plus nineteen decimal digits.
+    const DIGIT_WIDTH: usize = 20;
+    let mut digits = [0_u8; DIGIT_WIDTH];
+    let count = {
+        let mut remaining = digits.as_mut_slice();
+        std::io::Write::write_fmt(&mut remaining, format_args!("{value}"))?;
+        DIGIT_WIDTH - remaining.len()
+    };
+    crate::directory::render_field(&digits[..count])
 }
 
 fn sequence_field(marker: u8, sequence: u32) -> Result<[u8; 8], CodecError> {
     let mut output = [b' '; 8];
     output[0] = marker;
-    let digits = sequence.to_string();
-    if digits.len() > 7 {
+    // Every u32 spelling fits in ten decimal digits.
+    const DIGIT_WIDTH: usize = 10;
+    let mut digits = [0_u8; DIGIT_WIDTH];
+    let count = {
+        let mut remaining = digits.as_mut_slice();
+        std::io::Write::write_fmt(&mut remaining, format_args!("{sequence}"))?;
+        DIGIT_WIDTH - remaining.len()
+    };
+    if count > 7 {
         return Err(malformed("section sequence exceeds seven digits"));
     }
-    output[8 - digits.len()..].copy_from_slice(digits.as_bytes());
+    output[8 - count..].copy_from_slice(&digits[..count]);
     Ok(output)
 }
 
