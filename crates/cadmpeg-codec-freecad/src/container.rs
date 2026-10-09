@@ -15,7 +15,7 @@ use cadmpeg_ir::ContainerSummary;
 
 use crate::brep::ShapePayloadRecord;
 use crate::gui;
-use crate::native::element_map::ElementMapRecord;
+use crate::native::element_map::{ElementMapRecord, ScopedData};
 use crate::native::{
     ArchiveSpan, ByteCoverageRecord, DocumentFacts, EntryRecord, LogicalClassification,
     LogicalSpan, PropertyFamily, PropertyRecord, StringTableRecord,
@@ -152,8 +152,15 @@ pub(crate) fn scan<'a, 'c>(
         else {
             break;
         };
+        let id = {
+            let (data, storage) = ctx.format_scoped(
+                format_args!("{index}"), "FCStd archive span ordinal",
+            )?;
+            let ordinal = ScopedData { data, _storage: storage };
+            crate::native::native_id_charged(ctx, "archive-span", &ordinal.data)
+        }?;
         ledger.push(ArchiveSpan {
-            id: crate::native::native_id_charged(ctx, "archive-span", &index.to_string())?,
+            id,
             span: crate::native::ByteSpan::try_new(span.start, span.end)
                 .map_err(CodecError::Malformed)?,
             role: crate::native::ArchiveSpanRole::from(span.role),
@@ -1076,8 +1083,15 @@ fn push_logical_span(
         return Ok(());
     }
     ctx.reserve_vec(output, 1, "FCStd logical ledger spans")?;
+    let id = {
+        let (data, storage) = ctx.format_scoped(
+            format_args!("{}", output.len()), "FCStd logical span ordinal",
+        )?;
+        let ordinal = ScopedData { data, _storage: storage };
+        crate::native::native_id_charged(ctx, "logical-span", &ordinal.data)
+    }?;
     output.push(LogicalSpan {
-        id: crate::native::native_id_charged(ctx, "logical-span", &output.len().to_string())?,
+        id,
         entry: ctx.copy_retained_text(entry.name(), "FCStd logical span entry")?,
         span: crate::native::ByteSpan::try_new(start, end).map_err(CodecError::Malformed)?,
         classification,

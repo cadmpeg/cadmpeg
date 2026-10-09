@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Archive scan and physical-ledger unit tests.
 
+mod numeric_ordinals;
+
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::test_support::test_archive::{
