@@ -5,6 +5,7 @@ use std::cell::RefCell;
 use std::ptr::NonNull;
 
 use super::context::DecodeContext;
+use super::ScopedReservation;
 use crate::CodecError;
 
 /// Owns stable byte buffers allocated during a decode.
@@ -23,13 +24,41 @@ impl DecodeArena {
     ///
     /// The returned slice is stable: later `alloc` calls never invalidate it.
     pub fn alloc(&self, ctx: &DecodeContext<'_>, bytes: Box<[u8]>) -> Result<&[u8], CodecError> {
+        // Registry entries outlive a caller's active scratch or candidate
+        // capture. Their backing belongs to the arena's session output.
+        let _routing = ctx.budget.session_storage();
         let mut buffers = self.buffers.borrow_mut();
+        let mut registry_growth = ctx.provisional_retained("arena registry")?;
         let buffer = OwnedBuffer(NonNull::from(Box::leak(bytes)));
         let pointer = buffer.0;
-        ctx.push_vec(&mut buffers, buffer, "arena registry")?;
+        // Only newly reserved registry backing is provisional. A refusal
+        // cannot refund backing that an earlier allocation already installed.
+        registry_growth.with_storage(|| ctx.reserve_vec(&mut buffers, 1, "arena registry"))?;
+        registry_growth.commit_to_session();
+        buffers.push(buffer);
         // SAFETY: the arena owns every buffer until it is dropped, and no
         // method mutates a buffer. The borrow cannot outlive the arena.
         Ok(unsafe { pointer.as_ref() })
+    }
+
+    /// Promotes and installs one actual scoped payload. Registry admission
+    /// remains separate; failure destroys the payload before its lease drops.
+    pub(super) fn alloc_scoped(
+        &self,
+        ctx: &DecodeContext<'_>,
+        bytes: Box<[u8]>,
+        storage: ScopedReservation<'_>,
+    ) -> Result<&[u8], CodecError> {
+        let (bytes, payload) = storage.promote_session_value(bytes)?;
+        let bytes = self.alloc(ctx, bytes)?;
+        payload.commit_to_session();
+        Ok(bytes)
+    }
+
+    #[cfg(test)]
+    pub(super) fn allocation_state(&self) -> (usize, usize) {
+        let buffers = self.buffers.borrow();
+        (buffers.len(), buffers.capacity())
     }
 }
 
@@ -52,6 +81,8 @@ impl Drop for OwnedBuffer {
 
 #[cfg(test)]
 mod tests {
+    mod provisional_concat;
+
     use super::DecodeArena;
     use crate::decode::{DecodeContext, DecodePolicy};
 
@@ -83,6 +114,59 @@ mod tests {
             .expect("admitted registry");
         assert!(empty.is_empty());
         assert_eq!(present, &[7]);
+    }
+
+    #[test]
+    fn arena_registry_outlives_enclosing_scratch_and_candidate_scopes() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut scratch = ctx.reserve_scoped(0, "scratch").expect("guard");
+        let view = scratch
+            .with_storage(|| arena.alloc(&ctx, Vec::new().into_boxed_slice()))
+            .expect("session registry");
+        drop(scratch);
+        assert!(view.is_empty());
+        assert_eq!(arena.buffers.borrow().len(), 1);
+        let registered = crate::decode::u64_from_index(
+            arena.buffers.borrow().capacity() * std::mem::size_of::<super::OwnedBuffer>(),
+        );
+        assert_eq!(ctx.budget.retained_used(), registered);
+        assert_eq!(ctx.budget.materialized_used(), 0);
+        let mut candidate = ctx.provisional_retained("candidate").expect("guard");
+        let view = candidate
+            .with_storage(|| arena.alloc(&ctx, Vec::new().into_boxed_slice()))
+            .expect("session registry");
+        drop(candidate);
+        assert!(view.is_empty());
+        assert_eq!(arena.buffers.borrow().len(), 2);
+        assert_eq!(ctx.budget.retained_used(), registered);
+    }
+
+    #[test]
+    fn arena_registry_retained_refusal_leaves_live_arena_unchanged() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut scratch = ctx.reserve_scoped(0, "scratch").expect("guard");
+        let error = scratch
+            .with_storage(|| arena.alloc(&ctx, Vec::new().into_boxed_slice()))
+            .expect_err("session retained refusal");
+        let crate::CodecError::ResourceLimit(original) = error else {
+            panic!("retained refusal")
+        };
+        assert_eq!(
+            original.dimension,
+            crate::decode::ResourceDimension::RetainedBytes
+        );
+        assert_eq!(original.operation, "arena registry");
+        assert_eq!(ctx.resource_refusal(), Some(original));
+        assert!(arena.buffers.borrow().is_empty());
+        assert_eq!(arena.buffers.borrow().capacity(), 0);
+        drop(scratch);
+        assert_eq!(ctx.budget.materialized_used(), 0);
     }
 
     #[test]
