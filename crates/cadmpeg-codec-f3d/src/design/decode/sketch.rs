@@ -2572,12 +2572,12 @@ fn trailing_sketch_owner_reference(record: &[u8]) -> Option<u32> {
     View::u32_le_at(record, tail + 1)
 }
 
-fn decode_sketch_points_from_stream(
-    ctx: &DecodeContext<'_>,
+fn decode_sketch_points_from_stream<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
-) -> Result<Vec<SketchPoint>, CodecError> {
+) -> Result<(Vec<SketchPoint>, ScopedReservation<'ctx>), CodecError> {
     let _frames_storage;
     let (frames, held_storage) = ctx.with_scoped_storage("f3d sketch point frames", || {
         design_primary_frames(ctx, bytes, meta)
@@ -2599,6 +2599,7 @@ fn decode_sketch_points_from_stream(
             )
         })?;
     }
+    let mut output_storage = ctx.reserve_scoped(0, "f3d sketch point output")?;
     let mut out = Vec::new();
     for frame in ctx.admit_iter(&frames, "scan F3D sketch point frames")? {
         let design_type = frame.design_type;
@@ -2673,7 +2674,7 @@ fn decode_sketch_points_from_stream(
             ));
         };
 
-        ctx.reserve_vec(&mut out, 1, "f3d sketch point output")?;
+        ctx.reserve_scoped_vec(&mut output_storage, &mut out, 1, "f3d sketch point output")?;
         out.push(SketchPoint::try_from_charged(
             ctx,
             crate::records::sketch_geometry::SketchPointDraft {
@@ -2698,7 +2699,7 @@ fn decode_sketch_points_from_stream(
             },
         )?);
     }
-    Ok(out)
+    Ok((out, output_storage))
 }
 
 /// Whether `design_type` registers the sketch-point companion class.
@@ -2862,12 +2863,13 @@ fn sketch_utf16_text<'ctx>(
 
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
-fn decode_sketch_texts_from_stream(
-    ctx: &DecodeContext<'_>,
+fn decode_sketch_texts_from_stream<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
-) -> Result<Vec<SketchText>, CodecError> {
+) -> Result<(Vec<SketchText>, ScopedReservation<'ctx>), CodecError> {
+    let mut output_storage = ctx.reserve_scoped(0, "f3d sketch text records")?;
     let mut out = Vec::new();
     let _frames_storage;
     let (frames, held_storage) = ctx.with_scoped_storage("f3d sketch text frames", || {
@@ -2905,10 +2907,10 @@ fn decode_sketch_texts_from_stream(
         text_storage = held_storage;
         if let Some(text) = text {
             let text = text_storage.commit_value(text)?;
-            ctx.push_vec(&mut out, text, "f3d sketch text records")?;
+            ctx.push_scoped_vec(&mut output_storage, &mut out, text, "f3d sketch text records")?;
         }
     }
-    Ok(out)
+    Ok((out, output_storage))
 }
 
 /// Decode sketch-text records carrying persistent identities, font metrics,
@@ -4224,12 +4226,13 @@ impl SketchCurveClass {
 /// `crv_secondary_id`) from each design `BulkStream` entry in `scan`: the
 /// curve's persistent primary and secondary identities plus its NURBS, circular
 /// arc, line, or referenced analytic geometry.
-fn decode_sketch_curve_identities_from_stream(
-    ctx: &DecodeContext<'_>,
+fn decode_sketch_curve_identities_from_stream<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
-) -> Result<Vec<SketchCurveIdentity>, CodecError> {
+) -> Result<(Vec<SketchCurveIdentity>, ScopedReservation<'ctx>), CodecError> {
+    let mut output_storage = ctx.reserve_scoped(0, "f3d sketch curve output")?;
     let mut out = Vec::new();
     let _frames_storage;
     let (frames, held_storage) = ctx.with_scoped_storage("f3d sketch curve frames", || {
@@ -4282,7 +4285,7 @@ fn decode_sketch_curve_identities_from_stream(
                 (Some(parsed.geometry), parsed.geometry_offset)
             });
 
-        ctx.reserve_vec(&mut out, 1, "f3d sketch curve output")?;
+        ctx.reserve_scoped_vec(&mut output_storage, &mut out, 1, "f3d sketch curve output")?;
         out.push(SketchCurveIdentity {
             id: design_record_id_charged(
                 ctx,
@@ -4310,7 +4313,7 @@ fn decode_sketch_curve_identities_from_stream(
             geometry,
         });
     }
-    Ok(out)
+    Ok((out, output_storage))
 }
 
 /// Decode every sketch-curve record ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata), `crv_primary_id`/
@@ -6364,16 +6367,17 @@ fn decode_reference_list(
     }))
 }
 
-fn decode_sketch_streams<T>(
-    ctx: &DecodeContext<'_>,
+fn decode_sketch_streams<'ctx, T>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
     decode: impl Fn(
-        &DecodeContext<'_>,
+        &'ctx DecodeContext<'_>,
         &[u8],
         &crate::metastream::MetaStream,
         &str,
-    ) -> Result<Vec<T>, CodecError>,
+    ) -> Result<(Vec<T>, ScopedReservation<'ctx>), CodecError>,
 ) -> Result<Vec<T>, CodecError> {
+    let mut output_storage = ctx.reserve_scoped(0, "f3d sketch stream output")?;
     let mut out = Vec::new();
     for entry in ctx.admit_iter(&scan.entries, "scan F3D sketch design entries")? {
         if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
@@ -6383,13 +6387,17 @@ fn decode_sketch_streams<T>(
         let Some(meta) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
-        ctx.append_vec(
-            &mut out,
-            &mut { decode(ctx, bytes, &meta, &entry.name)? },
-            "f3d sketch stream output",
-        )?;
+        let child_storage;
+        let (mut child, held_storage) = decode(ctx, bytes, &meta, &entry.name)?;
+        child_storage = held_storage;
+        output_storage.with_storage(|| {
+            ctx.append_vec(&mut out, &mut child, "f3d sketch stream output")
+        })?;
+        // The drained allocation is destroyed before its reservation refunds.
+        drop(child);
+        drop(child_storage);
     }
-    Ok(out)
+    output_storage.commit_value(out)
 }
 
 #[cfg(test)]
