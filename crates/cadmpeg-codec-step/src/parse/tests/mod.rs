@@ -16,3 +16,5 @@ mod admission;
 mod known_length;
 
 mod borrowed_union;
+
+mod borrowed_queries;

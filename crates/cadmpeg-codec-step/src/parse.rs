@@ -513,12 +513,25 @@ impl Exchange {
     ) -> Result<impl Iterator<Item = Result<u64, CodecError>> + 'a, CodecError> {
         let mut list_storage = ctx.reserve_scoped(0, "STEP matching entity lists")?;
         let mut lists = Vec::new();
+        let mut first: Option<&[u64]> = None;
         let mut visited_items = (self.entity_ids()).iter();
         ctx.charge_work(0, "STEP matching entity name traversal")?;
         for _ in 0..visited_items.len() {
             let (name, ids) = ctx.next_charged(&mut visited_items, "STEP matching entity name traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
             if matches(name) {
+                if first.is_none() && lists.is_empty() {
+                    first = Some(ids.as_slice());
+                    continue;
+                }
+                if let Some(first) = first.take() {
+                    ctx.push_scoped_vec(
+                        &mut list_storage,
+                        &mut lists,
+                        first,
+                        "STEP matching entity lists",
+                    )?;
+                }
                 ctx.push_scoped_vec(
                     &mut list_storage,
                     &mut lists,
@@ -527,7 +540,10 @@ impl Exchange {
                 )?;
             }
         }
-        let mut ids = EntityIndex::ordered_ids(&lists, ctx)?;
+        let mut ids = match first {
+            Some(first) => EntityIndex::ordered_ids(&[first], ctx)?,
+            None => EntityIndex::ordered_ids(&lists, ctx)?,
+        };
         let mut failed = false;
         Ok(std::iter::from_fn(move || {
             if failed || ids.len() == 0 {
@@ -584,6 +600,7 @@ impl Exchange {
     {
         let mut list_storage = ctx.reserve_scoped(0, "STEP entity union lists")?;
         let mut lists = Vec::new();
+        let mut first: Option<&[u64]> = None;
         let mut visited_items = (names).iter();
         ctx.charge_work(0, "STEP entity union name traversal")?;
         for _ in 0..visited_items.len() {
@@ -592,6 +609,18 @@ impl Exchange {
             if let Some(ids) =
                 ctx.get_btree_map(self.entity_ids(), *name, "STEP entity name lookup")?
             {
+                if first.is_none() && lists.is_empty() {
+                    first = Some(ids.as_slice());
+                    continue;
+                }
+                if let Some(first) = first.take() {
+                    ctx.push_scoped_vec(
+                        &mut list_storage,
+                        &mut lists,
+                        first,
+                        "STEP entity union lists",
+                    )?;
+                }
                 ctx.push_scoped_vec(
                     &mut list_storage,
                     &mut lists,
@@ -600,7 +629,10 @@ impl Exchange {
                 )?;
             }
         }
-        let mut ids = EntityIndex::ordered_ids(&lists, ctx)?;
+        let mut ids = match first {
+            Some(first) => EntityIndex::ordered_ids(&[first], ctx)?,
+            None => EntityIndex::ordered_ids(&lists, ctx)?,
+        };
         let mut failed = false;
         Ok(std::iter::from_fn(move || {
             if failed || ids.len() == 0 {
