@@ -53,6 +53,81 @@ fn body_shape_shell_count_with_faces(
     Ok(count)
 }
 
+// One POINT owns its forty serialized bytes, one kind vector with four
+// Node slots, and one root node in each of the two graph indexes.
+fn one_point_graph_storage() -> (Vec<u8>, u64, u64) {
+    fn tree_node_bytes<K, V>() -> usize {
+        11 * (std::mem::size_of::<K>() + std::mem::size_of::<V>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<K>().max(std::mem::align_of::<V>())
+                .max(std::mem::align_of::<usize>())
+    }
+    let mut bytes = record(29, 40);
+    put_ref(&mut bytes, 2, 11);
+    put_vec3(&mut bytes, 16, [0.01, 0.02, 0.03]);
+    let node_bytes = cadmpeg_core::decode::u64_from_index(bytes.len());
+    let index_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<Node>()
+            + tree_node_bytes::<(NodeKind, u32), usize>()
+            + tree_node_bytes::<usize, (NodeKind, usize)>(),
+    );
+    (bytes, node_bytes, index_bytes)
+}
+
+#[test]
+fn topology_graph_promotions_preserve_node_then_index_refusals() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let (bytes, node_bytes, index_bytes) = one_point_graph_storage();
+    for (cap, operation, used, additional) in [
+        (node_bytes - 1, "NX topology node bytes", 0, node_bytes),
+        (node_bytes + index_bytes - 1, "NX topology node index", node_bytes, index_bytes),
+    ] {
+        crate::test_support::with_decode_context_over(&bytes, |policy| {
+            policy.limits.max_retained_bytes = cap;
+        }, |ctx| {
+            let error = Graph::parse(ctx, &bytes).unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("the selected graph must refuse at the first binding promotion");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.operation, operation);
+            assert_eq!((limit.used, limit.additional), (used, additional));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            assert!(matches!(ctx.reserve_scoped(0, "after graph promotion refusal"),
+                Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+        });
+    }
+}
+
+#[test]
+fn topology_graph_promotes_only_selected_backing_and_keeps_identity() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let (bytes, node_bytes, index_bytes) = one_point_graph_storage();
+    let retained = node_bytes + index_bytes;
+    crate::test_support::with_decode_context_over(&bytes, |policy| {
+        policy.limits.max_retained_bytes = retained;
+    }, |ctx| {
+        let graph = Graph::parse(ctx, &bytes).unwrap();
+        let [point] = graph.of_kind(NodeKind::Point) else {
+            panic!("the admitted point must remain the sole point record");
+        };
+        assert_eq!(point.xmt(), 11);
+        assert_eq!(point.pos(), 0);
+        assert_eq!(point.bytes, bytes);
+        assert_eq!(graph.get(ctx, NodeKind::Point, 11).unwrap().unwrap().pos(), 0);
+        assert_eq!(graph.at_pos(ctx, 0).unwrap().unwrap().xmt(), 11);
+        assert!(ctx.resource_refusal().is_none());
+        let error = ctx.collection_vec::<u8>(1, "next graph output slot").unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("the selected graph fills the retained allowance exactly");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.operation, "next graph output slot");
+        assert_eq!((limit.used, limit.additional), (retained, 1));
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
 #[test]
 fn topology_graph_parse_refuses_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;

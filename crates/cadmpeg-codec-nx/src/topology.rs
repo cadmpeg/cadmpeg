@@ -1007,9 +1007,9 @@ struct GraphStorage<'ctx> {
 }
 
 impl GraphStorage<'_> {
-    fn commit(self) -> Result<(), CodecError> {
-        self.nodes.commit()?;
-        self.index.commit()
+    fn commit_value(self, graph: Graph) -> Result<Graph, CodecError> {
+        let graph = self.nodes.commit_value(graph)?;
+        self.index.commit_value(graph)
     }
 }
 
@@ -1056,24 +1056,29 @@ impl Graph {
     pub(crate) fn parse(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Self, CodecError> {
         let ([baseline_candidates, full_candidates], candidate_storage) =
             Self::scan_candidates(ctx, stream)?;
-        let (mut baseline, mut baseline_storage) =
+        let (baseline_candidate, mut baseline_storage) =
             Self::select_graph(ctx, stream, &baseline_candidates)?;
-        let (full_domain, full_domain_storage) = Self::select_graph(ctx, stream, &full_candidates)?;
+        let mut baseline = baseline_candidate;
+        let (full_candidate, full_domain_storage) = Self::select_graph(ctx, stream, &full_candidates)?;
+        let full_domain = full_candidate;
         drop((baseline_candidates, full_candidates, candidate_storage));
         if !baseline.is_preserved_by(ctx, &full_domain)? {
-            baseline_storage.commit()?;
-            return Ok(baseline);
+            drop(full_domain);
+            drop(full_domain_storage);
+            return baseline_storage.commit_value(baseline);
         }
         if !baseline.has_complete_body_topology(ctx)? {
             let (complete, faces) = full_domain.body_topology_census(ctx)?;
             if complete && faces != 0 {
-                full_domain_storage.commit()?;
-                return Ok(full_domain);
+                drop(baseline);
+                drop(baseline_storage);
+                return full_domain_storage.commit_value(full_domain);
             }
         }
         baseline.admit_referenced_full_domain_nodes(ctx, &mut baseline_storage, &full_domain)?;
-        baseline_storage.commit()?;
-        Ok(baseline)
+        drop(full_domain);
+        drop(full_domain_storage);
+        baseline_storage.commit_value(baseline)
     }
 
     /// Return whether `other` holds every node of this graph at the same span.
