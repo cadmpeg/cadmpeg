@@ -1972,3 +1972,5 @@ mod resource_admission;
 mod arc_trims;
 
 mod radial_trim_admission;
+
+mod workspace_lifetimes;
