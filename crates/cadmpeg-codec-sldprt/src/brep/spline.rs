@@ -2,6 +2,7 @@
 //! B-spline/list carrier tables.
 
 pub(crate) mod patch;
+mod demand;
 
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -250,6 +251,22 @@ fn array_body(bytes: &[u8], off: usize, tag: u8) -> Option<usize> {
     Some(p)
 }
 
+fn framed_array_span(bytes: &[u8], off: usize) -> Option<(u16, u8, ArraySpan)> {
+    let tag = match bytes.get(off..off + 2) {
+        Some([0x00, tag @ (0x2d | 0x7f | 0x80)]) => *tag,
+        _ => return None,
+    };
+    let p = array_body(bytes, off, tag)?;
+    let count = View::u32_be_at(bytes, p + arr_hdr::COUNT).map(index_from_u32)?;
+    let attr = View::u16_be_at(bytes, p + arr_hdr::ATTR)?;
+    if attr <= 1 || count > MAX_ARRAY_VALUES { return None; }
+    let start = p + arr_hdr::LEN;
+    let width = if tag == 0x7f { 2 } else { 8 };
+    if count.checked_mul(width).and_then(|size| start.checked_add(size))
+        .is_none_or(|end| end > bytes.len()) { return None; }
+    Some((attr, tag, ArraySpan { start, count }))
+}
+
 fn scan_arrays<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
@@ -278,28 +295,12 @@ fn scan_arrays<'ctx>(
                 }
             }
         }
-        let tag = match bytes.get(off..off + 2) {
-            Some([0x00, tag @ (0x2d | 0x7f | 0x80)]) => *tag,
-            _ => continue,
-        };
-        let Some(p) = array_body(bytes, off, tag) else {
-            continue;
-        };
-        let Some(count) = View::u32_be_at(bytes, p + arr_hdr::COUNT).map(index_from_u32) else {
-            continue;
-        };
-        let Some(attr) = View::u16_be_at(bytes, p + arr_hdr::ATTR) else {
-            continue;
-        };
-        if attr <= 1 || count > MAX_ARRAY_VALUES {
-            continue;
-        }
+        let Some((attr, tag, span)) = framed_array_span(bytes, off) else { continue; };
         if let Some(required) = required_attrs {
             if !ctx.contains_btree_set(required, &attr, "select Parasolid spline arrays")? {
                 continue;
             }
         }
-        let values_at = p + arr_hdr::LEN;
         // The first array of an attribute is kept; a later one is not read.
         if tag == 0x7f {
             if ctx.contains_key_btree_map(
@@ -309,21 +310,11 @@ fn scan_arrays<'ctx>(
             )? {
                 continue;
             }
-            if count
-                .checked_mul(2)
-                .and_then(|size| values_at.checked_add(size))
-                .is_none_or(|end| end > bytes.len())
-            {
-                continue;
-            }
             ctx.insert_btree_map(
                 &mut arrays.u16s,
                 attr,
                 FramedArray {
-                    span: ArraySpan {
-                        start: values_at,
-                        count,
-                    },
+                    span,
                     operation: "decode Parasolid integer array values",
                     values: OnceCell::new(),
                 },
@@ -331,13 +322,6 @@ fn scan_arrays<'ctx>(
             )?;
         } else {
             if ctx.contains_key_btree_map(&arrays.f64s, &attr, "collect Parasolid scalar arrays")? {
-                continue;
-            }
-            if count
-                .checked_mul(8)
-                .and_then(|size| values_at.checked_add(size))
-                .is_none_or(|end| end > bytes.len())
-            {
                 continue;
             }
             // The native surface format can reserve physical knot slots beyond
@@ -348,10 +332,7 @@ fn scan_arrays<'ctx>(
                 &mut arrays.f64s,
                 attr,
                 FramedArray {
-                    span: ArraySpan {
-                        start: values_at,
-                        count,
-                    },
+                    span,
                     operation: "decode Parasolid scalar array values",
                     values: OnceCell::new(),
                 },
@@ -488,6 +469,29 @@ fn exact_f64_array<'a, 'ctx>(
     Ok(selected)
 }
 
+fn parse_curve_descriptor(bytes: &[u8], off: usize) -> Option<(u16, CurveDescriptor)> {
+    if bytes.get(off..off + 2) != Some(&[0x00, 0x88]) {
+        return None;
+    }
+    let mut p = off + 2;
+    if bytes.get(p) == Some(&0xff) {
+        p += 1;
+    }
+    let attr = View::u16_be_at(bytes, p)?;
+    let degree = View::u16_be_at(bytes, p + 2).map(u32::from)?;
+    let control_count = View::u32_be_at(bytes, p + 4).map(index_from_u32)?;
+    let dimension = View::u16_be_at(bytes, p + 8).map(usize::from)?;
+    let control_attr = View::u16_be_at(bytes, p + 19)?;
+    let multiplicity_attr = View::u16_be_at(bytes, p + 21)?;
+    let knot_attr = View::u16_be_at(bytes, p + 23)?;
+    if attr <= 1 || !(dimension == 3 || dimension == 4) || control_count == 0 {
+        return None;
+    }
+    Some((attr, CurveDescriptor {
+        degree, control_count, dimension, control_attr, multiplicity_attr, knot_attr,
+    }))
+}
+
 fn scan_curve_descriptors(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -495,46 +499,9 @@ fn scan_curve_descriptors(
     let mut out = BTreeMap::new();
     let starts = 0..bytes.len().checked_sub(29).map_or(0, |end| end);
     for off in ctx.admit_iter(starts, "scan Parasolid curve descriptors")? {
-        if bytes.get(off..off + 2) != Some(&[0x00, 0x88]) {
-            continue;
-        }
-        let mut p = off + 2;
-        if bytes.get(p) == Some(&0xff) {
-            p += 1;
-        }
-        let Some(attr) = View::u16_be_at(bytes, p) else {
-            continue;
-        };
-        let Some(degree) = View::u16_be_at(bytes, p + 2).map(u32::from) else {
-            continue;
-        };
-        let Some(control_count) = View::u32_be_at(bytes, p + 4).map(index_from_u32) else {
-            continue;
-        };
-        let Some(dimension) = View::u16_be_at(bytes, p + 8).map(usize::from) else {
-            continue;
-        };
-        let Some(control_attr) = View::u16_be_at(bytes, p + 19) else {
-            continue;
-        };
-        let Some(multiplicity_attr) = View::u16_be_at(bytes, p + 21) else {
-            continue;
-        };
-        let Some(knot_attr) = View::u16_be_at(bytes, p + 23) else {
-            continue;
-        };
-        if attr <= 1 || !(dimension == 3 || dimension == 4) || control_count == 0 {
-            continue;
-        }
+        let Some((attr, descriptor)) = parse_curve_descriptor(bytes, off) else { continue; };
         ctx.entry_btree_map(&mut out, attr, "collect Parasolid curve descriptors")?
-            .or_insert(CurveDescriptor {
-                degree,
-                control_count,
-                dimension,
-                control_attr,
-                multiplicity_attr,
-                knot_attr,
-            });
+            .or_insert(descriptor);
     }
     Ok(out)
 }
@@ -635,65 +602,21 @@ pub(crate) fn scan_curve_carriers(
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<u16, CurveCarrier>, cadmpeg_core::CodecError> {
-    let mut scratch = ctx.reserve_scoped(0, "hold Parasolid curve source tables")?;
-    let mut wrappers = Vec::new();
-    let mut required_attrs = BTreeSet::new();
-    {
-        let mut descriptor_storage = ctx.reserve_scoped(0, "hold Parasolid wrapper descriptors")?;
-        let mut descriptors = None;
-        let starts = 0..bytes.len().checked_sub(6).map_or(0, |end| end);
-        for off in ctx.admit_iter(starts, "scan Parasolid curve wrappers")? {
-            if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) {
-                continue;
-            }
-            let mut p = off + 2;
-            if bytes.get(p) == Some(&0xff) {
-                p += 1;
-            }
-            let Some(attr) = View::u16_be_at(bytes, p) else {
-                continue;
-            };
-            if descriptors.is_none() {
-                descriptors =
-                    Some(descriptor_storage.with_storage(|| scan_curve_descriptors(ctx, bytes))?);
-            }
-            let Some(descriptors) = &descriptors else {
-                continue;
-            };
-            let Some(descriptor) = curve_descriptor(ctx, bytes, p, descriptors)? else {
-                continue;
-            };
-            for reference in [
-                descriptor.control_attr,
-                descriptor.multiplicity_attr,
-                descriptor.knot_attr,
-            ] {
-                scratch.with_storage(|| {
-                    ctx.insert_btree_set(
-                        &mut required_attrs,
-                        reference,
-                        "collect Parasolid curve array references",
-                    )
-                })?;
-            }
-            ctx.push_scoped_vec(
-                &mut scratch,
-                &mut wrappers,
-                (off, attr, *descriptor),
-                "collect Parasolid curve wrappers",
-            )?;
-        }
-    }
-    if wrappers.is_empty() {
-        return Ok(BTreeMap::new());
-    }
-    let arrays = scratch.with_storage(|| scan_arrays(ctx, bytes, None, Some(&required_attrs)))?;
+    let mut sources = demand::Sources::new(ctx, bytes, false)?;
     let mut out = BTreeMap::new();
-    for (off, attr, descriptor) in ctx.admit_iter(wrappers, "decode Parasolid curve wrappers")? {
-        // The first carrier of an attribute is kept; a later wrapper is not built.
-        if ctx.contains_key_btree_map(&out, &attr, "collect Parasolid curve carriers")? {
-            continue;
+    let mut starts = 0..bytes.len().checked_sub(6).map_or(0, |end| end);
+    while starts.len() != 0 {
+        let Some(off) = ctx.next_charged(&mut starts, "scan Parasolid curve wrappers")? else { break; };
+        if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) { continue; }
+        let mut p = off + 2;
+        if bytes.get(p) == Some(&0xff) { p += 1; }
+        let Some(attr) = View::u16_be_at(bytes, p) else { continue; };
+        if ctx.contains_key_btree_map(&out, &attr, "collect Parasolid curve carriers")? { continue; }
+        let Some(descriptor) = sources.curve_for_wrapper(p)? else { continue; };
+        for reference in [descriptor.control_attr, descriptor.multiplicity_attr, descriptor.knot_attr] {
+            sources.array(reference)?;
         }
+        let arrays = sources.arrays();
         let Some(control_array) =
             ctx.get_btree_map(&arrays.f64s, &descriptor.control_attr, CURVE_ARRAYS)?
         else {
@@ -890,11 +813,10 @@ struct SurfaceKnotValues {
 fn surface_knot_values<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    output: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     bytes: &[u8],
     arrays: &Arrays<'ctx>,
-    knot_attr: u16,
-    multiplicity_attr: u16,
-    declared_count: usize,
+    (knot_attr, multiplicity_attr, declared_count): (u16, u16, usize),
 ) -> Result<Option<SurfaceKnotValues>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "collect Parasolid knot candidates";
     let multiplicity_candidates = array_candidates(
@@ -968,8 +890,8 @@ fn surface_knot_values<'ctx>(
         return Ok(None);
     };
     Ok(Some(SurfaceKnotValues {
-        unique: storage.with_storage(|| ctx.copy_slice(unique, "copy Parasolid distinct knots"))?,
-        multiplicities: storage.with_storage(|| {
+        unique: output.with_storage(|| ctx.copy_slice(unique, "copy Parasolid distinct knots"))?,
+        multiplicities: output.with_storage(|| {
             ctx.copy_slice(multiplicities, "copy Parasolid knot multiplicities")
         })?,
     }))
@@ -983,122 +905,34 @@ pub(crate) fn scan_surface_carriers(
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<u16, SurfaceCarrier>, cadmpeg_core::CodecError> {
-    let mut scratch = ctx.reserve_scoped(0, "hold Parasolid surface source tables")?;
-    let mut required_attrs = BTreeSet::new();
-    let mut wrappers = Vec::new();
-    {
-        let mut descriptor_storage = ctx.reserve_scoped(0, "hold Parasolid wrapper descriptors")?;
-        let mut descriptors = None;
-        let starts = 0..bytes.len().checked_sub(1).map_or(0, |end| end);
-        for off in ctx.admit_iter(starts, "scan Parasolid surface wrappers")? {
-            if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) {
-                continue;
-            }
-            let mut p = off + 2;
-            if bytes.get(p) == Some(&0xff) {
-                p += 1;
-            }
-            let Some(attr) = View::u16_be_at(bytes, p) else {
-                continue;
-            };
-            let Some(descriptor_at) = p.checked_add(17) else {
-                continue;
-            };
-            let Some(descriptor_attr) = View::u16_be_at(bytes, descriptor_at) else {
-                continue;
-            };
-            if descriptors.is_none() {
-                descriptors =
-                    Some(descriptor_storage.with_storage(|| scan_surface_descriptors(ctx, bytes))?);
-            }
-            let Some(descriptors) = &descriptors else {
-                continue;
-            };
-            let Some(descriptor) = ctx.get_btree_map(
-                descriptors,
-                &descriptor_attr,
-                "find Parasolid surface descriptors",
-            )?
-            else {
-                continue;
-            };
-            for &reference in &descriptor.refs {
-                scratch.with_storage(|| {
-                    ctx.insert_btree_set(
-                        &mut required_attrs,
-                        reference,
-                        "collect Parasolid surface array references",
-                    )
-                })?;
-            }
-            ctx.push_scoped_vec(
-                &mut scratch,
-                &mut wrappers,
-                (off, attr, *descriptor),
-                "collect Parasolid surface wrappers",
-            )?;
-        }
-    }
-    if wrappers.is_empty() {
-        return Ok(BTreeMap::new());
-    }
-    let arrays = scratch
-        .with_storage(|| scan_arrays(ctx, bytes, Some(&required_attrs), Some(&required_attrs)))?;
+    let mut sources = demand::Sources::new(ctx, bytes, true)?;
     let mut out = BTreeMap::new();
-    for (off, attr, descriptor) in ctx.admit_iter(wrappers, "decode Parasolid surface wrappers")? {
-        // The first carrier of an attribute is kept; a later wrapper is not built.
-        if ctx.contains_key_btree_map(&out, &attr, "collect Parasolid surface carriers")? {
-            continue;
+    let mut starts = 0..bytes.len().checked_sub(1).map_or(0, |end| end);
+    while starts.len() != 0 {
+        let Some(off) = ctx.next_charged(&mut starts, "scan Parasolid surface wrappers")? else { break; };
+        if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) { continue; }
+        let mut p = off + 2;
+        if bytes.get(p) == Some(&0xff) { p += 1; }
+        let Some(attr) = View::u16_be_at(bytes, p) else { continue; };
+        if ctx.contains_key_btree_map(&out, &attr, "collect Parasolid surface carriers")? { continue; }
+        let Some(descriptor_at) = p.checked_add(17) else { continue; };
+        let Some(descriptor_attr) = View::u16_be_at(bytes, descriptor_at) else { continue; };
+        let Some(descriptor) = sources.surface(descriptor_attr)? else { continue; };
+        for reference in descriptor.refs {
+            sources.array(reference)?;
         }
-        let mut storage = ctx.reserve_scoped(0, "hold Parasolid surface array candidates")?;
-        let Some(expected_poles) = descriptor.u_count.checked_mul(descriptor.v_count) else {
-            continue;
-        };
-        let Some(expected_control_values) = expected_poles.checked_mul(descriptor.dimension) else {
-            continue;
-        };
-        let Some(control) = exact_f64_array(
-            ctx,
-            &mut storage,
-            bytes,
-            &arrays,
-            descriptor.refs[0],
-            expected_control_values,
-        )?
-        else {
-            continue;
-        };
-        let Some(SurfaceKnotValues {
-            unique: u_unique,
-            multiplicities: u_mult,
-        }) = surface_knot_values(
-            ctx,
-            &mut storage,
-            bytes,
-            &arrays,
-            descriptor.refs[3],
-            descriptor.refs[1],
-            descriptor.u_knot_count,
-        )?
-        else {
-            continue;
-        };
-        let Some(SurfaceKnotValues {
-            unique: v_unique,
-            multiplicities: v_mult,
-        }) = surface_knot_values(
-            ctx,
-            &mut storage,
-            bytes,
-            &arrays,
-            descriptor.refs[4],
-            descriptor.refs[2],
-            descriptor.v_knot_count,
-        )?
-        else {
-            continue;
-        };
-        if control.as_slice().len() != expected_control_values {
+        let Some(expected_poles) = descriptor.u_count.checked_mul(descriptor.v_count) else { continue; };
+        let Some(expected_control_values) = expected_poles.checked_mul(descriptor.dimension) else { continue; };
+        sources.prepare_control(descriptor.refs[0], expected_control_values)?;
+        // Preserve the control-before-knot resolution gate.
+        if sources.control(descriptor.refs[0], expected_control_values)?.is_none() { continue; }
+        sources.prepare_knots(descriptor.refs[3], descriptor.refs[1], descriptor.u_knot_count)?;
+        if sources.knots(descriptor.refs[3], descriptor.refs[1], descriptor.u_knot_count)?.is_none() { continue; }
+        sources.prepare_knots(descriptor.refs[4], descriptor.refs[2], descriptor.v_knot_count)?;
+        let Some(control) = sources.control(descriptor.refs[0], expected_control_values)? else { continue; };
+        let Some(SurfaceKnotValues { unique: u_unique, multiplicities: u_mult }) = sources.knots(descriptor.refs[3], descriptor.refs[1], descriptor.u_knot_count)? else { continue; };
+        let Some(SurfaceKnotValues { unique: v_unique, multiplicities: v_mult }) = sources.knots(descriptor.refs[4], descriptor.refs[2], descriptor.v_knot_count)? else { continue; };
+        if control.len() != expected_control_values {
             continue;
         }
         let Some(u_expected) = descriptor
@@ -1115,26 +949,26 @@ pub(crate) fn scan_surface_carriers(
         else {
             continue;
         };
-        let Some(u_multiplicity_sum) = multiplicity_sum(ctx, &u_mult)? else {
+        let Some(u_multiplicity_sum) = multiplicity_sum(ctx, u_mult)? else {
             continue;
         };
-        let Some(v_multiplicity_sum) = multiplicity_sum(ctx, &v_mult)? else {
+        let Some(v_multiplicity_sum) = multiplicity_sum(ctx, v_mult)? else {
             continue;
         };
         if u_multiplicity_sum != u_expected || v_multiplicity_sum != v_expected {
             continue;
         }
         if !ctx.all_by(
-            &u_unique,
+            u_unique,
             |value| Ok(value.is_finite()),
             "check Parasolid surface knots",
         )? || !ctx.all_by(
-            &v_unique,
+            v_unique,
             |value| Ok(value.is_finite()),
             "check Parasolid surface knots",
-        )? || !knots_nondecreasing(&u_unique, |count| {
+        )? || !knots_nondecreasing(u_unique, |count| {
             ctx.charge_work(count, "IR NURBS knot order")
-        })? || !knots_nondecreasing(&v_unique, |count| {
+        })? || !knots_nondecreasing(v_unique, |count| {
             ctx.charge_work(count, "IR NURBS knot order")
         })? {
             continue;
@@ -1167,7 +1001,7 @@ pub(crate) fn scan_surface_carriers(
                 None
             };
             let valid = ctx.all_by(
-                control.as_slice().chunks(row_width.get()),
+                control.chunks(row_width.get()),
                 |row| {
                     let mut points =
                         ctx.vector_storage(descriptor.v_count, "decode Parasolid surface poles")?;
@@ -1227,8 +1061,8 @@ pub(crate) fn scan_surface_carriers(
         let mut carrier_storage = ctx.reserve_scoped(0, "retain Parasolid surface candidate")?;
         let Some(nurbs) = carrier_storage.with_storage(|| {
             let (Some(u_knots), Some(v_knots)) = (
-                expanded_knots(ctx, &u_unique, &u_mult, u_expected)?,
-                expanded_knots(ctx, &v_unique, &v_mult, v_expected)?,
+                expanded_knots(ctx, u_unique, u_mult, u_expected)?,
+                expanded_knots(ctx, v_unique, v_mult, v_expected)?,
             ) else {
                 return Ok(None);
             };
