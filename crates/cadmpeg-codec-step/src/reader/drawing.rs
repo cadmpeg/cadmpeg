@@ -485,7 +485,6 @@ pub(super) fn decode<'ctx>(
         &mut drawings,
         &target_context,
         (&mut losses, &slot_storage),
-        ctx,
     )?;
     let mut association_storage =
         ctx.reserve_scoped(0, "STEP drawing association claim candidates")?;
@@ -941,8 +940,8 @@ fn add_sheet_revision_usages(
         &mut Vec<LossNote>,
         &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>,
     ),
-    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    let ctx = target_context.wrappers.ctx;
     for indexed_entity in exchange.entities(ctx, "DRAWING_SHEET_REVISION_USAGE")? {
         let (usage_id, record) = indexed_entity?;
         let parameters = source_parameters(ctx, record, "DRAWING_SHEET_REVISION_USAGE")?;

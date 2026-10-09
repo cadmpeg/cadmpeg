@@ -652,7 +652,7 @@ fn sheet_usage_loss_refuses(typed_id: u64) {
             wrappers: super::super::WrapperCache::new(&ctx).expect("wrapper cache"),
         };
         let refused = matches!(
-            super::super::add_sheet_revision_usages(&exchange, &mut baseline.clone(), &targets, (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))), &ctx),
+            super::super::add_sheet_revision_usages(&exchange, &mut baseline.clone(), &targets, (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope")))),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "step_drawing_losses"
