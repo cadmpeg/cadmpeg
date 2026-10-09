@@ -79,17 +79,16 @@ fn push_distinct_candidate<'ctx, T: PartialEq + cadmpeg_core::decode::cost::Deco
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     groups: &mut BTreeMap<usize, Vec<Candidate<'ctx, T>>>,
     index: usize,
-    candidate: T,
-    candidate_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+    candidate: Candidate<'ctx, T>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if let Some(group) = ctx.get_mut_btree_map(groups, &index, PATTERN_INPUTS)? {
         if !ctx.any_by(
             &*group,
-            |(existing, _)| ctx.equal(existing, &candidate, PATTERN_INPUTS),
+            |(existing, _)| ctx.equal(existing, &candidate.0, PATTERN_INPUTS),
             PATTERN_INPUTS,
         )? {
             storage.with_storage(|| {
-                ctx.push_vec(group, (candidate, candidate_storage), PATTERN_INPUTS)
+                ctx.push_vec(group, candidate, PATTERN_INPUTS)
             })?;
         }
         return Ok(());
@@ -98,7 +97,7 @@ fn push_distinct_candidate<'ctx, T: PartialEq + cadmpeg_core::decode::cost::Deco
         ctx.push_btree_group(
             groups,
             index,
-            (candidate, candidate_storage),
+            candidate,
             PATTERN_INPUTS,
             PATTERN_INPUTS,
         )
@@ -321,8 +320,7 @@ pub(crate) fn bind_pattern_inputs(
                             &mut storage,
                             &mut mirror_planes_by_pattern,
                             model_index,
-                            (origin, normal),
-                            None,
+                            ((origin, normal), None),
                         )?;
                     }
                 }
@@ -342,7 +340,9 @@ pub(crate) fn bind_pattern_inputs(
                     {
                         continue;
                     }
-                    let (components, _components_storage) = ctx
+                    let _components_storage;
+                    let components;
+                    (components, _components_storage) = ctx
                         .with_scoped_storage(PATTERN_INPUTS, || {
                             mirror_pattern_component_path_at(ctx, object, offset)
                         })?;
@@ -400,8 +400,7 @@ pub(crate) fn bind_pattern_inputs(
                                 &mut storage,
                                 &mut mirror_seed_sets_by_pattern,
                                 model_index,
-                                seeds,
-                                Some(seed_storage),
+                                (seeds, Some(seed_storage)),
                             )?;
                         }
                     }
@@ -411,8 +410,7 @@ pub(crate) fn bind_pattern_inputs(
                         &mut storage,
                         &mut mirror_seed_sets_by_pattern,
                         model_index,
-                        seeds,
-                        Some(seed_storage),
+                        (seeds, Some(seed_storage)),
                     )?;
                 }
                 continue;
@@ -501,7 +499,9 @@ pub(crate) fn bind_pattern_inputs(
                             },
                             "deduplicate SLDPRT pattern input seeds",
                         )? {
-                            let (seed, seed_storage) = ctx
+                            let seed_storage;
+                            let seed;
+                            (seed, seed_storage) = ctx
                                 .with_scoped_storage(PATTERN_INPUTS, || {
                                     copy_feature_binding_id(ctx, first)
                                 })?;
@@ -510,8 +510,7 @@ pub(crate) fn bind_pattern_inputs(
                                 &mut storage,
                                 &mut seeds_by_pattern,
                                 model_index,
-                                seed,
-                                Some(seed_storage),
+                                (seed, Some(seed_storage)),
                             )?;
                         }
                     }
@@ -525,8 +524,7 @@ pub(crate) fn bind_pattern_inputs(
                             &mut storage,
                             &mut circular_axes_by_pattern,
                             model_index,
-                            axis,
-                            None,
+                            (axis, None),
                         )?;
                     }
                 }
@@ -595,7 +593,9 @@ pub(crate) fn bind_pattern_inputs(
                         Some(native) => model_of(native)?,
                         None => None,
                     } {
-                        let (seed, seed_storage) = ctx
+                        let seed_storage;
+                        let seed;
+                        (seed, seed_storage) = ctx
                             .with_scoped_storage(PATTERN_INPUTS, || {
                                 copy_feature_binding_id(ctx, &model_features[seed_index].id)
                             })?;
@@ -604,8 +604,7 @@ pub(crate) fn bind_pattern_inputs(
                             &mut storage,
                             &mut seeds_by_pattern,
                             model_index,
-                            seed,
-                            Some(seed_storage),
+                            (seed, Some(seed_storage)),
                         )?;
                     }
                 }
@@ -624,7 +623,9 @@ pub(crate) fn bind_pattern_inputs(
                 let mut direction_storage = ctx.reserve_scoped(0, DIRECTIONS)?;
                 let mut directions = Vec::new();
                 for class in ctx.admit_iter(declarations, DIRECTIONS)? {
-                    let (declared, _declared_storage) =
+                    let _declared_storage;
+                    let declared;
+                    (declared, _declared_storage) =
                         ctx.with_scoped_storage(DIRECTIONS, || {
                             declared_line_reference_directions(
                                 ctx,
@@ -655,7 +656,9 @@ pub(crate) fn bind_pattern_inputs(
                         }
                     }
                 }
-                let (compact, _compact_storage) = ctx.with_scoped_storage(DIRECTIONS, || {
+                let _compact_storage;
+                let compact;
+                (compact, _compact_storage) = ctx.with_scoped_storage(DIRECTIONS, || {
                     compact_line_reference_directions(
                         ctx,
                         &lane.native_payload,
@@ -684,7 +687,9 @@ pub(crate) fn bind_pattern_inputs(
                                 .map(|value| value.get() / 1000.0),
                         )
                     };
-                    let (display, _display_storage) =
+                    let _display_storage;
+                    let display;
+                    (display, _display_storage) =
                         ctx.with_scoped_storage(DIRECTIONS, || {
                             linear_pattern_display_directions(
                                 ctx,
@@ -733,8 +738,7 @@ pub(crate) fn bind_pattern_inputs(
                             &mut storage,
                             &mut linear_directions_by_pattern,
                             model_index,
-                            direction,
-                            None,
+                            (direction, None),
                         )?;
                     }
                 }
@@ -762,7 +766,9 @@ pub(crate) fn bind_pattern_inputs(
                     .and_then(|index| starts.get(index))
                 {
                     if let Some(seed_index) = model_of(seed.id.as_str())? {
-                        let (seed, seed_storage) = ctx
+                        let seed_storage;
+                        let seed;
+                        (seed, seed_storage) = ctx
                             .with_scoped_storage(PATTERN_INPUTS, || {
                                 copy_feature_binding_id(ctx, &model_features[seed_index].id)
                             })?;
@@ -794,37 +800,44 @@ pub(crate) fn bind_pattern_inputs(
             else {
                 continue;
             };
-            let ((dependency, sketch), path_storage) =
+            let path_storage;
+            let scoped_path;
+            (scoped_path, path_storage) =
                 ctx.with_scoped_storage(PATTERN_INPUTS, || {
                     Ok::<_, cadmpeg_core::CodecError>((
                         copy_feature_binding_id(ctx, &model_features[target_index].id)?,
                         copy_feature_binding_sketch_id(ctx, sketch)?,
                     ))
                 })?;
+            let (dependency, sketch) = scoped_path;
             push_distinct_candidate(
                 ctx,
                 &mut storage,
                 &mut paths_by_pattern,
                 model_index,
-                (dependency, PathRef::Sketch(sketch)),
-                Some(path_storage),
+                ((dependency, PathRef::Sketch(sketch)), Some(path_storage)),
             )?;
         }
     }
-    for (index, seed, seed_storage) in ctx.admit_iter(curve_seeds, PATTERN_INPUTS)? {
+    for candidate in ctx.admit_iter(curve_seeds, PATTERN_INPUTS)? {
+        let seed_storage;
+        let (index, seed);
+        (index, seed, seed_storage) = candidate;
         push_distinct_candidate(
             ctx,
             &mut storage,
             &mut seeds_by_pattern,
             index,
-            seed,
-            Some(seed_storage),
+            (seed, Some(seed_storage)),
         )?;
     }
     for (index, candidates) in ctx.admit_iter(seeds_by_pattern, PATTERN_INPUTS)? {
-        let Ok([(seed, _seed_storage)]) = <[_; 1]>::try_from(candidates) else {
+        let Ok([candidate]) = <[_; 1]>::try_from(candidates) else {
             continue;
         };
+        let _seed_storage;
+        let seed;
+        (seed, _seed_storage) = candidate;
         if !ctx.contains(
             model_features[index].dependencies.as_slice(),
             &seed,
@@ -854,9 +867,12 @@ pub(crate) fn bind_pattern_inputs(
         edit_result?;
     }
     for (index, candidates) in ctx.admit_iter(paths_by_pattern, PATTERN_INPUTS)? {
-        let Ok([((dependency, path), _path_storage)]) = <[_; 1]>::try_from(candidates) else {
+        let Ok([candidate]) = <[_; 1]>::try_from(candidates) else {
             continue;
         };
+        let _path_storage;
+        let (dependency, path);
+        ((dependency, path), _path_storage) = candidate;
         if !ctx.contains(
             model_features[index].dependencies.as_slice(),
             &dependency,
@@ -990,9 +1006,12 @@ pub(crate) fn bind_pattern_inputs(
         }
     }
     for (index, candidates) in ctx.admit_iter(mirror_seed_sets_by_pattern, PATTERN_INPUTS)? {
-        let Ok([(seeds, _seed_storage)]) = <[_; 1]>::try_from(candidates) else {
+        let Ok([candidate]) = <[_; 1]>::try_from(candidates) else {
             continue;
         };
+        let _seed_storage;
+        let seeds;
+        (seeds, _seed_storage) = candidate;
         for seed in ctx.admit_iter(&seeds, DEPENDENCIES)? {
             if !ctx.contains(
                 model_features[index].dependencies.as_slice(),
@@ -1351,7 +1370,9 @@ pub(crate) fn bind_sweep_adjacent_profiles(
             _ => None,
         };
         for lane in ctx.admit_iter(lanes, "scan SLDPRT sweep adjacent lanes")? {
-            let (mut starts, _starts_storage) = ctx.with_scoped_storage(INDEX, || {
+            let _starts_storage;
+            let mut starts;
+            (starts, _starts_storage) = ctx.with_scoped_storage(INDEX, || {
                 lane_feature_objects(
                     ctx,
                     history_features.iter().copied(),
@@ -1434,18 +1455,18 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                     &mut storage,
                     &mut assignments,
                     model_index,
-                    candidate,
-                    Some(candidate_storage),
+                    (candidate, Some(candidate_storage)),
                 )?;
             }
         }
     }
     for (index, candidates) in ctx.admit_iter(assignments, INDEX)? {
-        let Ok([((profile_dependency, sketch, path), _candidate_storage)]) =
-            <[_; 1]>::try_from(candidates)
-        else {
+        let Ok([candidate]) = <[_; 1]>::try_from(candidates) else {
             continue;
         };
+        let _candidate_storage;
+        let (profile_dependency, sketch, path);
+        ((profile_dependency, sketch, path), _candidate_storage) = candidate;
         let mut profile_bound = false;
         let mut assignment_result = Ok(());
         let mut path_dependency = None;
@@ -1892,7 +1913,9 @@ pub(crate) fn finalize_lane_bindings(
             .transpose()?;
     }
     drop(scalar_owners);
-    let (intervals, _intervals_storage) = ctx
+    let _intervals_storage;
+    let intervals;
+    (intervals, _intervals_storage) = ctx
         .with_scoped_storage("SLDPRT binding feature intervals", || {
             feature_intervals(ctx, histories, lane)
         })?;
@@ -2631,7 +2654,9 @@ fn bind_resolved_curve_vertices(
                     )?,
                 ),
             };
-            let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(SELECTED, || {
+            let _endpoint_storage;
+            let endpoints;
+            (endpoints, _endpoint_storage) = ctx.with_scoped_storage(SELECTED, || {
                 marker_curve_endpoint_markers_in(
                     ctx,
                     &lane.native_payload,
@@ -2682,7 +2707,9 @@ fn bind_resolved_curve_vertices(
                         )?,
                     ),
                 };
-                let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(RESOLVE, || {
+                let _endpoint_storage;
+                let endpoints;
+                (endpoints, _endpoint_storage) = ctx.with_scoped_storage(RESOLVE, || {
                     marker_curve_endpoint_markers_in(
                         ctx,
                         &lane.native_payload,
