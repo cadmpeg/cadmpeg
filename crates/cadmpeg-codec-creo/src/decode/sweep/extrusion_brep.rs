@@ -207,13 +207,15 @@ fn sketch_profiles_cover_generated_extrusion_sides(
             let Some(external_id) = entry.source_entity_id() else {
                 continue;
             };
-            let (entity, _reservation) = ctx.format_scoped(
+            let entity_owned_storage = ctx.format_scoped(
                 format_args!(
                     "creo:featdefs:sketch_entity#{}:{external_id}",
                     definition.identity.id()
                 ),
                 "creo extrusion expected sketch entity ID",
             )?;
+            let _reservation = entity_owned_storage.1;
+            let entity = entity_owned_storage.0;
             let Some(matched) = ctx.get_btree_set(
                 &profile_entity_set,
                 entity.as_str(),
@@ -502,10 +504,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         {
             let profile = validated.entities();
             let count = profile.len();
-            let (mut bottom_vertices, mut bottom_vertices_storage) =
-                ctx.temporary_vec(0, "creo extrusion profile vertex IDs")?;
-            let (mut top_vertices, mut top_vertices_storage) =
-                ctx.temporary_vec(0, "creo extrusion profile vertex IDs")?;
+            let bottom_vertices_owned_storage = ctx.temporary_vec(0, "creo extrusion profile vertex IDs")?;
+            let mut bottom_vertices_storage = bottom_vertices_owned_storage.1;
+            let mut bottom_vertices = bottom_vertices_owned_storage.0;
+            let top_vertices_owned_storage = ctx.temporary_vec(0, "creo extrusion profile vertex IDs")?;
+            let mut top_vertices_storage = top_vertices_owned_storage.1;
+            let mut top_vertices = top_vertices_owned_storage.0;
             for (index, entity) in ctx
                 .admit_iter(profile, "creo extrusion profile entity traversal")?
                 .enumerate()
@@ -571,12 +575,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 }
             }
 
-            let (mut bottom_edges, mut bottom_edges_storage) =
-                ctx.temporary_vec(0, "creo extrusion profile edge IDs")?;
-            let (mut top_edges, mut top_edges_storage) =
-                ctx.temporary_vec(0, "creo extrusion profile edge IDs")?;
-            let (mut vertical_edges, mut vertical_edges_storage) =
-                ctx.temporary_vec(0, "creo extrusion vertical edge IDs")?;
+            let bottom_edges_owned_storage = ctx.temporary_vec(0, "creo extrusion profile edge IDs")?;
+            let mut bottom_edges_storage = bottom_edges_owned_storage.1;
+            let mut bottom_edges = bottom_edges_owned_storage.0;
+            let top_edges_owned_storage = ctx.temporary_vec(0, "creo extrusion profile edge IDs")?;
+            let mut top_edges_storage = top_edges_owned_storage.1;
+            let mut top_edges = top_edges_owned_storage.0;
+            let vertical_edges_owned_storage = ctx.temporary_vec(0, "creo extrusion vertical edge IDs")?;
+            let mut vertical_edges_storage = vertical_edges_owned_storage.1;
+            let mut vertical_edges = vertical_edges_owned_storage.0;
             for (index, entity) in ctx
                 .admit_iter(profile, "creo extrusion profile entity traversal")?
                 .enumerate()
@@ -819,8 +826,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             top_loops.push(top_loop);
             let bottom_loop = &bottom_loops[profile_index];
             let top_loop = &top_loops[profile_index];
-            let (bottom_coedges, bottom_coedge_storage) =
-                ctx.with_scoped_storage("creo extrusion cap coedge scratch", || {
+            let bottom_coedges_owned_storage = ctx.with_scoped_storage("creo extrusion cap coedge scratch", || {
                     cap_coedge_ids_admitted(
                         ctx,
                         feature_id,
@@ -831,8 +837,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         "creo extrusion bottom cap coedge IDs",
                     )
                 })?;
-            let (top_coedges, top_coedge_storage) =
-                ctx.with_scoped_storage("creo extrusion cap coedge scratch", || {
+            let bottom_coedge_storage = bottom_coedges_owned_storage.1;
+            let bottom_coedges = bottom_coedges_owned_storage.0;
+            let top_coedges_owned_storage = ctx.with_scoped_storage("creo extrusion cap coedge scratch", || {
                     cap_coedge_ids_admitted(
                         ctx,
                         feature_id,
@@ -843,6 +850,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         "creo extrusion top cap coedge IDs",
                     )
                 })?;
+            let top_coedge_storage = top_coedges_owned_storage.1;
+            let top_coedges = top_coedges_owned_storage.0;
             ctx.charge_entities(1, "admit Creo model loops")?;
             ctx.reserve_vec(&mut ir.model.loops, 1, "creo extrusion model loops")?;
             ir.model.loops.push(IrLoop {
@@ -913,8 +922,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     transform.offset,
                     {
                         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-                        let (record, _record_reservation) =
-                            cap_record(ctx, feature_id, profile_index, "bottom", edge_index)?;
+                        let record_owned_storage = cap_record(ctx, feature_id, profile_index, "bottom", edge_index)?;
+                        let _record_reservation = record_owned_storage.1;
+                        let record = record_owned_storage.0;
                         let cap = extrusion_cap_pcurve(
                             ctx,
                             &sketch_geometry,
@@ -991,8 +1001,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     transform.offset,
                     {
                         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-                        let (record, _record_reservation) =
-                            cap_record(ctx, feature_id, profile_index, "top", ring_index)?;
+                        let record_owned_storage = cap_record(ctx, feature_id, profile_index, "top", ring_index)?;
+                        let _record_reservation = record_owned_storage.1;
+                        let record = record_owned_storage.0;
                         let cap = extrusion_cap_pcurve(
                             ctx,
                             &sketch_geometry,
@@ -1067,12 +1078,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let surface_id =
                     extrusion_id!(SurfaceId, "surface:{}:side:{}", profile_index, index);
                 let mut refusal = crate::lane_refusal::LaneRefusals::new();
-                let (record, _record_reservation) = ctx.format_scoped(
+                let record_owned_storage = ctx.format_scoped(
                     format_args!(
                         "extrusion feature {feature_id} profile {profile_index} side {index}"
                     ),
                     "creo extrusion side record text",
                 )?;
+                let _record_reservation = record_owned_storage.1;
+                let record = record_owned_storage.0;
                 let mut diagnostics =
                     crate::lane_refusal::LaneRefusalContext::new(&record, &mut refusal);
                 let surface_geometry = extrusion_brep_side_surface(
