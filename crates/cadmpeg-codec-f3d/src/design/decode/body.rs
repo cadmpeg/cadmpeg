@@ -695,15 +695,16 @@ fn body_map_record<'ctx>(
 
 /// The primary record frames of one Design stream and the frame ordinal of
 /// each entity. The primary index names each entity at most once.
-struct PrimaryFrames<'ctx> {
+struct PrimaryFrames<'ctx, 'arena> {
     frames: Vec<PrimaryRecordFrame>,
     by_entity: HashMap<u64, usize>,
     _storage: ScopedReservation<'ctx>,
+    ctx: &'ctx DecodeContext<'arena>,
 }
 
-impl<'ctx> PrimaryFrames<'ctx> {
+impl<'ctx, 'arena> PrimaryFrames<'ctx, 'arena> {
     fn index(
-        ctx: &'ctx DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'arena>,
         meta: &MetaStream,
         bulk_len: usize,
     ) -> Result<Self, CodecError> {
@@ -728,14 +729,16 @@ impl<'ctx> PrimaryFrames<'ctx> {
             frames,
             by_entity,
             _storage: storage,
+            ctx,
         })
     }
 
-    fn frame(&self, entity: u64) -> Option<PrimaryRecordFrame> {
-        self.by_entity
+    fn frame(&self, entity: u64) -> Result<Option<PrimaryRecordFrame>, CodecError> {
+        self.ctx.charge_work(0, "find F3D body-map primary frame")?;
+        Ok(self.by_entity
             .get(&entity)
             .and_then(|ordinal| self.frames.get(*ordinal))
-            .copied()
+            .copied())
     }
 }
 
@@ -903,7 +906,7 @@ fn snapshot_body_map_records<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     meta: &MetaStream,
-    primary: &PrimaryFrames<'_>,
+    primary: &PrimaryFrames<'_, '_>,
 ) -> Result<BodyMapRecords<'ctx>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "f3d snapshot body-map records")?;
     let mut out = Vec::new();
@@ -938,7 +941,7 @@ fn snapshot_body_map_records<'ctx>(
             "scan F3D snapshot body-map entities",
         )? {
             let entity = *entity;
-            let Some(frame) = primary.frame(entity) else {
+            let Some(frame) = primary.frame(entity)? else {
                 return Err(crate::design::text::malformed_design(
                     ctx,
                     format_args!(
@@ -1121,7 +1124,7 @@ fn body_map_records<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     meta: &MetaStream,
-    primary: &PrimaryFrames<'_>,
+    primary: &PrimaryFrames<'_, '_>,
 ) -> Result<BodyMapRecords<'ctx>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "f3d body-map records")?;
     let mut out = Vec::new();
@@ -1170,7 +1173,7 @@ fn body_map_records<'ctx>(
                 ctx.reserve_set(&mut typed_entities, 1, "f3d body-map typed entities")
             })?;
             typed_entities.insert(entity_id);
-            let Some(frame) = primary.frame(entity_id) else {
+            let Some(frame) = primary.frame(entity_id)? else {
                 return Err(crate::design::text::malformed_design(
                     ctx,
                     format_args!(
@@ -2085,6 +2088,7 @@ mod tests {
     mod map_limits;
     mod recipe_ids;
     mod reference_candidates;
+    mod primary_session;
 
     use cadmpeg_core::decode::u64_from_index;
 
