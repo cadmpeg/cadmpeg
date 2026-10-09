@@ -1357,3 +1357,5 @@ fn numerical_seventh_miter_preserves_a_shallow_plane_tilt() {
     assert!((point.z + 1.0).abs() <= 8.0 * f64::EPSILON);
     assert!(Vector3::from(normal).dot(point).abs() <= 8.0 * f64::EPSILON);
 }
+
+mod checksum_recovery;
