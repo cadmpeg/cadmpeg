@@ -254,3 +254,84 @@ fn a_sum_surface_whose_point_overflows_reports_the_point_it_reached() {
         )))
     );
 }
+
+fn direct_construction_point_without_derivative_storage(case: usize) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use crate::eval::admission::EvaluationAdmission;
+    use crate::eval::EvaluationFailure;
+    use crate::geometry::surface_payloads::{ExtrusionSurfaceConstruction, RevolutionSurfaceConstruction};
+    use crate::geometry::CacheContract;
+
+    let first = CurveId::mint("test:model:entity#first").unwrap();
+    let second = CurveId::mint("test:model:entity#second").unwrap();
+    let (definition, v, expected) = match case {
+        0 => (ProceduralSurfaceDefinition::Extrusion(
+            ExtrusionSurfaceConstruction::try_new(first, None, Vector3::new(0.0, 0.0, 1.0),
+                None, CacheContract::from_form(None)).unwrap()),
+            0.5, Point3::new(1.5, 2.0, 3.5)),
+        1 => (ProceduralSurfaceDefinition::Revolution(
+            RevolutionSurfaceConstruction::try_new(first,
+                (crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                 crate::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap()),
+                [0.0, std::f64::consts::TAU], None, None, false,
+                CacheContract::from_form(None)).unwrap()),
+            0.0, Point3::new(1.5, 2.0, 3.0)),
+        2 => (ProceduralSurfaceDefinition::Ruled { first, second, cache: None },
+            0.5, Point3::new(3.25, 6.375, 8.0)),
+        3 => (ProceduralSurfaceDefinition::Sum(
+            crate::geometry::surface_payloads::SumSurfaceConstruction::try_new(first, second,
+                Vector3::new(0.5, 1.0, 2.0), CacheContract::from_form(None)).unwrap()),
+            0.5, Point3::new(6.0, 12.5, 14.0)),
+        _ => unreachable!("four direct constructions"),
+    };
+    let (ir, surface) = direct_surface_fixture(definition, "point-demand");
+    // Index construction is fixture setup. The consuming decode point path
+    // uses this original session; this does not certify index construction.
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let mut policy = DecodePolicy::service();
+    // Surface and curve frames own paths of one and two slots.
+    // No remaining allowance can hold copied derivative poles.
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+        3 * std::mem::size_of::<Option<crate::eval::ModelEvaluationIdentity>>());
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(model_surface_point_by_id(EvaluationAdmission::Decode(&ctx), &index,
+        &surface, 0.25, v).unwrap().get(), expected);
+    assert_eq!(ctx.resource_refusal(), None);
+    // A derivative request needs dispatcher, mapping and curve paths.
+    // Its larger live frame backing exceeds the point allowance.
+    let Err(EvaluationFailure::ResourceLimit(original)) = model_surface_partials_by_id(
+        EvaluationAdmission::Decode(&ctx), &index, &surface, 0.25, v)
+    else { panic!("derivative storage must refuse") };
+    assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(original.operation, "model evaluation cycle path");
+    assert_eq!(original.limit, policy.limits.max_materialized_bytes);
+    assert!(original.used <= original.limit);
+    assert!(original.additional > 0);
+    assert_eq!(ctx.resource_refusal(), Some(original));
+    assert_eq!(model_surface_point_by_id(EvaluationAdmission::Decode(&ctx), &index,
+        &surface, f64::NAN, v), Err(EvaluationFailure::ResourceLimit(original)));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+}
+
+#[test]
+fn native_extrusion_point_does_not_allocate_derivative_poles() {
+    direct_construction_point_without_derivative_storage(0);
+}
+
+#[test]
+fn native_revolution_point_does_not_allocate_derivative_poles() {
+    direct_construction_point_without_derivative_storage(1);
+}
+
+#[test]
+fn ruled_surface_point_does_not_allocate_derivative_poles() {
+    direct_construction_point_without_derivative_storage(2);
+}
+
+#[test]
+fn sum_surface_point_does_not_allocate_derivative_poles() {
+    direct_construction_point_without_derivative_storage(3);
+}
