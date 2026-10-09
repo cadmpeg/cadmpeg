@@ -403,16 +403,17 @@ pub fn pcurve_uv<'ctx, 'arena: 'ctx>(
 
 /// Reusable point-evaluation storage for repeated parameters on one NURBS curve.
 /// The basis is admitted once; evaluations mutate that storage and borrow poles.
-pub struct NurbsPointEvaluator<'curve, 'ctx> {
+pub struct NurbsPointEvaluator<'curve, 'ctx, 'arena> {
     curve: &'curve NurbsCurve,
+    ctx: &'ctx DecodeContext<'arena>,
     basis: SupportValues<f64>,
     _storage: Option<ScopedReservation<'ctx>>,
 }
 
-impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
+impl<'curve, 'ctx, 'arena: 'ctx> NurbsPointEvaluator<'curve, 'ctx, 'arena> {
     /// Admit the basis storage before allocating it.
     pub fn new(
-        ctx: &'ctx DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'arena>,
         curve: &'curve NurbsCurve,
     ) -> Result<Self, ResourceLimit> {
         ctx.charge_work_limit(0, "IR B-spline basis")?;
@@ -437,6 +438,7 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
         };
         Ok(Self {
             curve,
+            ctx,
             basis: basis.0,
             _storage: basis.1,
         })
@@ -445,9 +447,10 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
     /// Evaluate in the knot domain without allocating another basis or pole window.
     pub fn point(
         &mut self,
-        ctx: &DecodeContext<'_>,
         parameter: f64,
     ) -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, ResourceLimit> {
+        let ctx = self.ctx;
+        ctx.charge_work_limit(0, "IR reusable NURBS evaluation")?;
         let _depth = if matches!(&self.basis, SupportValues::Heap(_)) {
             let depth = ctx.enter_nested_limit("geometry evaluation nesting")?;
             Some(depth)

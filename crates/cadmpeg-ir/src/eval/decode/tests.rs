@@ -232,7 +232,7 @@ fn reusable_nurbs_evaluator_admits_once_and_matches_point_evaluation() {
         let parameter = f64::from(index % 101) / 100.0;
         assert_eq!(
             evaluator
-                .point(&ctx, parameter)
+                .point(parameter)
                 .map_err(CodecError::from)
                 .expect("reused storage"),
             crate::eval::decode::nurbs_curve_point_at(
@@ -260,7 +260,7 @@ fn reusable_nurbs_evaluator_refuses_work_and_depth() {
             .map_err(CodecError::from)
             .expect("scratch storage");
         assert!(
-            matches!(evaluator.point(&ctx, 0.5).map_err(CodecError::from), Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
+            matches!(evaluator.point(0.5).map_err(CodecError::from), Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
         );
     }
 }
@@ -306,7 +306,7 @@ fn reusable_nurbs_evaluator_keeps_constant_and_linear_spans_inline() {
                     let parameter = f64::from(index % 101) / 100.0;
                     assert_eq!(
                         evaluator
-                            .point(ctx, parameter)
+                            .point(parameter)
                             .map_err(CodecError::from)
                             .expect("fixed arithmetic"),
                         crate::eval::decode::outer_refusal(
