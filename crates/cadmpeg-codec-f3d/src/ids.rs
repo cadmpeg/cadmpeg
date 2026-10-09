@@ -661,7 +661,7 @@ pub(crate) fn neutral_parameter_id_charged(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameter: &DesignParameter,
 ) -> Result<cadmpeg_ir::features::ParameterId, cadmpeg_core::CodecError> {
-    let stream = native_stream(&parameter.id).unwrap_or(DEFAULT_STREAM);
+    let stream = native_stream_charged(ctx, &parameter.id, "resolve F3D neutral parameter stream")?.unwrap_or(DEFAULT_STREAM);
     let encoded_len = escaped_scope_len(ctx, stream, "retain F3D neutral parameter ID")?;
     let id = native_scoped_id(
         ctx,
@@ -743,7 +743,7 @@ pub(crate) fn neutral_sketch_id_charged(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     placement: &DesignSketchPlacement,
 ) -> Result<cadmpeg_ir::sketches::SketchId, cadmpeg_core::CodecError> {
-    let stream = native_stream(&placement.id).unwrap_or(DEFAULT_STREAM);
+    let stream = native_stream_charged(ctx, &placement.id, "resolve F3D neutral sketch stream")?.unwrap_or(DEFAULT_STREAM);
     let id = neutral_sketch_key_charged(ctx, stream, placement.entity_id.suffix(), "sketch")?;
     cadmpeg_ir::sketches::SketchId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
 }
@@ -753,7 +753,7 @@ pub(crate) fn neutral_spatial_sketch_id_charged(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     placement: &DesignSketchPlacement,
 ) -> Result<cadmpeg_ir::sketches::SpatialSketchId, cadmpeg_core::CodecError> {
-    let stream = native_stream(&placement.id).unwrap_or(DEFAULT_STREAM);
+    let stream = native_stream_charged(ctx, &placement.id, "resolve F3D neutral spatial sketch stream")?.unwrap_or(DEFAULT_STREAM);
     let id =
         neutral_sketch_key_charged(ctx, stream, placement.entity_id.suffix(), "spatial-sketch")?;
     cadmpeg_ir::sketches::SpatialSketchId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
@@ -949,7 +949,7 @@ pub(crate) fn neutral_sketch_constraint_id_charged(
     native_ref: &str,
     record_index: u32,
 ) -> Result<cadmpeg_ir::sketches::SketchConstraintId, cadmpeg_core::CodecError> {
-    let stream = native_stream(native_ref).unwrap_or(DEFAULT_STREAM);
+    let stream = native_stream_charged(ctx, native_ref, "resolve F3D neutral sketch constraint stream")?.unwrap_or(DEFAULT_STREAM);
     let id = neutral_sketch_key_charged(ctx, stream, u64::from(record_index), "sketch-constraint")?;
     cadmpeg_ir::sketches::SketchConstraintId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
 }
@@ -1390,6 +1390,7 @@ mod tests {
     };
 
     mod native_occurrence;
+    mod neutral_stream;
 
     fn assert_history_split_refusal(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,

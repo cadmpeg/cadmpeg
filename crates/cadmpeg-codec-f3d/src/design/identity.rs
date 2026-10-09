@@ -94,7 +94,8 @@ pub(super) fn neutral_feature_id(
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> Result<cadmpeg_ir::features::FeatureId, CodecError> {
     let operation = "f3d feature identifier";
-    let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+    let stream = crate::ids::native_stream_charged(ctx, &scope.id, operation)?
+        .unwrap_or(crate::ids::DEFAULT_STREAM);
     let kind = scope.kind_name();
     let encoded_stream = encode_component(ctx, stream, false, operation)?;
     let stream_len = encoded_stream.text.len();
@@ -120,7 +121,8 @@ pub(super) fn neutral_parameter_id(
     parameter: &crate::records::parameters::DesignParameter,
 ) -> Result<cadmpeg_ir::features::ParameterId, CodecError> {
     let operation = "f3d parameter identifier";
-    let stream = crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+    let stream = crate::ids::native_stream_charged(ctx, &parameter.id, operation)?
+        .unwrap_or(crate::ids::DEFAULT_STREAM);
     let encoded_stream = encode_component(ctx, stream, false, operation)?;
     let len = encoded_stream.text.len();
     mint(
@@ -140,7 +142,8 @@ pub(super) fn neutral_sketch_id(
     ctx: &DecodeContext<'_>,
     placement: &crate::records::sketch_placement::DesignSketchPlacement,
 ) -> Result<cadmpeg_ir::sketches::SketchId, CodecError> {
-    let stream = crate::ids::native_stream(&placement.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+    let stream = crate::ids::native_stream_charged(ctx, &placement.id, "f3d sketch identifier")?
+        .unwrap_or(crate::ids::DEFAULT_STREAM);
     let encoded_stream = encode_component(ctx, stream, false, "f3d sketch identifier")?;
     mint(
         ctx,
@@ -159,7 +162,8 @@ pub(super) fn neutral_spatial_sketch_id(
     ctx: &DecodeContext<'_>,
     placement: &crate::records::sketch_placement::DesignSketchPlacement,
 ) -> Result<cadmpeg_ir::sketches::SpatialSketchId, CodecError> {
-    let stream = crate::ids::native_stream(&placement.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+    let stream = crate::ids::native_stream_charged(ctx, &placement.id, "f3d spatial sketch identifier")?
+        .unwrap_or(crate::ids::DEFAULT_STREAM);
     let encoded_stream = encode_component(ctx, stream, false, "f3d spatial sketch identifier")?;
     mint(
         ctx,
@@ -301,7 +305,8 @@ pub(super) fn neutral_sketch_constraint_id(
     native_ref: &str,
     record: u32,
 ) -> Result<cadmpeg_ir::sketches::SketchConstraintId, CodecError> {
-    let stream = crate::ids::native_stream(native_ref).unwrap_or(crate::ids::DEFAULT_STREAM);
+    let stream = crate::ids::native_stream_charged(ctx, native_ref, "f3d sketch constraint identifier")?
+        .unwrap_or(crate::ids::DEFAULT_STREAM);
     let encoded_stream = encode_component(ctx, stream, false, "f3d sketch constraint identifier")?;
     mint(
         ctx,
@@ -351,7 +356,8 @@ pub(super) fn neutral_component_insert_occurrence_id(
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> Result<cadmpeg_ir::ids::OccurrenceId, CodecError> {
     let operation = "f3d component insert occurrence identifier";
-    let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+    let stream = crate::ids::native_stream_charged(ctx, &scope.id, operation)?
+        .unwrap_or(crate::ids::DEFAULT_STREAM);
     let encoded_stream = encode_component(ctx, stream, false, operation)?;
     let len = encoded_stream.text.len();
     mint(
@@ -373,7 +379,8 @@ pub(super) fn neutral_assembly_joint_id(
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> Result<cadmpeg_ir::products::JointId, CodecError> {
     let operation = "f3d assembly joint identifier";
-    let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+    let stream = crate::ids::native_stream_charged(ctx, &scope.id, operation)?
+        .unwrap_or(crate::ids::DEFAULT_STREAM);
     let encoded_stream = encode_component(ctx, stream, false, operation)?;
     let len = encoded_stream.text.len();
     mint(
