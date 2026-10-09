@@ -2768,7 +2768,11 @@ pub(super) fn project<'ctx>(
                     valid = false;
                     break;
                 }
-                let representation_matches = match boundaries.get(&sequence) {
+                let representation_matches = match ctx.get_btree_map(
+                    &boundaries,
+                    &sequence,
+                    "iges bounded boundary definition lookup",
+                )? {
                     Some(boundary) => ctx.all_by(
                         &boundary.segments,
                         |segment| {
@@ -2885,7 +2889,11 @@ pub(super) fn project<'ctx>(
         while let Some((boundary_index, sequence)) =
             ctx.next_charged(&mut boundary_traversal, "iges trimming boundary traversal")?
         {
-            let Some(boundary) = boundaries.get(&sequence) else {
+            let Some(boundary) = ctx.get_btree_map(
+                &boundaries,
+                &sequence,
+                "iges trimming boundary definition lookup",
+            )? else {
                 super::push_entity_loss_with_scoped_slots(
                     ctx,
                     &mut loss_slots_storage,
