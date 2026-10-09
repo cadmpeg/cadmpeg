@@ -87,9 +87,11 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         )
     })?;
     let mut unique_curve_ids = BTreeSet::new();
-    let (unique_curve_rows, _unique_curve_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
+    let unique_curve_rows_parts = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
             row.id
         })?;
+    let _unique_curve_rows_storage = unique_curve_rows_parts.1;
+    let unique_curve_rows = unique_curve_rows_parts.0;
     for row in ctx.admit_iter(&unique_curve_rows, "creo topology-bound unique curve rows")? {
         scratch.with_storage(|| {
             ctx.insert_btree_set(
@@ -311,7 +313,10 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
         ),
     ] {
         let mut traversal = rows.iter();
-        while let Some(row) = ctx.next_charged(&mut traversal, "creo unresolved surface rows")? {
+        while traversal.len() != 0 {
+            let Some(row) = ctx.next_charged(&mut traversal, "creo unresolved surface rows")? else {
+                break;
+            };
             if rows.unique(row.id).is_none() {
                 continue;
             }
@@ -377,11 +382,16 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             )?;
         }
     }
-    let (unique_curve_rows, _unique_curve_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
+    let unique_curve_rows_parts = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
             row.id
         })?;
+    let _unique_curve_rows_storage = unique_curve_rows_parts.1;
+    let unique_curve_rows = unique_curve_rows_parts.0;
     let mut traversal = unique_curve_rows.iter();
-    while let Some(row) = ctx.next_charged(&mut traversal, "creo unresolved curve rows")? {
+    while traversal.len() != 0 {
+        let Some(row) = ctx.next_charged(&mut traversal, "creo unresolved curve rows")? else {
+            break;
+        };
         let id = crate::identity::compose_checked::<CurveId>(
             ctx,
             &crate::identity::VISIBGEOM_CURVE,
@@ -455,9 +465,11 @@ pub(in crate::decode) fn placed_carriers(
         ),
     ] {
         let mut traversal = namespace_rows.iter();
-        while let Some(row) =
-            ctx.next_charged(&mut traversal, "creo placed carrier namespace rows")?
-        {
+        while traversal.len() != 0 {
+            let Some(row) =
+                ctx.next_charged(&mut traversal, "creo placed carrier namespace rows")? else {
+                break;
+            };
             if crate::decode::surfaces::unique_native_surface_row(scan, row.id).is_none() {
                 continue;
             }
@@ -518,9 +530,11 @@ pub(in crate::decode) fn placed_carriers(
         }
     }
     let mut traversal = scan.planes.datum_cylinders.iter();
-    while let Some(datum) =
-        ctx.next_charged(&mut traversal, "creo placed carrier datum cylinders")?
-    {
+    while traversal.len() != 0 {
+        let Some(datum) =
+            ctx.next_charged(&mut traversal, "creo placed carrier datum cylinders")? else {
+            break;
+        };
         let namespace = if scan.surfaces.rows.contains_id(datum.id) {
             0
         } else if scan.surfaces.nonvisible_rows.contains_id(datum.id) {
@@ -592,6 +606,9 @@ fn positional_cylinder_carrier(
     model_surface: Option<&Surface>,
     source_carriers: &SourceUnitCarriers,
 ) -> Result<Option<CarrierEquation>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if row.kind != crate::surface::SurfaceKind::Cylinder {
         return Ok(None);
     }
@@ -735,9 +752,11 @@ fn projected_loop_polygon(
     };
     let mut polygon = Vec::new();
     let mut half_edges = lp.half_edges().iter();
-    while let Some(half_edge) =
-        ctx.next_charged(&mut half_edges, "creo projected loop half edges")?
-    {
+    while half_edges.len() != 0 {
+        let Some(half_edge) =
+            ctx.next_charged(&mut half_edges, "creo projected loop half edges")? else {
+            break;
+        };
         let Some(binding) =
             ctx.get_btree_map(incidence, half_edge, "creo projected loop incidence lookup")?
         else {
@@ -772,6 +791,9 @@ fn polygon_strictly_contains(
     };
     use cadmpeg_ir::units::FinitePoint2;
     use std::cmp::Ordering;
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if polygon.len() < 3 {
         return Ok(false);
     }
@@ -779,9 +801,11 @@ fn polygon_strictly_contains(
     let finite_point = FinitePoint2::new(point);
     let mut inside = false;
     let mut traversal = (polygon).iter().enumerate();
-    while let Some((index, first)) =
-        ctx.next_charged(&mut traversal, "creo polygon containment points")?
-    {
+    while traversal.len() != 0 {
+        let Some((index, first)) =
+            ctx.next_charged(&mut traversal, "creo polygon containment points")? else {
+            break;
+        };
         let first = *first;
         let second = polygon[(index + 1) % polygon.len()];
         let first = Point2::new(first[0], first[1]);
@@ -833,21 +857,31 @@ fn polygon_strictly_contains_polygon(
     outer: &[[f64; 2]],
     inner: &[[f64; 2]],
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut traversal = (inner).iter();
-    while let Some(point) = ctx.next_charged(&mut traversal, "creo contained polygon vertices")? {
+    while traversal.len() != 0 {
+        let Some(point) = ctx.next_charged(&mut traversal, "creo contained polygon vertices")? else {
+            break;
+        };
         if !polygon_strictly_contains(ctx, outer, *point)? {
             return Ok(false);
         }
     }
     let mut traversal = (inner).iter().enumerate();
-    while let Some((index, first)) =
-        ctx.next_charged(&mut traversal, "creo contained polygon edges")?
-    {
+    while traversal.len() != 0 {
+        let Some((index, first)) =
+            ctx.next_charged(&mut traversal, "creo contained polygon edges")? else {
+            break;
+        };
         let inner_edge = [*first, inner[(index + 1) % inner.len()]];
         let mut traversal = (outer).iter().enumerate();
-        while let Some((outer_index, first)) =
-            ctx.next_charged(&mut traversal, "creo containing polygon edges")?
-        {
+        while traversal.len() != 0 {
+            let Some((outer_index, first)) =
+                ctx.next_charged(&mut traversal, "creo containing polygon edges")? else {
+                break;
+            };
             let outer_edge = [*first, outer[(outer_index + 1) % outer.len()]];
             if segments_intersect(inner_edge, outer_edge) {
                 return Ok(false);
@@ -871,10 +905,13 @@ fn valid_parameter_polygon(
         }
         let mut has_non_finite_coordinate = false;
         let mut traversal = (polygon).iter();
-        'points: while let Some(point) = ctx.next_charged(
-            &mut traversal,
-            "creo parameter polygon finite-coordinate scan",
-        )? {
+        'points: while traversal.len() != 0 {
+            let Some(point) = ctx.next_charged(
+                &mut traversal,
+                "creo parameter polygon finite-coordinate scan",
+            )? else {
+                break;
+            };
             for value in point {
                 if !value.is_finite() {
                     has_non_finite_coordinate = true;
@@ -916,27 +953,39 @@ fn ordered_contained_face_loops<'a>(
     mut loops: Vec<&'a crate::topology::Loop>,
     polygons: &[Vec<[f64; 2]>],
 ) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if loops.len() < 2 || loops.len() != polygons.len() {
         return Ok(None);
     }
     let mut traversal = (polygons).iter();
-    while let Some(polygon) = ctx.next_charged(&mut traversal, "creo face parameter polygons")? {
+    while traversal.len() != 0 {
+        let Some(polygon) = ctx.next_charged(&mut traversal, "creo face parameter polygons")? else {
+            break;
+        };
         if !valid_parameter_polygon(ctx, polygon)? {
             return Ok(None);
         }
     }
     let mut outer = None;
     let mut traversal = (polygons).iter().enumerate();
-    while let Some((candidate, polygon)) = ctx.next_charged(
-        &mut traversal,
-        "creo outer face parameter polygon candidates",
-    )? {
+    while traversal.len() != 0 {
+        let Some((candidate, polygon)) = ctx.next_charged(
+            &mut traversal,
+            "creo outer face parameter polygon candidates",
+        )? else {
+            break;
+        };
         let mut contains_all = true;
         let mut traversal = (polygons).iter().enumerate();
-        while let Some((index, inner)) = ctx.next_charged(
-            &mut traversal,
-            "creo nested face parameter polygon candidates",
-        )? {
+        while traversal.len() != 0 {
+            let Some((index, inner)) = ctx.next_charged(
+                &mut traversal,
+                "creo nested face parameter polygon candidates",
+            )? else {
+                break;
+            };
             if index != candidate && !polygon_strictly_contains_polygon(ctx, polygon, inner)? {
                 contains_all = false;
                 break;
@@ -968,10 +1017,13 @@ pub(in crate::decode) fn ordered_planar_face_loops<'a>(
     }
     let mut polygons = Vec::new();
     let mut traversal = loops.iter();
-    while let Some(lp) = ctx.next_charged(
-        &mut traversal,
-        "creo ordered planar face loops loops traversal",
-    )? {
+    while traversal.len() != 0 {
+        let Some(lp) = ctx.next_charged(
+            &mut traversal,
+            "creo ordered planar face loops loops traversal",
+        )? else {
+            break;
+        };
         let Some(polygon) = scratch
             .with_storage(|| projected_loop_polygon(ctx, lp, plane, incidence, solved_vertices))?
         else {
@@ -989,6 +1041,9 @@ pub(in crate::decode) fn ordered_parameter_face_loops<'a>(
     loops: Vec<&'a crate::topology::Loop>,
     polygons: &[Vec<[f64; 2]>],
 ) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if loops.len() == 1 {
         return Ok(Some(loops));
     }
@@ -1053,7 +1108,7 @@ pub(in crate::decode) fn ordered_face_loops<'a>(
         (ordered_input.len() == 1).then_some(ordered_input)
     };
     if ordered.is_some() {
-        input_storage.commit()?;
+        return input_storage.commit_value(ordered);
     }
     Ok(ordered)
 }
