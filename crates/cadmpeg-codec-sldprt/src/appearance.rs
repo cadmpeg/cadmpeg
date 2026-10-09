@@ -110,7 +110,9 @@ fn definition_at(
     else {
         return Ok(None);
     };
-    let (decoded, _name_reservation) =
+    let _name_reservation;
+    let decoded;
+    (decoded, _name_reservation) =
         match ctx.utf16le_scoped_text(raw_name, count, false, "decode SLDPRT appearance name") {
             Ok(text) => text,
             Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
