@@ -509,3 +509,132 @@ fn both_scope_entry_points_pair_a_header_with_the_first_one_a_header_length_late
         assert_eq!(decoded.kind_name(), "WidgetFeature");
     });
 }
+
+#[test]
+fn scope_json_empty_walk_is_free_and_preserves_the_original_refusal() {
+    use cadmpeg_core::decode::DecodePolicy;
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    for empty in [serde_json::json!({}), serde_json::json!([])] {
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert!(super::equivalent_scope_json(ctx, &empty, &empty, true).unwrap());
+            assert_eq!(ctx.resource_refusal(), None);
+            let cadmpeg_core::CodecError::ResourceLimit(original) =
+                ctx.charge_work(1, "original scope comparison refusal").unwrap_err()
+            else { panic!("the original zero-work context must refuse"); };
+            let cadmpeg_core::CodecError::ResourceLimit(later) =
+                super::equivalent_scope_json(ctx, &empty, &empty, true).unwrap_err()
+            else { panic!("an empty comparison must preserve the original refusal"); };
+            assert_eq!(later, original);
+            assert_eq!(ctx.resource_refusal(), Some(original));
+        });
+    }
+}
+
+#[test]
+fn scope_json_object_stops_before_unvisited_payloads() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    let left = serde_json::json!({"a": false, "z": "x".repeat(4096)});
+    let right = serde_json::json!({"a": true, "z": "y".repeat(4096)});
+    // Two reached map members and the one-byte key comparison precede the first difference.
+    for cap in [3, 2] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let result = super::equivalent_scope_json(ctx, &left, &right, true);
+            if cap == 3 {
+                assert!(!result.unwrap());
+                assert_eq!(ctx.resource_refusal(), None);
+            } else {
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err()
+                else { panic!("the reached key comparison must refuse"); };
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(limit.operation, "f3d scope variant comparison");
+                assert_eq!(limit.used, 2);
+                assert_eq!(limit.additional, 1);
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            }
+        });
+    }
+}
+
+#[test]
+fn scope_json_array_admits_each_reached_side_before_its_first_difference() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    let left = serde_json::json!([false, "x".repeat(4096)]);
+    let right = serde_json::json!([true, "y".repeat(4096)]);
+    // One source step on each side; the unreached string elements do no work.
+    for cap in [2, 1] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let result = super::equivalent_scope_json(ctx, &left, &right, true);
+            if cap == 2 {
+                assert!(!result.unwrap());
+                assert_eq!(ctx.resource_refusal(), None);
+            } else {
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err()
+                else { panic!("the reached right array item must refuse before yield"); };
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(limit.operation, "f3d scope variant comparison");
+                assert_eq!(limit.used, 1);
+                assert_eq!(limit.additional, 1);
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            }
+        });
+    }
+}
+
+#[test]
+fn scope_json_provenance_member_does_not_visit_its_payload_or_an_empty_peer() {
+    use cadmpeg_core::decode::DecodePolicy;
+    let left = serde_json::json!({"id": "x".repeat(4096)});
+    let right = serde_json::json!({});
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(super::equivalent_scope_json(ctx, &left, &right, true).unwrap());
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn scope_json_equal_arrays_need_no_final_end_probe() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    let values = serde_json::json!([false, true]);
+    // Two reached items on each side, without an end probe.
+    for cap in [4, 3] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let result = super::equivalent_scope_json(ctx, &values, &values, true);
+            if cap == 4 {
+                assert!(result.unwrap());
+                assert_eq!(ctx.resource_refusal(), None);
+            } else {
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err()
+                else { panic!("the last right item must refuse before yield"); };
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(limit.operation, "f3d scope variant comparison");
+                assert_eq!(limit.used, 3);
+                assert_eq!(limit.additional, 1);
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            }
+        });
+    }
+}
