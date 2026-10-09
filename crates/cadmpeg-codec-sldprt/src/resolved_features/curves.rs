@@ -432,7 +432,8 @@ pub(super) fn resolve_two_center_semicircle_profile(
     let Some(first_position) = native_position(entities, first.0)? else {
         return Ok(());
     };
-    first_storage.commit()?;
+    let (first_geometry, first_endpoint_refs) =
+        first_storage.commit_value((first_geometry, first_endpoint_refs))?;
     let first_entity = &mut entities[first_position];
     first_entity.construction = false;
     first_entity.endpoint_refs = first_endpoint_refs;
@@ -445,7 +446,8 @@ pub(super) fn resolve_two_center_semicircle_profile(
     let Some(second_position) = native_position(entities, second.0)? else {
         return Ok(());
     };
-    second_storage.commit()?;
+    let (second_geometry, second_endpoint_refs) =
+        second_storage.commit_value((second_geometry, second_endpoint_refs))?;
     let second_entity = &mut entities[second_position];
     second_entity.construction = false;
     second_entity.endpoint_refs = second_endpoint_refs;
@@ -3105,10 +3107,10 @@ fn ordered_compact_line_profile(
             Ok((current == origin).then_some(profile))
         },
     )?;
-    if result.is_some() {
-        profile_storage.commit()?;
+    match result {
+        Some(profile) => profile_storage.commit_value(profile).map(Some),
+        None => Ok(None),
     }
-    Ok(result)
 }
 
 pub(super) fn complete_ordered_compact_line_profile(
@@ -3168,8 +3170,8 @@ pub(super) fn compact_line_region_addresses(
     if bounded_len(cadmpeg_core::decode::u64_from_index(count), 12, remaining).is_none() {
         return Ok(None);
     }
-    let (mut addresses, addresses_storage) =
-        ctx.with_scoped_storage(COLLECT, || ctx.alloc_filled(count, 0u16, COLLECT))?;
+    let mut addresses_storage = ctx.reserve_scoped(0, COLLECT)?;
+    let mut addresses = addresses_storage.with_storage(|| ctx.alloc_filled(count, 0u16, COLLECT))?;
     let mut entry_token = None;
     if !ctx.all_by(
         addresses.iter_mut().enumerate(),
@@ -3198,8 +3200,8 @@ pub(super) fn compact_line_region_addresses(
     )? {
         return Ok(None);
     }
-    let (mut seen, _seen_storage) =
-        ctx.with_scoped_storage(VALIDATE, || ctx.alloc_filled(count, false, VALIDATE))?;
+    let mut seen_storage = ctx.reserve_scoped(0, VALIDATE)?;
+    let mut seen = seen_storage.with_storage(|| ctx.alloc_filled(count, false, VALIDATE))?;
     if !ctx.all_by(
         &addresses,
         |address| {
@@ -3219,8 +3221,7 @@ pub(super) fn compact_line_region_addresses(
     )? {
         return Ok(None);
     }
-    addresses_storage.commit()?;
-    Ok(Some(addresses))
+    addresses_storage.commit_value(addresses).map(Some)
 }
 
 pub(super) fn compact_line_chain_addresses(
@@ -3258,8 +3259,8 @@ pub(super) fn compact_line_chain_addresses(
             })() else {
                 return Ok(false);
             };
-            let (mut addresses, storage) =
-                ctx.with_scoped_storage(COLLECT, || ctx.alloc_filled(count, 0u16, COLLECT))?;
+            let mut storage = ctx.reserve_scoped(0, COLLECT)?;
+            let mut addresses = storage.with_storage(|| ctx.alloc_filled(count, 0u16, COLLECT))?;
             let mut seen = [false; 64];
             let valid = ctx.all_by(
                 addresses.iter_mut().enumerate(),
@@ -3301,10 +3302,7 @@ pub(super) fn compact_line_chain_addresses(
         return Ok(None);
     }
     match selected {
-        Some((addresses, storage)) => {
-            storage.commit()?;
-            Ok(Some(addresses))
-        }
+        Some((addresses, storage)) => storage.commit_value(addresses).map(Some),
         None => Ok(None),
     }
 }
