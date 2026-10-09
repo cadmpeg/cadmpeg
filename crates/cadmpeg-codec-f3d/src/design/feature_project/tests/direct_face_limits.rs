@@ -345,3 +345,32 @@ fn direct_native_id_refuses_retained_limit() {
         false,
     );
 }
+
+#[test]
+fn direct_face_native_output_excludes_borrowed_members_and_feature_id() {
+    let scope = scope(DesignFeatureKind::OffsetFaces);
+    let operands = [direct_face_operand(101, 0, vec![42])];
+    let surviving = u64::try_from(scope.id.len()).unwrap();
+    for retained in [surviving, surviving - 1] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = retained;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::super::direct_face_selection(&ctx, &scope, &operands);
+        if retained == surviving {
+            assert!(matches!(result.unwrap(),
+                Some(cadmpeg_ir::features::FaceSelection::Native(id)) if id == scope.id));
+            assert!(ctx.resource_refusal().is_none());
+        } else {
+            let CodecError::ResourceLimit(limit) = result.err().unwrap() else {
+                panic!("expected original retained refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.used, 0);
+            assert_eq!(limit.additional, surviving);
+            assert_eq!(limit.limit, retained);
+            assert_eq!(limit.operation, "f3d direct native id");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
+    }
+}
