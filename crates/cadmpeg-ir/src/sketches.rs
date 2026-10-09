@@ -2429,11 +2429,10 @@ impl TryFrom<crate::geometry::nurbs::NurbsCurve> for SpatialSketchNurbsCurve {
         if curve.degree() == 0 {
             return Err("spatial sketch NURBS degree must be at least one");
         }
-        if curve
-            .weights()
-            .is_some_and(|weights| weights.iter().any(|weight| weight.get() <= 0.0))
-        {
-            return Err("spatial sketch NURBS weights must be positive");
+        if let crate::geometry::nurbs::NurbsPoles3::Rational { points } = curve.pole_rows() {
+            if points.iter().any(|pole| pole.weight.get() <= 0.0) {
+                return Err("spatial sketch NURBS weights must be positive");
+            }
         }
         Ok(Self(curve))
     }
