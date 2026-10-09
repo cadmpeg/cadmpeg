@@ -3,6 +3,7 @@ mod numeric_text;
 mod storage_transfer;
 mod connectivity_storage;
 mod source_indices;
+mod range_admission;
 use super::{
     bounded_pcurve_range, close_radial_rings, connected_components, edge_endpoint_uses,
     is_identity, normalize_occt_curve_range, normalize_pcurve_parameter_range, occurrence_label,
@@ -16,6 +17,7 @@ use crate::brep::{
 };
 use crate::test_support::test_archive::{archive_entries, assert_valid_document};
 use crate::FcstdCodec;
+use cadmpeg_core::decode::admission::StandardAdmission;
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -748,10 +750,12 @@ fn occt_parabola_ranges_convert_to_step_parameters() {
         .unwrap(),
     );
     assert_eq!(
-        normalize_occt_curve_range(&geometry, Some(admitted_range([-2.0, 4.0]))).map(raw_range),
+        normalize_occt_curve_range(&StandardAdmission, &geometry, Some(admitted_range([-2.0, 4.0])))
+            .expect("standard curve range walk").map(raw_range),
         Some([-0.25, 0.5])
     );
-    assert_eq!(normalize_occt_curve_range(&geometry, None), None);
+    assert_eq!(normalize_occt_curve_range(&StandardAdmission, &geometry, None)
+        .expect("standard curve range walk"), None);
 }
 
 #[test]
@@ -766,9 +770,11 @@ fn periodic_ranges_wrap_the_start_and_preserve_the_sweep() {
         .unwrap(),
     );
     let [start, end] = normalize_occt_curve_range(
+        &StandardAdmission,
         &geometry,
         Some(admitted_range([-1.0e-15, std::f64::consts::FRAC_PI_2])),
     )
+    .expect("standard curve range walk")
     .expect("periodic range");
     assert_eq!(start.get(), 0.0);
     assert!((end.get() - start.get() - (std::f64::consts::FRAC_PI_2 + 1.0e-15)).abs() < 1.0e-15);
@@ -786,7 +792,8 @@ fn periodic_range_keeps_finite_endpoints_when_its_width_overflows() {
         .expect("finite circle"),
     );
     assert_eq!(
-        normalize_occt_curve_range(&geometry, Some(admitted_range([-f64::MAX, f64::MAX])))
+        normalize_occt_curve_range(&StandardAdmission, &geometry, Some(admitted_range([-f64::MAX, f64::MAX])))
+            .expect("standard curve range walk")
             .map(raw_range),
         Some([-f64::MAX, f64::MAX])
     );
@@ -1691,7 +1698,8 @@ fn numerical_ranges_parabola_range_avoids_doubled_focal_overflow() {
             .unwrap(),
         );
         assert_eq!(
-            normalize_occt_curve_range(&geometry, Some(admitted_range([-focal, focal])))
+            normalize_occt_curve_range(&StandardAdmission, &geometry, Some(admitted_range([-focal, focal])))
+                .expect("standard curve range walk")
                 .map(raw_range),
             Some([-0.5, 0.5])
         );

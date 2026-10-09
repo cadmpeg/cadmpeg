@@ -6839,13 +6839,14 @@ fn append_text_curve(
                 .map(|basis| &basis.geometry)
                 .ok_or_else(|| CodecError::malformed("curve basis was not transferred"))?;
             let parameter_range = crate::topology_transfer::normalize_occt_curve_range(
+                ctx,
                 basis_geometry.solved().ok_or_else(|| {
                     cadmpeg_core::CodecError::NotImplemented(
                         "carrier has no solved geometry".into(),
                     )
                 })?,
                 Some(*parameter_range),
-            )
+            )?
             .unwrap_or(*parameter_range);
             ctx.reserve_vec(&mut transfer.procedural, 1, "FreeCAD procedural curves")?;
             let procedural_id: CurveId =

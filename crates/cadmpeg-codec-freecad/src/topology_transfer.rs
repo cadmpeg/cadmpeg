@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use cadmpeg_core::decode::admission::Admission;
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -2178,9 +2179,14 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             .map(|id| self.geometry.curve_position(self.ctx, ir, id))
             .transpose()?
             .flatten();
-        let param_range = curve_position.map_or(param_range, |position| {
-            normalize_occt_curve_range(ir.model.curves[position].geometry.solved()?, param_range)
-        });
+        let param_range = if let Some(position) = curve_position {
+            match ir.model.curves[position].geometry.solved() {
+                Some(geometry) => normalize_occt_curve_range(self.ctx, geometry, param_range)?,
+                None => None,
+            }
+        } else {
+            param_range
+        };
         self.ctx
             .reserve_vec(&mut ir.model.edges, 1, "FreeCAD edges records")?;
         ir.model.edges.push(Edge {
@@ -3939,12 +3945,14 @@ fn unique_fallback_polygon_representation<'a>(
     Ok(Some(first))
 }
 
-pub(crate) fn normalize_occt_curve_range(
+pub(crate) fn normalize_occt_curve_range<A: Admission>(
+    admission: &A,
     geometry: &SolvedCurveGeometry,
     range: Option<[FiniteReal; 2]>,
-) -> Option<[FiniteReal; 2]> {
+) -> Result<Option<[FiniteReal; 2]>, A::Error> {
+    let _depth = admission.enter_nested("FreeCAD curve range nesting")?;
     match geometry {
-        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => Ok((|| {
             let [start, end] = range?;
             let sweep = end.get() - start.get();
             let tau = std::f64::consts::TAU;
@@ -3962,19 +3970,19 @@ pub(crate) fn normalize_occt_curve_range(
                 FiniteReal::new(canonical_start)?,
                 FiniteReal::new(canonical_start + sweep)?,
             ])
-        }
-        SolvedCurveGeometry::Parabola(parabola_curve) => {
+        })()),
+        SolvedCurveGeometry::Parabola(parabola_curve) => Ok((|| {
             let focal_distance = parabola_curve.focal_distance().magnitude();
             let [start, end] = range?;
             Some([
                 cadmpeg_ir::math::multiply_divide(start, FiniteReal::HALF, focal_distance)?,
                 cadmpeg_ir::math::multiply_divide(end, FiniteReal::HALF, focal_distance)?,
             ])
-        }
+        })()),
         SolvedCurveGeometry::Transformed(placed) => {
-            normalize_occt_curve_range(placed.basis(), range)
+            normalize_occt_curve_range(admission, placed.basis(), range)
         }
-        _ => range,
+        _ => Ok(range),
     }
 }
 
