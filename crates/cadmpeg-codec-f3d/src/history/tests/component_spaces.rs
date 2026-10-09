@@ -366,8 +366,8 @@ fn historical_recipe_face_candidates_refuse_collection_limit() {
     let (topology, mut reference) = recipe_limit_case();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // Nine slots hold the two live identities, selector indexes, and snapshot cache.
-    policy.limits.max_collection_items = 9;
+    // Seven slots hold two live identities, the token/reference index, and snapshot cache.
+    policy.limits.max_collection_items = 7;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = bind_historical_recipe_reference_candidates(
@@ -388,8 +388,8 @@ fn historical_recipe_edge_candidates_refuse_collection_limit() {
     let (topology, mut reference) = recipe_limit_case();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // Nine slots hold the two live identities, selector indexes, and snapshot cache.
-    policy.limits.max_collection_items = 10;
+    // Seven index slots plus one face candidate precede the edge candidate.
+    policy.limits.max_collection_items = 8;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = bind_historical_recipe_reference_candidates(
@@ -450,7 +450,7 @@ fn historical_recipe_face_list_refuses_collection_limit() {
     let (topology, _) = recipe_limit_case();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // Nine slots hold the two live identities, selector indexes, and snapshot cache.
+    // Nine slots include the live identities, token/reference index, lazy face index, and cache.
     policy.limits.max_collection_items = 9;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -574,7 +574,10 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
 
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| recipe_reference_common_vertex(
-            decode_ctx, &recipe, &topology
+            decode_ctx,
+            &recipe,
+            &topology,
+            &mut crate::history::topology_cache::TopologyQueryCache::default()
         ))
         .unwrap(),
         Some(3)
