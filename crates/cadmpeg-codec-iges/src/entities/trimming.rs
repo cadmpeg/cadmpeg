@@ -855,8 +855,11 @@ fn source_curve_control_intervals(
     if ctx.contains_btree_set(active, curve_id, "iges source active curve lookup")? {
         return Ok(None);
     }
-    let active_id = curve_id.try_clone_for_decode(ctx, "iges source active curve ID")?;
-    ctx.insert_btree_set(active, active_id, "iges source active curve nodes")?;
+    let mut active_storage = ctx.reserve_scoped(0, "iges source active curve storage")?;
+    active_storage.with_storage(|| {
+        let active_id = curve_id.try_clone_for_decode(ctx, "iges source active curve ID")?;
+        ctx.insert_btree_set(active, active_id, "iges source active curve nodes")
+    })?;
     let result = (|| -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
         let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
             return Ok(None);
@@ -1005,7 +1008,13 @@ fn source_curve_control_intervals(
             _ => Ok(None),
         }
     })();
-    ctx.remove_btree_set(active, curve_id, "iges source active curve removal")?;
+    if let Err(error) = ctx.remove_btree_set(active, curve_id, "iges source active curve removal") {
+        drop(std::mem::take(active));
+        return Err(error);
+    }
+    if active.is_empty() {
+        drop(std::mem::take(active));
+    }
     result
 }
 
