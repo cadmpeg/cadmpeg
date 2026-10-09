@@ -304,22 +304,24 @@ pub(super) fn decode<'ctx>(
                     })
                     .transpose()?
                     .flatten(),
-                targets: targets(
-                    ctx.admit_iter(record.parameters(), "STEP datum target parameter traversal")?
-                        .flat_map(|value| references(value, ctx))
-                        .map(|id| -> Result<Option<u64>, CodecError> {
+                targets: {
+                    let mut storage = ctx.reserve_scoped(0, "STEP target identity scratch")?;
+                    let mut seen = BTreeSet::new();
+                    let mut targets = Vec::new();
+                    let mut parameters = record.parameters().iter();
+                    ctx.charge_work(0, "STEP datum target parameter traversal")?;
+                    for _ in 0..parameters.len() {
+                        let value = ctx.next_charged(&mut parameters, "STEP datum target parameter traversal")?
+                            .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+                        for id in references(value, ctx) {
                             let id = id?;
-                            Ok(ctx
-                                .contains_btree_set(
-                                    &base_aspects,
-                                    &id,
-                                    "STEP pmi base_aspects contains",
-                                )?
-                                .then_some(id))
-                        })
-                        .filter_map(Result::transpose),
-                    ctx,
-                )?,
+                            if ctx.contains_btree_set(&base_aspects, &id, "STEP pmi base_aspects contains")? {
+                                push_shape_aspect_target(id, &mut seen, &mut storage, &mut targets, ctx)?;
+                            }
+                        }
+                    }
+                    targets
+                },
                 visible: None,
                 definition: PmiDefinition::DatumSystem {
                     references: datum_references,
@@ -828,20 +830,21 @@ pub(super) fn decode<'ctx>(
                     })
                     .transpose()?
                     .flatten(),
-                targets: targets(
-                    ctx.admit_iter(&refs, "STEP tolerance target reference traversal")?
-                        .map(|id| -> Result<Option<u64>, CodecError> {
-                            Ok(ctx
-                                .contains_btree_set(
-                                    &base_aspects,
-                                    id,
-                                    "STEP pmi base_aspects contains",
-                                )?
-                                .then_some(*id))
-                        })
-                        .filter_map(Result::transpose),
-                    ctx,
-                )?,
+                targets: {
+                    let mut storage = ctx.reserve_scoped(0, "STEP target identity scratch")?;
+                    let mut seen = BTreeSet::new();
+                    let mut targets = Vec::new();
+                    let mut references = refs.iter();
+                    ctx.charge_work(0, "STEP tolerance target reference traversal")?;
+                    for _ in 0..references.len() {
+                        let &id = ctx.next_charged(&mut references, "STEP tolerance target reference traversal")?
+                            .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+                        if ctx.contains_btree_set(&base_aspects, &id, "STEP pmi base_aspects contains")? {
+                            push_shape_aspect_target(id, &mut seen, &mut storage, &mut targets, ctx)?;
+                        }
+                    }
+                    targets
+                },
                 visible: None,
                 definition: PmiDefinition::GeometricTolerance {
                     tolerance,
@@ -1145,10 +1148,16 @@ pub(super) fn decode<'ctx>(
             }
         }
     }
-    for &id in ctx.admit_iter(&targeted_aspects, "step_pmi_typed_claims")? {
-        if ctx.contains_btree_set(&shape_aspects, &id, "step_pmi_typed_claims")? {
-            claim_storage
-                .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
+    {
+        let mut visited_items = targeted_aspects.iter();
+        ctx.charge_work(0, "step_pmi_typed_claims")?;
+        for _ in 0..visited_items.len() {
+            let &id = ctx.next_charged(&mut visited_items, "step_pmi_typed_claims")?
+                .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+            if ctx.contains_btree_set(&shape_aspects, &id, "step_pmi_typed_claims")? {
+                claim_storage
+                    .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
+            }
         }
     }
     mark_characteristic_representations(
@@ -1339,54 +1348,57 @@ fn resolve_geometric_item_usages(
     let mut target_indices = BTreeMap::<usize, TargetIndex>::new();
 
     let mut aspect_annotations = BTreeMap::<u64, BTreeSet<AnnotationIndex>>::new();
-    for (&annotation_id, record) in ctx.admit_iter(
-        exchange.records(),
-        "STEP resolve geometric item usages traversal",
-    )? {
-        let Some(annotation_index) = annotations.get(ctx, annotation_id)? else {
-            continue;
-        };
-        if ctx.contains_btree_set(
-            shape_aspects,
-            &annotation_id,
-            "STEP pmi shape_aspects contains",
-        )? {
-            scratch_storage.with_storage(|| {
-                ctx.insert_btree_group_set(
-                    &mut aspect_annotations,
-                    annotation_id,
-                    annotation_index,
-                    "step_pmi_aspect_annotation_groups",
-                    "step_pmi_aspect_annotation_members",
-                )
-            })?;
-        }
-        ctx.charge_work(0, "STEP PMI record partial traversal")?;
-        let mut pmi_source = record.partials[..].iter();
-        for _ in 0..pmi_source.len() {
-            let partial = ctx.next_charged(&mut pmi_source, "STEP PMI record partial traversal")?
+    {
+        let mut visited_items = exchange.records().iter();
+        ctx.charge_work(0, "STEP resolve geometric item usages traversal")?;
+        for _ in 0..visited_items.len() {
+            let (&annotation_id, record) = ctx.next_charged(&mut visited_items, "STEP resolve geometric item usages traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
-            ctx.charge_work(0, "STEP PMI record parameter traversal")?;
-            let mut pmi_source = partial.parameters.as_slice().iter();
+            let Some(annotation_index) = annotations.get(ctx, annotation_id)? else {
+                continue;
+            };
+            if ctx.contains_btree_set(
+                shape_aspects,
+                &annotation_id,
+                "STEP pmi shape_aspects contains",
+            )? {
+                scratch_storage.with_storage(|| {
+                    ctx.insert_btree_group_set(
+                        &mut aspect_annotations,
+                        annotation_id,
+                        annotation_index,
+                        "step_pmi_aspect_annotation_groups",
+                        "step_pmi_aspect_annotation_members",
+                    )
+                })?;
+            }
+            ctx.charge_work(0, "STEP PMI record partial traversal")?;
+            let mut pmi_source = record.partials[..].iter();
             for _ in 0..pmi_source.len() {
-                let parameter = ctx.next_charged(&mut pmi_source, "STEP PMI record parameter traversal")?
+                let partial = ctx.next_charged(&mut pmi_source, "STEP PMI record partial traversal")?
                     .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
-                for reference in references(parameter, ctx) {
-                    let reference = reference?;
-                    if ctx.contains_btree_set(
-                        shape_aspects,
-                        &reference,
-                        "STEP pmi shape_aspects contains",
-                    )? {
-                        scratch_storage.with_storage(|| {
-                            ctx.insert_btree_group_set(
-                                &mut aspect_annotations,
-                                reference,
-                                annotation_index,
-                                "step_pmi_aspect_annotation_groups",
-                                "step_pmi_aspect_annotation_members",
-                            )
-                        })?;
+                ctx.charge_work(0, "STEP PMI record parameter traversal")?;
+                let mut pmi_source = partial.parameters.as_slice().iter();
+                for _ in 0..pmi_source.len() {
+                    let parameter = ctx.next_charged(&mut pmi_source, "STEP PMI record parameter traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+                    for reference in references(parameter, ctx) {
+                        let reference = reference?;
+                        if ctx.contains_btree_set(
+                            shape_aspects,
+                            &reference,
+                            "STEP pmi shape_aspects contains",
+                        )? {
+                            scratch_storage.with_storage(|| {
+                                ctx.insert_btree_group_set(
+                                    &mut aspect_annotations,
+                                    reference,
+                                    annotation_index,
+                                    "step_pmi_aspect_annotation_groups",
+                                    "step_pmi_aspect_annotation_members",
+                                )
+                            })?;
+                        }
                     }
                 }
             }
@@ -1394,78 +1406,64 @@ fn resolve_geometric_item_usages(
     }
 
     let mut relationship_aspects = BTreeMap::<u64, BTreeSet<u64>>::new();
-    for record in ctx
-        .admit_iter(
-            exchange.records(),
-            "STEP resolve geometric item usages map traversal",
-        )?
-        .map(|(_, value)| value)
     {
-        let Some((relating, related)) = relationship_endpoints(record, ctx)? else {
-            continue;
-        };
-        scratch_storage.with_storage(|| {
-            ctx.insert_btree_group_set(
-                &mut relationship_aspects,
-                relating,
-                related,
-                "step_pmi_relationship_aspect_groups",
-                "step_pmi_relationship_aspect_members",
-            )
-        })?;
-        scratch_storage.with_storage(|| {
-            ctx.insert_btree_group_set(
-                &mut relationship_aspects,
-                related,
-                relating,
-                "step_pmi_relationship_aspect_groups",
-                "step_pmi_relationship_aspect_members",
-            )
-        })?;
+        let mut visited_items = exchange.records().iter();
+        ctx.charge_work(0, "STEP resolve geometric item usages map traversal")?;
+        for _ in 0..visited_items.len() {
+            let (_, record) = ctx.next_charged(&mut visited_items, "STEP resolve geometric item usages map traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+            let Some((relating, related)) = relationship_endpoints(record, ctx)? else {
+                continue;
+            };
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_group_set(
+                    &mut relationship_aspects,
+                    relating,
+                    related,
+                    "step_pmi_relationship_aspect_groups",
+                    "step_pmi_relationship_aspect_members",
+                )
+            })?;
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_group_set(
+                    &mut relationship_aspects,
+                    related,
+                    relating,
+                    "step_pmi_relationship_aspect_groups",
+                    "step_pmi_relationship_aspect_members",
+                )
+            })?;
+        }
     }
 
-    for (&id, record) in ctx.admit_iter(
-        exchange.records(),
-        "STEP resolve geometric item usages traversal",
-    )? {
-        let Some(partial) = record.partial(ctx, "GEOMETRIC_ITEM_SPECIFIC_USAGE")? else {
-            continue;
-        };
-        let Some(definition) = first_matching(partial.parameters.get(2), ctx, |_| Ok(true))? else {
-            continue;
-        };
-        let Some(identified_item) = first_matching(partial.parameters.get(4), ctx, |_| Ok(true))?
-        else {
-            continue;
-        };
-        let mut annotation_indices = BTreeSet::new();
-        if let Some(items) = ctx.get_btree_map(
-            &aspect_annotations,
-            &definition,
-            "STEP pmi aspect_annotations get",
-        )? {
-            for &index in ctx.admit_iter(items, "STEP optional collection traversal")? {
-                scratch_storage.with_storage(|| {
-                    ctx.insert_btree_set(
-                        &mut annotation_indices,
-                        index,
-                        "step_pmi_usage_annotation_indices",
-                    )
-                })?;
-            }
-        }
-        if let Some(aspects) = ctx.get_btree_map(
-            &relationship_aspects,
-            &definition,
-            "STEP pmi relationship_aspects get",
-        )? {
-            for aspect in ctx.admit_iter(aspects, "STEP pmi aspects traversal")? {
-                if let Some(items) = ctx.get_btree_map(
-                    &aspect_annotations,
-                    aspect,
-                    "STEP pmi aspect_annotations get",
-                )? {
-                    for &index in ctx.admit_iter(items, "STEP optional collection traversal")? {
+    {
+        let mut visited_items = exchange.records().iter();
+        ctx.charge_work(0, "STEP resolve geometric item usages traversal")?;
+        for _ in 0..visited_items.len() {
+            let (&id, record) = ctx.next_charged(&mut visited_items, "STEP resolve geometric item usages traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+            let Some(partial) = record.partial(ctx, "GEOMETRIC_ITEM_SPECIFIC_USAGE")? else {
+                continue;
+            };
+            let Some(definition) = first_matching(partial.parameters.get(2), ctx, |_| Ok(true))? else {
+                continue;
+            };
+            let Some(identified_item) = first_matching(partial.parameters.get(4), ctx, |_| Ok(true))?
+            else {
+                continue;
+            };
+            let mut annotation_indices = BTreeSet::new();
+            if let Some(items) = ctx.get_btree_map(
+                &aspect_annotations,
+                &definition,
+                "STEP pmi aspect_annotations get",
+            )? {
+                {
+                    let mut visited_items = items.iter();
+                    ctx.charge_work(0, "STEP optional collection traversal")?;
+                    for _ in 0..visited_items.len() {
+                        let &index = ctx.next_charged(&mut visited_items, "STEP optional collection traversal")?
+                            .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
                         scratch_storage.with_storage(|| {
                             ctx.insert_btree_set(
                                 &mut annotation_indices,
@@ -1476,45 +1474,84 @@ fn resolve_geometric_item_usages(
                     }
                 }
             }
-        }
-        if annotation_indices.is_empty() {
-            continue;
-        }
-        let (targets_buffer, _target_storage) = ctx
-            .with_scoped_storage("STEP geometric usage target scratch", || {
-                topology_targets(identified_item, topology, geometry_sources, ctx)
-            })?;
-        let targets = targets_buffer;
-        if targets.is_empty() {
-            continue;
-        }
-        for annotation_index in
-            ctx.admit_iter(annotation_indices, "STEP pmi annotation_indices traversal")?
-        {
-            let annotation = &mut ir.model.pmi[annotation_index.get()];
-            ctx.charge_work(0, "STEP resolve geometric item usages traversal")?;
-            let mut pmi_source = targets[..].iter();
-            for _ in 0..pmi_source.len() {
-                let target = ctx.next_charged(&mut pmi_source, "STEP resolve geometric item usages traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
-                let seen = target_index(
-                    &mut target_indices,
-                    &mut target_storage,
-                    annotation_index.get(),
-                    &annotation.targets,
-                    ctx,
-                )?;
-                push_target(
-                    (seen, &mut target_storage),
-                    &mut annotation.targets,
-                    target_key(target),
-                    || copy_pmi_target(target, ctx, "step_pmi_geometric_usage_identity"),
-                    ctx,
-                    "step_pmi_geometric_usage_targets",
-                )?;
+            if let Some(aspects) = ctx.get_btree_map(
+                &relationship_aspects,
+                &definition,
+                "STEP pmi relationship_aspects get",
+            )? {
+                {
+                    let mut visited_items = aspects.iter();
+                    ctx.charge_work(0, "STEP pmi aspects traversal")?;
+                    for _ in 0..visited_items.len() {
+                        let aspect = ctx.next_charged(&mut visited_items, "STEP pmi aspects traversal")?
+                            .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+                        if let Some(items) = ctx.get_btree_map(
+                            &aspect_annotations,
+                            aspect,
+                            "STEP pmi aspect_annotations get",
+                        )? {
+                            {
+                                let mut visited_items = items.iter();
+                                ctx.charge_work(0, "STEP optional collection traversal")?;
+                                for _ in 0..visited_items.len() {
+                                    let &index = ctx.next_charged(&mut visited_items, "STEP optional collection traversal")?
+                                        .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+                                    scratch_storage.with_storage(|| {
+                                        ctx.insert_btree_set(
+                                            &mut annotation_indices,
+                                            index,
+                                            "step_pmi_usage_annotation_indices",
+                                        )
+                                    })?;
+                                }
+                            }
+                        }
+                    }
+                }
             }
+            if annotation_indices.is_empty() {
+                continue;
+            }
+            let (targets_buffer, _target_storage) = ctx
+                .with_scoped_storage("STEP geometric usage target scratch", || {
+                    topology_targets(identified_item, topology, geometry_sources, ctx)
+                })?;
+            let targets = targets_buffer;
+            if targets.is_empty() {
+                continue;
+            }
+            {
+                let mut visited_items = annotation_indices.into_iter();
+                ctx.charge_work(0, "STEP pmi annotation_indices traversal")?;
+                for _ in 0..visited_items.len() {
+                    let annotation_index = ctx.next_charged(&mut visited_items, "STEP pmi annotation_indices traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+                    let annotation = &mut ir.model.pmi[annotation_index.get()];
+                    ctx.charge_work(0, "STEP resolve geometric item usages traversal")?;
+                    let mut pmi_source = targets[..].iter();
+                    for _ in 0..pmi_source.len() {
+                        let target = ctx.next_charged(&mut pmi_source, "STEP resolve geometric item usages traversal")?
+                            .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+                        let seen = target_index(
+                            &mut target_indices,
+                            &mut target_storage,
+                            annotation_index.get(),
+                            &annotation.targets,
+                            ctx,
+                        )?;
+                        push_target(
+                            (seen, &mut target_storage),
+                            &mut annotation.targets,
+                            target_key(target),
+                            || copy_pmi_target(target, ctx, "step_pmi_geometric_usage_identity"),
+                            ctx,
+                            "step_pmi_geometric_usage_targets",
+                        )?;
+                    }
+                }
+            }
+            claim_storage.with_storage(|| ctx.insert_btree_set(typed, id, "step_pmi_typed_claims"))?;
         }
-        claim_storage.with_storage(|| ctx.insert_btree_set(typed, id, "step_pmi_typed_claims"))?;
     }
     Ok(())
 }
@@ -2152,26 +2189,26 @@ fn hidden_presentation_annotation_ids(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u64>, CodecError> {
     let mut hidden = BTreeSet::new();
-    for record in ctx
-        .admit_iter(
-            exchange.records(),
-            "STEP hidden presentation annotation ids map traversal",
-        )?
-        .map(|(_, value)| value)
     {
-        let Some(items) = record
-            .partial(ctx, "INVISIBILITY")?
-            .and_then(|partial| partial.parameters.first())
-        else {
-            continue;
-        };
-        for target in references(items, ctx) {
-            let target = target?;
-            if let Some(record) =
-                ctx.get_btree_map(exchange.records(), &target, "STEP pmi record get")?
-            {
-                if is_supported_invisibility_target(ctx, record)? {
-                    ctx.insert_btree_set(&mut hidden, target, "step_pmi_hidden_annotation_ids")?;
+        let mut visited_items = exchange.records().iter();
+        ctx.charge_work(0, "STEP hidden presentation annotation ids map traversal")?;
+        for _ in 0..visited_items.len() {
+            let (_, record) = ctx.next_charged(&mut visited_items, "STEP hidden presentation annotation ids map traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+            let Some(items) = record
+                .partial(ctx, "INVISIBILITY")?
+                .and_then(|partial| partial.parameters.first())
+            else {
+                continue;
+            };
+            for target in references(items, ctx) {
+                let target = target?;
+                if let Some(record) =
+                    ctx.get_btree_map(exchange.records(), &target, "STEP pmi record get")?
+                {
+                    if is_supported_invisibility_target(ctx, record)? {
+                        ctx.insert_btree_set(&mut hidden, target, "step_pmi_hidden_annotation_ids")?;
+                    }
                 }
             }
         }
@@ -2420,18 +2457,27 @@ fn targets(
     let mut seen = BTreeSet::new();
     let mut targets = Vec::new();
     for id in ids {
-        let id = id?;
-        if ctx.contains_btree_set(&seen, &id, "STEP pmi seen contains")? {
-            continue;
-        }
-        storage.with_storage(|| ctx.insert_btree_set(&mut seen, id, "step_pmi_target_ids"))?;
-
-        ctx.reserve_vec(&mut targets, 1, "step_pmi_target_items")?;
-        targets.push(PmiTarget::ShapeAspect {
-            source_id: super::step_source_id(ctx, id)?,
-        });
+        push_shape_aspect_target(id?, &mut seen, &mut storage, &mut targets, ctx)?;
     }
     Ok(targets)
+}
+
+fn push_shape_aspect_target(
+    id: u64,
+    seen: &mut BTreeSet<u64>,
+    storage: &mut ScopedReservation<'_>,
+    targets: &mut Vec<PmiTarget>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    if ctx.contains_btree_set(seen, &id, "STEP pmi seen contains")? {
+        return Ok(());
+    }
+    storage.with_storage(|| ctx.insert_btree_set(seen, id, "step_pmi_target_ids"))?;
+    ctx.reserve_vec(targets, 1, "step_pmi_target_items")?;
+    targets.push(PmiTarget::ShapeAspect {
+        source_id: super::step_source_id(ctx, id)?,
+    });
+    Ok(())
 }
 
 fn pmi_id(id: u64) -> PmiId {
@@ -2980,23 +3026,29 @@ fn characteristic_measure_values(
         })
     })?;
     let mut values = Vec::new();
-    for id in ctx.admit_iter(measure_ids, "STEP pmi measure_ids traversal")? {
-        if let Some(value) = measure(&Value::Reference(id), exchange, measurements, ctx)? {
-            let name = ctx
-                .get_btree_map(exchange.records(), &id, "STEP pmi record get")?
-                .map(|record| {
-                    measure_item_name(
-                        id,
-                        record,
-                        exchange,
-                        (measurements.losses.0, measurements.losses.1),
-                        (ctx, storage),
-                    )
-                })
-                .transpose()?
-                .flatten();
-            storage.with_storage(|| ctx.reserve_vec(&mut values, 1, "step_pmi_measure_values"))?;
-            values.push((name, value));
+    {
+        let mut visited_items = measure_ids.into_iter();
+        ctx.charge_work(0, "STEP pmi measure_ids traversal")?;
+        for _ in 0..visited_items.len() {
+            let id = ctx.next_charged(&mut visited_items, "STEP pmi measure_ids traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+            if let Some(value) = measure(&Value::Reference(id), exchange, measurements, ctx)? {
+                let name = ctx
+                    .get_btree_map(exchange.records(), &id, "STEP pmi record get")?
+                    .map(|record| {
+                        measure_item_name(
+                            id,
+                            record,
+                            exchange,
+                            (measurements.losses.0, measurements.losses.1),
+                            (ctx, storage),
+                        )
+                    })
+                    .transpose()?
+                    .flatten();
+                storage.with_storage(|| ctx.reserve_vec(&mut values, 1, "step_pmi_measure_values"))?;
+                values.push((name, value));
+            }
         }
     }
     if values.is_empty() {

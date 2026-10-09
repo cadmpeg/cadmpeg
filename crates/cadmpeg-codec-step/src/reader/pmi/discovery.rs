@@ -164,25 +164,32 @@ fn index_annotation_graph<'ctx>(
                                     )?;
                                 }
                             }
-                            for (&carrier, &transform) in ctx
-                                .admit_iter(&child.placements, "STEP annotation placement merge")?
                             {
-                                ctx.insert_btree_map(
-                                    &mut graph.placements,
-                                    carrier,
-                                    transform,
-                                    "step_pmi_placement_candidates",
-                                )?;
+                                let mut visited_items = child.placements.iter();
+                                ctx.charge_work(0, "STEP annotation placement merge")?;
+                                for _ in 0..visited_items.len() {
+                                    let (&carrier, &transform) = ctx.next_charged(&mut visited_items, "STEP annotation placement merge")?
+                                        .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+                                    ctx.insert_btree_map(
+                                        &mut graph.placements,
+                                        carrier,
+                                        transform,
+                                        "step_pmi_placement_candidates",
+                                    )?;
+                                }
                             }
-                            for &query in ctx.admit_iter(
-                                &child.cyclic_queries,
-                                "STEP annotation cyclic query merge",
-                            )? {
-                                ctx.insert_btree_set(
-                                    &mut graph.cyclic_queries,
-                                    query,
-                                    "step_annotation_cyclic_queries",
-                                )?;
+                            {
+                                let mut visited_items = child.cyclic_queries.iter();
+                                ctx.charge_work(0, "STEP annotation cyclic query merge")?;
+                                for _ in 0..visited_items.len() {
+                                    let &query = ctx.next_charged(&mut visited_items, "STEP annotation cyclic query merge")?
+                                        .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+                                    ctx.insert_btree_set(
+                                        &mut graph.cyclic_queries,
+                                        query,
+                                        "step_annotation_cyclic_queries",
+                                    )?;
+                                }
                             }
                         }
                     }
@@ -284,11 +291,17 @@ fn independent_annotation_graph<'ctx>(
             let mut placements = BTreeMap::new();
             // A complete text walk visits every reachable record. Placement
             // discovery has the same reachable set and no source-order choice.
-            for &node in ctx.admit_iter(&reach, "STEP independent placement record traversal")? {
-                if let Some(record) =
-                    ctx.get_btree_map(exchange.records(), &node, "STEP pmi record get")?
-                {
-                    collect_typed_placement_candidates(record, geometry, &mut placements, ctx)?;
+            {
+                let mut visited_items = reach.iter();
+                ctx.charge_work(0, "STEP independent placement record traversal")?;
+                for _ in 0..visited_items.len() {
+                    let &node = ctx.next_charged(&mut visited_items, "STEP independent placement record traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+                    if let Some(record) =
+                        ctx.get_btree_map(exchange.records(), &node, "STEP pmi record get")?
+                    {
+                        collect_typed_placement_candidates(record, geometry, &mut placements, ctx)?;
+                    }
                 }
             }
             let mut cyclic_queries = BTreeSet::new();
@@ -590,17 +603,21 @@ impl<'ctx> AnnotationDiscoveryIndex<'ctx> {
             let graph = graph
                 .as_ref()
                 .ok_or_else(|| CodecError::malformed("STEP annotation graph is incomplete"))?;
-            for (&carrier, &transform) in
-                ctx.admit_iter(&graph.placements, "STEP indexed placement traversal")?
             {
-                storage.with_storage(|| {
-                    ctx.insert_btree_map(
-                        candidates,
-                        carrier,
-                        transform,
-                        "step_pmi_placement_candidates",
-                    )
-                })?;
+                let mut visited_items = graph.placements.iter();
+                ctx.charge_work(0, "STEP indexed placement traversal")?;
+                for _ in 0..visited_items.len() {
+                    let (&carrier, &transform) = ctx.next_charged(&mut visited_items, "STEP indexed placement traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+                    storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            candidates,
+                            carrier,
+                            transform,
+                            "step_pmi_placement_candidates",
+                        )
+                    })?;
+                }
             }
             Ok(())
         } else {
