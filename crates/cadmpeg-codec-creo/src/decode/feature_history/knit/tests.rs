@@ -1,11 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::selections::feature_result_edge_ids;
+use super::super::selections::feature_result_edge_ids_by_feature;
 use super::{
-    feature_result_surface_ids, feature_result_topology, generated_surface_face_refs,
-    knit_class_100_operand_entity_ids, knit_operand_entity_ids, knit_operand_surface_ids,
-    knit_surface_feature_definition,
+    feature_result_surface_ids, generated_surface_face_refs, knit_class_100_operand_entity_ids,
+    knit_operand_entity_ids, knit_operand_surface_ids, knit_surface_feature_definition,
 };
+
+fn feature_result_topology(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+    curve_rows: &[crate::curve::CurveTopologyRow],
+    feature_id: u32,
+) -> Result<Option<cadmpeg_ir::features::FeatureResultTopology>, cadmpeg_core::CodecError> {
+    let edges = feature_result_edge_ids_by_feature(ctx, curve_rows)?
+        .remove(&feature_id)
+        .unwrap_or_default();
+    super::feature_result_topology(ctx, tables, rows, &edges, feature_id)
+}
 
 fn draft_neutral_plane_selection_with_service(
     scan: &crate::container::ContainerScan<'_>,
@@ -372,13 +384,13 @@ fn topology_limit_error(
                     &trial_policy,
                 )
                 .expect("root");
-                super::feature_result_topology(&trial_ctx, &tables, &rows, &curve_rows, 17)
+                feature_result_topology(&trial_ctx, &tables, &rows, &curve_rows, 17)
             },
         );
     }
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::feature_result_topology(&ctx, &tables, &rows, &curve_rows, 17)
+    let error = feature_result_topology(&ctx, &tables, &rows, &curve_rows, 17)
         .expect_err("one result member exceeds the resource limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -404,7 +416,7 @@ fn feature_result_edge_local_id_refuses_retained_limit() {
 
 #[test]
 fn feature_result_edge_members_refuse_collection_limit() {
-    topology_limit_error(false, Some(2), None, "creo feature result edge members");
+    topology_limit_error(false, Some(4), None, "creo feature result edge members");
 }
 
 #[test]
@@ -449,7 +461,7 @@ fn feature_result_distinctness_refuses_work_limit() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            super::feature_result_topology(&ctx, &tables, &rows, &[], 17)
+            feature_result_topology(&ctx, &tables, &rows, &[], 17)
         },
     );
     assert!(
@@ -896,8 +908,12 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         offset: 0,
     }];
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_result_edge_ids(ctx, &curve_rows, 97))
-            .expect("service profile admits result edge IDs"),
+        crate::decode::with_test_decode_ctx(|ctx| feature_result_edge_ids_by_feature(
+            ctx,
+            &curve_rows
+        )
+        .map(|mut rosters| rosters.remove(&97)))
+        .expect("service profile admits result edge IDs"),
         Some(vec![77])
     );
     let duplicate_curve_rows = [
@@ -908,11 +924,11 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         },
     ];
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_result_edge_ids(
+        crate::decode::with_test_decode_ctx(|ctx| feature_result_edge_ids_by_feature(
             ctx,
-            &duplicate_curve_rows,
-            97
-        ))
+            &duplicate_curve_rows
+        )
+        .map(|mut rosters| rosters.remove(&97)))
         .expect("service profile admits duplicate check")
         .is_none()
     );

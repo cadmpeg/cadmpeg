@@ -127,6 +127,14 @@ pub(in super::super) fn build_report(
     }
     let placed_plane_count = placed_plane_ids.len();
     let mut losses = Vec::new();
+    for message in &scan.framing.expansion_losses {
+        push_report_loss(
+            ctx,
+            &mut losses,
+            CreoLossCode::CompressedSectionUnexpanded,
+            &message.message,
+        )?;
+    }
 
     // The admission charge, first: it describes how the whole document was
     // read, not what any one record cost. Identity itself is authored once, in

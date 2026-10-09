@@ -1658,3 +1658,42 @@ fn numeric_array_withholds_child_at_maximum_depth() {
     ));
     assert_eq!(persistence.integer_values.unresolved_count, 1);
 }
+
+#[test]
+fn model_name_indexes_only_root_solid_owners() {
+    let mut data = b"@Solid 1 0\n@model_name 2 10\n0 1 ->\n1 2 ROOT\n".to_vec();
+    for id in 3..103 {
+        data.extend_from_slice(format!("@View {id} 0\n0 {id} ->\n").as_bytes());
+    }
+    let persistence = scan(&data, std::iter::once(0..data.len())).expect("persistence");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert_eq!(
+        persistence
+            .model_name(&ctx)
+            .expect("only the root solid is indexed")
+            .map(|(name, _)| name),
+        Some("ROOT".into())
+    );
+}
+
+#[test]
+fn value_index_retains_only_uniqueness_for_repeated_fields() {
+    let data = b"@Solid 1 0\n@value 2 1\n0 1 ->\n1 2 7\n";
+    let persistence = scan(data, std::iter::once(0..data.len())).expect("persistence");
+    let record = &persistence.integer_values.rows[0];
+    let parent = record.parent.expect("value belongs to Solid");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut index = std::collections::BTreeMap::new();
+    super::value_index(&ctx, [record], &mut index).expect("one unique field");
+    assert_eq!(index.get(&(parent, "value")), Some(&Some(record)));
+    super::value_index(&ctx, std::iter::repeat_n(record, 10_000), &mut index)
+        .expect("duplicate fields need no retained row list");
+    assert_eq!(index.len(), 1);
+    assert_eq!(index.get(&(parent, "value")), Some(&None));
+}
