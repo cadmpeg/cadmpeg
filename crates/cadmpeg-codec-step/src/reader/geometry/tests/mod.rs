@@ -12,4 +12,5 @@ mod polynomial_storage;
 mod replicas;
 mod trims;
 mod unit_limits;
+mod unit_scope_index;
 pub(crate) mod units;
