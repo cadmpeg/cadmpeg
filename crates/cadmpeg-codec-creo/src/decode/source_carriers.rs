@@ -242,7 +242,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
                     .geometry
                     .try_clone_for_decode(copy_ctx, "creo source sketch geometry copy")
             };
-            let (source_geometry, geometry_storage) = match self.context {
+            let source_geometry_parts = match self.context {
                 SourceContext::Decode(ctx) => {
                     let (geometry, storage) =
                         ctx.with_scoped_storage("creo source sketch geometry copy", copy_geometry)?;
@@ -251,6 +251,8 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
                 #[cfg(test)]
                 SourceContext::Fixture => (copy_geometry()?, None),
             };
+            let geometry_storage = source_geometry_parts.1;
+            let source_geometry = source_geometry_parts.0;
             let source_geometry = if let Some(scale) = self.length_scale_mm {
                 let unscaled = std::mem::replace(&mut entity.geometry, source_geometry);
                 let scaled =
@@ -375,7 +377,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
                 .geometry
                 .try_clone_for_decode(copy_ctx, "creo source surface geometry")
         };
-        let (source_geometry, geometry_storage) = match self.context {
+        let source_geometry_parts = match self.context {
             SourceContext::Decode(ctx) => {
                 let (geometry, storage) =
                     ctx.with_scoped_storage("creo source surface geometry", copy_geometry)?;
@@ -384,6 +386,8 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
             #[cfg(test)]
             SourceContext::Fixture => (copy_geometry()?, None),
         };
+        let geometry_storage = source_geometry_parts.1;
+        let source_geometry = source_geometry_parts.0;
         if let (Some(scale), SurfaceGeometry::Solved(geometry)) =
             (self.length_scale_mm, &mut surface.geometry)
         {
@@ -476,7 +480,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
         };
         let copy_geometry =
             || geometry.try_clone_for_decode(copy_ctx, "creo replacement source surface geometry");
-        let (source_geometry, geometry_storage) = match self.context {
+        let source_geometry_parts = match self.context {
             SourceContext::Decode(ctx) => {
                 let (geometry, storage) = ctx.with_scoped_storage(
                     "creo replacement source surface geometry",
@@ -487,6 +491,8 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
             #[cfg(test)]
             SourceContext::Fixture => (copy_geometry()?, None),
         };
+        let geometry_storage = source_geometry_parts.1;
+        let source_geometry = source_geometry_parts.0;
         if let (Some(scale), SurfaceGeometry::Solved(solved)) =
             (self.length_scale_mm, &mut geometry)
         {
@@ -584,7 +590,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
                 .geometry
                 .try_clone_for_decode(copy_ctx, "creo source curve geometry")
         };
-        let (source_geometry, geometry_storage) = match self.context {
+        let source_geometry_parts = match self.context {
             SourceContext::Decode(ctx) => {
                 let (geometry, storage) =
                     ctx.with_scoped_storage("creo source curve geometry", copy_geometry)?;
@@ -593,6 +599,8 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
             #[cfg(test)]
             SourceContext::Fixture => (copy_geometry()?, None),
         };
+        let geometry_storage = source_geometry_parts.1;
+        let source_geometry = source_geometry_parts.0;
         if let (Some(scale), CurveGeometry::Solved(geometry)) =
             (self.length_scale_mm, &mut curve.geometry)
         {
@@ -685,7 +693,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
         };
         let copy_geometry =
             || geometry.try_clone_for_decode(copy_ctx, "creo replacement source curve geometry");
-        let (source_geometry, geometry_storage) = match self.context {
+        let source_geometry_parts = match self.context {
             SourceContext::Decode(ctx) => {
                 let (geometry, storage) = ctx
                     .with_scoped_storage("creo replacement source curve geometry", copy_geometry)?;
@@ -694,6 +702,8 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
             #[cfg(test)]
             SourceContext::Fixture => (copy_geometry()?, None),
         };
+        let geometry_storage = source_geometry_parts.1;
+        let source_geometry = source_geometry_parts.0;
         if let (Some(scale), CurveGeometry::Solved(solved)) = (self.length_scale_mm, &mut geometry)
         {
             crate::decode::build::units::scale_curve_geometry(ctx, solved, scale).map_err(
