@@ -466,6 +466,10 @@ fn solved_composite_control_walk_stops_at_the_first_active_child() {
                 &mut std::collections::BTreeSet::new(),
                 ctx,
             )
+            .map(|controls| {
+                assert!(controls.is_none());
+                None::<()>
+            })
         })
     };
     let limit = {

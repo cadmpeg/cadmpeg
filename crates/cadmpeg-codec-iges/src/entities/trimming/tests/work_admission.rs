@@ -417,6 +417,7 @@ fn source_curve_active_identity_uses_scoped_storage() {
                         &mut std::collections::BTreeSet::new(),
                         ctx,
                     )
+                    .map(|_| ())
                 })
             })
         },
@@ -648,6 +649,7 @@ fn polynomial_boundaries_skip_implicit_weight_visits() {
                 .unwrap();
                 assert_eq!(
                     controls
+                        .values
                         .iter()
                         .map(|control| control
                             .map(|interval| [interval.lower_bound(), interval.upper_bound()]))
