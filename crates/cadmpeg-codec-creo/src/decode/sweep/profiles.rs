@@ -68,16 +68,16 @@ fn sketch_geometry_endpoints(
             };
             let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
             let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
-            let (Some(first), Some(last)) = (
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            let first = require_some!(cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::decode::outer_refusal(
                     cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, lower),
-                )?)?,
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                )?,
+            )?);
+            let last = require_some!(cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::decode::outer_refusal(
                     cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, upper),
-                )?)?,
-            ) else {
-                return Ok(None);
-            };
+                )?,
+            )?);
             Some([[first.x, first.y], [last.x, last.y]])
         }
         _ => None,
@@ -1440,15 +1440,10 @@ fn nurbs_profile_polyline<'ctx>(
         if start >= end {
             continue;
         }
-        let (Some(start_point), Some(end_point)) = (
-            nurbs_profile_point(ctx, &mut evaluator, nurbs, start)?,
-            nurbs_profile_point(ctx, &mut evaluator, nurbs, end)?,
-        ) else {
-            return Ok(None);
-        };
-        if points.last().copied() != Some(start_point) {
-            append_nurbs_profile_point(ctx, &mut storage, &mut points, start_point)?;
-        }
+        // Ordered knot spans share the endpoint already appended by the
+        // preceding span. The first span starts at the admitted lower point.
+        let start_point = require_some!(points.last().copied());
+        let end_point = require_some!(nurbs_profile_point(ctx, &mut evaluator, nurbs, end)?);
         if append_nurbs_profile_span(
             ctx,
             &mut evaluator,
