@@ -71,9 +71,8 @@ fn history_projection_keyed_work_refusals_preserve_the_caller_limit() {
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let result = crate::history::project(
-                    &ctx,
+                    crate::history::ProjectionContext::Metadata(&ctx),
                     &records,
-                    None,
                     &mut cadmpeg_ir::document::CadIr::empty(),
                     &mut crate::loss::Diagnostics::new(),
                 );

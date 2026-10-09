@@ -441,11 +441,10 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            crate::history::ProjectionContext::Metadata(&cadmpeg_test_support::service_decode_context()),
             &records,
-            None,
             &mut ir,
-            &mut Diagnostics::new()
+            &mut Diagnostics::new(),
         )
         .expect("history projection"),
         (0, 0, 0, 0)
@@ -478,9 +477,8 @@ fn history_projection_id_refusal(limit: u64, operation: &str) {
     let records = [record(1, 11, &[], &[])];
     let refusal = with_collection_limit(&[], limit, |ctx| {
         project(
-            ctx,
+            crate::history::ProjectionContext::Metadata(ctx),
             &records,
-            None,
             &mut cadmpeg_ir::document::CadIr::empty(),
             &mut Diagnostics::new(),
         )
@@ -509,11 +507,10 @@ fn projection_counts_dependency_on_later_producer() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            crate::history::ProjectionContext::Metadata(&cadmpeg_test_support::service_decode_context()),
             &records,
-            None,
             &mut ir,
-            &mut Diagnostics::new()
+            &mut Diagnostics::new(),
         )
         .expect("history projection"),
         (0, 0, 1, 0)
@@ -531,11 +528,10 @@ fn projection_counts_dependency_with_ambiguous_producers() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            crate::history::ProjectionContext::Metadata(&cadmpeg_test_support::service_decode_context()),
             &records,
-            None,
             &mut ir,
-            &mut Diagnostics::new()
+            &mut Diagnostics::new(),
         )
         .expect("history projection"),
         (0, 0, 1, 0)
@@ -765,11 +761,10 @@ fn projection_preserves_duplicate_values_and_same_record_descendants() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            crate::history::ProjectionContext::Metadata(&cadmpeg_test_support::service_decode_context()),
             &records,
-            None,
             &mut ir,
-            &mut Diagnostics::new()
+            &mut Diagnostics::new(),
         )
         .expect("history projection"),
         (0, 0, 0, 0)
@@ -828,15 +823,9 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
         };
         crate::decode::with_expand_bytes(&geometry_value, |expand| {
             structured_value_properties(
-                expand.ctx(),
+                crate::history::ProjectionContext::Geometry { expand, archive: ArchiveVersion::V8, writer_version: None, scale: crate::test_support::millimeter_scale(2.0) },
                 "value_7",
                 &parsed.value,
-                Some((
-                    expand,
-                    ArchiveVersion::V8,
-                    None,
-                    crate::test_support::millimeter_scale(2.0),
-                )),
                 &mut properties,
                 &mut sink,
             )
@@ -868,9 +857,8 @@ fn embedded_history_point_cloud_refuses_collection_limit_without_omission() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let mut warnings = Diagnostics::new();
     let refusal = project(
-        &cadmpeg_test_support::service_decode_context(),
+        crate::history::ProjectionContext::Geometry { expand, archive: ArchiveVersion::V8, writer_version: None, scale: MillimeterScale::IDENTITY },
         &[source.clone()],
-        Some((expand, ArchiveVersion::V8, None, MillimeterScale::IDENTITY)),
         &mut ir,
         &mut warnings,
     )
@@ -885,9 +873,8 @@ fn embedded_history_point_cloud_refuses_collection_limit_without_omission() {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         assert_eq!(
             project(
-                &cadmpeg_test_support::service_decode_context(),
+                crate::history::ProjectionContext::Geometry { expand, archive: ArchiveVersion::V8, writer_version: None, scale: MillimeterScale::IDENTITY },
                 &[source],
-                Some((expand, ArchiveVersion::V8, None, MillimeterScale::IDENTITY)),
                 &mut ir,
                 &mut Diagnostics::new(),
             )
@@ -929,10 +916,9 @@ fn history_geometry_without_unit_binding_is_counted_and_source_located() {
             refusal: None,
         };
         structured_value_properties(
-            &cadmpeg_test_support::service_decode_context(),
+            crate::history::ProjectionContext::Metadata(&cadmpeg_test_support::service_decode_context()),
             "value_7",
             &parsed.value,
-            None,
             &mut properties,
             &mut sink,
         )
@@ -987,15 +973,9 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     };
     crate::decode::with_expand_bytes(&geometry_value, |expand| {
         structured_value_properties(
-            expand.ctx(),
+            crate::history::ProjectionContext::Geometry { expand, archive: ArchiveVersion::V8, writer_version: None, scale: crate::test_support::millimeter_scale(2.0) },
             "value_7",
             &parsed.value,
-            Some((
-                expand,
-                ArchiveVersion::V8,
-                None,
-                crate::test_support::millimeter_scale(2.0),
-            )),
             &mut properties,
             &mut sink,
         )
@@ -1554,10 +1534,9 @@ fn history_polyedge_minor_versions_preserve_reference_and_paired_domains() {
             refusal: None,
         };
         structured_value_properties(
-            &cadmpeg_test_support::service_decode_context(),
+            crate::history::ProjectionContext::Metadata(&cadmpeg_test_support::service_decode_context()),
             "value_7",
             &Value::PolyEdges(vec![edge]),
-            None,
             &mut properties,
             &mut sink,
         )
@@ -1923,3 +1902,5 @@ mod projection;
 mod budget_repairs;
 
 mod prefix_admission;
+
+mod context_admission;
