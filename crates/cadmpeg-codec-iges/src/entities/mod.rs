@@ -165,6 +165,23 @@ fn push_entity_loss_with_scoped_slots(
     )
 }
 
+/// Records an entity loss with scoped slots when geometry admission fails.
+fn admit_with_scoped_loss_slots<T>(
+    result: Result<T, &str>,
+    entry: &DirectoryEntry,
+    slots: &mut ScopedReservation<'_>,
+    losses: &mut Vec<LossNote>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<T>, CodecError> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(message) => {
+            push_entity_loss_with_scoped_slots(ctx, slots, losses, entry, format_args!("{message}"))?;
+            Ok(None)
+        }
+    }
+}
+
 fn non_resource_error(error: CodecError, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
     match error {
         CodecError::ResourceLimit(_) => Err(error),

@@ -29,10 +29,11 @@ fn spline_declared_populations_fuse_the_original_caller_session() {
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut sequences = super::super::super::geometry::SourceSequences::default();
         let result = super::super::project(&mut ir, &directory, &[record], &global, &ctx, &mut sequences);
-        let first = match result {
-            Err(CodecError::ResourceLimit(first)) => first,
+        let first = match result.as_ref() {
+            Err(CodecError::ResourceLimit(first)) => *first,
             _ => panic!("expected the declared population ceiling before lane construction"),
         };
+        drop(result);
         assert_eq!(first.dimension, ResourceDimension::Codec(operation));
         assert_eq!(first.operation, operation);
         assert_eq!((first.limit, first.used, first.additional), (limit, limit, requested - limit));
