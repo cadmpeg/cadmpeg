@@ -4330,75 +4330,66 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             )));
         }
 
-        let mut scalar_arguments = Vec::new();
-        let mut argument_rows = arguments.iter();
-        while let Some(argument) = self
-            .ctx
-            .next_charged(&mut argument_rows, "catia_formula_scalar_argument_visits")?
-        {
-            let EvaluatedFormulaValue::Scalar(scalar) = argument else {
-                return Ok(None);
-            };
-            let scalar = *scalar;
-            let pushed = argument_storage.with_storage(|| {
-                self.ctx.push_vec(
-                    &mut scalar_arguments,
-                    scalar,
-                    "catia_formula_scalar_arguments",
-                )
-            });
-            pushed?;
-        }
-        let arguments = scalar_arguments;
-
         if matches!(function, "min" | "max") {
-            let mut arguments = arguments.iter();
-            let mut result = *formula_value!(self
-                .ctx
-                .next_charged(&mut arguments, "catia_formula_extremum_argument_visits")?);
-            while let Some(argument) = self
-                .ctx
-                .next_charged(&mut arguments, "catia_formula_extremum_argument_visits")?
-            {
-                if result.dimension() != argument.dimension() {
-                    return Ok(None);
-                }
-                let value = if function == "min" {
-                    result.value().min(argument.value())
-                } else {
-                    result.value().max(argument.value())
-                };
-                let integral = if self.evaluate {
-                    finite_integrality(value)
-                } else {
-                    static_all_integral(result.integral(), argument.integral())
-                };
-                let known_value = if self.evaluate {
-                    Some(value)
-                } else {
-                    result
-                        .known_value()
-                        .zip(argument.known_value())
-                        .map(|(result, argument)| {
-                            if function == "min" {
-                                result.min(argument)
-                            } else {
-                                result.max(argument)
-                            }
-                        })
-                };
-                result = EvaluatedFormulaScalar::from_parts(
-                    value,
-                    result.dimension(),
-                    integral,
-                    known_value,
-                );
-            }
-            return Ok(Some(EvaluatedFormulaValue::Scalar(result)));
+            const OPERATION: &str = "catia_formula_extremum_argument_visits";
+            self.ctx.charge_work(0, OPERATION)?;
+            let mut result: Option<EvaluatedFormulaScalar> = None;
+            let valid = self.ctx.all_by_limit(
+                &arguments,
+                |argument| {
+                    let EvaluatedFormulaValue::Scalar(argument) = argument else {
+                        return Ok(false);
+                    };
+                    let Some(previous) = result else {
+                        result = Some(*argument);
+                        return Ok(true);
+                    };
+                    if previous.dimension() != argument.dimension() {
+                        return Ok(false);
+                    }
+                    let value = if function == "min" {
+                        previous.value().min(argument.value())
+                    } else {
+                        previous.value().max(argument.value())
+                    };
+                    let integral = if self.evaluate {
+                        finite_integrality(value)
+                    } else {
+                        static_all_integral(previous.integral(), argument.integral())
+                    };
+                    let known_value = if self.evaluate {
+                        Some(value)
+                    } else {
+                        previous
+                            .known_value()
+                            .zip(argument.known_value())
+                            .map(|(previous, argument)| {
+                                if function == "min" {
+                                    previous.min(argument)
+                                } else {
+                                    previous.max(argument)
+                                }
+                            })
+                    };
+                    result = Some(EvaluatedFormulaScalar::from_parts(
+                        value,
+                        previous.dimension(),
+                        integral,
+                        known_value,
+                    ));
+                    Ok(true)
+                },
+                OPERATION,
+            )?;
+            return Ok(if valid {
+                result.map(EvaluatedFormulaValue::Scalar)
+            } else {
+                None
+            });
         }
 
         if matches!(function, "LinearInterpolation" | "CubicInterpolation") {
-            let [start, end, fraction] = arguments.as_slice() else {
+            let [EvaluatedFormulaValue::Scalar(start), EvaluatedFormulaValue::Scalar(end), EvaluatedFormulaValue::Scalar(fraction)] = arguments.as_slice() else {
                 return Ok(None);
             };
             if start.dimension() != end.dimension()
@@ -4460,8 +4451,10 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         }
 
         let (first, second) = match arguments.as_slice() {
-            [first] => (*first, None),
-            [first, second] => (*first, Some(*second)),
+            [EvaluatedFormulaValue::Scalar(first)] => (*first, None),
+            [EvaluatedFormulaValue::Scalar(first), EvaluatedFormulaValue::Scalar(second)] => {
+                (*first, Some(*second))
+            }
             _ => return Ok(None),
         };
         let value = formula_value!(match (function, first, second) {
@@ -5316,19 +5309,18 @@ mod parser_tests {
 
     #[test]
     fn formula_parser_argument_vectors_refuse_collection_limits() {
-        for (cap, operation) in [
-            (0, "catia_formula_arguments"),
-            (2, "catia_formula_scalar_arguments"),
-        ] {
-            let refused = crate::test_support::with_collection_limit(cap, |ctx| {
-                super::evaluate_formula_expression_charged(ctx, "min(1,2)", &BTreeMap::new())
-            });
-            assert!(
-                matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == operation),
-                "missing refusal at {operation}"
-            );
-        }
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            super::evaluate_formula_expression_charged(ctx, "min(1,2)", &BTreeMap::new())
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_formula_arguments"));
+        let admitted = crate::test_support::with_collection_limit(2, |ctx| {
+            super::evaluate_formula_expression_charged(ctx, "min(1,2)", &BTreeMap::new())
+        })
+        .expect("only the original two argument slots are allocated")
+        .and_then(EvaluatedFormulaValue::scalar)
+        .expect("scalar minimum");
+        assert_eq!(admitted.value(), 1.0);
         assert!(evaluate_formula_expression("min(1,2)", &BTreeMap::new()).is_some());
     }
 
