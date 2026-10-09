@@ -34,6 +34,10 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
 
+mod shells;
+
+use self::shells::ShellFaceIndex;
+
 use super::attrib;
 use super::blend::BlendSupportRef;
 use super::entity;
@@ -387,214 +391,6 @@ impl Brep {
     }
 }
 
-/// Faces grouped by their native shell identity, with the faces that share an
-/// edge with each face. The body walk splits every shell into connected
-/// components; this index is built once for all of those queries.
-struct ShellFaceIndex<'a, 'ctx> {
-    faces: &'a [Face],
-    /// Face indices that name each shell, in face order.
-    shells: BTreeMap<&'a str, Vec<usize>>,
-    /// A spanning star for each edge within one native shell.
-    neighbors: BTreeMap<usize, BTreeSet<usize>>,
-    /// Shell identities the component walk assigns to faces, applied once the
-    /// walk no longer borrows the faces.
-    assignments: Vec<(usize, ShellId)>,
-    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
-}
-
-impl<'a, 'ctx> ShellFaceIndex<'a, 'ctx> {
-    fn new(
-        ctx: &'ctx DecodeContext<'_>,
-        faces: &'a [Face],
-        loops: &'a [Loop],
-        coedges: &'a [Coedge],
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let ((shells, neighbors), storage) =
-            ctx.with_scoped_storage("index Parasolid shell faces", || {
-                let face_indices = ctx.collect_hash_map(
-                    faces
-                        .iter()
-                        .enumerate()
-                        .map(|(index, face)| (face.id.as_str(), index)),
-                    "index Parasolid shell faces",
-                )?;
-                let mut loop_faces = HashMap::new();
-                for loop_ in ctx.admit_iter(loops, "index Parasolid shell loops")? {
-                    if let Some(&face) = ctx.get_hash_map(
-                        &face_indices,
-                        loop_.face.as_str(),
-                        "index Parasolid shell loops",
-                    )? {
-                        ctx.insert_hash_map(
-                            &mut loop_faces,
-                            loop_.id.as_str(),
-                            face,
-                            "index Parasolid shell loops",
-                        )?;
-                    }
-                }
-                let mut faces_by_edge = BTreeMap::<(&str, &str), BTreeSet<usize>>::new();
-                for coedge in ctx.admit_iter(coedges, "index Parasolid shell edges")? {
-                    if let Some(&face) = ctx.get_hash_map(
-                        &loop_faces,
-                        coedge.owner_loop.as_str(),
-                        "index Parasolid shell edges",
-                    )? {
-                        ctx.insert_btree_group_set(
-                            &mut faces_by_edge,
-                            (coedge.edge.as_str(), faces[face].shell.as_str()),
-                            face,
-                            "index Parasolid shell edges",
-                            "index Parasolid edge faces",
-                        )?;
-                    }
-                }
-                let mut neighbors = BTreeMap::<usize, BTreeSet<usize>>::new();
-                for (_, edge_faces) in
-                    ctx.admit_iter(&faces_by_edge, "index Parasolid face neighbors")?
-                {
-                    let mut edge_faces =
-                        ctx.admit_iter(edge_faces, "index Parasolid face neighbors")?;
-                    let Some(&root) = edge_faces.next() else {
-                        continue;
-                    };
-                    for &other in edge_faces {
-                        for (face, neighbor) in [(root, other), (other, root)] {
-                            ctx.insert_btree_group_set(
-                                &mut neighbors,
-                                face,
-                                neighbor,
-                                "index Parasolid face neighbors",
-                                "index Parasolid face neighbors",
-                            )?;
-                        }
-                    }
-                }
-
-                let mut shells = BTreeMap::<&str, Vec<usize>>::new();
-                for (index, face) in ctx
-                    .admit_iter(faces, "group Parasolid shell faces")?
-                    .enumerate()
-                {
-                    ctx.push_btree_group(
-                        &mut shells,
-                        face.shell.as_str(),
-                        index,
-                        "group Parasolid shell faces",
-                        "collect Parasolid shell faces",
-                    )?;
-                }
-                Ok::<_, cadmpeg_core::CodecError>((shells, neighbors))
-            })?;
-        Ok(Self {
-            faces,
-            shells,
-            neighbors,
-            assignments: Vec::new(),
-            storage,
-        })
-    }
-
-    /// Record that `face` belongs to `shell`.
-    fn assign(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        face: usize,
-        shell: ShellId,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        self.storage.with_storage(|| {
-            ctx.push_vec(
-                &mut self.assignments,
-                (face, shell),
-                "collect Parasolid face shells",
-            )
-        })
-    }
-
-    /// The recorded face shells and the reservation that holds them.
-    fn into_assignments(
-        self,
-    ) -> (
-        Vec<(usize, ShellId)>,
-        cadmpeg_core::decode::ScopedReservation<'ctx>,
-    ) {
-        (self.assignments, self.storage)
-    }
-
-    /// Split the faces that name `shell` into edge-connected components.
-    ///
-    /// Components follow the face order of their first face, and each lists
-    /// its face indices in identity order. The shell's faces leave the index,
-    /// so one face belongs to the components of one shell query only. The
-    /// returned reservation holds the component lists.
-    fn take_components(
-        &mut self,
-        ctx: &'ctx DecodeContext<'_>,
-        shell: &str,
-    ) -> Result<
-        (
-            Vec<Vec<usize>>,
-            cadmpeg_core::decode::ScopedReservation<'ctx>,
-        ),
-        cadmpeg_core::CodecError,
-    > {
-        const WALK: &str = "walk Parasolid shell components";
-        let mut storage = ctx.reserve_scoped(0, WALK)?;
-        let Some(candidates) =
-            ctx.remove_btree_map(&mut self.shells, shell, "select Parasolid shell faces")?
-        else {
-            return Ok((Vec::new(), storage));
-        };
-        let faces = self.faces;
-        let neighbors = &self.neighbors;
-        let components = storage.with_storage(|| {
-            let members = ctx.collect_btree_set(candidates.iter().copied(), WALK)?;
-            let mut assigned = BTreeSet::new();
-            let mut components = Vec::new();
-            let mut pending = Vec::new();
-            for &face in ctx.admit_iter(&candidates, WALK)? {
-                if !ctx.insert_btree_set(&mut assigned, face, WALK)? {
-                    continue;
-                }
-                let mut component = Vec::new();
-                ctx.push_vec(&mut pending, face, WALK)?;
-                loop {
-                    ctx.charge_work(1, WALK)?;
-                    let Some(current) = pending.pop() else {
-                        break;
-                    };
-                    ctx.push_vec(&mut component, current, "group Parasolid shell components")?;
-                    let Some(values) = ctx.get_btree_map(neighbors, &current, WALK)? else {
-                        continue;
-                    };
-                    for &neighbor in
-                        ctx.admit_iter(values, "walk Parasolid shell component neighbors")?
-                    {
-                        if ctx.contains_btree_set(&members, &neighbor, WALK)?
-                            && ctx.insert_btree_set(&mut assigned, neighbor, WALK)?
-                        {
-                            ctx.push_vec(&mut pending, neighbor, WALK)?;
-                        }
-                    }
-                }
-                ctx.stable_sort_by_key(
-                    &mut component,
-                    |index: &usize| faces[*index].id.as_str(),
-                    Ord::cmp,
-                    "sort Parasolid shell faces",
-                )?;
-                ctx.push_vec(
-                    &mut components,
-                    component,
-                    "group Parasolid shell components",
-                )?;
-            }
-            Ok::<_, cadmpeg_core::CodecError>(components)
-        })?;
-        Ok((components, storage))
-    }
-}
-
 /// Emit the edge-connected components of one native shell into `shells`.
 ///
 /// The first component keeps the native identity and `native_source`; each
@@ -602,7 +398,7 @@ impl<'a, 'ctx> ShellFaceIndex<'a, 'ctx> {
 /// shell identities in component order.
 fn emit_shell_components<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
-    index: &mut ShellFaceIndex<'_, 'ctx>,
+    index: &mut ShellFaceIndex<'_, 'ctx, '_>,
     native_shell_id: &ShellId,
     region_id: &RegionId,
     native_source: Option<(usize, &'static str)>,
@@ -611,26 +407,23 @@ fn emit_shell_components<'ctx>(
 ) -> Result<Vec<ShellId>, cadmpeg_core::CodecError> {
     const COPY: &str = "SLDPRT decoded identity copy";
     let mut emitted = Vec::new();
-    let (components, _components_storage) = index.take_components(ctx, native_shell_id.as_str())?;
-    for (component, members) in ctx
-        .admit_iter(components, "emit Parasolid shell components")?
-        .enumerate()
-    {
+    let components = index.take_components(native_shell_id.as_str())?;
+    components.visit(|component, members| {
         let shell_id = if component == 0 {
             native_shell_id.try_clone_for_decode(ctx, COPY)?
         } else {
             shell_component(ctx, native_shell_id, component)?
         };
         annotate(shell_id.as_str(), native_source.filter(|_| component == 0))?;
-        let faces = index.faces;
+        let faces = index.faces();
         let face_ids = ctx.try_collect_vec(
             members
                 .iter()
                 .map(|&face| faces[face].id.try_clone_for_decode(ctx, COPY)),
             "collect Parasolid shell faces",
         )?;
-        for &face in ctx.admit_iter(&members, "assign Parasolid face shells")? {
-            index.assign(ctx, face, shell_id.try_clone_for_decode(ctx, COPY)?)?;
+        for &face in ctx.admit_iter(members, "assign Parasolid face shells")? {
+            index.assign(face, &shell_id)?;
         }
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(shells, 1, "collect Parasolid shells")?;
@@ -643,11 +436,12 @@ fn emit_shell_components<'ctx>(
                 Vec::new(),
             ) {
                 Ok(shell) => shell,
-                Err(_) => continue,
+                Err(_) => return Ok(()),
             },
         );
         ctx.push_vec(&mut emitted, shell_id, "collect Parasolid region shells")?;
-    }
+        Ok(())
+    })?;
     Ok(emitted)
 }
 
@@ -3589,12 +3383,7 @@ fn decode_graph(
             visible: None,
         });
     }
-    let (face_shells, _face_shells_storage) = shell_faces.into_assignments();
-    for (face, shell) in ctx.admit_iter(face_shells, "assign Parasolid face shells")? {
-        if let Some(face) = out.faces.get_mut(face) {
-            face.shell = shell;
-        }
-    }
+    shell_faces.into_assignments().apply(&mut out.faces)?;
 
     // Body and curve identities here are composed from a constant namespace
     // and one u16 attr, so reading the attr back is fixed-size work.
