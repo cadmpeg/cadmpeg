@@ -2565,6 +2565,7 @@ fn planar_trim(
             + EPS_DISPLAY_QUANTIZATION,
     );
     let mut polygons = Vec::new();
+    let mut circle_storage = ctx.reserve_scoped(0, "collect SLDPRT planar trim circles")?;
     let mut circles = Vec::new();
     let mut boundary_tolerance = 0.0_f64;
     let (outer_loop, inner_loops) = match &face.loops {
@@ -2590,8 +2591,7 @@ fn planar_trim(
             let circle = require_some!(closed_planar_circle(
                 ctx, loop_, surface, frame, tolerance, topology,
             )?);
-            ctx.reserve_vec(&mut circles, 1, "collect SLDPRT planar trim circles")?;
-            circles.push(circle);
+            ctx.push_scoped_vec(&mut circle_storage, &mut circles, circle, "collect SLDPRT planar trim circles")?;
             continue;
         }
 
@@ -2668,7 +2668,10 @@ fn planar_trim(
         if circles.is_empty() {
             return Ok(None);
         }
-        let (outer, holes) = require_some!(circular_outer_and_holes(ctx, &circles, tolerance)?);
+        let mut hole_storage = ctx.reserve_scoped(0, "collect SLDPRT circular trim holes")?;
+        let (outer, holes) = require_some!(hole_storage.with_storage(|| {
+            circular_outer_and_holes(ctx, &circles, tolerance)
+        })?);
         let mut planar_holes = Vec::new();
         for hole in ctx.admit_iter(&holes, "scan SLDPRT holes values")?.copied() {
             ctx.reserve_vec(&mut planar_holes, 1, "collect SLDPRT circular planar holes")?;
