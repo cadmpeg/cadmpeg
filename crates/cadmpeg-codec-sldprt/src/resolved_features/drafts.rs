@@ -753,7 +753,11 @@ mod tests {
 
     #[test]
     fn draft_operand_candidates_refuses_name_index_work_limit() {
-        let (history, lane) = named_draft_fixture();
+        let (mut history, lane) = named_draft_fixture();
+        crate::test_support::work_refusal_at("index SLDPRT object names by id", |ctx| {
+            super::draft_operand_candidates(ctx, std::slice::from_ref(&history), &lane)
+        });
+        history.features[0].source_id = None;
         crate::test_support::work_refusal_at("index SLDPRT object names by text", |ctx| {
             super::draft_operand_candidates(ctx, std::slice::from_ref(&history), &lane)
         });
