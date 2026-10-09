@@ -443,3 +443,83 @@ fn nearest_interval_heap_preserves_descending_order_and_releases_working_storage
     ctx.finish_session()
         .expect("scoped intervals retain no bytes");
 }
+
+#[test]
+fn pcurve_containment_admits_only_the_point_basis() {
+    use crate::math::Point2;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let knots = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+    let controls = [
+        Point2::new(0.0, 0.0),
+        Point2::new(0.5, 0.0),
+        Point2::new(1.0, 0.0),
+    ];
+    let weights = [1.0, 2.0, 1.0];
+    // The interval vector admits two slots, with four slots of amortized
+    // backing. The point basis admits three slots with four backing slots.
+    // Derivative bases do not contribute to a containment witness.
+    let interval_slots = controls.len() - 2 + 1;
+    let interval_capacity = interval_slots.max(4);
+    let basis_slots = 3;
+    let basis_capacity = basis_slots.max(4);
+    let bytes = u64::try_from(
+        interval_capacity * std::mem::size_of::<[f64; 2]>()
+            + basis_capacity * std::mem::size_of::<f64>(),
+    )
+    .unwrap();
+    for rational in [false, true] {
+        for shortage in [
+            None,
+            Some(ResourceDimension::MaterializedBytes),
+            Some(ResourceDimension::CollectionItems),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = bytes;
+            policy.limits.max_collection_items =
+                u64::try_from(interval_slots + basis_slots).unwrap();
+            policy.limits.max_retained_bytes = 0;
+            match shortage {
+                Some(ResourceDimension::MaterializedBytes) => {
+                    policy.limits.max_materialized_bytes -= 1;
+                }
+                Some(ResourceDimension::CollectionItems) => {
+                    policy.limits.max_collection_items -= 1;
+                }
+                None => {}
+                _ => unreachable!("tested point basis dimensions"),
+            }
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::super::nurbs_pcurve_contains_point(
+                &ctx,
+                2,
+                &knots,
+                &controls,
+                rational.then_some(weights.as_slice()),
+                Point2::new(0.5, 0.0),
+                0.0,
+            );
+            if let Some(dimension) = shortage {
+                let limit = result.unwrap_err();
+                assert_eq!(limit.dimension, dimension);
+                assert_eq!(limit.operation, "IR B-spline basis");
+                assert_eq!(
+                    ctx.charge_work_limit(0, "observe containment refusal"),
+                    Err(limit)
+                );
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+                );
+            } else {
+                assert_eq!(result.unwrap(), Some(true));
+                let reuse = ctx
+                    .reserve_scoped_limit(bytes, "containment backing released")
+                    .unwrap();
+                drop(reuse);
+                ctx.finish_session().unwrap();
+            }
+        }
+    }
+}

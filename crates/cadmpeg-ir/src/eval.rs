@@ -2924,22 +2924,14 @@ pub fn nurbs_pcurve_contains_point(
             return Ok(None);
         }
         let middle = start.midpoint(end);
-        let scratch = decode::Scratch::new(ctx);
-        let evaluation = FiniteReal::new(middle)
-            .ok_or(EvaluationFailure::NoValue)
-            .and_then(|middle| {
-                nurbs_pcurve_differential_with(
-                    &scratch,
-                    degree,
-                    knots,
-                    control_points.len(),
-                    |index| FinitePoint2::new(*control_points.get(index)?).map(planar_pole),
-                    weights,
-                    middle,
-                )
-                .map(|differential| differential.point)
-            });
-        let curve_uv = match scratch.finish_evaluation(evaluation)? {
+        let curve_uv = match nurbs_pcurve_uv(
+            ctx,
+            degree,
+            knots,
+            control_points,
+            weights,
+            middle,
+        ) {
             Ok(value) => Point2::from(value),
             Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
             Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return Ok(None),
