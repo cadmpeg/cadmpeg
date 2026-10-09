@@ -518,3 +518,91 @@ fn rejected_boundary_use_flag_after_valid_prefix_releases_nested_storage() {
 fn rejected_boundary_pointer_after_valid_prefix_releases_nested_storage() {
     assert_rejected_type141_storage(RejectedBoundary::PcurveLate);
 }
+
+fn assert_boundary_vertex_output_custody(positions: &[Point3], expected: &[&str]) {
+    use cadmpeg_ir::ids::VertexId;
+    const CAP: u64 = 65536;
+    let endpoints: Vec<_> = positions.iter().enumerate().map(|(index, position)| {
+        BoundaryVertexSourceEndpoint {
+            edge: format!("test:model:edge#{index}"),
+            endpoint: BoundaryEndpoint::Start,
+            position: FinitePoint3::new(*position).unwrap(),
+        }
+    }).collect();
+    let live = u64_from_index(expected.len() * size_of::<VertexId>()
+        + expected.iter().map(|id| id.len()).sum::<usize>());
+    for refuse_extra in [false, true] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = CAP;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut candidate_storage = ctx.reserve_scoped(0, "test boundary candidate storage").unwrap();
+        let mut candidate = ModelDraft::new();
+        let mut sequences = crate::entities::geometry::SourceSequences::new(&ctx).unwrap();
+        let mut derivation_storage = ctx.reserve_scoped(0, "test boundary derivation storage").unwrap();
+        let super::super::BoundaryVertices { ids, derivations, _storage: output_storage } =
+            candidate_storage.with_storage(|| create_boundary_vertices(
+                &mut candidate,
+                &crate::ids::Stem::directory(9_u32),
+                ("iges:entity:directory#9", 0),
+                &endpoints,
+                PositiveReal::new(1.0).unwrap(),
+                (&mut sequences, &mut derivation_storage),
+                &ctx,
+            )).unwrap();
+        assert_eq!(ids.iter().map(VertexId::as_str).collect::<Vec<_>>(), expected);
+        let cluster_count = expected.iter().enumerate().filter(|(index, id)| {
+            !expected[..*index].contains(id)
+        }).count();
+        assert_eq!(derivations.len(), cluster_count);
+        assert_eq!(candidate.model().points.len(), cluster_count);
+        assert_eq!(candidate.model().vertices.len(), cluster_count);
+        drop(derivations);
+        drop(derivation_storage);
+        drop(candidate);
+        drop(candidate_storage);
+        drop(sequences);
+        let free = ctx.reserve_scoped(CAP - live, "test exact live boundary vertex output").unwrap();
+        drop(free);
+        if refuse_extra {
+            let first = match ctx.reserve_scoped(CAP - live + 1, "test boundary output remains live").err().unwrap() {
+                CodecError::ResourceLimit(first) => first,
+                _ => panic!("expected exact materialized refusal"),
+            };
+            assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(first.operation, "test boundary output remains live");
+            assert_eq!((first.limit, first.used, first.additional), (CAP, live, CAP - live + 1));
+            drop(ids);
+            drop(output_storage);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        } else {
+            drop(ids);
+            drop(output_storage);
+            let free = ctx.reserve_scoped(CAP, "test boundary output backing destroyed").unwrap();
+            drop(free);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn empty_boundary_vertex_output_retains_no_temporary_storage() {
+    assert_boundary_vertex_output_custody(&[], &[]);
+}
+
+#[test]
+fn sewn_boundary_vertex_output_retains_only_result_ids_and_slots() {
+    assert_boundary_vertex_output_custody(
+        &[Point3::new(0.0, 0.0, 0.0), Point3::new(0.5, 0.0, 0.0)],
+        &["iges:model:vertex#D9:0:0", "iges:model:vertex#D9:0:0"],
+    );
+}
+
+#[test]
+fn separate_boundary_vertex_output_releases_each_cluster_identity() {
+    assert_boundary_vertex_output_custody(
+        &[Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        &["iges:model:vertex#D9:0:0", "iges:model:vertex#D9:0:1"],
+    );
+}
