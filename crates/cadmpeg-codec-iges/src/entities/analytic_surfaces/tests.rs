@@ -14,6 +14,8 @@ use crate::test_support::test_surface_fixtures::{
 };
 use crate::IgesCodec;
 
+mod index_sources;
+
 #[test]
 fn analytic_direction_refusals_render_without_intermediate_strings() {
     let reasons = [
