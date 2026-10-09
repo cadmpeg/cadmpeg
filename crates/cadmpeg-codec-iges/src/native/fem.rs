@@ -157,6 +157,9 @@ fn record_string(
     record: Option<&ParameterRecord>,
     index: usize,
 ) -> Result<Option<Vec<u8>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     record
         .and_then(|record| record.string(index))
         .map(|bytes| ctx.copy_retained(bytes, "iges FEM parameter string"))
@@ -191,6 +194,9 @@ fn resolved_id(
     ctx: &DecodeContext<'_>,
     resolved: Option<u32>,
 ) -> Result<Option<String>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     resolved
         .map(|sequence| source_entity(ctx, sequence))
         .transpose()
@@ -205,6 +211,9 @@ fn resolve_type(
     entity_type: i64,
     forms: &[i64],
 ) -> Result<Option<String>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(raw_pointer) = raw_pointer else {
         return Ok(None);
     };
@@ -221,6 +230,9 @@ fn resolve_note(
     index: usize,
     raw_pointer: Option<i64>,
 ) -> Result<Option<String>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(raw_pointer) = raw_pointer else {
         return Ok(None);
     };
@@ -966,4 +978,6 @@ mod tests {
         }
         assert_eq!(result_value_count(35), None);
     }
+
+    mod entry_refusal;
 }
