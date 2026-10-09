@@ -762,14 +762,37 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
 fn unique_by<'v, T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     values: &'v [T],
-    mut matches: impl FnMut(&T) -> Result<bool, cadmpeg_core::CodecError>,
+    matches: impl FnMut(&T) -> Result<bool, cadmpeg_core::CodecError>,
     operation: &'static str,
 ) -> Result<Option<&'v T>, cadmpeg_core::CodecError> {
-    let Some(index) = ctx.position_by(values, &mut matches, operation)? else {
-        return Ok(None);
-    };
-    let repeated = ctx.any_by(&values[index + 1..], matches, operation)?;
-    Ok((!repeated).then(|| &values[index]))
+    Ok(match unique_entry_by(ctx, values, matches, operation)? {
+        UniqueLookup::Value(value) => Some(value),
+        UniqueLookup::Absent | UniqueLookup::Repeated => None,
+    })
+}
+
+/// Distinguish an absent match from a second reached matching value.
+fn unique_entry_by<'v, T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    values: &'v [T],
+    mut matches: impl FnMut(&T) -> Result<bool, cadmpeg_core::CodecError>,
+    operation: &'static str,
+) -> Result<UniqueLookup<'v, T>, cadmpeg_core::CodecError> {
+    ctx.charge_work(0, operation)?;
+    let mut found = None;
+    let mut source = values.iter();
+    while !source.as_slice().is_empty() {
+        let Some(value) = ctx.next_charged(&mut source, operation)? else {
+            break;
+        };
+        if matches(value)? {
+            if found.is_some() {
+                return Ok(UniqueLookup::Repeated);
+            }
+            found = Some(value);
+        }
+    }
+    Ok(found.map_or(UniqueLookup::Absent, UniqueLookup::Value))
 }
 
 /// The native stream prefix before the last identity delimiter.
@@ -874,7 +897,11 @@ where
     > {
         let mut storage = ctx.reserve_scoped(0, self.operation)?;
         let mut table = HashMap::new();
-        for value in ctx.admit_iter(self.values, self.operation)? {
+        let mut source = self.values.iter();
+        while !source.as_slice().is_empty() {
+            let Some(value) = ctx.next_charged(&mut source, self.operation)? else {
+                break;
+            };
             let Some(key) = (self.key)(ctx, value)? else {
                 continue;
             };
@@ -4717,35 +4744,30 @@ fn unique_history_state<'a>(
     state_id: i64,
 ) -> Result<Option<(&'a AsmHistory, &'a AsmDeltaState)>, cadmpeg_core::CodecError> {
     let operation = "find F3D history state";
-    let mut found_state_index = None;
-    let Some(index) = decode.position_by(
-        histories,
-        |history| {
-            found_state_index = unique_history_state_in(decode, history, state_id)?;
-            Ok(found_state_index.is_some())
-        },
-        operation,
-    )?
-    else {
-        return Ok(None);
-    };
-    if decode
-        .position_by(
-            &histories[index + 1..],
-            |history| Ok(unique_history_state_in(decode, history, state_id)?.is_some()),
-            operation,
-        )?
-        .is_some()
-    {
-        return Ok(None);
+    decode.charge_work(0, operation)?;
+    let mut found = None;
+    let mut history_source = histories.iter();
+    while !history_source.as_slice().is_empty() {
+        let Some(history) = decode.next_charged(&mut history_source, operation)? else {
+            break;
+        };
+        let mut state_source = history.states.iter();
+        while !state_source.as_slice().is_empty() {
+            let Some(state) = decode.next_charged(
+                &mut state_source,
+                "find F3D ASM history state",
+            )? else {
+                break;
+            };
+            if state.state_id == state_id {
+                if found.is_some() {
+                    return Ok(None);
+                }
+                found = Some((history, state));
+            }
+        }
     }
-    let (Some(history), Some(state_index)) = (histories.get(index), found_state_index) else {
-        return Ok(None);
-    };
-    Ok(history
-        .states
-        .get(state_index)
-        .map(|state| (history, state)))
+    Ok(found)
 }
 
 fn unique_history_state_in(
@@ -6908,10 +6930,11 @@ pub(crate) fn bind_face_operand_history_candidates(
 ///
 /// Draft changes the selected face's actual surface geometry. The same
 /// transition may update tangent or context faces, so the transition is
-/// admissible only when exactly one face from the operand's alternate lane (or,
-/// when no alternate lane exists, its exact candidate lane) changes surface
-/// geometry. A missing, duplicate, or unchanged surface is not a selection
-/// proof. Carrier record identities are not compared: a history update may
+/// admissible through an alternate lane only when exactly one face changes
+/// surface geometry. A missing, duplicate, or unchanged surface does not prove
+/// that lane. Without an alternate lane, one exact candidate present in both
+/// topologies is selected without a geometry comparison.
+/// Carrier record identities are not compared: a history update may
 /// assign a new carrier record without changing the surface.
 #[derive(Clone, Copy, PartialEq)]
 enum DraftSurfaceGeometry {
@@ -6942,47 +6965,56 @@ fn draft_surface_geometry(
         &topology.face_surfaces,
         |binding| Ok(binding.entity == face),
         operation,
-    )?
-    else {
+    )? else {
         return Ok(None);
     };
     let carrier = binding.carrier;
-    if let Some(plane) = ctx.find_by(
+    match unique_entry_by(
+        ctx,
         &topology.surface_planes,
         |surface| Ok(surface.surface == carrier),
         operation,
     )? {
-        return Ok(Some(DraftSurfaceGeometry::Plane {
+        UniqueLookup::Repeated => return Ok(None),
+        UniqueLookup::Value(plane) => return Ok(Some(DraftSurfaceGeometry::Plane {
             origin: plane.origin,
             normal: plane.normal,
-        }));
+        })),
+        UniqueLookup::Absent => {}
     }
-    if let Some(cylinder) = ctx.find_by(
+    match unique_entry_by(
+        ctx,
         &topology.surface_cylinders,
         |surface| Ok(surface.surface == carrier),
         operation,
     )? {
-        return Ok(Some(DraftSurfaceGeometry::Cylinder {
+        UniqueLookup::Repeated => return Ok(None),
+        UniqueLookup::Value(cylinder) => return Ok(Some(DraftSurfaceGeometry::Cylinder {
             origin: cylinder.origin,
             axis: cylinder.axis,
             radius: cylinder.radius,
-        }));
+        })),
+        UniqueLookup::Absent => {}
     }
-    let Some(axis) = ctx.find_by(
+    let axis = match unique_entry_by(
+        ctx,
         &topology.surface_axes,
         |surface| Ok(surface.surface == carrier),
         operation,
-    )?
-    else {
-        return Ok(None);
+    )? {
+        UniqueLookup::Absent | UniqueLookup::Repeated => return Ok(None),
+        UniqueLookup::Value(axis) => axis,
     };
-    let radius = ctx
-        .find_by(
-            &topology.surface_radii,
-            |radius| Ok(radius.surface == carrier),
-            operation,
-        )?
-        .map(|radius| radius.radius);
+    let radius = match unique_entry_by(
+        ctx,
+        &topology.surface_radii,
+        |radius| Ok(radius.surface == carrier),
+        operation,
+    )? {
+        UniqueLookup::Repeated => return Ok(None),
+        UniqueLookup::Value(radius) => Some(radius.radius),
+        UniqueLookup::Absent => None,
+    };
     Ok(Some(DraftSurfaceGeometry::Axis {
         origin: axis.origin,
         direction: axis.direction,

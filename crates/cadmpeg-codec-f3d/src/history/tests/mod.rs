@@ -28,3 +28,5 @@ mod topology_budget;
 mod vertex_recipe_limits;
 
 mod recipe_transitions;
+
+mod unique_index;
