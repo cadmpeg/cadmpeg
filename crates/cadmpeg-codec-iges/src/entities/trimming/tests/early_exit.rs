@@ -552,3 +552,153 @@ fn pcurve_pole_mapping_stops_at_the_first_invalid_point() {
         Err(CompositeCurveError::Carrier(NurbsError::Structure(_)))
     ));
 }
+
+fn boundary_lookup_input(bounded: bool, missing: bool) -> ProjectionInput {
+    let mut entities = vec![
+        plane_entity(),
+        OwnedTestEntity {
+            entity_type: if bounded { 141 } else { 142 },
+            form: 0,
+            label: "BOUNDARY".into(),
+            status: "00010000",
+            parameters: if bounded {
+                "141,0,1,1,1,3,1,0;"
+            } else {
+                "142,0,1,0,3,2;"
+            }
+            .into(),
+        },
+    ];
+    if missing {
+        entities.push(OwnedTestEntity {
+            entity_type: 142,
+            form: 0,
+            label: "INVALID".into(),
+            status: "00010000",
+            parameters: "142,0,1,0,3,4;".into(),
+        });
+    }
+    entities.push(OwnedTestEntity {
+        entity_type: if bounded { 143 } else { 144 },
+        form: 0,
+        label: "TRIMMED".into(),
+        status: "00000000",
+        parameters: if bounded {
+            "143,0,1,1,3;"
+        } else if missing {
+            "144,1,0,1,,5;"
+        } else {
+            "144,1,0,1,,3;"
+        }
+        .into(),
+    });
+    parse_projection_input(&owned_test_file(&entities))
+}
+
+fn assert_boundary_lookup_admission(
+    bounded: bool,
+    missing: bool,
+    operation: &str,
+    next_operation: &str,
+    next_work: u64,
+) {
+    let input = boundary_lookup_input(bounded, missing);
+    let source_ir = support_plane_ir();
+    let refuse = |work_limit| {
+        let mut ir = source_ir.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut derivation_storage = ctx.reserve_scoped(0, "test trimming derivations").unwrap();
+        let mut sequences = super::super::super::geometry::SourceSequences::default();
+        let limit = match super::super::project(
+            &mut ir,
+            &input.directory,
+            &input.records,
+            &input.global,
+            (&ctx, &mut derivation_storage),
+            &mut sequences,
+        ) {
+            Err(CodecError::ResourceLimit(limit)) => limit,
+            Err(error) => panic!("unexpected boundary refusal: {error:?}"),
+            Ok(_) => panic!("boundary lookup did not refuse"),
+        };
+        assert_eq!(ir.model, source_ir.model);
+        assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
+        let sticky = match super::super::project(
+            &mut ir,
+            &[],
+            &[],
+            &input.global,
+            (&ctx, &mut derivation_storage),
+            &mut sequences,
+        ) {
+            Err(CodecError::ResourceLimit(limit)) => limit,
+            Err(error) => panic!("unexpected sticky refusal: {error:?}"),
+            Ok(_) => panic!("empty projection lost the original refusal"),
+        };
+        assert_eq!(sticky, limit);
+        drop(sequences);
+        drop(derivation_storage);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == limit));
+        limit
+    };
+    let first = {
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        refuse(u64::MAX)
+    };
+    // The actual boundary map has one u32 key. Core admits at most one
+    // comparison, with size_of::<u32>() key bytes, before the search.
+    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(first.operation, operation);
+    assert_eq!(first.additional, std::mem::size_of::<u32>() as u64);
+    assert_eq!(first.limit, first.used);
+    let next = refuse(first.used + first.additional);
+    assert_eq!(next.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(next.operation, next_operation);
+    assert_eq!(next.used, first.used + first.additional);
+    assert_eq!(next.limit, next.used);
+    assert_eq!(next.additional, next_work);
+    let losses = run_projection(&input, &source_ir, u64::MAX).unwrap();
+    let entity_type = if bounded { 143 } else { 144 };
+    let reason = if missing {
+        "trimmed-surface boundary definition is missing"
+    } else {
+        "boundary model curve has no bounded edge"
+    };
+    assert!(losses.contains(&entity_loss_message(entity_type, reason)));
+}
+
+#[test]
+fn bounded_boundary_lookup_admits_search_before_representation() {
+    assert_boundary_lookup_admission(
+        true,
+        false,
+        "iges bounded boundary definition lookup",
+        "iges bounded representation proof",
+        1,
+    );
+}
+
+#[test]
+fn trimming_boundary_lookup_admits_search_before_segments() {
+    assert_boundary_lookup_admission(
+        false,
+        false,
+        "iges trimming boundary definition lookup",
+        "iges trimming segment traversal",
+        1,
+    );
+}
+
+#[test]
+fn missing_trimming_boundary_lookup_admits_search_before_its_loss() {
+    assert_boundary_lookup_admission(
+        false,
+        true,
+        "iges trimming boundary definition lookup",
+        "iges entity loss message",
+        LOSS_MESSAGE_FIRST_FRAGMENT.len() as u64,
+    );
+}
