@@ -1205,10 +1205,13 @@ fn shell_bodies<'a>(
     HashMap<&'a cadmpeg_ir::ids::ShellId, &'a cadmpeg_ir::ids::BodyId>,
     cadmpeg_core::CodecError,
 > {
-    let regions = ctx.collect_hash_map(
-        regions.iter().map(|region| (&region.id, &region.body)),
-        "index SLDPRT tessellation regions",
-    )?;
+    let mut region_storage = ctx.reserve_scoped(0, "index SLDPRT tessellation regions")?;
+    let regions = region_storage.with_storage(|| {
+        ctx.collect_hash_map(
+            regions.iter().map(|region| (&region.id, &region.body)),
+            "index SLDPRT tessellation regions",
+        )
+    })?;
     let mut bodies = HashMap::new();
     for shell in ctx.admit_iter(shells, "index SLDPRT tessellation shells")? {
         if let Some(body) = ctx.get_hash_map(&regions, &shell.region, "look up SLDPRT hash key")? {
@@ -1373,10 +1376,12 @@ pub(crate) fn assign_unique_surface_owners(
         {
             continue;
         }
-        let (owner, _owner_scratch) = ctx
+        let (owner, owner_scratch) = ctx
             .with_scoped_storage("select SLDPRT tessellation owner", || {
                 select_surface_owner(ctx, mesh.mesh(), &candidates)
             })?;
+        // Selection returns only scalar metadata. Its vectors have already died.
+        drop(owner_scratch);
         let Some((index, chordal_deflection)) = owner else {
             continue;
         };
@@ -1693,7 +1698,10 @@ pub(crate) fn assign_persistent_owners(
         Ok::<_, cadmpeg_core::CodecError>(faces)
     })?;
     let face_bodies = indexes.with_storage(|| {
-        let shell_bodies = shell_bodies(ctx, &model.regions, &model.shells)?;
+        let mut shell_storage = ctx.reserve_scoped(0, "index SLDPRT persistent shell bodies")?;
+        let shell_bodies = shell_storage.with_storage(|| {
+            shell_bodies(ctx, &model.regions, &model.shells)
+        })?;
         let mut face_bodies = HashMap::new();
         for face in ctx.admit_iter(&model.faces, "index SLDPRT tessellation faces")? {
             if let Some(body) =
@@ -3602,8 +3610,11 @@ fn polygon_contains_triangle(
         if length_squared == 0.0 {
             continue;
         }
-        let (mut cuts, mut reservation) =
+        let (cuts, reservation) =
             ctx.scoped_vector_storage(capacity, "collect SLDPRT triangle boundary cuts")?;
+        // Bind the lease first: the live vector then dies before it on every exit.
+        let mut reservation = reservation;
+        let mut cuts = cuts;
         reservation.with_storage(|| {
             ctx.extend_vec(
                 &mut cuts,
