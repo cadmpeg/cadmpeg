@@ -10,6 +10,8 @@ use cadmpeg_ir::geometry::RevisionCacheForm;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use std::collections::{HashMap, HashSet};
 
+mod shared_carrier;
+
 fn ref_record(index: usize, name: &str, refs: &[i64]) -> Record {
     Record {
         index,
