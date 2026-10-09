@@ -589,12 +589,14 @@ pub(crate) fn round_replay_scalars(
             });
         }
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo round replay scalars result ordering",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo round replay scalars result ordering",
+        )?;
+    }
     Ok(result)
 }
 
@@ -704,12 +706,14 @@ pub(crate) fn choices(
                 next_label_offset[index] = label_end + 1;
             }
         }
-        ctx.stable_sort_by(
-            hits.as_mut_slice(),
-            |value| &value.0,
-            Ord::cmp,
-            "creo choices hits ordering",
-        )?;
+        if hits.len() > 1 {
+            ctx.stable_sort_by(
+                hits.as_mut_slice(),
+                |value| &value.0,
+                Ord::cmp,
+                "creo choices hits ordering",
+            )?;
+        }
         for (index, &(header, label_at, label, type_byte)) in ctx
             .admit_iter(&hits, "creo choice hit traversal")?
             .enumerate()
@@ -743,12 +747,14 @@ pub(crate) fn choices(
             });
         }
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo choices result ordering",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo choices result ordering",
+        )?;
+    }
     Ok(result)
 }
 
@@ -906,12 +912,14 @@ pub(crate) fn choice_fields(
             });
         }
     }
-    ctx.stable_sort_by(
-        fields.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo choice fields fields ordering",
-    )?;
+    if fields.len() > 1 {
+        ctx.stable_sort_by(
+            fields.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo choice fields fields ordering",
+        )?;
+    }
     Ok(fields)
 }
 
@@ -994,12 +1002,14 @@ pub(crate) fn geometry_tables(
             });
         }
     }
-    ctx.stable_sort_by(
-        tables.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo geometry tables tables ordering",
-    )?;
+    if tables.len() > 1 {
+        ctx.stable_sort_by(
+            tables.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo geometry tables tables ordering",
+        )?;
+    }
     Ok(tables)
 }
 
@@ -1229,12 +1239,14 @@ pub(crate) fn affected_ids(
             }
         }
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo affected ids result ordering",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo affected ids result ordering",
+        )?;
+    }
     Ok(result)
 }
 
@@ -1655,12 +1667,14 @@ pub(crate) fn replay_affected_ids(
             offset: row.body_offset + source_offset,
         });
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo replay affected ids result ordering",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo replay affected ids result ordering",
+        )?;
+    }
     Ok(result)
 }
 
@@ -1873,12 +1887,14 @@ pub(crate) fn surface_merge_replay_affected_ids(
         ctx.reserve_vec(&mut result, 1, "creo surface merge affected-id records")?;
         result.push(record);
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo surface merge replay affected ids result ordering",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo surface merge replay affected ids result ordering",
+        )?;
+    }
     Ok(result)
 }
 
@@ -1931,12 +1947,14 @@ pub(crate) fn loop_restore_directions(
             }
         }
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo loop restore directions result ordering",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo loop restore directions result ordering",
+        )?;
+    }
     Ok(result)
 }
 
@@ -1962,12 +1980,14 @@ pub(crate) fn loop_history_entries(
             })?;
         }
     }
-    ctx.sort_unstable_by(
-        &mut keys,
-        |key| key,
-        Ord::cmp,
-        "creo loop table key ordering",
-    )?;
+    if keys.len() > 1 {
+        ctx.sort_unstable_by(
+            &mut keys,
+            |key| key,
+            Ord::cmp,
+            "creo loop table key ordering",
+        )?;
+    }
     ctx.dedup_vec(&mut keys, "creo loop table key deduplication")?;
     let mut next_tables = std::collections::HashMap::new();
     for index in ctx.admit_iter(
@@ -2063,12 +2083,14 @@ pub(crate) fn loop_history_entries(
             });
         }
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo loop history entries result ordering",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo loop history entries result ordering",
+        )?;
+    }
     Ok(result)
 }
 
