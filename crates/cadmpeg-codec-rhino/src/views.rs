@@ -1136,13 +1136,13 @@ fn scan_viewport_userdata<'ctx>(
     let mut children = Vec::new();
     let mut has_untyped_content = false;
     loop {
-        ctx.charge_work(1, "Rhino views cursor traversal")?;
         if reader.position() == reader.end() {
             return Err(FramingError::structural(
                 reader.end(),
                 "view viewport userdata is missing its class end",
             ));
         }
+        ctx.charge_work(1, "Rhino views cursor traversal")?;
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
         if children.len() >= VIEWPORT_USERDATA_CHILD_CAP {
@@ -2035,6 +2035,7 @@ mod tests {
     mod fallible_prefix;
     mod image_limits;
     mod resource_limits;
+    mod terminal_work;
 
     use super::{
         legacy_clipping_depth, parse_attributes, parse_cplane, parse_list, parse_trace_image,
