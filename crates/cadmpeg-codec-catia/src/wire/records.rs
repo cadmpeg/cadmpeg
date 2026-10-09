@@ -1034,7 +1034,7 @@ fn parse_spanning_consolidated_record(
             return None;
         }
         let mut header_token = 0u32;
-        // Frame width is at most four bytes.
+        // Frame width is at most three bytes.
         for relative in 0..usize::from(u8::from(width)) {
             header_token |= u32::from(admitted!(source_byte(token_at.checked_add(relative)?))?)
                 << (8 * relative);

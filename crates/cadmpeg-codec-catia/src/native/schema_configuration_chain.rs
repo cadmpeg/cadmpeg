@@ -290,12 +290,13 @@ pub(super) fn derive_schema_configuration_row_chains<'a>(
             };
             let successor_id = link.successor.entity_id();
             let intervening_entities = if row_id < successor_id {
-                if identities.is_none() {
-                    identities = Some(entities_by_identity(ctx, &mut scratch, records)?);
-                }
+                let identities = match &mut identities {
+                    Some(identities) => identities,
+                    slot @ None => slot.insert(entities_by_identity(ctx, &mut scratch, records)?),
+                };
                 Some(intervening_entities(
                     ctx,
-                    identities.as_ref(),
+                    identities,
                     records,
                     graph,
                     row_id..successor_id,
@@ -356,18 +357,14 @@ pub(super) fn derive_schema_configuration_row_chains<'a>(
 /// in record order.
 fn intervening_entities(
     ctx: &DecodeContext<'_>,
-    identities: Option<&EntitiesByIdentity<'_>>,
+    identities: &EntitiesByIdentity<'_>,
     records: &[CatiaEntityRecord],
     graph: &str,
     rows: std::ops::Range<u32>,
     references: &CatiaEntityReferenceIndex<'_>,
 ) -> Result<Vec<CatiaEntityReference>, CodecError> {
     const OPERATION: &str = "catia_configuration_between";
-    let Some(group) = identities
-        .map(|identities| ctx.get_btree_map(identities, graph, OPERATION))
-        .transpose()?
-        .flatten()
-    else {
+    let Some(group) = ctx.get_btree_map(identities, graph, OPERATION)? else {
         return Ok(Vec::new());
     };
     let first = ctx.partition_point(group, |(id, _)| Ok(*id <= rows.start), OPERATION)?;
