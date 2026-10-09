@@ -15,6 +15,7 @@ use crate::StepCodec;
 mod collection_limits;
 mod string_limits;
 mod prefix_admission;
+mod original_context;
 
 #[test]
 fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
@@ -562,7 +563,7 @@ fn wrapper_resolution_reuses_queries_across_target_uses() {
         let cache = super::WrapperCache::new(ctx).expect("cache");
         for _ in 0..128 {
             let resolved = cache
-                .resolve(1, &identities, &exchange, ctx)
+                .resolve(1, &identities, &exchange)
                 .expect("shared wrapper query")
                 .expect("singleton");
             let super::WrapperTargetResolution::Singleton(identity) = resolved else {

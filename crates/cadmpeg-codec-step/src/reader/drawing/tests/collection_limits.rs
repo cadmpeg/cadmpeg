@@ -585,7 +585,6 @@ fn drawing_untyped_relationship_loss_refuses_collection_limit() {
             exchange: &exchange,
             external_documents: &documents,
             wrappers: super::super::WrapperCache::new(&ctx).expect("wrapper cache"),
-            ctx: &ctx,
         };
         let refused = matches!(
             super::super::add_reference_fields(
@@ -651,7 +650,6 @@ fn sheet_usage_loss_refuses(typed_id: u64) {
             exchange: &exchange,
             external_documents: &documents,
             wrappers: super::super::WrapperCache::new(&ctx).expect("wrapper cache"),
-            ctx: &ctx,
         };
         let refused = matches!(
             super::super::add_sheet_revision_usages(&exchange, &mut baseline.clone(), &targets, (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))), &ctx),
@@ -695,7 +693,6 @@ fn association_loss_refuses(typed_id: u64) {
             exchange: &exchange,
             external_documents: &documents,
             wrappers: super::super::WrapperCache::new(&ctx).expect("wrapper cache"),
-            ctx: &ctx,
         };
         let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
         let refused = matches!(

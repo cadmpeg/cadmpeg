@@ -27,13 +27,12 @@ const DRAWING_ASSOCIATION_TYPES: &[&str] = &[
     "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER",
 ];
 
-struct TargetContext<'a> {
+struct TargetContext<'a, 'arena> {
     target_identities: &'a BTreeMap<u64, BTreeSet<String>>,
     known_typed: &'a HashSet<u64>,
     exchange: &'a Exchange,
     external_documents: &'a BTreeMap<u64, &'a str>,
-    wrappers: WrapperCache<'a>,
-    ctx: &'a DecodeContext<'a>,
+    wrappers: WrapperCache<'a, 'arena>,
 }
 
 struct DrawingCandidate<'a> {
@@ -147,7 +146,7 @@ fn visit_drawing_references(
     Ok(())
 }
 
-impl TargetContext<'_> {
+impl TargetContext<'_, '_> {
     fn resolve(&self, id: u64) -> Result<TargetResolution<'_>, CodecError> {
         target_resolution(
             id,
@@ -156,7 +155,7 @@ impl TargetContext<'_> {
             self.exchange,
             self.external_documents,
             Some(&self.wrappers),
-            self.ctx,
+            self.wrappers.ctx,
         )
     }
 }
@@ -372,7 +371,6 @@ pub(super) fn decode<'ctx>(
         exchange,
         external_documents: &external_documents,
         wrappers: WrapperCache::new(ctx)?,
-        ctx,
     };
 
     let mut drawings = BTreeMap::<u64, Drawing>::new();
@@ -849,7 +847,7 @@ fn add_reference_fields(
     name: &str,
     parameters: DrawingParameters<'_>,
     source_id: u64,
-    target_context: &TargetContext<'_>,
+    target_context: &TargetContext<'_, '_>,
     (losses, slot_storage): (
         &mut Vec<LossNote>,
         &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>,
@@ -859,11 +857,11 @@ fn add_reference_fields(
         let Some(value) = parameters.get(index) else {
             continue;
         };
-        let role = parameter_key(target_context.ctx, name, index)?;
-        visit_drawing_references(value, target_context.ctx, &mut |target_id| {
+        let role = parameter_key(target_context.wrappers.ctx, name, index)?;
+        visit_drawing_references(value, target_context.wrappers.ctx, &mut |target_id| {
             match target_context.resolve(target_id)? {
                 TargetResolution::Resolved(target) => {
-                    (target_context.ctx).push_btree_group(
+                    (target_context.wrappers.ctx).push_btree_group(
                         relationships,
                         role.clone(),
                         target,
@@ -873,7 +871,7 @@ fn add_reference_fields(
                 }
                 TargetResolution::Ambiguous((identities_buffer, _storage)) => {
                     let identities = identities_buffer;
-                    let (source_buffer, _source_storage) = target_context.ctx.format_scoped(
+                    let (source_buffer, _source_storage) = target_context.wrappers.ctx.format_scoped(
                         format_args!("drawing #{source_id} {name}"),
                         "STEP drawing source label",
                     )?;
@@ -884,16 +882,16 @@ fn add_reference_fields(
                         role.as_str(),
                         target_id,
                         &identities,
-                        target_context.ctx,
+                        target_context.wrappers.ctx,
                     )?;
                 }
                 TargetResolution::Unresolved => {
                     slot_storage.borrow_mut().with_storage(|| {
                         target_context
-                            .ctx
+                            .wrappers.ctx
                             .reserve_vec(losses, 1, "step_drawing_losses")
                     })?;
-                    losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(target_context.ctx.format_retained(format_args!(
+                    losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(target_context.wrappers.ctx.format_retained(format_args!(
                         "STEP drawing #{source_id} {name} relationship {role} references source-typed record #{target_id} without a neutral identity; the raw source parameter is retained"
                     ), "STEP unresolved drawing relationship")?));
                 }
@@ -938,7 +936,7 @@ fn note_ambiguous_target(
 fn add_sheet_revision_usages(
     exchange: &Exchange,
     drawings: &mut BTreeMap<u64, Drawing>,
-    target_context: &TargetContext<'_>,
+    target_context: &TargetContext<'_, '_>,
     (losses, slot_storage): (
         &mut Vec<LossNote>,
         &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>,
@@ -960,7 +958,7 @@ fn add_sheet_revision_usages(
             ctx.get_mut_btree_map(drawings, &sheet_id, "STEP drawing drawings get_mut")?
         {
             match sheet_target {
-                TargetResolution::Resolved(target) => (target_context.ctx).push_btree_group(
+                TargetResolution::Resolved(target) => (target_context.wrappers.ctx).push_btree_group(
                     &mut sheet.relationships,
                     cadmpeg_core::nonblank_literal!("drawing_revision"),
                     target,
@@ -975,13 +973,13 @@ fn add_sheet_revision_usages(
                         "drawing_revision",
                         revision_id,
                         &identities,
-                        target_context.ctx,
+                        target_context.wrappers.ctx,
                     )?;
                 }
                 TargetResolution::Unresolved => {
                     slot_storage.borrow_mut().with_storage(|| {
                         target_context
-                            .ctx
+                            .wrappers.ctx
                             .reserve_vec(losses, 1, "step_drawing_losses")
                     })?;
                     losses.push(StepLossCode::DrawingSheetRevisionUnresolved.note(format!(
@@ -1005,7 +1003,7 @@ fn add_sheet_revision_usages(
                 .flatten()
             {
                 let key = cadmpeg_core::nonblank_literal!(ctx, "usage_{usage_id}_sequence")?;
-                target_context.ctx.insert_btree_map(
+                target_context.wrappers.ctx.insert_btree_map(
                     &mut sheet.parameters,
                     key,
                     sequence,
@@ -1017,7 +1015,7 @@ fn add_sheet_revision_usages(
             ctx.get_mut_btree_map(drawings, &revision_id, "STEP drawing drawings get_mut")?
         {
             match revision_target {
-                TargetResolution::Resolved(target) => (target_context.ctx).push_btree_group(
+                TargetResolution::Resolved(target) => (target_context.wrappers.ctx).push_btree_group(
                     &mut revision.relationships,
                     cadmpeg_core::nonblank_literal!("sheet_revision"),
                     target,
@@ -1032,13 +1030,13 @@ fn add_sheet_revision_usages(
                         "sheet_revision",
                         sheet_id,
                         &identities,
-                        target_context.ctx,
+                        target_context.wrappers.ctx,
                     )?;
                 }
                 TargetResolution::Unresolved => {
                     slot_storage.borrow_mut().with_storage(|| {
                         target_context
-                            .ctx
+                            .wrappers.ctx
                             .reserve_vec(losses, 1, "step_drawing_losses")
                     })?;
                     losses.push(StepLossCode::DrawingRevisionSheetUnresolved.note(format!(
@@ -1054,14 +1052,14 @@ fn add_sheet_revision_usages(
 fn add_draughting_model_associations(
     exchange: &Exchange,
     drawings: &mut BTreeMap<u64, Drawing>,
-    target_context: &TargetContext<'_>,
+    target_context: &TargetContext<'_, '_>,
     (losses, slot_storage): (
         &mut Vec<LossNote>,
         &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>,
     ),
     (typed, claim_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
 ) -> Result<(), CodecError> {
-    let ctx = target_context.ctx;
+    let ctx = target_context.wrappers.ctx;
     for entity in
         exchange.matching_entity_ids(ctx, |name| DRAWING_ASSOCIATION_TYPES.contains(&name))?
     {
@@ -1099,7 +1097,7 @@ fn add_draughting_model_associations(
                         "semantic_definition",
                         definition_id,
                         &identities,
-                        target_context.ctx,
+                        target_context.wrappers.ctx,
                     )?;
                     complete = false;
                     None
@@ -1107,7 +1105,7 @@ fn add_draughting_model_associations(
                 TargetResolution::Unresolved => {
                     slot_storage.borrow_mut().with_storage(|| {
                         target_context
-                            .ctx
+                            .wrappers.ctx
                             .reserve_vec(losses, 1, "step_drawing_losses")
                     })?;
                     losses.push(StepLossCode::DraughtingSemanticDefinitionUntyped.note(
@@ -1129,14 +1127,14 @@ fn add_draughting_model_associations(
         ensure_drawing_relationship_group(
             &mut model.relationships,
             cadmpeg_core::nonblank_literal!("associated_items"),
-            target_context.ctx,
+            target_context.wrappers.ctx,
         )?;
         let mut has_items = false;
         if let Some(items) = parameters.get(4) {
-            visit_drawing_references(items, target_context.ctx, &mut |item_id| {
+            visit_drawing_references(items, target_context.wrappers.ctx, &mut |item_id| {
                 has_items = true;
                 match target_context.resolve(item_id)? {
-                    TargetResolution::Resolved(item) => (target_context.ctx).push_btree_group(
+                    TargetResolution::Resolved(item) => (target_context.wrappers.ctx).push_btree_group(
                         &mut model.relationships,
                         cadmpeg_core::nonblank_literal!("associated_items"),
                         item,
@@ -1151,14 +1149,14 @@ fn add_draughting_model_associations(
                             "associated_items",
                             item_id,
                             &identities,
-                            target_context.ctx,
+                            target_context.wrappers.ctx,
                         )?;
                         complete = false;
                     }
                     TargetResolution::Unresolved => {
                         slot_storage.borrow_mut().with_storage(|| {
                             target_context
-                                .ctx
+                                .wrappers.ctx
                                 .reserve_vec(losses, 1, "step_drawing_losses")
                         })?;
                         losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(
@@ -1191,7 +1189,7 @@ fn add_draughting_model_associations(
                             "annotation_placeholder",
                             placeholder_id,
                             &identities,
-                            target_context.ctx,
+                            target_context.wrappers.ctx,
                         )?;
                         complete = false;
                         None
@@ -1199,7 +1197,7 @@ fn add_draughting_model_associations(
                     TargetResolution::Unresolved => {
                         slot_storage.borrow_mut().with_storage(|| {
                             target_context
-                                .ctx
+                                .wrappers.ctx
                                 .reserve_vec(losses, 1, "step_drawing_losses")
                         })?;
                         losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
@@ -1219,7 +1217,7 @@ fn add_draughting_model_associations(
         };
 
         if let Some(definition) = definition_target {
-            (target_context.ctx).push_btree_group(
+            (target_context.wrappers.ctx).push_btree_group(
                 &mut model.relationships,
                 cadmpeg_core::nonblank_literal!("semantic_definition"),
                 definition,
@@ -1228,7 +1226,7 @@ fn add_draughting_model_associations(
             )?;
         }
         if let Some(placeholder) = placeholder_target {
-            (target_context.ctx).push_btree_group(
+            (target_context.wrappers.ctx).push_btree_group(
                 &mut model.relationships,
                 cadmpeg_core::nonblank_literal!("annotation_placeholder"),
                 placeholder,
@@ -1238,7 +1236,7 @@ fn add_draughting_model_associations(
         }
         if complete {
             claim_storage.with_storage(|| {
-                target_context.ctx.insert_btree_set(
+                target_context.wrappers.ctx.insert_btree_set(
                     typed,
                     association_id,
                     "step_drawing_typed_claims",
@@ -1291,7 +1289,7 @@ fn target_resolution<'ctx>(
     known_typed: &HashSet<u64>,
     exchange: &Exchange,
     external_documents: &BTreeMap<u64, &str>,
-    wrappers: Option<&WrapperCache<'ctx>>,
+    wrappers: Option<&WrapperCache<'ctx, '_>>,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<TargetResolution<'ctx>, CodecError> {
     let local_targets = ctx
@@ -1321,7 +1319,7 @@ fn target_resolution<'ctx>(
         )));
     }
     let wrapper = if let Some(cache) = wrappers {
-        cache.resolve(id, target_identities, exchange, ctx)?
+        cache.resolve(id, target_identities, exchange)?
     } else {
         wrapper_target_resolution(id, target_identities, exchange, ctx)?
     };
@@ -1367,15 +1365,17 @@ type CachedWrapper<'ctx> = (
     ScopedReservation<'ctx>,
 );
 
-struct WrapperCache<'ctx> {
+struct WrapperCache<'ctx, 'arena> {
     values: std::cell::RefCell<BTreeMap<u64, CachedWrapper<'ctx>>>,
+    ctx: &'ctx DecodeContext<'arena>,
     storage: std::cell::RefCell<ScopedReservation<'ctx>>,
 }
 
-impl<'ctx> WrapperCache<'ctx> {
-    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
+    fn new(ctx: &'ctx DecodeContext<'arena>) -> Result<Self, CodecError> {
         Ok(Self {
             values: std::cell::RefCell::new(BTreeMap::new()),
+            ctx,
             storage: std::cell::RefCell::new(
                 ctx.reserve_scoped(0, "STEP drawing wrapper cache scratch")?,
             ),
@@ -1387,8 +1387,8 @@ impl<'ctx> WrapperCache<'ctx> {
         id: u64,
         target_identities: &BTreeMap<u64, BTreeSet<String>>,
         exchange: &Exchange,
-        ctx: &'ctx DecodeContext<'_>,
     ) -> Result<Option<WrapperTargetResolution<'ctx>>, CodecError> {
+        let ctx = self.ctx;
         if !ctx.contains_key_btree_map(
             &self.values.borrow(),
             &id,
