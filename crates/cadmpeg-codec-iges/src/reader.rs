@@ -952,8 +952,8 @@ fn decode_with_occurrence_limits(
                 "IGES transfer ledger is inconsistent: {message}"
             ))
         })?;
-    let (mut notes, note_storage) = directory::summary_notes(&parse.directory, ctx)?;
-    note_storage.commit()?;
+    let (notes, note_storage) = directory::summary_notes(&parse.directory, ctx)?;
+    let mut notes = note_storage.commit_value(notes)?;
     append_summary_notes(
         ctx,
         &mut notes,

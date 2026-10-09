@@ -580,7 +580,7 @@ pub(super) fn project(
         } else {
             None
         };
-        position_storage.commit()?;
+        let positions = position_storage.commit_value(positions)?;
         let parameter_end = cadmpeg_core::convert::f64_from_index(positions.len() - 1)
             .ok_or_else(|| ctx.refuse_codec_limit("iges copious knots", 0, 1))?;
         let knot_count = positions
