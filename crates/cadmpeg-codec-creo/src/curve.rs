@@ -1693,6 +1693,9 @@ fn extend_expression_dependencies(
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     expression: &str,
 ) -> Result<Option<()>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
@@ -8144,6 +8147,9 @@ fn row_terminator(
     start: usize,
     end: usize,
 ) -> Result<Option<(usize, usize)>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(bytes) = payload.get(start..end) else {
         return Ok(None);
     };
@@ -8303,6 +8309,9 @@ fn framed_segment_with_face_ids(
     materialized_face_ids: Option<&BTreeSet<u32>>,
     known_face_ids: Option<&BTreeSet<u32>>,
 ) -> Result<Option<FramedRow>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (start, end) = bounds;
 
     let Some(segment) = payload.get(start..end) else {
@@ -8457,6 +8466,9 @@ fn curve_scalar_lane(
     type_byte: u8,
     cache: &scalar::ScalarCache,
 ) -> Result<CurveScalarLane, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut scalars = Vec::new();
     let mut references = Vec::new();
     let mut opaque_spans = Vec::new();
@@ -8740,6 +8752,9 @@ fn complete_two_chart_samples(
     sample_operation: &'static str,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<[[f64; 2]; 2]>>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(remaining) = body.len().checked_sub(start) else {
         return Ok(None);
     };
@@ -9755,6 +9770,9 @@ fn topology_suffix_with_face_ids(
     materialized_face_ids: Option<&BTreeSet<u32>>,
     known_face_ids: Option<&BTreeSet<u32>>,
 ) -> Result<Option<TopologySuffixCandidate>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(candidates) = topology_suffix_candidates(row) else {
         return Ok(None);
     };
