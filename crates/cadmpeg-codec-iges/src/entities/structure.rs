@@ -2341,11 +2341,14 @@ fn plane_face_draft(
     surface_sequence: u32,
     source_sequence: u32,
     stem: &crate::ids::Stem,
-    boundary_edges: Vec<Edge>,
+    boundary: (Vec<Edge>, ScopedReservation<'_>),
     resolution: f64,
     sequences: &mut super::geometry::SourceSequences<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<ModelDraft, LegacyPlaneError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(LegacyPlaneError::Resource(refusal.into()));
+    }
     let tolerance = if resolution > 0.0 {
         Some(
             cadmpeg_ir::scalar::PositiveReal::new(resolution)
@@ -2363,10 +2366,10 @@ fn plane_face_draft(
     let mut candidate = ModelDraft::new();
     let mut outer_loop = None;
     let mut loop_ids = ctx.collection_vec(
-        boundary_edges.len().saturating_sub(1),
+        boundary.0.len().saturating_sub(1),
         "iges legacy plane loop IDs",
     )?;
-    let mut input = boundary_edges.into_iter().enumerate();
+    let mut input = boundary.0.into_iter().enumerate();
     while input.len() != 0 || ctx.resource_refusal().is_some() {
         let Some((boundary_index, edge)) = ctx.next_charged(&mut input, "iges structure list traversal")? else { break; };
         let edge_id = edge
@@ -2422,6 +2425,8 @@ fn plane_face_draft(
             loop_ids.push(loop_id);
         }
     }
+    drop(input);
+    drop(boundary.1);
     let face_loops = match outer_loop {
         Some(outer) => cadmpeg_ir::topology::FaceLoops::classified(outer, loop_ids),
         None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
@@ -2607,10 +2612,10 @@ fn legacy_single_parent_face<'ir, 'ctx>(
     let parent_plane = plane_carrier(index, parent_sequence, ctx)?
         .ok_or("legacy single-parent parent plane was not projected")?;
     let resolution = global.minimum_resolution_mm();
-    let _edge_storage;
+    let edge_storage;
     let (mut boundary_edges, result_edge_storage) =
         ctx.temporary_vec(boundary_sequences.len(), "iges legacy plane boundary edges")?;
-    _edge_storage = result_edge_storage;
+    edge_storage = result_edge_storage;
     let mut input = std::iter::once(parent_sequence)
         .chain(children.iter().copied())
         .zip(boundary_sequences.iter().copied())
@@ -2658,7 +2663,7 @@ fn legacy_single_parent_face<'ir, 'ctx>(
             parent_sequence,
             entry.sequence,
             &stem,
-            boundary_edges,
+            (boundary_edges, edge_storage),
             resolution,
             sequences,
             ctx,
@@ -4151,16 +4156,16 @@ pub(super) fn project<'ctx>(
                         crate::ids::Word::BoundedPlane,
                         entry.sequence,
                     );
-                    let _edge_storage;
+                    let edge_storage;
                     let (mut boundary_edges, result_edge_storage) =
                         ctx.temporary_vec(1, "iges bounded plane boundary edges")?;
-                    _edge_storage = result_edge_storage;
+                    edge_storage = result_edge_storage;
                     boundary_edges.push(edge);
                     let candidate = plane_face_draft(
                         entry.sequence,
                         entry.sequence,
                         &stem,
-                        boundary_edges,
+                        (boundary_edges, edge_storage),
                         global.minimum_resolution_mm(),
                         sequences,
                         ctx,
