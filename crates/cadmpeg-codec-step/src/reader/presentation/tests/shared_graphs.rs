@@ -245,6 +245,7 @@ fn color_resolution_reuses_warning_free_queries_across_styles() {
         let mut shared = super::super::StyleColors {
             prefixes: BTreeMap::new(),
             values: BTreeMap::new(),
+            ctx,
             storage: ctx.reserve_scoped(0, "shared fixture").expect("scope"),
         };
         let reports =
@@ -262,7 +263,6 @@ fn color_resolution_reuses_warning_free_queries_across_styles() {
                     super::super::StyleDomain::Surface,
                     &storage,
                     (&mut losses, &reports),
-                    ctx,
                 )
                 .expect("shared color query");
             let result = cached.color.as_ref().expect("color");
@@ -282,7 +282,6 @@ fn color_resolution_reuses_warning_free_queries_across_styles() {
                     query,
                     super::super::StyleDomain::Surface,
                     (&mut claims, &mut claim_storage),
-                    ctx,
                 )
                 .expect("shared graph claims");
         }
@@ -299,6 +298,7 @@ fn shared_color_cache_keeps_depth_cutoffs_and_per_style_warnings() {
         let mut shared = super::super::StyleColors {
             prefixes: BTreeMap::new(),
             values: BTreeMap::new(),
+            ctx,
             storage: ctx.reserve_scoped(0, "shared fixture").expect("scope"),
         };
         let reports =
@@ -334,7 +334,6 @@ fn shared_color_cache_keeps_depth_cutoffs_and_per_style_warnings() {
                     super::super::StyleDomain::Surface,
                     &storage,
                     (&mut losses, &reports),
-                    ctx
                 )
                 .expect("invalid side query")
                 .1
@@ -369,6 +368,7 @@ fn shared_style_color_query_keeps_ordered_local_cache_history() {
                 let mut shared = super::super::StyleColors {
                     prefixes: BTreeMap::new(),
                     values: BTreeMap::new(),
+            ctx,
                     storage: ctx.reserve_scoped(0, "shared fixture").expect("scope"),
                 };
                 for references in [[2, 10], [10, 2], [2, 10], [10, 2]] {
@@ -383,7 +383,6 @@ fn shared_style_color_query_keeps_ordered_local_cache_history() {
                             super::super::StyleDomain::Surface,
                             &storage,
                             (&mut losses, &reports),
-                            ctx,
                         )
                         .expect("ordered query")
                         .1
@@ -410,3 +409,5 @@ fn test_body(id: u64) -> cadmpeg_ir::topology::Body {
         regions: Vec::new(), transform: None, name: None, color: None, visible: None,
     }
 }
+
+mod original_context;
