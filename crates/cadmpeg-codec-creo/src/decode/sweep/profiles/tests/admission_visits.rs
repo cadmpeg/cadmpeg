@@ -188,3 +188,72 @@ fn single_circle_profile_uses_no_absent_pair_work() {
         }
     }
 }
+
+#[test]
+fn singular_sampling_stops_before_quarter_evaluation() {
+    use super::super::{append_nurbs_profile_span, NurbsProfileSpan};
+    use cadmpeg_ir::eval::decode::NurbsPointEvaluator;
+    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 3],
+        Some(vec![1.0, -1.0, 1.0]), false,
+    ).expect("structural admission").expect("finite rational lanes");
+    let span = NurbsProfileSpan {
+        start: 0.0, end: 1.0, start_point: [0.0; 2], end_point: [0.0; 2],
+        tolerance: 0.01, depth: 0,
+    };
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let mut evaluator = NurbsPointEvaluator::new(ctx, &curve).expect("basis");
+        assert_eq!(nurbs_profile_point(ctx, &mut evaluator, &curve, 0.5).expect("midpoint"), None);
+        for quarter in [0.25, 0.75] {
+            assert_eq!(nurbs_profile_point(ctx, &mut evaluator, &curve, quarter).expect("quarter"), Some([0.0; 2]));
+        }
+    });
+    // Basis storage fill: 3. Span: 1. Midpoint basis: 1 + (1 + 1) +
+    // (2 + 1) = 6. Finite basis: 3. Homogeneous axes: 4 * 3 visits,
+    // weight cancellation replay: 3, constant-coordinate pass: 3.
+    const FIRST_ABSENT_SAMPLE_WORK: u64 = 3 + 1 + 6 + 3 + 4 * 3 + 3 + 3;
+    for cap in 0..=FIRST_ABSENT_SAMPLE_WORK {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_collection_items = 3;
+        policy.limits.max_materialized_bytes = 3 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<f64>());
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut storage = ctx.reserve_scoped(0, "test sampling points").expect("empty storage");
+        let mut points = Vec::new();
+        let mut evaluator = match NurbsPointEvaluator::new(&ctx, &curve) {
+            Ok(evaluator) => evaluator,
+            Err(original) => {
+                assert!(cap < 3);
+                assert_eq!((original.dimension, original.used, original.additional, original.operation),
+                    (ResourceDimension::WorkUnits, 0, 3, "IR B-spline basis work"));
+                assert_eq!(ctx.resource_refusal(), Some(original));
+                continue;
+            }
+        };
+        let result = append_nurbs_profile_span(&ctx, &mut evaluator, &curve, &span, &mut points, &mut storage);
+        assert!(points.is_empty());
+        if cap == FIRST_ABSENT_SAMPLE_WORK {
+            assert!(result.expect("only reached midpoint work").is_none());
+            assert_eq!(ctx.resource_refusal(), None);
+            let original = ctx.charge_work_limit(1, "after absent midpoint").expect_err("exact midpoint work");
+            assert_eq!((original.used, original.additional), (FIRST_ABSENT_SAMPLE_WORK, 1));
+            assert!(matches!(append_nurbs_profile_span(&ctx, &mut evaluator, &curve, &span, &mut points, &mut storage), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        } else {
+            let Err(CodecError::ResourceLimit(original)) = result else { panic!("midpoint refusal"); };
+            let operation = match cap {
+                3 => "creo NURBS profile sampling spans",
+                4..=9 => "IR B-spline basis work",
+                10..=12 => "IR B-spline finite basis inspection",
+                _ => "IR homogeneous pole traversal",
+            };
+            assert_eq!((original.dimension, original.used, original.additional, original.operation),
+                (ResourceDimension::WorkUnits, cap, 1, operation));
+            assert_eq!(ctx.resource_refusal(), Some(original));
+            assert!(matches!(append_nurbs_profile_span(&ctx, &mut evaluator, &curve, &span, &mut points, &mut storage), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        }
+    }
+}

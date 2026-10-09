@@ -1339,13 +1339,11 @@ fn append_nurbs_profile_span(
     }
     let first_quarter = span.start + (span.end - span.start) * 0.25;
     let third_quarter = span.start + (span.end - span.start) * 0.75;
-    let (Some(middle_point), Some(first_quarter_point), Some(third_quarter_point)) = (
-        nurbs_profile_point(ctx, evaluator, nurbs, middle)?,
-        nurbs_profile_point(ctx, evaluator, nurbs, first_quarter)?,
-        nurbs_profile_point(ctx, evaluator, nurbs, third_quarter)?,
-    ) else {
-        return Ok(None);
-    };
+    let middle_point = require_some!(nurbs_profile_point(ctx, evaluator, nurbs, middle)?);
+    let first_quarter_point =
+        require_some!(nurbs_profile_point(ctx, evaluator, nurbs, first_quarter)?);
+    let third_quarter_point =
+        require_some!(nurbs_profile_point(ctx, evaluator, nurbs, third_quarter)?);
     let chord = [span.start_point, span.end_point];
     let flatness = planar_point_segment_distance(first_quarter_point, chord)
         .max(planar_point_segment_distance(middle_point, chord))
