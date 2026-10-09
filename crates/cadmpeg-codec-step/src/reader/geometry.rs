@@ -2506,29 +2506,27 @@ pub(super) fn decode<'ctx>(
     }
     let mut deferred_surface_queue = VecDeque::from(deferred_surface_ids);
     let mut surface_waiting_on = DeferredDependencies::default();
-    let (worklist_scale_index, mut worklist_scale_storage) = SurfaceScaleIndex::build(ir, ctx)?;
-    let mut worklist_scale_index = worklist_scale_index;
+    let mut worklist_scale_index = SurfaceScaleIndex::build(ir, ctx)?;
     let mut surface_start = ir.model.surfaces.len();
     let mut procedural_start = ir.model.procedural_surfaces.len();
     while let Some(id) = deferred_surface_queue.pop_front() {
         ctx.charge_work(1, "step deferred surface worklist")?;
-        worklist_scale_storage.with_storage(|| -> Result<(), CodecError> {
+        {
             ctx.charge_work(0, "step surface scale append")?;
             let mut geometry_source = (&ir.model.surfaces[surface_start..]).iter().enumerate();
             for _ in 0..geometry_source.len() {
                 let (offset, surface) = ctx.next_charged(&mut geometry_source, "step surface scale append")?
                     .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
-                worklist_scale_index.add_surface(surface, surface_start + offset, ctx)?;
+                worklist_scale_index.add_surface(surface, surface_start + offset)?;
             }
             ctx.charge_work(0, "step surface scale append")?;
             let mut geometry_source = (&ir.model.procedural_surfaces[procedural_start..]).iter().enumerate();
             for _ in 0..geometry_source.len() {
                 let (offset, procedural) = ctx.next_charged(&mut geometry_source, "step surface scale append")?
                     .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
-                worklist_scale_index.add_procedural(procedural, procedural_start + offset, ctx)?;
+                worklist_scale_index.add_procedural(procedural, procedural_start + offset)?;
             }
-            Ok(())
-        })?;
+        }
         surface_start = ir.model.surfaces.len();
         procedural_start = ir.model.procedural_surfaces.len();
         if ctx.contains_key_hash_map(&carrier_index.surfaces, &id, "step_geometry_lookup")? {
@@ -2605,17 +2603,14 @@ pub(super) fn decode<'ctx>(
                 continue;
             };
 
-            let Some(parameter_scales) = worklist_scale_storage.with_storage(|| {
-                procedural_surface_parameter_scales(
+            let Some(parameter_scales) = procedural_surface_parameter_scales(
                     ir,
                     &mut worklist_scale_index,
                     &SurfaceId::from(ids::data(kind!("surface"), support_step)),
                     geometry,
                     [record_scale, record_angle_scale],
                     &source_curve_parameter_scales,
-                    ctx,
-                )
-            })?
+                )?
             else {
                 ctx.push_vec(
                     &mut losses,
@@ -3052,7 +3047,6 @@ pub(super) fn decode<'ctx>(
         }
     }
     drop(worklist_scale_index);
-    drop(worklist_scale_storage);
     for indexed_entity in exchange.entities(ctx, "SURFACE_REPLICA")? {
         let (id, _) = indexed_entity?;
         if !ctx.contains_key_hash_map(&carrier_index.surfaces, &id, "step_geometry_lookup")? {
@@ -3280,8 +3274,7 @@ pub(super) fn decode<'ctx>(
         }
     }
     let mut surface_parameter_scales = BTreeMap::new();
-    let (scale_index, mut scale_index_workspace) = SurfaceScaleIndex::build(ir, ctx)?;
-    let mut scale_index = scale_index;
+    let mut scale_index = SurfaceScaleIndex::build(ir, ctx)?;
     ctx.charge_work(0, "STEP decode traversal")?;
     let mut geometry_source = (&ir.model.surfaces[..]).iter();
     for _ in 0..geometry_source.len() {
@@ -3290,8 +3283,7 @@ pub(super) fn decode<'ctx>(
         let Some(id) = step_instance_id(ctx, surface.id.as_str())? else {
             continue;
         };
-        if let Some(scales) = scale_index_workspace.with_storage(|| {
-            procedural_surface_parameter_scales(
+        if let Some(scales) = procedural_surface_parameter_scales(
                 ir,
                 &mut scale_index,
                 &surface.id,
@@ -3301,9 +3293,7 @@ pub(super) fn decode<'ctx>(
                     unit_scales.angle([id], ctx)?.get(),
                 ],
                 &source_curve_parameter_scales,
-                ctx,
-            )
-        })? {
+            )? {
             scratch.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut surface_parameter_scales,
@@ -3315,7 +3305,6 @@ pub(super) fn decode<'ctx>(
         }
     }
     drop(scale_index);
-    drop(scale_index_workspace);
     drop(source_curve_parameter_scales);
     drop(source_scale_storage);
     for indexed_entity in exchange.entities(ctx, "PCURVE")? {
@@ -7729,13 +7718,13 @@ fn shift_periodic_parameter(value: f64, [lower, upper]: [f64; 2]) -> f64 {
 
 fn procedural_surface_parameter_scales(
     ir: &CadIr,
-    index: &mut SurfaceScaleIndex,
+    index: &mut SurfaceScaleIndex<'_, '_>,
     surface_id: &SurfaceId,
     geometry: &SurfaceGeometry,
     unit_scales: [f64; 2],
     source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<[f64; 2]>, CodecError> {
+    let ctx = index.ctx;
     let _depth = ctx.enter_nested("step_surface_parameter_scale_walk")?;
     let mut active_storage = ctx.reserve_scoped(0, "step surface scale traversal storage")?;
     let mut active = BTreeMap::new();
@@ -7784,7 +7773,6 @@ fn procedural_surface_parameter_scales(
                     solved,
                     unit_scales,
                     source_curve_parameter_scales,
-                    ctx,
                 )? {
                     SurfaceScaleStep::Value(scales) => break (scales, Some(terminal)),
                     // A first procedure can turn a previously unknown terminal into a support.
@@ -7813,11 +7801,10 @@ fn procedural_surface_parameter_scales(
             solved,
             unit_scales,
             source_curve_parameter_scales,
-            ctx,
         )? {
             SurfaceScaleStep::Value(scales) => break (scales, position),
             SurfaceScaleStep::Support(support) => {
-                let Some(carrier) = index.surface(ir, ctx, support)? else {
+                let Some(carrier) = index.surface(ir, support)? else {
                     return Ok(None);
                 };
                 surface_id = support;
@@ -7827,19 +7814,19 @@ fn procedural_surface_parameter_scales(
     };
     for (_, position) in ctx.admit_iter(active, "step surface scale memo traversal")? {
         if let Some(position) = position {
-            ctx.insert_btree_map(
+            index.storage.with_storage(|| ctx.insert_btree_map(
                 &mut index.terminals,
                 position,
                 (index.generation, terminal),
                 "step surface scale memo",
-            )?;
+            ))?;
         }
     }
     Ok(scales)
 }
 
 /// Arena positions remain valid when the worklist appends model records.
-struct SurfaceScaleIndex {
+struct SurfaceScaleIndex<'ctx, 'arena> {
     curves: BTreeMap<String, usize>,
     surfaces: BTreeMap<String, usize>,
     owners: BTreeMap<String, Option<String>>,
@@ -7848,14 +7835,15 @@ struct SurfaceScaleIndex {
     // A terminal position is independent of a requesting surface's unit context.
     terminals: BTreeMap<usize, (usize, Option<usize>)>,
     generation: usize,
+    ctx: &'ctx DecodeContext<'arena>,
+    storage: ScopedReservation<'ctx>,
 }
 
-impl SurfaceScaleIndex {
-    fn build<'ctx>(
+impl<'ctx, 'arena> SurfaceScaleIndex<'ctx, 'arena> {
+    fn build(
         ir: &CadIr,
-        ctx: &'ctx DecodeContext<'_>,
-    ) -> Result<(Self, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
-        let mut workspace = ctx.reserve_scoped(0, "step surface scale index")?;
+        ctx: &'ctx DecodeContext<'arena>,
+    ) -> Result<Self, CodecError> {
         let mut index = Self {
             curves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
@@ -7864,8 +7852,9 @@ impl SurfaceScaleIndex {
             owned_procedurals: BTreeMap::new(),
             terminals: BTreeMap::new(),
             generation: 0,
+            ctx,
+            storage: ctx.reserve_scoped(0, "step surface scale index")?,
         };
-        workspace.with_storage(|| -> Result<(), CodecError> {
             ctx.charge_work(0, "step surface scale curve index")?;
             let mut geometry_source = (&ir.model.curves).iter().enumerate();
             for _ in 0..geometry_source.len() {
@@ -7876,6 +7865,7 @@ impl SurfaceScaleIndex {
                     curve.id.as_str(),
                     "step surface scale curve index",
                 )? {
+                    index.storage.with_storage(|| -> Result<(), CodecError> {
                     let key = ctx
                         .copy_retained_text(curve.id.as_str(), "step surface scale curve index")?;
                     ctx.insert_btree_map(
@@ -7884,6 +7874,8 @@ impl SurfaceScaleIndex {
                         position,
                         "step surface scale curve index",
                     )?;
+                    Ok(())
+                    })?;
                 }
             }
             ctx.charge_work(0, "step surface scale index")?;
@@ -7891,28 +7883,28 @@ impl SurfaceScaleIndex {
             for _ in 0..geometry_source.len() {
                 let (position, surface) = ctx.next_charged(&mut geometry_source, "step surface scale index")?
                     .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
-                index.add_surface(surface, position, ctx)?;
+                index.add_surface(surface, position)?;
             }
             ctx.charge_work(0, "step surface scale procedurals")?;
             let mut geometry_source = (&ir.model.procedural_surfaces[..]).iter().enumerate();
             for _ in 0..geometry_source.len() {
                 let (position, procedural) = ctx.next_charged(&mut geometry_source, "step surface scale procedurals")?
                     .ok_or_else(|| CodecError::malformed("STEP geometry traversal source ended early"))?;
-                index.add_procedural(procedural, position, ctx)?;
+                index.add_procedural(procedural, position)?;
             }
-            Ok(())
-        })?;
-        Ok((index, workspace))
+        Ok(index)
     }
 
     fn add_surface(
         &mut self,
         surface: &Surface,
         position: usize,
-        ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
+        let Self { surfaces, owners, procedurals, owned_procedurals, generation, ctx, storage, .. } = self;
+        let ctx = *ctx;
+        storage.with_storage(|| {
         if !ctx.contains_key_btree_map(
-            &self.surfaces,
+            surfaces,
             surface.id.as_str(),
             "step surface scale index",
         )? {
@@ -7921,7 +7913,7 @@ impl SurfaceScaleIndex {
                 "step surface scale index",
             )?;
             ctx.insert_btree_map(
-                &mut self.surfaces,
+                surfaces,
                 key,
                 position,
                 "step surface scale index",
@@ -7931,20 +7923,20 @@ impl SurfaceScaleIndex {
             return Ok(());
         };
         if let Some(owner) = ctx.get_mut_btree_map(
-            &mut self.owners,
+            owners,
             construction.as_str(),
             "step surface scale owners",
         )? {
             if let Some(owner) = owner.take() {
-                self.generation += 1;
+                *generation += 1;
                 // A second owner invalidates every procedure for this construction.
                 if let Some(procedurals) = ctx.get_btree_map(
-                    &self.procedurals,
+                    procedurals,
                     construction.as_str(),
                     "step surface scale procedurals",
                 )? {
                     if let Some(owned) = ctx.get_mut_btree_map(
-                        &mut self.owned_procedurals,
+                        owned_procedurals,
                         owner.as_str(),
                         "step surface scale owners",
                     )? {
@@ -7972,13 +7964,13 @@ impl SurfaceScaleIndex {
                 "step surface scale owners",
             )?;
             ctx.insert_btree_map(
-                &mut self.owners,
+                owners,
                 key,
                 Some(owner),
                 "step surface scale owners",
             )?;
             if let Some(procedurals) = ctx.get_btree_map(
-                &self.procedurals,
+                procedurals,
                 construction.as_str(),
                 "step surface scale procedurals",
             )? {
@@ -7992,7 +7984,7 @@ impl SurfaceScaleIndex {
                         "step surface scale owners",
                     )?;
                     ctx.insert_btree_group_set(
-                        &mut self.owned_procedurals,
+                        owned_procedurals,
                         owner,
                         procedural,
                         "step surface scale procedurals",
@@ -8002,42 +7994,45 @@ impl SurfaceScaleIndex {
             }
         }
         Ok(())
+        })
     }
 
     fn add_procedural(
         &mut self,
         procedural: &ProceduralSurface,
         position: usize,
-        ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
+        let Self { owners, procedurals, owned_procedurals, generation, ctx, storage, .. } = self;
+        let ctx = *ctx;
+        storage.with_storage(|| {
         if ctx.contains_key_btree_map(
-            &self.procedurals,
+            procedurals,
             procedural.id.as_str(),
             "step surface scale procedurals",
         )? {
             // Additional procedures can change a unique terminal into an ambiguous owner.
-            self.generation += 1;
+            *generation += 1;
         }
         let key = ctx.format_retained(
             format_args!("{}", procedural.id.as_str()),
             "step surface scale procedurals",
         )?;
         ctx.push_btree_group(
-            &mut self.procedurals,
+            procedurals,
             key,
             position,
             "step surface scale procedurals",
             "step surface scale procedure positions",
         )?;
         if let Some(Some(owner)) = ctx.get_btree_map(
-            &self.owners,
+            owners,
             procedural.id.as_str(),
             "step surface scale owners",
         )? {
             let owner =
                 ctx.format_retained(format_args!("{owner}"), "step surface scale procedurals")?;
             ctx.insert_btree_group_set(
-                &mut self.owned_procedurals,
+                owned_procedurals,
                 owner,
                 position,
                 "step surface scale procedurals",
@@ -8045,14 +8040,15 @@ impl SurfaceScaleIndex {
             )?;
         }
         Ok(())
+        })
     }
 
     fn curve<'a>(
         &self,
         ir: &'a CadIr,
         id: &CurveId,
-        ctx: &DecodeContext<'_>,
     ) -> Result<Option<&'a Curve>, CodecError> {
+        let ctx = self.ctx;
         Ok(ctx
             .get_btree_map(&self.curves, id.as_str(), "step surface scale curve lookup")?
             .and_then(|&position| ir.model.curves.get(position)))
@@ -8061,9 +8057,9 @@ impl SurfaceScaleIndex {
     fn surface<'a>(
         &self,
         ir: &'a CadIr,
-        ctx: &DecodeContext<'_>,
         id: &SurfaceId,
     ) -> Result<Option<&'a Surface>, CodecError> {
+        let ctx = self.ctx;
         Ok(ctx
             .get_btree_map(&self.surfaces, id.as_str(), "step surface scale lookup")?
             .and_then(|&position| ir.model.surfaces.get(position)))
@@ -8072,9 +8068,9 @@ impl SurfaceScaleIndex {
     fn owned_procedural<'a>(
         &self,
         ir: &'a CadIr,
-        ctx: &DecodeContext<'_>,
         owner: &SurfaceId,
     ) -> Result<Option<&'a ProceduralSurface>, CodecError> {
+        let ctx = self.ctx;
         Ok(ctx
             .get_btree_map(
                 &self.owned_procedurals,
@@ -8094,13 +8090,13 @@ enum SurfaceScaleStep<'a> {
 
 fn surface_geometry_parameter_scales<'a>(
     ir: &'a CadIr,
-    index: &SurfaceScaleIndex,
+    index: &SurfaceScaleIndex<'_, '_>,
     surface_id: &SurfaceId,
     geometry: &SolvedSurfaceGeometry,
     [length_scale, angle_scale]: [f64; 2],
     source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<SurfaceScaleStep<'a>, CodecError> {
+    let ctx = index.ctx;
     let _depth = ctx.enter_nested("step_surface_geometry_scale_walk")?;
     let mut geometry = geometry;
     while let SolvedSurfaceGeometry::Transformed(placed) = geometry {
@@ -8118,7 +8114,7 @@ fn surface_geometry_parameter_scales<'a>(
         SolvedSurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
         SolvedSurfaceGeometry::Transformed(_) => None,
         SolvedSurfaceGeometry::Unknown { .. } => {
-            let Some(procedural) = index.owned_procedural(ir, ctx, surface_id)? else {
+            let Some(procedural) = index.owned_procedural(ir, surface_id)? else {
                 return Ok(SurfaceScaleStep::Value(None));
             };
             if let Some(support) = procedural_surface_support(procedural.definition()) {
@@ -8131,7 +8127,6 @@ fn surface_geometry_parameter_scales<'a>(
                 length_scale,
                 angle_scale,
                 source_curve_parameter_scales,
-                ctx,
             )
             .map(SurfaceScaleStep::Value);
         }
@@ -8154,12 +8149,11 @@ fn procedural_surface_support(definition: &ProceduralSurfaceDefinition) -> Optio
 
 fn procedural_definition_parameter_scales(
     ir: &CadIr,
-    index: &SurfaceScaleIndex,
+    index: &SurfaceScaleIndex<'_, '_>,
     definition: &ProceduralSurfaceDefinition,
     length_scale: f64,
     angle_scale: f64,
     source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<[f64; 2]>, CodecError> {
     match definition {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
@@ -8172,7 +8166,6 @@ fn procedural_definition_parameter_scales(
                     length_scale,
                     angle_scale,
                     source_curve_parameter_scales,
-                    ctx,
                 )?),
                 1.0,
             ]))
@@ -8185,7 +8178,6 @@ fn procedural_definition_parameter_scales(
                 length_scale,
                 angle_scale,
                 source_curve_parameter_scales,
-                ctx,
             )?),
             1.0,
         ])),
@@ -8198,7 +8190,6 @@ fn procedural_definition_parameter_scales(
                 length_scale,
                 angle_scale,
                 source_curve_parameter_scales,
-                ctx,
             )?),
         ])),
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
@@ -8209,7 +8200,6 @@ fn procedural_definition_parameter_scales(
                 length_scale,
                 angle_scale,
                 source_curve_parameter_scales,
-                ctx,
             )?);
             Ok(Some(if *definition_payload.transposed() {
                 [angle_scale, directrix]
@@ -8224,13 +8214,13 @@ fn procedural_definition_parameter_scales(
 
 fn directrix_parameter_scale(
     ir: &CadIr,
-    index: &SurfaceScaleIndex,
+    index: &SurfaceScaleIndex<'_, '_>,
     curve_id: &CurveId,
     length_scale: f64,
     angle_scale: f64,
     source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<f64>, CodecError> {
+    let ctx = index.ctx;
     if let Some(source_scale) = step_instance_id(ctx, curve_id.as_str())?
         .map(|id| ctx.get_btree_map(source_curve_parameter_scales, &id, "step_geometry_lookup"))
         .transpose()?
@@ -8238,7 +8228,7 @@ fn directrix_parameter_scale(
     {
         return Ok(Some(source_scale.get()));
     }
-    let Some(curve) = index.curve(ir, curve_id, ctx)? else {
+    let Some(curve) = index.curve(ir, curve_id)? else {
         return Ok(None);
     };
     let Some(solved) = curve.geometry.solved() else {
