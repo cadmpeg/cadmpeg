@@ -20,11 +20,11 @@ fn e5_bound_parameter_queries_do_not_replay_shared_entries() {
         },
     )]);
     crate::test_support::with_service_context(|ctx| {
-        let (parameters, _storage) = index_bound_parameters(ctx, &bounds).expect("bound index");
+        let parameters = index_bound_parameters(ctx, &bounds).expect("bound index");
         crate::test_support::with_work_limit(u64::from(count) * 64, |query_ctx| {
             for representation in 0..count {
                 assert_eq!(
-                    bound_representation_parameter(query_ctx, &parameters, 1, representation)?
+                    bound_representation_parameter(query_ctx, &parameters.0, 1, representation)?
                         .map(FiniteReal::get),
                     Some(f64::from(representation))
                 );
@@ -49,10 +49,10 @@ fn e5_bound_parameter_index_keeps_duplicate_ambiguity() {
         },
     )]);
     crate::test_support::with_retained_limit(0, |ctx| {
-        let (parameters, _storage) =
+        let parameters =
             index_bound_parameters(ctx, &bounds).expect("scoped bound index");
         assert_eq!(
-            bound_representation_parameter(ctx, &parameters, 1, 7).expect("parameter query"),
+            bound_representation_parameter(ctx, &parameters.0, 1, 7).expect("parameter query"),
             None
         );
     });

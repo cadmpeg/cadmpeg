@@ -473,7 +473,7 @@ fn derive_e5_vertices(
     surfaces: &[crate::families::e5::records::E5Surface],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<Vec<Point3>>, cadmpeg_core::CodecError> {
-    let (bound_parameters, _bound_storage) =
+    let bound_parameters =
         crate::families::e5::graph::index_bound_parameters(ctx, &topology.bounds)?;
     let mut surface_for_ref = HashMap::new();
     for surface in ctx.admit_iter(surfaces, "catia_e5_derived_surface_scan")? {
@@ -519,7 +519,7 @@ fn derive_e5_vertices(
                 let Some(reversed) = e5_stored_pcurve_reversed(
                     ctx,
                     topology,
-                    &bound_parameters,
+                    &bound_parameters.0,
                     edge_ref,
                     pcurve_ref,
                     range,
@@ -1067,13 +1067,13 @@ fn e5_native_uv_endpoints(
         } => {
             // The evaluator reads raw lanes, so the copies live only for
             // the two endpoint evaluations.
-            let (scalar_knots, _knot_storage) = ctx.try_collect_scoped_vec(
+            let scalar_knots = ctx.try_collect_scoped_vec(
                 knots
                     .iter()
                     .map(|knot| Ok::<_, cadmpeg_core::CodecError>(knot.get())),
                 "catia_e5_uv_knots",
             )?;
-            let (scalar_controls, _control_storage) = ctx.try_collect_scoped_vec(
+            let scalar_controls = ctx.try_collect_scoped_vec(
                 control_points
                     .iter()
                     .map(|[u, v]| Ok::<_, cadmpeg_core::CodecError>(Point2::new(u.get(), v.get()))),
@@ -1082,16 +1082,16 @@ fn e5_native_uv_endpoints(
             let start = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
                 ctx,
                 *degree,
-                &scalar_knots,
-                &scalar_controls,
+                &scalar_knots.0,
+                &scalar_controls.0,
                 None,
                 range[0].get(),
             ))?;
             let end = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
                 ctx,
                 *degree,
-                &scalar_knots,
-                &scalar_controls,
+                &scalar_knots.0,
+                &scalar_controls.0,
                 None,
                 range[1].get(),
             ))?;
@@ -1634,7 +1634,7 @@ fn plan_e5_boundary<'a>(
     vertices: E5VertexPoints<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<E5BoundaryPlan<'a>>, cadmpeg_core::CodecError> {
-    let (bound_parameters, _bound_storage) =
+    let bound_parameters =
         crate::families::e5::graph::index_bound_parameters(ctx, &topology.bounds)?;
     let mut faces = Vec::new();
     let mut steps = topology.faces.iter();
@@ -1724,7 +1724,7 @@ fn plan_e5_boundary<'a>(
                 let reversed = e5_stored_pcurve_reversed(
                     ctx,
                     topology,
-                    &bound_parameters,
+                    &bound_parameters.0,
                     edge_ref,
                     pcurve_ref,
                     range,
@@ -1747,7 +1747,7 @@ fn plan_e5_boundary<'a>(
                     return Ok(None);
                 }
                 let oriented_pcurve = if reversed {
-                    let (record, _reservation) = ctx.format_scoped(
+                    let record = ctx.format_scoped(
                         format_args!(
                             "e5 boundary pcurve of loop record {} member {member_index}",
                             loop_.record_id
@@ -1755,7 +1755,7 @@ fn plan_e5_boundary<'a>(
                         "catia_e5_reverse_pcurve_label",
                     )?;
                     let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(
-                        ctx, &geometry, range, refusal, &record,
+                        ctx, &geometry, range, refusal, &record.0,
                     )?
                     else {
                         return Ok(None);
@@ -1776,7 +1776,7 @@ fn plan_e5_boundary<'a>(
                     refusal,
                 )? {
                     if reversed {
-                        let (record, _reservation) = ctx.format_scoped(
+                        let record = ctx.format_scoped(
                             format_args!(
                                 "e5 boundary curve of loop record {} member {member_index}",
                                 loop_.record_id
@@ -1788,7 +1788,7 @@ fn plan_e5_boundary<'a>(
                             &curve,
                             curve_range,
                             refusal,
-                            &record,
+                            &record.0,
                         )?
                         else {
                             return Ok(None);
@@ -1923,7 +1923,7 @@ fn plan_e5_boundary<'a>(
             let reversed = e5_stored_pcurve_reversed(
                 ctx,
                 topology,
-                &bound_parameters,
+                &bound_parameters.0,
                 edge_ref,
                 pcurve_ref,
                 range,
@@ -1948,7 +1948,7 @@ fn plan_e5_boundary<'a>(
                 continue;
             };
             if reversed {
-                let (record, _reservation) = ctx.format_scoped(
+                let record = ctx.format_scoped(
                     format_args!("e5 boundary curve of edge {edge_ref} pcurve {pcurve_ref}"),
                     "catia_e5_intersection_reverse_curve_label",
                 )?;
@@ -1957,7 +1957,7 @@ fn plan_e5_boundary<'a>(
                     &curve,
                     curve_range,
                     refusal,
-                    &record,
+                    &record.0,
                 )?
                 else {
                     continue;
@@ -1965,12 +1965,12 @@ fn plan_e5_boundary<'a>(
                 (curve, curve_range) = reversed_curve;
             }
             let pcurve = if reversed {
-                let (record, _reservation) = ctx.format_scoped(
+                let record = ctx.format_scoped(
                     format_args!("e5 boundary pcurve of edge {edge_ref} pcurve {pcurve_ref}"),
                     "catia_e5_intersection_reverse_pcurve_label",
                 )?;
                 let Some(reversed) =
-                    crate::nurbs::reverse_pcurve_geometry(ctx, &geometry, range, refusal, &record)?
+                    crate::nurbs::reverse_pcurve_geometry(ctx, &geometry, range, refusal, &record.0)?
                 else {
                     continue;
                 };
@@ -3296,13 +3296,13 @@ fn e5_pcurve_on_surface(
         }
         crate::families::e5::graph::E5Pcurve::Jet { sites, range, .. } => {
             let scale = decoded_surface.uv_scale.map(FiniteReal::get);
-            let (mut knots, _knots_reservation) =
+            let mut knots =
                 ctx.temporary_vec(sites.len(), "catia E5 pcurve jet knots")?;
-            let (mut points, _points_reservation) =
+            let mut points =
                 ctx.temporary_vec(sites.len(), "catia E5 pcurve jet points")?;
-            let (mut first_derivatives, _first_reservation) =
+            let mut first_derivatives =
                 ctx.temporary_vec(sites.len(), "catia E5 pcurve first jets")?;
-            let (mut second_derivatives, _second_reservation) =
+            let mut second_derivatives =
                 ctx.temporary_vec(sites.len(), "catia E5 pcurve second jets")?;
             let scaled =
                 |values: [FiniteReal; 2]| [values[0].get() * scale[0], values[1].get() * scale[1]];
@@ -3315,17 +3315,17 @@ fn e5_pcurve_on_surface(
                 if !finite(point) || !finite(first) || !finite(second) {
                     return Ok(None);
                 }
-                knots.push(site.knot.get());
-                points.push(point);
-                first_derivatives.push(first);
-                second_derivatives.push(second);
+                knots.0.push(site.knot.get());
+                points.0.push(point);
+                first_derivatives.0.push(first);
+                second_derivatives.0.push(second);
             }
             let Some(geometry) = quintic_jet_pcurve(
                 ctx,
                 crate::families::e5::graph::E5Pcurve::JET_DEGREE,
-                &knots,
-                &points,
-                (&first_derivatives, &second_derivatives),
+                &knots.0,
+                &points.0,
+                (&first_derivatives.0, &second_derivatives.0),
                 refusal,
                 format_args!(
                     "e5 quintic-jet pcurve on surface record {} at byte {}",
@@ -3335,7 +3335,7 @@ fn e5_pcurve_on_surface(
             else {
                 return Ok(None);
             };
-            let (Some(first), Some(last)) = (points.first(), points.last()) else {
+            let (Some(first), Some(last)) = (points.0.first(), points.0.last()) else {
                 return Ok(None);
             };
             let Some(start) =
@@ -4329,6 +4329,7 @@ fn plane_frame_for_surface(
 #[cfg(test)]
 fn plan_boundary_with_points<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scratch: &mut ScopedReservation<'_>,
     topology: &'a crate::families::e5::graph::E5Topology,
     surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
     points: &HashMap<u32, Point3>,
@@ -4345,10 +4346,9 @@ fn plan_boundary_with_points<'a>(
             )
         })
         .collect();
-    let mut scratch = ctx.reserve_scoped(0, "catia_e5_test_boundary_scratch")?;
     plan_e5_boundary(
         ctx,
-        &mut scratch,
+        scratch,
         topology,
         surface_for_ref,
         E5VertexPoints {
@@ -4944,9 +4944,9 @@ mod route_tests {
 
         assert_eq!(
             crate::test_support::with_service_context(|ctx| {
-                let (parameters, _storage) =
+                let parameters =
                     crate::families::e5::graph::index_bound_parameters(ctx, &topology.bounds)?;
-                e5_stored_pcurve_reversed(ctx, &topology, &parameters, 1, 20, [0.0, 1.0])
+                e5_stored_pcurve_reversed(ctx, &topology, &parameters.0, 1, 20, [0.0, 1.0])
             })
             .expect("service resource budget"),
             None
@@ -5053,15 +5053,18 @@ mod route_tests {
         ]);
 
         assert!(
-            crate::test_support::with_service_context(|ctx| plan_boundary_with_points(
-                ctx,
-                &topology,
-                &surfaces,
-                &points,
-                &mut crate::nurbs::LaneRefusals::new()
-            ))
+            crate::test_support::with_service_context(|ctx| {
+                let mut scratch = ctx.reserve_scoped(0, "catia_e5_test_boundary_scratch")?;
+                Ok::<_, cadmpeg_core::CodecError>(plan_boundary_with_points(
+                    ctx,
+                    &mut scratch,
+                    &topology,
+                    &surfaces,
+                    &points,
+                    &mut crate::nurbs::LaneRefusals::new(),
+                )?.is_none())
+            })
             .expect("service resource budget")
-            .is_none()
         );
     }
 
@@ -5126,19 +5129,21 @@ mod route_tests {
             (401, Point3::new(0.0004, 0.0, 0.0)),
         ]);
 
-        let plan = crate::test_support::with_service_context(|ctx| {
-            plan_boundary_with_points(
+        crate::test_support::with_service_context(|ctx| {
+            let mut scratch = ctx.reserve_scoped(0, "catia_e5_test_boundary_scratch")?;
+            let plan = plan_boundary_with_points(
                 ctx,
+                &mut scratch,
                 &topology,
                 &surfaces,
                 &points,
                 &mut crate::nurbs::LaneRefusals::new(),
-            )
+            )?.expect("boundary plan");
+            assert!(plan.intersections.is_empty());
+            assert!(plan.edge_curves.is_empty());
+            Ok::<_, cadmpeg_core::CodecError>(())
         })
-        .expect("service resource budget")
-        .expect("boundary plan");
-        assert!(plan.intersections.is_empty());
-        assert!(plan.edge_curves.is_empty());
+        .expect("service resource budget");
     }
 
     #[test]
@@ -5250,20 +5255,22 @@ mod route_tests {
             (401, Point3::new(1.0, 0.0, 0.0)),
         ]);
 
-        let plan = crate::test_support::with_service_context(|ctx| {
-            plan_boundary_with_points(
+        crate::test_support::with_service_context(|ctx| {
+            let mut scratch = ctx.reserve_scoped(0, "catia_e5_test_boundary_scratch")?;
+            let plan = plan_boundary_with_points(
                 ctx,
+                &mut scratch,
                 &topology,
                 &surfaces,
                 &points,
                 &mut crate::nurbs::LaneRefusals::new(),
-            )
+            )?.expect("boundary plan");
+            assert!(plan.intersections.is_empty());
+            assert!(!plan.surface_curves.contains_key(&200));
+            assert!(!plan.edge_curves.contains_key(&200));
+            Ok::<_, cadmpeg_core::CodecError>(())
         })
-        .expect("service resource budget")
-        .expect("boundary plan");
-        assert!(plan.intersections.is_empty());
-        assert!(!plan.surface_curves.contains_key(&200));
-        assert!(!plan.edge_curves.contains_key(&200));
+        .expect("service resource budget");
     }
 
     #[test]
