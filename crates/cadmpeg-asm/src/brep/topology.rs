@@ -172,6 +172,9 @@ pub(super) fn keep_faces_and_carriers(
             )
         })?;
         if purpose == DecodePurpose::History {
+            if kept_surfaces.contains(&surf_ref) {
+                continue;
+            }
             let native_kind = (surf_rec.head() == "spline")
                 .then(|| nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens))
                 .flatten()
@@ -210,30 +213,36 @@ pub(super) fn keep_faces_and_carriers(
             })?;
             continue;
         }
-        if let Some(procedural) = nurbs::proc_surface::procedural_surface_resolving_refs(
-            ctx,
-            &surf_rec.tokens,
-            token_table,
-        ) {
-            scratch.with_storage(|| {
-                ctx.insert_hash_map(
-                    procedural_surface_defs,
-                    surf_ref,
-                    procedural?,
-                    "ASM topology procedural_surface_defs",
-                )
-            })?;
-        }
-        if let Some(procedural) = procedural_surface_defs.get(&surf_ref) {
-            if let Some(geometry) = analytic_procedural_surface(ctx, procedural.definition()) {
+        // A carrier is classified on its first face. Both a decoded carrier
+        // and an unavailable carrier remain indexed for later faces.
+        let first_carrier =
+            !kept_surfaces.contains(&surf_ref) && !unknown_surface_records.contains(&surf_ref);
+        if first_carrier {
+            if let Some(procedural) = nurbs::proc_surface::procedural_surface_resolving_refs(
+                ctx,
+                &surf_rec.tokens,
+                token_table,
+            ) {
                 scratch.with_storage(|| {
                     ctx.insert_hash_map(
-                        surface_geo,
+                        procedural_surface_defs,
                         surf_ref,
-                        geometry?,
-                        "ASM topology surface_geo",
+                        procedural?,
+                        "ASM topology procedural_surface_defs",
                     )
                 })?;
+            }
+            if let Some(procedural) = procedural_surface_defs.get(&surf_ref) {
+                if let Some(geometry) = analytic_procedural_surface(ctx, procedural.definition()) {
+                    scratch.with_storage(|| {
+                        ctx.insert_hash_map(
+                            surface_geo,
+                            surf_ref,
+                            geometry?,
+                            "ASM topology surface_geo",
+                        )
+                    })?;
+                }
             }
         }
         let exact_cacheless_construction =
@@ -246,7 +255,7 @@ pub(super) fn keep_faces_and_carriers(
         // A non-analytic surface may still carry a decodable B-spline face
         // cache. Exact cacheless constructions own their nested surface blocks
         // as supports, not as evaluated face caches.
-        if !exact_cacheless_construction && !surface_geo.contains_key(&surf_ref) {
+        if first_carrier && !exact_cacheless_construction && !surface_geo.contains_key(&surf_ref) {
             if let Some(ns) =
                 nurbs::core::surface_cache_resolving_refs(ctx, &surf_rec.tokens, token_table)
             {
