@@ -1918,3 +1918,5 @@ fn appearance_token_grammar_admits_the_suffix_before_scanning() {
             && limit.additional == 9 * 64)
     );
 }
+
+mod texture_lifetimes;
