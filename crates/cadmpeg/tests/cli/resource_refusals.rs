@@ -279,25 +279,32 @@ fn diff_refusal_report_cannot_replace_either_input() {
     let directory = tempdir().unwrap();
     let left = directory.path().join("left.cadir.json");
     let right = directory.path().join("right.cadir.json");
+    let text = CadIr::empty().to_canonical_json().unwrap();
     for path in [&left, &right] {
-        fs::write(path, b"12345").unwrap();
+        fs::write(path, &text).unwrap();
     }
-    for report in [&left, &right] {
-        Command::cargo_bin("cadmpeg")
-            .unwrap()
-            .args([
-                "diff",
-                left.to_str().unwrap(),
-                right.to_str().unwrap(),
-                "--max-input-bytes",
-                "4",
-                "--report",
-                report.to_str().unwrap(),
-                "--force",
-            ])
-            .assert()
-            .code(2);
-        assert_eq!(fs::read(report).unwrap(), b"12345");
+    for limit in ["4".to_owned(), text.len().to_string()] {
+        for report in [&left, &right] {
+            Command::cargo_bin("cadmpeg")
+                .unwrap()
+                .args([
+                    "diff",
+                    left.to_str().unwrap(),
+                    right.to_str().unwrap(),
+                    "--input-format-a",
+                    "cadir",
+                    "--input-format-b",
+                    "cadir",
+                    "--max-input-bytes",
+                    &limit,
+                    "--report",
+                    report.to_str().unwrap(),
+                    "--force",
+                ])
+                .assert()
+                .code(2);
+            assert_eq!(fs::read(report).unwrap(), text.as_bytes());
+        }
     }
 }
 
