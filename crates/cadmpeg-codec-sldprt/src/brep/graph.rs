@@ -35,6 +35,9 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
 
 mod shells;
+mod cylindrical_radial;
+
+use self::cylindrical_radial::CylindricalRadialControls;
 
 use self::shells::ShellFaceIndex;
 
@@ -4308,32 +4311,8 @@ fn derive_cylindrical_pcurves(
                     let relative = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
                     cadmpeg_ir::math::Point2::new(dot(relative, *u_reference), dot(relative, cross))
                 };
-                let (radial_control_points, curve_weights) = match nurbs.pole_rows() {
-                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => (
-                        ctx.collect_vec(
-                            points.iter().map(|point| project(point.get())),
-                            "collect Parasolid cylinder radial poles",
-                        )?,
-                        None,
-                    ),
-                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => (
-                        ctx.collect_vec(
-                            points.iter().map(|pole| project(pole.point.get())),
-                            "collect Parasolid cylinder radial poles",
-                        )?,
-                        Some(ctx.collect_vec(
-                            points.iter().map(|pole| pole.weight.get()),
-                            "collect Parasolid cylinder pole weights",
-                        )?),
-                    ),
-                };
-                if !quadratic_nurbs_has_constant_radius(
-                    ctx,
-                    &radial_control_points,
-                    curve_weights.as_deref(),
-                    nurbs.knots(),
-                    cylinder_surface.radius(),
-                )? {
+                let radial_control_points = CylindricalRadialControls::new(ctx, nurbs, project)?;
+                if !radial_control_points.has_constant_radius(cylinder_surface.radius())? {
                     continue;
                 }
                 parameter_range = if let Some(range) = edge.param_range() {
@@ -4367,7 +4346,7 @@ fn derive_cylindrical_pcurves(
                 )?;
                 for (index, radial) in ctx
                     .admit_iter(
-                        &radial_control_points,
+                        radial_control_points.values(),
                         "scan SLDPRT derive_cylindrical_pcurves values",
                     )?
                     .enumerate()
@@ -4387,6 +4366,7 @@ fn derive_cylindrical_pcurves(
                         "collect cylindrical polar poles",
                     )?;
                 }
+                drop(radial_control_points);
                 let knots = nurbs
                     .knots()
                     .try_clone_for_decode(ctx, "copy cylindrical polar knots")?;
@@ -4516,7 +4496,9 @@ fn inverse_coordinate_tolerance(
     })
 }
 
-/// The poles of `surface` in u-major order, after admitting the grid scan.
+/// Borrow the rectangular surface poles in u-major order.
+/// Each in-bounds index yields one pole, so the consumer can admit each
+/// fixed-step projection before advancing this iterator.
 fn surface_poles<'s>(
     ctx: &DecodeContext<'_>,
     surface: &'s cadmpeg_ir::geometry::nurbs::NurbsSurface,
@@ -4525,8 +4507,7 @@ fn surface_poles<'s>(
     let count = surface.u_count().checked_mul(v_count).ok_or_else(|| {
         ctx.refuse_codec_limit("scan Parasolid surface poles", u64::MAX - 1, u64::MAX)
     })?;
-    Ok(ctx
-        .admit_iter(0..count, "scan Parasolid surface poles")?
+    Ok((0..count)
         .filter_map(move |index| surface.pole(index / v_count, index % v_count)))
 }
 
@@ -4759,7 +4740,7 @@ fn nurbs_parameter_at_point(
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
             inverse_coordinate_tolerance(
                 ctx,
-                ctx.admit_iter(&points[..], "scan SLDPRT nurbs_parameter_at_point values")?
+                points.iter()
                     .copied()
                     .map(FinitePoint3::get)
                     .chain(std::iter::once(target)),
@@ -4768,7 +4749,7 @@ fn nurbs_parameter_at_point(
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
             inverse_coordinate_tolerance(
                 ctx,
-                ctx.admit_iter(&points[..], "scan SLDPRT nurbs_parameter_at_point values")?
+                points.iter()
                     .map(|pole| pole.point.get())
                     .chain(std::iter::once(target)),
             )?
@@ -5813,7 +5794,7 @@ fn nurbs_boundary_pcurve(
         ctx,
         surface_poles(ctx, surface)?
             .chain(
-                ctx.admit_iter(0..curve.pole_count(), "scan Parasolid inverse curve poles")?
+                (0..curve.pole_count())
                     .filter_map(|index| curve.pole_rows().point_at(index)),
             )
             .map(FinitePoint3::get),
@@ -6005,7 +5986,7 @@ fn nurbs_strict_isocurve_pcurve(
             ctx,
             surface_poles(ctx, surface)?
                 .chain(
-                    ctx.admit_iter(0..curve.pole_count(), "scan Parasolid inverse curve poles")?
+                    (0..curve.pole_count())
                         .filter_map(|index| curve.pole_rows().point_at(index)),
                 )
                 .map(FinitePoint3::get),
@@ -8140,3 +8121,6 @@ mod sample_parameter_tests;
 
 #[cfg(test)]
 mod homogeneous_generation_tests;
+
+#[cfg(test)]
+mod coordinate_scale_tests;
