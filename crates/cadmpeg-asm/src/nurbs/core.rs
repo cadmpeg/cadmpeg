@@ -308,9 +308,14 @@ pub(super) fn owned_surface_cache(
     propagate_resource!(ctx.find_map(
         positions,
         |pos| {
-            surface_block(ctx, tokens, pos)
-                .transpose()
-                .map(|candidate| candidate.map(|(cache, _)| cache))
+            let (candidate, storage) = ctx.with_scoped_storage(
+                "ASM owned surface cache candidate",
+                || surface_block(ctx, tokens, pos).transpose(),
+            )?;
+            match candidate {
+                Some((cache, _)) => storage.commit_value(cache).map(Some),
+                None => Ok(None),
+            }
         },
         "ASM owned_surface_cache candidates"
     ))
@@ -333,9 +338,14 @@ pub(super) fn curve_cache(
     propagate_resource!(ctx.find_map(
         positions,
         |pos| {
-            curve_block(ctx, scope, pos)
-                .transpose()
-                .map(|candidate| candidate.map(|(cache, _)| cache))
+            let (candidate, storage) = ctx.with_scoped_storage(
+                "ASM curve cache candidate",
+                || curve_block(ctx, scope, pos).transpose(),
+            )?;
+            match candidate {
+                Some((cache, _)) => storage.commit_value(cache).map(Some),
+                None => Ok(None),
+            }
         },
         "ASM curve_cache candidates"
     ))
@@ -355,9 +365,14 @@ pub(super) fn owned_curve_cache(
     propagate_resource!(ctx.find_map(
         positions,
         |pos| {
-            curve_block(ctx, tokens, pos)
-                .transpose()
-                .map(|candidate| candidate.map(|(cache, _)| cache))
+            let (candidate, storage) = ctx.with_scoped_storage(
+                "ASM owned curve cache candidate",
+                || curve_block(ctx, tokens, pos).transpose(),
+            )?;
+            match candidate {
+                Some((cache, _)) => storage.commit_value(cache).map(Some),
+                None => Ok(None),
+            }
         },
         "ASM owned_curve_cache candidates"
     ))
