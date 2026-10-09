@@ -349,6 +349,10 @@ pub(super) fn polynomial_higher(
             degree, points.len(), parameter.get(), true)?.ok_or(EvaluationFailure::NoValue)?;
         let width = curve.knots()[span + 1] - curve.knots()[span];
         if width == 0.0 { return Err(EvaluationFailure::NoValue); }
+        if fourth && degree >= 4 {
+            return polynomial_selected_higher(scratch, curve.knots(), points,
+                degree, span, parameter, PositiveReal::new(width));
+        }
         // Each actual polynomial span below degree4 has identically zero
         // Fourth, even when the independent Third is unavailable or overflows.
         let fourth = if fourth && degree < 4 { Ok(FiniteVector3::ZERO) }
@@ -398,6 +402,77 @@ pub(super) fn polynomial_higher(
         Ok(CurveHigher { third, fourth })
     })();
     scratch.settle(result)
+}
+
+/// One actual selected polynomial support supplies both independent orders.
+fn polynomial_selected_higher(
+    scratch: &decode::Scratch<'_, '_>,
+    knots: &[f64],
+    points: &[FinitePoint3],
+    degree: usize,
+    span: usize,
+    parameter: FiniteReal,
+    scale: Option<PositiveReal>,
+) -> Result<super::curve_higher::CurveHigher, EvaluationFailure<()>> {
+    use super::curve_higher::CurveHigher;
+    let rows = basis::polynomial_higher::rows(scratch, knots, degree, span, parameter.get(), scale)?;
+    let mut third = rows.third;
+    let mut fourth = rows.fourth;
+    let mut third_sums = [ExactSignedSum::default(); 3];
+    let mut fourth_sums = [ExactSignedSum::default(); 3];
+    for local in 0..degree.checked_add(1).ok_or(EvaluationFailure::NoValue)? {
+        if third.is_err() && fourth.is_err() { break; }
+        if scratch.admission.independent_cost::<()>(Some(1)).is_err() {
+            if third.is_ok() { third = Err(EvaluationFailure::NoValue); }
+            if fourth.is_ok() { fourth = Err(EvaluationFailure::NoValue); }
+            break;
+        }
+        scratch.work(1, if third.is_ok() { "IR polynomial curve third support" }
+            else { "IR polynomial curve fourth support" })
+            .ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
+        let coefficient = |values: &Result<Cow<'static, [f64]>, EvaluationFailure<()>>| {
+            values.as_ref().map_err(|failure| *failure).and_then(|values| {
+                values.get(local).copied().ok_or(EvaluationFailure::NoValue)
+                    .and_then(|value| FiniteReal::new(value).ok_or(EvaluationFailure::NonFinite(())))
+            })
+        };
+        let third_coefficient = coefficient(&third);
+        let fourth_coefficient = coefficient(&fourth);
+        if let Err(failure) = third_coefficient { third = Err(failure); }
+        if let Err(failure) = fourth_coefficient { fourth = Err(failure); }
+        if third.is_err() && fourth.is_err() { break; }
+        let Some(point) = points.get(span - degree + local) else {
+            if third.is_ok() { third = Err(EvaluationFailure::NoValue); }
+            if fourth.is_ok() { fourth = Err(EvaluationFailure::NoValue); }
+            break;
+        };
+        for (coefficient, sums) in [(third_coefficient, &mut third_sums), (fourth_coefficient, &mut fourth_sums)] {
+            if let Ok(coefficient) = coefficient {
+                for (sum, coordinate) in sums.iter_mut().zip([point.x, point.y, point.z]) {
+                    sum.add_product(coefficient.get(), coordinate);
+                }
+            }
+        }
+    }
+    let complete = |values: Result<Cow<'static, [f64]>, EvaluationFailure<()>>,
+        sums: [ExactSignedSum; 3], order| {
+        values?;
+        let lane = |sum: ExactSignedSum| sum.finish().map_or(Ok(FiniteReal::ZERO), |value| {
+            if let Some(scale) = scale {
+                let scale = crate::math::sum::scaled_finite(scale.get()).ok_or(EvaluationFailure::NoValue)?;
+                let result = if order == 3 {
+                    crate::math::sum::ScaledValue::product_quotient([value], [scale, scale, scale])
+                } else {
+                    crate::math::sum::ScaledValue::product_quotient([value], [scale, scale, scale, scale])
+                };
+                result.map_err(|_| EvaluationFailure::NonFinite(()))
+            } else { value.finite().map_err(|_| EvaluationFailure::NonFinite(())) }
+        });
+        let [x, y, z] = sums;
+        Ok(FiniteVector3::from_components(lane(x)?, lane(y)?, lane(z)?))
+    };
+    scratch.settle(Ok(CurveHigher { third: complete(third, third_sums, 3),
+        fourth: complete(fourth, fourth_sums, 4) }))
 }
 
 /// Requested rational higher orders. Fixed linear and clamped quadratic
