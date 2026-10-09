@@ -2238,22 +2238,58 @@ struct BoundaryTolerance {
     sampling_tolerance: f64,
 }
 
-fn planar_boundary_samples(
-    ctx: &DecodeContext<'_>,
+/// Sampled UV points own their backing until borrowed or consumed. The
+/// point vector is destroyed before its materialized storage reservation.
+struct PlanarBoundarySamples<'ctx> {
+    points: Vec<Point2>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+impl std::ops::Deref for PlanarBoundarySamples<'_> {
+    type Target = [Point2];
+
+    fn deref(&self) -> &Self::Target {
+        &self.points
+    }
+}
+
+impl PlanarBoundarySamples<'_> {
+    fn append_into(
+        self,
+        ctx: &DecodeContext<'_>,
+        polygon: &mut Vec<Point2>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        // The moved source vector dies inside extend_vec, before self's
+        // remaining reservation field drops on success or refusal.
+        ctx.extend_vec(polygon, self.points, "collect SLDPRT planar trim polygon")
+    }
+}
+
+fn planar_boundary_samples<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     curve: &CurveGeometry,
     start: Point3,
     end: Point3,
     surface: &SurfaceGeometry,
     frame: PlaneFrame,
     limits: BoundaryTolerance,
-) -> Result<Option<(Vec<Point2>, f64)>, cadmpeg_core::CodecError> {
+) -> Result<Option<(PlanarBoundarySamples<'ctx>, f64)>, cadmpeg_core::CodecError> {
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(limit.into());
+    }
     let BoundaryTolerance {
         tolerance,
         sampling_tolerance,
     } = limits;
     match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => {
-            Ok(Some((vec![frame.project(start)], 0.0)))
+            const OPERATION: &str = "collect SLDPRT planar trim line samples";
+            let (points, storage) = ctx.with_scoped_storage(OPERATION, || {
+                ctx.collection_vec(1, OPERATION)
+            })?;
+            let mut samples = PlanarBoundarySamples { points, _storage: storage };
+            samples.points.push(frame.project(start));
+            Ok(Some((samples, 0.0)))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
@@ -2382,15 +2418,18 @@ struct PlanarArc {
 }
 
 impl PlanarArc {
-    fn samples(
+    fn samples<'ctx>(
         self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'_>,
         start_parameter: f64,
         span: f64,
         surface: &SurfaceGeometry,
         frame: PlaneFrame,
         limits: BoundaryTolerance,
-    ) -> Result<Option<(Vec<Point2>, f64)>, cadmpeg_core::CodecError> {
+    ) -> Result<Option<(PlanarBoundarySamples<'ctx>, f64)>, cadmpeg_core::CodecError> {
+        if let Some(limit) = ctx.resource_refusal() {
+            return Err(limit.into());
+        }
         let BoundaryTolerance {
             tolerance,
             sampling_tolerance,
@@ -2402,7 +2441,10 @@ impl PlanarArc {
             return Ok(None);
         };
         let solved_surface = require_some!(surface.solved());
-        let mut points = Vec::new();
+        let mut samples = PlanarBoundarySamples {
+            points: Vec::new(),
+            _storage: ctx.reserve_scoped(0, "hold SLDPRT planar trim arc samples")?,
+        };
         for index in 0..segments {
             ctx.charge_work(1, "sample SLDPRT planar trim arc")?;
             let (Some(index_value), Some(segment_value)) = (
@@ -2421,10 +2463,14 @@ impl PlanarArc {
             {
                 return Ok(None);
             }
-            ctx.reserve_vec(&mut points, 1, "collect SLDPRT planar trim arc samples")?;
-            points.push(frame.project(point));
+            ctx.push_scoped_vec(
+                &mut samples._storage,
+                &mut samples.points,
+                frame.project(point),
+                "collect SLDPRT planar trim arc samples",
+            )?;
         }
-        Ok(Some((points, boundary_tolerance)))
+        Ok(Some((samples, boundary_tolerance)))
     }
 }
 
@@ -2599,7 +2645,7 @@ fn planar_trim(
                     sampling_tolerance
                 }
             )?);
-            ctx.extend_vec(&mut polygon, samples, "collect SLDPRT planar trim polygon")?;
+            samples.append_into(ctx, &mut polygon)?;
             boundary_tolerance = boundary_tolerance.max(sample_tolerance);
             first_start.get_or_insert(start);
             previous_end = Some(end);
