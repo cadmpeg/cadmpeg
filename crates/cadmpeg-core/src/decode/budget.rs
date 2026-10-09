@@ -21,12 +21,24 @@ pub(super) struct DecodeBudget {
     decompressed: Cell<u64>,
     materialized: Cell<u64>,
     retained: Cell<u64>,
-    scoped_storage: Cell<Option<u64>>,
+    scoped_storage: Cell<Option<StorageAccount>>,
     entities: Cell<u64>,
     collection_items: Cell<u64>,
     recursion_depth: Cell<u64>,
     work: Cell<u64>,
     fuse: Cell<Option<ResourceLimit>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum StorageKind {
+    Materialized,
+    Provisional,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct StorageAccount {
+    kind: StorageKind,
+    bytes: u64,
 }
 
 impl DecodeBudget {
@@ -103,6 +115,11 @@ impl DecodeBudget {
     #[cfg(test)]
     pub(super) fn retained_used(&self) -> u64 {
         self.retained.get()
+    }
+
+    #[cfg(test)]
+    pub(super) fn materialized_used(&self) -> u64 {
+        self.materialized.get()
     }
 
     pub(super) fn decompressed_used(&self) -> u64 {
@@ -318,24 +335,22 @@ impl DecodeBudget {
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
         if let Some(current) = self.scoped_storage.get() {
-            let total = current.checked_add(bytes).ok_or_else(|| {
+            let (dimension, counter, limit) = self.storage_counter(current.kind);
+            let total = current.bytes.checked_add(bytes).ok_or_else(|| {
                 self.refuse_limit(
-                    ResourceDimension::MaterializedBytes,
+                    dimension,
                     ResourceFailure::BudgetExceeded,
-                    self.materialized_allowance(),
-                    current,
+                    limit,
+                    current.bytes,
                     bytes,
                     operation,
                 )
             })?;
-            self.charge(
-                ResourceDimension::MaterializedBytes,
-                &self.materialized,
-                self.materialized_allowance(),
-                bytes,
-                operation,
-            )?;
-            self.scoped_storage.set(Some(total));
+            self.charge(dimension, counter, limit, bytes, operation)?;
+            self.scoped_storage.set(Some(StorageAccount {
+                bytes: total,
+                ..current
+            }));
             return Ok(());
         }
         self.charge(
@@ -347,8 +362,23 @@ impl DecodeBudget {
         )
     }
 
+    /// Routes an escaping result to session storage and restores scratch routing
+    /// on return or unwind.
+    pub(super) fn session_storage(&self) -> SessionStorage<'_> {
+        SessionStorage {
+            budget: self,
+            prior: self.scoped_storage.replace(None),
+        }
+    }
+
     pub(super) fn retained_size_overflow_limit(&self, operation: &'static str) -> ResourceLimit {
-        let (dimension, limit, used) = if self.scoped_storage.get().is_some() {
+        let (dimension, limit, used) = if matches!(
+            self.scoped_storage.get(),
+            Some(StorageAccount {
+                kind: StorageKind::Materialized,
+                ..
+            })
+        ) {
             (
                 ResourceDimension::MaterializedBytes,
                 self.materialized_allowance(),
@@ -385,7 +415,13 @@ impl DecodeBudget {
         charged: u64,
         operation: &'static str,
     ) -> ResourceLimit {
-        let (dimension, current, limit) = if self.scoped_storage.get().is_some() {
+        let (dimension, current, limit) = if matches!(
+            self.scoped_storage.get(),
+            Some(StorageAccount {
+                kind: StorageKind::Materialized,
+                ..
+            })
+        ) {
             (
                 ResourceDimension::MaterializedBytes,
                 self.materialized.get(),
@@ -479,12 +515,72 @@ impl DecodeBudget {
     }
 
     pub(super) fn storage_scope(&self, operation: &'static str) -> StorageScope<'_> {
-        let prior = self.scoped_storage.replace(Some(0));
+        let prior = self.scoped_storage.replace(Some(StorageAccount {
+            kind: StorageKind::Materialized,
+            bytes: 0,
+        }));
         StorageScope {
             budget: self,
             prior,
             operation,
         }
+    }
+
+    pub(super) fn provisional_retained(
+        &self,
+        operation: &'static str,
+    ) -> Result<ProvisionalReservation<'_>, CodecError> {
+        if let Some(limit) = self.fused() {
+            return Err(CodecError::ResourceLimit(limit));
+        }
+        Ok(ProvisionalReservation {
+            budget: self,
+            bytes: 0,
+            operation,
+        })
+    }
+
+    fn provisional_scope(&self, operation: &'static str) -> StorageScope<'_> {
+        let prior = self.scoped_storage.replace(Some(StorageAccount {
+            kind: StorageKind::Provisional,
+            bytes: 0,
+        }));
+        StorageScope {
+            budget: self,
+            prior,
+            operation,
+        }
+    }
+
+    fn storage_counter(&self, kind: StorageKind) -> (ResourceDimension, &Cell<u64>, u64) {
+        match kind {
+            StorageKind::Materialized => (
+                ResourceDimension::MaterializedBytes,
+                &self.materialized,
+                self.materialized_allowance(),
+            ),
+            StorageKind::Provisional => (
+                ResourceDimension::RetainedBytes,
+                &self.retained,
+                self.retained_allowance(),
+            ),
+        }
+    }
+
+    fn release_storage(&self, kind: StorageKind, bytes: u64, operation: &'static str) {
+        let (dimension, counter, limit) = self.storage_counter(kind);
+        let Some(remaining) = counter.get().checked_sub(bytes) else {
+            self.refuse_limit(
+                dimension,
+                ResourceFailure::BudgetExceeded,
+                limit,
+                counter.get(),
+                bytes,
+                operation,
+            );
+            return;
+        };
+        counter.set(remaining);
     }
 
     pub(super) fn enter_nested(
@@ -535,22 +631,40 @@ impl DecodeBudget {
     }
 }
 
+pub(super) struct SessionStorage<'a> {
+    budget: &'a DecodeBudget,
+    prior: Option<StorageAccount>,
+}
+
+impl Drop for SessionStorage<'_> {
+    fn drop(&mut self) {
+        self.budget.scoped_storage.set(self.prior);
+    }
+}
+
 pub(super) struct StorageScope<'a> {
     budget: &'a DecodeBudget,
-    prior: Option<u64>,
+    prior: Option<StorageAccount>,
     operation: &'static str,
 }
 
 impl<'a> StorageScope<'a> {
-    pub(super) fn finish(self) -> ScopedReservation<'a> {
-        let bytes = self
-            .budget
-            .scoped_storage
-            .replace(Some(0))
-            .map_or(0, std::convert::identity);
+    fn take_bytes(&self) -> u64 {
+        let Some(account) = self.budget.scoped_storage.get() else {
+            return 0;
+        };
+        self.budget.scoped_storage.set(Some(StorageAccount {
+            bytes: 0,
+            ..account
+        }));
+        account.bytes
+    }
+
+    #[cfg(test)]
+    fn finish(self) -> ScopedReservation<'a> {
         ScopedReservation {
             budget: self.budget,
-            bytes,
+            bytes: self.take_bytes(),
             operation: self.operation,
         }
     }
@@ -558,16 +672,42 @@ impl<'a> StorageScope<'a> {
 
 impl Drop for StorageScope<'_> {
     fn drop(&mut self) {
-        let bytes = self
-            .budget
-            .scoped_storage
-            .replace(self.prior)
-            .map_or(0, std::convert::identity);
-        drop(ScopedReservation {
-            budget: self.budget,
-            bytes,
-            operation: self.operation,
-        });
+        if let Some(account) = self.budget.scoped_storage.replace(self.prior) {
+            self.budget
+                .release_storage(account.kind, account.bytes, self.operation);
+        }
+    }
+}
+
+/// Transfers captured backing to its existing owner even on unwind. The
+/// caller can mutate a collection outside the build closure, so restoring
+/// the destination must not release its still-live allocations.
+struct ReservationCapture<'owner, 'budget> {
+    scope: StorageScope<'budget>,
+    owner_bytes: &'owner mut u64,
+}
+
+impl Drop for ReservationCapture<'_, '_> {
+    fn drop(&mut self) {
+        let Some(account) = self.scope.budget.scoped_storage.get() else {
+            return;
+        };
+        // Both byte sets are disjoint parts of one admitted live counter.
+        // Their sum therefore fits whenever that counter invariant holds.
+        let Some(bytes) = self.owner_bytes.checked_add(account.bytes) else {
+            let (dimension, counter, limit) = self.scope.budget.storage_counter(account.kind);
+            let _original = self.scope.budget.refuse_limit(
+                dimension,
+                ResourceFailure::BudgetExceeded,
+                limit,
+                counter.get(),
+                account.bytes,
+                self.scope.operation,
+            );
+            return;
+        };
+        *self.owner_bytes = bytes;
+        self.scope.take_bytes();
     }
 }
 
@@ -579,7 +719,7 @@ pub struct ScopedReservation<'a> {
     operation: &'static str,
 }
 
-impl ScopedReservation<'_> {
+impl<'budget> ScopedReservation<'budget> {
     /// Account copied storage in this live temporary reservation.
     pub fn with_storage<T, E: From<CodecError>>(
         &mut self,
@@ -601,23 +741,18 @@ impl ScopedReservation<'_> {
         build: impl FnOnce() -> Result<T, E>,
         failure: impl FnOnce(ResourceLimit) -> E,
     ) -> Result<T, E> {
-        let scope = self.budget.storage_scope(self.operation);
-        let value = build();
-        let mut storage = scope.finish();
-        let Some(bytes) = self.bytes.checked_add(storage.bytes) else {
-            return value.and_then(|_| {
-                Err(failure(self.budget.refuse_limit(
-                    ResourceDimension::MaterializedBytes,
-                    ResourceFailure::BudgetExceeded,
-                    self.budget.materialized_allowance(),
-                    self.bytes,
-                    storage.bytes,
-                    self.operation,
-                )))
-            });
+        if let Some(limit) = self.budget.fused() {
+            return Err(failure(limit));
+        }
+        let capture = ReservationCapture {
+            scope: self.budget.storage_scope(self.operation),
+            owner_bytes: &mut self.bytes,
         };
-        self.bytes = bytes;
-        storage.bytes = 0;
+        let value = build();
+        drop(capture);
+        if let Some(limit) = self.budget.fused() {
+            return Err(failure(limit));
+        }
         value
     }
 
@@ -665,6 +800,27 @@ impl ScopedReservation<'_> {
         Ok(value)
     }
 
+    /// Holds the actual payload through session-retained admission. The arena
+    /// keeps this candidate lease until its separate registry installation.
+    pub(super) fn promote_session_value<T>(
+        self,
+        value: T,
+    ) -> Result<(T, ProvisionalReservation<'budget>), CodecError> {
+        self.budget.charge(
+            ResourceDimension::RetainedBytes,
+            &self.budget.retained,
+            self.budget.retained_allowance(),
+            self.bytes,
+            self.operation,
+        )?;
+        let candidate = ProvisionalReservation {
+            budget: self.budget,
+            bytes: self.bytes,
+            operation: self.operation,
+        };
+        Ok((value, candidate))
+    }
+
     /// Transfers already-live temporary bytes between reservations of the
     /// same session. Failure preserves both reservations. The caller moves the
     /// corresponding data without copying or dropping its surviving storage.
@@ -696,18 +852,27 @@ impl ScopedReservation<'_> {
         if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
-        if let Some(current) = self.budget.scoped_storage.get() {
-            let total = current.checked_add(self.bytes).ok_or_else(|| {
+        if let Some(
+            current @ StorageAccount {
+                kind: StorageKind::Materialized,
+                ..
+            },
+        ) = self.budget.scoped_storage.get()
+        {
+            let total = current.bytes.checked_add(self.bytes).ok_or_else(|| {
                 self.budget.refuse_limit(
                     ResourceDimension::MaterializedBytes,
                     ResourceFailure::BudgetExceeded,
                     self.budget.materialized_allowance(),
-                    current,
+                    current.bytes,
                     self.bytes,
                     self.operation,
                 )
             })?;
-            self.budget.scoped_storage.set(Some(total));
+            self.budget.scoped_storage.set(Some(StorageAccount {
+                bytes: total,
+                ..current
+            }));
             self.bytes = 0;
             return Ok(());
         }
@@ -717,18 +882,101 @@ impl ScopedReservation<'_> {
 
 impl Drop for ScopedReservation<'_> {
     fn drop(&mut self) {
-        let Some(remaining) = self.budget.materialized.get().checked_sub(self.bytes) else {
-            self.budget.refuse_limit(
-                ResourceDimension::MaterializedBytes,
-                ResourceFailure::BudgetExceeded,
-                self.budget.materialized_allowance(),
-                self.budget.materialized.get(),
-                self.bytes,
-                self.operation,
-            );
-            return;
+        self.budget
+            .release_storage(StorageKind::Materialized, self.bytes, self.operation);
+    }
+}
+
+/// Retained candidate storage released on rejection and preserved on commit.
+///
+/// Allocate through normal context operations inside `with_storage`. Hold the
+/// reservation until every captured allocation is dropped or committed. Keep
+/// backing storage and surviving child fields in separate owners when only
+/// part of a candidate survives. Escaping diagnostics use session storage.
+#[derive(Debug)]
+pub struct ProvisionalReservation<'a> {
+    budget: &'a DecodeBudget,
+    bytes: u64,
+    operation: &'static str,
+}
+
+impl ProvisionalReservation<'_> {
+    /// The private arena boundary has completed every fallible admission and
+    /// installed the actual backing. It now belongs to the session regardless
+    /// of an enclosing caller capture. This handoff cannot refuse installation.
+    pub(super) fn commit_to_session(mut self) {
+        self.bytes = 0;
+    }
+
+    /// Captures actual retained growth even inside a materialized scope.
+    /// Work and collection charges remain cumulative after rejection.
+    /// Growth remains owned by this reservation after a builder unwinds;
+    /// drop the candidate data before dropping its reservation to reject it.
+    pub fn with_storage<T, E: From<CodecError>>(
+        &mut self,
+        build: impl FnOnce() -> Result<T, E>,
+    ) -> Result<T, E> {
+        if let Some(limit) = self.budget.fused() {
+            return Err(E::from(CodecError::ResourceLimit(limit)));
+        }
+        let capture = ReservationCapture {
+            scope: self.budget.provisional_scope(self.operation),
+            owner_bytes: &mut self.bytes,
         };
-        self.budget.materialized.set(remaining);
+        let value = build();
+        drop(capture);
+        if let Some(limit) = self.budget.fused() {
+            return Err(E::from(CodecError::ResourceLimit(limit)));
+        }
+        value
+    }
+
+    /// Commits to the active retained parent, or to session output. No copy,
+    /// allocation, work charge or materialized admission occurs.
+    pub fn commit(mut self) -> Result<(), CodecError> {
+        self.commit_in_place()
+    }
+
+    /// Commits a value while holding its storage through a refused handoff.
+    pub fn commit_value<T>(mut self, value: T) -> Result<T, CodecError> {
+        self.commit_in_place()?;
+        Ok(value)
+    }
+
+    fn commit_in_place(&mut self) -> Result<(), CodecError> {
+        if let Some(limit) = self.budget.fused() {
+            return Err(CodecError::ResourceLimit(limit));
+        }
+        if let Some(
+            current @ StorageAccount {
+                kind: StorageKind::Provisional,
+                ..
+            },
+        ) = self.budget.scoped_storage.get()
+        {
+            let bytes = current.bytes.checked_add(self.bytes).ok_or_else(|| {
+                self.budget.refuse_limit(
+                    ResourceDimension::RetainedBytes,
+                    ResourceFailure::BudgetExceeded,
+                    self.budget.retained_allowance(),
+                    current.bytes,
+                    self.bytes,
+                    self.operation,
+                )
+            })?;
+            self.budget
+                .scoped_storage
+                .set(Some(StorageAccount { bytes, ..current }));
+        }
+        self.bytes = 0;
+        Ok(())
+    }
+}
+
+impl Drop for ProvisionalReservation<'_> {
+    fn drop(&mut self) {
+        self.budget
+            .release_storage(StorageKind::Provisional, self.bytes, self.operation);
     }
 }
 
@@ -1101,6 +1349,8 @@ fn local_limit_error(
 
 #[cfg(test)]
 mod tests {
+    mod storage_capture;
+
     use super::{u64_from_index, work_units, DecodeBudget, WorkBudget};
     use crate::decode::{DecodePolicy, ResourceDimension, ResourceFailure};
     use std::sync::atomic::{AtomicUsize, Ordering};
