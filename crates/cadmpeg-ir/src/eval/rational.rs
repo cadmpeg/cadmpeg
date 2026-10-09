@@ -34,12 +34,6 @@ pub(super) struct Homogeneous {
     constant: [Option<FiniteReal>; 3],
 }
 
-#[derive(Clone, Copy)]
-enum ProjectedLane {
-    Constant(FiniteReal),
-    Quotient { numerator: Option<ScaledValue>, denominator: ScaledValue },
-}
-
 impl Homogeneous {
     /// The three normalized orders of a quadratic Bezier carrier, in one
     /// fixed three-pole walk. Accumulate the expanded Bernstein terms before
@@ -82,6 +76,26 @@ impl Homogeneous {
             values: lanes.map(ExactSignedSum::finish), constant: [None; 3],
         });
         Some([Self { constant, ..base }, first, second])
+    }
+
+    /// The complete quotient Third for this actual fixed quadratic carrier.
+    /// Only the all-three-source-pole equality from quadratic_orders proves
+    /// a coordinate constant. General sampled support equality does not.
+    pub(super) fn quadratic_third(
+        poles: &[crate::geometry::nurbs::WeightedPole3<FinitePoint3>; 3],
+        parameter: FiniteReal,
+        width: ScaledValue,
+    ) -> Option<[Result<FiniteReal, f64>; 3]> {
+        let [base, first, second] = Self::quadratic_orders(poles, parameter)?;
+        base.values[3]?;
+        let w = [base.values[3], first.values[3], second.values[3], None];
+        let mut lanes = [Ok(FiniteReal::ZERO); 3];
+        for (axis, lane) in lanes.iter_mut().enumerate() {
+            if base.constant[axis].is_some() { continue; }
+            *lane = crate::math::sum::quotient_third::quotient_third(
+                [base.values[axis], first.values[axis], second.values[axis], None], w, width)?;
+        }
+        Some(lanes)
     }
 
     /// The identically zero homogeneous derivative of a polynomial whose
@@ -260,46 +274,13 @@ impl Homogeneous {
         base: Self,
         subtract: &[(Self, [FiniteReal; 3])],
     ) -> Option<[Result<FiniteReal, f64>; 3]> {
-        Some(self.projected_lanes(base, subtract)?.map(|lane| match lane {
-            ProjectedLane::Constant(value) => Ok(value),
-            ProjectedLane::Quotient { numerator, denominator } =>
-                numerator.map_or(Ok(FiniteReal::ZERO), |value| value.quotient(denominator)),
-        }))
-    }
-
-    /// Normalized intermediates whose nonzero quotients remain normal.
-    /// A later span division can amplify a subnormal rounding or lost zero;
-    /// this finite-intermediate route leaves that order unavailable.
-    pub(super) fn project_normalized(
-        self,
-        base: Self,
-        subtract: &[(Self, [FiniteReal; 3])],
-    ) -> Option<[FiniteReal; 3]> {
-        let mut values = [FiniteReal::ZERO; 3];
-        for (value, lane) in values.iter_mut().zip(self.projected_lanes(base, subtract)?) {
-            *value = match lane {
-                ProjectedLane::Constant(value) => value,
-                ProjectedLane::Quotient { numerator: None, .. } => FiniteReal::ZERO,
-                ProjectedLane::Quotient { numerator: Some(numerator), denominator } => {
-                    let quotient = numerator.quotient(denominator).ok()?;
-                    if !quotient.get().is_normal() { return None; }
-                    quotient
-                }
-            };
-        }
-        Some(values)
-    }
-
-    fn projected_lanes(self, base: Self, subtract: &[(Self, [FiniteReal; 3])])
-        -> Option<[ProjectedLane; 3]>
-    {
         let denominator = base.values[3]?;
-        let mut lanes = [ProjectedLane::Quotient { numerator: None, denominator }; 3];
+        let mut lanes = [Ok(FiniteReal::ZERO); 3];
         for (axis, lane) in lanes.iter_mut().enumerate() {
             // A constant coordinate divides out exactly, including at f64::MAX.
             if subtract.is_empty() {
                 if let Some(value) = self.constant[axis] {
-                    *lane = ProjectedLane::Constant(value);
+                    *lane = Ok(value);
                     continue;
                 }
             }
@@ -313,7 +294,7 @@ impl Homogeneous {
                 }
                 sum.finish()
             };
-            *lane = ProjectedLane::Quotient { numerator, denominator };
+            *lane = numerator.map_or(Ok(FiniteReal::ZERO), |value| value.quotient(denominator));
         }
         Some(lanes)
     }

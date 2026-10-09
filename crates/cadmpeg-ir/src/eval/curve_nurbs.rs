@@ -370,15 +370,14 @@ pub(super) fn polynomial_third(
 }
 
 /// The clamped single-span rational quadratic Third. The actual fixed
-/// carrier shape supplies Bernstein orders; unavailable normalized quotient
-/// intermediates remain NoValue, separately from a final range failure.
+/// carrier shape supplies actual Bernstein orders. The complete extended
+/// numerator cancels before the final weight and span divisions.
 pub(super) fn quadratic_third(
     scratch: &decode::Scratch<'_, '_>,
     curve: &crate::geometry::nurbs::NurbsCurve,
     parameter: FiniteReal,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
     use super::rational::Homogeneous;
-    use crate::math::sum::{scaled_finite, ScaledValue};
     scratch.unless_refused()?;
     let result = (|| {
         let no_value = EvaluationFailure::NoValue;
@@ -397,28 +396,13 @@ pub(super) fn quadratic_third(
         let [a, b] = FiniteReal::array([*a, *b]).ok_or(no_value)?;
         let local = difference_quotient(parameter, a, b, a)
             .map_err(|failure| failure.map(|_| ()))?;
-        let [base, first, second] = Homogeneous::quadratic_orders(poles, local).ok_or(no_value)?;
-        let project = |sum: Homogeneous, corrections: &[(Homogeneous, [FiniteReal; 3])]| {
-            sum.project_normalized(base, corrections).ok_or(no_value)
-        };
-        let point = project(base, &[])?;
-        let tangent = project(first, &[(first, point)])?;
-        let acceleration = project(second, &[(second, point), (first, tangent), (first, tangent)])?;
-        let third = project(Homogeneous::zero(), &[
-            (second, tangent), (second, tangent), (second, tangent),
-            (first, acceleration), (first, acceleration), (first, acceleration),
-        ])?;
         let mut width = ExactSignedSum::default();
         width.add_factors([b.get()]);
         width.add_factors([-a.get()]);
         let width = width.finish().ok_or(no_value)?;
-        let unscale = |lane: FiniteReal| {
-            let Some(lane) = scaled_finite(lane.get()) else { return Ok(FiniteReal::ZERO); };
-            ScaledValue::product_quotient([lane], [width, width, width])
-                .map_err(|_| EvaluationFailure::NonFinite(()))
-        };
-        let [x, y, z] = third;
-        Ok(FiniteVector3::from_components(unscale(x)?, unscale(y)?, unscale(z)?))
+        let [x, y, z] = finite_lanes(Homogeneous::quadratic_third(poles, local, width)
+            .ok_or(no_value)?).map_err(|_| EvaluationFailure::NonFinite(()))?;
+        Ok(FiniteVector3::from_components(x, y, z))
     })();
     scratch.settle(result)
 }

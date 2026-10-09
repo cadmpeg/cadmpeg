@@ -3,6 +3,8 @@
 
 use crate::scalar::{FiniteReal, NonZeroReal};
 
+pub(crate) mod quotient_third;
+
 /// A finite dot product with an exact-product fallback for range loss or cancellation.
 ///
 /// A non-finite input, and a sum outside the finite range, leave the dot
@@ -341,7 +343,7 @@ fn finite_significand(value: f64) -> Option<(bool, u64, u16)> {
     }
 }
 
-fn add_word(words: &mut [u64; EXACT_SUM_WORDS], index: usize, value: u64) {
+fn add_word<const N: usize>(words: &mut [u64; N], index: usize, value: u64) {
     let (sum, mut carry) = words[index].overflowing_add(value);
     words[index] = sum;
     let mut index = index + 1;
@@ -353,7 +355,7 @@ fn add_word(words: &mut [u64; EXACT_SUM_WORDS], index: usize, value: u64) {
     }
 }
 
-fn add_shifted(words: &mut [u64; EXACT_SUM_WORDS], value: u128, shift: usize) {
+fn add_shifted<const N: usize>(words: &mut [u64; N], value: u128, shift: usize) {
     let bytes = value.to_le_bytes();
     // endian-exception: reconstructed-scalar
     let low = u64::from_le_bytes([
@@ -525,10 +527,10 @@ impl ExactSignedSum {
 /// subtraction below, so the minuend is never the smaller side and the loop
 /// cannot leave a borrow in the highest word. Splitting the comparison from the
 /// subtraction would state that relation as an assertion instead of holding it.
-fn signed_difference(
-    positive: &[u64; EXACT_SUM_WORDS],
-    negative: &[u64; EXACT_SUM_WORDS],
-) -> Option<(bool, [u64; EXACT_SUM_WORDS])> {
+fn signed_difference<const N: usize>(
+    positive: &[u64; N],
+    negative: &[u64; N],
+) -> Option<(bool, [u64; N])> {
     let (larger, smaller, is_negative) =
         positive
             .iter()
@@ -539,9 +541,9 @@ fn signed_difference(
                 std::cmp::Ordering::Less => Some((negative, positive, true)),
                 std::cmp::Ordering::Equal => None,
             })?;
-    let mut magnitude = [0; EXACT_SUM_WORDS];
+    let mut magnitude = [0; N];
     let mut borrow = false;
-    for index in 0..EXACT_SUM_WORDS {
+    for index in 0..N {
         let (difference, first_borrow) = larger[index].overflowing_sub(smaller[index]);
         let (difference, second_borrow) = difference.overflowing_sub(u64::from(borrow));
         magnitude[index] = difference;
@@ -550,7 +552,7 @@ fn signed_difference(
     Some((is_negative, magnitude))
 }
 
-fn bit_is_set(words: &[u64; EXACT_SUM_WORDS], bit: usize) -> bool {
+fn bit_is_set<const N: usize>(words: &[u64; N], bit: usize) -> bool {
     words[bit / 64] & (1_u64 << (bit % 64)) != 0
 }
 
