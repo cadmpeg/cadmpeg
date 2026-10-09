@@ -28,7 +28,7 @@ pub(crate) fn validate_native(
     let mut temporary = ctx.reserve_scoped(0, "SLDPRT validation workspace")?;
     let mut findings = Vec::new();
     for history in ctx.admit_iter(&native.feature_histories, "scan SLDPRT native histories")? {
-        if let Err(error) = crate::writer::validate_feature_graph(ctx, &history.features) {
+        if let Err(error) = crate::history::feature_graph::validate_feature_graph(ctx, &history.features) {
             if matches!(error, CodecError::ResourceLimit(_)) {
                 return Err(error);
             }
