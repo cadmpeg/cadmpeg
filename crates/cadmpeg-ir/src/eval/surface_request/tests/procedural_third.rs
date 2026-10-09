@@ -144,7 +144,7 @@ fn degree_one_nurbs_curve_third_keeps_real_surface_lower_orders() {
 }
 
 #[test]
-fn missing_higher_degree_rational_third_preserves_actual_lower_orders() {
+fn quadratic_rational_third_supplies_actual_offset_second_and_preserves_lower_orders() {
     use crate::geometry::nurbs::NurbsCurve;
     let mut ir = CadIr::empty();
     let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 2,
@@ -161,8 +161,40 @@ fn missing_higher_degree_rational_third_preserves_actual_lower_orders() {
     assert_eq!(third.jet.second, second.second);
     assert!(third.jet.first.is_ok());
     assert!(third.jet.second.is_ok());
-    assert_eq!(third.higher.third(), Err(EvaluationFailure::NoValue));
+    // C=2u^2/(1+u^2), so C'''(.5)=-4608/625.
+    let [uuu, uuv, uvv, vvv] = third.higher.third().unwrap();
+    close(uuu.get(), Vector3::new(-4608.0 / 625.0, 0.0, 0.0));
+    for mixed in [uuv, uvv, vvv] { close(mixed.get(), Vector3::new(0.0, 0.0, 0.0)); }
     let shifted = offset(&mut ir, "higher-rational-offset", surface, 1.0);
+    let result = evaluate(&ir, &shifted, 0.5, 0.25, SurfaceRequest::Second);
+    assert!(result.first.is_ok());
+    // The normal is constant. C''(.5)=4*(1-3/4)/(5/4)^3=64/125.
+    let [uu, uv, vv] = result.second.unwrap();
+    close(uu.get(), Vector3::new(64.0 / 125.0, 0.0, 0.0));
+    for mixed in [uv, vv] { close(mixed.get(), Vector3::new(0.0, 0.0, 0.0)); }
+}
+
+#[test]
+fn unavailable_cubic_rational_third_preserves_actual_surface_lower_orders() {
+    use crate::geometry::nurbs::NurbsCurve;
+    let mut ir = CadIr::empty();
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 3,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        Some(vec![1.0, 1.0, 1.0, 2.0]), false).unwrap().unwrap();
+    let directrix = add_curve(&mut ir, "cubic-rational-line", SolvedCurveGeometry::Nurbs(curve));
+    let surface = procedural(&mut ir, "cubic-rational-extrusion", ProceduralSurfaceDefinition::LinearSweep(
+        LinearSweepSurfaceConstruction::try_new(directrix, Vector3::new(0.0, 0.0, 1.0)).unwrap()));
+    let third = requested(&ir, &surface, 0.5, 0.25);
+    let second = evaluate(&ir, &surface, 0.5, 0.25, SurfaceRequest::Second);
+    assert_eq!(third.jet.point, second.point);
+    assert_eq!(third.jet.first, second.first);
+    assert_eq!(third.jet.second, second.second);
+    assert!(third.jet.first.is_ok());
+    assert!(third.jet.second.is_ok());
+    assert_eq!(third.higher.third(), Err(EvaluationFailure::NoValue));
+    let shifted = offset(&mut ir, "cubic-rational-offset", surface, 1.0);
     let result = evaluate(&ir, &shifted, 0.5, 0.25, SurfaceRequest::Second);
     assert!(result.first.is_ok());
     assert_eq!(result.second, Err(EvaluationFailure::NoValue));

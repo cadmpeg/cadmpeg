@@ -69,7 +69,11 @@ fn low_degree_polynomial_third_is_zero_without_inventing_a_rational_theorem() {
             let geometry = polynomial(degree, [0.0, f64::from_bits(1)], f64::MAX, false);
             assert_eq!(third(&scratch, &geometry, 0.0), Ok(FiniteVector3::ZERO));
         }
-        assert_eq!(third(&scratch, &rational, 0.0), Err(EvaluationFailure::NoValue));
+        // This rational law is 2t^2/(1+t^2): its Third is zero at
+        // t=0, but is -4608/625 at t=.5. Degree alone proves no zero.
+        assert_eq!(third(&scratch, &rational, 0.0), Ok(FiniteVector3::ZERO));
+        let actual = third(&scratch, &rational, 0.5).unwrap().x;
+        assert!((actual + 4608.0 / 625.0).abs() <= 32.0 * f64::EPSILON * actual.abs());
     }
     ctx.finish_session().unwrap();
 }
