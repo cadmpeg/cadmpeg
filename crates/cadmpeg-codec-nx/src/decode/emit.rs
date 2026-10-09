@@ -1016,6 +1016,7 @@ pub(super) fn emit_topology<'ctx, 'graph>(
     drop(shell_storage);
     let mut loop_index_storage = ctx.reserve_scoped(0, "nx emitted loop indexes")?;
     let mut loops: BTreeMap<u32, LoopId> = BTreeMap::new();
+    let mut loop_spec_storage = ctx.reserve_scoped(0, "nx loop specification index")?;
     let mut loop_specs: BTreeMap<u32, (LoopId, FaceId)> = BTreeMap::new();
     for (&loop_xmt, &ring) in ctx.admit_iter(&valid_loop_rings, "nx emitted loop index")? {
         let Some(node) = graph.get(ctx, NodeKind::Loop, loop_xmt)? else {
@@ -1060,7 +1061,7 @@ pub(super) fn emit_topology<'ctx, 'graph>(
             continue;
         }
         annotate_node(ctx, annotations, id.as_str(), source_stream, node, "LOOP")?;
-        loop_index_storage.with_storage(|| {
+        loop_spec_storage.with_storage(|| {
             let spec = (
                 id.try_clone_for_decode(ctx, "nx loop specification identity")?,
                 face_ref.try_clone_for_decode(ctx, "nx loop face identity")?,
@@ -1070,7 +1071,9 @@ pub(super) fn emit_topology<'ctx, 'graph>(
                 node.xmt(),
                 spec,
                 "nx loop specification index",
-            )?;
+            )
+        })?;
+        loop_index_storage.with_storage(|| {
             ctx.insert_btree_map(&mut loops, node.xmt(), id, "nx emitted loop index")
         })?;
     }
@@ -1492,6 +1495,7 @@ pub(super) fn emit_topology<'ctx, 'graph>(
     drop(face_loop_rings);
     drop(face_loop_storage);
     drop(loop_specs);
+    drop(loop_spec_storage);
     drop(fin_ids);
     drop(fin_index_storage);
     for pending in ctx.admit_iter(pending_faces, "nx emitted faces")? {
