@@ -159,3 +159,122 @@ fn compressed_parameter_card_writer_admits_actual_lines_and_observes_empty_fuse(
         Err(CodecError::ResourceLimit(original)) if original == refusal
     ));
 }
+
+
+fn hollerith_policy(work: u64) -> DecodePolicy {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    policy
+}
+
+#[test]
+fn compressed_hollerith_digits_admit_only_existing_bytes() {
+    for count in [1_usize, 64] {
+        let bytes = vec![b'1'; count];
+        let required = u64::try_from(count).unwrap();
+        for cap in [0, required - 1, required] {
+            let arena = DecodeArena::new();
+            let policy = hollerith_policy(cap);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = hollerith_at(&bytes, 0, &ctx);
+            if cap == required {
+                assert!(result.unwrap().is_none());
+                ctx.finish_session().unwrap();
+                continue;
+            }
+            let Err(CodecError::ResourceLimit(first)) = result else {
+                panic!("expected first or last actual digit refusal");
+            };
+            assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(first.operation, "iges compressed Global Hollerith digits");
+            assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+            for input in [b"".as_slice(), bytes.as_slice()] {
+                assert!(matches!(hollerith_at(input, 0, &ctx),
+                    Err(CodecError::ResourceLimit(last)) if last == first));
+            }
+            assert!(matches!(ctx.finish_session(),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+}
+
+#[test]
+fn compressed_hollerith_absent_marker_is_free_after_the_final_byte() {
+    let arena = DecodeArena::new();
+    let policy = hollerith_policy(0);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        for (bytes, start) in [(b"".as_slice(), 0), (b"1".as_slice(), 1),
+            (b"1".as_slice(), usize::MAX)] {
+            assert!(hollerith_at(bytes, start, &ctx).unwrap().is_none());
+        }
+    }
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn compressed_hollerith_marker_and_payload_keep_their_exact_bounds() {
+    for (bytes, expected) in [(b"0H".as_slice(), (2, 2)),
+        (b"1Hx".as_slice(), (2, 3)), (b"1h,".as_slice(), (2, 3))] {
+        // Digit and marker visits, one UTF-8 byte, one integer-parse byte.
+        for cap in [3, 4] {
+            let arena = DecodeArena::new();
+            let policy = hollerith_policy(cap);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = hollerith_at(bytes, 0, &ctx);
+            if cap == 4 {
+                assert_eq!(result.unwrap(), Some(expected));
+                ctx.finish_session().unwrap();
+            } else {
+                let Err(CodecError::ResourceLimit(first)) = result else {
+                    panic!("expected count-parse refusal");
+                };
+                assert_eq!(first.operation, "iges compressed Global Hollerith number");
+                assert_eq!((first.limit, first.used, first.additional), (3, 3, 1));
+                assert!(matches!(ctx.finish_session(),
+                    Err(CodecError::ResourceLimit(last)) if last == first));
+            }
+        }
+    }
+    let arena = DecodeArena::new();
+    let policy = hollerith_policy(4);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(hollerith_at(b"1H", 0, &ctx), Err(CodecError::Malformed(_))));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn compressed_hollerith_empty_routes_preserve_each_original_refusal() {
+    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes, ResourceDimension::RetainedBytes,
+        ResourceDimension::Entities, ResourceDimension::RecursionDepth] {
+        let arena = DecodeArena::new();
+        let policy = hollerith_policy(0);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let refused = match dimension {
+            ResourceDimension::WorkUnits => ctx.charge_work(1, "test original Hollerith refusal"),
+            ResourceDimension::CollectionItems => ctx.charge_collection_items(1, "test original Hollerith refusal"),
+            ResourceDimension::MaterializedBytes => ctx.reserve_scoped(1, "test original Hollerith refusal").map(|_| ()),
+            ResourceDimension::RetainedBytes => ctx.charge_retained(1, "test original Hollerith refusal"),
+            ResourceDimension::Entities => ctx.charge_entities(1, "test original Hollerith refusal"),
+            ResourceDimension::RecursionDepth => ctx.enter_nested("test original Hollerith refusal").map(|_| ()),
+            _ => panic!("Hollerith refusal dimension"),
+        };
+        let Err(CodecError::ResourceLimit(first)) = refused else { panic!("expected original refusal"); };
+        assert_eq!(first.dimension, dimension);
+        for _ in 0..64 {
+            for (bytes, start) in [(b"".as_slice(), 0), (b"1".as_slice(), 1),
+                (b"1".as_slice(), usize::MAX), (b"1Hx".as_slice(), 0)] {
+                assert!(matches!(hollerith_at(bytes, start, &ctx),
+                    Err(CodecError::ResourceLimit(last)) if last == first));
+            }
+        }
+        assert!(matches!(ctx.finish_session(),
+            Err(CodecError::ResourceLimit(last)) if last == first));
+    }
+}
