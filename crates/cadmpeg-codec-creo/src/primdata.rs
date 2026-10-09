@@ -72,18 +72,23 @@ impl PrimitiveTriangleStrip {
         normals: Option<Vec<FiniteVector<3>>>,
         strip_lengths: Vec<u32>,
     ) -> Result<Option<Self>, CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(strip_lengths.len()),
-            "creo primitive strip validation",
-        )?;
-        let Some(total) = strip_lengths.iter().try_fold(0usize, |total, length| {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut total = 0usize;
+        let mut lengths = strip_lengths.iter();
+        while lengths.len() != 0 {
+            let Some(length) = ctx.next_charged(&mut lengths, "creo primitive strip validation")? else {
+                break;
+            };
             if *length < 3 {
-                return None;
+                return Ok(None);
             }
-            total.checked_add(usize::try_from(*length).ok()?)
-        }) else {
-            return Ok(None);
-        };
+            let Some(next) = usize::try_from(*length).ok().and_then(|length| total.checked_add(length)) else {
+                return Ok(None);
+            };
+            total = next;
+        }
         if strip_lengths.is_empty()
             || total != positions.len()
             || normals
@@ -476,6 +481,7 @@ fn primitive_scalar(data: &[u8], offset: usize) -> Option<(f64, usize)> {
 
 #[cfg(test)]
 mod tests {
+    mod strip_visits;
     use super::{
         scalar_arrays, triangle_strip_geometry, triangle_strips, PrimitiveArrayField,
         PrimitiveScalarArray, TriangleStripGeometry, TriangleStripGeometryError,
