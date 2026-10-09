@@ -6,7 +6,8 @@ use crate::math::Point3;
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 
-pub(super) struct HomogeneousBezierSplit<'ctx> {
+pub(super) struct HomogeneousBezierSplit<'ctx, 'arena> {
+    ctx: &'ctx DecodeContext<'arena>,
     left: Vec<[f64; 4]>,
     point: [f64; 4],
     right_reversed: Vec<[f64; 4]>,
@@ -14,15 +15,12 @@ pub(super) struct HomogeneousBezierSplit<'ctx> {
     right_storage: ScopedReservation<'ctx>,
 }
 
-impl<'ctx> HomogeneousBezierSplit<'ctx> {
-    pub(super) fn into_polygons(
-        mut self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<[ScopedRows<'ctx, [f64; 4]>; 2], ResourceLimit> {
-        ctx.charge_work_limit(2, "IR Bezier split final points")?;
+impl<'ctx> HomogeneousBezierSplit<'ctx, '_> {
+    pub(super) fn into_polygons(mut self) -> Result<[ScopedRows<'ctx, [f64; 4]>; 2], ResourceLimit> {
+        self.ctx.charge_work_limit(2, "IR Bezier split final points")?;
         self.left.push(self.point);
         self.right_reversed.push(self.point);
-        ctx.charge_work_limit(
+        self.ctx.charge_work_limit(
             u64_from_index(self.right_reversed.len() / 2) * 2,
             "IR Bezier split reverse",
         )?;
@@ -34,11 +32,11 @@ impl<'ctx> HomogeneousBezierSplit<'ctx> {
     }
 }
 
-fn split_homogeneous_bezier<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+fn split_homogeneous_bezier<'ctx, 'arena>(
+    ctx: &'ctx DecodeContext<'arena>,
     controls: &[[f64; 4]],
     parameter: f64,
-) -> Result<Option<HomogeneousBezierSplit<'ctx>>, ResourceLimit> {
+) -> Result<Option<HomogeneousBezierSplit<'ctx, 'arena>>, ResourceLimit> {
     if !parameter.is_finite() || !(0.0..=1.0).contains(&parameter) {
         return Ok(None);
     }
@@ -47,20 +45,20 @@ fn split_homogeneous_bezier<'ctx>(
     })
 }
 
-pub(super) fn split_homogeneous_bezier_midpoint<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+pub(super) fn split_homogeneous_bezier_midpoint<'ctx, 'arena>(
+    ctx: &'ctx DecodeContext<'arena>,
     controls: &[[f64; 4]],
-) -> Result<Option<HomogeneousBezierSplit<'ctx>>, ResourceLimit> {
+) -> Result<Option<HomogeneousBezierSplit<'ctx, 'arena>>, ResourceLimit> {
     split_homogeneous_bezier_with(ctx, controls, |left, right| {
         std::array::from_fn(|axis| left[axis].midpoint(right[axis]))
     })
 }
 
-fn split_homogeneous_bezier_with<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+fn split_homogeneous_bezier_with<'ctx, 'arena>(
+    ctx: &'ctx DecodeContext<'arena>,
     controls: &[[f64; 4]],
     blend: impl Fn([f64; 4], [f64; 4]) -> [f64; 4],
-) -> Result<Option<HomogeneousBezierSplit<'ctx>>, ResourceLimit> {
+) -> Result<Option<HomogeneousBezierSplit<'ctx, 'arena>>, ResourceLimit> {
     let Some((&first, input_rest)) = controls.split_first() else {
         return Ok(None);
     };
@@ -93,6 +91,7 @@ fn split_homogeneous_bezier_with<'ctx>(
         remaining -= 1;
     }
     Ok(Some(HomogeneousBezierSplit {
+        ctx,
         left,
         point: first,
         right_reversed: right,
@@ -133,7 +132,7 @@ pub(super) fn restrict_homogeneous_bezier<'ctx>(
         let Some(split) = split_homogeneous_bezier(ctx, controls, end)? else {
             return Ok(None);
         };
-        let [left, _] = split.into_polygons(ctx)?;
+        let [left, _] = split.into_polygons()?;
         if start == 0.0 {
             return Ok(Some(left));
         }
@@ -141,7 +140,7 @@ pub(super) fn restrict_homogeneous_bezier<'ctx>(
         let Some(split) = split_homogeneous_bezier(ctx, &left, relative_start)? else {
             return Ok(None);
         };
-        let [_, right] = split.into_polygons(ctx)?;
+        let [_, right] = split.into_polygons()?;
         Ok(Some(right))
     })()?;
     let Some(mut result) = result else {
@@ -267,7 +266,7 @@ mod tests {
                     let result = (|| -> Result<(), cadmpeg_core::decode::ResourceLimit> {
                         let split = split_homogeneous_bezier_midpoint(&ctx, &controls)?
                             .expect("nonempty polygon");
-                        let polygons = split.into_polygons(&ctx)?;
+                        let polygons = split.into_polygons()?;
                         drop(polygons);
                         Ok(())
                     })()
@@ -334,7 +333,7 @@ mod tests {
         let split = split_homogeneous_bezier_midpoint(&ctx, &controls)
             .expect("exact split work")
             .expect("nonempty");
-        let [left, right] = split.into_polygons(&ctx).expect("exact completion work");
+        let [left, right] = split.into_polygons().expect("exact completion work");
         assert_eq!(&*left, &[[0.0, 0.0, 0.0, 1.0], [0.5, 0.0, 0.0, 1.0]]);
         assert_eq!(&*right, &[[0.5, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]]);
         let spare = ctx
@@ -370,7 +369,7 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = (|| -> Result<(), cadmpeg_core::decode::ResourceLimit> {
                 let split = split_homogeneous_bezier_midpoint(&ctx, &controls)?.expect("nonempty");
-                let [left, right] = split.into_polygons(&ctx)?;
+                let [left, right] = split.into_polygons()?;
                 assert_eq!(
                     &*left,
                     &[
@@ -494,7 +493,7 @@ mod tests {
                 let controls = (0..count).map(|_| [coordinate, coordinate, coordinate, 1.0]).collect::<Vec<_>>();
                 let ctx = cadmpeg_test_support::service_decode_context();
                 let split = split_homogeneous_bezier_midpoint(&ctx, &controls).unwrap().unwrap();
-                let [left, right] = split.into_polygons(&ctx).unwrap();
+                let [left, right] = split.into_polygons().unwrap();
                 assert_eq!(&*left, controls.as_slice());
                 assert_eq!(&*right, controls.as_slice());
                 drop((left, right));
@@ -504,12 +503,42 @@ mod tests {
         let controls = [[f64::MAX, -f64::MAX, 0.0, 1.0], [-f64::MAX, f64::MAX, 0.0, 1.0]];
         let ctx = cadmpeg_test_support::service_decode_context();
         let split = split_homogeneous_bezier_midpoint(&ctx, &controls).unwrap().unwrap();
-        let [left, right] = split.into_polygons(&ctx).unwrap();
+        let [left, right] = split.into_polygons().unwrap();
         let midpoint = [0.0, 0.0, 0.0, 1.0];
         assert_eq!(&*left, &[controls[0], midpoint]);
         assert_eq!(&*right, &[midpoint, controls[1]]);
         drop((left, right));
         ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn homogeneous_split_completion_observes_its_original_session_refusal() {
+        let controls = [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One copied row and three boundary copies/blends construct the split.
+        policy.limits.max_work_units = 4;
+        policy.limits.max_materialized_bytes = 160;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 5;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let split = split_homogeneous_bezier_midpoint(&ctx, &controls)
+            .expect("exact construction work")
+            .expect("nonempty controls");
+        let original = ctx
+            .charge_work_limit(1, "original split completion refusal")
+            .unwrap_err();
+        let actual = split.into_polygons().err().expect("original session refusal");
+        assert_eq!(actual, original);
+        assert_eq!(actual.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(actual.operation, "original split completion refusal");
+        assert_eq!(actual.used, 4);
+        assert_eq!(actual.additional, 1);
+        assert_eq!(ctx.charge_work_limit(0, "observe split refusal"), Err(original));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+        );
     }
 
 }
