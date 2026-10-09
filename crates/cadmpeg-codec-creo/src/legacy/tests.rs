@@ -85,10 +85,14 @@ fn principal_unit_system(persistence: &super::Persistence) -> Option<PrincipalUn
         .expect("unit selection fits service limits")
 }
 
-fn scan(
+fn scan<I>(
     data: &[u8],
-    ranges: impl IntoIterator<Item = Range<usize>>,
-) -> Result<super::Persistence, cadmpeg_core::CodecError> {
+    ranges: I,
+) -> Result<super::Persistence, cadmpeg_core::CodecError>
+where
+    I: IntoIterator<Item = Range<usize>>,
+    I::IntoIter: ExactSizeIterator,
+{
     crate::decode::with_test_decode_ctx(|ctx| super::scan(ctx, data, ranges))
 }
 
