@@ -44,8 +44,12 @@ impl<T> Deref for ScopedRows<'_, T> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use super::ScopedRows;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{
+        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimit,
+    };
     use cadmpeg_core::CodecError;
 
     #[test]
@@ -90,5 +94,88 @@ mod tests {
                 );
             }
         }
+    }
+
+    struct DropWithLiveStorage<'ctx, 'arena> {
+        ctx: &'ctx DecodeContext<'arena>,
+        observed: &'ctx Cell<Option<ResourceLimit>>,
+    }
+
+    impl Drop for DropWithLiveStorage<'_, '_> {
+        fn drop(&mut self) {
+            self.observed.set(
+                self.ctx
+                    .reserve_scoped_limit(1, "observe live rows during child drop")
+                    .err(),
+            );
+        }
+    }
+
+    #[test]
+    fn scoped_rows_destroy_children_before_releasing_their_backing_reservation(
+    ) -> Result<(), CodecError> {
+        let bytes = u64::try_from(std::mem::size_of::<DropWithLiveStorage<'_, '_>>())
+            .expect("row size fits the resource counter");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = bytes;
+        policy.limits.max_retained_bytes = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let observed = Cell::new(None);
+        let storage;
+        let mut rows = Vec::new();
+        storage = ctx.reserve_temporary_vec(&mut rows, 1, "construct observed scoped rows")?;
+        rows.push(DropWithLiveStorage {
+            ctx: &ctx,
+            observed: &observed,
+        });
+        let rows = ScopedRows::new(rows, storage);
+        assert_eq!(rows.capacity(), 1);
+        drop(rows);
+        let limit = observed
+            .get()
+            .expect("child drop must observe the live reservation");
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!((limit.limit, limit.used, limit.additional), (bytes, bytes, 1));
+        assert_eq!(limit.operation, "observe live rows during child drop");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        Ok(())
+    }
+
+    struct PanicOnFirstDrop<'a>(&'a Cell<usize>);
+
+    impl Drop for PanicOnFirstDrop<'_> {
+        fn drop(&mut self) {
+            let previous = self.0.replace(self.0.get() + 1);
+            if previous == 0 {
+                panic!("first row destructor fails");
+            }
+        }
+    }
+
+    #[test]
+    fn scoped_rows_unwind_destroys_remaining_children_and_releases_storage(
+    ) -> Result<(), CodecError> {
+        let bytes = u64::try_from(2 * std::mem::size_of::<PanicOnFirstDrop<'_>>())
+            .expect("two row sizes fit the resource counter");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = bytes;
+        policy.limits.max_retained_bytes = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let dropped = Cell::new(0);
+        let storage;
+        let mut rows = Vec::new();
+        storage = ctx.reserve_temporary_vec(&mut rows, 2, "construct unwinding scoped rows")?;
+        rows.extend([PanicOnFirstDrop(&dropped), PanicOnFirstDrop(&dropped)]);
+        let rows = ScopedRows::new(rows, storage);
+        assert_eq!(rows.capacity(), 2);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(rows)));
+        assert!(result.is_err());
+        assert_eq!(dropped.get(), 2);
+        assert_eq!(ctx.resource_refusal(), None);
+        drop(ctx.reserve_scoped_limit(bytes, "reuse storage after child unwind")?);
+        ctx.finish_session()?;
+        Ok(())
     }
 }
