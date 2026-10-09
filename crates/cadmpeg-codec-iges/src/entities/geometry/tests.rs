@@ -13,7 +13,7 @@ use cadmpeg_ir::math::Vector3;
 
 use super::{
     base_geometry_line_font_valid, base_geometry_use_flag_valid, consumed_support_sequences,
-    declared_affine_progression, enforce_transform_depth, is_finite_nonzero_vector,
+    enforce_transform_depth, is_finite_nonzero_vector,
     normal_matches_plane, plane_coordinates, source_object, validate_declared_transform_frame,
     DeclaredInterval, DeclaredTransformFrameError, ProjectionOutcome, WireProjectionOutcome,
 };
@@ -1273,20 +1273,6 @@ fn declared_transform_validation_separates_frame_and_handedness_invariants() {
 }
 
 #[test]
-fn declared_intervals_prove_or_reject_an_affine_control_polygon() {
-    crate::test_support::with_service_context(&[], |ctx| {
-        assert!(declared_affine_progression(&[0.0, 1.0, 2.0, 3.0], &[0.0; 4], ctx).unwrap());
-        assert!(declared_affine_progression(
-            &[0.0, 1.000_002, 2.000_004, 3.0],
-            &[0.0, 5.0e-6, 5.0e-6, 0.0],
-            ctx
-        )
-        .unwrap());
-        assert!(!declared_affine_progression(&[0.0, 1.0, 2.2, 3.0], &[0.0; 4], ctx).unwrap());
-    });
-}
-
-#[test]
 fn type_123_accepts_a_finite_non_unit_direction() {
     assert!(is_finite_nonzero_vector(Vector3::new(2.0, -3.0, 4.0)));
     assert!(!is_finite_nonzero_vector(Vector3::new(0.0, 0.0, 0.0)));
@@ -2000,3 +1986,5 @@ mod local_limits;
 mod source_lanes;
 
 mod source_visits;
+
+mod affine_progression;
