@@ -1054,8 +1054,8 @@ impl Graph {
     /// only when it preserves every baseline node and completes a body
     /// topology that the baseline does not.
     pub(crate) fn parse(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Self, CodecError> {
-        let ([baseline_candidates, full_candidates], candidate_storage) =
-            Self::scan_candidates(ctx, stream)?;
+        let (domains, candidate_storage) = Self::scan_candidates(ctx, stream)?;
+        let [baseline_candidates, full_candidates] = domains;
         let (baseline_candidate, mut baseline_storage) =
             Self::select_graph(ctx, stream, &baseline_candidates)?;
         let mut baseline = baseline_candidate;
@@ -1244,8 +1244,8 @@ impl Graph {
         stream: &[u8],
     ) -> Result<([DomainCandidates; 2], ScopedReservation<'ctx>), CodecError> {
         const OPERATION: &str = "NX topology candidates";
-        let mut domains: [DomainCandidates; 2] = Default::default();
         let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut domains: [DomainCandidates; 2] = Default::default();
         let last = stream.len().checked_sub(3).unwrap_or(0);
         for pos in ctx.admit_iter(0..last, "scan NX topology candidates")? {
             if stream[pos] != 0 {
@@ -1282,19 +1282,28 @@ impl Graph {
         // that is wholly contained in a selected record is payload data, not
         // a second serialized node. Counting it first can invalidate the real
         // node and make otherwise stable identities depend on unrelated bytes.
-        let (non_overlapping, _non_overlapping_storage) =
+        let (non_overlapping_candidate, non_overlapping_storage) =
             Self::select_non_overlapping_candidates(ctx, stream, &candidates.typed)?;
-        let (selected, _selected_storage) = Self::select_unique_candidates(ctx, &non_overlapping)?;
+        let non_overlapping = non_overlapping_candidate;
+        let (selected_candidate, selected_storage) =
+            Self::select_unique_candidates(ctx, &non_overlapping)?;
+        let selected = selected_candidate;
+        drop(non_overlapping);
+        drop(non_overlapping_storage);
         // BODY and REGION carry ownership identity only. Their opaque fixed
         // payloads can contain complete-looking typed tags, so they are
         // admitted after typed topology/carrier selection and never veto a
         // typed candidate. An ownership node that shares bytes with a typed
         // node is ambiguous and is omitted; shells retain the identity even
         // when the optional BODY or REGION record is absent.
-        let (non_overlapping_ownership, _ownership_nonoverlap_storage) =
+        let (non_overlapping_candidate, ownership_nonoverlap_storage) =
             Self::select_non_overlapping_candidates(ctx, stream, &candidates.ownership)?;
-        let (ownership, _ownership_unique_storage) =
+        let non_overlapping_ownership = non_overlapping_candidate;
+        let (ownership_candidate, ownership_unique_storage) =
             Self::select_unique_candidates(ctx, &non_overlapping_ownership)?;
+        let ownership = ownership_candidate;
+        drop(non_overlapping_ownership);
+        drop(ownership_nonoverlap_storage);
         let mut storage = GraphStorage {
             nodes: ctx.reserve_scoped(0, "NX topology node bytes")?,
             index: ctx.reserve_scoped(0, INDEX_OPERATION)?,
@@ -1305,13 +1314,20 @@ impl Graph {
                 graph.push_node(ctx, &mut storage.index, node)?;
             }
         }
-        let (ownership, _ownership_storage) =
+        let (admitted_candidate, admitted_storage) =
             Self::admit_disjoint_ownership(ctx, &ownership, &selected)?;
-        for candidate in ctx.admit_iter(&ownership, "NX admitted ownership records")? {
+        let admitted = admitted_candidate;
+        drop(ownership);
+        drop(ownership_unique_storage);
+        drop(selected);
+        drop(selected_storage);
+        for candidate in ctx.admit_iter(&admitted, "NX admitted ownership records")? {
             if let Some(node) = candidate.materialize(ctx, &mut storage.nodes, stream)? {
                 graph.push_node(ctx, &mut storage.index, node)?;
             }
         }
+        drop(admitted);
+        drop(admitted_storage);
         Ok((graph, storage))
     }
 
@@ -1325,8 +1341,8 @@ impl Graph {
         selected: &[NodeCandidate],
     ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
         const OPERATION: &str = "compare NX ownership overlaps";
-        let mut admitted = Vec::new();
         let mut storage = ctx.reserve_scoped(0, "NX admitted ownership candidates")?;
+        let mut admitted = Vec::new();
         for candidate in ctx.admit_iter(ownership, OPERATION)? {
             let first_after = ctx.partition_point(
                 selected,
@@ -1413,8 +1429,8 @@ impl Graph {
                 }
             }
         }
-        let mut selected = Vec::new();
         let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut selected = Vec::new();
         for candidate in ctx.admit_iter(candidates, OPERATION)? {
             let key = (candidate.kind, candidate.xmt());
             if ctx.get_btree_map(&repeated, &key, OPERATION)? == Some(&false) {
@@ -1433,8 +1449,8 @@ impl Graph {
         nodes: &[NodeCandidate],
     ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
         const OPERATION: &str = "select NX topology candidates";
-        let mut selected = Vec::new();
         let mut storage = ctx.reserve_scoped(0, "NX topology nonoverlapping candidates")?;
+        let mut selected = Vec::new();
         let mut start = 0;
         while let Some(first) = nodes.get(start).copied() {
             ctx.charge_work(1, OPERATION)?;
