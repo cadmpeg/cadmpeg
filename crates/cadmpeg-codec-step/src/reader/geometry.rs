@@ -1536,8 +1536,11 @@ pub(super) fn decode<'ctx>(
     let mut deferred_queue = VecDeque::from(deferred_ids);
     let mut waiting_on = DeferredDependencies::default();
     let mut line_scale_index = LineParameterScaleIndex::new(exchange, ctx)?;
-    while let Some(id) = deferred_queue.pop_front() {
+    while !deferred_queue.is_empty() {
         ctx.charge_work(1, "step deferred curve worklist")?;
+        let Some(id) = deferred_queue.pop_front() else {
+            break;
+        };
         if ctx.contains_key_hash_map(&carrier_index.curves, &id, "step_geometry_lookup")? {
             continue;
         }
@@ -2506,8 +2509,11 @@ pub(super) fn decode<'ctx>(
     let mut worklist_scale_index = SurfaceScaleIndex::build(ir, ctx)?;
     let mut surface_start = ir.model.surfaces.len();
     let mut procedural_start = ir.model.procedural_surfaces.len();
-    while let Some(id) = deferred_surface_queue.pop_front() {
+    while !deferred_surface_queue.is_empty() {
         ctx.charge_work(1, "step deferred surface worklist")?;
+        let Some(id) = deferred_surface_queue.pop_front() else {
+            break;
+        };
         {
             ctx.charge_work(0, "step surface scale append")?;
             let mut geometry_source = (&ir.model.surfaces[surface_start..]).iter().enumerate();
