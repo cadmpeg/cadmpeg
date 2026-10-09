@@ -744,8 +744,10 @@ fn wait_for_worker(worker: &mut Child, timeout: Duration) -> Result<Output, Work
     impl Drop for WorkerCleanup<'_> {
         fn drop(&mut self) {
             if self.0.kill().is_ok() {
+                // discarded-value: Drop cannot return a wait error after requesting termination.
                 let _ = self.0.wait();
             } else {
+                // discarded-value: a failed kill may mean exit; Drop can only attempt reaping.
                 let _ = self.0.try_wait();
             }
         }
@@ -793,7 +795,9 @@ fn wait_for_worker(worker: &mut Child, timeout: Duration) -> Result<Output, Work
                 .0
                 .wait()
                 .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
+            // discarded-value: the terminated child timed out; join releases the stdout reader.
             let _ = stdout_reader.join();
+            // discarded-value: the terminated child timed out; join releases the stderr reader.
             let _ = stderr_reader.join();
             return Err(WorkerFailure::TimedOut);
         }
