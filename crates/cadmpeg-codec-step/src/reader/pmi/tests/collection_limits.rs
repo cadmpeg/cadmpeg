@@ -353,27 +353,6 @@ fn datum_reference_refuses(records: &str, operation: &str) {
     let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("valid datum exchange");
-    let setup_ctx = cadmpeg_test_support::service_decode_context();
-    let mut annotations =
-        super::super::Annotations::new(&setup_ctx).expect("annotation index setup");
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    crate::test_support::with_service_context(source.as_bytes(), |_, _ctx| {
-        annotations
-            .push(
-                &setup_ctx,
-                &mut ir,
-                2,
-                super::super::annotations::AnnotationDraft {
-                    name: None,
-                    targets: Vec::new(),
-                    visible: None,
-                    definition: cadmpeg_ir::pmi::PmiDefinition::Datum {
-                        identification: "A".into(),
-                    },
-                },
-            )
-            .expect("datum annotation setup");
-    });
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::CollectionItems,
         operation,
@@ -383,6 +362,23 @@ fn datum_reference_refuses(records: &str, operation: &str) {
             policy.limits.max_collection_items = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
                 .expect("empty root fits collection policy");
+            let mut annotations =
+                super::super::Annotations::new(&ctx).expect("annotation index setup");
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+                annotations
+                    .push(
+                        &mut ir,
+                        2,
+                        super::super::annotations::AnnotationDraft {
+                            name: None,
+                            targets: Vec::new(),
+                            visible: None,
+                            definition: cadmpeg_ir::pmi::PmiDefinition::Datum {
+                                identification: "A".into(),
+                            },
+                        },
+                    )
+                    .expect("datum annotation setup");
             let mut losses = Vec::new();
             let mut measurements = super::super::MeasureContext {
                 length_scale: 1.0,

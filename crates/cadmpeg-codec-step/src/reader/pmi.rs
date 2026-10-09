@@ -140,7 +140,6 @@ pub(super) fn decode<'ctx>(
             .flatten()
             .unwrap_or_else(|| format!("#{id}"));
         annotations.push(
-            ctx,
             ir,
             id,
             AnnotationDraft {
@@ -205,7 +204,6 @@ pub(super) fn decode<'ctx>(
             .flatten()
             .unwrap_or_else(|| format!("#{id}"));
         annotations.push(
-            ctx,
             ir,
             id,
             AnnotationDraft {
@@ -286,7 +284,6 @@ pub(super) fn decode<'ctx>(
             }
         };
         annotations.push(
-            ctx,
             ir,
             id,
             AnnotationDraft {
@@ -449,7 +446,6 @@ pub(super) fn decode<'ctx>(
             }
         }
         annotations.push(
-            ctx,
             ir,
             id,
             AnnotationDraft {
@@ -472,7 +468,7 @@ pub(super) fn decode<'ctx>(
         let refs = refs_buffer;
         let dimension = ctx.find_map(
             &refs[..],
-            |reference| annotations.get(ctx, *reference),
+            |reference| annotations.get(*reference),
             "STEP decode traversal",
         )?;
         let limits = ctx.find_map(
@@ -792,7 +788,7 @@ pub(super) fn decode<'ctx>(
                 datum_values,
                 |value| {
                     first_matching([value], ctx, |id| {
-                        Ok(annotations.get(ctx, id)?.is_some_and(|index| {
+                        Ok(annotations.get(id)?.is_some_and(|index| {
                             matches!(
                                 ir.model.pmi[index.get()].definition,
                                 PmiDefinition::DatumSystem { .. }
@@ -802,14 +798,13 @@ pub(super) fn decode<'ctx>(
                 },
                 "STEP tolerance datum parameter traversal",
             )?
-            .map(|id| annotations.get(ctx, id))
+            .map(|id| annotations.get(id))
             .transpose()?
             .flatten()
             .map(|index| &ir.model.pmi[index.get()].id)
             .map(|id| id.try_clone_for_decode(ctx, "step_pmi_datum_system_identity_copy"))
             .transpose()?;
         annotations.push(
-            ctx,
             ir,
             id,
             AnnotationDraft {
@@ -909,7 +904,7 @@ pub(super) fn decode<'ctx>(
         else {
             continue;
         };
-        if annotations.get(ctx, definition)?.is_some() {
+        if annotations.get(definition)?.is_some() {
             if let Some(items) = record
                 .partial(ctx, "DRAUGHTING_MODEL_ITEM_ASSOCIATION")?
                 .and_then(|partial| partial.parameters.get(4))
@@ -1007,7 +1002,7 @@ pub(super) fn decode<'ctx>(
                     .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
                 for reference in references(parameter, ctx) {
                     let reference = reference?;
-                    if annotations.get(ctx, reference)?.is_some() {
+                    if annotations.get(reference)?.is_some() {
                         ctx.push_vec(
                             &mut semantics,
                             pmi_id(reference),
@@ -1035,7 +1030,6 @@ pub(super) fn decode<'ctx>(
             }
         }
         annotations.push(
-            ctx,
             ir,
             id,
             AnnotationDraft {
@@ -1196,7 +1190,7 @@ fn mark_characteristic_representations(
         let (id, record) = indexed_entity?;
         let Some(_) = find_record_value(record, ctx, |value| {
             first_matching([value], ctx, |reference| {
-                Ok(annotations.get(ctx, reference)?.is_some())
+                Ok(annotations.get(reference)?.is_some())
             })
         })?
         else {
@@ -1293,7 +1287,7 @@ fn resolve_feature_for_datum_target_relationships(
         let Some((relating, related)) = relationship_endpoints(record, ctx)? else {
             continue;
         };
-        let Some(annotation_index) = annotations.get(ctx, related)? else {
+        let Some(annotation_index) = annotations.get(related)? else {
             continue;
         };
         let annotation = &mut ir.model.pmi[annotation_index.get()];
@@ -1354,7 +1348,7 @@ fn resolve_geometric_item_usages(
         for _ in 0..visited_items.len() {
             let (&annotation_id, record) = ctx.next_charged(&mut visited_items, "STEP resolve geometric item usages traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
-            let Some(annotation_index) = annotations.get(ctx, annotation_id)? else {
+            let Some(annotation_index) = annotations.get(annotation_id)? else {
                 continue;
             };
             if ctx.contains_btree_set(
@@ -1959,7 +1953,7 @@ fn datum_references_for_compartment(
             let Some(datum) = datum_base(ctx, element)?.and_then(ValueExt::reference) else {
                 continue;
             };
-            if annotations.get(ctx, datum)?.is_none() {
+            if annotations.get(datum)?.is_none() {
                 continue;
             }
             let mut modifiers = output_storage.with_storage(|| {
@@ -2013,7 +2007,7 @@ fn datum_references_for_compartment(
     }
     if let Some(base) = base {
         visit_datum_ids(base, ctx, &mut |datum| {
-            if annotations.get(ctx, datum)?.is_none() {
+            if annotations.get(datum)?.is_none() {
                 return Ok(());
             }
             claim_storage
