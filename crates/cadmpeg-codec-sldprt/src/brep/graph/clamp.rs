@@ -159,16 +159,16 @@ pub(super) fn insert_nurbs_homogeneous_knot<'ctx>(
 
 /// The knots, control points and weights of one clamped NURBS segment, before
 /// the carrier mints them.
+#[cfg(test)]
 type ClampedCurveLanes = (Vec<f64>, Vec<cadmpeg_ir::math::Point3>, Option<Vec<f64>>);
 
-/// The clamped segment lanes of `curve` over `domain`. `None` when the curve
-/// does not clamp to the domain at all; the lanes themselves are minted by the
-/// caller.
-pub(super) fn clamp_nurbs_curve_to_domain_lanes(
+/// Construct one segment while its homogeneous source lanes remain live.
+fn clamped_segment_with<T>(
     ctx: &DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     domain: [f64; 2],
-) -> Result<Option<ClampedCurveLanes>, cadmpeg_core::CodecError> {
+    publish: impl FnOnce(Vec<f64>, &[[f64; 4]], bool) -> Result<Option<T>, cadmpeg_core::CodecError>,
+) -> Result<Option<T>, cadmpeg_core::CodecError> {
     if let Some(limit) = ctx.resource_refusal() { return Err(limit.into()); }
     if curve.periodic()
         || !domain[0].is_finite()
@@ -259,6 +259,16 @@ pub(super) fn clamp_nurbs_curve_to_domain_lanes(
         curve.pole_rows(),
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
     );
+    publish(segment_knots, control_slice, rational)
+}
+
+type ClampedRawPoles = (Vec<cadmpeg_ir::math::Point3>, Option<Vec<f64>>);
+
+fn clamped_raw_poles(
+    ctx: &DecodeContext<'_>,
+    control_slice: &[[f64; 4]],
+    rational: bool,
+) -> Result<Option<ClampedRawPoles>, cadmpeg_core::CodecError> {
     let mut control_points = Vec::new();
     ctx.reserve_capacity(
         &mut control_points,
@@ -289,7 +299,61 @@ pub(super) fn clamp_nurbs_curve_to_domain_lanes(
             ctx.push_vec(&mut *weights, weight, "collect clamped NURBS weights")?;
         }
     }
-    Ok(Some((segment_knots, control_points, weights)))
+    Ok(Some((control_points, weights)))
+}
+
+/// Raw poles expire after IR consumes them. The knot vector is output backing.
+struct ClampedConversionLanes<'ctx, 'arena> {
+    context: &'ctx DecodeContext<'arena>,
+    segment_knots: Vec<f64>,
+    control_points: Vec<cadmpeg_ir::math::Point3>,
+    weights: Option<Vec<f64>>,
+    pole_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl ClampedConversionLanes<'_, '_> {
+    fn into_curve(
+        self,
+        degree: u32,
+    ) -> Result<Result<cadmpeg_ir::geometry::nurbs::NurbsCurve, cadmpeg_ir::geometry::nurbs::NurbsError>, cadmpeg_core::CodecError> {
+        let Self { context, segment_knots, control_points, weights, pole_storage } = self;
+        let result = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            context, degree, segment_knots, control_points, weights, false,
+        );
+        // The constructor consumes both raw lanes before returning its result.
+        drop(pole_storage);
+        result
+    }
+}
+
+fn clamped_conversion_lanes<'ctx, 'arena>(
+    ctx: &'ctx DecodeContext<'arena>,
+    curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
+    domain: [f64; 2],
+) -> Result<Option<ClampedConversionLanes<'ctx, 'arena>>, cadmpeg_core::CodecError> {
+    clamped_segment_with(ctx, curve, domain, |segment_knots, controls, rational| {
+        let pole_storage;
+        let poles;
+        (poles, pole_storage) = ctx.with_scoped_storage("hold clamped NURBS raw poles", || {
+            clamped_raw_poles(ctx, controls, rational)
+        })?;
+        Ok(poles.map(|(control_points, weights)| ClampedConversionLanes {
+            context: ctx, segment_knots, control_points, weights, pole_storage,
+        }))
+    })
+}
+
+/// Standalone raw-lane inspection retains the lanes it returns.
+#[cfg(test)]
+pub(super) fn clamp_nurbs_curve_to_domain_lanes(
+    ctx: &DecodeContext<'_>,
+    curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
+    domain: [f64; 2],
+) -> Result<Option<ClampedCurveLanes>, cadmpeg_core::CodecError> {
+    clamped_segment_with(ctx, curve, domain, |segment_knots, controls, rational| {
+        Ok(clamped_raw_poles(ctx, controls, rational)?
+            .map(|(control_points, weights)| (segment_knots, control_points, weights)))
+    })
 }
 
 pub(super) fn clamp_nurbs_curve_to_domain(
@@ -297,19 +361,10 @@ pub(super) fn clamp_nurbs_curve_to_domain(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     domain: [f64; 2],
 ) -> Result<Option<cadmpeg_ir::geometry::nurbs::NurbsCurve>, NurbsPcurveFailure> {
-    let Some((segment_knots, control_points, weights)) =
-        clamp_nurbs_curve_to_domain_lanes(ctx, curve, domain)?
-    else {
+    let Some(lanes) = clamped_conversion_lanes(ctx, curve, domain)? else {
         return Ok(None);
     };
-    Ok(Some(cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        ctx,
-        curve.degree(),
-        segment_knots,
-        control_points,
-        weights,
-        false,
-    )??))
+    Ok(Some(lanes.into_curve(curve.degree())??))
 }
 
 #[cfg(test)]
