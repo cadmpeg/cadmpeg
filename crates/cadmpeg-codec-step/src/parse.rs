@@ -90,7 +90,10 @@ fn try_clone_value(
         Value::List(values) => {
             let mut copied = budget.collection_vec(values.len(), operation)?;
             let mut visited_items = (values.as_slice()).iter();
-            while let Some(value) = budget.next_charged(&mut visited_items, "STEP try clone value value traversal")? {
+            budget.charge_work(0, "STEP try clone value value traversal")?;
+            for _ in 0..visited_items.len() {
+                let value = budget.next_charged(&mut visited_items, "STEP try clone value value traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                 copied.push(try_clone_value(value, budget, operation)?);
             }
             Value::List(copied)
@@ -303,9 +306,15 @@ impl EntityIndex {
     ) -> Result<Self, ParseError> {
         let mut index = BTreeMap::<String, Vec<u64>>::new();
         let mut visited_items = (records).iter();
-        while let Some((&id, record)) = budget.next_charged(&mut visited_items, "STEP build traversal")? {
+        budget.charge_work(0, "STEP build traversal")?;
+        for _ in 0..visited_items.len() {
+            let (&id, record) = budget.next_charged(&mut visited_items, "STEP build traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
             let mut visited_items = (record.partials[..]).iter();
-            while let Some(partial) = budget.next_charged(&mut visited_items, "STEP build traversal")? {
+            budget.charge_work(0, "STEP build traversal")?;
+            for _ in 0..visited_items.len() {
+                let partial = budget.next_charged(&mut visited_items, "STEP build traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                 if let Some(ids) = budget.get_mut_btree_map(
                     &mut index,
                     partial.name.as_str(),
@@ -329,7 +338,10 @@ impl EntityIndex {
         let (mut ids, mut storage) =
             ctx.temporary_vec(0, "STEP entity union identifier storage")?;
         let mut visited_items = (lists).iter();
-        while let Some(list) = ctx.next_charged(&mut visited_items, "STEP entity union list traversal")? {
+        ctx.charge_work(0, "STEP entity union list traversal")?;
+        for _ in 0..visited_items.len() {
+            let list = ctx.next_charged(&mut visited_items, "STEP entity union list traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
             storage.with_storage(|| {
                 ctx.extend_from_slice(&mut ids, list, "STEP entity union identifier copies")
             })?;
@@ -466,7 +478,10 @@ impl Exchange {
     ) -> Result<impl Iterator<Item = Result<u64, CodecError>> + 'a, CodecError> {
         let (mut lists, mut list_storage) = ctx.temporary_vec(0, "STEP matching entity lists")?;
         let mut visited_items = (self.entity_ids()).iter();
-        while let Some((name, ids)) = ctx.next_charged(&mut visited_items, "STEP matching entity name traversal")? {
+        ctx.charge_work(0, "STEP matching entity name traversal")?;
+        for _ in 0..visited_items.len() {
+            let (name, ids) = ctx.next_charged(&mut visited_items, "STEP matching entity name traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
             if matches(name) {
                 ctx.push_scoped_vec(
                     &mut list_storage,
@@ -535,7 +550,10 @@ impl Exchange {
     {
         let (mut lists, mut list_storage) = ctx.temporary_vec(0, "STEP entity union lists")?;
         let mut visited_items = (names).iter();
-        while let Some(name) = ctx.next_charged(&mut visited_items, "STEP entity union name traversal")? {
+        ctx.charge_work(0, "STEP entity union name traversal")?;
+        for _ in 0..visited_items.len() {
+            let name = ctx.next_charged(&mut visited_items, "STEP entity union name traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
             if let Some(ids) =
                 ctx.get_btree_map(self.entity_ids(), *name, "STEP entity name lookup")?
             {
@@ -1186,7 +1204,10 @@ impl Parser<'_, '_, '_> {
                 .reserve_scoped(0, "step_anchor_binding_storage")?;
             let mut anchor_bindings = BTreeMap::new();
             let mut visited_items = (anchors[..]).iter();
-            while let Some(anchor) = self.budget.next_charged(&mut visited_items, "STEP exchange traversal")? {
+            self.budget.charge_work(0, "STEP exchange traversal")?;
+            for _ in 0..visited_items.len() {
+                let anchor = self.budget.next_charged(&mut visited_items, "STEP exchange traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                 binding_storage.with_storage(|| {
                     let name = self
                         .budget
@@ -1211,38 +1232,38 @@ impl Parser<'_, '_, '_> {
             let mut resolver = AnchorResolver::new(&anchor_bindings, self.budget)
                 .map_err(|error| error.into_parse_error(0))?;
             let mut resolving_anchors = anchors.iter_mut();
-            while let Some(anchor) = self
-                .budget
-                .next_charged(&mut resolving_anchors, "STEP anchor resolution traversal")?
-            {
+            self.budget.charge_work(0, "STEP anchor resolution traversal")?;
+            for _ in 0..resolving_anchors.len() {
+                let anchor = self.budget.next_charged(&mut resolving_anchors, "STEP anchor resolution traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                 anchor.value = resolver
                     .resolve_root(&anchor.value)
                     .map_err(|error| error.into_parse_error(0))?;
                 let mut tags = anchor.tags.iter_mut();
-                while let Some(tag) = self
-                    .budget
-                    .next_charged(&mut tags, "STEP anchor tag resolution traversal")?
-                {
+                self.budget.charge_work(0, "STEP anchor tag resolution traversal")?;
+                for _ in 0..tags.len() {
+                    let tag = self.budget.next_charged(&mut tags, "STEP anchor tag resolution traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                     tag.value = resolver
                         .resolve_root(&tag.value)
                         .map_err(|error| error.into_parse_error(0))?;
                 }
             }
             let mut resolving_records = records.iter_mut();
-            while let Some((_, record)) = self
-                .budget
-                .next_charged(&mut resolving_records, "STEP mutable record traversal")?
-            {
+            self.budget.charge_work(0, "STEP mutable record traversal")?;
+            for _ in 0..resolving_records.len() {
+                let (_, record) = self.budget.next_charged(&mut resolving_records, "STEP mutable record traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                 let mut partials = record.partials.iter_mut();
-                while let Some(partial) = self
-                    .budget
-                    .next_charged(&mut partials, "STEP mutable partial traversal")?
-                {
+                self.budget.charge_work(0, "STEP mutable partial traversal")?;
+                for _ in 0..partials.len() {
+                    let partial = self.budget.next_charged(&mut partials, "STEP mutable partial traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                     let mut parameters = partial.parameters.iter_mut();
-                    while let Some(value) = self
-                        .budget
-                        .next_charged(&mut parameters, "STEP mutable parameter traversal")?
-                    {
+                    self.budget.charge_work(0, "STEP mutable parameter traversal")?;
+                    for _ in 0..parameters.len() {
+                        let value = self.budget.next_charged(&mut parameters, "STEP mutable parameter traversal")?
+                            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                         *value = resolver
                             .resolve_root(value)
                             .map_err(|error| error.into_parse_error(record.span.start))?;
@@ -1299,7 +1320,10 @@ impl Parser<'_, '_, '_> {
         resolve_local_references(&mut anchors, &mut records, &reference_entries, self.budget)
             .map_err(|error| error.into_parse_error(0))?;
         let mut visited_items = (records).iter_mut();
-        while let Some((_, record)) = self.budget.next_charged(&mut visited_items, "STEP mutable record traversal")? {
+        self.budget.charge_work(0, "STEP mutable record traversal")?;
+        for _ in 0..visited_items.len() {
+            let (_, record) = self.budget.next_charged(&mut visited_items, "STEP mutable record traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
             if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
                 let parameters = &mut record.partials[0].parameters;
 
@@ -1323,10 +1347,10 @@ impl Parser<'_, '_, '_> {
         let mut refs = Vec::new();
         let mut value_refs = Vec::new();
         let mut validating_anchors = anchors.iter();
-        while let Some(anchor) = self
-            .budget
-            .next_charged(&mut validating_anchors, "STEP exchange traversal")?
-        {
+        self.budget.charge_work(0, "STEP exchange traversal")?;
+        for _ in 0..validating_anchors.len() {
+            let anchor = self.budget.next_charged(&mut validating_anchors, "STEP exchange traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
             refs.clear();
             value_refs.clear();
             reference_storage.with_storage(|| {
@@ -1363,10 +1387,10 @@ impl Parser<'_, '_, '_> {
                 return self.err("unresolved value instance reference in anchor binding");
             }
             let mut tags = anchor.tags.iter();
-            while let Some(tag) = self
-                .budget
-                .next_charged(&mut tags, "STEP exchange traversal")?
-            {
+            self.budget.charge_work(0, "STEP exchange traversal")?;
+            for _ in 0..tags.len() {
+                let tag = self.budget.next_charged(&mut tags, "STEP exchange traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                 refs.clear();
                 value_refs.clear();
                 reference_storage.with_storage(|| {
@@ -1405,16 +1429,22 @@ impl Parser<'_, '_, '_> {
             }
         }
         let mut validating_records = records.values();
-        while let Some(record) = self
-            .budget
-            .next_charged(&mut validating_records, "STEP exchange map traversal")?
-        {
+        self.budget.charge_work(0, "STEP exchange map traversal")?;
+        for _ in 0..validating_records.len() {
+            let record = self.budget.next_charged(&mut validating_records, "STEP exchange map traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
             refs.clear();
             value_refs.clear();
             let mut visited_items = (record.partials[..]).iter();
-            while let Some(partial) = self.budget.next_charged(&mut visited_items, "STEP exchange traversal")? {
+            self.budget.charge_work(0, "STEP exchange traversal")?;
+            for _ in 0..visited_items.len() {
+                let partial = self.budget.next_charged(&mut visited_items, "STEP exchange traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                 let mut visited_items = (partial.parameters[..]).iter();
-                while let Some(value) = self.budget.next_charged(&mut visited_items, "STEP exchange traversal")? {
+                self.budget.charge_work(0, "STEP exchange traversal")?;
+                for _ in 0..visited_items.len() {
+                    let value = self.budget.next_charged(&mut visited_items, "STEP exchange traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                     reference_storage.with_storage(|| {
                         references(value, &mut refs, &mut value_refs, self.budget)
                     })?;
@@ -1566,7 +1596,10 @@ impl Parser<'_, '_, '_> {
                 let mut name_storage = self.budget.reserve_scoped(0, "step partial name lookup")?;
                 let mut canonical_names = Vec::new();
                 let mut visited_items = (parts[..]).iter();
-                while let Some(part) = self.budget.next_charged(&mut visited_items, "STEP record traversal")? {
+                self.budget.charge_work(0, "STEP record traversal")?;
+                for _ in 0..visited_items.len() {
+                    let part = self.budget.next_charged(&mut visited_items, "STEP record traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                     name_storage.with_storage(|| {
                         self.budget.push_vec(
                             &mut canonical_names,
@@ -1984,10 +2017,10 @@ fn validate_header(
         budget.reserve_scoped(0, "STEP schema identifier uniqueness storage")?;
     let mut normalized_identifiers = BTreeSet::new();
     let mut identifiers = identifiers.iter();
-    while let Some(value) = budget.next_charged(
-        &mut identifiers,
-        "STEP schema identifier validation traversal",
-    )? {
+    budget.charge_work(0, "STEP schema identifier validation traversal")?;
+    for _ in 0..identifiers.len() {
+        let value = budget.next_charged(&mut identifiers, "STEP schema identifier validation traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         let Value::String(bytes) = value else {
             return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
@@ -2037,7 +2070,14 @@ fn schema_object_identifier_diagnostics<'a>(
         if failed {
             return None;
         }
+        if let Err(error) = budget.charge_work(0, "STEP schema identifier diagnostic traversal") {
+            failed = true;
+            return Some(Err(error));
+        }
         loop {
+            if identifiers.len() == 0 {
+                return None;
+            }
             let identifier = match budget.next_charged(&mut identifiers, "STEP schema identifier diagnostic traversal") {
                 Ok(Some(identifier)) => identifier,
                 Ok(None) => return None,
@@ -2108,9 +2148,10 @@ fn validate_header_sections(
     let mut language_sections = BTreeSet::new();
     let mut context_sections = BTreeSet::new();
     let mut optional = header.get(3..).unwrap_or_default().iter();
-    while let Some(record) =
-        budget.next_charged(&mut optional, "STEP validate header sections traversal")?
-    {
+    budget.charge_work(0, "STEP validate header sections traversal")?;
+    for _ in 0..optional.len() {
+        let record = budget.next_charged(&mut optional, "STEP validate header sections traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         if record.name.starts_with('!') {
             user_defined = true;
             continue;
@@ -2269,9 +2310,10 @@ fn admit_file_population(
         Value::List(sections) if !sections.is_empty() => {
             let mut names = BTreeSet::new();
             let mut sections = sections.iter();
-            while let Some(section) =
-                budget.next_charged(&mut sections, "STEP file population section traversal")?
-            {
+            budget.charge_work(0, "STEP file population section traversal")?;
+            for _ in 0..sections.len() {
+                let section = budget.next_charged(&mut sections, "STEP file population section traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                 let Some(section) = decoded_string(section, implementation_level, budget)? else {
                     return invalid("FILE_POPULATION has invalid parameters");
                 };
@@ -2657,15 +2699,17 @@ fn validate_header_data_references(
     data_section_names: &BTreeSet<String>,
 ) -> Result<(), ValidationError> {
     let mut references = references.iter();
-    while let Some(reference) =
-        budget.next_charged(&mut references, "STEP header DATA reference traversal")?
-    {
+    budget.charge_work(0, "STEP header DATA reference traversal")?;
+    for _ in 0..references.len() {
+        let reference = budget.next_charged(&mut references, "STEP header DATA reference traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         match reference {
             HeaderDataReferences::FilePopulation(sections) => {
                 let mut sections = sections.iter();
-                while let Some(section) =
-                    budget.next_charged(&mut sections, "STEP FILE_POPULATION section traversal")?
-                {
+                budget.charge_work(0, "STEP FILE_POPULATION section traversal")?;
+                for _ in 0..sections.len() {
+                    let section = budget.next_charged(&mut sections, "STEP FILE_POPULATION section traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                     if !budget.contains_btree_set(
                         data_section_names,
                         section,
@@ -2730,7 +2774,10 @@ fn schema_names_for_matching(
 ) -> Result<Vec<String>, ParseError> {
     let mut names = Vec::new();
     let mut visited_items = (admitted).iter();
-    while let Some(identifier) = budget.next_charged(&mut visited_items, "STEP schema names for matching traversal")? {
+    budget.charge_work(0, "STEP schema names for matching traversal")?;
+    for _ in 0..visited_items.len() {
+        let identifier = budget.next_charged(&mut visited_items, "STEP schema names for matching traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         let source = identifier.text();
         let mut name = budget.copy_retained_text(source, "step_schema_matching_name")?;
         budget.make_ascii_uppercase(&mut name, "STEP schema matching name uppercase")?;
@@ -2993,10 +3040,10 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     .collection_vec(values.len(), "step_anchor_list_items")
                     .map_err(ResolveError::Resource)?;
                 let mut values = values.iter();
-                while let Some(value) = self
-                    .budget
-                    .next_charged(&mut values, "STEP resolve value traversal")?
-                {
+                self.budget.charge_work(0, "STEP resolve value traversal")?;
+                for _ in 0..values.len() {
+                    let value = self.budget.next_charged(&mut values, "STEP resolve value traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                     let remaining = budget
                         .checked_sub(expanded_nodes)
                         .ok_or_else(|| self.node_limit_error())?;
@@ -3070,7 +3117,10 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         let mut storage = budget.reserve_scoped(0, "step_reference_binding_storage")?;
         let mut bindings = BTreeMap::new();
         let mut visited_items = (references).iter();
-        while let Some(reference) = budget.next_charged(&mut visited_items, "STEP new traversal")? {
+        budget.charge_work(0, "STEP new traversal")?;
+        for _ in 0..visited_items.len() {
+            let reference = budget.next_charged(&mut visited_items, "STEP new traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
             storage.with_storage(|| {
                 budget.insert_btree_map(
                     &mut bindings,
@@ -3146,7 +3196,10 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                     .collection_vec(values.len(), "step_reference_list_items")
                     .map_err(ResolveError::Resource)?;
                 let mut visited_items = (values.as_slice()).iter();
-                while let Some(value) = self.budget.next_charged(&mut visited_items, "STEP resolve value value traversal")? {
+                self.budget.charge_work(0, "STEP resolve value value traversal")?;
+                for _ in 0..visited_items.len() {
+                    let value = self.budget.next_charged(&mut visited_items, "STEP resolve value value traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                     resolved.push(self.resolve_value(value, depth + 1)?);
                 }
                 Ok(Value::List(resolved))
@@ -3267,7 +3320,10 @@ fn resolve_local_references(
     let mut snapshot_storage = budget.reserve_scoped(0, "step_reference_anchor_copy_storage")?;
     let mut anchor_bindings = BTreeMap::new();
     let mut visited_items = (anchors[..]).iter();
-    while let Some(anchor) = budget.next_charged(&mut visited_items, "STEP resolve local references traversal")? {
+    budget.charge_work(0, "STEP resolve local references traversal")?;
+    for _ in 0..visited_items.len() {
+        let anchor = budget.next_charged(&mut visited_items, "STEP resolve local references traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         snapshot_storage.with_storage(|| {
             let name =
                 budget.copy_retained_text(&anchor.name, "step_reference_anchor_name_copy")?;
@@ -3283,19 +3339,34 @@ fn resolve_local_references(
     }
     let mut resolver = ReferenceResolver::new(references, &anchor_bindings, budget)?;
     let mut visited_items = (anchors).iter_mut();
-    while let Some(anchor) = budget.next_charged(&mut visited_items, "STEP local anchor resolution traversal")? {
+    budget.charge_work(0, "STEP local anchor resolution traversal")?;
+    for _ in 0..visited_items.len() {
+        let anchor = budget.next_charged(&mut visited_items, "STEP local anchor resolution traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         anchor.value = resolver.resolve_value(&anchor.value, 0)?;
         let mut visited_items = (anchor.tags.as_mut_slice()).iter_mut();
-        while let Some(tag) = budget.next_charged(&mut visited_items, "STEP local anchor tag traversal")? {
+        budget.charge_work(0, "STEP local anchor tag traversal")?;
+        for _ in 0..visited_items.len() {
+            let tag = budget.next_charged(&mut visited_items, "STEP local anchor tag traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
             tag.value = resolver.resolve_value(&tag.value, 0)?;
         }
     }
     let mut visited_items = (records).iter_mut();
-    while let Some((_, record)) = budget.next_charged(&mut visited_items, "STEP local record resolution traversal")? {
+    budget.charge_work(0, "STEP local record resolution traversal")?;
+    for _ in 0..visited_items.len() {
+        let (_, record) = budget.next_charged(&mut visited_items, "STEP local record resolution traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         let mut visited_items = (record.partials[..]).iter_mut();
-        while let Some(partial) = budget.next_charged(&mut visited_items, "STEP local partial resolution traversal")? {
+        budget.charge_work(0, "STEP local partial resolution traversal")?;
+        for _ in 0..visited_items.len() {
+            let partial = budget.next_charged(&mut visited_items, "STEP local partial resolution traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
             let mut visited_items = (partial.parameters.as_mut_slice()).iter_mut();
-            while let Some(value) = budget.next_charged(&mut visited_items, "STEP local parameter resolution traversal")? {
+            budget.charge_work(0, "STEP local parameter resolution traversal")?;
+            for _ in 0..visited_items.len() {
+                let value = budget.next_charged(&mut visited_items, "STEP local parameter resolution traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                 *value = resolver.resolve_value(value, 0)?;
             }
         }
@@ -3356,7 +3427,10 @@ fn value_node_count(
         match value {
             Value::List(values) => {
                 let mut visited_items = (values.as_slice()).iter();
-                while let Some(child) = budget.next_charged(&mut visited_items, "STEP visit value traversal")? {
+                budget.charge_work(0, "STEP visit value traversal")?;
+                for _ in 0..visited_items.len() {
+                    let child = budget.next_charged(&mut visited_items, "STEP visit value traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                     visit(child, remaining, budget, depth + 1)?;
                 }
             }
@@ -3399,7 +3473,10 @@ fn references(
             }
             Value::List(values) => {
                 let mut visited_items = (values[..]).iter().rev();
-                while let Some(child) = budget.next_charged(&mut visited_items, "STEP references traversal")? {
+                budget.charge_work(0, "STEP references traversal")?;
+                for _ in 0..visited_items.len() {
+                    let child = budget.next_charged(&mut visited_items, "STEP references traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                     budget.push_scoped_vec(
                         &mut pending_storage,
                         &mut pending,
