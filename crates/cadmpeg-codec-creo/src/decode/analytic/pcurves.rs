@@ -63,6 +63,9 @@ fn topology_ignored_surface_ids(
     layout: &crate::container::Layout,
     rows: &[crate::surface::SurfaceRow],
 ) -> Result<HashSet<u32>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     // The interpolation carrier makes a legacy spline surface evaluable, but
     // its trim/intersection join is still unresolved. Keep that surface from
     // vetoing endpoint evidence supplied by a proven adjacent analytic face.
@@ -85,6 +88,9 @@ pub(in crate::decode) fn canonicalized_pcurve_endpoints(
     face_0_endpoints: [[f64; 2]; 2],
     face_1_endpoints: [[f64; 2]; 2],
 ) -> Result<[[[f64; 2]; 2]; 2], cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut endpoints = [face_0_endpoints, face_1_endpoints];
     for (side, face) in faces.into_iter().enumerate() {
         let Some(face) = face else {
@@ -152,6 +158,9 @@ fn map_two_chart_endpoint_sets(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     surface_index: &SurfaceIndex<'_>,
 ) -> Result<TwoChartMapping, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
         return Ok(TwoChartMapping::NoSamples);
     };
@@ -229,6 +238,9 @@ pub(in crate::decode) fn mapped_two_chart_endpoint_sets(
     pcurve: &crate::curve::TwoChartPcurveSamples,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<Option<TwoChartEndpointSets>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if pcurve.samples.is_empty() {
         return Ok(None);
     }
@@ -481,6 +493,9 @@ fn pcurve_plane_carrier_status(
     other_carrier: CarrierEquation,
     endpoints: [[f64; 2]; 2],
 ) -> Result<PcurveCarrierStatus, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (CarrierEquation::Plane(face_plane), CarrierEquation::Plane(other_plane)) =
         (face_carrier, other_carrier)
     else {
@@ -535,6 +550,9 @@ fn pcurve_path_carrier_status(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     surface_index: &SurfaceIndex<'_>,
 ) -> Result<PcurveCarrierStatus, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (faces, face_index) = incidence;
     let face_id = faces[face_index];
     let other_id = faces[1 - face_index];
@@ -585,6 +603,9 @@ fn pcurve_endpoint_carrier_status(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     surface_index: &SurfaceIndex<'_>,
 ) -> Result<PcurveCarrierStatus, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (faces, face_index) = incidence;
     let face_id = faces[face_index];
     let other_id = faces[1 - face_index];
@@ -708,6 +729,9 @@ fn collect_support_cone_plane_witness(
     faces: [Option<NonZeroU32>; 2],
     endpoint_sets: [Option<[[f64; 2]; 2]>; 2],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let [Some(first), Some(second)] = faces else {
         return Ok(());
     };
@@ -954,6 +978,9 @@ fn pcurve_endpoint_evidence_from_mapped(
     mapped: &[MappedPcurvePath],
     authoritative: bool,
 ) -> Result<Option<PcurveEndpointEvidence>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(first) = mapped.first().map(|path| path.endpoints) else {
         return Ok(None);
     };
@@ -1010,6 +1037,9 @@ fn pcurve_mismatch_detail(
     curve_id: u32,
     mapped: &[MappedPcurvePath],
 ) -> Result<Option<PcurveMismatchDetail>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(first) = mapped.first().map(|path| path.endpoints) else {
         return Ok(None);
     };
@@ -1476,6 +1506,9 @@ fn linear_pcurve_carrier(
     surface: &SurfaceGeometry,
     endpoints: [[f64; 2]; 2],
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let scaled_vector = |vector: Vector3, scale: f64| {
         Vector3::new(vector.x * scale, vector.y * scale, vector.z * scale)
     };
@@ -2488,6 +2521,9 @@ pub(in crate::decode) fn planar_curve_pcurve(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
         return Ok(planar_primitive_pcurve(surface, geometry));
     };
@@ -4543,3 +4579,6 @@ mod tests {
 
 #[cfg(test)]
 mod evaluation_tests;
+
+#[cfg(test)]
+mod admission_recovery;
