@@ -130,3 +130,21 @@ fn extrusion_rows_complete_at_exact_source_visit_limit() {
     assert!(rows.iter().all(|row| row == &[first[0], second[0]]));
     ctx.finish_session().expect("no exhaustion visit");
 }
+
+#[test]
+fn extrusion_weight_equality_accepts_exact_pair_visit_count() {
+    let first = super::test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        Some(vec![2.0, 3.0]),
+        [0.0, 1.0],
+    );
+    let second = first.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(super::super::matching_pole_weights(&ctx, first.pole_rows(), second.pole_rows())
+        .expect("two actual pairs fit"));
+    ctx.finish_session().expect("no exhausted pair visit");
+}
+
