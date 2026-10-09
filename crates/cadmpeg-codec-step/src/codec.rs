@@ -194,7 +194,7 @@ fn inspect_parsed_exchange(
         )),
         error => Err(error),
     })?;
-    let (schema, _schema_storage) =
+    let (_schema_storage, schema) =
         ctx.with_scoped_storage("STEP inspect schema text storage", || {
             let identifiers = exchange.joined_schema_identifiers(ctx)?;
             if identifiers.is_empty() {
@@ -202,7 +202,7 @@ fn inspect_parsed_exchange(
             } else {
                 Ok(identifiers)
             }
-        })?;
+        }).map(|(schema, storage)| (storage, schema))?;
     let dialect = matched.dialect();
     let mut notes = Vec::new();
     ctx.push_vec(
@@ -214,7 +214,10 @@ fn inspect_parsed_exchange(
         "step_codec_notes",
     )?;
     let mut visited_items = (diagnostics).iter();
-    while let Some(diagnostic) = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")? {
+    ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
+    for _ in 0..visited_items.len() {
+        let diagnostic = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         let note = ctx.format_retained(
             format_args!("{}", diagnostic.message),
             "step_inspect_diagnostic_copy",
@@ -306,11 +309,17 @@ fn inspect_logical_entries(
         )?;
     }
     let mut visited_items = (exchange.data()).iter().enumerate();
-    while let Some((index, section)) = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")? {
+    ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
+    for _ in 0..visited_items.len() {
+        let (index, section) = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         let mut counts_storage = ctx.reserve_scoped(0, "STEP inspect unknown count storage")?;
         let mut counts = BTreeMap::<&str, usize>::new();
         let mut visited_items = ((section.records)[..]).iter();
-        while let Some(id) = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")? {
+        ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
+        for _ in 0..visited_items.len() {
+            let id = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
             let record = ctx
                 .get_btree_map(exchange.records(), id, "STEP inspect record lookup")?
                 .ok_or_else(|| CodecError::malformed("DATA section names no record"))?;
@@ -322,7 +331,10 @@ fn inspect_logical_entries(
                 continue;
             }
             let mut visited_items = (record.partials[..]).iter();
-            while let Some(partial) = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")? {
+            ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
+            for _ in 0..visited_items.len() {
+                let partial = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                 let name = partial.name.as_str();
                 counts_storage.with_storage(|| {
                     match ctx.entry_btree_map(&mut counts, name, "step_inspect_unknown_counts")? {
@@ -365,10 +377,14 @@ fn inspect_logical_entries(
             "step_inspect_entries",
         )?;
     }
-    let (mut external_dependencies, mut dependency_storage) =
+    let (dependency_buffer, mut dependency_storage) =
         ctx.temporary_vec(0, "STEP inspect dependency storage")?;
+    let mut external_dependencies = dependency_buffer;
     let mut notes = dependency_notes.iter();
-    while let Some(note) = ctx.next_charged(&mut notes, "STEP inspect dependency traversal")? {
+    ctx.charge_work(0, "STEP inspect dependency traversal")?;
+    for _ in 0..notes.len() {
+        let note = ctx.next_charged(&mut notes, "STEP inspect dependency traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         if note.starts_with("external document ") || note.starts_with("external source ") {
             ctx.push_scoped_vec(
                 &mut dependency_storage, &mut external_dependencies, note.as_str(),
@@ -411,7 +427,10 @@ fn inspect_logical_entries(
         )?;
     }
     let mut visited_items = (exchange.signatures()).iter().enumerate();
-    while let Some((index, signature)) = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")? {
+    ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
+    for _ in 0..visited_items.len() {
+        let (index, signature) = ctx.next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         ctx.push_vec(
             &mut entries,
             ContainerEntry {
@@ -438,7 +457,8 @@ fn inspect_logical_entries(
 
 fn starts_with_step_magic(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
     let mut at = 0;
-    loop {
+    ctx.charge_work(0, "STEP magic cursor traversal")?;
+    while at < bytes.len() {
         ctx.charge_work(1, "STEP magic cursor traversal")?;
         while bytes
             .get(at)
@@ -520,7 +540,10 @@ fn inspect_zip(
     )?;
     let mut roles = role_buffer;
     let mut visited_items = (archive.entries()).iter();
-    while let Some(entry) = ctx.next_charged(&mut visited_items, "STEP ZIP role classification visits")? {
+    ctx.charge_work(0, "STEP ZIP role classification visits")?;
+    for _ in 0..visited_items.len() {
+        let entry = ctx.next_charged(&mut visited_items, "STEP ZIP role classification visits")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         let role = archive::classify_entry(ctx, entry.name.as_str())?;
         ctx.push_scoped_vec(
             &mut role_storage,
@@ -531,7 +554,10 @@ fn inspect_zip(
     }
     let mut entries = archive.container_entries(ctx, |_| ContainerRole::Ancillary)?;
     let mut visited_items = (roles.as_slice()).iter().enumerate();
-    while let Some((index, role)) = ctx.next_charged(&mut visited_items, "STEP ZIP summary role assignment visits")? {
+    ctx.charge_work(0, "STEP ZIP summary role assignment visits")?;
+    for _ in 0..visited_items.len() {
+        let (index, role) = ctx.next_charged(&mut visited_items, "STEP ZIP summary role assignment visits")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         let entry = entries.get_mut(index).map_or_else(
             || {
                 Err(CodecError::Malformed(ctx.copy_retained_text(
@@ -702,7 +728,8 @@ fn xml_root_start_tag<'a>(
     } else {
         0
     };
-    loop {
+    ctx.charge_work(0, "STEP XML root cursor traversal")?;
+    while cursor < bytes.len() {
         ctx.charge_work(1, "STEP XML root cursor traversal")?;
         while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
             ctx.charge_work(1, "STEP XML root cursor traversal")?;
@@ -762,6 +789,9 @@ fn xml_root_start_tag<'a>(
         break;
     }
 
+    if cursor == bytes.len() {
+        return Ok(None);
+    }
     let Some(tag_end) = find_xml_tag_end(ctx, bytes, cursor + 1)? else {
         return Ok(None);
     };
@@ -905,6 +935,8 @@ const BO_MODEL_NAMESPACES: [&[u8]; 2] = [
 
 #[cfg(test)]
 mod tests {
+    mod prefix_admission;
+
     use std::fmt::Write as _;
     use std::io::Cursor;
 
