@@ -1006,19 +1006,17 @@ fn standard_mesh_analysis(
     let Some((edge_rows, handle_width, fixed_complete_row_spans)) = parsed else {
         return Ok(None);
     };
-    let (trims, _trim_storage) = ctx.with_scoped_storage("catia_mesh_analysis_trims", || {
+    let mut trim_owner = ctx.with_scoped_storage("catia_mesh_analysis_trims", || {
         parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)
     })?;
-    let Some(trims) = trims else {
+    let (trims, trim_storage) = &mut trim_owner;
+    let Some(trims) = trims.as_ref() else {
         return Ok(None);
     };
     let mut cycles = ctx.collection_vec(trims.len(), "catia_mesh_analysis_cycles")?;
     let mut charged_steps = trims.iter();
     while let Some(trim) = ctx.next_charged(&mut charged_steps, "catia_mesh_analysis_cycles")? {
-        let (triangles, _triangle_storage) = ctx
-            .with_scoped_storage("catia_mesh_analysis_triangles", || {
-                trim.packet.triangles(ctx)
-            })?;
+        let triangles = trim_storage.with_storage(|| trim.packet.triangles(ctx))?;
         let Some(face) = boundary_cycles(ctx, triangles)? else {
             return Ok(None);
         };
