@@ -489,22 +489,26 @@ impl PresentationEnvelope<'_> {
             end,
             entity_suffix,
         } = *self;
-        let Some((physical_guid_at, physical_guid, _physical_guid_storage)) =
+        let _physical_guid_storage;
+        let Some((physical_guid_at, physical_guid, held_text_storage)) =
             preceding_lp_utf16(ctx, bytes, start, physical_at)?
         else {
             return Ok(None);
         };
+        _physical_guid_storage = held_text_storage;
         let Some(node_tail_at) = physical_guid_at.checked_sub(11) else {
             return Ok(None);
         };
         if bytes_at::<11>(bytes, node_tail_at) != Some(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]) {
             return Ok(None);
         }
-        let Some((_, node_guid, _node_guid_storage)) =
+        let _node_guid_storage;
+        let Some((_, node_guid, held_text_storage)) =
             preceding_lp_utf16(ctx, bytes, start, node_tail_at)?
         else {
             return Ok(None);
         };
+        _node_guid_storage = held_text_storage;
         if physical_guid.len() != GUID_LEN
             || node_guid.len() != GUID_LEN
             || !is_guid_prefix(&physical_guid)
@@ -931,11 +935,13 @@ fn preceding_lp_utf16<'ctx>(
             {
                 continue;
             }
-            let Some((value, _, storage)) =
+            let storage;
+            let Some((value, _, held_text_storage)) =
                 lp_utf16_bounded_scoped(ctx, bytes, at, 1..=256, "f3d Design UTF-16 text")?
             else {
                 continue;
             };
+            storage = held_text_storage;
             if candidate.is_some() {
                 return Ok(None);
             }

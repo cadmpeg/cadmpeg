@@ -1173,11 +1173,13 @@ fn parse_scope_frame(
         .checked_sub(KIND_SCAN_SPAN)
         .map_or(scan_start, |span_start| span_start.max(scan_start));
     for at in window_start..kind_scan_end {
-        let Some((kind, kind_end, _kind_storage)) =
+        let _kind_storage;
+        let Some((kind, kind_end, held_text_storage)) =
             lp_utf16_bounded_scoped(ctx, bytes, at, 1..=256, "f3d Design temporary UTF-16 text")?
         else {
             continue;
         };
+        _kind_storage = held_text_storage;
         if utf16_has_control(ctx, bytes.get(at + 4..kind_end).unwrap_or(&[]))? {
             continue;
         }
@@ -1218,7 +1220,8 @@ fn parse_scope_frame(
     let Some((kind_at, kind_end, tail_length, tail_form)) = candidate else {
         return Ok(None);
     };
-    let Some((kind_text, confirmed_kind_end, _kind_storage)) = lp_utf16_bounded_scoped(
+    let _kind_storage;
+    let Some((kind_text, confirmed_kind_end, held_text_storage)) = lp_utf16_bounded_scoped(
         ctx,
         bytes,
         kind_at,
@@ -1228,6 +1231,7 @@ fn parse_scope_frame(
     else {
         return Ok(None);
     };
+    _kind_storage = held_text_storage;
     if confirmed_kind_end != kind_end {
         return Ok(None);
     }
@@ -1598,7 +1602,8 @@ fn named_parameter_scope_tail_is_valid(
     let Some(label_at) = kind_end.checked_add(8) else {
         return Ok(None);
     };
-    let Some((_label, label_end, _label_storage)) = lp_utf16_bounded_scoped(
+    let _label_storage;
+    let Some((_label, label_end, held_text_storage)) = lp_utf16_bounded_scoped(
         ctx,
         bytes,
         label_at,
@@ -1608,6 +1613,7 @@ fn named_parameter_scope_tail_is_valid(
     else {
         return Ok(None);
     };
+    _label_storage = held_text_storage;
     // The counted field holds the label's UTF-16 code units after its prefix.
     let label_bytes = label_end - label_at - 4;
     let marker = kind_end + 19 + label_bytes;
