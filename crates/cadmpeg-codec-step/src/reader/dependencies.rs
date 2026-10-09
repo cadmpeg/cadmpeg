@@ -141,7 +141,7 @@ pub(super) fn decode<'ctx>(
             if scratch_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut notes, note, "step_dependency_note_set")
             })? {
-                note_storage.commit()?;
+                notes = note_storage.commit_value(notes)?;
             }
             claim_storage
                 .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_dependency_claims"))?;
@@ -192,7 +192,7 @@ pub(super) fn decode<'ctx>(
             if scratch_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut notes, note, "step_dependency_note_set")
             })? {
-                note_storage.commit()?;
+                notes = note_storage.commit_value(notes)?;
             }
             claim_storage
                 .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_dependency_claims"))?;
