@@ -2769,8 +2769,8 @@ pub(crate) fn project_geometry<'ctx>(
                 operation,
             )
         };
-        let mut native_storage = ctx.reserve_scoped(0, "iges NURBS source lane storage")?;
-        let Some(finite_knots) = native_storage
+        let mut knot_storage = ctx.reserve_scoped(0, "iges NURBS source lane storage")?;
+        let Some(finite_knots) = knot_storage
             .with_storage(|| collect_numbers(knot_start, knot_count, "iges NURBS source knots"))?
         else {
             super::push_entity_loss(
@@ -2788,6 +2788,7 @@ pub(crate) fn project_geometry<'ctx>(
             ctx.admit_iter(finite_knots, "iges NURBS admitted knot traversal")?
                 .map(FiniteReal::get),
         );
+        drop(knot_storage);
         let Ok(knots) = KnotVector::new(ctx, raw_knots)? else {
             super::push_entity_loss(
                 ctx,
@@ -2797,27 +2798,28 @@ pub(crate) fn project_geometry<'ctx>(
             )?;
             continue;
         };
-        let Some(native_weights) = native_storage.with_storage(|| {
-            collect_numbers(weight_start, control_count, "iges NURBS source weights")
-        })?
-        else {
-            super::push_entity_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!("{}", "weight vector is truncated or non-finite"),
-            )?;
-            continue;
+        let mut weight_storage = ctx.reserve_scoped(0, "iges NURBS source lane storage")?;
+        let native_weights = {
+            let mut source_weight_storage = ctx.reserve_scoped(0, "iges NURBS source lane storage")?;
+            let Some(finite_weights) = source_weight_storage.with_storage(|| {
+                collect_numbers(weight_start, control_count, "iges NURBS source weights")
+            })? else {
+                super::push_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "weight vector is truncated or non-finite"),
+                )?;
+                continue;
+            };
+            weight_storage.with_storage(|| {
+                ctx.collect_options(
+                    finite_weights.into_iter().map(|weight| PositiveReal::try_from(weight).ok()),
+                    "iges NURBS positive weights",
+                )
+            })?
         };
-        let Some(native_weights) = native_storage.with_storage(|| {
-            ctx.collect_options(
-                native_weights
-                    .into_iter()
-                    .map(|weight| PositiveReal::try_from(weight).ok()),
-                "iges NURBS positive weights",
-            )
-        })?
-        else {
+        let Some(native_weights) = native_weights else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -2872,7 +2874,8 @@ pub(crate) fn project_geometry<'ctx>(
             )?;
             continue;
         }
-        let Some(native_poles) = native_storage.with_storage(|| {
+        let mut pole_storage = ctx.reserve_scoped(0, "iges NURBS source lane storage")?;
+        let Some(native_poles) = pole_storage.with_storage(|| {
             collect_numbers(pole_start, pole_value_count, "iges NURBS source poles")
         })?
         else {
@@ -2948,6 +2951,7 @@ pub(crate) fn project_geometry<'ctx>(
                 continue;
             }
         };
+        let mut pairing_storage = ctx.reserve_scoped(0, "iges NURBS source lane storage")?;
         let collect_controls = || {
             ctx.collect_options(
                 native_poles.chunks_exact(3).map(|point| {
@@ -2960,11 +2964,14 @@ pub(crate) fn project_geometry<'ctx>(
                 "iges NURBS placed controls",
             )
         };
-        let Some(control_points) = (if polynomial {
+        let control_points = if polynomial {
             collect_controls()?
         } else {
-            native_storage.with_storage(collect_controls)?
-        }) else {
+            pairing_storage.with_storage(collect_controls)?
+        };
+        drop(native_poles);
+        drop(pole_storage);
+        let Some(control_points) = control_points else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -3060,27 +3067,32 @@ pub(crate) fn project_geometry<'ctx>(
             continue;
         }
         let weights = if polynomial {
+            drop(native_weights);
+            drop(weight_storage);
             None
         } else {
-            let mut values = native_storage.with_storage(|| {
+            let mut values = pairing_storage.with_storage(|| {
                 ctx.collection_vec(native_weights.len(), "iges NURBS neutral weights")
             })?;
             values.extend(
                 ctx.admit_iter(native_weights, "iges NURBS neutral weight traversal")?
                     .map(NonZeroReal::from),
             );
+            drop(weight_storage);
             Some(values)
         };
         // IGES PROP4 is informational; neutral evaluation uses the
         // serialized active carrier without periodic parameter wrapping.
-        let nurbs = match NurbsCurve::from_checked_lanes(
+        let nurbs_result = NurbsCurve::from_checked_lanes(
             ctx,
             degree,
             knots,
             control_points,
             weights,
             false,
-        )? {
+        )?;
+        drop(pairing_storage);
+        let nurbs = match nurbs_result {
             Ok(nurbs) => nurbs,
             Err(error) => {
                 super::push_entity_loss(
