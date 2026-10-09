@@ -154,13 +154,13 @@ fn feature_output_body_candidates_with_history<'ir, 'ctx>(
     let generated_input_outputs =
         generated_input_output_bodies(ctx, scan, ir, feature_id, history)?;
     let mut add_surface_outputs = |surface_id| -> Result<(), CodecError> {
-        let (surface, _reservation) = ctx.format_scoped(
+        let surface_storage = ctx.format_scoped(
             format_args!("creo:visibgeom:surface#{surface_id}"),
             "creo generated surface lookup",
         )?;
         let bodies = history
             .surface_outputs
-            .bodies(ctx, &surface)?
+            .bodies(ctx, &surface_storage.0)?
             .unwrap_or(&[]);
         for body in ctx.admit_iter(bodies, "creo generated surface body references")? {
             if !outputs.contains(ctx, body, "creo feature output body lookup")? {
@@ -224,7 +224,7 @@ fn generated_input_output_bodies<'ir, 'ctx>(
     feature_id: u32,
     history: &mut FeatureOutputHistory<'ir, 'ctx>,
 ) -> Result<FeatureOutputCandidates<'ir, 'ctx>, CodecError> {
-    let (feature_id_text, reservation) = ctx.format_scoped(
+    let feature_id_storage = ctx.format_scoped(
         format_args!("creo:model:feature#{feature_id}"),
         "creo generated input feature lookup",
     )?;
@@ -234,7 +234,7 @@ fn generated_input_output_bodies<'ir, 'ctx>(
         |feature| {
             ctx.equal(
                 feature.id.as_str(),
-                feature_id_text.as_str(),
+                feature_id_storage.0.as_str(),
                 "creo generated input feature identity comparison",
             )
         },
@@ -243,8 +243,7 @@ fn generated_input_output_bodies<'ir, 'ctx>(
     let Some(feature) = matching_feature else {
         return FeatureOutputCandidates::new(ctx);
     };
-    drop(feature_id_text);
-    drop(reservation);
+    drop(feature_id_storage);
     let mut outputs = FeatureOutputCandidates::new(ctx)?;
     let mut dependency_storage = ctx.reserve_scoped(0, "Creo generated producer lookup")?;
     let producers = dependency_storage
@@ -424,7 +423,7 @@ fn append_evaluated_sweep_output_body_candidates<'ir, 'ctx>(
         &crate::identity::FEATURE_EXTRUSION,
         &crate::identity::FEATURE_REVOLUTION,
     ] {
-        let (candidate, _reservation) = ctx.format_scoped(
+        let candidate_storage = ctx.format_scoped(
             format_args!(
                 "{}:{}:{}#{feature_id}:body",
                 namespace.format(),
@@ -439,7 +438,7 @@ fn append_evaluated_sweep_output_body_candidates<'ir, 'ctx>(
             |body| {
                 ctx.equal(
                     body.id.as_str(),
-                    candidate.as_str(),
+                    candidate_storage.0.as_str(),
                     "creo evaluated sweep body identity comparison",
                 )
             },
@@ -653,16 +652,20 @@ fn insert_feature_parameter(
     let value = text_storage.with_storage(|| {
         ctx.format_retained(format_args!("{value}"), "creo feature parameter value")
     })?;
-    let (base, base_reservation) = ctx.format_scoped(
+    let base_storage = ctx.format_scoped(
         format_args!("{base}"),
         "creo feature parameter key candidate",
     )?;
     let (key, key_reservation) =
-        if ctx.contains_key_btree_map(parameters, &base, "creo feature parameter key lookup")? {
+        if ctx.contains_key_btree_map(
+            parameters,
+            &base_storage.0,
+            "creo feature parameter key lookup",
+        )? {
             let mut occurrence = 2usize;
             loop {
                 let candidate = ctx.format_scoped(
-                    format_args!("{base}#{occurrence}"),
+                    format_args!("{}#{occurrence}", base_storage.0),
                     "creo feature parameter key candidate",
                 )?;
                 if !ctx.contains_key_btree_map(
@@ -670,8 +673,7 @@ fn insert_feature_parameter(
                     &candidate.0,
                     "creo feature parameter key lookup",
                 )? {
-                    drop(base);
-                    drop(base_reservation);
+                    drop(base_storage);
                     break candidate;
                 }
                 occurrence = occurrence.checked_add(1).ok_or_else(|| {
@@ -683,15 +685,9 @@ fn insert_feature_parameter(
                 })?;
             }
         } else {
-            (base, base_reservation)
+            base_storage
         };
-    drop(key_reservation);
-    text_storage.with_storage(|| {
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(key.len()),
-            "creo feature parameter key",
-        )
-    })?;
+    let key = text_storage.with_storage(|| key_reservation.commit_value(key))?;
     node_storage.with_storage(|| {
         ctx.insert_btree_map(parameters, key, value, "creo feature parameter nodes")
     })?;
