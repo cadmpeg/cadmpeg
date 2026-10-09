@@ -257,3 +257,125 @@ fn singular_sampling_stops_before_quarter_evaluation() {
         }
     }
 }
+
+#[test]
+fn absent_first_endpoint_stops_before_last_endpoint_evaluation() {
+    let curve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        2, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![cadmpeg_ir::math::Point2::new(0.0, 0.0); 4], None, false,
+    ).expect("structural admission").expect("finite ordered knot and pole lanes");
+    let geometry = cadmpeg_ir::sketches::SketchGeometry::nurbs(curve);
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let lifted = super::super::super::nurbs::sketch_nurbs_curve(ctx, &geometry)
+            .expect("lift admission").expect("positive curve with increasing domain");
+        let carrier = cadmpeg_ir::geometry::CurveGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(lifted),
+        );
+        assert!(cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, 0.0),
+        ).expect("lower evaluation").is_none());
+        assert_eq!(cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, 1.0),
+        ).expect("upper evaluation").map(|point| point.get()),
+            Some(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)));
+    });
+    // Lift: seven copied knots and four pole projections. Repeated knots
+    // produce zero basis terms: three fill visits, six recurrence visits,
+    // three finite checks, then five three-pole homogeneous passes. All
+    // products are zero, so the exact accumulator does not replay them.
+    const FIRST_ENDPOINT_WORK: u64 = 7 + 4 + 3 + 6 + 3 + 5 * 3;
+    for cap in 0..=FIRST_ENDPOINT_WORK {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_collection_items = 7 + 4 + 3;
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+            7 * std::mem::size_of::<f64>() +
+            4 * std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>() +
+            4 * std::mem::size_of::<f64>(),
+        );
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = sketch_geometry_endpoints(&ctx, &geometry);
+        if cap == FIRST_ENDPOINT_WORK {
+            assert!(result.expect("first endpoint only").is_none());
+            assert_eq!(ctx.resource_refusal(), None);
+            let original = ctx.charge_work_limit(1, "after absent first endpoint").expect_err("exact first endpoint work");
+            assert_eq!((original.used, original.additional), (FIRST_ENDPOINT_WORK, 1));
+            assert!(matches!(sketch_geometry_endpoints(&ctx, &geometry), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        } else {
+            let Err(CodecError::ResourceLimit(original)) = result else { panic!("endpoint work refusal"); };
+            let expected = match cap {
+                0..=6 => (0, 7, "creo sketch NURBS lift knots"),
+                7..=10 => (7, 4, "creo NURBS point projection"),
+                11..=19 => (cap, 1, "IR B-spline basis work"),
+                20..=22 => (cap, 1, "IR B-spline finite basis inspection"),
+                _ => (cap, 1, "IR homogeneous pole traversal"),
+            };
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!((original.used, original.additional, original.operation), expected);
+            assert_eq!(ctx.resource_refusal(), Some(original));
+            assert!(matches!(sketch_geometry_endpoints(&ctx, &geometry), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        }
+    }
+}
+
+#[test]
+fn profile_sampling_reuses_the_admitted_span_start() {
+    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 3], None, false,
+    ).expect("structural admission").expect("finite polynomial lanes");
+    let basis = "IR B-spline basis work";
+    let finite = "IR B-spline finite basis inspection";
+    let poles = "IR homogeneous pole traversal";
+    let knots = "creo NURBS profile knot scan";
+    // Each point evaluates six basis steps, three finite-basis entries, four
+    // axes of three poles and a three-pole constant-coordinate pass: 24.
+    let point_visits = || std::iter::repeat_n((1_u64, basis), 6)
+        .chain(std::iter::repeat_n((1, finite), 3))
+        .chain(std::iter::repeat_n((1, poles), 4 * 3 + 3));
+    let mut charges = vec![(3, basis)];
+    charges.extend(point_visits()); // Initial lower point.
+    charges.extend(std::iter::repeat_n((1, knots), 3));
+    charges.extend(point_visits()); // Span end; start is already stored.
+    charges.push((1, "creo NURBS profile sampling spans"));
+    for _ in 0..3 { charges.extend(point_visits()); } // Midpoint and quarters.
+    charges.extend(std::iter::repeat_n((1, knots), 2));
+    const SAMPLING_WORK: u64 = 3 + 5 * 24 + 5 + 1;
+    assert_eq!(charges.iter().map(|(amount, _)| amount).sum::<u64>(), SAMPLING_WORK);
+    for cap in 0..=SAMPLING_WORK {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_collection_items = 3 + 2;
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+            3 * std::mem::size_of::<f64>() + 4 * std::mem::size_of::<[f64; 2]>(),
+        );
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = nurbs_profile_polyline(&ctx, &curve, 0.01);
+        if cap == SAMPLING_WORK {
+            let result = result.expect("five required points").expect("sampled curve");
+            assert_eq!(result.points, vec![[0.0; 2]; 2]);
+            assert_eq!(ctx.resource_refusal(), None);
+            drop(result);
+            let original = ctx.charge_work_limit(1, "after sampled profile").expect_err("exact sampling work");
+            assert_eq!((original.used, original.additional), (SAMPLING_WORK, 1));
+            assert!(matches!(nurbs_profile_polyline(&ctx, &curve, 0.01), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        } else {
+            let Err(CodecError::ResourceLimit(original)) = result else { panic!("sampling work refusal"); };
+            let mut used = 0;
+            let expected = charges.iter().find_map(|&(amount, operation)| {
+                if used + amount > cap { Some((used, amount, operation)) }
+                else { used += amount; None }
+            }).expect("first unadmitted source operation");
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!((original.used, original.additional, original.operation), expected);
+            assert_eq!(ctx.resource_refusal(), Some(original));
+            assert!(matches!(nurbs_profile_polyline(&ctx, &curve, 0.01), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        }
+    }
+}
