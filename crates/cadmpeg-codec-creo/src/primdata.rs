@@ -100,15 +100,18 @@ impl PrimitiveTriangleStrip {
         let vertices = match normals {
             None => PrimitiveVertices::Unshaded(positions),
             Some(normals) => {
-                PrimitiveVertices::Shaded(
+                let parts = ctx.with_scoped_storage("creo primitive shaded vertices", || {
                     ctx.collect_retained_vec(
                         positions
                             .into_iter()
                             .zip(normals)
                             .map(|(position, normal)| PrimitiveShadedVertex { position, normal }),
                         "creo primitive shaded vertices",
-                    )?,
-                )
+                    )
+                })?;
+                let storage = parts.1;
+                let vertices = parts.0;
+                PrimitiveVertices::Shaded(storage.commit_value(vertices)?)
             }
         };
         Ok(Some(Self {
@@ -345,12 +348,13 @@ pub(crate) fn triangle_strips(
         if cadmpeg_core::decode::bounded_len(u64::from(count), 1, record.len() - cursor).is_none() {
             continue;
         }
+        let mut cumulative_storage = ctx.reserve_scoped(0, "creo triangle strip cumulative counts")?;
         let mut cumulative = Vec::new();
-        ctx.reserve_vec(
+        cumulative_storage.with_storage(|| ctx.reserve_vec(
             &mut cumulative,
             index_from_u32(count),
             "creo triangle strip cumulative counts",
-        )?;
+        ))?;
         let mut counts = 0..count;
         while !counts.is_empty() {
             if cursor >= record.len() {
@@ -372,12 +376,13 @@ pub(crate) fn triangle_strips(
             continue;
         };
         let mut previous = 0;
+        let mut lengths_storage = ctx.reserve_scoped(0, "creo triangle strip lengths")?;
         let mut strip_lengths = Vec::new();
-        ctx.reserve_vec(
+        lengths_storage.with_storage(|| ctx.reserve_vec(
             &mut strip_lengths,
             cumulative.len(),
             "creo triangle strip lengths",
-        )?;
+        ))?;
         let mut cumulative = cumulative.into_iter();
         while cumulative.len() != 0 {
             let Some(current) = ctx.next_charged(
@@ -393,11 +398,20 @@ pub(crate) fn triangle_strips(
             previous = current;
         }
         drop(cumulative);
+        drop(cumulative_storage);
         if strip_lengths.is_empty() {
             continue;
         }
-        let arrays = scalar_arrays(ctx, record)?;
-        let geometry = match triangle_strip_geometry(ctx, &arrays, vertex_count) {
+        let array_parts = ctx.with_scoped_storage("creo primitive strip scalar arrays", || {
+            scalar_arrays(ctx, record)
+        })?;
+        let array_storage = array_parts.1;
+        let arrays = array_parts.0;
+        let geometry_parts = ctx.with_scoped_storage("creo triangle strip geometry storage", || {
+            Ok::<_, CodecError>(triangle_strip_geometry(ctx, &arrays, vertex_count))
+        })?;
+        let mut geometry_storage = geometry_parts.1;
+        let geometry = match geometry_parts.0 {
             Ok(geometry) => geometry,
             Err(TriangleStripGeometryError::Missing) => continue,
             Err(TriangleStripGeometryError::Conflicting) => {
@@ -406,16 +420,31 @@ pub(crate) fn triangle_strips(
             }
             Err(TriangleStripGeometryError::Resource(error)) => return Err(error),
         };
+        drop(arrays);
+        drop(array_storage);
+        let shaded = geometry.normals.is_some();
         ctx.reserve_vec(&mut strips, 1, "creo triangle strip records")?;
-        if let Some(strip) = PrimitiveTriangleStrip::new(
-            ctx,
-            offset,
-            geometry.positions,
-            geometry.normals,
-            strip_lengths,
-        )? {
-            strips.push(strip);
+        let strip_parts = ctx.with_scoped_storage("creo triangle strip backing", || {
+            PrimitiveTriangleStrip::new(
+                ctx,
+                offset,
+                geometry.positions,
+                geometry.normals,
+                strip_lengths,
+            )
+        })?;
+        let mut strip_storage = strip_parts.1;
+        let Some(strip) = strip_parts.0 else {
+            continue;
+        };
+        strip_storage.absorb(&mut lengths_storage)?;
+        if !shaded {
+            strip_storage.absorb(&mut geometry_storage)?;
         }
+        // Shaded construction consumes both geometry buffers. Unshaded strips
+        // retain their positions, whose receipt now belongs to strip_storage.
+        drop(geometry_storage);
+        strips.push(strip_storage.commit_value(strip)?);
     }
     Ok(PrimitiveTriangleStripScan {
         strips,
@@ -475,8 +504,11 @@ pub(crate) fn scalar_arrays(
             else {
                 continue;
             };
+            let mut value_storage = ctx.reserve_scoped(0, "creo primitive scalar values")?;
             let mut values = Vec::new();
-            ctx.reserve_vec(&mut values, capacity, "creo primitive scalar values")?;
+            value_storage.with_storage(|| {
+                ctx.reserve_vec(&mut values, capacity, "creo primitive scalar values")
+            })?;
             let mut cursor = psb::Cursor::at(data, start);
             let mut attempts = 0..capacity;
             while values.len() < capacity && cursor.pos() < data.len() {
@@ -498,6 +530,7 @@ pub(crate) fn scalar_arrays(
                 values.push(value);
             }
             if values.len() == capacity {
+                let values = value_storage.commit_value(values)?;
                 ctx.reserve_vec(&mut arrays, 1, "creo primitive scalar arrays")?;
                 arrays.push(PrimitiveScalarArray {
                     field,
@@ -541,6 +574,7 @@ mod tests {
     mod strip_visits;
     mod operation_visits;
     mod geometry_storage;
+    mod custody;
     use super::{
         scalar_arrays, triangle_strip_geometry, triangle_strips, PrimitiveArrayField,
         PrimitiveScalarArray, TriangleStripGeometry, TriangleStripGeometryError,
