@@ -3953,6 +3953,7 @@ pub(crate) fn scan_bytes<'a>(
     let cross_section_curve_rows = cross_section_curve_rows(ctx, &sections)?;
     let mut pcurves = curve::pcurve_endpoints(ctx, &curve_parameters, &curve_topology_rows)?;
     let two_chart_pcurves = two_chart_pcurves(ctx, &model_geometry_sections, &topology_face_ids)?;
+    drop((topology_face_ids, topology_face_storage));
     if matches!(layout, Layout::LegacyAscii(_)) {
         append_legacy_curve_witnesses(
             ctx,
@@ -4174,7 +4175,6 @@ pub(crate) fn scan_bytes<'a>(
         &feature_entity_tables,
     )?;
     drop((placement_outline_planes, placement_outline_storage));
-    drop((topology_face_ids, topology_face_storage));
     let (feature_entities, feature_entity_references) = feature_entity_graph(ctx, &sections)?;
     let declared_body_count = geomlists_value(ctx, &sections, b"n_bodies\0")?;
     let first_quilt_ptr = match geomlists_value(ctx, &sections, b"first_quilt_ptr\0")? {
