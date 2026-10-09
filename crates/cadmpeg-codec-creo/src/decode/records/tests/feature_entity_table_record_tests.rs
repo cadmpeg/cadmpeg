@@ -105,7 +105,9 @@ fn entity_table_record_id_refuses_retained_limit() {
 fn entity_table_record_preserves_source_order_and_partition() {
     let scan = scan_with_table();
     crate::decode::with_test_decode_ctx(|ctx| {
-        let (records, _records_storage) = feature_entity_table_records(ctx, &scan)?;
+        let records_parts = feature_entity_table_records(ctx, &scan)?;
+        let _records_storage = records_parts.1;
+        let records = records_parts.0;
         assert_eq!(records.len(), 1);
         let record = &records[0];
         assert_eq!(record.id, "creo:allfeatur:entity_table#12");

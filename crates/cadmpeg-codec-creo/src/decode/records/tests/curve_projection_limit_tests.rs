@@ -150,11 +150,15 @@ fn borrowed_curve_projection_preserves_nested_json() {
     let policy = DecodePolicy::service();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let (parameters, _parameters_storage) =
+    let parameters_parts =
         curve_parameter_records(&ctx, &scan, &scan.curves.parameters, "visibgeom")
             .expect("parameters are admitted");
-    let (replay, _replay_storage) =
+    let _parameters_storage = parameters_parts.1;
+    let parameters = parameters_parts.0;
+    let replay_parts =
         tabulated_cylinder_curve_replay_records(&ctx, &scan).expect("replay is admitted");
+    let _replay_storage = replay_parts.1;
+    let replay = replay_parts.0;
     let parameter = serde_json::to_value(&parameters[0]).expect("parameter serializes");
     let replay = serde_json::to_value(&replay[0]).expect("replay serializes");
     assert_eq!(parameter["scalar_values"], serde_json::json!([2.0]));
