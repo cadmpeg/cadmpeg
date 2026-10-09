@@ -74,3 +74,49 @@ fn missing_relation_prefix_rejects_before_reverse_result_search() {
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
 }
+
+#[test]
+fn schema_footer_stops_one_forward_scan_before_unread_tail() {
+    let mut bytes = CATALOG_OPEN.to_vec();
+    bytes.extend_from_slice(super::super::SCHEMA_PROGRAM_PREFIX);
+    let offset = bytes.len();
+    bytes.push(0xfe);
+    let footer_offset = bytes.len();
+    bytes.extend_from_slice(super::super::SCHEMA_PROGRAM_FOOTER);
+    bytes.extend([0x81; 4096]);
+    bytes.extend_from_slice(CATALOG_OPEN);
+    let run = |ctx: &DecodeContext<'_>| parse_schema_program(ctx, &bytes, 0, None);
+    let program = crate::test_support::with_work_limit(4, run)
+        .expect("two boundary positions, one byte copy, one identifier position")
+        .expect("first complete footer closes the program");
+    assert_eq!(program.offset, offset);
+    assert_eq!(program.boundary_offset, footer_offset);
+    assert_eq!(
+        program.boundary,
+        super::super::LegacySchemaProgramBoundary::VendorFooter
+    );
+    assert_eq!(program.bytes, [0xfe]);
+    assert!(program.identifiers.is_empty());
+    crate::test_support::with_work_limit(1, |ctx| {
+        let CodecError::ResourceLimit(limit) = run(ctx).expect_err("footer position needs admission")
+        else {
+            panic!("resource refusal");
+        };
+        assert_eq!(limit.operation, "catia_legacy_schema_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+    crate::test_support::with_work_limit(0, |ctx| {
+        let CodecError::ResourceLimit(original) = ctx
+            .charge_work(1, "before complete schema footer")
+            .expect_err("zero work fuse")
+        else {
+            panic!("resource refusal");
+        };
+        let CodecError::ResourceLimit(actual) = run(ctx).expect_err("sticky schema refusal")
+        else {
+            panic!("resource refusal");
+        };
+        assert_eq!(actual, original);
+        assert_eq!(ctx.resource_refusal(), Some(original));
+    });
+}
