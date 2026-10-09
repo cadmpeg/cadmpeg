@@ -31,6 +31,7 @@ const EPS_OFFSET_FRAME: f64 = 1.0e-10;
 
 fn admit_offset_controls(
     ctx: &DecodeContext<'_>,
+    _control_storage: ScopedReservation<'_>,
     controls: Vec<Point3>,
     operation: &'static str,
 ) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
@@ -1056,10 +1057,10 @@ pub(super) fn project<'ctx>(
                     )?;
                     continue;
                 };
-                let _control_storage;
+                let control_storage;
                 let (mut controls, result_control_storage) =
                     ctx.temporary_vec(2, "iges linear-offset controls")?;
-                _control_storage = result_control_storage;
+                control_storage = result_control_storage;
                 controls.extend([
                     source_start.translated(offset_direction, evaluate_distance(start)),
                     source_end.translated(offset_direction, evaluate_distance(end)),
@@ -1068,7 +1069,7 @@ pub(super) fn project<'ctx>(
                 knots.extend([start, start, end, end]);
                 let law = CurveOffsetDistanceLaw::linear(basis, distances, control_range);
                 let Some(controls) =
-                    admit_offset_controls(ctx, controls, "iges linear-offset admitted controls")?
+                    admit_offset_controls(ctx, control_storage, controls, "iges linear-offset admitted controls")?
                 else {
                     super::push_entity_loss_with_scoped_slots(
                         ctx,
@@ -1279,10 +1280,10 @@ pub(super) fn project<'ctx>(
                     CurveOffsetLawBasis::Parameter => independent,
                 };
                 let offset_direction = normal_direction.cross(direction);
-                let _control_storage;
+                let control_storage;
                 let (mut controls, result_control_storage) = ctx
                     .temporary_vec(function_nurbs.pole_count(), "iges function-offset controls")?;
-                _control_storage = result_control_storage;
+                control_storage = result_control_storage;
                 let mut indices = 0..function_nurbs.pole_count();
                 while !indices.is_empty() || ctx.resource_refusal().is_some() {
                     let Some(index) = ctx.next_charged(&mut indices, "iges function-offset control traversal")? else { break; };
@@ -1378,7 +1379,7 @@ pub(super) fn project<'ctx>(
                     function_parameter_scale,
                 };
                 let Some(controls) =
-                    admit_offset_controls(ctx, controls, "iges function-offset admitted controls")?
+                    admit_offset_controls(ctx, control_storage, controls, "iges function-offset admitted controls")?
                 else {
                     super::push_entity_loss_with_scoped_slots(
                         ctx,

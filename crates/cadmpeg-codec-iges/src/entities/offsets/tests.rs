@@ -29,6 +29,8 @@ const EPS_OFFSET_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_PARAMETER_DOMAIN: f64 = 1.0e-12;
 const EPS_PLACED_OFFSET: f64 = 1.0e-12;
 
+mod raw_controls;
+
 fn assert_offset_collection_refusal(bytes: &[u8], operation: &str) {
     cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::CollectionItems,
@@ -149,6 +151,7 @@ fn offset_control_admission_stops_at_the_first_nonfinite_control() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(super::admit_offset_controls(
         &ctx,
+        ctx.reserve_scoped(0, "test supplied raw controls").unwrap(),
         controls,
         "iges linear-offset admitted controls",
     )
