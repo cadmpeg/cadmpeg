@@ -89,6 +89,10 @@ pub(super) fn emit_topology(
     topology_budgets: &TopologyBudgets<'_>,
     topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<EndpointWitnesses, CodecError> {
+    // This scope appends carriers and preserves their identity and construction links.
+    let mut procedural_admission =
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, &ir.model)?;
+
     let &TopologyBudgets {
         exact_transfer: exact_transfer_budget,
         completion_transfer: completion_transfer_budget,
@@ -559,8 +563,8 @@ pub(super) fn emit_topology(
                     source_object: None,
                 });
 
-                let _attached = ir.model.add_procedural_curve(
-                    ctx,
+                let _attached = procedural_admission.add_curve(
+                    &mut ir.model,
                     &carrier.try_clone_for_decode(ctx, "nx parametric construction owner")?,
                     ProceduralCurve::new(
                         construction,

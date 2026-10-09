@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed identity replacement under the caller's decode policy.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
@@ -9,10 +9,14 @@ use cadmpeg_core::CodecError;
 mod cache;
 pub mod native_fields;
 
-use cache::{Key, ReplacementIndex};
+use crate::ids::comparison::key::Key;
+use cache::ReplacementIndex;
 
 /// Rewrite owned fields without projecting or reconstructing a serde value.
 pub trait RewriteIdentities: Sized {
+    /// False only when identity and text replacement cannot change this value.
+    const HAS_IDENTITY_FIELDS: bool = true;
+
     /// Rewrite identity markers in an existing native wire value.
     /// Owners without a declared native wire layout refuse this operation.
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
@@ -50,8 +54,8 @@ pub struct IdentityMap<'ctx, F> {
     map: F,
     context: &'ctx DecodeContext<'ctx>,
     text_index: Option<ReplacementIndex<'ctx>>,
-    targets: BTreeMap<Key<'ctx>, crate::ids::Identity>,
-    occupied: BTreeSet<Key<'ctx>>,
+    targets: HashMap<Key<'ctx>, crate::ids::Identity>,
+    occupied: HashSet<Key<'ctx>>,
     operation: &'static str,
     refused: Option<String>,
     resource_refusal: Option<ResourceLimit>,
@@ -69,8 +73,8 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
             map,
             context: ctx,
             text_index: None,
-            targets: BTreeMap::new(),
-            occupied: BTreeSet::new(),
+            targets: HashMap::new(),
+            occupied: HashSet::new(),
             storage: ctx.reserve_scoped(0, operation)?,
             operation,
             refused: None,
@@ -215,12 +219,12 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
         }
         ctx.charge_work(1, operation)?;
         self.storage
-            .with_storage(|| ctx.insert_btree_set(&mut self.occupied, destination, operation))?;
+            .with_storage(|| ctx.insert_hash_set(&mut self.occupied, destination, operation))?;
         self.context.charge_work_limit(0, operation)?;
         let key = Key::owned(self.context, key, operation);
         ctx.charge_work(1, operation)?;
         self.storage
-            .with_storage(|| ctx.admit_btree_entry(&self.targets, &key, operation))?;
+            .with_storage(|| ctx.admit_hash_map_entry(&mut self.targets, &key, operation))?;
         self.context.charge_work_limit(0, operation)?;
         self.targets.insert(key, cached);
         self.context.charge_work_limit(0, operation)?;
@@ -263,6 +267,7 @@ impl RewriteIdentities for crate::ids::Identity {
 macro_rules! rewrite_scalars {
     ($($type:ty),* $(,)?) => {$(
         impl RewriteIdentities for $type {
+            const HAS_IDENTITY_FIELDS: bool = false;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(ctx: &DecodeContext<'_>, _value: &mut serde_json::Value, _map: &mut IdentityMap<'_, F>) -> Result<(), CodecError> {
         ctx.charge_work(1, "walk native identity scalar")
     }
@@ -321,6 +326,7 @@ impl RewriteIdentities for String {
 }
 
 impl<T: RewriteIdentities> RewriteIdentities for Option<T> {
+    const HAS_IDENTITY_FIELDS: bool = T::HAS_IDENTITY_FIELDS;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
         ctx: &DecodeContext<'_>,
         value: &mut serde_json::Value,
@@ -359,6 +365,7 @@ impl<T: RewriteIdentities> RewriteIdentities for Option<T> {
 }
 
 impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
+    const HAS_IDENTITY_FIELDS: bool = T::HAS_IDENTITY_FIELDS;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
         ctx: &DecodeContext<'_>,
         value: &mut serde_json::Value,
@@ -391,22 +398,28 @@ impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
         ctx: &DecodeContext<'_>,
         map: &mut IdentityMap<'_, F>,
     ) -> Result<Self, CodecError> {
+        if !T::HAS_IDENTITY_FIELDS {
+            ctx.charge_work(1, "identity rewrite sequence")?;
+            return Ok(self);
+        }
         let _depth = ctx.enter_nested("identity rewrite sequence")?;
         ctx.charge_work(1, "identity rewrite sequence")?;
-        let mut rewritten = Vec::new();
-        for value in self {
-            let value = value.rewrite_identities(ctx, map)?;
-            ctx.charge_work(
-                u64_from_index(std::mem::size_of::<T>()),
-                "identity rewrite sequence",
-            )?;
-            ctx.push_vec(&mut rewritten, value, "identity rewrite sequence")?;
-        }
-        Ok(rewritten)
+        // The consuming, same-type map keeps Vec's allocation through the
+        // standard library's in-place collection path, including fallible walks.
+        self.into_iter()
+            .map(|value| {
+                ctx.charge_work(
+                    u64_from_index(std::mem::size_of::<T>()),
+                    "identity rewrite sequence",
+                )?;
+                value.rewrite_identities(ctx, map)
+            })
+            .collect()
     }
 }
 
 impl<T: RewriteIdentities, const N: usize> RewriteIdentities for [T; N] {
+    const HAS_IDENTITY_FIELDS: bool = T::HAS_IDENTITY_FIELDS;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
         ctx: &DecodeContext<'_>,
         value: &mut serde_json::Value,
@@ -455,6 +468,7 @@ impl<T: RewriteIdentities, const N: usize> RewriteIdentities for [T; N] {
 }
 
 impl<K: RewriteIdentities + Ord, V: RewriteIdentities> RewriteIdentities for BTreeMap<K, V> {
+    const HAS_IDENTITY_FIELDS: bool = K::HAS_IDENTITY_FIELDS || V::HAS_IDENTITY_FIELDS;
     fn visit_identity_references(
         &self,
         ctx: &DecodeContext<'_>,
@@ -516,6 +530,7 @@ impl RewriteIdentities for cadmpeg_core::text::NonBlankString {
 rewrite_scalars!(std::num::NonZeroI64, std::num::NonZeroU32);
 
 impl<T: RewriteIdentities> RewriteIdentities for Box<T> {
+    const HAS_IDENTITY_FIELDS: bool = T::HAS_IDENTITY_FIELDS;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
         ctx: &DecodeContext<'_>,
         value: &mut serde_json::Value,
@@ -555,6 +570,7 @@ impl<T: RewriteIdentities> RewriteIdentities for Box<T> {
 macro_rules! rewrite_tuple {
     ($($type:ident: $field:ident),*) => {
         impl<$($type: RewriteIdentities),*> RewriteIdentities for ($($type,)*) {
+            const HAS_IDENTITY_FIELDS: bool = false $(|| $type::HAS_IDENTITY_FIELDS)*;
             fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
                 let _depth = ctx.enter_nested("walk typed reference tuple")?;
                 ctx.charge_work(1, "walk typed reference tuple")?;

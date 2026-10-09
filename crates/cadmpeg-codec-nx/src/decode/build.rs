@@ -134,6 +134,10 @@ pub(super) fn try_decode_geometry(
     admitted_entities: &mut u64,
 ) -> Result<Option<GeometryDecode>, CodecError> {
     let mut ir = CadIr::empty();
+    // This scope appends carriers and preserves their identity and construction links.
+    let mut procedural_admission =
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, &ir.model)?;
+
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
     let mut stream_unknowns = Vec::new();
@@ -550,8 +554,8 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralSurface::new(procedural_id, definition, None);
 
-            let _attached = ir.model.add_procedural_surface(
-                ctx,
+            let _attached = procedural_admission.add_surface(
+                &mut ir.model,
                 &surface_id.try_clone_for_decode(ctx, "nx offset construction owner")?,
                 procedural,
             )?;
@@ -613,8 +617,8 @@ pub(super) fn try_decode_geometry(
             annotations.derived(ctx, procedural_id.as_str(), "definition")?;
             let procedural_index = ir.model.procedural_surfaces.len();
 
-            let attached = ir.model.add_procedural_surface(
-                ctx,
+            let attached = procedural_admission.add_surface(
+                &mut ir.model,
                 &surface_id.try_clone_for_decode(ctx, "nx blend construction owner")?,
                 ProceduralSurface::new(
                     procedural_id,
@@ -1109,8 +1113,8 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
-            let _attached = ir.model.add_procedural_curve(
-                ctx,
+            let _attached = procedural_admission.add_curve(
+                &mut ir.model,
                 &curve_id.try_clone_for_decode(ctx, "nx intersection owner identity")?,
                 procedural,
             )?;
@@ -1491,6 +1495,7 @@ pub(super) fn try_decode_geometry(
         stream_unknowns.push((si, unknown_index));
     }
 
+    drop(procedural_admission);
     intersection_index.complete_from_model(ctx, &mut ir)?;
     let mut completion_sources =
         ctx.collection_vec(completion_streams.len(), "nx completion sources")?;

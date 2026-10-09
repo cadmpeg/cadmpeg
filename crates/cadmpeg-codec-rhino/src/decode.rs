@@ -5200,6 +5200,8 @@ fn stage_brep_carriers(
     } = input;
     let ctx = expand.ctx();
     let mut staged = BrepDraft::default();
+    let mut procedural_admission =
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, staged.draft.model_mut())?;
     let mut c3 = HashMap::new();
     let mut surfaces = HashMap::new();
     let mut child_cause = None;
@@ -5280,14 +5282,17 @@ fn stage_brep_carriers(
                     &curve,
                     format_args!("C3 slot {index}"),
                 )?;
-                let id = match stage_curve_tree(
-                    expand.ctx(),
+                let id = match stage_curve_tree_indexed(
+                    &mut procedural_admission,
                     &mut staged,
                     curve,
-                    key,
                     &format!("c3-{index}"),
-                    association,
-                    unknown,
+                    &BrepStageContext {
+                        ctx: expand.ctx(),
+                        key,
+                        association,
+                        unknown,
+                    },
                 ) {
                     Ok(id) => id,
                     Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
@@ -5389,6 +5394,7 @@ fn stage_brep_carriers(
                         definition,
                     },
             }) => match stage_brep_procedural_surface(
+                &mut procedural_admission,
                 &mut staged,
                 index,
                 geometry,
@@ -6299,6 +6305,7 @@ fn coedge_sense(reversed_3d: bool, edge_proxy_reversed: bool) -> Sense {
 }
 
 fn stage_brep_procedural_surface(
+    procedural_admission: &mut cadmpeg_ir::document::procedural::ProceduralAdmission<'_>,
     staged: &mut BrepDraft,
     index: usize,
     geometry: cadmpeg_ir::geometry::nurbs::NurbsSurface,
@@ -6309,14 +6316,15 @@ fn stage_brep_procedural_surface(
         .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     let definition = definition.into_definition(
         |child_index, _, child| {
-            stage_curve_tree(
-                context.ctx,
+            stage_curve_tree_indexed(
+                procedural_admission,
                 staged,
                 child,
-                key.as_str(),
                 &format!("surface-{index}.child-{child_index}"),
-                context.association,
-                context.unknown,
+                &BrepStageContext {
+                    key: key.as_str(),
+                    ..*context
+                },
             )
         },
         |error| crate::curves::GeometryError::unpositioned(error.to_string()),
@@ -6347,11 +6355,9 @@ fn stage_brep_procedural_surface(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "procedural-surface"),
         key.then(cadmpeg_ir::identity_key!(".slot-")).then(index),
     );
-    staged
-        .draft
-        .model_mut()
-        .add_procedural_surface(
-            context.ctx,
+    procedural_admission
+        .add_surface(
+            staged.draft.model_mut(),
             &surface_id,
             ProceduralSurface::new(
                 procedural_id.try_clone_for_decode(context.ctx, "Rhino typed identity copy")?,
@@ -6371,6 +6377,7 @@ fn stage_brep_procedural_surface(
     Ok(surface_id)
 }
 
+#[cfg(test)]
 fn stage_curve_tree(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     staged: &mut BrepDraft,
@@ -6380,6 +6387,35 @@ fn stage_curve_tree(
     association: &SourceObjectAssociation,
     unknown: &UnknownId,
 ) -> Result<cadmpeg_ir::ids::CurveId, crate::curves::GeometryError> {
+    let mut procedural_admission =
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, staged.draft.model_mut())?;
+    stage_curve_tree_indexed(
+        &mut procedural_admission,
+        staged,
+        curve,
+        path,
+        &BrepStageContext {
+            ctx,
+            key,
+            association,
+            unknown,
+        },
+    )
+}
+
+fn stage_curve_tree_indexed(
+    procedural_admission: &mut cadmpeg_ir::document::procedural::ProceduralAdmission<'_>,
+    staged: &mut BrepDraft,
+    curve: crate::curves::DecodedCurve,
+    path: &str,
+    context: &BrepStageContext<'_>,
+) -> Result<cadmpeg_ir::ids::CurveId, crate::curves::GeometryError> {
+    let BrepStageContext {
+        ctx,
+        key,
+        association,
+        unknown,
+    } = *context;
     let _nested = ctx.enter_nested("Rhino Brep curve tree")?;
     let (geometry, definition) = match curve {
         crate::curves::DecodedCurve::Leaf { geometry, .. } => (geometry, None),
@@ -6402,14 +6438,12 @@ fn stage_curve_tree(
                 parameters.push(parameter);
                 components.push(cadmpeg_ir::geometry::CompoundComponent {
                     parameter,
-                    component: stage_curve_tree(
-                        ctx,
+                    component: stage_curve_tree_indexed(
+                        procedural_admission,
                         staged,
                         child,
-                        key,
                         &format!("{path}.component-{index}"),
-                        association,
-                        unknown,
+                        context,
                     )?,
                 });
             }
@@ -6480,10 +6514,12 @@ fn stage_curve_tree(
             .draft
             .exactness(ctx, procedure_id.to_string(), Exactness::Derived)?;
         staged.links.push(procedure_id.to_string());
-        staged
-            .draft
-            .model_mut()
-            .add_procedural_curve(ctx, &id, ProceduralCurve::new(procedure_id, definition))?
+        procedural_admission
+            .add_curve(
+                staged.draft.model_mut(),
+                &id,
+                ProceduralCurve::new(procedure_id, definition),
+            )?
             .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     }
     Ok(id)
@@ -7014,6 +7050,26 @@ fn commit_curve_tree(
     curve: crate::curves::DecodedCurve,
     source: CurveCommitSource<'_>,
 ) -> Result<cadmpeg_ir::ids::CurveId, CandidateError> {
+    let mut procedural_admission =
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, &ir.model)?;
+    commit_curve_tree_indexed(
+        ctx,
+        &mut procedural_admission,
+        ir,
+        annotations,
+        curve,
+        source,
+    )
+}
+
+fn commit_curve_tree_indexed(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    procedural_admission: &mut cadmpeg_ir::document::procedural::ProceduralAdmission<'_>,
+    ir: &mut CadIr,
+    annotations: &mut impl ExactnessTarget,
+    curve: crate::curves::DecodedCurve,
+    source: CurveCommitSource<'_>,
+) -> Result<cadmpeg_ir::ids::CurveId, CandidateError> {
     let _nested = ctx.enter_nested("Rhino committed curve tree")?;
     let (geometry, definition) = match curve {
         crate::curves::DecodedCurve::Leaf { geometry, .. } => (geometry, None),
@@ -7035,8 +7091,9 @@ fn commit_curve_tree(
                 let child_path = format!("{}.component-{index}", source.path);
                 components.push(cadmpeg_ir::geometry::CompoundComponent {
                     parameter,
-                    component: commit_curve_tree(
+                    component: commit_curve_tree_indexed(
                         ctx,
+                        procedural_admission,
                         ir,
                         annotations,
                         child,
@@ -7099,8 +7156,12 @@ fn commit_curve_tree(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "procedural-curve"),
             curve_key,
         );
-        ir.model
-            .add_procedural_curve(ctx, &id, ProceduralCurve::new(procedure_id, definition))?
+        procedural_admission
+            .add_curve(
+                &mut ir.model,
+                &id,
+                ProceduralCurve::new(procedure_id, definition),
+            )?
             .map_err(|error| error.to_string())?;
     }
     Ok(id)

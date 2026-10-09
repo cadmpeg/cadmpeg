@@ -13,6 +13,7 @@ rewrite_scalar!(UnitVector2);
 rewrite_scalar!(UnitVector3);
 
 impl<const N: usize> crate::schema::rewrite::typed::RewriteIdentities for super::FiniteVector<N> {
+    const HAS_IDENTITY_FIELDS: bool = false;
     fn visit_identity_references(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -30,6 +31,7 @@ impl<const N: usize> crate::schema::rewrite::typed::RewriteIdentities for super:
     }
 }
 impl<const N: usize> crate::schema::rewrite::typed::RewriteIdentities for super::NonzeroVector<N> {
+    const HAS_IDENTITY_FIELDS: bool = false;
     fn visit_identity_references(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,

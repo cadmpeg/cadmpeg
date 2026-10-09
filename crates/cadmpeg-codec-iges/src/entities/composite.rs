@@ -2070,6 +2070,10 @@ fn project_with_type_130_policy(
     sequences: &mut super::geometry::SourceSequences,
     only_type_130_children: bool,
 ) -> Result<WireProjectionOutcome, CodecError> {
+    // This scope appends carriers and preserves their identity and construction links.
+    let mut procedural_admission =
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, &ir.model)?;
+
     let mut lookup_storage = ctx.reserve_scoped(0, "IGES projection source lookup")?;
     let mut records = BTreeMap::new();
     for record in parameters {
@@ -2573,8 +2577,8 @@ fn project_with_type_130_policy(
         }
 
         ctx.charge_entities(1, "iges_geometry_composites")?;
-        let _attached = ir.model.add_procedural_curve(
-            ctx,
+        let _attached = procedural_admission.add_curve(
+            &mut ir.model,
             &curve_id,
             ProceduralCurve::new(
                 crate::ids::procedural_curve_admitted(&stem, ctx)?,
