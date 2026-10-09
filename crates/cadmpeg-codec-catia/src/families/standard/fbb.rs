@@ -2166,6 +2166,7 @@ pub(crate) fn boundary_cycles(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     triangles: &[[u32; 3]],
 ) -> Result<Option<Vec<Vec<u32>>>, cadmpeg_core::CodecError> {
+    let mut workspace = ctx.reserve_scoped(0, "catia_boundary_workspace")?;
     let mut edge_directions = HashMap::<(u32, u32), u8>::new();
     for &[a, b, c] in triangles {
         for (start, end) in [(a, b), (b, c), (c, a)] {
@@ -2183,12 +2184,14 @@ pub(crate) fn boundary_cycles(
                 }
                 *directions |= direction;
             } else {
-                ctx.insert_hash_map(
-                    &mut edge_directions,
-                    edge,
-                    direction,
-                    "catia_boundary_edge_directions",
-                )?;
+                workspace.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut edge_directions,
+                        edge,
+                        direction,
+                        "catia_boundary_edge_directions",
+                    )
+                })?;
             }
         }
     }
@@ -2204,7 +2207,9 @@ pub(crate) fn boundary_cycles(
             if successors.contains_key(&start) {
                 return Ok(None);
             }
-            ctx.insert_hash_map(&mut successors, start, end, "catia_boundary_successors")?;
+            workspace.with_storage(|| {
+                ctx.insert_hash_map(&mut successors, start, end, "catia_boundary_successors")
+            })?;
         }
     }
     let mut seen = HashSet::new();
@@ -2215,13 +2220,15 @@ pub(crate) fn boundary_cycles(
         }
         let mut cycle = Vec::new();
         ctx.push_vec(&mut cycle, start, "catia_boundary_cycle_handles")?;
-        ctx.insert_hash_set(&mut seen, start, "catia_boundary_seen")?;
+        workspace.with_storage(|| ctx.insert_hash_set(&mut seen, start, "catia_boundary_seen"))?;
         let Some(&mut_current) = successors.get(&start) else {
             return Ok(None);
         };
         let mut current = mut_current;
         while current != start {
-            if !ctx.insert_hash_set(&mut seen, current, "catia_boundary_seen")? {
+            if !workspace
+                .with_storage(|| ctx.insert_hash_set(&mut seen, current, "catia_boundary_seen"))?
+            {
                 return Ok(None);
             }
             ctx.push_vec(&mut cycle, current, "catia_boundary_cycle_handles")?;
@@ -2435,6 +2442,25 @@ mod tests {
         let empty = FbbFaceRun::try_new(usize::MAX, 0).expect("empty face run");
         assert_eq!(empty.face_count(), 0);
         assert_eq!(empty.after_faces(), usize::MAX);
+    }
+
+    #[test]
+    fn boundary_maps_use_scoped_bytes_and_cycles_keep_retained_bytes() {
+        let triangles = [[0, 1, 2], [0, 2, 3]];
+        let output_bytes = 4 * size_of::<u32>() + 4 * size_of::<Vec<u32>>();
+        let cycles = crate::test_support::with_retained_limit(
+            cadmpeg_core::decode::u64_from_index(output_bytes),
+            |ctx| boundary_cycles(ctx, &triangles),
+        )
+        .expect("only the returned cycles retain bytes")
+        .expect("square boundary");
+        assert_eq!(cycles, vec![vec![0, 1, 2, 3]]);
+        let refused =
+            crate::test_support::with_materialized_limit(0, |ctx| boundary_cycles(ctx, &triangles));
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_boundary_edge_directions")
+        );
     }
 
     #[test]

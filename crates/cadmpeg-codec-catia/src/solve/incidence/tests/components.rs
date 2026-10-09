@@ -1631,3 +1631,40 @@ fn compact_face_quotient_state_cap_is_exhausted() {
 }
 
 mod component_search;
+
+#[test]
+fn component_degree_workspace_releases_after_each_face_check() {
+    let faces = HashSet::from([0]);
+    let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0])];
+    let choices = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];
+    let face_edges = vec![vec![0, 1, 2]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::solve::incidence::component_incidence_faces_viable(
+            ctx,
+            &faces,
+            &assignment,
+            &choices,
+            &face_edges,
+            None,
+            3,
+        )
+    };
+    crate::test_support::with_retained_limit(0, |ctx| {
+        for _ in 0..128 {
+            assert!(run(ctx).expect("degree map is scoped"));
+        }
+    });
+    crate::test_support::with_materialized_limit(1024, |ctx| {
+        for _ in 0..128 {
+            assert!(run(ctx).expect("previous degree map released"));
+        }
+        assert!(ctx
+            .reserve_scoped(1024, "test degree workspace released")
+            .is_ok());
+    });
+    let refused = crate::test_support::with_materialized_limit(0, run);
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia component incidence degree points")
+    );
+}

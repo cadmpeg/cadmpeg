@@ -9820,7 +9820,7 @@ impl CatiaNative {
             let family = ctx
                 .copy_retained_text(finjpl_family(segment.kind()), "catia_native_finjpl_family")?;
             let data =
-                ctx.copy_slice(&bytes[segment.range.clone()], "catia_native_finjpl_bytes")?;
+                ctx.copy_retained(&bytes[segment.range.clone()], "catia_native_finjpl_bytes")?;
             ctx.push_vec(
                 &mut finjpl_segments,
                 CatiaFinjplSegment {

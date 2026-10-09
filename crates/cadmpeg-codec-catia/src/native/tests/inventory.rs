@@ -52,6 +52,36 @@ fn decode_persists_external_references_in_native_namespace() {
 }
 
 #[test]
+fn native_finjpl_bytes_do_not_consume_collection_items() {
+    let mut bytes = summary_preview_segment();
+    bytes.resize(8192, 0);
+    let native = crate::test_support::with_collection_limit(256, |ctx| {
+        crate::native::CatiaNative::decode_with_record_sources(
+            ctx,
+            &bytes,
+            &[],
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("one retained segment does not admit one item per byte");
+    assert_eq!(native.finjpl_segments.len(), 1);
+    assert_eq!(native.finjpl_segments[0].data, bytes);
+    let refused =
+        crate::test_support::with_retained_refusal(&bytes, "catia_native_finjpl_bytes", |ctx| {
+            crate::native::CatiaNative::decode_with_record_sources(
+                ctx,
+                &bytes,
+                &[],
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_finjpl_bytes")
+    );
+}
+
+#[test]
 fn native_namespace_retains_summary_preview_bytes() {
     let bytes = summary_preview_segment();
     let native = crate::native::CatiaNative::decode(&bytes);

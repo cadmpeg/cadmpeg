@@ -537,23 +537,6 @@ pub(crate) struct B2UseMetadata {
 }
 
 impl B2UseMetadata {
-    pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let payload = ctx.copy_slice(&self.payload, "catia_b2_use_clone_payload")?;
-        let kind = match &self.kind {
-            B2UsePayload::Closed { sense, references } => B2UsePayload::Closed {
-                sense: *sense,
-                references: ctx.copy_slice(references, "catia_b2_use_clone_references")?,
-            },
-            B2UsePayload::SenseOnly(sense) => B2UsePayload::SenseOnly(*sense),
-            B2UsePayload::Opaque => B2UsePayload::Opaque,
-        };
-        Ok(Self {
-            pos: self.pos,
-            payload,
-            kind,
-        })
-    }
-
     pub(crate) fn sense(&self) -> Option<B2UseSense> {
         match self.kind {
             B2UsePayload::Closed { sense, .. } | B2UsePayload::SenseOnly(sense) => Some(sense),
@@ -625,7 +608,7 @@ pub(in crate::families) fn b2_use_metadata_from_records(
 ) -> Result<Vec<B2UseMetadata>, CodecError> {
     let mut uses = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x06) {
-        let payload = ctx.copy_slice(&data[frame.payload..frame.end], "catia_b2_use_payload")?;
+        let payload = ctx.copy_retained(&data[frame.payload..frame.end], "catia_b2_use_payload")?;
         let sense = match payload.last() {
             Some(0x84) => Some(B2UseSense::Sense84),
             Some(0x88) => Some(B2UseSense::Sense88),

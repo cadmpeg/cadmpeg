@@ -1284,11 +1284,7 @@ fn b2_use_payload_references_and_rows_refuse_collection_limits() {
             }
         }
     }
-    for operation in [
-        "catia_b2_use_payload",
-        "catia_b2_use_references",
-        "catia_b2_uses",
-    ] {
+    for operation in ["catia_b2_use_references", "catia_b2_uses"] {
         assert!(refused.contains(operation), "{operation} did not refuse");
     }
 }
@@ -1949,3 +1945,16 @@ fn b2_spatial_circle_stream() -> Vec<u8> {
 mod carrier_records;
 mod indexed_wrappers;
 mod spatial_and_consolidated;
+
+#[test]
+fn b2_use_payload_bytes_refuse_retained_limit() {
+    let bytes = b2_topology_metadata_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::b2_use_metadata_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_use_payload")
+    );
+}

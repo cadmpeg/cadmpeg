@@ -1525,11 +1525,12 @@ fn reconstruct_logical_stream<'storage>(
     inner: usize,
 ) -> Result<(Vec<u8>, ScopedReservation<'storage>), CodecError> {
     let Some(logical_length) = logical_stream_length(ctx, data.len(), descriptor, inner)? else {
-        return ctx.temporary_vec(0, "catia_logical_stream_bytes");
+        return ctx.scoped_vector_storage(0, "catia_logical_stream_bytes");
     };
     let bytes = u64_from_index(logical_length);
     ctx.charge_work(bytes, "catia_logical_stream_copy")?;
-    let (mut out, storage) = ctx.temporary_vec(logical_length, "catia_logical_stream_bytes")?;
+    let (mut out, storage) =
+        ctx.scoped_vector_storage(logical_length, "catia_logical_stream_bytes")?;
     for extent in &descriptor.extents {
         let start = inner + index_from_u32(extent.phys_off);
         let end = start + index_from_u32(extent.phys_len);
@@ -1580,6 +1581,10 @@ pub(crate) fn outer_container_declarations(
     };
     if data_descriptors.next().is_some() {
         return Ok(Vec::new());
+    }
+    if let Some(range) = contiguous_descriptor_range(ctx, data_descriptor, outer.inner, data.len())?
+    {
+        return parse_outer_container_declarations(ctx, &data[range], &outer.descriptors);
     }
     let (logical, _storage) = reconstruct_logical_stream(ctx, data, data_descriptor, outer.inner)?;
     parse_outer_container_declarations(ctx, &logical, &outer.descriptors)
