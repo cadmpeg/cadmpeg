@@ -299,3 +299,22 @@ fn dimension_annotation_interval_owner_scan_refuses_work_limit() {
         ));
     });
 }
+
+#[test]
+fn presentation_stream_prefixes_commit_only_surviving_prefixes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let types = presentation_types("FusionAssetName[Active]/Design1/MetaStream.dat");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    // The paired vector dies in the builder; only the four prefix slots survive.
+    policy.limits.max_retained_bytes = u64::try_from(4 * std::mem::size_of::<&str>()).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let storage;
+    let (prefixes, held_storage) = super::super::presentation_stream_prefixes(&ctx, &types).unwrap();
+    storage = held_storage;
+    assert_eq!(prefixes.capacity(), 4);
+    let prefixes = storage.commit_value(prefixes).unwrap();
+    assert_eq!(prefixes, ["f3d:FusionAssetName[Active]/Design1/"]);
+    assert!(ctx.resource_refusal().is_none());
+}

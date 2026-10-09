@@ -306,6 +306,8 @@ impl CompanionBoundaries {
         }
         // The record index of the first scope that references each member,
         // and whether a scope with another record index also references it.
+        let mut reference_storage =
+            ctx.reserve_scoped(0, "f3d companion foreign scope members")?;
         let mut referencing_scopes = HashMap::new();
         for scope in scopes {
             ctx.push_vec(
@@ -318,11 +320,13 @@ impl CompanionBoundaries {
                 scope.reference_members(),
                 "scan F3D companion scope references",
             )? {
-                match ctx.entry_hash_map(
-                    &mut referencing_scopes,
-                    member,
-                    "f3d companion foreign scope members",
-                )? {
+                match reference_storage.with_storage(|| {
+                    ctx.entry_hash_map(
+                        &mut referencing_scopes,
+                        member,
+                        "f3d companion foreign scope members",
+                    )
+                })? {
                     Entry::Occupied(mut entry) => {
                         let (first, other) = entry.get_mut();
                         *other |= *first != scope.record_index;
@@ -2555,13 +2559,17 @@ fn annotation_intervals<'a, 'ctx>(
     ctx.with_scoped_storage("f3d dimension annotation intervals", || {
         let mut intervals = Vec::new();
         // The first companion of each record index in the stream.
+        let mut companion_storage =
+            ctx.reserve_scoped(0, "f3d dimension annotation companions")?;
         let mut companion_offsets = HashMap::new();
         for companion in companions.of(ctx, stream, "scan F3D annotation owner companions")? {
-            if let Entry::Vacant(slot) = ctx.entry_hash_map(
-                &mut companion_offsets,
-                companion.record_index(),
-                "f3d dimension annotation companions",
-            )? {
+            if let Entry::Vacant(slot) = companion_storage.with_storage(|| {
+                ctx.entry_hash_map(
+                    &mut companion_offsets,
+                    companion.record_index(),
+                    "f3d dimension annotation companions",
+                )
+            })? {
                 slot.insert(companion.byte_offset());
             }
             let Some((start, end)) =
@@ -2576,6 +2584,8 @@ fn annotation_intervals<'a, 'ctx>(
             )?;
         }
         // The nearest companion that an owner of each scope record index names.
+        let mut scope_storage =
+            ctx.reserve_scoped(0, "f3d dimension annotation scope ends")?;
         let mut scope_ends = HashMap::new();
         for owner in intervals_by_stream.owners_of(
             ctx,
@@ -2592,11 +2602,13 @@ fn annotation_intervals<'a, 'ctx>(
             else {
                 continue;
             };
-            match ctx.entry_hash_map(
-                &mut scope_ends,
-                owner.scope_record_index(),
-                "f3d dimension annotation scope ends",
-            )? {
+            match scope_storage.with_storage(|| {
+                ctx.entry_hash_map(
+                    &mut scope_ends,
+                    owner.scope_record_index(),
+                    "f3d dimension annotation scope ends",
+                )
+            })? {
                 Entry::Occupied(mut entry) => {
                     let end = entry.get_mut();
                     *end = offset.min(*end);
@@ -3230,22 +3242,26 @@ fn presentation_stream_prefixes<'a, 'ctx>(
     let operation = "f3d dimension presentation streams";
     ctx.with_scoped_storage(operation, || {
         let mut presentation = Vec::new();
+        let mut paired_storage = ctx.reserve_scoped(0, operation)?;
         let mut paired = Vec::new();
         for design_type in ctx.admit_iter(types, "scan F3D dimension presentation types")? {
             let type_guid = design_type.type_guid.as_str();
-            let prefixes = if is_dimension_presentation_type(type_guid) {
-                &mut presentation
-            } else if type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID) {
-                &mut paired
-            } else {
+            let is_presentation = is_dimension_presentation_type(type_guid);
+            if !is_presentation
+                && !type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID)
+            {
                 continue;
-            };
+            }
             let Some(prefix) = record_stream(ctx, design_type.id())?
                 .and_then(|stream| stream.strip_suffix(META_STREAM_FILE))
             else {
                 continue;
             };
-            ctx.push_vec(prefixes, prefix, operation)?;
+            if is_presentation {
+                ctx.push_vec(&mut presentation, prefix, operation)?;
+            } else {
+                paired_storage.with_storage(|| ctx.push_vec(&mut paired, prefix, operation))?;
+            }
         }
         for prefixes in [&mut presentation, &mut paired] {
             ctx.stable_sort_by(&mut prefixes[..], |prefix| *prefix, Ord::cmp, operation)?;
@@ -3321,17 +3337,21 @@ impl<'a, 'r> PresentationStreamTables<'a, 'r> {
         pass: &'r PresentationPassTables<'a, '_>,
         parameters: &ParameterIndex<'_>,
     ) -> Result<Self, CodecError> {
+        let mut owner_storage =
+            ctx.reserve_scoped(0, "f3d dimension presentation owners")?;
         let mut dimension_owners = Vec::new();
         for owner in pass
             .owners
             .of(ctx, stream, "scan F3D dimension presentation owners")?
         {
             if is_dimension_parameter(ctx, parameters, stream, owner.parameter_record_index())? {
-                ctx.push_vec(
-                    &mut dimension_owners,
-                    owner,
-                    "f3d dimension presentation owners",
-                )?;
+                owner_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut dimension_owners,
+                        owner,
+                        "f3d dimension presentation owners",
+                    )
+                })?;
             }
         }
         ctx.stable_sort_by_key(
