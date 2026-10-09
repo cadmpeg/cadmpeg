@@ -3070,17 +3070,23 @@ fn feature_definitions(
             definitions.push(definition);
         }
         if section.section.name() == "DEPDB_DATA" {
-            let recipe_operations = feature::operations::operations(ctx, payload)?;
-            if let Some(operation) = crate::decode::uniqueness::exactly_one_by(
+            let mut recipe_storage =
+                ctx.reserve_scoped(0, "creo definition recipe operation storage")?;
+            let recipe_operations = recipe_storage
+                .with_storage(|| feature::operations::operations(ctx, payload))?;
+            let owner_feature_id = crate::decode::uniqueness::exactly_one_by(
                 ctx,
                 &recipe_operations,
                 |operation| Ok(operation.recipe.resolved().is_some()),
                 "creo definition recipe operation selection",
-            )? {
+            )?
+            .map(|operation| operation.feature_id);
+            drop((recipe_operations, recipe_storage));
+            if let Some(owner_feature_id) = owner_feature_id {
                 if let Some(mut definition) = feature::definitions::depdb_section_definition(
                     ctx,
                     payload,
-                    Some(operation.feature_id),
+                    Some(owner_feature_id),
                 )? {
                     offset_feature_definition(ctx, &mut definition, section.section.offset())?;
                     if let Some(position) = ctx.position_by(
