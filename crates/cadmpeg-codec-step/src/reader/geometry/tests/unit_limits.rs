@@ -254,11 +254,15 @@ fn scope_refusal(records: &str, collection_limit: u64, depth_limit: Option<u64>)
     }
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
+    let mut active_storage = ctx.reserve_scoped(0, "test unit scope owner").expect("empty owner");
+    let mut members = BTreeSet::new();
+    let mut active = BTreeSet::new();
     super::super::collect_unit_scope_members(
         1,
         &exchange,
-        &mut BTreeSet::new(),
-        &mut BTreeSet::new(),
+        &mut members,
+        &mut active,
+        &mut active_storage,
         &ctx,
     )
     .expect_err("scope traversal exceeds the limit")

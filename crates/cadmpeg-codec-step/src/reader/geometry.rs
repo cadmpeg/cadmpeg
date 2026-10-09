@@ -5088,6 +5088,13 @@ fn surface_curve_associated_geometry<'a>(
     )
 }
 
+/// One context's units and the source nodes already propagated for that context.
+struct UnitScope {
+    length: Option<PositiveReal>,
+    angle: Option<PositiveReal>,
+    visited: BTreeSet<u64>,
+}
+
 fn resolve_unit_scales(
     exchange: &Exchange,
     default_length: PositiveReal,
@@ -5096,6 +5103,8 @@ fn resolve_unit_scales(
     storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<UnitScales, CodecError> {
+    let mut scope_storage = ctx.reserve_scoped(0, "step unit context storage")?;
+    let mut scopes = HashMap::<u64, UnitScope>::new();
     let mut length_candidate_storage = ctx.reserve_scoped(0, "step length candidate storage")?;
     let mut angle_candidate_storage = ctx.reserve_scoped(0, "step angle candidate storage")?;
     let mut length_candidates = BTreeMap::<u64, Vec<PositiveReal>>::new();
@@ -5109,7 +5118,20 @@ fn resolve_unit_scales(
         let Some(context_id) = representation_context(ctx, representation)? else {
             continue;
         };
-        let (length, angle) = context_unit_scales(context_id, exchange, ctx)?;
+        if !ctx.contains_key_hash_map(&scopes, &context_id, "step unit context lookup")? {
+            let (length, angle) = context_unit_scales(context_id, exchange, ctx)?;
+            scope_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut scopes,
+                    context_id,
+                    UnitScope { length, angle, visited: BTreeSet::new() },
+                    "step unit context index",
+                )
+            })?;
+        }
+        let scope = ctx.get_mut_hash_map(&mut scopes, &context_id, "step unit context lookup")?
+            .ok_or_else(|| CodecError::malformed("STEP unit context index lost its entry"))?;
+        let (length, angle) = (scope.length, scope.angle);
         if length.is_none() && angle.is_none() {
             continue;
         }
@@ -5140,7 +5162,6 @@ fn resolve_unit_scales(
         };
         let mut member_storage = ctx.reserve_scoped(0, "STEP unit scope storage")?;
         let mut members = BTreeSet::new();
-        let mut active = BTreeSet::new();
         ctx.charge_work(0, "STEP geometry representation item traversal")?;
         let mut item_source = items.iter();
         for _ in 0..item_source.len() {
@@ -5150,7 +5171,14 @@ fn resolve_unit_scales(
                 continue;
             };
             member_storage.with_storage(|| {
-                collect_unit_scope_members(item, exchange, &mut members, &mut active, ctx)
+                collect_unit_scope_members(
+                    item,
+                    exchange,
+                    &mut members,
+                    &mut scope.visited,
+                    &mut scope_storage,
+                    ctx,
+                )
             })?;
         }
         for member in ctx.admit_iter(members, "STEP unit scope member traversal")? {
@@ -5178,6 +5206,8 @@ fn resolve_unit_scales(
             }
         }
     }
+    drop(scopes);
+    drop(scope_storage);
     let length = finalize_unit_candidates(
         length_candidates,
         default_length,
@@ -5337,6 +5367,7 @@ fn collect_unit_scope_members(
     exchange: &Exchange,
     members: &mut BTreeSet<u64>,
     active: &mut BTreeSet<u64>,
+    active_storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let _root_depth = ctx.enter_nested("step_unit_scope_walk")?;
@@ -5348,7 +5379,7 @@ fn collect_unit_scope_members(
         let _nested = (current != id)
             .then(|| ctx.enter_nested("step_unit_scope_walk"))
             .transpose()?;
-        if ctx.insert_btree_set(active, current, "step_unit_scope_active")? {
+        if ctx.insert_scoped_btree_value(active_storage, active, current, "step_unit_scope_active")? {
             if let Some(record) =
                 ctx.get_btree_map(exchange.records(), &current, "step_geometry_lookup")?
             {
