@@ -748,18 +748,18 @@ fn candidate_contexts_share_edge_row_storage() {
     catia_test_context!(ctx);
     let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
     let faces = [[0, 0]; 4];
-    let (base, _base_storage) = StandardMeshBoundaryContext::parse(&ctx, &bytes, &faces)
+    let base = StandardMeshBoundaryContext::parse(&ctx, &bytes, &faces)
         .expect("service resource budget")
         .expect("quad boundary context");
     let mut candidates = Vec::with_capacity(CANDIDATES);
-    assert_eq!(Arc::strong_count(&base.analysis), 1);
+    assert_eq!(Arc::strong_count(&base.0.analysis), 1);
     for _ in 0..CANDIDATES {
         candidates.push(
-            base.with_edge_faces(&ctx, &faces)
+            base.0.with_edge_faces(&ctx, &faces)
                 .expect("service resource budget")
                 .expect("quad candidate context"),
         );
-        assert_eq!(Arc::strong_count(&base.analysis), candidates.len() + 1);
+        assert_eq!(Arc::strong_count(&base.0.analysis), candidates.len() + 1);
     }
     for (candidate, _candidate_storage) in &candidates {
         let StandardMeshBoundaryContext {
@@ -769,14 +769,14 @@ fn candidate_contexts_share_edge_row_storage() {
             edge_runs,
             cycle_lengths,
         } = candidate;
-        assert!(Arc::ptr_eq(analysis, &base.analysis));
-        assert_eq!(coverage, &base.coverage);
-        assert_eq!(edge_ports, &base.edge_ports);
-        assert_eq!(edge_runs, &base.edge_runs);
-        assert_eq!(cycle_lengths, &base.cycle_lengths);
+        assert!(Arc::ptr_eq(analysis, &base.0.analysis));
+        assert_eq!(coverage, &base.0.coverage);
+        assert_eq!(edge_ports, &base.0.edge_ports);
+        assert_eq!(edge_runs, &base.0.edge_runs);
+        assert_eq!(cycle_lengths, &base.0.cycle_lengths);
     }
     drop(candidates);
-    assert_eq!(Arc::strong_count(&base.analysis), 1);
+    assert_eq!(Arc::strong_count(&base.0.analysis), 1);
 }
 
 #[test]
@@ -1024,18 +1024,18 @@ fn missing_edge_solution_promotion_preserves_refusal_and_parent_storage() {
 fn parsed_boundary_context_keeps_no_retained_workspace() {
     let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
     crate::test_support::with_retained_limit(0, |ctx| {
-        let (base, _base_storage) = StandardMeshBoundaryContext::parse(ctx, &bytes, &[[0, 0]; 4])
+        let base = StandardMeshBoundaryContext::parse(ctx, &bytes, &[[0, 0]; 4])
             .expect("temporary parse")
             .expect("quad context");
-        let (candidate, _candidate_storage) = base
+        let candidate = base.0
             .with_edge_faces(ctx, &[[0, 0]; 4])
             .expect("temporary candidate")
             .expect("quad candidate");
-        assert!(Arc::ptr_eq(&base.analysis, &candidate.analysis));
-        assert!(Arc::ptr_eq(&base.edge_ports, &candidate.edge_ports));
-        assert!(Arc::ptr_eq(&base.edge_runs, &candidate.edge_runs));
-        assert!(Arc::ptr_eq(&base.cycle_lengths, &candidate.cycle_lengths));
-        assert_eq!(base.coverage, candidate.coverage);
+        assert!(Arc::ptr_eq(&base.0.analysis, &candidate.0.analysis));
+        assert!(Arc::ptr_eq(&base.0.edge_ports, &candidate.0.edge_ports));
+        assert!(Arc::ptr_eq(&base.0.edge_runs, &candidate.0.edge_runs));
+        assert!(Arc::ptr_eq(&base.0.cycle_lengths, &candidate.0.cycle_lengths));
+        assert_eq!(base.0.coverage, candidate.0.coverage);
     });
 }
 

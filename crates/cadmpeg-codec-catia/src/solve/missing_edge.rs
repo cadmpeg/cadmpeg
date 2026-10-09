@@ -843,7 +843,7 @@ fn mesh_edge_occurrences(
             return Ok(None);
         };
         // A forward match at a start position wins over a reversed one.
-        let (matches, _matches_storage) = ctx.with_scoped_storage(
+        let matches = ctx.with_scoped_storage(
             OPERATION,
             || -> Result<BTreeMap<(usize, usize, usize), bool>, CodecError> {
                 let mut matches = BTreeMap::new();
@@ -893,7 +893,7 @@ fn mesh_edge_occurrences(
         // occurrences shows as two neighbouring keys.
         let mut previous_cycle = None;
         let mut occurrences = Vec::new();
-        let mut charged_steps = matches.iter();
+        let mut charged_steps = matches.0.iter();
         while let Some((&(face, cycle, start), &reversed)) =
             ctx.next_charged(&mut charged_steps, "catia_mesh_occurrence_runs")?
         {
@@ -1250,14 +1250,14 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     let Some((edge_rows, trims)) = parsed else {
         return Ok(None);
     };
-    let (face_handles, _face_handle_storage) =
+    let face_handles =
         ctx.with_scoped_storage("catia repeated edge face handles", || {
             ctx.collect_vec(
                 trims.iter().map(|trim| trim.packet.handles()),
                 "catia repeated edge face handles",
             )
         })?;
-    repeated_edge_face_handle_candidates_from_sets(ctx, &edge_rows, &face_handles, serialized)
+    repeated_edge_face_handle_candidates_from_sets(ctx, &edge_rows, &face_handles.0, serialized)
 }
 
 /// Refine unresolved repeated-face domains with positive trim-handle evidence.
@@ -3703,7 +3703,7 @@ fn standard_mesh_missing_edge_assignment_domains(
             }
         }
         if let Some(candidates) = edge_candidates {
-            let (points, _points_storage) =
+            let points =
                 ctx.with_scoped_storage("catia_mesh_corner_candidate_points", || {
                     let mut points = BTreeSet::new();
                     for pair in
@@ -3719,7 +3719,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     }
                     Ok::<_, CodecError>(points)
                 })?;
-            if !points.is_empty() {
+            if !points.0.is_empty() {
                 for corner in [run.start, end] {
                     let key = (run.face, run.cycle, corner);
                     if let Some(stored) = ctx.get_mut_hash_map(
@@ -3731,7 +3731,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                             stored,
                             |point| {
                                 ctx.contains_btree_set(
-                                    &points,
+                                    &points.0,
                                     point,
                                     "catia_mesh_corner_point_filter",
                                 )
@@ -3741,7 +3741,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     } else {
                         scratch.with_storage(|| {
                             let copied = ctx.collect_btree_set(
-                                points.iter().copied(),
+                                points.0.iter().copied(),
                                 "catia_mesh_corner_point_copy",
                             )?;
                             ctx.insert_hash_map(
@@ -3885,14 +3885,14 @@ fn standard_mesh_missing_edge_assignments(
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     canonicalize_spans: bool,
 ) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>>, CodecError> {
-    let Some((context, _context_storage)) =
+    let Some(context) =
         StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)?
     else {
         return Ok(None);
     };
     let Some((domains, _)) = standard_mesh_missing_edge_assignment_domains(
         ctx,
-        &context,
+        &context.0,
         edge_candidates,
         canonicalize_spans,
         false,
@@ -3948,12 +3948,12 @@ pub(crate) fn standard_mesh_boundary_assignments(
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
 ) -> Result<Option<Vec<Vec<MeshFaceBoundaryAssignment>>>, CodecError> {
-    let Some((context, _context_storage)) =
+    let Some(context) =
         StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)?
     else {
         return Ok(None);
     };
-    standard_mesh_boundary_assignments_from_context(ctx, &context, edge_candidates)
+    standard_mesh_boundary_assignments_from_context(ctx, &context.0, edge_candidates)
 }
 
 fn standard_mesh_boundary_assignments_from_context(
@@ -4567,16 +4567,16 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
         while let Some(assignments) =
             ctx.next_charged(&mut charged_steps, "catia_prune_face_support_rows")?
         {
-            let mut evaluated = Vec::new();
             let mut evaluated_storage =
                 ctx.reserve_scoped(0, "catia_prune_evaluated_assignments")?;
+            let mut evaluated = Vec::new();
             'assignment: for (index, assignment) in ctx
                 .admit_iter(&*assignments, "catia_prune_evaluated_assignments")?
                 .enumerate()
             {
-                let mut support = BTreeMap::<usize, BTreeSet<[usize; 2]>>::new();
                 let mut support_storage =
                     ctx.reserve_scoped(0, "catia_prune_assignment_support")?;
+                let mut support = BTreeMap::<usize, BTreeSet<[usize; 2]>>::new();
                 let mut boundaries = assignment.boundaries.iter();
                 while let Some(boundary) = ctx.next_charged(&mut boundaries, OPERATION)? {
                     let Some(boundary_support) = support_storage.with_storage(|| {
@@ -4614,18 +4614,18 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             if evaluated.is_empty() {
                 return Ok(None);
             }
-            let (mut kept, kept_storage) = ctx
+            let mut kept = ctx
                 .with_scoped_storage("catia_prune_assignment_marks", || {
                     ctx.alloc_filled(assignments.len(), false, "catia_prune_assignment_marks")
                 })?;
             for &(index, _, _) in ctx.admit_iter(&evaluated, "catia_prune_retained_assignments")? {
-                kept[index] = true;
+                kept.0[index] = true;
             }
             let mut index = 0;
             ctx.retain_vec(
                 assignments,
                 |_| {
-                    let selected = kept[index];
+                    let selected = kept.0[index];
                     index += 1;
                     Ok(selected)
                 },
@@ -4639,7 +4639,8 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
                     "catia_prune_assignment_supports",
                 )
             })?;
-            drop((evaluated_storage, kept, kept_storage));
+            drop(evaluated_storage);
+            drop(kept);
             face_supports.push(support_rows);
         }
         let mut charged_steps = candidates.iter_mut().enumerate();
@@ -4655,7 +4656,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             .into_iter()
             .flatten()
             {
-                let (support, support_storage) = ctx.with_scoped_storage(
+                let support = ctx.with_scoped_storage(
                     "catia_prune_incident_support_pairs",
                     || -> Result<BTreeSet<[usize; 2]>, CodecError> {
                         let mut support = BTreeSet::new();
@@ -4684,7 +4685,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
                         Ok(support)
                     },
                 )?;
-                if support.is_empty() {
+                if support.0.is_empty() {
                     return Ok(None);
                 }
                 if let Some((allowed, _storage)) = &mut allowed {
@@ -4692,7 +4693,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
                         allowed,
                         |pair| {
                             ctx.contains_btree_set(
-                                &support,
+                                &support.0,
                                 pair,
                                 "catia_prune_incident_support_pairs",
                             )
@@ -4700,17 +4701,17 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
                         "catia_prune_incident_support_pairs",
                     )?;
                 } else {
-                    allowed = Some((support, support_storage));
+                    allowed = Some(support);
                 }
             }
-            let Some((allowed, _allowed_storage)) = allowed else {
+            let Some(allowed) = allowed else {
                 return Ok(None);
             };
             ctx.retain_vec(
                 domain,
                 |pair| {
                     ctx.contains_btree_set(
-                        &allowed,
+                        &allowed.0,
                         &[pair[0].min(pair[1]), pair[0].max(pair[1])],
                         "catia missing edge allowed pairs",
                     )
@@ -4755,7 +4756,7 @@ fn standard_mesh_assignment_corner_points(
     if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
         return Ok(None);
     }
-    let (runs, _run_storage) = ctx.with_scoped_storage("catia_corner_run_workspace", || {
+    let runs = ctx.with_scoped_storage("catia_corner_run_workspace", || {
         mesh_edge_runs(ctx, &analysis)
     })?;
     let Some(assignments) =
@@ -4770,7 +4771,7 @@ fn standard_mesh_assignment_corner_points(
     // each corner are indexed for narrowing.
     let mut run_constraints = Vec::new();
     let mut constraints_by_corner = HashMap::<MeshCorner, Vec<usize>>::new();
-    let mut charged_steps = runs.iter();
+    let mut charged_steps = runs.0.iter();
     while let Some(run) = ctx.next_charged(&mut charged_steps, "catia_corner_run_constraints")? {
         let Some(pair) = edge_points[run.edge] else {
             continue;
@@ -5044,8 +5045,8 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
         >::new();
         for (face, assignments) in ctx.admit_iter(&faces, OPERATION)?.enumerate() {
             for &edge in ctx.admit_iter(&edges_by_face[face], OPERATION)? {
-                let mut domain = BTreeSet::new();
                 let mut domain_storage = ctx.reserve_scoped(0, OPERATION)?;
+                let mut domain = BTreeSet::new();
                 let mut complete = true;
                 let mut assignments = assignments.iter();
                 while let Some(assignment) = ctx.next_charged(&mut assignments, OPERATION)? {
@@ -5718,8 +5719,8 @@ impl PortCandidateSearch<'_, '_> {
         }
         let _depth = ctx.enter_nested(OPERATION)?;
         ctx.charge_work(1, OPERATION)?;
-        let mut propagated = Vec::new();
         let mut propagated_storage = ctx.reserve_scoped(0, "catia_port_search_propagated")?;
+        let mut propagated = Vec::new();
         // Assign every edge with one compatible orientation until none is
         // forced, then branch on the edge with the fewest.
         let branch = loop {

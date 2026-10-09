@@ -1761,28 +1761,28 @@ fn parse_outer_container_declarations(
         else {
             continue;
         };
-        let (canonical_stream_name, _canonical_storage) = ctx.format_scoped(
+        let canonical_stream_name = ctx.format_scoped(
             format_args!("{first:x}_{middle:08x}_{last:x}"),
             "catia_container_stream_name",
         )?;
-        let (prefixed_stream_name, _prefixed_storage) = ctx.format_scoped(
-            format_args!("_{canonical_stream_name}"),
+        let prefixed_stream_name = ctx.format_scoped(
+            format_args!("_{}", canonical_stream_name.0),
             "catia_container_stream_name",
         )?;
         let stream_name = match (
             ctx.contains_hash_set(
                 &descriptor_names,
-                canonical_stream_name.as_str(),
+                canonical_stream_name.0.as_str(),
                 "catia_container_descriptor_lookup",
             )?,
             ctx.contains_hash_set(
                 &descriptor_names,
-                prefixed_stream_name.as_str(),
+                prefixed_stream_name.0.as_str(),
                 "catia_container_descriptor_lookup",
             )?,
         ) {
-            (true, false) => canonical_stream_name.as_str(),
-            (false, true) => prefixed_stream_name.as_str(),
+            (true, false) => canonical_stream_name.0.as_str(),
+            (false, true) => prefixed_stream_name.0.as_str(),
             (false, false) | (true, true) => continue,
         };
         let Some(ordinal) = View::u32_le_at(data, start + 12) else {
