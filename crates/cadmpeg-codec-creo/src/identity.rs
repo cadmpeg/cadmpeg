@@ -132,8 +132,9 @@ pub(crate) fn uniquely_identified_rows_checked<'ctx, 'a, T>(
             }
         }
     }
-    let (mut unique, mut unique_storage) =
-        ctx.temporary_vec(0, "creo unique-row projection storage")?;
+    let unique_owned_storage = ctx.temporary_vec(0, "creo unique-row projection storage")?;
+    let mut unique_storage = unique_owned_storage.1;
+    let mut unique = unique_owned_storage.0;
     for row in ctx.admit_iter(rows, "creo unique-row identity work")? {
         if counts.get(&id(row)) == Some(&1) {
             unique_storage
@@ -291,14 +292,17 @@ mod tests {
             cadmpeg_core::decode::u64_from_index("creo:visibgeom:shell#7".len());
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited root admitted");
-        let (id, reservation) = compose_scoped::<ShellId>(
+        let id_owned_storage = compose_scoped::<ShellId>(
             &ctx,
             &crate::identity::VISIBGEOM_SHELL,
             7,
             "creo temporary curve identity",
         )
         .expect("service temporary identity admitted");
+        let reservation = id_owned_storage.1;
+        let id = id_owned_storage.0;
         assert_eq!(id.as_str(), "creo:visibgeom:shell#7");
+        drop(id);
         drop(reservation);
         compose_scoped::<ShellId>(
             &ctx,
@@ -427,8 +431,10 @@ mod tests {
                 policy.limits.max_materialized_bytes = cap;
                 policy.limits.max_retained_bytes = 0;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                let (unique, storage) =
+                let unique_owned_storage =
                     super::uniquely_identified_rows_checked(&ctx, &rows, |row| *row)?;
+                let storage = unique_owned_storage.1;
+                let unique = unique_owned_storage.0;
                 assert_eq!(unique, [&2]);
                 drop(unique);
                 drop(storage);
@@ -441,8 +447,10 @@ mod tests {
             policy.limits.max_materialized_bytes = cap;
             policy.limits.max_retained_bytes = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let (unique, storage) =
+            let unique_owned_storage =
                 super::uniquely_identified_rows_checked(&ctx, &rows, |row| *row)?;
+            let storage = unique_owned_storage.1;
+            let unique = unique_owned_storage.0;
             if release {
                 drop(unique);
                 drop(storage);
