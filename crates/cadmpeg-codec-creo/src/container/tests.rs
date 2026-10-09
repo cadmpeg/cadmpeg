@@ -1440,3 +1440,5 @@ fn version_line_trim_refuses_work() {
 }
 
 mod identity_index;
+
+mod family_pointer;
