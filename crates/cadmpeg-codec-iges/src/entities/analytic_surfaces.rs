@@ -845,15 +845,13 @@ pub(super) fn project<'ctx>(
                 continue;
             }
         };
-        sequences.record_surface(
-            &crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
-            entry.sequence,
-            ctx,
-        )?;
+        let surface_id =
+            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+        sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         ctx.reserve_vec(&mut ir.model.surfaces, 1, "iges analytic-surface slots")?;
         ctx.charge_entities(1, "iges_geometry_analytic_surfaces")?;
         ir.model.surfaces.push(Surface {
-            id: crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
+            id: surface_id,
             geometry: result,
             source_object: Some(match source_object(entry, ctx) {
                 Ok(source) => source,

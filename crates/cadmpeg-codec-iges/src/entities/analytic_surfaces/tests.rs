@@ -489,3 +489,5 @@ fn analytic_location_index_refuses_work_and_scoped_storage() {
 }
 
 mod entry_refusal;
+
+mod identity_custody;
