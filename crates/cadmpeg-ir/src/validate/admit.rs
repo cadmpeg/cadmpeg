@@ -5,6 +5,8 @@
 //! validator. Each route names the [`Check`] variants that may reject a
 //! candidate; findings outside that set do not affect admission.
 
+pub(crate) mod incremental;
+
 use crate::annotations::Annotations;
 use crate::document::CadIr;
 use crate::report::{
@@ -156,6 +158,52 @@ pub fn admit_with_native_unknowns(
     Ok(Ok(filter_checks(ctx, report, allowed)?))
 }
 
+/// Validate a sparse replacement against the combined document with one model index.
+pub(crate) fn admit_annotation_delta(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    (format, records): (&str, &[crate::unknown::UnknownRecord]),
+    annotations: &crate::annotations::SparseAnnotationTransaction<'_, '_>,
+    allowed: &[Check],
+) -> Result<Result<ValidationReport, crate::native::NativeConvertError>, CodecError> {
+    let order = match native_unknown_order(ctx, records)? {
+        Ok(order) => order,
+        Err(error) => return Ok(Err(error)),
+    };
+    let index =
+        crate::index::ModelIndex::with_native_unknowns(ir, format, records, &order.positions, ctx)?;
+    let mut report = super::validate_model_with_index(ctx, ir, Vec::new(), &index)?;
+    let mut old = Vec::new();
+    super::validate_annotations(
+        ctx,
+        &index,
+        annotations.base(),
+        std::iter::empty(),
+        &mut old,
+    )?;
+    for finding in old {
+        ctx.charge_work(1, "candidate annotation replacement findings")?;
+        if let Some(id) = &finding.entity {
+            if annotations.selected(id)? {
+                continue;
+            }
+        }
+        ctx.push_vec(
+            &mut report.findings,
+            finding,
+            "candidate annotation findings",
+        )?;
+    }
+    super::validate_annotations(
+        ctx,
+        &index,
+        annotations.annotations(),
+        std::iter::empty(),
+        &mut report.findings,
+    )?;
+    Ok(Ok(filter_checks(ctx, report, allowed)?))
+}
+
 /// Check source-product link grammar and distinct identities without validating the model.
 /// Raw images and link text remain borrowed throughout the scoped identity sort.
 pub fn validate_native_unknowns(
@@ -174,26 +222,8 @@ fn native_unknown_order<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     records: &[crate::unknown::UnknownRecord],
 ) -> Result<Result<NativeUnknownOrder<'ctx>, crate::native::NativeConvertError>, CodecError> {
-    for record in records {
-        ctx.charge_work(1, "source product record scan")?;
-        for (position, link) in record.links().iter().enumerate() {
-            for _ in 0..4 {
-                ctx.charge_work(u64_from_index(link.len()), "source product link grammar")?;
-            }
-            ctx.charge_work(1, "source product link grammar")?;
-            if !crate::ids::is_valid_identity(link) {
-                let message = ctx.format_retained(
-                    format_args!(
-                        "native unknown {} link {position}: identity is invalid: {link:?}",
-                        record.id()
-                    ),
-                    "source product link error",
-                )?;
-                return Ok(Err(crate::native::NativeConvertError::InvalidCollection(
-                    message,
-                )));
-            }
-        }
+    if let Err(error) = native_unknown_grammar(ctx, records)? {
+        return Ok(Err(error));
     }
     let order = ctx.with_scoped_storage("source product identity order", || {
         let mut order = Vec::new();
@@ -236,6 +266,102 @@ fn native_unknown_order<'ctx>(
         positions: order.0,
         _storage: order.1,
     }))
+}
+
+fn native_unknown_grammar(
+    ctx: &DecodeContext<'_>,
+    records: &[crate::unknown::UnknownRecord],
+) -> Result<Result<(), crate::native::NativeConvertError>, CodecError> {
+    for record in records {
+        ctx.charge_work(1, "source product record scan")?;
+        for (position, link) in record.links().iter().enumerate() {
+            for _ in 0..4 {
+                ctx.charge_work(u64_from_index(link.len()), "source product link grammar")?;
+            }
+            ctx.charge_work(1, "source product link grammar")?;
+            if !crate::ids::is_valid_identity(link) {
+                let message = ctx.format_retained(
+                    format_args!(
+                        "native unknown {} link {position}: identity is invalid: {link:?}",
+                        record.id()
+                    ),
+                    "source product link error",
+                )?;
+                return Ok(Err(crate::native::NativeConvertError::InvalidCollection(
+                    message,
+                )));
+            }
+        }
+    }
+    Ok(Ok(()))
+}
+
+/// Cached source identity admission. Link edits do not change identity order.
+#[derive(Debug)]
+pub(crate) struct NativeUnknownAdmission<'ctx> {
+    dirty: std::collections::BTreeSet<usize>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx> NativeUnknownAdmission<'ctx> {
+    pub(crate) fn build(
+        ctx: &'ctx DecodeContext<'_>,
+        records: &[crate::unknown::UnknownRecord],
+    ) -> Result<Result<Self, crate::native::NativeConvertError>, CodecError> {
+        if let Err(error) = native_unknown_order(ctx, records)? {
+            return Ok(Err(error));
+        }
+        Ok(Ok(Self {
+            dirty: std::collections::BTreeSet::new(),
+            storage: ctx.reserve_scoped(0, "source admission storage")?,
+        }))
+    }
+
+    pub(crate) fn dirty(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        position: usize,
+    ) -> Result<(), CodecError> {
+        mark_unknown_dirty(
+            ctx,
+            &mut self.storage,
+            &mut self.dirty,
+            position,
+            "changed source grammar positions",
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn check(
+        &mut self,
+        ctx: &'ctx DecodeContext<'_>,
+        records: &[crate::unknown::UnknownRecord],
+    ) -> Result<Result<(), crate::native::NativeConvertError>, CodecError> {
+        for &position in &self.dirty {
+            let record = records
+                .get(position)
+                .ok_or_else(|| CodecError::malformed("changed source record is absent"))?;
+            if let Err(error) = native_unknown_grammar(ctx, std::slice::from_ref(record))? {
+                return Ok(Err(error));
+            }
+        }
+        self.dirty.clear();
+        self.storage = ctx.reserve_scoped(0, "source admission storage")?;
+        Ok(Ok(()))
+    }
+}
+
+fn mark_unknown_dirty(
+    ctx: &DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    dirty: &mut std::collections::BTreeSet<usize>,
+    position: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let levels = u64::from(usize::BITS - dirty.len().leading_zeros()) + 1;
+    ctx.charge_work(levels * 32, operation)?;
+    storage.with_storage(|| ctx.insert_btree_set(dirty, position, operation))?;
+    Ok(())
 }
 
 #[cfg(test)]
