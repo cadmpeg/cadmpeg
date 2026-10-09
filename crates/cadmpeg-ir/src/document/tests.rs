@@ -19,6 +19,7 @@ mod append;
 mod feature_parents;
 mod procedural;
 mod procedural_wire;
+mod row_field_count;
 mod unknowns;
 
 #[test]
