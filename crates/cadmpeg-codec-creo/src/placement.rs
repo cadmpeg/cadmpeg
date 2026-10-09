@@ -703,11 +703,13 @@ fn generated_cylinder_section_transform(
     if !points.ambiguous.is_empty() {
         return Ok(None);
     }
-    let (mut correspondences, mut correspondence_storage) = ctx
+    let correspondences_owned_storage = ctx
         .temporary_vec::<([f64; 2], [f64; 3], UnitVector3)>(
             0,
             "creo cylinder placement correspondence storage",
         )?;
+    let mut correspondence_storage = correspondences_owned_storage.1;
+    let mut correspondences = correspondences_owned_storage.0;
     let mut coordinate_scale = 1.0f64;
     let mut first_offset = None::<usize>;
     for table in ctx.admit_iter(entity_tables, "creo cylinder placement table traversal")? {
@@ -933,8 +935,9 @@ fn generated_planar_section_transform(
         return Ok(None);
     };
     let caps = [first_cap, second_cap];
-    let (mut sides, mut side_storage) =
-        ctx.temporary_vec(0, "creo planar placement side storage")?;
+    let sides_owned_storage = ctx.temporary_vec(0, "creo planar placement side storage")?;
+    let mut side_storage = sides_owned_storage.1;
+    let mut sides = sides_owned_storage.0;
     let mut entries = table.entries[2..].iter();
     while entries.len() != 0 {
         let Some(entry) = ctx.next_charged(
@@ -1008,8 +1011,9 @@ fn generated_planar_section_transform(
             .zip(right)
             .all(|(left, right)| close(left, right))
     };
-    let (mut candidates, mut candidate_storage) =
-        ctx.temporary_vec(0, "creo planar placement candidate storage")?;
+    let candidates_owned_storage = ctx.temporary_vec(0, "creo planar placement candidate storage")?;
+    let mut candidate_storage = candidates_owned_storage.1;
+    let mut candidates = candidates_owned_storage.0;
     for first_index in
         ctx.admit_iter(0..sides.len(), "creo planar placement first side traversal")?
     {
@@ -1855,8 +1859,8 @@ pub(crate) fn resolve(
 ) -> Result<Vec<FeatureSectionTransform>, CodecError> {
     let mut lookup = PlacementLookup::new(ctx, sources, definitions)?;
     let mut result = Vec::new();
-    let mut resolved_definitions = std::collections::HashSet::new();
     let mut resolved_storage = ctx.reserve_scoped(0, "creo resolved placement identity storage")?;
+    let mut resolved_definitions = std::collections::HashSet::new();
     for definition in ctx.admit_iter(definitions, "creo placement definition traversal")? {
         let Some(section) = &definition.section_3d else {
             continue;
@@ -1877,17 +1881,18 @@ pub(crate) fn resolve(
         }
         .map(|transform| apply_section_orientation(ctx, transform, section))
         .transpose()?;
-        let (mut reference_ids, mut reference_storage) =
-            ctx.temporary_vec(0, "creo placement reference storage")?;
+        let reference_ids_owned_storage = ctx.temporary_vec(0, "creo placement reference storage")?;
+        let mut reference_storage = reference_ids_owned_storage.1;
+        let mut reference_ids = reference_ids_owned_storage.0;
         if let Some(id) = section.reference_plane_datum_geometry_id {
             reference_storage.with_storage(|| {
                 ctx.reserve_vec(&mut reference_ids, 1, "creo placement reference IDs")
             })?;
             reference_ids.push(id);
         } else {
-            let mut reference_seen = std::collections::HashSet::new();
             let mut seen_storage =
                 ctx.reserve_scoped(0, "creo placement reference identity storage")?;
+            let mut reference_seen = std::collections::HashSet::new();
             let (named, positional): (
                 &[u32],
                 &[crate::feature::definitions::FeatureSectionReferencePlane],
@@ -1941,8 +1946,9 @@ pub(crate) fn resolve(
                 },
             },
         };
-        let (mut candidates, mut candidate_storage) =
-            ctx.temporary_vec::<SectionFrameCandidate>(0, "creo placement candidate storage")?;
+        let candidates_owned_storage = ctx.temporary_vec::<SectionFrameCandidate>(0, "creo placement candidate storage")?;
+        let mut candidate_storage = candidates_owned_storage.1;
+        let mut candidates = candidates_owned_storage.0;
         for &reference_id in ctx.admit_iter(
             &reference_ids,
             "creo placement reference candidate traversal",
