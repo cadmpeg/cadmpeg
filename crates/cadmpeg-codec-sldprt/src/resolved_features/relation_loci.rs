@@ -435,7 +435,9 @@ pub(super) fn relation_operand_loci_in(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Result<Option<Vec<SketchLocus>>, CodecError> {
     const OPERATION: &str = "collect SLDPRT marker relation operand loci";
-    let (owners, _owners_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let _owners_storage;
+    let owners;
+    (owners, _owners_storage) = ctx.with_scoped_storage(OPERATION, || {
         relation_owner_markers_in(ctx, relation, markers)
     })?;
     let mut loci = Vec::new();
@@ -537,7 +539,9 @@ pub(super) fn relation_constraint_is_inactive(
     definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
 ) -> Result<bool, CodecError> {
-    let (profile, _profile_storage) = ctx
+    let _profile_storage;
+    let profile;
+    (profile, _profile_storage) = ctx
         .with_scoped_storage("index SLDPRT relation sketch entities", || {
             ProfileEntities::new(ctx, sketch_entities)
         })?;
@@ -741,7 +745,9 @@ pub(super) fn typed_relation_definition_with_profile_axis(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     profile_axis: Option<ProfileAxis>,
 ) -> Result<Option<SketchConstraintDefinitionInput>, CodecError> {
-    let (entities, _entities_storage) = ctx
+    let _entities_storage;
+    let entities;
+    (entities, _entities_storage) = ctx
         .with_scoped_storage("index SLDPRT relation sketch entities", || {
             ProfileEntities::new(ctx, profile.sketch_entities)
         })?;
@@ -827,7 +833,9 @@ pub(super) fn relation_definition(
     };
     let resolve_point = |operand: usize| -> Result<Option<SketchLocus>, CodecError> {
         const SCAN: &str = "scan SLDPRT relation point identities";
-        let (geometry_ref, _geometry_ref_storage) =
+        let _geometry_ref_storage;
+        let geometry_ref;
+        (geometry_ref, _geometry_ref_storage) =
             ctx.format_scoped(format_args!("{}:operand:{operand}", relation.id), SCAN)?;
         if let Some(entity) = entities
             .with_geometry_ref(ctx, &geometry_ref, SCAN)?
@@ -1705,7 +1713,9 @@ fn solver_line_entity(
             return Ok(None);
         }
     }
-    let (geometry_ref, _geometry_ref_storage) = ctx.format_scoped(
+    let _geometry_ref_storage;
+    let geometry_ref;
+    (geometry_ref, _geometry_ref_storage) = ctx.format_scoped(
         format_args!(
             "{}:solver-line:{}",
             relation.feature_ref, operand.entity_index
@@ -1817,7 +1827,9 @@ fn unique_profile_measured_loci_pair(
     else {
         return Ok(None);
     };
-    let (loci, _loci_storage) =
+    let _loci_storage;
+    let loci;
+    (loci, _loci_storage) =
         ctx.with_scoped_storage(OPERATION, || canonical_profile_loci(ctx, sketch, entities))?;
     let mut selected: Option<(&SketchLocus, &SketchLocus)> = None;
     if !ctx.all_by(
@@ -1918,7 +1930,9 @@ fn unique_profile_measured_locus(
     let Some(known_point) = profile_locus_point_charged(ctx, known, entities, OPERATION)? else {
         return Ok(None);
     };
-    let (loci, _loci_storage) =
+    let _loci_storage;
+    let loci;
+    (loci, _loci_storage) =
         ctx.with_scoped_storage(OPERATION, || canonical_profile_loci(ctx, sketch, entities))?;
     let mut selected: Option<&SketchLocus> = None;
     if !ctx.all_by(
@@ -1955,7 +1969,9 @@ pub(super) fn unique_profile_distance_locus(
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Result<Option<SketchLocus>, CodecError> {
-    let (entities, _entities_storage) = ctx
+    let _entities_storage;
+    let entities;
+    (entities, _entities_storage) = ctx
         .with_scoped_storage("index SLDPRT relation sketch entities", || {
             ProfileEntities::new(ctx, sketch_entities)
         })?;
@@ -1989,7 +2005,9 @@ pub(super) fn doubled_profile_distance_loci(
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
 ) -> Result<Option<(SketchLocus, SketchLocus)>, CodecError> {
-    let (entities, _entities_storage) = ctx
+    let _entities_storage;
+    let entities;
+    (entities, _entities_storage) = ctx
         .with_scoped_storage("index SLDPRT relation sketch entities", || {
             ProfileEntities::new(ctx, sketch_entities)
         })?;
@@ -3291,7 +3309,9 @@ fn dynamic_marker_point_candidates(
     index: RelationIndex<'_, '_>,
 ) -> Result<Vec<SketchLocus>, CodecError> {
     const OPERATION: &str = "select SLDPRT dynamic marker points";
-    let (identities, _identity_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let _identity_storage;
+    let identities;
+    (identities, _identity_storage) = ctx.with_scoped_storage(OPERATION, || {
         MarkerIdentities::collect(ctx, marker, index.markers_by_id())
     })?;
     let centers = dynamic_marker_center_loci(ctx, &identities, sketch, index)?;
@@ -3361,7 +3381,9 @@ fn dynamic_marker_center_candidates(
     index: RelationIndex<'_, '_>,
 ) -> Result<Option<Vec<SketchLocus>>, CodecError> {
     const OPERATION: &str = "select SLDPRT dynamic marker centers";
-    let (identities, _identity_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let _identity_storage;
+    let identities;
+    (identities, _identity_storage) = ctx.with_scoped_storage(OPERATION, || {
         MarkerIdentities::collect(ctx, marker, index.markers_by_id())
     })?;
     dynamic_marker_center_loci(ctx, &identities, sketch, index)
@@ -3420,7 +3442,9 @@ fn dynamic_marker_line_candidates(
     index: RelationIndex<'_, '_>,
 ) -> Result<Vec<SketchEntityId>, CodecError> {
     const OPERATION: &str = "select SLDPRT dynamic marker lines";
-    let (identities, _identity_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let _identity_storage;
+    let identities;
+    (identities, _identity_storage) = ctx.with_scoped_storage(OPERATION, || {
         MarkerIdentities::collect(ctx, marker, index.markers_by_id())
     })?;
     let mut candidates = marker_entities(
@@ -3692,7 +3716,9 @@ fn unique_profile_line_point_locus(
     let Some(line) = entities.entity(ctx, line, OPERATION)? else {
         return Ok(None);
     };
-    let (loci, _loci_storage) =
+    let _loci_storage;
+    let loci;
+    (loci, _loci_storage) =
         ctx.with_scoped_storage(OPERATION, || collect_profile_loci(ctx, sketch, entities))?;
     let mut selected: Option<&SketchLocus> = None;
     if !ctx.all_by(
@@ -4245,7 +4271,9 @@ fn qualified_point_loci<'a>(
     loci_by_marker: &'a HashMap<String, Vec<SketchLocus>>,
 ) -> Result<Option<&'a [SketchLocus]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT qualified point loci";
-    let (key, _key_storage) = ctx.format_scoped(
+    let _key_storage;
+    let key;
+    (key, _key_storage) = ctx.format_scoped(
         format_args!("{marker_id}{QUALIFIED_POINT_SUFFIX}"),
         OPERATION,
     )?;
@@ -4266,8 +4294,8 @@ pub(super) fn marker_point_locus(
             return Ok(Some(locus));
         }
     }
-    let mut visited = HashSet::new();
     let mut visited_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut visited = HashSet::new();
     resolved_marker_locus(
         ctx,
         marker_id,
@@ -4306,8 +4334,8 @@ fn qualified_or_linked_point_locus(
             ) {
                 continue;
             }
-            let mut visited = HashSet::new();
             let mut visited_storage = ctx.reserve_scoped(0, OPERATION)?;
+            let mut visited = HashSet::new();
             let Some(locus) = resolved_marker_locus(
                 ctx,
                 &link.entity_ref,
@@ -4512,7 +4540,9 @@ pub(super) fn single_marker_line_entity(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     sketch_entities: &[SketchEntity],
 ) -> Result<Option<SketchEntityId>, CodecError> {
-    let (entities, _entities_storage) = ctx
+    let _entities_storage;
+    let entities;
+    (entities, _entities_storage) = ctx
         .with_scoped_storage("index SLDPRT relation sketch entities", || {
             ProfileEntities::new(ctx, sketch_entities)
         })?;
@@ -4721,11 +4751,15 @@ pub(super) fn profile_loci_by_marker(
     sketch_entities: &[SketchEntity],
     lanes: &[FeatureInputLane],
 ) -> Result<HashMap<String, Vec<SketchLocus>>, CodecError> {
-    let (entities, _entities_storage) = ctx
+    let _entities_storage;
+    let entities;
+    (entities, _entities_storage) = ctx
         .with_scoped_storage("index SLDPRT relation sketch entities", || {
             ProfileEntities::new(ctx, sketch_entities)
         })?;
-    let (markers, _markers_storage) = ctx
+    let _markers_storage;
+    let markers;
+    (markers, _markers_storage) = ctx
         .with_scoped_storage("index SLDPRT relation markers", || {
             RelationMarkers::new(ctx, lanes)
         })?;
@@ -5216,7 +5250,9 @@ pub(super) fn profile_loci_in(
     // A point marker without coordinates resolves through its links to the one
     // endpoint they share; each pass can resolve markers the previous pass
     // made reachable.
-    let (mut pending, _pending_storage) = ctx.with_scoped_storage(LINKED_OPERATION, || {
+    let _pending_storage;
+    let mut pending;
+    (pending, _pending_storage) = ctx.with_scoped_storage(LINKED_OPERATION, || {
         let mut pending = Vec::new();
         for lane in ctx.admit_iter(lanes, LINKED_OPERATION)? {
             for marker in ctx.admit_iter(&lane.sketch_entities, LINKED_OPERATION)? {
@@ -5469,7 +5505,9 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
     sketch_entities: &[SketchEntity],
     lanes: &[FeatureInputLane],
 ) -> Result<HashMap<&'a str, Vec<MarkerTransform>>, CodecError> {
-    let (entities, _entity_storage) = ctx
+    let _entity_storage;
+    let entities;
+    (entities, _entity_storage) = ctx
         .with_scoped_storage("index SLDPRT marker transform entities", || {
             ProfileEntities::new(ctx, sketch_entities)
         })?;
