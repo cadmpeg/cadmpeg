@@ -241,6 +241,7 @@ fn text_font_definition(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<TextFontDefinition>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() { return Err(refusal.into()); }
     let parameter_end = record.parameter_end();
     let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
         && entry.status.use_flag(global_table) == Some(UseFlag::Definition);
@@ -281,7 +282,7 @@ fn text_font_definition(
     let mut cursor = 6;
     let mut character_codes = 0_u128;
     let mut characters = 0..count;
-    while ctx
+    while characters.len() != 0 && ctx
         .next_charged(&mut characters, "iges text font character traversal")?
         .is_some()
     {
@@ -309,7 +310,7 @@ fn text_font_definition(
         };
         cursor += 4;
         let mut motions = 0..count;
-        while ctx
+        while motions.len() != 0 && ctx
             .next_charged(&mut motions, "iges text font motion traversal")?
             .is_some()
         {
