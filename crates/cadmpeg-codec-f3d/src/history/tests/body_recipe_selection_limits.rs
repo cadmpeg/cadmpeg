@@ -784,3 +784,5 @@ fn external_body_preserves_selected_identity() {
         "f3d:brep:body#1"
     );
 }
+
+mod stream_keys;
