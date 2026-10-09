@@ -274,9 +274,14 @@ pub(super) fn surface_cache(
         matches!(token, Token::Ident(name) | Token::SubIdent(name) if name == "comp_spl_sur")
     ), "ASM compound surface cache search"));
     let decode = |pos| {
-        surface_block(ctx, scope, pos)
-            .transpose()
-            .map(|candidate| candidate.map(|(surface, _)| surface))
+        let (candidate, storage) = ctx.with_scoped_storage(
+            "ASM surface cache candidate",
+            || surface_block(ctx, scope, pos).transpose(),
+        )?;
+        match candidate {
+            Some((surface, _)) => storage.commit_value(surface).map(Some),
+            None => Ok(None),
+        }
     };
     let found = if compound {
         propagate_resource!(ctx.find_map(positions, decode, "ASM surface cache candidates"))
@@ -1149,4 +1154,6 @@ mod tests {
         };
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     }
+
+    mod attempt_storage;
 }
