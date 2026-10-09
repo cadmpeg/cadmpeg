@@ -3,3 +3,4 @@
 
 pub(crate) mod patching;
 pub(crate) mod targets;
+mod property_wrapper;
