@@ -92,7 +92,21 @@ impl EntityRows {
         self.ordered_surfaces.iter().copied()
     }
 
-    /// Borrow only the source offsets that a section rebase changes.
+    /// Rebase source offsets without changing indexed identities.
+    pub(crate) fn relocate_offsets(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        base: usize,
+    ) -> Result<(), CodecError> {
+        for row in ctx.admit_iter(&mut self.rows, "creo record child relocation traversal")? {
+            row.offset += base;
+            row.end_offset += base;
+        }
+        Ok(())
+    }
+
+    /// Borrow only the source offsets that a fixture changes.
+    #[cfg(test)]
     pub(crate) fn offsets_mut(&mut self) -> impl Iterator<Item = (&mut usize, &mut usize)> {
         self.rows
             .iter_mut()
@@ -205,5 +219,90 @@ mod tests {
         assert!(!rows.contains_surface(7));
         assert!(rows.contains_surface(11));
         assert_eq!(rows.surfaces_in_order().collect::<Vec<_>>(), [11]);
+    }
+
+    #[test]
+    fn offset_relocation_admits_actual_rows_before_mutation() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let fixture = || {
+            let mut first = dummy_table_entry(7);
+            first.offset = 3;
+            first.end_offset = 5;
+            let mut second = dummy_table_entry(9);
+            second.offset = 8;
+            second.end_offset = 11;
+            EntityRows::from_fixture(vec![first, second], &BTreeSet::from([7]))
+        };
+        for cap in 0..=2 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut rows = fixture();
+            let original_rows = rows.clone();
+            let result = rows.relocate_offsets(&ctx, 17);
+            if cap < 2 {
+                let Err(CodecError::ResourceLimit(original)) = result else {
+                    panic!("two present rows need two visits");
+                };
+                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(original.operation, "creo record child relocation traversal");
+                assert_eq!(original.used, 0);
+                assert_eq!(original.additional, 2);
+                assert_eq!(rows, original_rows);
+                assert!(matches!(rows.relocate_offsets(&ctx, 17),
+                    Err(CodecError::ResourceLimit(actual)) if actual == original));
+                assert_eq!(rows, original_rows);
+                assert_eq!(ctx.resource_refusal(), Some(original));
+            } else {
+                result.expect("exact two-row traversal");
+                assert_eq!((rows[0].offset, rows[0].end_offset), (20, 22));
+                assert_eq!((rows[1].offset, rows[1].end_offset), (25, 28));
+                assert!(rows.contains_surface(7));
+                assert!(rows.contains_non_surface(9));
+                assert_eq!(rows.surfaces(), &BTreeSet::from([7]));
+                assert_eq!(rows.surfaces_in_order().collect::<Vec<_>>(), [7]);
+                for (row, before) in rows.iter().zip(original_rows.iter()) {
+                    assert_eq!(row.entity_id, before.entity_id);
+                    assert_eq!(row.payload, before.payload);
+                    assert_eq!(row.prefixed, before.prefixed);
+                }
+                let original = ctx.charge_work_limit(1, "after actual row relocation")
+                    .expect_err("the two admitted visits use the exact cap");
+                assert_eq!(original.used, 2);
+                assert_eq!(original.additional, 1);
+                assert!(matches!(rows.relocate_offsets(&ctx, 17),
+                    Err(CodecError::ResourceLimit(actual)) if actual == original));
+                assert_eq!((rows[0].offset, rows[0].end_offset), (20, 22));
+            }
+        }
+    }
+
+    #[test]
+    fn empty_offset_relocation_is_free_and_preserves_original_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::CodecError;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut rows = EntityRows::default();
+        rows.relocate_offsets(&ctx, 17).expect("no source rows");
+        assert!(rows.is_empty());
+        assert!(ctx.resource_refusal().is_none());
+        let original = ctx.charge_work_limit(1, "after empty relocation").expect_err("zero cap");
+        assert!(matches!(rows.relocate_offsets(&ctx, 17),
+            Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert_eq!(ctx.resource_refusal(), Some(original));
+        assert!(rows.is_empty());
     }
 }
