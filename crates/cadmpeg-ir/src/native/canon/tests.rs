@@ -733,3 +733,75 @@ fn canonical_native_key_comparisons_admit_the_complete_key_bound() {
         );
     }
 }
+
+#[test]
+fn canonical_native_unknown_sequence_slot_refuses_before_the_child_producer() {
+    use std::cell::Cell;
+
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    struct Child<'a>(&'a Cell<usize>);
+    impl Serialize for Child<'_> {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            self.0.set(self.0.get() + 1);
+            serializer.serialize_str("retained child")
+        }
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let calls = Cell::new(0);
+    let mut sequence = CanonValue::for_record(&ctx).serialize_seq(None).unwrap();
+    let super::CanonError::Resource(cadmpeg_core::CodecError::ResourceLimit(original)) =
+        sequence.serialize_element(&Child(&calls)).unwrap_err()
+    else {
+        panic!("destination slot must refuse");
+    };
+    assert_eq!(original.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(original.operation, super::STORAGE);
+    assert_eq!(original.used, 0);
+    assert_eq!(original.additional, 1);
+    assert_eq!(calls.get(), 0);
+    assert!(sequence.out.is_empty());
+    assert_eq!(sequence.unfilled, 0);
+    let super::CanonError::Resource(cadmpeg_core::CodecError::ResourceLimit(repeated)) =
+        sequence.serialize_element(&Child(&calls)).unwrap_err()
+    else {
+        panic!("original refusal must remain");
+    };
+    assert_eq!(repeated, original);
+    assert_eq!(calls.get(), 0);
+    drop(sequence);
+    assert!(
+        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original)
+    );
+}
+
+#[test]
+fn canonical_native_unknown_sequence_keeps_the_reserved_slot_after_child_error() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    struct Refused;
+    impl Serialize for Refused {
+        fn serialize<S: Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("fixture rejects this element"))
+        }
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut sequence = CanonValue::for_record(&ctx).serialize_seq(None).unwrap();
+    sequence.serialize_element(&1).unwrap();
+    assert_eq!(
+        sequence.serialize_element(&Refused).unwrap_err().to_string(),
+        "fixture rejects this element"
+    );
+    assert_eq!(sequence.out, vec![serde_json::json!(1)]);
+    assert_eq!(sequence.unfilled, 1);
+    sequence.serialize_element(&2).expect("retry reuses the admitted slot");
+    assert_eq!(sequence.unfilled, 0);
+    assert_eq!(sequence.end().unwrap().render(), "[1,2]");
+    ctx.finish_session().unwrap();
+}
