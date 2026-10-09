@@ -294,6 +294,81 @@ fn native_class25_edge_descriptors_collector_preserves_work_refusal() {
 }
 
 #[test]
+fn native_class25_final_values_preserve_work_refusal() {
+    let bytes = class25_edge_run();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_source_work_refusal(
+        "catia_native_class25_descriptor_values",
+        |ctx| crate::native::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[]),
+        |nodes| nodes.first().is_some_and(|node| node.class25_descriptor.as_ref()
+            .is_some_and(|descriptor| cadmpeg_ir::scalar::FiniteReal::raw_lane(&descriptor.values) == [3.0, 7.0])),
+    );
+}
+
+#[test]
+fn native_class25_final_values_preserve_retained_refusal() {
+    let bytes = class25_edge_run();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let result = crate::test_support::with_retained_refusal(
+        &[],
+        "catia_native_class25_descriptor_values",
+        |ctx| {
+            let result = crate::native::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[]);
+            if let Err(CodecError::ResourceLimit(error)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(error));
+            }
+            result
+        },
+    );
+    assert!(matches!(result, Err(CodecError::ResourceLimit(error))
+        if error.operation == "catia_native_class25_descriptor_values"
+            && error.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn native_class25_orphan_descriptor_does_not_allocate_final_values() {
+    let bytes = class25_edge_run();
+    let descriptor_end = 5 + usize::from(bytes[3]);
+    let bytes = &bytes[..descriptor_end];
+    let records = crate::wire::records::consolidated_records(bytes);
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits, "catia_native_class25_descriptor_values", None,
+    );
+    let nodes = crate::test_support::with_service_context(|ctx| {
+        let result = crate::native::projection::consolidated_edge_nodes(ctx, bytes, &records, &[]);
+        assert!(ctx.resource_refusal().is_none());
+        result
+    }).expect("an orphan descriptor does not copy a final scalar lane");
+    assert!(nodes.is_empty());
+}
+
+#[test]
+fn native_class25_final_values_transfer_to_live_parent() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+
+    const MATERIALIZED_LIMIT: u64 = 16_384;
+    let bytes = class25_edge_run();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = MATERIALIZED_LIMIT;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("fixture root");
+    let nodes = ctx.with_scoped_storage("test class25 parent", || {
+        crate::native::projection::consolidated_edge_nodes(&ctx, &bytes, &records, &[])
+    }).expect("final descriptor transfers to its actual parent");
+    let [node] = nodes.0.as_slice() else { panic!("one native edge node") };
+    let descriptor = node.class25_descriptor.as_ref().expect("class25 descriptor");
+    assert_eq!(descriptor.record_id, 0x1234);
+    assert_eq!(cadmpeg_ir::scalar::FiniteReal::raw_lane(&descriptor.values), [3.0, 7.0]);
+    drop(nodes.0);
+    drop(nodes.1);
+    let available = ctx.reserve_scoped(MATERIALIZED_LIMIT, "test released class25 parent")
+        .expect("all backing releases after its actual native output");
+    drop(available);
+}
+
+#[test]
 fn native_catalog_entries_collector_preserves_work_refusal() {
     let bytes = crate::test_support::test_object_graph::catalog_stream(&[
         "CATCatalogManager",

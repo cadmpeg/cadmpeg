@@ -1216,7 +1216,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     };
     assert_eq!(run.descriptor.record_id, 0x1234);
     assert_eq!(
-        cadmpeg_ir::scalar::FiniteReal::raw_lane(&run.descriptor.values),
+        cadmpeg_ir::scalar::FiniteReal::raw_lane(run.descriptor.values.as_slice()),
         [3.0, 7.0]
     );
     let native = crate::native::CatiaNative::decode(&described);
@@ -1418,7 +1418,6 @@ fn class25_edge_descriptor_and_runs_refuse_collection_limits() {
     for operation in [
         "catia_class25_edge_descriptors",
         "catia_class25_edge_use_runs",
-        "catia_class25_edge_descriptor_values",
         "catia_class25_edge_runs",
     ] {
         assert!(refused.contains(operation), "{operation} did not refuse");

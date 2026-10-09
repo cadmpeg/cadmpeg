@@ -2295,7 +2295,12 @@ pub(in crate::families) fn b2_class25_descriptors_from_records(
         let Some((record_id, control, lane)) = parsed else {
             continue;
         };
-        let Some(values) = finite_f64_lane_charged(ctx, lane, "catia_b2_class25_values")? else {
+        let values = match lane.len() {
+            16 => read_f64_array::<2>(lane, 0).map(B2Class25Values::Two),
+            24 => read_f64_array::<3>(lane, 0).map(B2Class25Values::Three),
+            _ => None,
+        };
+        let Some(values) = values else {
             continue;
         };
         ctx.push_vec(
@@ -2324,7 +2329,7 @@ pub(crate) struct B2EdgeParameters {
 }
 
 /// Typed class-`0x18` descriptor immediately preceding a class-`0x25` edge.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct B2Class25Descriptor {
     /// Record byte offset.
     pub(crate) pos: usize,
@@ -2333,7 +2338,23 @@ pub(crate) struct B2Class25Descriptor {
     /// Descriptor control byte (`0x02` or `0x0a`).
     pub(crate) control: u8,
     /// Complete finite scalar lane containing two or three values.
-    pub(crate) values: Vec<FiniteReal>,
+    pub(crate) values: B2Class25Values,
+}
+
+/// Fixed scalar arities of the class-`0x18` descriptor grammar.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum B2Class25Values {
+    Two([FiniteReal; 2]),
+    Three([FiniteReal; 3]),
+}
+
+impl B2Class25Values {
+    pub(crate) fn as_slice(&self) -> &[FiniteReal] {
+        match self {
+            Self::Two(values) => values,
+            Self::Three(values) => values,
+        }
+    }
 }
 
 fn parameter_in_closed_range(value: f64, range: [f64; 2]) -> bool {
