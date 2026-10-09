@@ -1557,23 +1557,27 @@ fn arc_z_fields(
             start,
         )
     };
-    let mut trials = (0..body.len())
-        .map(|start| (true, start))
-        .chain((0..body.len()).map(|start| (false, start)));
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut selected = None;
-    while let Some((stored_center, start)) =
-        ctx.next_charged(&mut trials, "creo arc-z numeric trials")?
-    {
-        let candidate = if stored_center {
-            explicit(start)
-        } else {
-            diametric(start)
-        };
-        if let Some(circle) = candidate {
-            if selected.is_some() {
-                return Ok(None);
+    for stored_center in [true, false] {
+        let mut starts = 0..body.len();
+        while !starts.is_empty() {
+            let Some(start) = ctx.next_charged(&mut starts, "creo arc-z numeric trials")? else {
+                break;
+            };
+            let candidate = if stored_center {
+                explicit(start)
+            } else {
+                diametric(start)
+            };
+            if let Some(circle) = candidate {
+                if selected.is_some() {
+                    return Ok(None);
+                }
+                selected = Some(circle);
             }
-            selected = Some(circle);
         }
     }
     Ok(selected)

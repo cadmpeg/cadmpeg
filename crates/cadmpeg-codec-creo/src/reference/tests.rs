@@ -822,3 +822,5 @@ fn scalar_suffix_ignores_bytes_before_its_maximum_token_span() {
     row.extend_from_slice(suffix);
     assert_eq!(scalar_suffix::<6>(&row, &ScalarCache::default()), expected);
 }
+
+mod trial_visits;
