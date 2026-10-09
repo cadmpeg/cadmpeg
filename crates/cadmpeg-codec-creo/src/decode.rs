@@ -54,9 +54,11 @@ pub(crate) fn with_test_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T)
 /// the returned IR contains source metadata and preserved geometry sections but
 /// no transferred entities.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    let (scan, scan_storage) = ctx.with_scoped_storage("creo container scan storage", || {
+    let scan_owned_storage = ctx.with_scoped_storage("creo container scan storage", || {
         container::scan_bytes(ctx, root.window())
     })?;
+    let scan_storage = scan_owned_storage.1;
+    let scan = scan_owned_storage.0;
     let decoded = (|| -> Result<Decoded, CodecError> {
         let classification = crate::dialect::classify(ctx, &scan)?;
         // Admit section identities before model construction.

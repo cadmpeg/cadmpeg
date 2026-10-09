@@ -3690,10 +3690,12 @@ pub(crate) fn scan_bytes<'a>(
         sections
     };
     if let Some(framing) = &mut legacy_ascii {
-        let (scopes, _scope_storage) = ctx
+        let scopes_owned_storage = ctx
             .with_scoped_storage("creo legacy scope range storage", || {
                 legacy_scope_ranges(ctx, &data, framing, &sections)
             })?;
+        let _scope_storage = scopes_owned_storage.1;
+        let scopes = scopes_owned_storage.0;
         framing.persistence = legacy::scan(ctx, &data, scopes.iter().cloned())?;
     }
     if model_name.is_none() {
@@ -3836,10 +3838,12 @@ pub(crate) fn scan_bytes<'a>(
         surface::placed_outline_planes(ctx, &plane_envelopes, &plane_local_systems)?;
     let positional_frame_planes =
         surface::positional_frame_planes(ctx, &surface_parameters, &surface_rows)?;
-    let (placement_outline_planes, placement_outline_storage) = ctx
+    let placement_outline_planes_owned_storage = ctx
         .with_scoped_storage("creo placement outline plane storage", || {
             placement_outline_planes(ctx, &outline_planes, &positional_frame_planes)
         })?;
+    let placement_outline_storage = placement_outline_planes_owned_storage.1;
+    let placement_outline_planes = placement_outline_planes_owned_storage.0;
     let cross_section_outline_planes = surface::placed_outline_planes(
         ctx,
         &cross_section_plane_envelopes,
@@ -3866,7 +3870,7 @@ pub(crate) fn scan_bytes<'a>(
             None => None,
         },
     )?;
-    let (topology_face_ids, topology_face_storage) =
+    let topology_face_ids_owned_storage =
         ctx.with_scoped_storage("creo topology face index storage", || {
             topology_face_ids(
                 ctx,
@@ -3878,6 +3882,8 @@ pub(crate) fn scan_bytes<'a>(
                 .map(|row| row.id),
             )
         })?;
+    let topology_face_storage = topology_face_ids_owned_storage.1;
+    let topology_face_ids = topology_face_ids_owned_storage.0;
     let nonvisible_curve_parameters =
         curve_parameters(ctx, &nonvisible_geometry_sections, &topology_face_ids)?;
     let curve_parameters = curve_parameters(ctx, &model_geometry_sections, &topology_face_ids)?;
@@ -3929,11 +3935,13 @@ pub(crate) fn scan_bytes<'a>(
     let feature_operation_states = feature_operation_states(ctx, &sections)?;
     let feature_operations = feature_operations(ctx, &sections)?;
     let feature_reference_names = feature_reference_names(ctx, &sections)?;
-    let (structural_feature_ids, structural_feature_storage) = ctx
+    let structural_feature_ids_owned_storage = ctx
         .with_scoped_storage("creo structural feature index storage", || {
             structural_feature_ids(ctx, &sections, &surface_rows, &curve_topology_rows)
         })?;
-    let (candidate_feature_ids, candidate_feature_storage) =
+    let structural_feature_storage = structural_feature_ids_owned_storage.1;
+    let structural_feature_ids = structural_feature_ids_owned_storage.0;
+    let candidate_feature_ids_owned_storage =
         ctx.with_scoped_storage("creo candidate feature index storage", || {
             candidate_feature_ids(
                 ctx,
@@ -3952,6 +3960,8 @@ pub(crate) fn scan_bytes<'a>(
                 ),
             )
         })?;
+    let candidate_feature_storage = candidate_feature_ids_owned_storage.1;
+    let candidate_feature_ids = candidate_feature_ids_owned_storage.0;
     let mut feature_rows = feature_rows(ctx, &sections, &candidate_feature_ids)?;
     drop((candidate_feature_ids, candidate_feature_storage));
     let feature_identity_index = FeatureIdentityIndex::new(
@@ -4016,10 +4026,12 @@ pub(crate) fn scan_bytes<'a>(
         Ord::cmp,
         "creo scan bytes feature definitions ordering",
     )?;
-    let (claimed_definition_owners, claimed_owner_storage) = ctx
+    let claimed_definition_owners_owned_storage = ctx
         .with_scoped_storage("creo claimed definition owner storage", || {
             claimed_definition_owners(ctx, &feature_definitions)
         })?;
+    let claimed_owner_storage = claimed_definition_owners_owned_storage.1;
+    let claimed_definition_owners = claimed_definition_owners_owned_storage.0;
     let replay_definitions = feature::definitions::bind_replay_definition_owners(
         ctx,
         positional_replay_definitions(ctx, &sections)?,
@@ -4038,10 +4050,12 @@ pub(crate) fn scan_bytes<'a>(
         Ord::cmp,
         "creo scan bytes feature definitions ordering",
     )?;
-    let (section_owner_ranges, section_owner_storage) = ctx
+    let section_owner_ranges_owned_storage = ctx
         .with_scoped_storage("creo section owner range storage", || {
             section_owner_ranges(ctx, &sections, &feature_rows)
         })?;
+    let section_owner_storage = section_owner_ranges_owned_storage.1;
+    let section_owner_ranges = section_owner_ranges_owned_storage.0;
     let feature_definitions = feature::definitions::bind_section_owners(
         ctx,
         feature_definitions,
