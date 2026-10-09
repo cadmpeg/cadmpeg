@@ -813,26 +813,20 @@ pub(super) fn field_value(
         let mut storage = ctx.reserve_scoped(0, "creo feature compact integer values")?;
         let mut values = Vec::new();
         let mut items = 0..count;
-        while !items.is_empty() {
+        while !items.is_empty() && cursor < payload.len() {
             let Some(_) = ctx.next_charged(&mut items, "creo compact integer field traversal")? else {
                 break;
             };
             let (value, next) = psb::compact_int(payload, cursor);
-            if next == cursor {
-                drop(values);
-                drop(storage);
-                return Ok(FeatureFieldValue::Raw(
-                    ctx.copy_retained(payload, "creo feature raw field")?,
-                ));
-            }
             storage.with_storage(|| {
                 ctx.reserve_vec(&mut values, 1, "creo feature compact integer values")
             })?;
             values.push(value);
             cursor = next;
         }
-        if cursor == payload.len()
-            || cursor + 1 == payload.len() && payload[cursor] == psb::token::ARRAY_CLOSE
+        if values.len() == index_from_u32(count)
+            && (cursor == payload.len()
+                || cursor + 1 == payload.len() && payload[cursor] == psb::token::ARRAY_CLOSE)
         {
             let values = storage.commit_value(values)?;
             return Ok(FeatureFieldValue::CompactIntArray(values));
@@ -1058,6 +1052,7 @@ fn positional_datum_geometry_table_at(
     let mut entry_ids = Vec::new();
     let mut items = 0..count;
     while !items.is_empty() {
+        if cursor == body.len() { return Ok(None); }
         let Some(index) = ctx.next_charged(&mut items, "creo positional datum traversal")? else {
             break;
         };
@@ -1144,6 +1139,10 @@ fn geometry_table_at(
         let mut entry_cursor = after_class;
         let mut items = 0..count;
         while !items.is_empty() {
+            if entry_cursor == body.len() {
+                entries.clear();
+                break;
+            }
             let Some(_) = ctx.next_charged(&mut items, "creo named datum traversal")? else {
                 break;
             };
@@ -1219,6 +1218,10 @@ pub(crate) fn affected_ids(
                 let mut ids = Vec::new();
                 let mut items = 0..count;
                 while !items.is_empty() {
+                    if cursor == row.body.len() {
+                        ids.clear();
+                        break;
+                    }
                     let Some(_) = ctx.next_charged(&mut items, "creo affected ID traversal")? else {
                         break;
                     };
@@ -1323,6 +1326,7 @@ fn replay_ids<'a>(
     let start = cursor;
     let mut items = 0..count;
     while !items.is_empty() {
+        if cursor == run.len() { return None; }
         match ctx.next_charged(&mut items, "creo replay ID traversal") {
             Ok(Some(_)) => {}
             Ok(None) => break,
@@ -2128,6 +2132,7 @@ fn loop_history_prototypes<'a, 'ctx>(
     }
     let mut items = 0..count;
     while !items.is_empty() {
+        if cursor == body.len() { return None; }
         let index = match ctx.next_charged(&mut items, "creo loop history roster traversal") {
             Ok(Some(index)) => index,
             Ok(None) => break,
