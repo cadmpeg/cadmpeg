@@ -334,7 +334,7 @@ fn rational_surface_patches_with_budget<'ctx>(
             ctx.reserve_temporary_vec(&mut values, control_count, "IR surface control points")?;
         (reservation, values)
     };
-    let (weights, _weight_storage) = match surface.pole_grid() {
+    let (_weight_storage, weights) = match surface.pole_grid() {
         NurbsPoleGrid::Polynomial { rows } => {
             for row in ctx.admit_iter(rows, "IR surface control row visit")? {
                 points.extend(
@@ -345,8 +345,9 @@ fn rational_surface_patches_with_budget<'ctx>(
             (None, None)
         }
         NurbsPoleGrid::Rational { rows } => {
+            let storage;
             let mut weights = Vec::new();
-            let storage = ctx.reserve_temporary_vec(
+            storage = ctx.reserve_temporary_vec(
                 &mut weights,
                 control_count,
                 "IR surface control weights",
@@ -358,7 +359,7 @@ fn rational_surface_patches_with_budget<'ctx>(
                     weights.push(pole.weight.get());
                 }
             }
-            (Some(weights), Some(storage))
+            (Some(storage), Some(weights))
         }
     };
     let Some(homogeneous_controls) =
@@ -937,24 +938,24 @@ fn split_rational_surface_patch<'ctx>(
         };
         (patch.u_domain, patch.u_domain, first_v, second_v)
     };
-    let (first_controls, first_scratch) = assemble(&first_lines)?;
-    let (second_controls, second_scratch) = assemble(&second_lines)?;
+    let first = assemble(&first_lines)?;
+    let second = assemble(&second_lines)?;
     Ok(Some([
         RationalBezierSurfacePatch {
             u_domain: first_u,
             v_domain: first_v,
             u_degree: patch.u_degree,
             v_degree: patch.v_degree,
-            controls: first_controls,
-            _scratch: first_scratch,
+            controls: first.0,
+            _scratch: first.1,
         },
         RationalBezierSurfacePatch {
             u_domain: second_u,
             v_domain: second_v,
             u_degree: patch.u_degree,
             v_degree: patch.v_degree,
-            controls: second_controls,
-            _scratch: second_scratch,
+            controls: second.0,
+            _scratch: second.1,
         },
     ]))
 }
