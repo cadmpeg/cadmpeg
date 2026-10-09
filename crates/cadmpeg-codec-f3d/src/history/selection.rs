@@ -346,7 +346,9 @@ pub(super) fn bind_face_selection<'a, 'ctx>(
     index: &super::FaceSelectionIndex<'a, 'ctx>,
     updated_face_slots: &[i64],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (bound, storage) = ctx.with_scoped_storage(
+    let storage;
+    let bound;
+    (bound, storage) = ctx.with_scoped_storage(
         "retain F3D resolved face selection",
         || -> Result<_, cadmpeg_core::CodecError> {
             let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
@@ -461,7 +463,9 @@ pub(super) fn bind_body_recipe_face_selection<'a, 'ctx>(
     scope: &'a crate::records::feature::scope::DesignParameterScope,
     index: &super::FaceSelectionIndex<'a, 'ctx>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (bound, storage) = ctx.with_scoped_storage(
+    let storage;
+    let bound;
+    (bound, storage) = ctx.with_scoped_storage(
         "retain F3D historical face selection",
         || -> Result<_, cadmpeg_core::CodecError> {
             use cadmpeg_ir::features::FaceSelection;
@@ -638,12 +642,14 @@ impl HistoricalIdentityIndex {
                 revisions,
             });
         }
-        let (histories, _histories_storage) = decode
+        let _histories_storage;
+        let history_entries;
+        (history_entries, _histories_storage) = decode
             .with_scoped_storage("collect F3D identity histories", || {
                 decode.collect_vec(histories, "collect F3D identity histories")
             })?;
         if decode.any_by(
-            &histories,
+            &history_entries,
             |history| Ok(history.record_table_binding_budget_exceeded),
             "scan F3D identity history limits",
         )? {
@@ -652,15 +658,17 @@ impl HistoricalIdentityIndex {
                 revisions,
             });
         }
-        let (ambiguous_states, _ambiguous_storage) = decode
+        let _ambiguous_storage;
+        let ambiguous_states;
+        (ambiguous_states, _ambiguous_storage) = decode
             .with_scoped_storage("index F3D ambiguous history states", || {
-                ambiguous_history_state_ids(decode, &histories)
+                ambiguous_history_state_ids(decode, &history_entries)
             })?;
         // Revisions named by an entity version, and every entity a revision
         // reaches; both grow as the revisions are indexed.
         let mut versioned_revisions = HashSet::new();
         let mut revision_entity_refs = HashSet::new();
-        for history in decode.admit_iter(&histories, "scan F3D identity revision histories")? {
+        for history in decode.admit_iter(&history_entries, "scan F3D identity revision histories")? {
             for state in decode.admit_iter(&history.states, "scan F3D identity revision states")? {
                 if decode.contains_hash_set(
                     &ambiguous_states,
@@ -728,7 +736,7 @@ impl HistoricalIdentityIndex {
         let mut reconstructed_revisions = BTreeSet::new();
         // Finalized histories retain the entity-slot membership and the
         // bulletin-board chain after their geometry caches are compacted.
-        for history in decode.admit_iter(&histories, "collect F3D finalized identity histories")? {
+        for history in decode.admit_iter(&history_entries, "collect F3D finalized identity histories")? {
             if history.states.is_empty() {
                 continue;
             }
@@ -803,7 +811,7 @@ impl HistoricalIdentityIndex {
                 }
             }
         }
-        for history in decode.admit_iter(&histories, "scan F3D identity membership histories")? {
+        for history in decode.admit_iter(&history_entries, "scan F3D identity membership histories")? {
             for state in
                 decode.admit_iter(&history.states, "scan F3D identity membership states")?
             {
@@ -1037,7 +1045,9 @@ pub(super) fn historical_selection_identity_kind(
     histories: &[AsmHistory],
     local_id: u64,
 ) -> Result<Option<(AsmHistoricalEntityKind, i64, Vec<i64>)>, cadmpeg_core::CodecError> {
-    let (index, _index_storage) =
+    let _index_storage;
+    let index;
+    (index, _index_storage) =
         decode.with_scoped_storage("index F3D identity membership", || {
             HistoricalIdentityIndex::build(
                 decode,
@@ -1252,7 +1262,9 @@ pub(crate) fn historical_extrude_selection_identity_kind(
     body_bindings: &[DesignBodyBinding],
     histories: &[AsmHistory],
 ) -> Result<Option<(AsmHistoricalEntityKind, i64, Vec<i64>)>, cadmpeg_core::CodecError> {
-    let (selected, _selection_storage) =
+    let _selection_storage;
+    let selected;
+    (selected, _selection_storage) =
         decode.with_scoped_storage("collect F3D component histories", || {
             component_histories(
                 decode,
@@ -1264,7 +1276,9 @@ pub(crate) fn historical_extrude_selection_identity_kind(
         })?;
     match selected {
         Some(selected) => {
-            let (index, _index_storage) =
+            let _index_storage;
+            let index;
+            (index, _index_storage) =
                 decode.with_scoped_storage("index F3D identity membership", || {
                     HistoricalIdentityIndex::build(
                         decode,
@@ -1333,7 +1347,9 @@ pub(crate) fn bind_entity_selection_history(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (identities, _identities_storage) =
+    let _identities_storage;
+    let identities;
+    (identities, _identities_storage) =
         decode.with_scoped_storage("index F3D identity membership", || {
             HistoricalIdentityIndex::build(
                 decode,
@@ -1539,7 +1555,9 @@ fn hole_transition_face_candidate(
         return Ok(None);
     }
     let (state_id, previous_state_id) = (some!(state_id), some!(previous_state_id));
-    let (identities, _identity_storage) =
+    let _identity_storage;
+    let identities;
+    (identities, _identity_storage) =
         decode.with_scoped_storage("index F3D identity membership", || {
             HistoricalIdentityIndex::build(
                 decode,
@@ -1781,7 +1799,9 @@ pub(crate) fn bind_circular_pattern_axes(
             continue;
         };
         *resolved = None;
-        let (identities, _identities_storage) =
+        let _identities_storage;
+        let identities;
+        (identities, _identities_storage) =
             decode.with_scoped_storage("index F3D identity membership", || {
                 HistoricalIdentityIndex::build(
                     decode,
@@ -1790,7 +1810,9 @@ pub(crate) fn bind_circular_pattern_axes(
                     |local_id| std::iter::once(*local_id).chain(None),
                 )
             })?;
-        let (axis_candidates, _axis_storage) =
+        let _axis_storage;
+        let axis_candidates;
+        (axis_candidates, _axis_storage) =
             decode.with_scoped_storage("collect F3D circular pattern axis candidates", || {
                 historical_pattern_identity_axes(
                     decode,
@@ -1856,7 +1878,9 @@ pub(super) fn historical_pattern_identity_axes(
     let Some(revision) = snapshot_edge_identity_revision(decode, identity, history)? else {
         return Ok(Vec::new());
     };
-    let (archived, _archived_storage) =
+    let _archived_storage;
+    let archived;
+    (archived, _archived_storage) =
         decode.with_scoped_storage("index F3D identity membership", || {
             HistoricalIdentityIndex::build(
                 decode,
@@ -1968,7 +1992,9 @@ pub(super) fn historical_pattern_identity_axes_for_selection(
         let Some(topology) = state.topology() else {
             return Ok(Vec::new());
         };
-        let (axis_candidates, _axis_candidates_storage) =
+        let _axis_candidates_storage;
+        let axis_candidates;
+        (axis_candidates, _axis_candidates_storage) =
             decode.with_scoped_storage("collect F3D pattern axis candidates", || {
                 historical_pattern_identity_axis_candidates(
                     decode,
@@ -1976,7 +2002,9 @@ pub(super) fn historical_pattern_identity_axes_for_selection(
                     topology,
                 )
             })?;
-        let (state_axes, _state_axes_storage) =
+        let _state_axes_storage;
+        let state_axes;
+        (state_axes, _state_axes_storage) =
             decode.with_scoped_storage("collect F3D pattern state axes", || {
                 decode.collect_vec(
                     decode
@@ -2142,7 +2170,9 @@ pub(crate) fn bind_mirror_selection_planes(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut history_source = IntoIterator::into_iter(scopes);
     while let Some(scope) = decode.next_charged(&mut history_source, "scan F3D selection scopes")? {
-        let (stream, _stream_storage) =
+        let _stream_storage;
+        let stream;
+        (stream, _stream_storage) =
             decode.with_scoped_storage("copy F3D mirror scope stream", || {
                 crate::ids::native_stream_charged(decode, &scope.id, "split F3D native stream")?
                     .map(|stream| decode.copy_retained_text(stream, "copy F3D mirror scope stream"))
@@ -3039,7 +3069,9 @@ pub(super) fn entity_selection_face_candidates(
     'histories: while let Some(history) =
         decode.next_charged(&mut history_source, "scan F3D entity selection histories")?
     {
-        let (identities, _identities_storage) =
+        let _identities_storage;
+        let identities;
+        (identities, _identities_storage) =
             decode.with_scoped_storage("index F3D identity membership", || {
                 HistoricalIdentityIndex::build(
                     decode,
@@ -3232,7 +3264,9 @@ pub(crate) fn bind_edge_identity_history(
         let Some(stream) = crate::ids::native_stream_charged(decode, &operand.id, "split F3D native stream")? else {
             continue;
         };
-        let (key, key_storage) =
+        let key_storage;
+        let key;
+        (key, key_storage) =
             decode.with_scoped_storage("retain F3D compact group key", || {
                 Ok::<_, cadmpeg_core::CodecError>((
                     decode.copy_retained_text(stream, "copy F3D compact edge group stream")?,
@@ -3270,7 +3304,9 @@ pub(crate) fn bind_edge_identity_history(
         })?;
     }
     let scope_records = super::ScopesByRecord::new(decode, scopes)?;
-    let (local_ids, _local_ids_storage) =
+    let _local_ids_storage;
+    let local_ids;
+    (local_ids, _local_ids_storage) =
         decode.with_scoped_storage("collect F3D edge identity local ids", || {
             decode.collect_vec(
                 decode
@@ -3288,7 +3324,9 @@ pub(crate) fn bind_edge_identity_history(
                 "collect F3D edge identity local ids",
             )
         })?;
-    let (history_identities, _history_identities_storage) =
+    let _history_identities_storage;
+    let history_identities;
+    (history_identities, _history_identities_storage) =
         decode.with_scoped_storage("index F3D identity membership", || {
             HistoricalIdentityIndex::build(
                 decode,
@@ -3537,7 +3575,9 @@ pub(crate) fn bind_edge_identity_history(
                                     | crate::design::DesignFeatureFamily::Chamfer
                             )
                         );
-                        let (lookup_key, _lookup_storage) = decode.with_scoped_storage(
+                        let _lookup_storage;
+                        let lookup_key;
+                        (lookup_key, _lookup_storage) = decode.with_scoped_storage(
                             "lookup F3D compact edge group count",
                             || {
                                 Ok::<_, cadmpeg_core::CodecError>((
