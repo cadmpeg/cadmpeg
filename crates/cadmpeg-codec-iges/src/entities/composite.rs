@@ -283,11 +283,17 @@ pub(super) struct CompositeIndex {
 
 impl CompositeIndex {
     pub(super) fn from_ir(ir: &CadIr, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(CodecError::from(refusal));
+        }
         let mut curve_positions = BTreeMap::new();
-        for (position, curve) in ctx
-            .admit_iter(&ir.model.curves, "iges composite curve index traversal")?
-            .enumerate()
-        {
+        let mut source_index_entries = ir.model.curves.iter().enumerate();
+        while source_index_entries.len() != 0 {
+            let Some((position, curve)) =
+                ctx.next_charged(&mut source_index_entries, "iges composite curve index traversal")?
+            else {
+                break;
+            };
             if !ctx.contains_key_btree_map(
                 &curve_positions,
                 &curve.id,
@@ -319,6 +325,9 @@ impl CompositeIndex {
         ir: &CadIr,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(CodecError::from(refusal));
+        }
         if self.indexed_edges > ir.model.edges.len()
             || self.indexed_points > ir.model.points.len()
             || self.indexed_vertices > ir.model.vertices.len()
@@ -327,10 +336,13 @@ impl CompositeIndex {
                 "IGES composite topology index source shrank",
             ));
         }
-        for edge in ctx.admit_iter(
-            &ir.model.edges[self.indexed_edges..],
-            "iges composite edge index traversal",
-        )? {
+        let mut source_index_entries = ir.model.edges[self.indexed_edges..].iter();
+        while source_index_entries.len() != 0 {
+            let Some(edge) =
+                ctx.next_charged(&mut source_index_entries, "iges composite edge index traversal")?
+            else {
+                break;
+            };
             if let Some(curve) = edge.curve() {
                 if !ctx.contains_key_btree_map(
                     &self.edges,
@@ -362,10 +374,13 @@ impl CompositeIndex {
                 });
             }
         }
-        for point in ctx.admit_iter(
-            &ir.model.points[self.indexed_points..],
-            "iges composite point index traversal",
-        )? {
+        let mut source_index_entries = ir.model.points[self.indexed_points..].iter();
+        while source_index_entries.len() != 0 {
+            let Some(point) =
+                ctx.next_charged(&mut source_index_entries, "iges composite point index traversal")?
+            else {
+                break;
+            };
             if !ctx.contains_key_btree_map(
                 &self.points,
                 &point.id,
@@ -382,10 +397,13 @@ impl CompositeIndex {
                 )?;
             }
         }
-        for vertex in ctx.admit_iter(
-            &ir.model.vertices[self.indexed_vertices..],
-            "iges composite vertex index traversal",
-        )? {
+        let mut source_index_entries = ir.model.vertices[self.indexed_vertices..].iter();
+        while source_index_entries.len() != 0 {
+            let Some(vertex) =
+                ctx.next_charged(&mut source_index_entries, "iges composite vertex index traversal")?
+            else {
+                break;
+            };
             if let Some(point) = ctx
                 .get_btree_map(
                     &self.points,

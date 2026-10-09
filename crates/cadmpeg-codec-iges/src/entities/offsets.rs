@@ -254,13 +254,16 @@ impl OffsetSourceIndex {
         ctx: &DecodeContext<'_>,
         storage: &mut ScopedReservation<'_>,
     ) -> Result<(), CodecError> {
-        for (offset, curve) in ctx
-            .admit_iter(
-                &ir.model.curves[self.curve_count..],
-                "iges offset source curve scan",
-            )?
-            .enumerate()
-        {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(CodecError::from(refusal));
+        }
+        let mut source_index_entries = ir.model.curves[self.curve_count..].iter().enumerate();
+        while source_index_entries.len() != 0 {
+            let Some((offset, curve)) =
+                ctx.next_charged(&mut source_index_entries, "iges offset source curve scan")?
+            else {
+                break;
+            };
             if !ctx.contains_key_btree_map(
                 &self.curves,
                 &curve.id,
@@ -282,13 +285,13 @@ impl OffsetSourceIndex {
             }
         }
         self.curve_count = ir.model.curves.len();
-        for (offset, point) in ctx
-            .admit_iter(
-                &ir.model.points[self.point_count..],
-                "iges offset source point scan",
-            )?
-            .enumerate()
-        {
+        let mut source_index_entries = ir.model.points[self.point_count..].iter().enumerate();
+        while source_index_entries.len() != 0 {
+            let Some((offset, point)) =
+                ctx.next_charged(&mut source_index_entries, "iges offset source point scan")?
+            else {
+                break;
+            };
             if !ctx.contains_key_btree_map(
                 &self.points,
                 &point.id,
@@ -310,13 +313,13 @@ impl OffsetSourceIndex {
             }
         }
         self.point_count = ir.model.points.len();
-        for (offset, vertex) in ctx
-            .admit_iter(
-                &ir.model.vertices[self.vertex_count..],
-                "iges offset source vertex scan",
-            )?
-            .enumerate()
-        {
+        let mut source_index_entries = ir.model.vertices[self.vertex_count..].iter().enumerate();
+        while source_index_entries.len() != 0 {
+            let Some((offset, vertex)) =
+                ctx.next_charged(&mut source_index_entries, "iges offset source vertex scan")?
+            else {
+                break;
+            };
             if !ctx.contains_key_btree_map(
                 &self.vertices,
                 &vertex.id,
@@ -338,13 +341,13 @@ impl OffsetSourceIndex {
             }
         }
         self.vertex_count = ir.model.vertices.len();
-        for (offset, edge) in ctx
-            .admit_iter(
-                &ir.model.edges[self.edge_count..],
-                "iges offset source edge scan",
-            )?
-            .enumerate()
-        {
+        let mut source_index_entries = ir.model.edges[self.edge_count..].iter().enumerate();
+        while source_index_entries.len() != 0 {
+            let Some((offset, edge)) =
+                ctx.next_charged(&mut source_index_entries, "iges offset source edge scan")?
+            else {
+                break;
+            };
             let Some(curve) = edge.curve() else {
                 continue;
             };
@@ -668,9 +671,13 @@ pub(super) fn project(
                     })?;
                 }
                 let mut records = BTreeMap::new();
-                for record in
-                    ctx.admit_iter(parameters, "iges offsets transform parameter traversal")?
-                {
+                let mut source_index_entries = parameters.iter();
+                while source_index_entries.len() != 0 {
+                    let Some(record) =
+                        ctx.next_charged(&mut source_index_entries, "iges offsets transform parameter traversal")?
+                    else {
+                        break;
+                    };
                     transform_storage.with_storage(|| {
                         ctx.insert_btree_map(
                             &mut records,

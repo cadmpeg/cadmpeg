@@ -3096,7 +3096,13 @@ pub(super) fn project<'ctx>(
     let mut flows = BTreeMap::new();
     let mut property_owners = BTreeMap::<u32, Vec<u32>>::new();
     let mut association_owners = BTreeMap::<u32, BTreeSet<u32>>::new();
-    for (owner, record) in ctx.admit_iter(records, "iges structure ownership records")? {
+    let mut source_index_entries = records.iter();
+    while source_index_entries.len() != 0 {
+        let Some((owner, record)) =
+            ctx.next_charged(&mut source_index_entries, "iges structure ownership records")?
+        else {
+            break;
+        };
         let Some(TrailingPointerAnalysis::Unambiguous(groups)) =
             ctx.get_btree_map(
                 trailing_pointer_analysis,
@@ -3106,7 +3112,13 @@ pub(super) fn project<'ctx>(
         else {
             continue;
         };
-        for target in ctx.admit_iter(groups.properties(), "iges structure property references")? {
+        let mut source_index_entries = groups.properties().iter();
+        while source_index_entries.len() != 0 {
+            let Some(target) =
+                ctx.next_charged(&mut source_index_entries, "iges structure property references")?
+            else {
+                break;
+            };
             if target != owner
                 && ctx
                     .get_btree_map(&property_owners, target, "iges property owner lookup")?
@@ -3123,10 +3135,13 @@ pub(super) fn project<'ctx>(
                 )?;
             }
         }
-        for target in ctx.admit_iter(
-            groups.associations(),
-            "iges structure association references",
-        )? {
+        let mut source_index_entries = groups.associations().iter();
+        while source_index_entries.len() != 0 {
+            let Some(target) =
+                ctx.next_charged(&mut source_index_entries, "iges structure association references")?
+            else {
+                break;
+            };
             scratch.with_storage(|| {
                 ctx.insert_btree_group_set(
                     &mut association_owners,
