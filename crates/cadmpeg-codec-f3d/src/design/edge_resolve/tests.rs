@@ -1966,3 +1966,5 @@ fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {
 }
 
 mod candidate_intersection;
+
+mod assignment_temporary;
