@@ -359,10 +359,11 @@ pub(crate) fn enrich_history_reference_planes(
                     })?;
                 }
             }
-            let (component_reference, component_storage) = ctx
+            let (_component_reference, component_storage) = ctx
                 .with_scoped_storage("SLDPRT component face path workspace", || {
                     component_face_reference_in_record(ctx, bytes)
                 })?;
+            let component_reference = _component_reference;
             if let Some((relative_offset, components)) = component_reference {
                 let mut native = temporary_storage.with_storage(|| {
                     ctx.format_retained(

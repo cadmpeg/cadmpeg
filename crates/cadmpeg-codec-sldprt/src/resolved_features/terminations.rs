@@ -1128,8 +1128,8 @@ pub(crate) fn project_surface_sweep_profiles(
         let lane_key = ctx
             .rsplit_once(&lane.id, "#", OPERATION)?
             .map_or(lane.id.as_str(), |(_, key)| key);
-        let mut objects = Vec::new();
         let mut objects_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut objects = Vec::new();
         let object_names = ObjectNames::new(ctx, lane)?;
         for feature in ctx.admit_iter(&history_features, OPERATION)? {
             if let Some(name) = object_names.of(ctx, feature)? {
@@ -1557,8 +1557,8 @@ pub(crate) fn project_compact_combine_paths(
             tool_owner,
             "project SLDPRT combine dependencies",
         )?;
-        let mut ordered = Vec::new();
         let mut ordered_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut ordered = Vec::new();
         for (ordinal, dependency) in ctx.admit_iter(dependencies, OPERATION)?.enumerate() {
             let order = ctx
                 .get_hash_map(&ordinals, dependency.as_str(), OPERATION)?
@@ -2036,10 +2036,11 @@ fn compact_termination_reference_offsets(
         ctx.next_charged(&mut markers, "scan SLDPRT termination reference offsets")?
     {
         let present = if require_path {
-            let (path, _storage) = ctx
+            let (_path, _storage) = ctx
                 .with_scoped_storage("SLDPRT termination reference candidate", || {
                     compact_termination_reference_path_at(ctx, payload, marker)
                 })?;
+            let path = _path;
             path.is_some()
         } else {
             compact_termination_reference_frame_at(payload, marker).is_some()
@@ -2279,7 +2280,7 @@ fn legacy_single_face_reference_path_at(
     if header_valid.is_none() {
         return Ok(None);
     }
-    let (selected, _storage) = ctx.with_scoped_storage(
+    let (_selected, _storage) = ctx.with_scoped_storage(
         "SLDPRT legacy face path workspace",
         || -> Result<_, cadmpeg_core::CodecError> {
             let mut search = LegacyFacePathSearch {
@@ -2342,6 +2343,7 @@ fn legacy_single_face_reference_path_at(
             })
         },
     )?;
+    let selected = _selected;
     selected
         .map(|entries| ctx.collect_vec(entries.iter().cloned(), "retain SLDPRT legacy face path"))
         .transpose()
