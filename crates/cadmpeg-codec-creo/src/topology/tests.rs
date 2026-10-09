@@ -1153,7 +1153,12 @@ fn vertex_orbit_constructor_rejects_zero_empty_repeated_and_unordered_members() 
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error = super::TopologicalVertex::new(&ctx, 1, vec![a]).expect_err("orbit work refused");
+    let singleton = super::TopologicalVertex::new(&ctx, 1, vec![a])
+        .expect("one member has no adjacent comparison")
+        .expect("valid singleton orbit");
+    assert_eq!(singleton.id.get(), 1);
+    assert_eq!(singleton.half_edges(), [a]);
+    let error = super::TopologicalVertex::new(&ctx, 1, vec![a, b]).expect_err("orbit work refused");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("resource refusal");
     };
@@ -1176,6 +1181,7 @@ fn topology_successor_and_open_tail_walks_refuse_work() {
 }
 
 mod work_admission;
+mod validation_visits;
 
 #[test]
 fn half_edge_id_cost_excludes_struct_padding() {
