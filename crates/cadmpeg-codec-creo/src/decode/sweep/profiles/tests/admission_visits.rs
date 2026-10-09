@@ -379,3 +379,69 @@ fn profile_sampling_reuses_the_admitted_span_start() {
         }
     }
 }
+
+#[test]
+fn absent_gauss_point_stops_before_tangent_evaluation() {
+    use super::super::nurbs_profile_signed_area_twice;
+    let width = f64::from_bits(1);
+    let curve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        2, vec![0.0, 0.0, 0.0, 0.0, width, width, width],
+        vec![cadmpeg_ir::math::Point2::new(0.0, 0.0); 4], None, false,
+    ).expect("structural admission").expect("finite ordered polynomial lanes");
+    let geometry = cadmpeg_ir::sketches::SketchGeometry::nurbs(curve);
+    assert_eq!(width * 0.5, 0.0);
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let lifted = super::super::super::nurbs::sketch_nurbs_curve(ctx, &geometry)
+            .expect("lift admission").expect("positive polynomial with increasing domain");
+        let carrier = cadmpeg_ir::geometry::CurveGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(lifted),
+        );
+        assert!(cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, 0.0),
+        ).expect("first Gauss point").is_none());
+        assert_eq!(cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, width),
+        ).expect("upper endpoint").map(|point| point.get()),
+            Some(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)));
+    });
+    // Lift: seven knots and four projections. Four knot windows precede
+    // the first Gauss point. Its all-zero basis uses three fill, six
+    // recurrence, three finite and fifteen homogeneous visits, with no replay.
+    const FIRST_GAUSS_POINT_WORK: u64 = 7 + 4 + 4 + 3 + 6 + 3 + 5 * 3;
+    for cap in 0..=FIRST_GAUSS_POINT_WORK {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_collection_items = 7 + 4 + 3;
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+            7 * std::mem::size_of::<f64>() +
+            4 * std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>() +
+            4 * std::mem::size_of::<f64>(),
+        );
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = nurbs_profile_signed_area_twice(&ctx, &geometry, false);
+        if cap == FIRST_GAUSS_POINT_WORK {
+            assert!(result.expect("first point only").is_none());
+            assert_eq!(ctx.resource_refusal(), None);
+            let original = ctx.charge_work_limit(1, "after absent Gauss point").expect_err("exact first point work");
+            assert_eq!((original.used, original.additional), (FIRST_GAUSS_POINT_WORK, 1));
+            assert!(matches!(nurbs_profile_signed_area_twice(&ctx, &geometry, false), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        } else {
+            let Err(CodecError::ResourceLimit(original)) = result else { panic!("Gauss point work refusal"); };
+            let expected = match cap {
+                0..=6 => (0, 7, "creo sketch NURBS lift knots"),
+                7..=10 => (7, 4, "creo NURBS point projection"),
+                11..=14 => (cap, 1, "creo NURBS profile knot scan"),
+                15..=23 => (cap, 1, "IR B-spline basis work"),
+                24..=26 => (cap, 1, "IR B-spline finite basis inspection"),
+                _ => (cap, 1, "IR homogeneous pole traversal"),
+            };
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!((original.used, original.additional, original.operation), expected);
+            assert_eq!(ctx.resource_refusal(), Some(original));
+            assert!(matches!(nurbs_profile_signed_area_twice(&ctx, &geometry, false), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        }
+    }
+}

@@ -1540,16 +1540,16 @@ fn nurbs_profile_signed_area_twice(
             .zip(NURBS_AREA_GAUSS_WEIGHTS)
         {
             let parameter = middle + half_width * node;
-            let (Some(point), Some(tangent)) = (
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            let point = require_some!(cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::decode::outer_refusal(
                     cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, parameter),
-                )?)?,
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                )?,
+            )?);
+            let tangent = require_some!(cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::decode::outer_refusal(
                     cadmpeg_ir::eval::decode::curve_tangent(ctx, &carrier, parameter),
-                )?)?,
-            ) else {
-                return Ok(None);
-            };
+                )?,
+            )?);
             area_twice += weight * (point.x * tangent.y - point.y * tangent.x) * half_width;
         }
     }
