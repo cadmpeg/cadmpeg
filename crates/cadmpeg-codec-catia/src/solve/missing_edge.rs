@@ -2916,14 +2916,16 @@ fn standard_mesh_missing_edge_assignment_domains(
                 };
                 if self.assignments == before {
                     let dead_states = &mut self.dead_states;
-                    self.storage.with_storage(|| {
-                        ctx.insert_hash_map(
+                    let entry = self.storage.with_storage(|| {
+                        ctx.entry_hash_map(
                             dead_states,
                             state,
-                            points_storage,
                             "catia_gap_dead_states",
                         )
                     })?;
+                    if let std::collections::hash_map::Entry::Vacant(entry) = entry {
+                        entry.insert(points_storage);
+                    }
                 }
                 Ok(Some(()))
             }

@@ -4548,7 +4548,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             self.state = IncidenceSearchState::Exhausted;
             return Ok(());
         }
-        let (state, state_storage) = self.ctx.with_scoped_storage(OPERATION, || {
+        let state_owner = self.ctx.with_scoped_storage(OPERATION, || {
             self.ctx.collect_vec(
                 self.edges.iter().map(|&edge| self.assignment[edge]),
                 OPERATION,
@@ -4556,7 +4556,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         })?;
         if self
             .ctx
-            .get_hash_map(&self.dead_states, &state, "catia incidence dead states")?
+            .get_hash_map(&self.dead_states, &state_owner.0, "catia incidence dead states")?
             .is_some()
         {
             return Ok(());
@@ -4564,14 +4564,16 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         let solutions_before = self.solutions.len();
         self.search_state(quotient_states, coordinate_domains, component_faces)?;
         if self.state == IncidenceSearchState::Open && self.solutions.len() == solutions_before {
-            self.search_storage.borrow_mut().with_storage(|| {
-                self.ctx.insert_hash_map(
+            let entry = self.search_storage.borrow_mut().with_storage(|| {
+                self.ctx.entry_hash_map(
                     &mut self.dead_states,
-                    state,
-                    state_storage,
+                    state_owner.0,
                     "catia incidence dead states",
                 )
             })?;
+            if let std::collections::hash_map::Entry::Vacant(entry) = entry {
+                entry.insert(state_owner.1);
+            }
         }
         Ok(())
     }

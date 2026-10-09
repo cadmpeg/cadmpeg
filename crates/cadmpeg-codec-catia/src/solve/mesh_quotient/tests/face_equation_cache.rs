@@ -75,7 +75,15 @@ fn face_equation_projection_and_cache_refuse_before_growth() {
     let mut refusals = BTreeSet::new();
     let mut completed = false;
     for cap in 0..=1_024 {
-        match crate::test_support::with_collection_limit(cap, run) {
+        match crate::test_support::with_collection_limit(cap, |ctx| {
+            let result = run(ctx);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+                assert!(matches!(ctx.charge_work(0, "after face cache refusal"),
+                    Err(CodecError::ResourceLimit(later)) if later == *limit));
+            }
+            result
+        }) {
             Err(CodecError::ResourceLimit(limit)) => {
                 refusals.insert(limit.operation);
             }
@@ -201,7 +209,8 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
                 (key, Vec::new()),
                 CachedFaceEquations {
                     equations: ScopedValue::default(),
-                    _key_storage: None,
+                    _key_storage: ctx.reserve_scoped(0, "empty seeded face cache key")
+                        .expect("empty key has no backing"),
                 },
             );
         }

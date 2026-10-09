@@ -4142,7 +4142,7 @@ type MeshSelectionStateSignature = (
 type MeshOrientationOption<'storage> = (Vec<Vec<bool>>, MeshQuotient<'storage>);
 struct CachedFaceEquations<'storage> {
     equations: ScopedValue<'storage, Vec<[usize; 2]>>,
-    _key_storage: Option<ScopedReservation<'storage>>,
+    _key_storage: ScopedReservation<'storage>,
 }
 type MeshFaceEquationCache<'storage> =
     RefCell<HashMap<(usize, MeshQuotientSignature), CachedFaceEquations<'storage>>>;
