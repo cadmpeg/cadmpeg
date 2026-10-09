@@ -2260,7 +2260,13 @@ pub(super) fn project<'ctx>(
     let mut composite_storage = ctx.reserve_scoped(0, "IGES trimming composite index")?;
     let mut composite_index: Option<CompositeIndex> = None;
     let mut edges_by_curve = BTreeMap::<&CurveId, Vec<&Edge>>::new();
-    for edge in ctx.admit_iter(&ir.model.edges, "iges boundary carrier traversal")? {
+    let mut source_index_entries = ir.model.edges.iter();
+    while source_index_entries.len() != 0 {
+        let Some(edge) =
+            ctx.next_charged(&mut source_index_entries, "iges boundary carrier traversal")?
+        else {
+            break;
+        };
         if let Some(curve) = edge.curve() {
             lookup_storage.with_storage(|| {
                 ctx.admit_btree_entry(&edges_by_curve, &curve, "iges boundary carrier index nodes")

@@ -1530,11 +1530,17 @@ struct OffsetLookups {
 
 impl OffsetLookups {
     fn from_ir(ir: &CadIr, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(CodecError::from(refusal));
+        }
         let mut surfaces = BTreeMap::new();
-        for (position, surface) in ctx
-            .admit_iter(&ir.model.surfaces, "iges offset surface index traversal")?
-            .enumerate()
-        {
+        let mut source_index_entries = ir.model.surfaces.iter().enumerate();
+        while source_index_entries.len() != 0 {
+            let Some((position, surface)) =
+                ctx.next_charged(&mut source_index_entries, "iges offset surface index traversal")?
+            else {
+                break;
+            };
             if let Some(positions) = ctx.get_mut_btree_map(
                 &mut surfaces,
                 &surface.id,
@@ -1567,13 +1573,13 @@ impl OffsetLookups {
         )?;
         _owner_storage = result_owner_storage;
         let mut procedural = BTreeMap::new();
-        for (position, surface) in ctx
-            .admit_iter(
-                &ir.model.procedural_surfaces,
-                "iges offset procedural index traversal",
-            )?
-            .enumerate()
-        {
+        let mut source_index_entries = ir.model.procedural_surfaces.iter().enumerate();
+        while source_index_entries.len() != 0 {
+            let Some((position, surface)) =
+                ctx.next_charged(&mut source_index_entries, "iges offset procedural index traversal")?
+            else {
+                break;
+            };
             if let Some(owner) = ctx
                 .get_hash_map(&owners, surface.id.as_str(), "iges offset owner lookup")?
                 .and_then(Option::as_ref)
@@ -1690,7 +1696,13 @@ pub(super) fn project<'ctx>(
     let mut transform_storage = ctx.reserve_scoped(0, "iges surfaces transform indexes")?;
     let (records, entries) = transform_storage.with_storage(|| {
         let mut records = BTreeMap::new();
-        for record in ctx.admit_iter(parameters, "iges surfaces parameter index traversal")? {
+        let mut source_index_entries = parameters.iter();
+        while source_index_entries.len() != 0 {
+            let Some(record) =
+                ctx.next_charged(&mut source_index_entries, "iges surfaces parameter index traversal")?
+            else {
+                break;
+            };
             ctx.insert_btree_map(
                 &mut records,
                 record.directory_sequence,

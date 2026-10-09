@@ -296,10 +296,13 @@ pub(super) fn project<'ctx>(
     let mut transform_storage = ctx.reserve_scoped(0, "iges analytic-surface transform indexes")?;
     let (records, entries) = transform_storage.with_storage(|| {
         let mut records = BTreeMap::new();
-        for record in ctx.admit_iter(
-            parameters,
-            "iges analytic-surface parameter index traversal",
-        )? {
+        let mut source_index_entries = parameters.iter();
+        while source_index_entries.len() != 0 {
+            let Some(record) =
+                ctx.next_charged(&mut source_index_entries, "iges analytic-surface parameter index traversal")?
+            else {
+                break;
+            };
             ctx.insert_btree_map(
                 &mut records,
                 record.directory_sequence,
@@ -370,9 +373,13 @@ pub(super) fn project<'ctx>(
                 if point_index.is_none() {
                     point_index = Some(point_storage.with_storage(|| {
                         let mut points = BTreeMap::new();
-                        for point in
-                            ctx.admit_iter(&ir.model.points, "iges analytic point index traversal")?
-                        {
+                        let mut source_index_entries = ir.model.points.iter();
+                        while source_index_entries.len() != 0 {
+                            let Some(point) =
+                                ctx.next_charged(&mut source_index_entries, "iges analytic point index traversal")?
+                            else {
+                                break;
+                            };
                             // Location lookup uses the first occurrence of an identity.
                             if !ctx.contains_key_btree_map(
                                 &points,

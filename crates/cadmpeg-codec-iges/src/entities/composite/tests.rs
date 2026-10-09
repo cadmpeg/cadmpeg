@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 mod index_admission;
+mod index_sources;
 mod nurbs;
 
 use crate::directory::UseFlag;

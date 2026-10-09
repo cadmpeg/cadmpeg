@@ -637,7 +637,13 @@ pub fn decode_with_header(
 
     let mut scratch = ctx.reserve_scoped(0, "ASM decode scratch")?;
     let mut by_index = HashMap::new();
-    for record in ctx.admit_iter(records, "index ASM records")? {
+    let mut source_index_entries = records.iter();
+    while source_index_entries.len() != 0 {
+        let Some(record) =
+            ctx.next_charged(&mut source_index_entries, "index ASM records")?
+        else {
+            break;
+        };
         let index = i64::try_from(record.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",

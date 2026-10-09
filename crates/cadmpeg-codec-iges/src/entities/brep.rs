@@ -1216,10 +1216,13 @@ pub(super) fn project<'ctx>(
     let mut surface_positions = BTreeMap::<String, usize>::new();
     let mut curve_positions = BTreeMap::<String, usize>::new();
     if !body_definitions.is_empty() {
-        for (position, surface) in ctx
-            .admit_iter(&ir.model.surfaces, "iges B-rep surface index traversal")?
-            .enumerate()
-        {
+        let mut source_index_entries = ir.model.surfaces.iter().enumerate();
+        while source_index_entries.len() != 0 {
+            let Some((position, surface)) =
+                ctx.next_charged(&mut source_index_entries, "iges B-rep surface index traversal")?
+            else {
+                break;
+            };
             if !ctx.contains_key_btree_map(
                 &surface_positions,
                 surface.id.as_str(),
@@ -1240,10 +1243,13 @@ pub(super) fn project<'ctx>(
                 })?;
             }
         }
-        for (position, curve) in ctx
-            .admit_iter(&ir.model.curves, "iges B-rep curve index traversal")?
-            .enumerate()
-        {
+        let mut source_index_entries = ir.model.curves.iter().enumerate();
+        while source_index_entries.len() != 0 {
+            let Some((position, curve)) =
+                ctx.next_charged(&mut source_index_entries, "iges B-rep curve index traversal")?
+            else {
+                break;
+            };
             if !ctx.contains_key_btree_map(
                 &curve_positions,
                 curve.id.as_str(),
@@ -1582,13 +1588,13 @@ pub(super) fn project<'ctx>(
                                 ctx,
                             )?;
                             let positions = &mut edges_by_curve;
-                            for (offset, edge) in ctx
-                                .admit_iter(
-                                    &ir.model.edges[indexed_edge_count..source_edge_count],
-                                    "iges B-rep source edge index traversal",
-                                )?
-                                .enumerate()
-                            {
+                            let mut source_index_entries = ir.model.edges[indexed_edge_count..source_edge_count].iter().enumerate();
+                            while source_index_entries.len() != 0 {
+                                let Some((offset, edge)) =
+                                    ctx.next_charged(&mut source_index_entries, "iges B-rep source edge index traversal")?
+                                else {
+                                    break;
+                                };
                                 if let Some(curve) = edge.curve() {
                                     if !ctx.contains_key_btree_map(
                                         positions,

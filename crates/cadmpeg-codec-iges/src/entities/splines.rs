@@ -261,7 +261,13 @@ pub(super) fn project(
     let mut transform_storage = ctx.reserve_scoped(0, "iges splines transform indexes")?;
     let (records, entries) = transform_storage.with_storage(|| {
         let mut records = BTreeMap::new();
-        for record in ctx.admit_iter(parameters, "iges splines parameter index traversal")? {
+        let mut source_index_entries = parameters.iter();
+        while source_index_entries.len() != 0 {
+            let Some(record) =
+                ctx.next_charged(&mut source_index_entries, "iges splines parameter index traversal")?
+            else {
+                break;
+            };
             ctx.insert_btree_map(
                 &mut records,
                 record.directory_sequence,

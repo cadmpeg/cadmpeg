@@ -1895,7 +1895,13 @@ pub(crate) fn project_geometry<'ctx>(
     let directory = admitted_directory.as_deref().unwrap_or(directory);
     let mut lookup_storage = ctx.reserve_scoped(0, "iges geometry source lookup storage")?;
     let mut records = BTreeMap::new();
-    for record in ctx.admit_iter(parameters, "iges geometry parameter traversal")? {
+    let mut source_index_entries = parameters.iter();
+    while source_index_entries.len() != 0 {
+        let Some(record) =
+            ctx.next_charged(&mut source_index_entries, "iges geometry parameter traversal")?
+        else {
+            break;
+        };
         lookup_storage.with_storage(|| {
             ctx.insert_btree_map(
                 &mut records,
@@ -3497,7 +3503,13 @@ pub(crate) fn project_geometry<'ctx>(
 
     let mut vertex_storage = ctx.reserve_scoped(0, "iges analytic vertex point storage")?;
     let mut vertex_points = BTreeSet::new();
-    for vertex in ctx.admit_iter(&ir.model.vertices, "iges analytic vertex traversal")? {
+    let mut source_index_entries = ir.model.vertices.iter();
+    while source_index_entries.len() != 0 {
+        let Some(vertex) =
+            ctx.next_charged(&mut source_index_entries, "iges analytic vertex traversal")?
+        else {
+            break;
+        };
         vertex_storage.with_storage(|| {
             ctx.insert_btree_set(
                 &mut vertex_points,

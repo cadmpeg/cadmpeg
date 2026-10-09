@@ -749,14 +749,26 @@ impl SubtypeTable {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         records: &[crate::sab::Record],
     ) -> Result<Self, cadmpeg_core::CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(cadmpeg_core::CodecError::from(refusal));
+        }
         let mut defs: Vec<SubtypeDefinition> = Vec::new();
-        for record in ctx.admit_iter(records, "index ASM subtype records")? {
+        let mut source_index_entries = records.iter();
+        while source_index_entries.len() != 0 {
+            let Some(record) =
+                ctx.next_charged(&mut source_index_entries, "index ASM subtype records")?
+            else {
+                break;
+            };
             let mut scratch = ctx.reserve_scoped(0, "index ASM subtype boundaries")?;
             let mut stack = Vec::new();
-            for (pos, token) in ctx
-                .admit_iter(record.tokens.as_ref(), "index ASM subtype tokens")?
-                .enumerate()
-            {
+            let mut source_index_entries = record.tokens.as_ref().iter().enumerate();
+            while source_index_entries.len() != 0 {
+                let Some((pos, token)) =
+                    ctx.next_charged(&mut source_index_entries, "index ASM subtype tokens")?
+                else {
+                    break;
+                };
                 match token {
                     Token::SubtypeOpen => {
                         let definition = match record.tokens.get(pos + 1) {
@@ -935,6 +947,7 @@ pub fn test_table(
 
 #[cfg(test)]
 mod tests {
+    mod index_sources;
     use super::{
         cache_scope as cache_scope_ctx, lex_test_span, marker_at,
         owned_construction_subtype as owned_construction_subtype_ctx,

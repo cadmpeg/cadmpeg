@@ -180,7 +180,13 @@ fn appearance(
 ) -> Result<(), CodecError> {
     if identities.is_none() {
         let mut index = BTreeSet::new();
-        for item in ctx.admit_iter(&ir.model.appearances, "iges appearance index traversal")? {
+        let mut source_index_entries = ir.model.appearances.iter();
+        while source_index_entries.len() != 0 {
+            let Some(item) =
+                ctx.next_charged(&mut source_index_entries, "iges appearance index traversal")?
+            else {
+                break;
+            };
             let key =
                 ctx.copy_scoped_text(item.id.as_str(), storage, "iges appearance index keys")?;
             storage.with_storage(|| {

@@ -708,7 +708,13 @@ pub(super) fn project<'ctx>(
                                 };
                                 let mut members = BTreeSet::new();
                                 if let Some(TrailingPointerAnalysis::Unambiguous(groups)) = groups {
-                                    for sequence in ctx.admit_iter(groups.associations(), "iges view association index traversal")? {
+                                    let mut source_index_entries = groups.associations().iter();
+                                    while source_index_entries.len() != 0 {
+                                        let Some(sequence) =
+                                            ctx.next_charged(&mut source_index_entries, "iges view association index traversal")?
+                                        else {
+                                            break;
+                                        };
                                         association_storage.with_storage(|| ctx.insert_btree_set(&mut members, *sequence, "iges view association index members"))?;
                                     }
                                 }
