@@ -7274,6 +7274,7 @@ pub(crate) fn edge_recipe_structure_with_context(
     ctx: &DecodeContext<'_>,
     program: &[i32],
 ) -> Result<Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>, CodecError> {
+    ctx.charge_work(0, "interpret F3D edge recipe structure")?;
     let Some(tail) = program.get(7..) else {
         return Ok(None);
     };
@@ -7294,6 +7295,7 @@ pub(crate) fn surface_patch_recipe_structure_with_context(
     Option<crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure>,
     CodecError,
 > {
+    ctx.charge_work(0, "interpret F3D SurfacePatch recipe structure")?;
     let Some(mut remaining) = program.get(7..) else {
         return Ok(None);
     };
@@ -7678,6 +7680,7 @@ pub(crate) fn face_recipe_structure_with_context(
     ctx: &DecodeContext<'_>,
     program: &[i32],
 ) -> Result<Option<crate::records::topology::face::DesignFaceRecipeStructure>, CodecError> {
+    ctx.charge_work(0, "interpret F3D face recipe structure")?;
     let Some((&root, remaining)) = program.split_first() else {
         return Ok(None);
     };
