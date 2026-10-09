@@ -897,7 +897,7 @@ fn patch_direct_curve_body(
         PatchCurve::Ellipse(ellipse) => return patch_direct_ellipse(ctx, body, request, ellipse),
         PatchCurve::Nurbs(curve) => return patch_direct_nurbs(ctx, body, request, curve),
     };
-    let frame = match crate::brep::curve_by_attr(ctx, body, request.carrier_attr)? {
+    let frame = match crate::brep::patch::curve_by_attr(ctx, body, request.carrier_attr)? {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
             *circle_curve.frame()
         }
@@ -923,7 +923,7 @@ fn patch_direct_curve_body(
         cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, radius),
     ));
     let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
-    if !crate::brep::patch_compact_values(ctx, body, request.carrier_attr, &values)? {
+    if !crate::brep::patch::patch_compact_values(ctx, body, request.carrier_attr, &values)? {
         return Err(cadmpeg_core::CodecError::Malformed(
             "SLDPRT sketch circle carrier cannot be patched".into(),
         ));
@@ -1059,7 +1059,7 @@ fn patch_direct_nurbs(
                 "SLDPRT sketch NURBS lift is invalid: {error}"
             ))
         })?;
-    if !crate::brep::patch_nurbs_by_attr(ctx, body, request.carrier_attr, &curve)? {
+    if !crate::brep::patch::patch_nurbs_by_attr(ctx, body, request.carrier_attr, &curve)? {
         return Err(cadmpeg_core::CodecError::NotImplemented(
             "SLDPRT sketch NURBS edit changes native storage shape".into(),
         ));
@@ -1073,7 +1073,7 @@ fn patch_direct_ellipse(
     request: &CurvePatch,
     ellipse: &PatchEllipse,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let axis = match crate::brep::curve_by_attr(ctx, body, request.carrier_attr)? {
+    let axis = match crate::brep::patch::curve_by_attr(ctx, body, request.carrier_attr)? {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))) => {
             *ellipse_curve.frame().axis()
         }
@@ -1122,7 +1122,7 @@ fn patch_direct_ellipse(
         cadmpeg_ir::geometry::analytic::EllipseCurve::new(center_3d, frame, radii),
     ));
     let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
-    if !crate::brep::patch_compact_values(ctx, body, request.carrier_attr, &values)? {
+    if !crate::brep::patch::patch_compact_values(ctx, body, request.carrier_attr, &values)? {
         return Err(cadmpeg_core::CodecError::Malformed(
             "SLDPRT sketch ellipse carrier cannot be patched".into(),
         ));

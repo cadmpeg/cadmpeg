@@ -120,7 +120,7 @@ fn attribute_nurbs_patch_preserves_nested_descriptor_refusal() {
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
             let mut patched = bytes.clone();
-            let result = crate::brep::patch_nurbs_by_attr(&ctx, &mut patched, 10, old);
+            let result = crate::brep::patch::patch_nurbs_by_attr(&ctx, &mut patched, 10, old);
             if let Err(CodecError::ResourceLimit(limit)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
             }
