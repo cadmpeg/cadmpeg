@@ -7,6 +7,7 @@ use triangulation::TextTriangulation;
 
 use std::collections::{BTreeMap, HashMap};
 
+use cadmpeg_core::decode::admission::Admission;
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -2383,14 +2384,18 @@ pub(crate) struct SurfaceParameterAffine {
     pub(crate) v_offset: f64,
 }
 
-pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParameterAffine {
+pub(crate) fn surface_parameter_affine<A: Admission>(
+    admission: &A,
+    surface: &TextSurface,
+) -> Result<SurfaceParameterAffine, A::Error> {
+    let _depth = admission.enter_nested("FreeCAD surface parameter nesting")?;
     let identity = SurfaceParameterAffine {
         u_scale: 1.0,
         u_offset: 0.0,
         v_scale: 1.0,
         v_offset: 0.0,
     };
-    match surface {
+    Ok(match surface {
         TextSurface::Plane {
             v_reversed: true, ..
         } => SurfaceParameterAffine {
@@ -2422,7 +2427,7 @@ pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParamete
             parameter_ranges,
             basis,
         } => {
-            let basis = surface_parameter_affine(basis.surface());
+            let basis = surface_parameter_affine(admission, basis.surface())?;
             let u_scale = basis.u_scale.abs();
             let v_scale = basis.v_scale.abs();
             SurfaceParameterAffine {
@@ -2432,9 +2437,9 @@ pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParamete
                 v_offset: -parameter_ranges[1][0].get() * v_scale,
             }
         }
-        TextSurface::Offset { basis, .. } => surface_parameter_affine(basis.surface()),
+        TextSurface::Offset { basis, .. } => surface_parameter_affine(admission, basis.surface())?,
         _ => identity,
-    }
+    })
 }
 
 /// Bind every exact-shape property to and frame its payload.
@@ -7178,7 +7183,7 @@ fn append_text_surface(
             parameter_ranges,
             basis,
         } => {
-            let basis_parameters = surface_parameter_affine(basis.surface());
+            let basis_parameters = surface_parameter_affine(ctx, basis.surface())?;
             let parameter_ranges = [
                 parameter_ranges[0].map(|value| {
                     value

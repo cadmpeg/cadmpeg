@@ -784,7 +784,8 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                     .tables
                     .surfaces
                     .get(surface - 1)
-                    .map(surface_parameter_affine);
+                    .map(|surface| surface_parameter_affine(self.ctx, surface))
+                    .transpose()?;
                 if !self.emit_pcurve(
                     position + 1,
                     representation_index,

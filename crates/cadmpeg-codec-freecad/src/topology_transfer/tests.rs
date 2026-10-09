@@ -916,7 +916,8 @@ fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
         radius: cadmpeg_ir::scalar::FiniteReal::ONE,
         u_reversed: true,
     };
-    let affine = surface_parameter_affine(&surface);
+    let affine = surface_parameter_affine(&cadmpeg_core::decode::admission::StandardAdmission, &surface)
+        .expect("standard surface parameter walk");
     assert_eq!(affine.u_scale, -1.0);
     assert_eq!(affine.v_scale, 1.0);
 
@@ -928,7 +929,8 @@ fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
         half_angle: cadmpeg_ir::scalar::FiniteReal::new(std::f64::consts::FRAC_PI_3).unwrap(),
         u_reversed: true,
     };
-    let affine = surface_parameter_affine(&cone);
+    let affine = surface_parameter_affine(&cadmpeg_core::decode::admission::StandardAdmission, &cone)
+        .expect("standard surface parameter walk");
     assert_eq!(affine.u_scale, -1.0);
     assert!((affine.v_scale - 0.5).abs() < 1.0e-15);
 
@@ -937,7 +939,8 @@ fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
             .map(|range| range.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap())),
         basis: crate::brep::NestedSurface::try_new(cone).expect("one inline basis is admitted"),
     };
-    let affine = surface_parameter_affine(&trimmed);
+    let affine = surface_parameter_affine(&cadmpeg_core::decode::admission::StandardAdmission, &trimmed)
+        .expect("standard surface parameter walk");
     assert_eq!(affine.u_scale, 1.0);
     assert_eq!(affine.u_offset, -2.0);
     assert!((affine.v_scale - 0.5).abs() < 1.0e-15);
