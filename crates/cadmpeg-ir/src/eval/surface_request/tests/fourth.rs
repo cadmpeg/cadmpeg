@@ -185,3 +185,21 @@ fn actual_stored_placement_maps_third_and_fourth_without_repeating_source() {
     }).unwrap();
     assert_eq!(budget.consumed(), 1);
 }
+
+#[test]
+fn actual_quartic_offset_third_follows_polynomial_normal_law() {
+    let surface = crate::eval::surface_nurbs_higher::tests::quartic();
+    let mut ir = CadIr::empty();
+    let base = stored(&mut ir, "quartic", SolvedSurfaceGeometry::Nurbs(surface));
+    let shifted = offset(&mut ir, "quartic-offset", base, 1.0);
+    let index = ModelIndex::build(&ir, StandardIndex);
+    super::super::with_mapping(EvaluationAdmission::Standard, &index, &shifted, 0.0, 0.0, &mut |mapping| {
+        let result = mapping.evaluate(EvaluationAdmission::Standard, &index, SurfaceRequest::Third)?;
+        assert_eq!(result.jet.point.get(), Point3::new(0.0, 0.0, 1.0));
+        assert_eq!(result.jet.second.unwrap(), [FiniteVector3::ZERO; 3]);
+        for (actual, (x, y)) in result.higher.third().unwrap().into_iter().zip([
+            (-24.0, -12.0), (-12.0, -12.0), (-12.0, -24.0), (-24.0, -120.0),
+        ]) { close(actual.get(), Vector3::new(x, y, 0.0)); }
+        Ok(())
+    }).unwrap();
+}

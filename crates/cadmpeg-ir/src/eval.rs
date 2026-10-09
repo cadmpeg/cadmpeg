@@ -63,6 +63,7 @@ mod rational;
 mod sketch_offset;
 mod sweep_law;
 mod surface_request;
+mod surface_nurbs_higher;
 #[cfg(test)]
 mod test_support;
 use basis::fill_bspline_basis;
@@ -2706,6 +2707,14 @@ struct NurbsSurfaceSecondPartials {
     lanes: [[FiniteReal; 3]; 3],
 }
 
+/// Completed third bases and homogeneous sums, with their projected lanes.
+/// Fourth partials reuse this state without evaluating an earlier order again.
+struct NurbsSurfaceThirdPartials {
+    bases: [Cow<'static, [f64]>; 2],
+    sums: [Homogeneous; 4],
+    lanes: [[FiniteReal; 3]; 4],
+}
+
 /// The homogeneous sum of a NURBS surface's poles local to `spans`, blended
 /// by `u_values` along `u` and `v_values` along `v`. A missing pole and a
 /// value that is not finite leave no sum.
@@ -2759,7 +2768,7 @@ impl NurbsSurfaceLocal<'_> {
         )
     }
 
-    /// A third-only homogeneous derivative sum over the exact pole window.
+    /// A higher homogeneous derivative sum over the exact pole window.
     fn derivative_sum(
         &self,
         scratch: &decode::Scratch<'_, '_>,
@@ -2877,7 +2886,7 @@ impl NurbsSurfaceLocal<'_> {
         scratch: &decode::Scratch<'_, '_>,
         first: &NurbsSurfaceFirstPartials,
         second: &NurbsSurfaceSecondPartials,
-    ) -> Result<[[FiniteReal; 3]; 4], EvaluationFailure<()>> {
+    ) -> Result<NurbsSurfaceThirdPartials, EvaluationFailure<()>> {
         scratch.settle((|| {
             scratch.admission.independent_cost(nurbs_surface_third_evaluation_cost(self.degrees))?;
             let non_finite = EvaluationFailure::NonFinite(());
@@ -2901,12 +2910,13 @@ impl NurbsSurfaceLocal<'_> {
             let lane = |sum: Homogeneous, corrections: &[(Homogeneous, [FiniteReal; 3])]| {
                 finite_lanes(sum.project(self.base, corrections).ok_or(non_finite)?).map_err(|_| non_finite)
             };
-            Ok([
+            let lanes = [
                 lane(uuu, &[(uuu, self.point), (uu, du), (uu, du), (uu, du), (u, duu), (u, duu), (u, duu)])?,
                 lane(uuv, &[(uuv, self.point), (uu, dv), (uv, du), (uv, du), (u, duv), (u, duv), (v, duu)])?,
                 lane(uvv, &[(uvv, self.point), (vv, du), (uv, dv), (uv, dv), (v, duv), (v, duv), (u, dvv)])?,
                 lane(vvv, &[(vvv, self.point), (vv, dv), (vv, dv), (vv, dv), (v, dvv), (v, dvv), (v, dvv)])?,
-            ])
+            ];
+            Ok(NurbsSurfaceThirdPartials { bases, sums: [uuu, uuv, uvv, vvv], lanes })
         })())
     }
 }
@@ -3075,15 +3085,25 @@ fn nurbs_surface_requested_jet(
             first.as_ref().map_err(|failure| *failure).and_then(|first| {
                 second.as_ref().map_err(|failure| *failure)
                     .and_then(|second| local.third(scratch, first, second))
+            })
+        } else { Err(EvaluationFailure::NoValue) };
+        let fourth = if request == SurfaceRequest::Fourth {
+            first.as_ref().map_err(|failure| *failure).and_then(|first| {
+                second.as_ref().map_err(|failure| *failure).and_then(|second| {
+                    third.as_ref().map_err(|failure| *failure)
+                        .and_then(|third| local.fourth(scratch, first, second, third))
+                })
             }).map(|lanes| lanes.map(finite_vector))
         } else { Err(EvaluationFailure::NoValue) };
+        let third = third.map(|third| third.lanes.map(finite_vector));
         Ok(RequestedJet {
             jet: SurfaceJet {
                 point: FinitePoint3::from_coordinates(x, y, z),
                 first: first.map(|first| first.lanes.map(finite_vector)),
                 second: second.map(|second| second.lanes.map(finite_vector)),
             },
-            higher: HigherPartials::Third(third),
+            higher: if request == SurfaceRequest::Fourth { HigherPartials::Fourth { third, fourth } }
+                else { HigherPartials::Third(third) },
         })
     })();
     scratch.settle(result)
