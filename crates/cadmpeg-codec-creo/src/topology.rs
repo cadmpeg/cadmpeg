@@ -123,34 +123,45 @@ impl Loop {
         half_edges: Vec<HalfEdgeId>,
         graph: &[HalfEdge],
     ) -> Result<Option<Self>, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         if half_edges.is_empty() {
             return Ok(None);
         }
-        let count = cadmpeg_core::decode::u64_from_index(half_edges.len());
-        let work = count
-            .checked_mul(cadmpeg_core::decode::u64_from_index(graph.len()))
-            .and_then(|work| {
-                count
-                    .checked_mul(count)
-                    .and_then(|unique| work.checked_add(unique))
-            })
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo closed ring validation work", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(work, "creo closed ring validation work")?;
-        for (index, (id, next)) in half_edges
-            .iter()
-            .zip(half_edges.iter().cycle().skip(1))
-            .enumerate()
-        {
-            if half_edges.iter().take(index).any(|previous| previous == id) {
-                return Ok(None);
+        let mut indices = 0..half_edges.len();
+        while !indices.is_empty() {
+            let Some(index) = ctx.next_charged(&mut indices, "creo closed ring validation work")? else {
+                break;
+            };
+            let id = half_edges[index];
+            let next = half_edges[if index + 1 == half_edges.len() { 0 } else { index + 1 }];
+            let mut previous = half_edges[..index].iter();
+            while previous.len() != 0 {
+                let Some(previous) = ctx.next_charged(&mut previous, "creo closed ring validation work")? else {
+                    break;
+                };
+                if *previous == id {
+                    return Ok(None);
+                }
             }
-            let mut candidates = graph.iter().filter(|edge| edge.id == *id);
-            let Some(edge) = candidates.next() else {
+            let mut candidates = graph.iter();
+            let mut selected = None;
+            while candidates.len() != 0 {
+                let Some(edge) = ctx.next_charged(&mut candidates, "creo closed ring validation work")? else {
+                    break;
+                };
+                if edge.id == id {
+                    if selected.is_some() {
+                        return Ok(None);
+                    }
+                    selected = Some(edge);
+                }
+            }
+            let Some(edge) = selected else {
                 return Ok(None);
             };
-            if candidates.next().is_some() || edge.face_id != face_id || edge.next != Some(*next) {
+            if edge.face_id != face_id || edge.next != Some(next) {
                 return Ok(None);
             }
         }
@@ -186,21 +197,38 @@ impl FaceComponent {
         face_ids: Vec<u32>,
         curve_ids: Vec<u32>,
     ) -> Result<Option<Self>, CodecError> {
-        let work = cadmpeg_core::decode::u64_from_index(face_ids.len())
-            .checked_mul(2)
-            .and_then(|work| {
-                work.checked_add(cadmpeg_core::decode::u64_from_index(curve_ids.len()))
-            })
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo face component validation work", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(work, "creo face component validation work")?;
-        if face_ids.is_empty()
-            || face_ids.contains(&0)
-            || face_ids.windows(2).any(|pair| pair[0] >= pair[1])
-            || curve_ids.windows(2).any(|pair| pair[0] >= pair[1])
-        {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        if face_ids.is_empty() {
             return Ok(None);
+        }
+        let mut faces = face_ids.iter();
+        while faces.len() != 0 {
+            let Some(face) = ctx.next_charged(&mut faces, "creo face component validation work")? else {
+                break;
+            };
+            if *face == 0 {
+                return Ok(None);
+            }
+        }
+        let mut face_pairs = face_ids.windows(2);
+        while face_pairs.len() != 0 {
+            let Some(pair) = ctx.next_charged(&mut face_pairs, "creo face component validation work")? else {
+                break;
+            };
+            if pair[0] >= pair[1] {
+                return Ok(None);
+            }
+        }
+        let mut curve_pairs = curve_ids.windows(2);
+        while curve_pairs.len() != 0 {
+            let Some(pair) = ctx.next_charged(&mut curve_pairs, "creo face component validation work")? else {
+                break;
+            };
+            if pair[0] >= pair[1] {
+                return Ok(None);
+            }
         }
         Ok(Some(Self {
             face_ids,
@@ -238,15 +266,23 @@ impl TopologicalVertex {
         id: u32,
         half_edges: Vec<HalfEdgeId>,
     ) -> Result<Option<Self>, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let Some(id) = NonZeroU32::new(id) else {
             return Ok(None);
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(half_edges.len()),
-            "creo vertex orbit validation work",
-        )?;
-        if half_edges.is_empty() || half_edges.windows(2).any(|pair| pair[0] >= pair[1]) {
+        if half_edges.is_empty() {
             return Ok(None);
+        }
+        let mut pairs = half_edges.windows(2);
+        while pairs.len() != 0 {
+            let Some(pair) = ctx.next_charged(&mut pairs, "creo vertex orbit validation work")? else {
+                break;
+            };
+            if pair[0] >= pair[1] {
+                return Ok(None);
+            }
         }
         Ok(Some(Self { id, half_edges }))
     }
