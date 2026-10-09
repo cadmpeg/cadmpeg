@@ -192,15 +192,20 @@ fn dimension_geometry_runs<'a, 'ctx>(
 ) -> Result<(StreamIndexRuns<'a>, ScopedReservation<'ctx>), CodecError> {
     let operation = "f3d dimension geometry indices";
     ctx.with_scoped_storage(operation, || {
+        let mut keys_storage = ctx.reserve_scoped(0, operation)?;
         let mut keys = Vec::new();
         for point in ctx.admit_iter(points, "scan F3D dimension sketch points")? {
             if let Some(stream) = record_stream(ctx, &point.id)? {
-                ctx.push_vec(&mut keys, (stream, point.record_index), operation)?;
+                keys_storage.with_storage(|| {
+                    ctx.push_vec(&mut keys, (stream, point.record_index), operation)
+                })?;
             }
         }
         for curve in ctx.admit_iter(curves, "scan F3D dimension sketch curves")? {
             if let Some(stream) = record_stream(ctx, &curve.id)? {
-                ctx.push_vec(&mut keys, (stream, curve.record_index), operation)?;
+                keys_storage.with_storage(|| {
+                    ctx.push_vec(&mut keys, (stream, curve.record_index), operation)
+                })?;
             }
         }
         StreamIndexRuns::new(ctx, keys, operation)
@@ -215,6 +220,7 @@ fn dimension_sketch_entity_runs<'a, 'ctx>(
 ) -> Result<(StreamIndexRuns<'a>, ScopedReservation<'ctx>), CodecError> {
     let operation = "f3d dimension sketch entities";
     ctx.with_scoped_storage(operation, || {
+        let mut keys_storage = ctx.reserve_scoped(0, operation)?;
         let mut keys = Vec::new();
         for entity in ctx.admit_iter(entities, "scan F3D dimension sketch entities")? {
             if !entity.in_sketch_module() {
@@ -226,7 +232,7 @@ fn dimension_sketch_entity_runs<'a, 'ctx>(
             ) else {
                 continue;
             };
-            ctx.push_vec(&mut keys, (stream, index), operation)?;
+            keys_storage.with_storage(|| ctx.push_vec(&mut keys, (stream, index), operation))?;
         }
         StreamIndexRuns::new(ctx, keys, operation)
     })
