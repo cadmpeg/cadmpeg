@@ -3382,8 +3382,8 @@ pub(crate) fn equation_table(
     let prototype_end = after_prototype_reference + 1;
     cursor = prototype_end;
 
-    let mut prototypes = Vec::new();
     let mut storage = ctx.reserve_scoped(0, "creo equation prototypes")?;
+    let mut prototypes = Vec::new();
     while cursor < rows_end {
         ctx.next_charged(&mut (cursor..rows_end), "creo equation row traversal")?;
         let row_start = cursor;
@@ -3465,12 +3465,12 @@ pub(crate) fn equation_table(
     let mut rows = Vec::new();
     ctx.reserve_vec(&mut rows, prototypes.len(), "creo equation rows")?;
     for prototype in ctx.admit_iter(prototypes, "creo equation materialization")? {
-        prototype.argument_storage.commit()?;
+        let arguments = prototype.argument_storage.commit_value(prototype.arguments)?;
         rows.push(FeatureEquation {
             equation_id: prototype.equation_id,
             function_id: prototype.function_id,
             explicit_argument_count: prototype.explicit_argument_count,
-            arguments: prototype.arguments,
+            arguments,
             arguments_body: ctx.copy_retained(
                 &payload[prototype.arguments_start..prototype.arguments_end],
                 "creo equation argument body",
@@ -5287,10 +5287,7 @@ fn self_described_positional_dimension_table(
         }
     }
     match candidate {
-        Some((table, storage)) => {
-            storage.commit()?;
-            Ok(Some(table))
-        }
+        Some((table, storage)) => Ok(Some(storage.commit_value(table)?)),
         None => Ok(None),
     }
 }
@@ -5384,8 +5381,8 @@ fn feature_skamps(
         None => return Ok(Vec::new()),
     };
     item_cursor = named_item_end + named_item_close_len;
-    let mut prototype_items = Vec::new();
     let mut prototype_storage = ctx.reserve_scoped(0, "creo skamp prototype items")?;
+    let mut prototype_items = Vec::new();
     if let Some(item) = named_item {
         prototype_storage.with_storage(|| {
             ctx.reserve_vec(&mut prototype_items, 1, "creo skamp prototype items")
@@ -5425,7 +5422,7 @@ fn feature_skamps(
     let Some(status) = named_compact_int(ctx, payload, b"status\0", cursor, prototype_end)? else {
         return Ok(Vec::new());
     };
-    prototype_storage.commit()?;
+    let prototype_items = prototype_storage.commit_value(prototype_items)?;
     let prototype = FeatureSkamp {
         id,
         kind,
@@ -5469,8 +5466,8 @@ fn feature_skamps(
             break;
         }
         cursor += 2;
-        let mut items = Vec::new();
         let mut item_storage = ctx.reserve_scoped(0, "creo skamp items")?;
+        let mut items = Vec::new();
         while items.len() < index_from_u32(item_count) {
             ctx.next_charged(
                 &mut (items.len()..index_from_u32(item_count)),
@@ -5513,7 +5510,7 @@ fn feature_skamps(
         } else {
             break;
         }
-        item_storage.commit()?;
+        let items = item_storage.commit_value(items)?;
         ctx.reserve_vec(&mut rows, 1, "creo skamp rows")?;
         rows.push(FeatureSkamp {
             id,
@@ -5778,8 +5775,8 @@ fn positional_feature_skamps(
         };
         let classes = item_classes.get_or_insert((item_table_class, item_row_class));
         cursor = after_item_row_class;
-        let mut items = Vec::new();
         let mut item_storage = ctx.reserve_scoped(0, "creo skamp items")?;
+        let mut items = Vec::new();
         while items.len() < index_from_u32(item_count) {
             ctx.next_charged(
                 &mut (items.len()..index_from_u32(item_count)),
@@ -5846,7 +5843,7 @@ fn positional_feature_skamps(
             };
             cursor = next;
         }
-        item_storage.commit()?;
+        let row = item_storage.commit_value(row)?;
         ctx.reserve_vec(&mut rows, 1, "creo skamp rows")?;
         rows.push(row);
     }
@@ -6604,8 +6601,8 @@ fn saved_line_block(
             break;
         }
         let record_offset = cursor;
-        let mut references = Vec::new();
         let mut storage = ctx.reserve_scoped(0, "creo saved line record scratch")?;
+        let mut references = Vec::new();
         let mut attributes = Vec::new();
         loop {
             ctx.next_charged(
@@ -6773,7 +6770,7 @@ fn saved_line_block(
         if row_separator {
             cursor += 1;
         }
-        storage.commit()?;
+        let (references, attributes) = storage.commit_value((references, attributes))?;
         let body =
             ctx.copy_retained(&payload[record_offset..record_end], "creo saved line body")?;
         ctx.reserve_vec(entities, 1, "creo saved line block entities")?;
@@ -7612,8 +7609,8 @@ fn saved_spline_parameters(
     if usize::try_from(count).ok() != Some(point_count) || cursor <= count_at {
         return Ok(None);
     }
-    let mut values = Vec::new();
     let mut storage = ctx.reserve_scoped(0, "creo saved spline parameters")?;
+    let mut values = Vec::new();
     storage.with_storage(|| {
         ctx.reserve_vec(&mut values, point_count, "creo saved spline parameters")
     })?;
@@ -7632,7 +7629,7 @@ fn saved_spline_parameters(
         values.push(value);
         cursor = next;
     }
-    storage.commit()?;
+    let values = storage.commit_value(values)?;
     Ok(Some(DecodedField {
         value: values,
         body: ctx.copy_retained(
