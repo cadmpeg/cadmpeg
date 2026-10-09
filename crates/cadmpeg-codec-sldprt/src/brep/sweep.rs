@@ -13,11 +13,12 @@
 //! (degree-one ruling for a swept surface, a full rational circle ring for a
 //! spun surface).
 
+#[cfg(test)]
 use std::borrow::Cow;
 #[cfg(test)]
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoles3, NurbsSurface},
@@ -142,20 +143,59 @@ pub(in crate::brep) fn scan_into(
     Ok(())
 }
 
+/// A source profile or an owned analytic conversion with its live backing.
+pub(super) enum ProfileNurbs<'source, 'ctx> {
+    Borrowed(&'source NurbsCurve),
+    Generated(GeneratedProfile<'ctx>),
+}
+
+/// Private fields keep the curve and its mandatory lease inseparable.
+pub(super) struct GeneratedProfile<'ctx> {
+    curve: NurbsCurve,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'source, 'ctx> ProfileNurbs<'source, 'ctx> {
+    pub(super) fn curve(&self) -> &NurbsCurve {
+        match self {
+            Self::Borrowed(curve) => curve,
+            Self::Generated(profile) => &profile.curve,
+        }
+    }
+
+    #[cfg(test)]
+    fn into_retained(self) -> Result<Cow<'source, NurbsCurve>, CodecError> {
+        match self {
+            Self::Borrowed(curve) => Ok(Cow::Borrowed(curve)),
+            Self::Generated(profile) => Ok(Cow::Owned(profile.storage.commit_value(profile.curve)?)),
+        }
+    }
+}
+
+/// Full rational circle ring, clamped at both ends.
+const FULL_RING_KNOTS: [f64; 12] = [
+    0.0, 0.0, 0.0,
+    std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2,
+    std::f64::consts::PI, std::f64::consts::PI,
+    3.0 * std::f64::consts::FRAC_PI_2, 3.0 * std::f64::consts::FRAC_PI_2,
+    2.0 * std::f64::consts::PI, 2.0 * std::f64::consts::PI, 2.0 * std::f64::consts::PI,
+];
+
 /// Convert an exact analytic sweep profile to its exact rational NURBS form.
 ///
 /// The nine poles are four rational quadratic quarter arcs. Odd poles are the
 /// intersections of adjacent endpoint tangents and therefore carry weight
 /// `sqrt(2) / 2`.
-pub(super) fn profile_nurbs<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn profile_nurbs<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     geometry: &'a CurveGeometry,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<Option<Cow<'a, NurbsCurve>>, CodecError> {
+) -> Result<Option<ProfileNurbs<'a, 'ctx>>, CodecError> {
+    if let Some(limit) = ctx.resource_refusal() { return Err(limit.into()); }
     let (center, frame, major_radius, minor_radius) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
-            return Ok(Some(Cow::Borrowed(curve)))
+            return Ok(Some(ProfileNurbs::Borrowed(curve)))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let radius = circle_curve.radius().get();
@@ -177,8 +217,10 @@ pub(super) fn profile_nurbs<'a>(
     let major = *frame.reference().as_raw();
     let minor = *frame.binormal().as_raw();
     let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
-    let mut control_points = Vec::with_capacity(9);
-    let mut weights = Vec::with_capacity(9);
+    let mut pole_storage = ctx.reserve_scoped(0, "hold SLDPRT sweep profile raw lanes")?;
+    let (control_points, weights) = pole_storage.with_storage(|| {
+    let mut control_points = ctx.vector_storage(9, "construct SLDPRT sweep profile poles")?;
+    let mut weights = ctx.vector_storage(9, "construct SLDPRT sweep profile weights")?;
     for index in 0_i32..9 {
         let angle = f64::from(index) * std::f64::consts::FRAC_PI_4;
         let (sin, cos) = angle.sin_cos();
@@ -200,28 +242,24 @@ pub(super) fn profile_nurbs<'a>(
             "collect SLDPRT decoded vector items",
         )?;
     }
-    match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        Ok::<_, CodecError>((control_points, weights))
+    })?;
+    let mut curve_storage = ctx.reserve_scoped(0, "hold SLDPRT generated sweep profile")?;
+    let result = curve_storage.with_storage(|| {
+        let mut knots = ctx.collection_vec(FULL_RING_KNOTS.len(), "construct SLDPRT sweep profile knots")?;
+        knots.extend_from_slice(&FULL_RING_KNOTS);
+        NurbsCurve::from_lanes(
         ctx,
         2,
-        vec![
-            0.0,
-            0.0,
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-            std::f64::consts::FRAC_PI_2,
-            std::f64::consts::PI,
-            std::f64::consts::PI,
-            3.0 * std::f64::consts::FRAC_PI_2,
-            3.0 * std::f64::consts::FRAC_PI_2,
-            2.0 * std::f64::consts::PI,
-            2.0 * std::f64::consts::PI,
-            2.0 * std::f64::consts::PI,
-        ],
+        knots,
         control_points,
         Some(weights),
         false,
-    )? {
-        Ok(curve) => Ok(Some(Cow::Owned(curve))),
+        )
+    })?;
+    drop(pole_storage);
+    match result {
+        Ok(curve) => Ok(Some(ProfileNurbs::Generated(GeneratedProfile { curve, storage: curve_storage }))),
         Err(error) => {
             refusal.note(
                 ctx,
@@ -258,6 +296,7 @@ pub(super) fn swept_nurbs(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<NurbsSurface>, CodecError> {
+    if let Some(limit) = ctx.resource_refusal() { return Err(limit.into()); }
     let direction = direction.as_raw();
     if !(v_start.is_finite() && v_end.is_finite()) || v_end <= v_start {
         return Ok(None);
@@ -265,6 +304,7 @@ pub(super) fn swept_nurbs(
     // Each profile pole becomes one row of two poles, at the two travel ends.
     let n = profile.pole_count();
     let rational = matches!(profile.pole_rows(), NurbsPoles3::Rational { .. });
+    let (raw_grid, grid_storage) = ctx.with_scoped_storage("hold SLDPRT sweep raw grid", || {
     let mut control_rows = ctx.vector_storage(n, "construct swept surface pole rows")?;
     let mut weight_rows = if rational {
         Some(ctx.vector_storage(n, "construct swept surface weight rows")?)
@@ -298,8 +338,15 @@ pub(super) fn swept_nurbs(
             ctx.push_vec(rows, row, "construct swept surface weight rows")?;
         }
     }
+        Ok::<_, CodecError>(Some((control_rows, weight_rows)))
+    })?;
+    let Some((control_rows, weight_rows)) = raw_grid else { return Ok(None); };
+    let mut surface_storage = ctx.reserve_scoped(0, "retain SLDPRT sweep surface candidate")?;
+    let result = surface_storage.with_storage(|| {
     let knots = ctx.copy_slice(profile.knots().as_slice(), "copy sweep profile knots")?;
-    match NurbsSurface::from_checked_lanes(
+        let mut v_knots = ctx.collection_vec(4, "construct swept surface knots")?;
+        v_knots.extend_from_slice(&[v_start, v_start, v_end, v_end]);
+        NurbsSurface::from_checked_lanes(
         ctx,
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             profile.degree(),
@@ -308,13 +355,16 @@ pub(super) fn swept_nurbs(
         ),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             1,
-            vec![v_start, v_start, v_end, v_end],
+            v_knots,
             false,
         ),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_rows, weight_rows),
         false,
-    )? {
-        Ok(surface) => Ok(Some(surface)),
+        )
+    })?;
+    drop(grid_storage);
+    match result {
+        Ok(surface) => Ok(Some(surface_storage.commit_value(surface)?)),
         Err(error) => {
             refusal.note(
                 ctx,
@@ -337,12 +387,13 @@ pub(super) fn spun_nurbs(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<NurbsSurface>, CodecError> {
-    use std::f64::consts::{FRAC_PI_2, PI};
+    use std::f64::consts::FRAC_PI_2;
     let axis = axis.as_raw();
     // Each profile pole becomes one row of nine poles: four rational
     // quadratic quarter arcs around the axis.
     let n = profile.pole_count();
     let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
+    let (raw_grid, grid_storage) = ctx.with_scoped_storage("hold SLDPRT sweep raw grid", || {
     let mut control_rows = ctx.vector_storage(n, "construct spun surface pole rows")?;
     let mut weight_rows = ctx.vector_storage(n, "construct spun surface weight rows")?;
     for i in ctx.admit_iter(0..n, "solve spun surface poles")? {
@@ -435,22 +486,15 @@ pub(super) fn spun_nurbs(
             "construct spun surface weight rows",
         )?;
     }
-    let v_knots = vec![
-        0.0,
-        0.0,
-        0.0,
-        FRAC_PI_2,
-        FRAC_PI_2,
-        PI,
-        PI,
-        3.0 * FRAC_PI_2,
-        3.0 * FRAC_PI_2,
-        2.0 * PI,
-        2.0 * PI,
-        2.0 * PI,
-    ];
+        Ok::<_, CodecError>(Some((control_rows, weight_rows)))
+    })?;
+    let Some((control_rows, weight_rows)) = raw_grid else { return Ok(None); };
+    let mut surface_storage = ctx.reserve_scoped(0, "retain SLDPRT sweep surface candidate")?;
+    let result = surface_storage.with_storage(|| {
+        let mut v_knots = ctx.collection_vec(FULL_RING_KNOTS.len(), "construct spun surface knots")?;
+        v_knots.extend_from_slice(&FULL_RING_KNOTS);
     let knots = ctx.copy_slice(profile.knots().as_slice(), "copy sweep profile knots")?;
-    match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        NurbsSurface::from_lanes(
         ctx,
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             profile.degree(),
@@ -460,8 +504,11 @@ pub(super) fn spun_nurbs(
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, true),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_rows, Some(weight_rows)),
         false,
-    )? {
-        Ok(surface) => Ok(Some(surface)),
+        )
+    })?;
+    drop(grid_storage);
+    match result {
+        Ok(surface) => Ok(Some(surface_storage.commit_value(surface)?)),
         Err(error) => {
             refusal.note(
                 ctx,
@@ -479,7 +526,7 @@ mod tests {
 
     use cadmpeg_core::decode::index_from_u32;
 
-    use super::{profile_nurbs, spun_nurbs, swept_nurbs, SweepCarrier, SweepKind};
+    use super::{profile_nurbs, spun_nurbs, swept_nurbs, ProfileNurbs, SweepCarrier, SweepKind};
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::geometry::nurbs::NurbsSurface;
     use cadmpeg_ir::geometry::CurveGeometry;
@@ -648,7 +695,7 @@ mod tests {
                 &geometry,
                 &"test profile",
                 &mut crate::lane_refusal::LaneRefusals::new(),
-            )
+            ).and_then(|profile| profile.map(ProfileNurbs::into_retained).transpose())
         })
         .expect("profile fits service policy")
         .expect("ellipse NURBS");
@@ -687,7 +734,7 @@ mod tests {
                 &geometry,
                 &"test profile",
                 &mut crate::lane_refusal::LaneRefusals::new(),
-            )
+            ).and_then(|profile| profile.map(ProfileNurbs::into_retained).transpose())
         })
         .expect("profile fits service policy")
         .expect("circle NURBS");
@@ -1119,3 +1166,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod ownership_tests;
