@@ -78,7 +78,7 @@ macro_rules! procedural_curve {
 }
 
 mod helix;
-mod law_sweep;
+pub(super) mod law_sweep;
 mod overflowing_arms;
 mod overflowing_curve_arms;
 mod pcurves;
@@ -87,7 +87,7 @@ mod procedural_curves;
 mod ruled_sum;
 mod surface_derivative_context;
 mod surface_parameter_bounds;
-mod variable_blend;
+pub(super) mod variable_blend;
 
 const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
 

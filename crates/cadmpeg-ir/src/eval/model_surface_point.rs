@@ -145,14 +145,18 @@ pub(super) fn model_surface_point_by_id_inner(
         })
     }
 
-    /// A stored cache's point and unit normal. The point is evaluated alone;
-    /// the normal is that of the cache's first partials.
+    /// A stored cache's point and, where the reader needs it, unit normal.
+    /// The normal is that of the cache's first partials.
     fn cache_evaluation(
         admission: admission::EvaluationAdmission<'_, '_>,
         geometry: &SurfaceGeometry,
         u: f64,
         v: f64,
+        normal: bool,
     ) -> Option<SurfaceEvaluation> {
+        if !normal {
+            return point_evaluation(crate::eval::decode::surface_point(admission, geometry, u, v));
+        }
         let point = match crate::eval::decode::surface_point(admission, geometry, u, v) {
             Ok(point) => Ok(point),
             Err(EvaluationFailure::NonFinite(point)) => Err(point),
@@ -480,7 +484,7 @@ pub(super) fn model_surface_point_by_id_inner(
                         Err(failure) => cache_fallback(
                             failure,
                             sweep_has_current_cache(construction)
-                                .then(|| cache_evaluation(admission, &surface.geometry, u, v))
+                                .then(|| cache_evaluation(admission, &surface.geometry, u, v, normal))
                                 .flatten(),
                         ),
                     }
@@ -501,7 +505,7 @@ pub(super) fn model_surface_point_by_id_inner(
                     Err(failure) => cache_fallback(
                         failure,
                         variable_blend_has_current_cache(construction)
-                            .then(|| cache_evaluation(admission, &surface.geometry, u, v))
+                            .then(|| cache_evaluation(admission, &surface.geometry, u, v, normal))
                             .flatten(),
                     ),
                 }
@@ -542,7 +546,7 @@ pub(super) fn model_surface_point_by_id_inner(
                         Err(failure) => cache_fallback(
                             failure.map(|()| UNREACHED_POINT),
                             revision_surface_tail_has_current_cache(&native.cache)
-                                .then(|| cache_evaluation(admission, &surface.geometry, u, v))
+                                .then(|| cache_evaluation(admission, &surface.geometry, u, v, normal))
                                 .flatten(),
                         ),
                     }
