@@ -986,16 +986,16 @@ pub(super) fn spatial_relation_marker_coordinates(payload: &[u8], offset: usize)
     {
         return None;
     }
-    let tagged_offsets = [56usize, 64]
+    let mut tagged_offsets = [56usize, 64]
         .into_iter()
         .filter_map(|relative| {
             let tag = offset.checked_add(relative)?;
             (payload.get(tag..tag + 2) == Some(&[0x0e, 0x00])).then_some(tag.checked_add(2)?)
-        })
-        .collect::<Vec<_>>();
-    let [coordinate_offset] = tagged_offsets.as_slice() else {
+        });
+    let coordinate_offset = tagged_offsets.next()?;
+    if tagged_offsets.next().is_some() {
         return None;
-    };
+    }
     if !(0..3).all(|index| {
         View::f64_le_at(payload, coordinate_offset + index * 8)
             .is_some_and(|value| value == 0.0 || value.is_normal())
@@ -1011,7 +1011,12 @@ pub(super) fn spatial_vertex_coordinates_charged(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<FinitePoint3>, CodecError> {
-    let offsets = spatial_vertex_offsets_charged(ctx, payload)?;
+    let _offsets_storage;
+    let offsets;
+    (offsets, _offsets_storage) = ctx.with_scoped_storage(
+        "SLDPRT spatial vertex offset workspace",
+        || spatial_vertex_offsets_charged(ctx, payload),
+    )?;
     spatial_vertices_at(ctx, payload, &offsets)
 }
 
@@ -1508,7 +1513,9 @@ pub(super) fn relation_bindings_scoped(
     let lane_key = ctx
         .rsplit_once(parent, "#", "split SLDPRT relation parent")?
         .map_or(parent, |(_, key)| key);
-    let (candidates, _candidates_storage) = ctx
+    let _candidates_storage;
+    let candidates;
+    (candidates, _candidates_storage) = ctx
         .with_scoped_storage("SLDPRT relation binding candidates", || {
             unique_relation_declaration_candidates_charged(ctx, classes, scalars, intervals)
         })?;
@@ -3718,7 +3725,9 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
         return Ok(None);
     };
     let selected = Some((curve.feature_ref.as_deref(), curve_index));
-    let (index, _storage) = ctx
+    let _storage;
+    let index;
+    (index, _storage) = ctx
         .with_scoped_storage("index SLDPRT reverse incidence endpoints", || {
             ReverseIncidenceIndex::build(ctx, payload, markers, selected)
         })?;
