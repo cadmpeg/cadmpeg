@@ -193,9 +193,15 @@ fn unavailable_cubic_rational_third_preserves_actual_surface_lower_orders() {
     assert_eq!(third.jet.second, second.second);
     assert!(third.jet.first.is_ok());
     assert!(third.jet.second.is_ok());
-    assert_eq!(third.higher.third(), Err(EvaluationFailure::NoValue));
+    // C=2u^3/(1+u^3), so C'''(.5)=-512/81.
+    let [uuu, uuv, uvv, vvv] = third.higher.third().unwrap();
+    close(uuu.get(), Vector3::new(-512.0 / 81.0, 0.0, 0.0));
+    for mixed in [uuv, uvv, vvv] { close(mixed.get(), Vector3::new(0.0, 0.0, 0.0)); }
     let shifted = offset(&mut ir, "cubic-rational-offset", surface, 1.0);
     let result = evaluate(&ir, &shifted, 0.5, 0.25, SurfaceRequest::Second);
     assert!(result.first.is_ok());
-    assert_eq!(result.second, Err(EvaluationFailure::NoValue));
+    // The constant -Y chart normal leaves C''(.5)=256/81 unchanged.
+    let [uu, uv, vv] = result.second.unwrap();
+    close(uu.get(), Vector3::new(256.0 / 81.0, 0.0, 0.0));
+    for mixed in [uv, vv] { close(mixed.get(), Vector3::new(0.0, 0.0, 0.0)); }
 }

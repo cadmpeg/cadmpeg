@@ -10,6 +10,8 @@ use crate::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::ResourceLimit;
 
+pub(super) mod requested_third;
+
 /// Knot span index of `t` for a clamped B-spline basis, or `None` when the
 /// knot vector cannot support `count` poles of the given degree.
 pub(super) fn bspline_span<'ctx, 'arena: 'ctx>(

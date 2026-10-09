@@ -56,12 +56,9 @@ fn stored_third_frame(
         }
         SolvedCurveGeometry::Nurbs(curve) => match curve.pole_rows() {
             crate::geometry::nurbs::NurbsPoles3::Polynomial { .. } => super::curve_nurbs::polynomial_third(scratch, curve, parameter),
-            crate::geometry::nurbs::NurbsPoles3::Rational { .. } => if curve.degree() == 2 {
-                super::curve_nurbs::quadratic_third(scratch, curve, parameter)
-            } else { super::curve_nurbs::linear_third(scratch, curve, parameter) },
+            crate::geometry::nurbs::NurbsPoles3::Rational { .. } => super::curve_nurbs::rational_third(scratch, curve, parameter),
         }.map(ThirdFrame::Local),
-        // Other rational spans still need generalized scaled local rows and
-        // extended quotient corrections. Keep their lower orders intact.
+        // Other carrier families still need their own higher-order owner.
         SolvedCurveGeometry::Degenerate(_)
         | SolvedCurveGeometry::Composite { .. }
         | SolvedCurveGeometry::Unknown { .. } => Err(EvaluationFailure::NoValue),
