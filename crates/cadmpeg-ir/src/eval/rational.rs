@@ -34,7 +34,47 @@ pub(super) struct Homogeneous {
     constant: [Option<FiniteReal>; 3],
 }
 
+#[derive(Clone, Copy)]
+enum ProjectedLane {
+    Constant(FiniteReal),
+    Quotient { numerator: Option<ScaledValue>, denominator: ScaledValue },
+}
+
 impl Homogeneous {
+    /// The three normalized orders of a quadratic Bezier carrier, in one
+    /// fixed three-pole walk. A nonzero coefficient lost below binary64
+    /// leaves this finite-coefficient route unavailable.
+    pub(super) fn quadratic_orders(
+        poles: &[crate::geometry::nurbs::WeightedPole3<FinitePoint3>; 3],
+        parameter: FiniteReal,
+    ) -> Option<[Self; 3]> {
+        let s = parameter.get();
+        if !(0.0..=1.0).contains(&s) { return None; }
+        let left = 1.0 - s;
+        let base = [left * left, 2.0 * s * left, s * s];
+        if (left != 0.0 && base[0] == 0.0)
+            || (left != 0.0 && s != 0.0 && base[1] == 0.0)
+            || (s != 0.0 && base[2] == 0.0) { return None; }
+        let coefficients = [base, [-2.0 * left, 2.0 - 4.0 * s, 2.0 * s], [2.0, -4.0, 2.0]];
+        let mut sums: [[ExactSignedSum; 4]; 3] =
+            std::array::from_fn(|_| std::array::from_fn(|_| ExactSignedSum::default()));
+        let mut constant = poles[0].point.coordinates().map(Some);
+        for (local, pole) in poles.iter().enumerate() {
+            for (axis, coordinate) in pole.point.coordinates().into_iter().enumerate() {
+                if constant[axis] != Some(coordinate) { constant[axis] = None; }
+            }
+            for (order, lanes) in sums.iter_mut().enumerate() {
+                for (sum, coordinate) in lanes.iter_mut().zip([pole.point.x, pole.point.y, pole.point.z, 1.0]) {
+                    sum.add_factors([coefficients[order][local], pole.weight.get(), coordinate]);
+                }
+            }
+        }
+        let [base, first, second] = sums.map(|lanes| Self {
+            values: lanes.map(ExactSignedSum::finish), constant: [None; 3],
+        });
+        Some([Self { constant, ..base }, first, second])
+    }
+
     /// The identically zero homogeneous derivative of a polynomial whose
     /// degree is lower than the requested derivative order.
     pub(super) fn zero() -> Self {
@@ -211,13 +251,46 @@ impl Homogeneous {
         base: Self,
         subtract: &[(Self, [FiniteReal; 3])],
     ) -> Option<[Result<FiniteReal, f64>; 3]> {
+        Some(self.projected_lanes(base, subtract)?.map(|lane| match lane {
+            ProjectedLane::Constant(value) => Ok(value),
+            ProjectedLane::Quotient { numerator, denominator } =>
+                numerator.map_or(Ok(FiniteReal::ZERO), |value| value.quotient(denominator)),
+        }))
+    }
+
+    /// Normalized intermediates whose nonzero quotients remain normal.
+    /// A later span division can amplify a subnormal rounding or lost zero;
+    /// this finite-intermediate route leaves that order unavailable.
+    pub(super) fn project_normalized(
+        self,
+        base: Self,
+        subtract: &[(Self, [FiniteReal; 3])],
+    ) -> Option<[FiniteReal; 3]> {
+        let mut values = [FiniteReal::ZERO; 3];
+        for (value, lane) in values.iter_mut().zip(self.projected_lanes(base, subtract)?) {
+            *value = match lane {
+                ProjectedLane::Constant(value) => value,
+                ProjectedLane::Quotient { numerator: None, .. } => FiniteReal::ZERO,
+                ProjectedLane::Quotient { numerator: Some(numerator), denominator } => {
+                    let quotient = numerator.quotient(denominator).ok()?;
+                    if !quotient.get().is_normal() { return None; }
+                    quotient
+                }
+            };
+        }
+        Some(values)
+    }
+
+    fn projected_lanes(self, base: Self, subtract: &[(Self, [FiniteReal; 3])])
+        -> Option<[ProjectedLane; 3]>
+    {
         let denominator = base.values[3]?;
-        let mut lanes = [Ok(FiniteReal::ZERO); 3];
+        let mut lanes = [ProjectedLane::Quotient { numerator: None, denominator }; 3];
         for (axis, lane) in lanes.iter_mut().enumerate() {
             // A constant coordinate divides out exactly, including at f64::MAX.
             if subtract.is_empty() {
                 if let Some(value) = self.constant[axis] {
-                    *lane = Ok(value);
+                    *lane = ProjectedLane::Constant(value);
                     continue;
                 }
             }
@@ -231,7 +304,7 @@ impl Homogeneous {
                 }
                 sum.finish()
             };
-            *lane = numerator.map_or(Ok(FiniteReal::ZERO), |value| value.quotient(denominator));
+            *lane = ProjectedLane::Quotient { numerator, denominator };
         }
         Some(lanes)
     }
