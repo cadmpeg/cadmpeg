@@ -1472,31 +1472,30 @@ fn hem_transition_edge_slot(
 ) -> Result<Option<i64>, CodecError> {
     ctx.charge_work(0, "resolve F3D hem transition edge slot")?;
     let reference_contexts = operand.recipe_reference_contexts.as_slice();
-    let mut empty_contexts = reference_contexts
-        .iter()
-        .filter(|context| context.changed_reference_edge_slots.is_empty());
-    let Some(empty_context) = empty_contexts
-        .next()
-        .filter(|_| empty_contexts.next().is_none())
-    else {
-        return Ok(None);
-    };
-    if !empty_context.result_faces.is_empty()
-        || !empty_context.preceding_faces.is_empty()
-        || !empty_context.preceding_support_face_slots.is_empty()
-        || reference_contexts.iter().any(|context| {
-            !context.changed_reference_edge_slots.is_empty()
-                && (context.result_faces.is_empty()
-                    || context.preceding_support_face_slots.is_empty())
-        })
-    {
+    let mut remaining = reference_contexts.iter();
+    let mut has_empty_context = false;
+    while !remaining.as_slice().is_empty() {
+        let Some(context) = ctx.next_charged(&mut remaining, "scan F3D Hem reference eligibility")? else {
+            break;
+        };
+        if context.changed_reference_edge_slots.is_empty() {
+            if has_empty_context || !context.result_faces.is_empty()
+                || !context.preceding_faces.is_empty()
+                || !context.preceding_support_face_slots.is_empty() {
+                return Ok(None);
+            }
+            has_empty_context = true;
+        } else if context.result_faces.is_empty()
+            || context.preceding_support_face_slots.is_empty() {
+            return Ok(None);
+        }
+    }
+    if !has_empty_context {
         return Ok(None);
     }
     unique_hem_transition_edge_candidate(
         &operand.changed_boundary_edge_slots,
-        reference_contexts
-            .iter()
-            .map(|context| context.changed_reference_edge_slots.as_slice()),
+        reference_contexts.iter().map(|context| context.changed_reference_edge_slots.as_slice()),
         ctx,
     )
 }
@@ -1507,58 +1506,54 @@ fn unique_hem_transition_edge_candidate<'a>(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
     ctx.charge_work(0, "resolve F3D unique hem transition edge candidate")?;
+    let mut storage = ctx.reserve_scoped(0, "hold F3D Hem reference candidates")?;
     let mut reference_edge_sets: Vec<&'a [i64]> = Vec::new();
-    for edges in reference_edge_sets_input {
-        ctx.push_vec(
-            &mut reference_edge_sets,
-            edges,
-            "f3d hem reference edge set",
-        )?;
+    let mut source = reference_edge_sets_input.into_iter();
+    let mut empty_count = 0;
+    while source.size_hint().1 != Some(0) {
+        let Some(edges) = ctx.next_charged(&mut source, "scan F3D Hem reference set sources")? else {
+            break;
+        };
+        empty_count += usize::from(edges.is_empty());
+        ctx.push_scoped_vec(&mut storage, &mut reference_edge_sets, edges, "f3d hem reference edge set")?;
     }
-    if reference_edge_sets.is_empty()
-        || reference_edge_sets
-            .iter()
-            .filter(|edges| edges.is_empty())
-            .count()
-            != 1
-    {
+    if reference_edge_sets.is_empty() || empty_count != 1 {
         return Ok(None);
     }
     let mut support_edges = Vec::new();
-    for edge in reference_edge_sets
-        .iter()
-        .flat_map(|edges| edges.iter().copied())
-    {
-        ctx.push_vec(&mut support_edges, edge, "f3d hem support edge")?;
+    let mut sets = reference_edge_sets.iter();
+    while !sets.as_slice().is_empty() {
+        let Some(edges) = ctx.next_charged(&mut sets, "scan F3D Hem reference support sets")? else {
+            break;
+        };
+        let mut edges = edges.iter();
+        while !edges.as_slice().is_empty() {
+            let Some(&edge) = ctx.next_charged(&mut edges, "scan F3D Hem reference support edges")? else {
+                break;
+            };
+            ctx.push_scoped_vec(&mut storage, &mut support_edges, edge, "f3d hem support edge")?;
+        }
     }
-    ctx.sort_unstable_by(
-        &mut support_edges,
-        |value| value,
-        Ord::cmp,
-        "f3d hem support edge sort",
-    )?;
+    ctx.sort_unstable_by(&mut support_edges, |value| value, Ord::cmp, "f3d hem support edge sort")?;
     ctx.dedup_vec(&mut support_edges, "deduplicate F3D Hem support edges")?;
-    if support_edges.is_empty()
-        || ctx.any_by(
-            &support_edges,
-            |edge| ctx.contains(changed_boundary_edges, edge, "find F3D Hem changed support edge").map(|found| !found),
-            "scan F3D Hem support membership",
-        )?
-    {
+    if support_edges.is_empty() || ctx.any_by(
+        &support_edges,
+        |edge| ctx.contains(changed_boundary_edges, edge, "find F3D Hem changed support edge").map(|found| !found),
+        "scan F3D Hem support membership",
+    )? {
         return Ok(None);
     }
     let mut candidates = Vec::new();
-    for &edge in changed_boundary_edges {
+    let mut changed = changed_boundary_edges.iter();
+    while !changed.as_slice().is_empty() {
+        let Some(&edge) = ctx.next_charged(&mut changed, "scan F3D Hem changed candidate edges")? else {
+            break;
+        };
         if !ctx.contains(&support_edges, &edge, "find F3D Hem support candidate")? {
-            ctx.push_vec(&mut candidates, edge, "f3d hem candidate edge")?;
+            ctx.push_scoped_vec(&mut storage, &mut candidates, edge, "f3d hem candidate edge")?;
         }
     }
-    ctx.sort_unstable_by(
-        &mut candidates,
-        |value| value,
-        Ord::cmp,
-        "f3d hem candidate edge sort",
-    )?;
+    ctx.sort_unstable_by(&mut candidates, |value| value, Ord::cmp, "f3d hem candidate edge sort")?;
     ctx.dedup_vec(&mut candidates, "deduplicate F3D Hem candidate edges")?;
     match candidates.as_slice() {
         [edge] => Ok(Some(*edge)),
@@ -1685,38 +1680,46 @@ pub(super) fn changed_reference_edge_group_candidates(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
     ctx.charge_work(0, "resolve F3D changed reference edge group candidates")?;
+    let mut storage = ctx.reserve_scoped(0, "hold F3D changed reference candidates")?;
     let mut candidate_sets = Vec::new();
-    for operand in operands {
-        let mut changed_sets = operand
-            .recipe_reference_contexts
-            .iter()
-            .map(|context| context.changed_reference_edge_slots.as_slice())
-            .filter(|edges| !edges.is_empty());
-        let Some(first) = changed_sets.next() else {
-            return Ok(None);
+    let mut source = operands.iter();
+    while !source.as_slice().is_empty() {
+        let Some(operand) = ctx.next_charged(&mut source, "scan F3D changed reference operands")? else {
+            break;
         };
+        let mut contexts = operand.recipe_reference_contexts.iter();
+        let mut first = None;
+        while !contexts.as_slice().is_empty() {
+            let Some(context) = ctx.next_charged(&mut contexts, "scan F3D changed reference contexts")? else {
+                break;
+            };
+            if !context.changed_reference_edge_slots.is_empty() {
+                first = Some(context.changed_reference_edge_slots.as_slice());
+                break;
+            }
+        }
+        let Some(first) = first else { return Ok(None); };
         let mut candidates = Vec::new();
-        for edge in first {
-            ctx.push_vec(&mut candidates, *edge, "f3d changed reference candidate")?;
+        let mut first_edges = first.iter();
+        while !first_edges.as_slice().is_empty() {
+            let Some(&edge) = ctx.next_charged(&mut first_edges, "scan F3D first changed reference edges")? else {
+                break;
+            };
+            ctx.push_scoped_vec(&mut storage, &mut candidates, edge, "f3d changed reference candidate")?;
         }
-        for changed in changed_sets {
+        while !contexts.as_slice().is_empty() {
+            let Some(context) = ctx.next_charged(&mut contexts, "scan F3D changed reference contexts")? else {
+                break;
+            };
+            let changed = context.changed_reference_edge_slots.as_slice();
+            if changed.is_empty() { continue; }
             ctx.retain_vec(&mut candidates, |candidate| ctx.contains(changed, candidate, "find F3D changed reference candidate"), "retain F3D changed reference candidates")?;
+            if candidates.is_empty() { return Ok(None); }
         }
-        ctx.sort_unstable_by(
-            &mut candidates,
-            |value| value,
-            Ord::cmp,
-            "f3d changed reference candidate sort",
-        )?;
+        ctx.sort_unstable_by(&mut candidates, |value| value, Ord::cmp, "f3d changed reference candidate sort")?;
         ctx.dedup_vec(&mut candidates, "deduplicate F3D changed reference edges")?;
-        if candidates.is_empty() {
-            return Ok(None);
-        }
-        ctx.push_vec(
-            &mut candidate_sets,
-            candidates,
-            "f3d changed reference candidate set",
-        )?;
+        if candidates.is_empty() { return Ok(None); }
+        ctx.push_scoped_vec(&mut storage, &mut candidate_sets, candidates, "f3d changed reference candidate set")?;
     }
     unique_bipartite_assignment(&candidate_sets, ctx)
 }
