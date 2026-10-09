@@ -18,11 +18,11 @@ use super::markers::{
     sketch_marker_prefix_at,
 };
 use super::relation_loci::{
-    canonical_profile_loci, copy_locus, line_line_distance, linked_midpoint_operands,
+    line_line_distance, linked_midpoint_operands,
     linked_single_arc_entity, linked_single_ellipse_entity, linked_single_entities,
     marker_point_locus, point_line_distance_value, profile_locus_point_charged,
     relation_operand_loci_in, role_locus, same_dimension_angle, same_dimension_length,
-    ProfileEntities, RelationIndex,
+    CanonicalProfileLoci, CanonicalProfileLocus, ProfileEntities, RelationIndex,
 };
 use super::scalars::operand_kind;
 use super::selections::operand_accepts_marker;
@@ -1798,24 +1798,21 @@ fn unique_axis_aligned_linked_loci_in(
     else {
         return Ok(None);
     };
-    let (_loci_storage, loci);
-    (loci, _loci_storage) = ctx.with_scoped_storage(OPERATION, || {
-        canonical_profile_loci(ctx, sketch, index.entities)
-    })?;
-    let mut selected: Option<&SketchLocus> = None;
+    let canonical = CanonicalProfileLoci::new(ctx, sketch, index.entities)?;
+    let mut selected: Option<&CanonicalProfileLocus<'_>> = None;
     if !ctx.all_by(
-        &loci,
-        |(candidate_point, candidate)| {
+        canonical.as_slice(),
+        |candidate| {
             let aligned = if axis == ProfileAxis::U {
-                same_dimension_length(candidate_point.v, known_point.v)
+                same_dimension_length(candidate.point.v, known_point.v)
             } else {
-                same_dimension_length(candidate_point.u, known_point.u)
+                same_dimension_length(candidate.point.u, known_point.u)
             };
-            if !aligned || ctx.equal(candidate, &known, OPERATION)? {
+            if !aligned || candidate.matches_locus(ctx, &known, OPERATION)? {
                 return Ok(true);
             }
             if let Some(selected) = selected {
-                if !ctx.equal(selected, candidate, OPERATION)? {
+                if !selected.same_identity(ctx, candidate, OPERATION)? {
                     return Ok(false);
                 }
             }
@@ -1830,7 +1827,7 @@ fn unique_axis_aligned_linked_loci_in(
     let Some(candidate) = selected else {
         return Ok(None);
     };
-    let candidate = copy_locus(ctx, candidate, OPERATION)?;
+    let candidate = candidate.copy_locus(ctx, OPERATION)?;
     let mut pair = Vec::new();
     for locus in if known_is_first {
         [known, candidate]
