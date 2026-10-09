@@ -168,3 +168,32 @@ fn requested_cancellation_does_not_compute_nurbs_third() {
     assert!(result.jet.second.is_ok());
     assert!(matches!(result.higher, HigherPartials::Third(Err(EvaluationFailure::NoValue))));
 }
+
+#[test]
+fn requested_nurbs_first_preserves_point_and_partials_below_second_work_refusal() {
+    let surface = cubic();
+    let mut policy = DecodePolicy::service();
+    // Two cubic basis rows use 28 advances and finite inspection uses eight.
+    // Each first-derivative row uses nine lower-basis and four output
+    // advances: 36 + 2*13 = 62. Three sums each have at most nine passes
+    // of sixteen poles and one terminal probe: 62 + 3*9*17 = 521.
+    // Keep the existing 556 second-order refusal cap.
+    policy.limits.max_work_units = 556;
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let scratch = Scratch::new(&ctx);
+    let first = crate::eval::nurbs_surface_requested_jet(
+        &scratch, &surface, 0.0, 0.0, SurfaceRequest::First,
+    ).unwrap().jet.first_order().partials().unwrap();
+    // S=(u,v,u^3+2u^2v+3uv^2+4v^3) at zero.
+    assert_eq!(first.point.get(), Point3::new(0.0, 0.0, 0.0));
+    for (actual, expected) in [first.du, first.dv].into_iter().zip([
+        Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0),
+    ]) {
+        assert!((actual.get() - expected).norm() <= EPS_THIRD_QUOTIENT);
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+    drop(scratch);
+    ctx.finish_session().unwrap();
+}

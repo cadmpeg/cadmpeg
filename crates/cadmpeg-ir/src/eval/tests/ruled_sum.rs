@@ -335,3 +335,92 @@ fn ruled_surface_point_does_not_allocate_derivative_poles() {
 fn sum_surface_point_does_not_allocate_derivative_poles() {
     direct_construction_point_without_derivative_storage(3);
 }
+
+fn direct_construction_first_without_acceleration(case: usize) {
+    use crate::eval::admission::EvaluationAdmission;
+    use crate::eval::EvaluationFailure;
+    use crate::geometry::surface_payloads::{AxisRevolutionSurfaceConstruction,
+        ExtrusionSurfaceConstruction, LinearSweepSurfaceConstruction,
+        RevolutionSurfaceConstruction, SumSurfaceConstruction};
+    use crate::geometry::CacheContract;
+    use cadmpeg_core::decode::WorkBudget;
+
+    let first = CurveId::mint("test:model:entity#first").unwrap();
+    let second = CurveId::mint("test:model:entity#second").unwrap();
+    let z = Vector3::new(0.0, 0.0, 1.0);
+    let origin = Point3::new(0.0, 0.0, 0.0);
+    let rail_tangent = Vector3::new(2.0, 0.0, 0.0);
+    let angular_tangent = Vector3::new(-2.0, 1.5, 0.0);
+    let (definition, u, v, expected, partials, cap) = match case {
+        0 => (ProceduralSurfaceDefinition::Extrusion(
+            ExtrusionSurfaceConstruction::try_new(first, None, z, None,
+                CacheContract::from_form(None)).unwrap()),
+            0.25, 0.5, Point3::new(1.5, 2.0, 3.5), [rail_tangent, z], 14),
+        1 => (ProceduralSurfaceDefinition::Revolution(
+            RevolutionSurfaceConstruction::try_new(first,
+                (crate::features::FinitePoint3::new(origin).unwrap(), crate::units::UnitVector3::new(z).unwrap()),
+                [0.0, std::f64::consts::TAU], None, None, false,
+                CacheContract::from_form(None)).unwrap()),
+            0.25, 0.0, Point3::new(1.5, 2.0, 3.0), [rail_tangent, angular_tangent], 14),
+        2 => (ProceduralSurfaceDefinition::Ruled { first, second, cache: None },
+            0.25, 0.5, Point3::new(3.25, 6.375, 8.0),
+            [Vector3::new(1.0, 1.5, 0.0), Vector3::new(3.5, 8.75, 10.0)], 27),
+        3 => (ProceduralSurfaceDefinition::Sum(SumSurfaceConstruction::try_new(first, second,
+            Vector3::new(0.5, 1.0, 2.0), CacheContract::from_form(None)).unwrap()),
+            0.25, 0.5, Point3::new(6.0, 12.5, 14.0),
+            [rail_tangent, Vector3::new(0.0, 3.0, 0.0)], 27),
+        4 => (ProceduralSurfaceDefinition::LinearSweep(
+            LinearSweepSurfaceConstruction::try_new(first, z).unwrap()),
+            0.25, 0.5, Point3::new(1.5, 2.0, 3.5), [rail_tangent, z], 14),
+        5 => (ProceduralSurfaceDefinition::AxisRevolution(
+            AxisRevolutionSurfaceConstruction::try_new(first, origin, z).unwrap()),
+            0.0, 0.25, Point3::new(1.5, 2.0, 3.0), [angular_tangent, rail_tangent], 14),
+        _ => unreachable!("six direct constructions"),
+    };
+    let (ir, surface) = direct_surface_fixture(definition, "first-demand");
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    // Existing independent law: one surface step, and per rail one curve
+    // step + degree-one point cost4 + first derivative cost8. No new fee.
+    // This is an independent slice control, not decode body certification.
+    let budget = WorkBudget::new(cap);
+    let actual = EvaluationAdmission::Standard.within_work_slice(&budget, |admission| {
+        model_surface_partials_by_id(admission, &index, &surface, u, v)
+    }).unwrap().into_raw();
+    assert_eq!(actual.point, expected);
+    assert_eq!([actual.du, actual.dv], partials);
+    assert_eq!(budget.consumed(), cap);
+    let second_budget = WorkBudget::new(cap);
+    assert_eq!(EvaluationAdmission::Standard.within_work_slice(&second_budget, |admission| {
+        model_surface_second_partials_by_id(admission, &index, &surface, u, v)
+    }), Err(EvaluationFailure::NoValue));
+}
+
+#[test]
+fn native_extrusion_first_does_not_compute_acceleration() {
+    direct_construction_first_without_acceleration(0);
+}
+
+#[test]
+fn native_revolution_first_does_not_compute_acceleration() {
+    direct_construction_first_without_acceleration(1);
+}
+
+#[test]
+fn ruled_surface_first_does_not_compute_acceleration() {
+    direct_construction_first_without_acceleration(2);
+}
+
+#[test]
+fn sum_surface_first_does_not_compute_acceleration() {
+    direct_construction_first_without_acceleration(3);
+}
+
+#[test]
+fn linear_sweep_first_does_not_compute_acceleration() {
+    direct_construction_first_without_acceleration(4);
+}
+
+#[test]
+fn axis_revolution_first_does_not_compute_acceleration() {
+    direct_construction_first_without_acceleration(5);
+}
