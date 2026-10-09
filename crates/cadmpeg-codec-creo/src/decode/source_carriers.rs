@@ -156,6 +156,9 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
         feature: &mut Feature,
         mut definition: FeatureDefinition,
     ) -> Result<(), CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         if let Some(scale) = self.length_scale_mm {
             crate::decode::build::units::scale_feature_definition(ctx, &mut definition, scale)
                 .map_err(Self::unrepresentable_length)?;
