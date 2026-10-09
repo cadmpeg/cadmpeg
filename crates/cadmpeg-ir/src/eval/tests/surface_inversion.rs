@@ -221,20 +221,27 @@ fn budgeted_nurbs_surface_inverse_refines_an_approximate_seed_before_global_sear
 
     let surface = bilinear_surface();
     let point = Point3::new(0.3, 0.7, 0.0);
-    let refused_ctx = cadmpeg_test_support::service_decode_context();
-    let refused_budget = WorkBudget::new(256);
-    let refusal = nurbs_surface_parameter_within_tolerance_with_budget(
-        &refused_ctx,
+    let budget = WorkBudget::new(256);
+    let parameters = nurbs_surface_parameter_within_tolerance_with_budget(&cadmpeg_test_support::service_decode_context(),
         &surface,
         point,
         Some(Point2::new(0.29, 0.69)),
         FIT_TOLERANCE,
-        &refused_budget,
-    )
-    .expect_err("the original cap cannot admit all pole traversals");
-    assert_eq!(refusal.operation, "geometry evaluation work slice");
-    assert!(matches!(refused_ctx.finish_session(),
-        Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == refusal));
+        &budget,
+    ).expect("resource allocation did not fail")
+    .expect("a nearby seed should be refined before global patch search");
+
+    assert!((parameters.u - 0.3).abs() <= PARAMETER_TOLERANCE);
+    assert!((parameters.v - 0.7).abs() <= PARAMETER_TOLERANCE);
+    assert!(budget.consumed() > 0);
+}
+
+#[test]
+fn budgeted_nurbs_surface_inverse_refines_with_the_existing_ample_slice() {
+    const FIT_TOLERANCE: f64 = 1.0e-10;
+    const PARAMETER_TOLERANCE: f64 = 1.0e-12;
+    let surface = bilinear_surface();
+    let point = Point3::new(0.3, 0.7, 0.0);
     let budget = WorkBudget::new(32768);
     let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
         &cadmpeg_test_support::service_decode_context(),
@@ -415,4 +422,31 @@ fn surface_partials_preserve_scratch_refusal_and_temporary_lifetime() {
         assert_eq!(second.dvv, crate::math::Vector3::new(0.0, 0.0, 0.0));
         assert_eq!(ctx.resource_refusal(), None);
     });
+}
+
+#[test]
+fn refinement_preserves_original_session_refusal_before_its_partial_point() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    let surface = bilinear_surface();
+    let u_domain = surface.u_knots().span(1, 2).unwrap();
+    let v_domain = surface.v_knots().span(1, 2).unwrap();
+    let start = crate::units::FinitePoint2::new(Point2::new(0.29, 0.69)).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let original = ctx.charge_work_limit(1, "test original refinement refusal").unwrap_err();
+    let budget = WorkBudget::new(256);
+    for point in [Point3::new(0.3, 0.7, 0.0), Point3::new(f64::NAN, 0.7, 0.0)] {
+        assert_eq!(crate::eval::refine_nurbs_surface_parameters(
+            &ctx, &surface, point, start, u_domain.into(), v_domain.into(), &budget,
+        ), Err(original));
+        assert_eq!(budget.consumed(), 0);
+    }
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
 }

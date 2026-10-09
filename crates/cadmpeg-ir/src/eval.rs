@@ -978,27 +978,6 @@ fn refine_nurbs_surface_parameters(
         v_domain.project(ExtendedReal::from_finite(start_v)),
     );
     for _ in 0..32 {
-        let Some(position) = finite_or_refusal(
-            crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(
-                budget,
-                |admission| {
-                    crate::eval::decode::nurbs_surface_point(
-                        admission,
-                        surface,
-                        parameters.u,
-                        parameters.v,
-                    )
-                },
-            ),
-        )?
-        else {
-            return Ok(None);
-        };
-        let residual = Vector3::new(
-            position.x - point.x,
-            position.y - point.y,
-            position.z - point.z,
-        );
         let Some(partials) = finite_or_refusal(
             crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(
                 budget,
@@ -1015,6 +994,12 @@ fn refine_nurbs_surface_parameters(
         else {
             return Ok(None);
         };
+        let position = partials.point;
+        let residual = Vector3::new(
+            position.x - point.x,
+            position.y - point.y,
+            position.z - point.z,
+        );
         let Some((step_u, step_v)) = least_squares_step(partials.du, partials.dv, residual) else {
             break;
         };
