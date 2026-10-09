@@ -6911,6 +6911,7 @@ fn nurbs_pcurve(
         &mut staging,
         ctx
     )?);
+    let mut raw_pole_storage = ctx.reserve_scoped(0, "step raw pcurve poles")?;
     let mut control_points = Vec::new();
     let mut ids = definition.control_points.iter();
     while let Some(value) = ctx.next_charged(&mut ids, "STEP nurbs pole traversal")? {
@@ -6918,13 +6919,12 @@ fn nurbs_pcurve(
         let point = geometry_or_none!(ctx
             .get_btree_map(points, &id, "step_geometry_lookup")?
             .copied());
-        storage.with_storage(|| {
-            ctx.push_vec(
-                &mut control_points,
-                point,
-                "step_nurbs_pcurve_control_points",
-            )
-        })?;
+        ctx.push_scoped_vec(
+            &mut raw_pole_storage,
+            &mut control_points,
+            point,
+            "step_nurbs_pcurve_control_points",
+        )?;
     }
     let pcurve = storage.with_storage(|| {
         PcurveNurbs::from_lanes(
@@ -6936,6 +6936,7 @@ fn nurbs_pcurve(
             definition.periodic,
         )
     })?;
+    drop(raw_pole_storage);
     drop(staging);
     match pcurve {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
@@ -8044,6 +8045,7 @@ fn polyline_pcurve(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PcurveGeometry>, CodecError> {
     let values = geometry_or_none!(record.parameter(1).and_then(Value::list));
+    let mut raw_pole_storage = ctx.reserve_scoped(0, "step raw pcurve poles")?;
     let mut control_points = Vec::new();
     let mut values = values.iter();
     while let Some(value) = ctx.next_charged(&mut values, "STEP polyline pcurve value traversal")? {
@@ -8055,9 +8057,12 @@ fn polyline_pcurve(
             ))
             .transpose()?
             .flatten());
-        storage.with_storage(|| {
-            ctx.push_vec(&mut control_points, point, "step_polyline_pcurve_points")
-        })?;
+        ctx.push_scoped_vec(
+            &mut raw_pole_storage,
+            &mut control_points,
+            point,
+            "step_polyline_pcurve_points",
+        )?;
     }
     if control_points.len() < 2 {
         return Ok(None);
@@ -8073,9 +8078,10 @@ fn polyline_pcurve(
         storage.with_storage(|| ctx.push_vec(&mut knots, knot, "step_polyline_pcurve_knots"))?;
     }
     storage.with_storage(|| ctx.push_vec(&mut knots, last, "step_polyline_pcurve_knots"))?;
-    match storage
-        .with_storage(|| PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false))?
-    {
+    let pcurve = storage
+        .with_storage(|| PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false))?;
+    drop(raw_pole_storage);
+    match pcurve {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
             ctx.push_vec(
