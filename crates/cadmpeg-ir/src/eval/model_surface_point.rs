@@ -259,6 +259,7 @@ pub(super) fn model_surface_point_by_id_inner(
         support: &crate::ids::SurfaceId,
         u: f64,
         v: f64,
+        normal: bool,
     ) -> Option<SurfaceEvaluation> {
         let support = match index.surfaces(support.as_str(), admission) {
             Ok(Some(support)) => support,
@@ -308,12 +309,13 @@ pub(super) fn model_surface_point_by_id_inner(
             Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
             Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return None,
         };
-        let oriented_normal =
+        let oriented_normal = if normal {
             match oriented_normal(Ok([partials.du, partials.dv]), nurbs.normal_reversed()) {
-                Ok(normal) => normal,
+                Ok(normal) => Ok(normal),
                 Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
                 Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(())) => return None,
-            };
+            }
+        } else { Err(EvaluationFailure::NoValue) };
         let partials = partials.into_raw();
         let du = u - boundary_u;
         let dv = v - boundary_v;
@@ -323,7 +325,7 @@ pub(super) fn model_surface_point_by_id_inner(
                 partials.point.y + du * partials.du.y + dv * partials.dv.y,
                 partials.point.z + du * partials.du.z + dv * partials.dv.z,
             )),
-            oriented_normal: Ok(oriented_normal),
+            oriented_normal,
             resource: None,
         })
     }
@@ -633,7 +635,8 @@ pub(super) fn model_surface_point_by_id_inner(
                 let support = definition_payload.support();
                 let distance = definition_payload.distance();
                 {
-                    let support = evaluate(admission, index, support, u, v, true)?;
+                    let support = evaluate(admission, index, support, u, v, normal || distance.get() != 0.0)?;
+                    if distance.get() == 0.0 { return Some(support); }
                     if support.resource.is_some() {
                         return Some(support);
                     }
@@ -655,10 +658,12 @@ pub(super) fn model_surface_point_by_id_inner(
                 let distance = definition_payload.distance();
                 let linear_extension = definition_payload.linear_support_extension();
                 {
+                    let read_normal = normal || distance.get() != 0.0;
                     let support = linear_extension
-                        .then(|| linear_nurbs_support_extension(admission, index, support, u, v))
+                        .then(|| linear_nurbs_support_extension(admission, index, support, u, v, read_normal))
                         .flatten()
-                        .or_else(|| evaluate(admission, index, support, u, v, true))?;
+                        .or_else(|| evaluate(admission, index, support, u, v, read_normal))?;
+                    if distance.get() == 0.0 { return Some(support); }
                     if support.resource.is_some() {
                         return Some(support);
                     }
