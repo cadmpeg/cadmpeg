@@ -52,7 +52,7 @@ pub(super) fn split_homogeneous_bezier_midpoint<'ctx>(
     controls: &[[f64; 4]],
 ) -> Result<Option<HomogeneousBezierSplit<'ctx>>, ResourceLimit> {
     split_homogeneous_bezier_with(ctx, controls, |left, right| {
-        std::array::from_fn(|axis| 0.5 * (left[axis] + right[axis]))
+        std::array::from_fn(|axis| left[axis].midpoint(right[axis]))
     })
 }
 
@@ -485,4 +485,31 @@ mod tests {
         ctx.finish_session()
             .expect("five visits without allocations");
     }
+    #[test]
+    fn homogeneous_midpoint_preserves_finite_extreme_and_subnormal_controls() {
+        for coordinate in [1e308, f64::MAX, -f64::MAX, f64::from_bits(1)] {
+            for count in [2, 4] {
+                // An identical-control Bezier curve is constant at every
+                // parameter. Its split must keep each coordinate unchanged.
+                let controls = (0..count).map(|_| [coordinate, coordinate, coordinate, 1.0]).collect::<Vec<_>>();
+                let ctx = cadmpeg_test_support::service_decode_context();
+                let split = split_homogeneous_bezier_midpoint(&ctx, &controls).unwrap().unwrap();
+                let [left, right] = split.into_polygons(&ctx).unwrap();
+                assert_eq!(&*left, controls.as_slice());
+                assert_eq!(&*right, controls.as_slice());
+                drop((left, right));
+                ctx.finish_session().unwrap();
+            }
+        }
+        let controls = [[f64::MAX, -f64::MAX, 0.0, 1.0], [-f64::MAX, f64::MAX, 0.0, 1.0]];
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let split = split_homogeneous_bezier_midpoint(&ctx, &controls).unwrap().unwrap();
+        let [left, right] = split.into_polygons(&ctx).unwrap();
+        let midpoint = [0.0, 0.0, 0.0, 1.0];
+        assert_eq!(&*left, &[controls[0], midpoint]);
+        assert_eq!(&*right, &[midpoint, controls[1]]);
+        drop((left, right));
+        ctx.finish_session().unwrap();
+    }
+
 }
