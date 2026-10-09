@@ -6,6 +6,7 @@
 
 mod occurrence_limits;
 mod placement_limits;
+mod prefix_admission;
 
 use cadmpeg_test_support::EditableDecodeResult;
 
