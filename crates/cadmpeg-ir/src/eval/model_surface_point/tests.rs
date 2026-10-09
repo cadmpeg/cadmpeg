@@ -2,7 +2,8 @@
 use super::*;
 use crate::document::admission::StandardAdmission;
 use crate::geometry::analytic::{CircleCurve, LineCurve};
-use crate::geometry::surface_payloads::{ExtrusionSurfaceConstruction, OffsetSurfaceConstruction,
+use crate::geometry::surface_payloads::{AxisRevolutionSurfaceConstruction,
+    LinearSweepSurfaceConstruction, ExtrusionSurfaceConstruction, OffsetSurfaceConstruction,
     RevolutionSurfaceConstruction, SumSurfaceConstruction};
 use crate::geometry::{CacheContract, Curve, CurveGeometry, LegacyExtensionFlags, OffsetExtension,
     ProceduralSurface, Surface, SolvedCurveGeometry};
@@ -44,7 +45,11 @@ fn fixture(case: usize) -> (CadIr, SurfaceId, SurfaceId, f64, f64, Point3, Point
         3 => (ProceduralSurfaceDefinition::Sum(SumSurfaceConstruction::try_new(first, second,
             Vector3::new(0.0, 0.0, 0.0), CacheContract::from_form(None)).unwrap()),
             0.0, std::f64::consts::FRAC_PI_2, Point3::new(2.0, 4.0, 0.0), Point3::new(2.0, 4.0, 1.0)),
-        _ => unreachable!("four differential-selected direct owners"),
+        4 => (ProceduralSurfaceDefinition::LinearSweep(LinearSweepSurfaceConstruction::try_new(first, z).unwrap()),
+            0.0, 0.25, Point3::new(2.0, 0.0, 0.25), Point3::new(3.0, 0.0, 0.25)),
+        5 => (ProceduralSurfaceDefinition::AxisRevolution(AxisRevolutionSurfaceConstruction::try_new(axial, origin, z).unwrap()),
+            0.0, 0.25, Point3::new(2.0, 0.0, 0.25), Point3::new(3.0, 0.0, 0.25)),
+        _ => unreachable!("six differential-selected direct owners"),
     };
     let mut publish = |name: &str, definition| {
         let surface = SurfaceId::mint(format!("test:model:normal-surface#{name}")).unwrap();
@@ -110,3 +115,5 @@ fn direct_procedural_normal_preserves_the_original_prefused_context() {
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
     }
 }
+
+mod axis_linear;
