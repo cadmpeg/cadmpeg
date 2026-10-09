@@ -2511,7 +2511,8 @@ fn source_topology_indices(
     ] {
         let mut next_index = 1;
         for root in tables.roots {
-            let mut stack = ctx.collection_vec(1, "FreeCAD source topology stack")?;
+            let (mut stack, mut stack_reservation) =
+                ctx.temporary_vec(1, "FreeCAD source topology stack")?;
             stack.push((root.clone(), Transform::identity()));
             while let Some((shape_use, parent)) = stack.pop() {
                 ctx.charge_work(1, "FreeCAD source topology scan")?;
@@ -2533,7 +2534,8 @@ fn source_topology_indices(
                     continue;
                 }
                 if topology_rank(shape.kind()) < topology_rank(target) {
-                    ctx.reserve_vec(
+                    ctx.reserve_scoped_vec(
+                        &mut stack_reservation,
                         &mut stack,
                         shape.children.len(),
                         "FreeCAD source topology stack",
