@@ -114,10 +114,11 @@ fn hem_carrier_offsets_prove_fold_direction() {
     let forward_second = cylinder(Point3::new(2.0, 0.0, 0.0));
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
+            let cylinders = [forward_first.clone(), forward_second.clone()];
             super::super::super::hem_direction_from_transition(
                 decode_ctx,
                 7,
-                &[forward_first.clone(), forward_second.clone()],
+                (&cylinders, &cylinders[0]),
                 &transition.topology.surfaces.inserted,
                 None,
                 &previous,
@@ -132,10 +133,11 @@ fn hem_carrier_offsets_prove_fold_direction() {
     let reverse_second = cylinder(Point3::new(-2.0, 0.0, 0.0));
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
+            let cylinders = [reverse_first.clone(), reverse_second.clone()];
             super::super::super::hem_direction_from_transition(
                 decode_ctx,
                 7,
-                &[reverse_first.clone(), reverse_second.clone()],
+                (&cylinders, &cylinders[0]),
                 &transition.topology.surfaces.inserted,
                 None,
                 &previous,
@@ -149,10 +151,11 @@ fn hem_carrier_offsets_prove_fold_direction() {
     let zero_offset = cylinder(Point3::new(0.0, 0.0, 0.0));
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
+            let cylinders = [zero_offset.clone(), forward_second.clone()];
             super::super::super::hem_direction_from_transition(
                 decode_ctx,
                 7,
-                &[zero_offset.clone(), forward_second.clone()],
+                (&cylinders, &cylinders[0]),
                 &transition.topology.surfaces.inserted,
                 None,
                 &previous,
@@ -210,7 +213,7 @@ fn hem_direction_refuses_incident_loop_and_carrier_scans() {
                 super::super::super::hem_direction_from_transition(
                     decode,
                     7,
-                    &cylinders,
+                    (&cylinders, &cylinders[0]),
                     &transition.topology.surfaces.inserted,
                     Some(Vector3::new(0.0, 1.0, 0.0)),
                     &previous,
@@ -412,3 +415,5 @@ fn hem_geometry_fixture() -> (
     }];
     (scope, histories)
 }
+
+mod reached_carrier;
