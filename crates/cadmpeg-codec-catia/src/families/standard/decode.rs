@@ -102,6 +102,11 @@ fn bind_consolidated_revolution_faces_and_seams(
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     const TOLERANCE: f64 = 2e-3;
 
+    if revolutions.is_empty() {
+        ctx.charge_work(0, "catia_standard_iteration")?;
+        return Ok((0, 0));
+    }
+
     fn point_on_torus(point: Point3, geometry: &SurfaceGeometry, tolerance: f64) -> bool {
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) = geometry else {
             return false;
@@ -314,6 +319,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         Ok::<_, CodecError>((vertex_positions, curve_indices))
     })?;
     let mut surface_bindings = HashMap::<&SurfaceId, Option<usize>>::new();
+    let mut bound_surfaces = 0;
     {
         let mut visits = ir.model.faces.iter();
         while let Some(face) = ctx.next_charged(&mut visits, "catia_standard_iteration")? {
@@ -444,6 +450,9 @@ fn bind_consolidated_revolution_faces_and_seams(
                 "catia_revolution_surface_binding_lookup",
             )? {
                 if *stored != Some(binding) {
+                    if stored.is_some() {
+                        bound_surfaces -= 1;
+                    }
                     *stored = None;
                 }
             } else {
@@ -455,6 +464,7 @@ fn bind_consolidated_revolution_faces_and_seams(
                         "catia_revolution_surface_bindings",
                     )
                 })?;
+                bound_surfaces += 1;
             }
         }
     }
@@ -614,8 +624,6 @@ fn bind_consolidated_revolution_faces_and_seams(
             )
         })?;
     }
-    let bound_surfaces = surface_bindings.len();
-
     for surface in ctx.admit_iter(&mut ir.model.surfaces, "catia_standard_revolution_surfaces")? {
         let Some(&Some(binding)) = ctx.get_hash_map(
             &surface_bindings,
@@ -679,12 +687,36 @@ mod consolidated_revolution_binding_tests {
                 .expect("finite point"),
             None,
         ));
+        let empty = crate::test_support::with_collection_limit(0, |ctx| {
+            let result = bind_consolidated_revolution_faces_and_seams(
+                ctx,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &[],
+            );
+            assert_eq!(ctx.resource_refusal(), None);
+            result
+        });
+        assert_eq!(empty.expect("empty binding domain needs no point index"), (0, 0));
+        let binding = ConsolidatedRevolutionBinding {
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                    3.0,
+                )
+                .expect("finite torus"),
+            )),
+            profile_sweep: 0.5,
+        };
         let limited = crate::test_support::with_collection_limit(0, |ctx| {
             bind_consolidated_revolution_faces_and_seams(
                 ctx,
                 &mut ir,
                 &mut AnnotationBuilder::new(),
-                &[],
+                std::slice::from_ref(&binding),
             )
         });
         assert!(matches!(
@@ -9661,6 +9693,7 @@ fn refine_repeated_face_domains_by_geometry_and_bounds(
         };
         let mut best = (0, 0);
         let mut best_count = 0usize;
+        let mut best_face = 0;
         for face in ctx
             .admit_iter(
                 alternatives.as_slice(),
@@ -9672,6 +9705,7 @@ fn refine_repeated_face_domains_by_geometry_and_bounds(
             if candidate > best {
                 best = candidate;
                 best_count = 1;
+                best_face = face;
             } else if candidate == best {
                 best_count += 1;
             }
@@ -9681,7 +9715,7 @@ fn refine_repeated_face_domains_by_geometry_and_bounds(
         }
         ctx.retain_vec(
             alternatives,
-            |face| Ok(score(*face)? == best),
+            |face| Ok(*face == best_face),
             "catia_standard_face_alternate_score_filter",
         )?;
     }

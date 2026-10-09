@@ -223,3 +223,83 @@ fn revolution_procedural_binding_lookup_propagates_caller_work_refusal() {
 fn revolution_curve_edge_count_lookup_propagates_caller_work_refusal() {
     assert_lookup_refusal("catia_revolution_curve_edge_count_lookup");
 }
+
+#[test]
+fn empty_revolution_domain_skips_model_indexes() {
+    let (mut ir, _) = fixture();
+    crate::test_support::with_work_limit(0, |ctx| {
+        assert_eq!(bind_consolidated_revolution_faces_and_seams(
+            ctx, &mut ir, &mut AnnotationBuilder::new(), &[],
+        )?, (0, 0));
+        assert_eq!(ctx.resource_refusal(), None);
+        Ok::<_, CodecError>(())
+    }).expect("an empty revolution domain performs no model traversal");
+}
+
+#[test]
+fn conflicting_revolution_face_aliases_are_not_counted_as_bound() {
+    let (mut ir, first) = fixture();
+    ir.model.faces[1].surface = ir.model.faces[0].surface.clone();
+    let second = ConsolidatedRevolutionBinding {
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+                Point3::new(100.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+                3.0,
+            ).expect("finite second torus"),
+        )),
+        profile_sweep: 0.5,
+    };
+    let mut edge = ir.model.edges[0].clone();
+    edge.id = EdgeId::mint("catia:test:edge#other-torus").expect("identity grammar");
+    let vertices = [0, 1].map(|index| {
+        let point_id = PointId::mint(format!("catia:test:point#other-torus-{index}"))
+            .expect("identity grammar");
+        let vertex_id = VertexId::mint(format!("catia:test:vertex#other-torus-{index}"))
+            .expect("identity grammar");
+        let source = ir.model.points[index].position().get();
+        ir.model.points.push(Point::new(
+            point_id.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(source.x + 100.0, source.y, source.z))
+                .expect("finite translated point"),
+            None,
+        ));
+        ir.model.vertices.push(Vertex { id: vertex_id.clone(), point: point_id, tolerance: None });
+        vertex_id
+    });
+    edge.start = vertices[0].clone();
+    edge.end = vertices[1].clone();
+    ir.model.coedges[1].edge = edge.id.clone();
+    ir.model.edges.push(edge);
+    let mut face = ir.model.faces[0].clone();
+    face.id = FaceId::mint("catia:test:face#repeated-torus").expect("identity grammar");
+    let mut loop_ = ir.model.loops[0].clone();
+    loop_.id = LoopId::mint("catia:test:loop#repeated-torus").expect("identity grammar");
+    loop_.face = face.id.clone();
+    let mut coedge = ir.model.coedges[0].clone();
+    coedge.id = CoedgeId::mint("catia:test:coedge#repeated-torus").expect("identity grammar");
+    coedge.owner_loop = loop_.id.clone();
+    coedge.radial_next = coedge.id.clone();
+    loop_.boundary = cadmpeg_ir::topology::LoopBoundary::Ring(
+        cadmpeg_ir::topology::LoopRing::new(
+            &cadmpeg_test_support::service_decode_context(),
+            vec![coedge.id.clone()], Vec::new(),
+        ).expect("fixture ring admission").expect("one repeated witness coedge"),
+    );
+    face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_.id.clone()]);
+    ir.model.faces.push(face);
+    ir.model.loops.push(loop_);
+    ir.model.coedges.push(coedge);
+    let surfaces = ir.model.surfaces.clone();
+    let result = crate::test_support::with_service_context(|ctx| {
+        bind_consolidated_revolution_faces_and_seams(
+            ctx, &mut ir, &mut AnnotationBuilder::new(), &[first, second],
+        )
+    }).expect("two finite torus witnesses are admitted");
+    assert_eq!(result, (0, 0));
+    assert_eq!(ir.model.surfaces, surfaces);
+    assert!(matches!(ir.model.curves[0].geometry.solved_cache(),
+        Some(SolvedCurveGeometry::Unknown { .. })));
+}
