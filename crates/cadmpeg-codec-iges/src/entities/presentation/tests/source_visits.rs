@@ -293,3 +293,87 @@ fn empty_font_definition_is_free_and_preserves_original_entry_refusal() {
         }
     }
 }
+
+fn zero_scalar_policy() -> DecodePolicy {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    policy
+}
+
+#[test]
+fn presentation_fixed_enum_and_absent_pointer_checks_are_free() {
+    let arena = DecodeArena::new();
+    let policy = zero_scalar_policy();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let entries = BTreeMap::new();
+    for _ in 0..64 {
+        for table in [GlobalTable::V4_0, GlobalTable::V5_0, GlobalTable::Legacy, GlobalTable::V5Later] {
+            for value in [0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003] {
+                assert!(super::super::general_note_font_valid_for_global_table(value, &entries, table, &ctx).unwrap());
+            }
+            for (value, accepted) in [(2001, !matches!(table, GlobalTable::V4_0)),
+                (3001, matches!(table, GlobalTable::Legacy | GlobalTable::V5Later))] {
+                assert_eq!(super::super::general_note_font_valid_for_global_table(value, &entries, table, &ctx).unwrap(), accepted);
+            }
+            for value in [4, 5, 7, 1000, 3002, -1, -2, i64::MIN, i64::MAX] {
+                assert!(!super::super::general_note_font_valid_for_global_table(value, &entries, table, &ctx).unwrap());
+            }
+        }
+        for value in [1, 1001, 1002, 1003, 2001, 3001] {
+            assert!(super::super::new_general_note_charset_valid(value, &entries, &ctx).unwrap());
+        }
+        for value in [0, 2, 1000, 3002, -1, -2, i64::MIN, i64::MAX] {
+            assert!(!super::super::new_general_note_charset_valid(value, &entries, &ctx).unwrap());
+        }
+        for value in [0, 1, -1, -2, i64::MIN, i64::MAX] {
+            assert!(!super::super::text_font_definition_pointer_valid(value, &entries, &ctx).unwrap());
+        }
+    }
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn presentation_scalar_checks_preserve_each_original_refusal() {
+    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes, ResourceDimension::RetainedBytes,
+        ResourceDimension::Entities, ResourceDimension::RecursionDepth] {
+        let arena = DecodeArena::new();
+        let policy = zero_scalar_policy();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let refused = match dimension {
+            ResourceDimension::WorkUnits => ctx.charge_work(1, "test original presentation scalar refusal"),
+            ResourceDimension::CollectionItems => ctx.charge_collection_items(1, "test original presentation scalar refusal"),
+            ResourceDimension::MaterializedBytes => ctx.reserve_scoped(1, "test original presentation scalar refusal").map(|_| ()),
+            ResourceDimension::RetainedBytes => ctx.charge_retained(1, "test original presentation scalar refusal"),
+            ResourceDimension::Entities => ctx.charge_entities(1, "test original presentation scalar refusal"),
+            ResourceDimension::RecursionDepth => ctx.enter_nested("test original presentation scalar refusal").map(|_| ()),
+            _ => panic!("presentation scalar refusal dimension"),
+        };
+        let Err(CodecError::ResourceLimit(first)) = refused else { panic!("expected original refusal"); };
+        assert_eq!(first.dimension, dimension);
+        let mut target = crate::test_support::directory_target(1, 310);
+        target.form = 0;
+        let populated = BTreeMap::from([(1, &target)]);
+        let empty = BTreeMap::new();
+        for entries in [&empty, &populated] {
+            for _ in 0..64 {
+                for value in [0, 1, 4, 2001, 3001, -1, -2, i64::MIN, i64::MAX] {
+                    assert!(matches!(super::super::text_font_definition_pointer_valid(value, entries, &ctx),
+                        Err(CodecError::ResourceLimit(last)) if last == first));
+                    assert!(matches!(super::super::new_general_note_charset_valid(value, entries, &ctx),
+                        Err(CodecError::ResourceLimit(last)) if last == first));
+                    for table in [GlobalTable::V4_0, GlobalTable::V5_0, GlobalTable::Legacy, GlobalTable::V5Later] {
+                        assert!(matches!(super::super::general_note_font_valid_for_global_table(value, entries, table, &ctx),
+                            Err(CodecError::ResourceLimit(last)) if last == first));
+                    }
+                }
+            }
+        }
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+    }
+}
