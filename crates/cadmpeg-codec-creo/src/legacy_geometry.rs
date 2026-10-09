@@ -127,6 +127,9 @@ pub(crate) fn scan(
     ctx: &DecodeContext<'_>,
     persistence: &Persistence,
 ) -> Result<LegacyGeometryScan, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let object_ids = object_id_index(ctx, &persistence.objects)?;
     let children = child_index(ctx, &persistence.objects)?;
     let mut integer_fields = BTreeMap::new();
@@ -160,12 +163,14 @@ pub(crate) fn scan(
         "creo legacy nonvisible carrier aggregation",
     )?;
     carriers.append(&mut nonvisible_carriers);
-    ctx.stable_sort_by(
-        carriers.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo scan carriers ordering",
-    )?;
+    if carriers.len() > 1 {
+        ctx.stable_sort_by(
+            carriers.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo scan carriers ordering",
+        )?;
+    }
     let (topology_rows, pcurves) = curve_namespace(
         ctx,
         &persistence.objects,
@@ -189,6 +194,9 @@ fn curve_namespace(
     integer_fields: &IntegerFieldIndex<'_>,
     real_fields: &RealFieldIndex<'_>,
 ) -> Result<(Vec<CurveTopologyRow>, Vec<PcurveEndpoints>), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(elements) = geometry_array_elements(
         ctx,
         objects,
@@ -213,28 +221,32 @@ fn curve_namespace(
         ctx.reserve_vec(&mut topology_rows, 1, "creo legacy topology rows")?;
         topology_rows.push(row);
     }
-    ctx.stable_sort_by(
-        topology_rows.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo curve namespace topology rows ordering",
-    )?;
-    ctx.dedup_by_key(
-        &mut topology_rows,
-        |row| Ok(row.offset),
-        "creo curve namespace topology_rows deduplication",
-    )?;
-    ctx.stable_sort_by(
-        pcurves.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo curve namespace pcurves ordering",
-    )?;
-    ctx.dedup_by_key(
-        &mut pcurves,
-        |pcurve| Ok(pcurve.offset),
-        "creo curve namespace pcurves deduplication",
-    )?;
+    if topology_rows.len() > 1 {
+        ctx.stable_sort_by(
+            topology_rows.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo curve namespace topology rows ordering",
+        )?;
+        ctx.dedup_by_key(
+            &mut topology_rows,
+            |row| Ok(row.offset),
+            "creo curve namespace topology_rows deduplication",
+        )?;
+    }
+    if pcurves.len() > 1 {
+        ctx.stable_sort_by(
+            pcurves.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo curve namespace pcurves ordering",
+        )?;
+        ctx.dedup_by_key(
+            &mut pcurves,
+            |pcurve| Ok(pcurve.offset),
+            "creo curve namespace pcurves deduplication",
+        )?;
+    }
     Ok((topology_rows, pcurves))
 }
 
@@ -424,6 +436,9 @@ fn namespace(
     branch_name: &str,
     namespace: LegacySurfaceNamespace,
 ) -> Result<(Vec<SurfaceRow>, Vec<LegacySurfaceCarrier>), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(elements) = geometry_array_elements(
         ctx,
         index.objects,
@@ -467,18 +482,22 @@ fn namespace(
         ctx.reserve_vec(&mut rows, 1, "creo legacy surface rows")?;
         rows.push(row);
     }
-    ctx.stable_sort_by(
-        rows.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo namespace rows ordering",
-    )?;
-    ctx.stable_sort_by(
-        carriers.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo namespace carriers ordering",
-    )?;
+    if rows.len() > 1 {
+        ctx.stable_sort_by(
+            rows.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo namespace rows ordering",
+        )?;
+    }
+    if carriers.len() > 1 {
+        ctx.stable_sort_by(
+            carriers.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo namespace carriers ordering",
+        )?;
+    }
     Ok((rows, carriers))
 }
 
@@ -893,6 +912,7 @@ fn local_system_slots(record: &RealRecord) -> Option<[f64; 12]> {
 
 #[cfg(test)]
 mod tests {
+    mod admission_ordering;
     use super::{
         canonicalize_legacy_cone_pcurve_endpoints, scan as scan_checked, LegacySurfaceCarrier,
         LegacySurfaceGeometry, LegacySurfaceNamespace,
@@ -1942,7 +1962,21 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 
     #[test]
     fn legacy_pcurves_deduplication_refuses_work() {
-        let persistence = topology_persistence();
+        let mut persistence = topology_persistence();
+        persistence.real_values.rows.push(real_array("curve_11",
+            [[8.0, 9.0, 10.0, 11.0], [12.0, 13.0, 14.0, 15.0]], 811));
+        let admitted = scan(&persistence);
+        assert_eq!(admitted.pcurves, [crate::curve::PcurveEndpoints {
+            curve_id: 10,
+            faces: [std::num::NonZeroU32::new(100), std::num::NonZeroU32::new(200)],
+            face_0_endpoints: [[0.0, 1.0], [4.0, 5.0]],
+            face_1_endpoints: [[2.0, 3.0], [6.0, 7.0]], offset: 810,
+        }, crate::curve::PcurveEndpoints {
+            curve_id: 11,
+            faces: [std::num::NonZeroU32::new(100), std::num::NonZeroU32::new(200)],
+            face_0_endpoints: [[8.0, 9.0], [12.0, 13.0]],
+            face_1_endpoints: [[10.0, 11.0], [14.0, 15.0]], offset: 811,
+        }]);
         let error = crate::test_support::last_refusal_at(
             &[],
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
