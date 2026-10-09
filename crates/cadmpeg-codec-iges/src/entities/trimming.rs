@@ -1518,16 +1518,24 @@ fn planar_point_is_strictly_inside(
     Ok(inside)
 }
 
-fn linear_boundary_rings<'a>(
+struct LinearBoundaryRings<'ctx> {
+    values: Vec<SimpleRing>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+fn linear_boundary_rings<'a, 'ctx>(
     mut candidates: impl ExactSizeIterator<Item = Option<&'a LinearBoundaryGeometry>>,
     space: BoundarySpace,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Result<Vec<SimpleRing>, NonSimpleRing>>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<Option<Result<LinearBoundaryRings<'ctx>, NonSimpleRing>>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() { return Err(refusal.into()); }
     if candidates.len() == 0 {
         return Ok(None);
     }
-    let mut rings = ctx.collection_vec(candidates.len(), "iges linear boundary ring slots")?;
+    let mut storage = ctx.reserve_scoped(0, "iges linear boundary rings storage")?;
+    let mut rings = storage.with_storage(|| {
+        ctx.collection_vec(candidates.len(), "iges linear boundary ring slots")
+    })?;
     while let Some(candidate) =
         ctx.next_charged(&mut candidates, "iges linear boundary candidates")?
     {
@@ -1537,13 +1545,19 @@ fn linear_boundary_rings<'a>(
         else {
             return Ok(None);
         };
-        let copied = ctx.copy_slice(points, "iges linear boundary ring points")?;
+        let mut point_storage = ctx.reserve_scoped(0, "iges linear boundary copied points storage")?;
+        let copied = point_storage.with_storage(|| {
+            ctx.copy_slice(points, "iges linear boundary ring points")
+        })?;
         match SimpleRing::new(copied, ctx)? {
-            Ok(ring) => rings.push(ring),
+            Ok(ring) => {
+                storage.absorb(&mut point_storage)?;
+                rings.push(ring);
+            }
             Err(error) => return Ok(Some(Err(error))),
         }
     }
-    Ok(Some(Ok(rings)))
+    Ok(Some(Ok(LinearBoundaryRings { values: rings, _storage: storage })))
 }
 
 fn rings_are_disjoint(rings: &[SimpleRing], ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
@@ -3016,7 +3030,8 @@ pub(super) fn project<'ctx>(
         let mut implicit_boundary_pcurves = Vec::new();
         let mut loop_ids = Vec::new();
         let mut explicit_outer_loop: Option<cadmpeg_ir::ids::LoopId> = None;
-        let mut linear_boundary_candidates = face_scratch.with_storage(|| {
+        let mut linear_candidate_slots = ctx.reserve_scoped(0, "iges trimming linear candidate slots storage")?;
+        let mut linear_boundary_candidates = linear_candidate_slots.with_storage(|| {
             ctx.collection_vec(boundary_sequences.len(), "iges trimming linear candidates")
         })?;
         let mut face_tolerance = 0.0_f64;
@@ -3603,17 +3618,23 @@ pub(super) fn project<'ctx>(
         if !valid {
             continue;
         }
-        let linear_rings = match face_scratch.with_storage(|| {
-            linear_boundary_rings(linear_boundary_candidates.iter().map(|candidate| candidate.as_ref().map(|candidate| &candidate.geometry)), BoundarySpace::Parameter, ctx)
-        })? {
+        let linear_rings = match linear_boundary_rings(
+            linear_boundary_candidates.iter().map(|candidate| candidate.as_ref().map(|candidate| &candidate.geometry)),
+            BoundarySpace::Parameter,
+            ctx,
+        )? {
             Some(rings) => Some(rings),
-            None => face_scratch.with_storage(|| {
-                linear_boundary_rings(linear_boundary_candidates.iter().map(|candidate| candidate.as_ref().map(|candidate| &candidate.geometry)), BoundarySpace::Model, ctx)
-            })?,
+            None => linear_boundary_rings(
+                linear_boundary_candidates.iter().map(|candidate| candidate.as_ref().map(|candidate| &candidate.geometry)),
+                BoundarySpace::Model,
+                ctx,
+            )?,
         };
+        drop(linear_boundary_candidates);
+        drop(linear_candidate_slots);
         let linear_relationship = match linear_rings {
             Some(rings) => linear_boundary_relationship_is_valid(
-                rings.as_deref(),
+                rings.as_ref().map(|rings| rings.values.as_slice()),
                 surface_kind,
                 has_explicit_outer,
                 &support_geometry,

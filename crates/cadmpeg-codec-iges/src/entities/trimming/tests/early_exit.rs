@@ -408,7 +408,7 @@ fn linear_boundary_candidates_stop_at_the_first_unusable_candidate() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
         match crate::test_support::with_policy_context(&[], &policy, |ctx| {
-            linear_boundary_rings(candidates.iter().map(Option::as_ref), BoundarySpace::Parameter, ctx)
+            linear_boundary_rings(candidates.iter().map(Option::as_ref), BoundarySpace::Parameter, ctx).map(|_| ())
         }) {
             Err(CodecError::ResourceLimit(limit)) => limit,
             Err(error) => panic!("unexpected ring refusal: {error:?}"),

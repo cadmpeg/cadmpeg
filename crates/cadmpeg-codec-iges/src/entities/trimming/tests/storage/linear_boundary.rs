@@ -221,3 +221,127 @@ fn empty_linear_boundary_rings_preserve_original_refusal_and_zero_work_absence()
         }
     }
 }
+
+fn ring_points() -> Vec<[f64; 2]> {
+    vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, 0.0]]
+}
+
+fn ring_candidates(parameter: bool) -> Vec<Option<LinearBoundaryGeometry>> {
+    (0..ITEMS).map(|_| Some(if parameter {
+        LinearBoundaryGeometry::Parameter(ring_points())
+    } else {
+        LinearBoundaryGeometry::Model(ring_points())
+    })).collect()
+}
+
+fn assert_ring_output_custody(parameter: bool) {
+    let candidates = ring_candidates(parameter);
+    let space = if parameter { BoundarySpace::Parameter } else { BoundarySpace::Model };
+    // collection_vec and copy_slice both use exact growth: 64 ring slots
+    // and four copied points per ring, with no constructor allocation.
+    let live = u64_from_index(ITEMS * (size_of::<SimpleRing>() + 4 * size_of::<[f64; 2]>()));
+    for refuse_extra in [false, true] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = CAP;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut outer = ctx.reserve_scoped(0, "test ring ambient storage").unwrap();
+        let rings = outer.with_storage(|| linear_boundary_rings(
+            candidates.iter().map(Option::as_ref), space, &ctx,
+        )).unwrap().unwrap().unwrap_or_else(|_| panic!("expected simple rings"));
+        assert_eq!(rings.values.len(), ITEMS);
+        for ring in &rings.values { assert_eq!(ring.points(), ring_points()); }
+        let free = ctx.reserve_scoped(CAP - live, "test exact surviving ring storage").unwrap();
+        drop(free);
+        if refuse_extra {
+            let first = match ctx.reserve_scoped(CAP - live + 1, "test ring backing remains live").err().unwrap() {
+                CodecError::ResourceLimit(first) => first,
+                _ => panic!("expected original materialized refusal"),
+            };
+            assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(first.operation, "test ring backing remains live");
+            assert_eq!((first.limit, first.used, first.additional), (CAP, live, CAP - live + 1));
+            drop(rings); drop(outer);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        } else {
+            drop(rings);
+            let free = ctx.reserve_scoped(CAP, "test ring backing destroyed").unwrap();
+            drop(free); drop(outer);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn parameter_rings_keep_only_surviving_copied_points_and_slots() {
+    assert_ring_output_custody(true);
+}
+#[test]
+fn model_rings_keep_only_surviving_copied_points_and_slots() {
+    assert_ring_output_custody(false);
+}
+
+fn assert_failed_ring_attempts(last: Option<LinearBoundaryGeometry>, non_simple: bool) {
+    let mut candidates = ring_candidates(true);
+    candidates[ITEMS - 1] = last;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = CAP;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut outer = ctx.reserve_scoped(0, "test partial ring ambient storage").unwrap();
+    for _ in 0..16 {
+        let result = outer.with_storage(|| linear_boundary_rings(
+            candidates.iter().map(Option::as_ref), BoundarySpace::Parameter, &ctx,
+        )).unwrap();
+        if non_simple { assert!(matches!(result, Some(Err(_)))); }
+        else { assert!(result.is_none()); }
+        let free = ctx.reserve_scoped(CAP, "test failed ring backing destroyed").unwrap();
+        drop(free);
+    }
+    drop(outer);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn absent_last_ring_releases_prior_copies_per_attempt() {
+    assert_failed_ring_attempts(None, false);
+}
+#[test]
+fn non_simple_last_ring_releases_its_copy_and_prior_rings_per_attempt() {
+    assert_failed_ring_attempts(Some(LinearBoundaryGeometry::Parameter(
+        vec![[0.0, 0.0], [1.0, 0.0], [0.0, 0.0]],
+    )), true);
+}
+#[test]
+fn mismatched_last_ring_space_releases_prior_copies_per_attempt() {
+    assert_failed_ring_attempts(Some(LinearBoundaryGeometry::Model(ring_points())), false);
+}
+
+#[test]
+fn ring_slot_and_point_allocations_keep_original_refusal() {
+    let candidates = [Some(LinearBoundaryGeometry::Parameter(ring_points()))];
+    let slots = u64_from_index(size_of::<SimpleRing>());
+    let points = u64_from_index(4 * size_of::<[f64; 2]>());
+    for (used, additional, operation) in [
+        (0, slots, "iges linear boundary ring slots"),
+        (slots, points, "iges linear boundary ring points"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = used + additional - 1;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let first = match linear_boundary_rings(
+            candidates.iter().map(Option::as_ref), BoundarySpace::Parameter, &ctx,
+        ).err().expect("expected ring storage refusal") {
+            CodecError::ResourceLimit(first) => first,
+            _ => panic!("expected original resource refusal"),
+        };
+        assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(first.operation, operation);
+        assert_eq!((first.limit, first.used, first.additional), (used + additional - 1, used, additional));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+    }
+}
