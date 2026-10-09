@@ -197,3 +197,19 @@ fn requested_nurbs_first_preserves_point_and_partials_below_second_work_refusal(
     drop(scratch);
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn actual_nurbs_fourth_is_unavailable_without_erasing_true_lower_orders() {
+    let geometry = SolvedSurfaceGeometry::Nurbs(cubic());
+    let scratch = Scratch::new(EvaluationAdmission::Standard);
+    let third = crate::eval::surface_requested_jet_solved(&scratch, &geometry, 0.0, 0.0, SurfaceRequest::Third).unwrap();
+    let fourth = crate::eval::surface_requested_jet_solved(&scratch, &geometry, 0.0, 0.0, SurfaceRequest::Fourth).unwrap();
+    assert_eq!(fourth.jet.point, third.jet.point);
+    assert_eq!(fourth.jet.first, third.jet.first);
+    assert_eq!(fourth.jet.second, third.jet.second);
+    assert_eq!(fourth.higher.third(), third.higher.third());
+    for (lane, expected) in fourth.higher.third().unwrap().into_iter().zip([6.0, 4.0, 6.0, 24.0]) {
+        assert!((lane.z - expected).abs() <= EPS_THIRD_QUOTIENT);
+    }
+    assert_eq!(fourth.higher.fourth(), Err(EvaluationFailure::NoValue));
+}

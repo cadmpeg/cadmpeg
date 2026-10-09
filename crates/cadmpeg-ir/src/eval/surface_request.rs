@@ -19,8 +19,7 @@ pub(super) enum SurfaceRequest {
     First,
     Second,
     Third,
-    // An offset's requested third needs fourth support partials. This order
-    // has no implemented owner; keep the available lower orders separately.
+    // An offset's requested third needs fourth support partials.
     Fourth,
 }
 
@@ -54,6 +53,10 @@ pub(super) struct RequestedJet {
 pub(super) enum HigherPartials {
     Affine,
     Third(Result<[FiniteVector3; 4], EvaluationFailure<()>>),
+    Fourth {
+        third: Result<[FiniteVector3; 4], EvaluationFailure<()>>,
+        fourth: Result<[FiniteVector3; 5], EvaluationFailure<()>>,
+    },
 }
 
 impl HigherPartials {
@@ -61,6 +64,15 @@ impl HigherPartials {
         match self {
             Self::Affine => Ok([FiniteVector3::ZERO; 4]),
             Self::Third(result) => result,
+            Self::Fourth { third, .. } => third,
+        }
+    }
+
+    pub(super) fn fourth(self) -> Result<[FiniteVector3; 5], EvaluationFailure<()>> {
+        match self {
+            Self::Affine => Ok([FiniteVector3::ZERO; 5]),
+            Self::Third(_) => Err(EvaluationFailure::NoValue),
+            Self::Fourth { fourth, .. } => fourth,
         }
     }
 
@@ -68,6 +80,10 @@ impl HigherPartials {
         match self {
             Self::Affine => Self::Affine,
             Self::Third(result) => Self::Third(result.and_then(|lanes| super::placed_vectors(transform, lanes))),
+            Self::Fourth { third, fourth } => Self::Fourth {
+                third: third.and_then(|lanes| super::placed_vectors(transform, lanes)),
+                fourth: fourth.and_then(|lanes| super::placed_vectors(transform, lanes)),
+            },
         }
     }
 }
@@ -241,6 +257,7 @@ fn offset(
     distance: f64,
     request: SurfaceRequest,
 ) -> Result<RequestedJet, EvaluationFailure<Point3>> {
+    if distance == 0.0 { return Ok(source); }
     let base = source.jet;
     let unreached = EvaluationFailure::NonFinite(super::UNREACHED_POINT);
     if !distance.is_finite() { return Err(unreached); }
@@ -269,19 +286,22 @@ fn offset(
             Vector3::new(dv.x + distance * normal_v.x, dv.y + distance * normal_v.y, dv.z + distance * normal_v.z),
         ])
     });
-    let second = if matches!(source.higher, HigherPartials::Affine) {
+    let (second, higher) = if matches!(source.higher, HigherPartials::Affine) {
         // An affine chart has a constant normal; a constant offset preserves
         // its derivatives at every order, including after a Replica.
-        base.second
+        (base.second, HigherPartials::Affine)
     } else if request == SurfaceRequest::First {
-        Err(EvaluationFailure::NoValue)
+        (Err(EvaluationFailure::NoValue), HigherPartials::Third(Err(EvaluationFailure::NoValue)))
     } else {
-        differentials::offset_second(base, source.higher.third(), distance, normal, magnitude)
+        let orders = differentials::offset_second(base, source.higher.third(), distance, normal, magnitude);
+        let third = if request.needs_third() {
+            orders.and_then(|orders| differentials::normal_third::offset_third(
+                base, source.higher.third(), source.higher.fourth(), distance, orders.normal,
+            ))
+        } else { Err(EvaluationFailure::NoValue) };
+        (orders.and_then(|orders| orders.offset), HigherPartials::Third(third))
     };
-    Ok(RequestedJet { jet: SurfaceJet { point, first, second }, higher: match source.higher {
-        HigherPartials::Affine => HigherPartials::Affine,
-        HigherPartials::Third(_) => HigherPartials::Third(Err(EvaluationFailure::NoValue)),
-    } })
+    Ok(RequestedJet { jet: SurfaceJet { point, first, second }, higher })
 }
 
 #[cfg(test)]
