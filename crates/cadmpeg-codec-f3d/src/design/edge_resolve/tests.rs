@@ -1986,3 +1986,5 @@ mod reference_lifetimes;
 mod deleted_reference_lifetimes;
 
 mod unique_assignment_lifetimes;
+
+mod candidate_vector_lifetimes;
