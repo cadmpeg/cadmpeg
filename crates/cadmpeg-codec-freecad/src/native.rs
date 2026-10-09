@@ -273,6 +273,8 @@ pub(crate) fn id_key_charged<'text>(
 #[cfg(test)]
 mod tests {
 
+    mod archive_span_roles;
+
     use super::{model_id, native_child_id, native_id};
 
     #[test]
@@ -3407,6 +3409,8 @@ pub(crate) enum ArchiveSpanRole {
     CentralExtra(String),
     /// ZIP central-header comment for the named entry.
     CentralComment(String),
+    /// ZIP central-directory digital-signature record; authenticity is not established.
+    DigitalSignature,
     /// ZIP64 end-of-central-directory record.
     Zip64EndRecord,
     /// ZIP64 end-of-central-directory locator.
@@ -3494,6 +3498,7 @@ impl ArchiveSpanRole {
             Self::CentralName(_) => "central-name",
             Self::CentralExtra(_) => "central-extra",
             Self::CentralComment(_) => "central-comment",
+            Self::DigitalSignature => "digital-signature",
             Self::Zip64EndRecord => "zip64-end-record",
             Self::Zip64EndLocator => "zip64-end-locator",
             Self::EndRecord => "end-record",
@@ -3515,7 +3520,8 @@ impl ArchiveSpanRole {
             | Self::CentralName(entry)
             | Self::CentralExtra(entry)
             | Self::CentralComment(entry) => Some(entry),
-            Self::Zip64EndRecord
+            Self::DigitalSignature
+            | Self::Zip64EndRecord
             | Self::Zip64EndLocator
             | Self::EndRecord
             | Self::ArchivePadding => None,
@@ -3553,6 +3559,7 @@ impl ArchiveSpanRole {
             "central-name" => named(entry, Self::CentralName),
             "central-extra" => named(entry, Self::CentralExtra),
             "central-comment" => named(entry, Self::CentralComment),
+            "digital-signature" => unit(entry, Self::DigitalSignature),
             "zip64-end-record" => unit(entry, Self::Zip64EndRecord),
             "zip64-end-locator" => unit(entry, Self::Zip64EndLocator),
             "end-record" => unit(entry, Self::EndRecord),
