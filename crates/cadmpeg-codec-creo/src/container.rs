@@ -4446,25 +4446,23 @@ pub(crate) fn has_thumbnail(
             let raw_is_compressed = raw
                 .get(payload_start..)
                 .is_some_and(|payload| payload.starts_with(UNIX_COMPRESS_MAGIC));
-            let expanded_carries_jpeg = match expanded_section_for(ctx, scan, section)? {
-                Some(expanded) => ctx
+            if !raw_is_compressed
+                && ctx.find_bytes_from(raw, JPEG_MAGIC, 0, "find Creo thumbnail")?
+                    .is_some()
+            {
+                return Ok(true);
+            }
+            match expanded_section_for(ctx, scan, section)? {
+                Some(expanded) => Ok(ctx
                     .find_bytes_from(
                         &expanded.data,
                         JPEG_MAGIC,
                         0,
                         "find Creo expanded thumbnail",
                     )?
-                    .is_some(),
-                None => false,
-            };
-            let carries_jpeg = if raw_is_compressed {
-                expanded_carries_jpeg
-            } else {
-                ctx.find_bytes_from(raw, JPEG_MAGIC, 0, "find Creo thumbnail")?
-                    .is_some()
-                    || expanded_carries_jpeg
-            };
-            Ok(carries_jpeg)
+                    .is_some()),
+                None => Ok(false),
+            }
         },
         "creo thumbnail section selection",
     )
