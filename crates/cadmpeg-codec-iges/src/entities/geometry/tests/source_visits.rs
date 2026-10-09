@@ -6,8 +6,21 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use std::collections::BTreeSet;
 
-fn outcome(decoded: BTreeSet<u32>) -> WireProjectionOutcome {
-    WireProjectionOutcome { decoded, losses: Vec::new(), wire_edges: Vec::new() }
+fn outcome<'ctx>(ctx: &'ctx DecodeContext<'_>, decoded: BTreeSet<u32>) -> WireProjectionOutcome<'ctx> {
+    // Prebuilt unit inputs own real backing without decode traversal or creation.
+    let node_bytes = 11 * std::mem::size_of::<u32>()
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<u32>().max(std::mem::align_of::<usize>());
+    let nodes = if decoded.is_empty() { 0 } else { (decoded.len() - 1) / 5 + 1 };
+    WireProjectionOutcome {
+        decoded,
+        decoded_storage: ctx.reserve_scoped(u64::try_from(nodes * node_bytes).unwrap(),
+            "test wire decoded input backing").unwrap(),
+        losses: Vec::new(),
+        loss_slots_storage: ctx.reserve_scoped(0, "test wire loss input backing").unwrap(),
+        wire_edges: Vec::new(),
+        wire_slots_storage: ctx.reserve_scoped(0, "test wire edge input backing").unwrap(),
+    }
 }
 
 fn boundary(work: u64, additional: u64, operation: &'static str) {
@@ -18,7 +31,9 @@ fn boundary(work: u64, additional: u64, operation: &'static str) {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut decoded_storage = ctx.reserve_scoped(0, "test merged decoded storage").unwrap();
     let mut decoded = BTreeSet::new();
-    let first = match outcome(BTreeSet::from([1, 3, 5])).merge_into(
+    let initial = outcome(&ctx, BTreeSet::from([1, 3, 5]));
+    let replays = [outcome(&ctx, BTreeSet::from([1, 3, 5])), outcome(&ctx, BTreeSet::new())];
+    let first = match initial.merge_into(
         &mut decoded, &mut decoded_storage, &mut Vec::new(), &mut Vec::new(), &ctx,
     ) {
         Err(CodecError::ResourceLimit(first)) => first,
@@ -28,8 +43,8 @@ fn boundary(work: u64, additional: u64, operation: &'static str) {
     assert_eq!(first.operation, operation);
     assert_eq!((first.limit, first.used, first.additional), (work, work, additional));
     assert!(decoded.is_empty());
-    for replay in [BTreeSet::from([1, 3, 5]), BTreeSet::new()] {
-        assert!(matches!(outcome(replay).merge_into(
+    for replay in replays {
+        assert!(matches!(replay.merge_into(
             &mut decoded, &mut decoded_storage, &mut Vec::new(), &mut Vec::new(), &ctx),
             Err(CodecError::ResourceLimit(last)) if last == first));
     }
@@ -64,7 +79,7 @@ fn empty_wire_merge_executes_no_source_steps() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut decoded_storage = ctx.reserve_scoped(0, "test merged decoded storage").unwrap();
-    outcome(BTreeSet::new()).merge_into(
+    outcome(&ctx, BTreeSet::new()).merge_into(
         &mut BTreeSet::new(), &mut decoded_storage, &mut Vec::new(), &mut Vec::new(), &ctx,
     ).unwrap();
     drop(decoded_storage);

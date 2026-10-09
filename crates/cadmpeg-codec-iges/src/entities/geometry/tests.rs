@@ -255,8 +255,13 @@ fn projector_merges_refuse_decoded_loss_and_wire_growth() {
                         .merge_into(&mut decoded, &mut storage, &mut losses, &ctx),
                     "iges merged wire edge slots" => WireProjectionOutcome {
                         decoded: BTreeSet::new(),
+                        decoded_storage: ctx.reserve_scoped(0, "test wire decoded input backing").unwrap(),
                         losses: Vec::new(),
+                        loss_slots_storage: ctx.reserve_scoped(0, "test wire loss input backing").unwrap(),
                         wire_edges: vec![crate::ids::edge(&crate::ids::Stem::directory(1_u32))],
+                        wire_slots_storage: ctx.reserve_scoped(
+                            u64::try_from(std::mem::size_of::<cadmpeg_ir::ids::EdgeId>()).unwrap(),
+                            "test wire edge input backing").unwrap(),
                     }
                     .merge_into(
                         &mut decoded,
@@ -1988,3 +1993,5 @@ mod source_lanes;
 mod source_visits;
 
 mod affine_progression;
+
+mod wire_outcome_storage;

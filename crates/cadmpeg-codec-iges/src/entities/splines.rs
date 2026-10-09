@@ -249,14 +249,14 @@ fn add_edge(
     Ok(Some(edge))
 }
 
-pub(super) fn project(
+pub(super) fn project<'ctx>(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: &DecodeContext<'_>,
+    ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
-) -> Result<WireProjectionOutcome, CodecError> {
+) -> Result<WireProjectionOutcome<'ctx>, CodecError> {
     // The transform resolver requires sequence maps. Their storage is local to this projection.
     let mut transform_storage = ctx.reserve_scoped(0, "iges splines transform indexes")?;
     let (records, entries) = transform_storage.with_storage(|| {
@@ -292,8 +292,11 @@ pub(super) fn project(
         }
         Ok::<_, CodecError>((records, entries))
     })?;
+    let mut decoded_storage = ctx.reserve_scoped(0, "iges splines decoded sequences")?;
     let mut decoded = BTreeSet::new();
+    let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
+    let mut wire_slots_storage = ctx.reserve_scoped(0, "iges splines wire slots")?;
     let mut wire_edges = Vec::new();
 
     let mut directory_entries = directory.iter();
@@ -310,8 +313,9 @@ pub(super) fn project(
         let mut scratch = ctx.reserve_scoped(0, "iges spline numeric scratch")?;
         let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -321,8 +325,9 @@ pub(super) fn project(
         let (Some(curve_type), Some(continuity), Some(dimensions)) =
             (record.integer(1), record.integer(2), record.integer(3))
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline header fields are not integers"),
@@ -333,8 +338,9 @@ pub(super) fn project(
             || !(0..=2).contains(&continuity)
             || !matches!(dimensions, 2 | 3)
         {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline header enum is out of range"),
@@ -342,8 +348,9 @@ pub(super) fn project(
             continue;
         }
         let Some(raw_segment_count) = record.integer(4) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline segment count is invalid"),
@@ -364,8 +371,9 @@ pub(super) fn project(
             .ok()
             .filter(|count| *count > 0)
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("segment count is outside 1..={MAX_SPLINE_SEGMENTS}"),
@@ -373,8 +381,9 @@ pub(super) fn project(
             continue;
         };
         let Some(breakpoint_count) = segment_count.checked_add(1) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "breakpoint count overflows"),
@@ -389,8 +398,9 @@ pub(super) fn project(
             )
         })?
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "breakpoint array is truncated or non-finite"),
@@ -402,8 +412,9 @@ pub(super) fn project(
             |pair| Ok(pair[0].get() >= pair[1].get()),
             "iges spline curve breakpoint order",
         )? {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "breakpoints are not strictly increasing"),
@@ -412,8 +423,9 @@ pub(super) fn project(
         }
         let coefficient_start = 6 + segment_count;
         let Some(coefficient_count) = segment_count.checked_mul(12) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "coefficient count overflows"),
@@ -428,8 +440,9 @@ pub(super) fn project(
             )
         })?
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "coefficient array is truncated or non-finite"),
@@ -451,7 +464,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
@@ -642,8 +655,9 @@ pub(super) fn project(
             previous_terminal_point = Some(end_point);
         }
         if !continuous {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -660,8 +674,9 @@ pub(super) fn project(
         let [Some(x0), Some(x1), Some(x2), Some(x3), Some(y0), Some(y1), Some(y2), Some(y3), Some(z0), Some(z1), Some(z2), Some(z3)] =
             tail
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("terminal derivative block is missing"),
@@ -699,8 +714,9 @@ pub(super) fn project(
             !declared_interval(record, tail_start + offset, actual.get(), precision)
                 .overlaps(expected_tail[offset / 4][offset % 4])
         }) {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -727,8 +743,9 @@ pub(super) fn project(
         let nurbs = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                super::push_entity_loss(
+                super::push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("converted spline cardinalities are inconsistent: {error}"),
@@ -745,23 +762,20 @@ pub(super) fn project(
             ctx,
         )?
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "converted spline endpoints cannot be evaluated"),
             )?;
             continue;
         };
-        ctx.reserve_vec(&mut wire_edges, 1, "iges spline wire edge slots")?;
+        ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges spline wire edge slots")?;
         wire_edges.push(edge);
-        super::push_attributed_loss(ctx, &mut losses, entry, IgesLossCode::SplineHeaderNotTransferred,
+        super::push_attributed_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, IgesLossCode::SplineHeaderNotTransferred,
             format_args!("Type 112 curve type, continuity, and dimensionality are retained only in native parameters"))?;
-        ctx.insert_btree_set(
-            &mut decoded,
-            entry.sequence,
-            "iges splines decoded sequences",
-        )?;
+        ctx.insert_scoped_btree_set(&mut decoded_storage, &mut decoded, entry.sequence, "iges splines decoded sequences", "iges splines decoded sequences")?;
     }
 
     let mut directory_entries = directory.iter();
@@ -778,8 +792,9 @@ pub(super) fn project(
         let mut scratch = ctx.reserve_scoped(0, "iges spline numeric scratch")?;
         let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -787,8 +802,9 @@ pub(super) fn project(
             continue;
         };
         let (Some(curve_type), Some(patch_type)) = (record.integer(1), record.integer(2)) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface type fields are not integers"),
@@ -796,8 +812,9 @@ pub(super) fn project(
             continue;
         };
         if !(1..=6).contains(&curve_type) || !matches!(patch_type, 0 | 1) {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface type enum is out of range"),
@@ -806,8 +823,9 @@ pub(super) fn project(
         }
         let dimensions = [record.integer(3), record.integer(4)];
         let [Some(raw_u_segments), Some(raw_v_segments)] = dimensions else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface dimensions are invalid"),
@@ -850,8 +868,9 @@ pub(super) fn project(
         let [Some(u_segments), Some(v_segments)] = [raw_u_segments, raw_v_segments]
             .map(|value| usize::try_from(value).ok().filter(|count| *count > 0))
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface dimensions are invalid"),
@@ -866,8 +885,9 @@ pub(super) fn project(
                 .checked_mul(3)
                 .and_then(|value| value.checked_add(1)),
         ) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface pole dimensions overflow"),
@@ -889,8 +909,9 @@ pub(super) fn project(
             ));
         }
         let Some(u_breakpoint_count) = u_segments.checked_add(1) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "u-breakpoint count overflows"),
@@ -898,8 +919,9 @@ pub(super) fn project(
             continue;
         };
         let Some(v_breakpoint_count) = v_segments.checked_add(1) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "v-breakpoint count overflows"),
@@ -914,8 +936,9 @@ pub(super) fn project(
             )
         })?
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "u-breakpoints are truncated or non-finite"),
@@ -931,8 +954,9 @@ pub(super) fn project(
             )
         })?
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "v-breakpoints are truncated or non-finite"),
@@ -948,8 +972,9 @@ pub(super) fn project(
             |pair| Ok(pair[0].get() >= pair[1].get()),
             "iges spline surface v breakpoint order",
         )? {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface breakpoints are not increasing"),
@@ -971,14 +996,15 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
         let coefficient_start = v_breakpoint_start + v_breakpoint_count;
         let Some(block_columns) = v_segments.checked_add(1) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface block stride overflows"),
@@ -989,8 +1015,9 @@ pub(super) fn project(
             .checked_add(1)
             .and_then(|rows| rows.checked_mul(block_columns))
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface placeholder grid overflows"),
@@ -1001,8 +1028,9 @@ pub(super) fn project(
             .checked_mul(48)
             .and_then(|count| coefficient_start.checked_add(count))
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface parameter count overflows"),
@@ -1010,8 +1038,9 @@ pub(super) fn project(
             continue;
         };
         if record.parameter_end() < required_parameter_count {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface placeholder grid is truncated"),
@@ -1087,8 +1116,9 @@ pub(super) fn project(
             }
         }
         if !valid {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -1103,8 +1133,9 @@ pub(super) fn project(
             |point| Ok(point.is_none()),
             "iges spline surface completed controls",
         )? {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface patch grid is incomplete"),
@@ -1130,8 +1161,9 @@ pub(super) fn project(
         }
         v_knots.extend([v_breakpoints[v_segments].get(); 4]);
         let (Ok(_u_count), Ok(_v_count)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface pole dimensions exceed u32"),
@@ -1172,8 +1204,9 @@ pub(super) fn project(
         let nurbs = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                super::push_entity_loss(
+                super::push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!(
@@ -1199,24 +1232,24 @@ pub(super) fn project(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry, ctx)?),
         });
-        super::push_attributed_loss(
+        super::push_attributed_loss_with_scoped_slots(
             ctx,
+            &mut loss_slots_storage,
             &mut losses,
             entry,
             IgesLossCode::SplineHeaderNotTransferred,
             format_args!("Type 114 curve and patch types are retained only in native parameters"),
         )?;
-        ctx.insert_btree_set(
-            &mut decoded,
-            entry.sequence,
-            "iges splines decoded sequences",
-        )?;
+        ctx.insert_scoped_btree_set(&mut decoded_storage, &mut decoded, entry.sequence, "iges splines decoded sequences", "iges splines decoded sequences")?;
     }
 
     Ok(WireProjectionOutcome {
         decoded,
+        decoded_storage,
         losses,
+        loss_slots_storage,
         wire_edges,
+        wire_slots_storage,
     })
 }
 

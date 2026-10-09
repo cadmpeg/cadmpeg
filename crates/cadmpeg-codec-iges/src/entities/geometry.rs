@@ -1166,18 +1166,16 @@ impl ProjectionOutcome<'_> {
 
 /// A curve projector's result: the two-field outcome extended with the edges
 /// the caller collects into the free-geometry wire shell.
-pub(super) type ScopedWireProjection<'ctx> = (
-    WireProjectionOutcome,
-    cadmpeg_core::decode::ScopedReservation<'ctx>,
-);
-
-pub(super) struct WireProjectionOutcome {
+pub(super) struct WireProjectionOutcome<'ctx> {
     pub(super) decoded: BTreeSet<u32>,
+    pub(super) decoded_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     pub(super) losses: Vec<LossNote>,
+    pub(super) loss_slots_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     pub(super) wire_edges: Vec<EdgeId>,
+    pub(super) wire_slots_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
-impl WireProjectionOutcome {
+impl WireProjectionOutcome<'_> {
     fn merge_into(
         self,
         decoded: &mut BTreeSet<u32>,
@@ -1198,8 +1196,12 @@ impl WireProjectionOutcome {
                 ctx.insert_btree_set(decoded, sequence, "iges merged decoded sequences")
             })?;
         }
+        drop(source_values);
+        drop(self.decoded_storage);
         ctx.extend_vec(losses, self.losses, "iges merged loss slots")?;
+        drop(self.loss_slots_storage);
         ctx.extend_vec(wire_edges, self.wire_edges, "iges merged wire edge slots")?;
+        drop(self.wire_slots_storage);
         Ok(())
     }
 }
@@ -1554,21 +1556,6 @@ pub(super) fn curve_geometry_coplanar(
     Ok(valid)
 }
 
-/// Records an entity loss when geometry admission fails.
-pub(super) fn admit<T>(
-    result: Result<T, &str>,
-    entry: &DirectoryEntry,
-    losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<T>, CodecError> {
-    match result {
-        Ok(value) => Ok(Some(value)),
-        Err(message) => {
-            super::push_entity_loss(ctx, losses, entry, format_args!("{message}"))?;
-            Ok(None)
-        }
-    }
-}
 
 /// The Directory sequence a source-object association names.
 ///
@@ -3307,8 +3294,7 @@ pub(crate) fn project_geometry<'ctx>(
     }
     // The stanza sequence keeps source order in losses, wire edges, and free
     // vertices. Each projection admits its model entities before creation.
-    let membership_storage;
-    let (outcome, result_membership_storage) = super::conics::project(
+    let outcome = super::conics::project(
         ir,
         directory,
         (&entries, &records),
@@ -3316,7 +3302,6 @@ pub(crate) fn project_geometry<'ctx>(
         ctx,
         &mut sequences,
     )?;
-    membership_storage = result_membership_storage;
     outcome.merge_into(
         &mut decoded,
         &mut decoded_storage,
@@ -3324,7 +3309,6 @@ pub(crate) fn project_geometry<'ctx>(
         &mut wire_edges,
         ctx,
     )?;
-    drop(membership_storage);
 
     super::copious::project(
         ir,
@@ -3352,8 +3336,7 @@ pub(crate) fn project_geometry<'ctx>(
         ctx,
     )?;
 
-    let membership_storage;
-    let (outcome, result_membership_storage) = super::composite::project(
+    let outcome = super::composite::project(
         ir,
         directory,
         (&entries, &records),
@@ -3361,7 +3344,6 @@ pub(crate) fn project_geometry<'ctx>(
         ctx,
         &mut sequences,
     )?;
-    membership_storage = result_membership_storage;
     outcome.merge_into(
         &mut decoded,
         &mut decoded_storage,
@@ -3369,7 +3351,6 @@ pub(crate) fn project_geometry<'ctx>(
         &mut wire_edges,
         ctx,
     )?;
-    drop(membership_storage);
 
     super::offsets::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
         &mut decoded,
@@ -3382,8 +3363,7 @@ pub(crate) fn project_geometry<'ctx>(
     // A valid V5 Type 130 constituent is deferred until its exact offset
     // carrier has been projected above. The second composite pass consumes
     // that carrier while retaining each entity's ordered child list.
-    let membership_storage;
-    let (outcome, result_membership_storage) = super::composite::project_type_130_children(
+    let outcome = super::composite::project_type_130_children(
         ir,
         directory,
         (&entries, &records),
@@ -3391,7 +3371,6 @@ pub(crate) fn project_geometry<'ctx>(
         ctx,
         &mut sequences,
     )?;
-    membership_storage = result_membership_storage;
     outcome.merge_into(
         &mut decoded,
         &mut decoded_storage,
@@ -3399,7 +3378,6 @@ pub(crate) fn project_geometry<'ctx>(
         &mut wire_edges,
         ctx,
     )?;
-    drop(membership_storage);
 
     super::analytic_surfaces::project(ir, directory, parameters, global, ctx, &mut sequences)?
         .merge_into(&mut decoded, &mut decoded_storage, &mut losses, ctx)?;

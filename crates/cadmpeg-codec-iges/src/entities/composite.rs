@@ -2686,8 +2686,9 @@ fn project_degraded_composite(
     reason: impl fmt::Display,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
-    losses: &mut Vec<LossNote>,
+    loss_output: (&mut cadmpeg_core::decode::ScopedReservation<'_>, &mut Vec<LossNote>),
 ) -> Result<Option<EdgeId>, CodecError> {
+    let (loss_slots_storage, losses) = loss_output;
     let (index, index_storage) = index;
     let edge = project_native_composite(
         ir,
@@ -2699,13 +2700,14 @@ fn project_degraded_composite(
         sequences,
     )?;
     if edge.is_some() {
-        super::push_attributed_loss(
-            ctx, losses, carrier.entry, IgesLossCode::CompositeCarrierDegraded,
+        super::push_attributed_loss_with_scoped_slots(
+            ctx, loss_slots_storage, losses, carrier.entry, IgesLossCode::CompositeCarrierDegraded,
             format_args!("IGES Type 102 entity D{} has no admitted concatenated carrier because {reason}; the ordered native composite carrier was retained", carrier.entry.sequence),
         )?;
     } else {
-        super::push_entity_loss(
+        super::push_entity_loss_with_scoped_slots(
             ctx,
+            loss_slots_storage,
             losses,
             carrier.entry,
             format_args!("{reason}, and no ordered native composite carrier can be constructed"),
@@ -2724,7 +2726,7 @@ pub(super) fn project<'ctx>(
     global: &ProjectedGlobal,
     ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
-) -> Result<super::geometry::ScopedWireProjection<'ctx>, CodecError> {
+) -> Result<WireProjectionOutcome<'ctx>, CodecError> {
     project_with_type_130_policy(ir, directory, source, global, ctx, sequences, false)
 }
 
@@ -2738,7 +2740,7 @@ pub(super) fn project_type_130_children<'ctx>(
     global: &ProjectedGlobal,
     ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
-) -> Result<super::geometry::ScopedWireProjection<'ctx>, CodecError> {
+) -> Result<WireProjectionOutcome<'ctx>, CodecError> {
     project_with_type_130_policy(ir, directory, source, global, ctx, sequences, true)
 }
 
@@ -2795,25 +2797,27 @@ fn project_with_type_130_policy<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
     only_type_130_children: bool,
-) -> Result<super::geometry::ScopedWireProjection<'ctx>, CodecError> {
+) -> Result<WireProjectionOutcome<'ctx>, CodecError> {
     let (entries, records) = source;
     let mut decoded_storage = ctx.reserve_scoped(0, "iges curve family membership storage")?;
     let mut decoded = BTreeSet::new();
+    let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
+    let mut wire_slots_storage = ctx.reserve_scoped(0, "iges composite wire slots")?;
     let mut wire_edges = Vec::new();
     if !ctx.any_by(
         directory,
         |entry| Ok(entry.entity_type == 102 && entry.form == 0),
         "iges composite presence search",
     )? {
-        return Ok((
-            WireProjectionOutcome {
-                decoded,
-                losses,
-                wire_edges,
-            },
+        return Ok(WireProjectionOutcome {
+            decoded,
             decoded_storage,
-        ));
+            losses,
+            loss_slots_storage,
+            wire_edges,
+            wire_slots_storage,
+        });
     }
     if only_type_130_children
         && !ctx.any_by(
@@ -2822,14 +2826,14 @@ fn project_with_type_130_policy<'ctx>(
             "iges composite Type130 presence search",
         )?
     {
-        return Ok((
-            WireProjectionOutcome {
-                decoded,
-                losses,
-                wire_edges,
-            },
+        return Ok(WireProjectionOutcome {
+            decoded,
             decoded_storage,
-        ));
+            losses,
+            loss_slots_storage,
+            wire_edges,
+            wire_slots_storage,
+        });
     }
     let mut index_storage = ctx.reserve_scoped(0, "IGES composite carrier index")?;
     let mut index = index_storage.with_storage(|| CompositeIndex::from_ir(ir, ctx))?;
@@ -2852,8 +2856,9 @@ fn project_with_type_130_policy<'ctx>(
             .use_flag(global.global_table())
             .filter(|use_flag| composite_use_flag_valid(*use_flag, global.global_table()))
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Type 102 Entity Use Flag must be 00 in IGES 4.0"),
@@ -2865,8 +2870,9 @@ fn project_with_type_130_policy<'ctx>(
             entry.status.hierarchy(),
             global.global_table(),
         ) {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -2880,8 +2886,9 @@ fn project_with_type_130_policy<'ctx>(
             .get_btree_map(records, &entry.sequence, "iges composite parameter lookup")?
             .copied()
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -2889,8 +2896,9 @@ fn project_with_type_130_policy<'ctx>(
             continue;
         };
         let Some(raw_child_count) = record.integer(1) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "child count is invalid"),
@@ -2912,8 +2920,9 @@ fn project_with_type_130_policy<'ctx>(
             .ok()
             .filter(|count| *count >= minimum_child_count)
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -2942,8 +2951,9 @@ fn project_with_type_130_policy<'ctx>(
             child_sequences.push(sequence);
         }
         if !valid_child_pointers {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "child pointer list is invalid"),
@@ -2974,12 +2984,13 @@ fn project_with_type_130_policy<'ctx>(
             is_logical_connector,
             global.global_table(),
         ) {
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04 in IGES 5.0 and later"))?;
+            super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{}", "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04 in IGES 5.0 and later"))?;
             continue;
         }
         if entry.transform != 0 {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -3004,7 +3015,7 @@ fn project_with_type_130_policy<'ctx>(
             },
             "iges composite child admission",
         )? {
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "composite child is missing, outside the effective specification family, or is not physically dependent"))?;
+            super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{}", "composite child is missing, outside the effective specification family, or is not physically dependent"))?;
             continue;
         }
         let point_context = CompositePointContext {
@@ -3052,8 +3063,9 @@ fn project_with_type_130_policy<'ctx>(
             &curve_carriers,
             &point_context,
         )? {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "point or connect-point adjacency is invalid"),
@@ -3088,8 +3100,9 @@ fn project_with_type_130_policy<'ctx>(
             )?;
         }
         if curve_ids.is_empty() && !missing_curve {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "composite has no parameterized curve constituent"),
@@ -3097,8 +3110,9 @@ fn project_with_type_130_policy<'ctx>(
             continue;
         }
         if missing_curve {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -3151,10 +3165,10 @@ fn project_with_type_130_policy<'ctx>(
                 reason,
                 ctx,
                 sequences,
-                &mut losses,
+                (&mut loss_slots_storage, &mut losses),
             )?;
             if let Some(edge) = edge {
-                ctx.reserve_vec(&mut wire_edges, 1, "iges composite wire edge ids")?;
+                ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges composite wire edge ids")?;
                 wire_edges.push(edge);
                 decoded_storage.with_storage(|| {
                     ctx.insert_btree_set(
@@ -3189,10 +3203,10 @@ fn project_with_type_130_policy<'ctx>(
                     },
                     ctx,
                     sequences,
-                    &mut losses,
+                    (&mut loss_slots_storage, &mut losses),
                 )?;
                 if let Some(edge) = edge {
-                    ctx.reserve_vec(&mut wire_edges, 1, "iges composite wire edge ids")?;
+                    ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges composite wire edge ids")?;
                     wire_edges.push(edge);
                     decoded_storage.with_storage(|| {
                         ctx.insert_btree_set(
@@ -3218,10 +3232,10 @@ fn project_with_type_130_policy<'ctx>(
                 "child endpoints do not join within the Global minimum resolution",
                 ctx,
                 sequences,
-                &mut losses,
+                (&mut loss_slots_storage, &mut losses),
             )?;
             if let Some(edge) = edge {
-                ctx.reserve_vec(&mut wire_edges, 1, "iges composite wire edge ids")?;
+                ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges composite wire edge ids")?;
                 wire_edges.push(edge);
                 decoded_storage.with_storage(|| {
                     ctx.insert_btree_set(
@@ -3363,7 +3377,7 @@ fn project_with_type_130_policy<'ctx>(
                 ),
             ),
         )?;
-        ctx.reserve_vec(&mut wire_edges, 1, "iges composite wire edge ids")?;
+        ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges composite wire edge ids")?;
         wire_edges.push(edge);
         decoded_storage.with_storage(|| {
             ctx.insert_btree_set(
@@ -3374,14 +3388,14 @@ fn project_with_type_130_policy<'ctx>(
         })?;
     }
 
-    Ok((
-        WireProjectionOutcome {
-            decoded,
-            losses,
-            wire_edges,
-        },
+    Ok(WireProjectionOutcome {
+        decoded,
         decoded_storage,
-    ))
+        losses,
+        loss_slots_storage,
+        wire_edges,
+        wire_slots_storage,
+    })
 }
 
 #[cfg(test)]
