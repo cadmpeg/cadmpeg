@@ -1511,3 +1511,5 @@ fn dimension_dependency_aliases_keep_first_identity_and_assignment_order() {
         );
     }
 }
+
+mod admission_visits;

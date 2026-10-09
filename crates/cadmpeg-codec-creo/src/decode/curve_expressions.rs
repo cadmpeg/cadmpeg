@@ -190,10 +190,13 @@ fn expression_dependency_components(
                 "creo curve-expression pending dependency",
             )
         })?;
-        while let Some((index, expanded)) = ctx.next_charged(
-            &mut std::iter::from_fn(|| pending.pop()),
-            "walk Creo curve-expression dependencies",
-        )? {
+        while !pending.is_empty() {
+            let Some((index, expanded)) = ctx.next_charged(
+                &mut std::iter::from_fn(|| pending.pop()),
+                "walk Creo curve-expression dependencies",
+            )? else {
+                break;
+            };
             if expanded {
                 scratch.with_storage(|| {
                     ctx.push_vec(
@@ -254,10 +257,13 @@ fn expression_dependency_components(
                 "creo curve-expression pending dependency",
             )
         })?;
-        while let Some((index, _)) = ctx.next_charged(
-            &mut std::iter::from_fn(|| pending.pop()),
-            "walk Creo curve-expression reverse dependencies",
-        )? {
+        while !pending.is_empty() {
+            let Some((index, _)) = ctx.next_charged(
+                &mut std::iter::from_fn(|| pending.pop()),
+                "walk Creo curve-expression reverse dependencies",
+            )? else {
+                break;
+            };
             if visited[index] {
                 continue;
             }
@@ -313,10 +319,12 @@ fn curve_expression_parameter_order(
             &assignment.dependencies,
             "creo curve-expression dependency traversal",
         )? {
-            let (mut key, _key_storage) = ctx.format_scoped(
+            let key_parts = ctx.format_scoped(
                 format_args!("{name}"),
                 "creo curve-expression ordering lookup",
             )?;
+            let _key_storage = key_parts.1;
+            let mut key = key_parts.0;
             ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
             let Some(&index) = ctx.get_btree_map(
                 unique_assignment_indices,
@@ -382,10 +390,13 @@ fn curve_expression_parameter_order(
         "creo curve-expression parameter ordinals",
     )?;
     let mut ordinal_steps = 0..dependencies.len();
-    while let Some(ordinal) = ctx.next_charged(
-        &mut ordinal_steps,
-        "creo curve-expression ordinal traversal",
-    )? {
+    while ordinal_steps.len() > 0 {
+        let Some(ordinal) = ctx.next_charged(
+            &mut ordinal_steps,
+            "creo curve-expression ordinal traversal",
+        )? else {
+            break;
+        };
         let Some(index) = ctx
             .find_by(
                 &ready,
@@ -669,10 +680,12 @@ fn curve_expression_properties(
         ctx,
         &assignment.dependencies,
         |name| {
-            let (mut key, _reservation) = ctx.format_scoped(
+            let key_parts = ctx.format_scoped(
                 format_args!("{name}"),
                 "creo curve-expression external lookup",
             )?;
+            let _reservation = key_parts.1;
+            let mut key = key_parts.0;
             ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
             Ok(key != "t"
                 && !ctx.contains_key_btree_map(
@@ -692,10 +705,12 @@ fn curve_expression_properties(
         ctx,
         &assignment.dependencies,
         |name| {
-            let (mut key, _reservation) = ctx.format_scoped(
+            let key_parts = ctx.format_scoped(
                 format_args!("{name}"),
                 "creo curve-expression ambiguous lookup",
             )?;
+            let _reservation = key_parts.1;
+            let mut key = key_parts.0;
             ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
             Ok(matches!(
                 ctx.get_btree_map(
@@ -788,10 +803,12 @@ fn curve_expression_properties(
         &assignment.dependencies,
         "creo curve-expression dependency traversal",
     )? {
-        let (mut key, _reservation) = ctx.format_scoped(
+        let key_parts = ctx.format_scoped(
             format_args!("{name}"),
             "creo curve-expression cyclic lookup",
         )?;
+        let _reservation = key_parts.1;
+        let mut key = key_parts.0;
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         if ctx
             .get_btree_map(
@@ -912,10 +929,12 @@ fn curve_expression_parameter_dependencies(
         &assignment.dependencies,
         "creo curve-expression dependency traversal",
     )? {
-        let (mut key, _key_reservation) = ctx.format_scoped(
+        let key_parts = ctx.format_scoped(
             format_args!("{name}"),
             "creo curve-expression dependency key",
         )?;
+        let _key_reservation = key_parts.1;
+        let mut key = key_parts.0;
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         if let Some(&dependency) = ctx.get_btree_map(
             unique_assignment_indices,
