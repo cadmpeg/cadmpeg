@@ -581,15 +581,11 @@ mod tests {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
                     &cadmpeg_test_support::service_decode_context(),
-                    4,
-                    vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-                    vec![
-                        Point3::new(0.0, 0.0, 0.0),
-                        Point3::new(0.25, 0.0, 0.0),
-                        Point3::new(0.5, 0.0, 0.0),
-                        Point3::new(0.75, 0.0, 0.0),
-                        Point3::new(1.0, 0.0, 0.0),
-                    ],
+                    16,
+                    [vec![0.0; 17], vec![1.0; 17]].concat(),
+                    (0..=16)
+                        .map(|x| Point3::new(f64::from(x) / 16.0, 0.0, 0.0))
+                        .collect(),
                     None,
                     false,
                 )
@@ -656,10 +652,10 @@ mod tests {
         assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(first.limit, 3 * frame_bytes);
         assert_eq!(first.used, 3 * frame_bytes);
-        // The five-value heap basis must be admitted before allocation.
+        // The seventeen-value heap basis must be admitted before allocation.
         assert_eq!(
             first.additional,
-            cadmpeg_core::decode::u64_from_index(5 * std::mem::size_of::<f64>())
+            cadmpeg_core::decode::u64_from_index(17 * std::mem::size_of::<f64>())
         );
         assert_eq!(evaluate(), Err(EvaluationFailure::ResourceLimit(first)));
         assert!(

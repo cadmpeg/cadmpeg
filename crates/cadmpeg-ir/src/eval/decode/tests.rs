@@ -44,27 +44,18 @@ fn heap_curve() -> NurbsCurve {
 }
 
 #[test]
-fn admitted_curve_point_refuses_each_scratch_collection() {
+fn admitted_curve_point_uses_inline_basis() {
     let curve = heap_curve();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(
-        matches!(crate::eval::decode::outer_refusal(crate::eval::decode::nurbs_curve_point_at(&ctx, &curve, 0.5)).map_err(CodecError::from),
-        Err(CodecError::ResourceLimit(resource)) if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "IR B-spline basis")
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
+    policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
         crate::eval::decode::outer_refusal(crate::eval::decode::nurbs_curve_point_at(
             &ctx, &curve, 0.5
         ))
         .map_err(CodecError::from)
-        .expect("exact scratch cap"),
+        .expect("inline scratch"),
         crate::eval::decode::nurbs_curve_point_at(
             crate::eval::admission::EvaluationAdmission::Standard,
             &curve,
@@ -115,7 +106,7 @@ fn admitted_curve_tangent_refuses_point_copy() {
 }
 
 #[test]
-fn admitted_surface_point_refuses_both_axis_bases() {
+fn admitted_surface_point_keeps_both_axis_bases_inline() {
     use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     let surface = NurbsSurface::from_lanes(
@@ -145,26 +136,16 @@ fn admitted_surface_point_refuses_both_axis_bases() {
     .expect("fixture constructor admission")
     .expect("finite plane spline");
     let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface));
-    for cap in [4, 9] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(
-            matches!(crate::eval::decode::outer_refusal(crate::eval::decode::surface_point(&ctx, &geometry, 0.5, 0.5)).map_err(CodecError::from),
-            Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR B-spline basis")
-        );
-    }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 10;
+    policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
         crate::eval::decode::outer_refusal(crate::eval::decode::surface_point(
             &ctx, &geometry, 0.5, 0.5
         ))
         .map_err(CodecError::from)
-        .expect("exact cap"),
+        .expect("inline scratch"),
         crate::eval::decode::surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
             &geometry,
@@ -175,7 +156,7 @@ fn admitted_surface_point_refuses_both_axis_bases() {
 }
 
 #[test]
-fn admitted_pcurve_point_refuses_weights_poles_and_derivative_bases() {
+fn admitted_pcurve_point_admits_weights_and_keeps_bases_inline() {
     use crate::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
     use crate::math::Point2;
     let pcurve = PcurveGeometry::Nurbs {
@@ -196,19 +177,14 @@ fn admitted_pcurve_point_refuses_weights_poles_and_derivative_bases() {
         .expect("fixture pcurve construction admission")
         .expect("finite rational line pcurve"),
     };
-    for (cap, operation) in [
-        (4, "IR NURBS pcurve weights"),
-        (9, "IR B-spline basis"),
-        (10, "IR B-spline derivative basis"),
-        (19, "IR B-spline second derivative basis"),
-    ] {
+    {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
+        policy.limits.max_collection_items = 4;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert!(
             matches!(crate::eval::decode::outer_refusal(crate::eval::decode::pcurve_uv(&ctx, &pcurve, 0.5)).map_err(CodecError::from),
-            Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
+            Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR NURBS pcurve weights")
         );
     }
     let arena = DecodeArena::new();
@@ -685,10 +661,10 @@ fn decode_evaluation_scratch_charges_scoped_bytes_and_releases_them() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = u64::try_from(bytes).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let point = crate::eval::decode::outer_refusal(crate::eval::decode::nurbs_curve_point_at(
-        &ctx, &curve, 0.5,
-    ))
-    .unwrap();
+    let point = {
+        let mut evaluator = super::NurbsPointEvaluator::new(&ctx, &curve).unwrap();
+        evaluator.point(&ctx, 0.5).unwrap()
+    };
     assert_eq!(
         point,
         crate::eval::decode::nurbs_curve_point_at(
@@ -711,11 +687,9 @@ fn decode_evaluation_refuses_scoped_basis_storage() {
     policy.limits.max_materialized_bytes =
         u64::try_from(5 * std::mem::size_of::<f64>() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(crate::eval::decode::outer_refusal(crate::eval::decode::nurbs_curve_point_at(&ctx, &curve, 0.5)),
+    assert!(matches!(super::NurbsPointEvaluator::new(&ctx, &curve),
         Err(limit) if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "IR B-spline basis")
-    );
+            && limit.operation == "IR B-spline basis"));
 }
 
 #[test]

@@ -2712,8 +2712,8 @@ fn nurbs_pcurve_differential_unsettled(
         else {
             return Ok(point_only(unreached));
         };
-        first_basis = decode::SupportValues::Heap(scaled.first);
-        second_basis = Some(decode::SupportValues::Heap(scaled.second));
+        first_basis = scaled.first;
+        second_basis = Some(scaled.second);
         scale
     };
     let first_sum = sum(&first_basis);
@@ -4082,7 +4082,7 @@ fn nurbs_curve_derivative_unsettled(
         basis::bspline_basis_second_derivative(scratch, knots, degree, span, t).ok_or(non_finite)?
     } else {
         decode::SupportValues::Inline {
-            values: [0.0; 4],
+            values: [0.0; decode::INLINE_SUPPORT],
             len: 0,
         }
     };
@@ -4109,9 +4109,9 @@ fn nurbs_curve_derivative_unsettled(
         let scaled =
             basis::bspline_basis_scaled_derivatives(scratch, knots, degree, span, t, scale)
                 .ok_or(non_finite)?;
-        first_basis = decode::SupportValues::Heap(scaled.first);
+        first_basis = scaled.first;
         if second {
-            second_basis = decode::SupportValues::Heap(scaled.second);
+            second_basis = scaled.second;
         }
         scale
     };

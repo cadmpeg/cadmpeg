@@ -14,6 +14,7 @@ use cadmpeg_core::CodecError;
 
 use crate::provenance::{AnnotationProvenance, Exactness, StreamName};
 
+mod identity_work;
 mod sparse;
 pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
 
@@ -659,44 +660,42 @@ impl AnnotationState {
         offset: u64,
         tag: Option<&str>,
     ) -> Result<(), CodecError> {
-        admit_identity_work(
+        const OPERATION: &str = "collect source provenance";
+        let previous = identity_work::get_mut(
             ctx,
-            self.annotations.provenance.len(),
-            id.len(),
-            4,
-            "collect source provenance",
+            &mut self.annotations.provenance,
+            id.as_ref(),
+            OPERATION,
         )?;
-        if !self.annotations.provenance.contains_key(id.as_ref()) {
+        let provenance = || {
+            let tag = tag
+                .map(|tag| ctx.copy_retained_text(tag, "retain source provenance tag"))
+                .transpose()?;
+            ctx.charge_work(1, "share source provenance stream")?;
+            Ok::<_, CodecError>(AnnotationProvenance::annotation(
+                stream.0.clone(),
+                offset,
+                tag,
+            ))
+        };
+        if let Some(previous) = previous {
+            *previous = provenance()?;
+        } else {
             if let std::borrow::Cow::Borrowed(text) = id {
                 id = std::borrow::Cow::Owned(
                     ctx.copy_retained_text(text, "retain source provenance identity")?,
                 );
             }
-        }
-        if let std::borrow::Cow::Owned(id) = &id {
-            if !self.annotations.provenance.contains_key(id) {
-                ctx.charge_work(1, "collect source provenance")?;
-            }
-            ctx.admit_btree_entry(
-                &self.annotations.provenance,
-                id,
-                "collect source provenance",
+            // The lookup proved absence. Admit the new slot without another lookup.
+            identity_work::admit_insert::<AnnotationProvenance>(
+                ctx,
+                self.annotations.provenance.len(),
+                id.len(),
+                OPERATION,
             )?;
-        }
-        let tag = tag
-            .map(|tag| ctx.copy_retained_text(tag, "retain source provenance tag"))
-            .transpose()?;
-        ctx.charge_work(1, "share source provenance stream")?;
-        let provenance = AnnotationProvenance::annotation(stream.0.clone(), offset, tag);
-        match id {
-            std::borrow::Cow::Owned(id) => {
-                self.annotations.provenance.insert(id, provenance);
-            }
-            std::borrow::Cow::Borrowed(id) => {
-                if let Some(previous) = self.annotations.provenance.get_mut(id) {
-                    *previous = provenance;
-                }
-            }
+            self.annotations
+                .provenance
+                .insert(id.into_owned(), provenance()?);
         }
         Ok(())
     }
@@ -714,20 +713,7 @@ impl AnnotationState {
             format_args!("{id}"),
             "source exactness lookup",
         )?;
-        admit_identity_work(
-            ctx,
-            self.annotations.exactness.len(),
-            id.len(),
-            1,
-            "collect source exactness entities",
-        )?;
-        let id =
-            if exactness != Exactness::ByteExact && !self.annotations.exactness.contains_key(&id) {
-                ctx.copy_retained_text(&id, "retain source exactness identity")?
-            } else {
-                id
-            };
-        self.exactness_owned(ctx, id, exactness)
+        self.insert_exactness(ctx, std::borrow::Cow::Borrowed(&id), exactness)
     }
 
     /// Move an admitted identity into an exactness entry after destination admission.
@@ -737,40 +723,66 @@ impl AnnotationState {
         id: String,
         exactness: Exactness,
     ) -> Result<&mut Self, CodecError> {
-        admit_identity_work(
-            ctx,
-            self.annotations.exactness.len(),
-            id.len(),
-            5,
-            "collect source exactness entities",
-        )?;
-        let fields = self
-            .annotations
-            .exactness
-            .get(&id)
-            .map_or(0, |note| note.fields().len());
-        ctx.charge_work(u64_from_index(fields), "retain source exactness fields")?;
-        if exactness != Exactness::ByteExact && !self.annotations.exactness.contains_key(&id) {
-            ctx.charge_work(1, "collect source exactness entities")?;
-            ctx.admit_btree_entry(
-                &self.annotations.exactness,
-                &id,
-                "collect source exactness entities",
-            )?;
-        }
-        if let Some(note) = self.annotations.exactness.get_mut(&id) {
-            note.fields_mut().retain(|_, value| *value != exactness);
-            let fields = std::mem::take(note.fields_mut());
-            *note = match Inexactness::try_from(exactness) {
-                Ok(entity) => ExactnessNote::Entity { entity, fields },
-                Err(_) => ExactnessNote::Fields {
-                    fields: NonEmptyMap(fields),
-                },
-            };
-            if exactness == Exactness::ByteExact && note.fields().is_empty() {
-                self.annotations.exactness.remove(&id);
+        self.insert_exactness(ctx, std::borrow::Cow::Owned(id), exactness)
+    }
+
+    fn insert_exactness(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        id: std::borrow::Cow<'_, str>,
+        exactness: Exactness,
+    ) -> Result<&mut Self, CodecError> {
+        const OPERATION: &str = "collect source exactness entities";
+        if let Some(note) =
+            identity_work::get_mut(ctx, &mut self.annotations.exactness, id.as_ref(), OPERATION)?
+        {
+            let mut remove = exactness == Exactness::ByteExact;
+            if remove {
+                for value in note.fields().values() {
+                    ctx.charge_work(1, "retain source exactness fields")?;
+                    if *value != exactness {
+                        remove = false;
+                        break;
+                    }
+                }
+            }
+            if remove {
+                // Removal performs its own key comparisons. Refuse before changing fields.
+                admit_identity_work(
+                    ctx,
+                    self.annotations.exactness.len(),
+                    id.len(),
+                    1,
+                    OPERATION,
+                )?;
+                self.annotations.exactness.remove(id.as_ref());
+            } else {
+                ctx.charge_work(
+                    u64_from_index(note.fields().len()),
+                    "retain source exactness fields",
+                )?;
+                note.fields_mut().retain(|_, value| *value != exactness);
+                let fields = std::mem::take(note.fields_mut());
+                *note = match Inexactness::try_from(exactness) {
+                    Ok(entity) => ExactnessNote::Entity { entity, fields },
+                    Err(_) => ExactnessNote::Fields {
+                        fields: NonEmptyMap(fields),
+                    },
+                };
             }
         } else if let Ok(entity) = Inexactness::try_from(exactness) {
+            let id = match id {
+                std::borrow::Cow::Owned(id) => id,
+                std::borrow::Cow::Borrowed(id) => {
+                    ctx.copy_retained_text(id, "retain source exactness identity")?
+                }
+            };
+            identity_work::admit_insert::<ExactnessNote>(
+                ctx,
+                self.annotations.exactness.len(),
+                id.len(),
+                OPERATION,
+            )?;
             self.annotations.exactness.insert(
                 id,
                 ExactnessNote::Entity {

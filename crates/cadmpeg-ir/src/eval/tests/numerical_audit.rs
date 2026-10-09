@@ -746,8 +746,9 @@ fn raw_pcurve_evaluation_uses_the_callers_storage_and_work_limits() {
         Point2::new(1.0, 2.0),
         Point2::new(2.0, 0.0),
     ];
-    let heap_knots = [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0];
-    let heap_points = [Point2::new(0.0, 0.0); 5];
+    let mut heap_knots = vec![0.0; 17];
+    heap_knots.extend([1.0; 17]);
+    let heap_points = [Point2::new(0.0, 0.0); 17];
     for dimension in [
         ResourceDimension::MaterializedBytes,
         ResourceDimension::CollectionItems,
@@ -763,7 +764,7 @@ fn raw_pcurve_evaluation_uses_the_callers_storage_and_work_limits() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let EvaluationFailure::ResourceLimit(original) =
-            nurbs_pcurve_uv(&ctx, 4, &heap_knots, &heap_points, None, 0.5).unwrap_err()
+            nurbs_pcurve_uv(&ctx, 16, &heap_knots, &heap_points, None, 0.5).unwrap_err()
         else {
             panic!("raw pcurve must refuse");
         };

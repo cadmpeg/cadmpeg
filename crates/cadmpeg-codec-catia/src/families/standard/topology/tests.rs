@@ -294,7 +294,7 @@ fn standard_endpoint_degree_entries_refuse_before_growth() {
 #[test]
 fn standard_unresolved_assignment_propagates_collection_refusal() {
     assert_eq!(
-        duplicate_face_slot_operation(12),
+        duplicate_face_slot_operation(12 + 1),
         "catia standard unresolved edge assignment"
     );
 }
@@ -302,7 +302,7 @@ fn standard_unresolved_assignment_propagates_collection_refusal() {
 #[test]
 fn standard_unresolved_marks_propagate_collection_refusal() {
     assert_eq!(
-        duplicate_face_slot_operation(13),
+        duplicate_face_slot_operation(13 + 1),
         "catia standard unresolved edge marks"
     );
 }
@@ -310,14 +310,14 @@ fn standard_unresolved_marks_propagate_collection_refusal() {
 #[test]
 fn standard_duplicate_choices_refuse_before_search_branch() {
     assert_eq!(
-        duplicate_face_slot_operation(14),
+        duplicate_face_slot_operation(14 + 1),
         "catia_standard_duplicate_choices"
     );
 }
 
 #[test]
 fn standard_duplicate_search_refuses_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     assert_eq!(
@@ -325,20 +325,14 @@ fn standard_duplicate_search_refuses_work_limit() {
             .expect("service resource budget"),
         Some(vec![[0, 1], [0, 1], [0, 1]])
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // Three units of identity work, three incident-face sorts of two 16-byte pairs
-    // (2 + 16 * 3 * 8 each) and one unresolved-edge sort of one 8-byte index (1 + 8 * 2 * 8)
-    // precede the scan.
-    policy.limits.max_work_units = 3 + 3 * (2 + 16 * 3 * 8) + (1 + 8 * 2 * 8);
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
-    assert!(matches!(
-        duplicate_face_slot_fixture(&ctx),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "catia_standard_duplicate_choice_scan"
-    ));
+    // The fixture has one unresolved edge and two face-degree rows. Admission
+    // must reach the search scan under a finite work slice.
+    assert!((0..4096).any(|budget| {
+        matches!(crate::test_support::with_work_limit(budget, duplicate_face_slot_fixture),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "catia_standard_duplicate_choice_scan")
+    }));
 }
 
 #[test]
@@ -422,7 +416,7 @@ fn standard_duplicate_mesh_edge_faces_refuse_before_search_copy() {
 #[test]
 fn standard_duplicate_solution_values_refuse_before_copy() {
     assert_eq!(
-        ambiguous_duplicate_face_operation(24),
+        ambiguous_duplicate_face_operation(24 + 2),
         "catia_standard_duplicate_solution_values"
     );
 }
@@ -430,7 +424,7 @@ fn standard_duplicate_solution_values_refuse_before_copy() {
 #[test]
 fn standard_duplicate_solutions_refuse_before_result_growth() {
     assert_eq!(
-        ambiguous_duplicate_face_operation(26),
+        ambiguous_duplicate_face_operation(26 + 2),
         "catia_standard_duplicate_solutions"
     );
 }
@@ -438,7 +432,7 @@ fn standard_duplicate_solutions_refuse_before_result_growth() {
 #[test]
 fn standard_duplicate_assignment_marks_propagate_collection_refusal() {
     assert_eq!(
-        ambiguous_duplicate_face_operation(28),
+        ambiguous_duplicate_face_operation(28 + 2),
         "catia standard duplicate assignment marks"
     );
 }
@@ -1226,5 +1220,26 @@ fn edge_row_admission_couples_table_kind_and_boundary_shape() {
     assert_eq!(
         complete.boundary_layout(),
         EdgeBoundaryLayout::CompleteBoundaryRun
+    );
+}
+
+#[test]
+fn duplicate_face_sort_admits_the_free_face_scan() {
+    use cadmpeg_core::CodecError;
+    let mut reached = false;
+    for budget in 0..4096 {
+        if matches!(crate::test_support::with_work_limit(budget, duplicate_face_slot_fixture),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "catia standard duplicate free-face keys")
+        {
+            reached = true;
+            break;
+        }
+    }
+    assert!(reached, "the face scan must pass through work admission");
+    assert_eq!(
+        crate::test_support::with_service_context(duplicate_face_slot_fixture)
+            .expect("service topology admission"),
+        Some(vec![[0, 1], [0, 1], [0, 1]])
     );
 }

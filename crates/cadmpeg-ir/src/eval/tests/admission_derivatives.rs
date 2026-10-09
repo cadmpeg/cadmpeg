@@ -8,7 +8,7 @@ use crate::eval::{
     curve_second_derivative, curve_second_derivative_solved, curve_tangent_solved,
     surface_partials, surface_second_partials, EvaluationFailure,
 };
-use crate::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+use crate::geometry::nurbs::NurbsCurve;
 use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::{Point3, Vector3};
 
@@ -89,33 +89,8 @@ fn stored_curve_derivatives_admit_actual_scratch_and_work() {
 
 #[test]
 fn stored_surface_partial_entries_admit_actual_scratch_and_work() {
-    let fixture = cadmpeg_test_support::service_decode_context();
-    let axis = || {
-        NurbsSurfaceAxis::new(
-            4,
-            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-            false,
-        )
-    };
-    let poles = [0.0, 0.25, 0.5, 0.75, 1.0]
-        .into_iter()
-        .map(|x| {
-            [0.0, 0.25, 0.5, 0.75, 1.0]
-                .into_iter()
-                .map(|y| Point3::new(x, y, 0.0))
-                .collect()
-        })
-        .collect();
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
-            &fixture,
-            axis(),
-            axis(),
-            NurbsSurfaceLanes::new(poles, None),
-            false,
-        )
-        .unwrap()
-        .unwrap(),
+        crate::eval::test_support::high_degree_plane(),
     ));
     for trigger in 0..4 {
         for second in [false, true] {

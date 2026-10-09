@@ -50,32 +50,7 @@ fn surface_derivatives_use_the_existing_scratch_context() {
             .map(|row| row.map(crate::scalar::FiniteReal::get)),
         [[0.0, 0.0, 2.0], [0.0, 0.0, 0.0], [0.0, 0.0, 2.0]]
     );
-    let heap_surface = NurbsSurface::from_lanes(
-        &source,
-        NurbsSurfaceAxis::new(
-            4,
-            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-            false,
-        ),
-        NurbsSurfaceAxis::new(
-            4,
-            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-            false,
-        ),
-        NurbsSurfaceLanes::new(
-            (0..5)
-                .map(|i| {
-                    (0..5)
-                        .map(|j| Point3::new(f64::from(i) / 4.0, f64::from(j) / 4.0, 0.0))
-                        .collect()
-                })
-                .collect(),
-            None,
-        ),
-        false,
-    )
-    .unwrap()
-    .unwrap();
+    let heap_surface = crate::eval::test_support::high_degree_plane();
     let heap_local = nurbs_surface_local(&source_scratch, &heap_surface, 0.25, 0.75).unwrap();
     let heap_first = heap_local.first(&source_scratch).unwrap();
     for second in [false, true] {
