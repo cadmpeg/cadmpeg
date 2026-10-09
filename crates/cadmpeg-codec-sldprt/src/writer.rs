@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic SLDPRT writer for analytic B-reps.
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::num::NonZeroU16;
@@ -2225,7 +2226,7 @@ fn has_core_tessellation_channels(
 
 fn sequential_tessellation(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
-) -> Result<cadmpeg_ir::tessellation::Tessellation, CodecError> {
+) -> Result<Cow<'_, cadmpeg_ir::tessellation::Tessellation>, CodecError> {
     if !mesh.triangle_groups().is_empty() || !mesh.texture_assignments().is_empty() {
         return Err(CodecError::NotImplemented(
             "SLDPRT display tessellation triangle groups and texture assignments are not writable"
@@ -2242,7 +2243,7 @@ fn sequential_tessellation(
         cadmpeg_ir::tessellation::TessellationMesh::Strips { .. }
             | cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { .. }
     ) {
-        return Ok(mesh.clone());
+        return Ok(Cow::Borrowed(mesh));
     }
     let source_vertices = mesh.vertices();
     let source_normals = mesh.vertex_normals();
@@ -2324,6 +2325,7 @@ fn sequential_tessellation(
     };
     mesh.clone()
         .with_mesh(rows, channels)
+        .map(Cow::Owned)
         .map_err(|err| CodecError::Malformed(err.to_string()))
 }
 

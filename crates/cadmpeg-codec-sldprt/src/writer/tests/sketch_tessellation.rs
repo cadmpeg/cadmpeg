@@ -970,3 +970,33 @@ fn semantic_writer_refuses_more_auxiliary_channels_than_the_table_carries() {
         "{error}"
     );
 }
+
+#[test]
+fn semantic_writer_borrows_sequential_tessellation_without_copy() {
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::tessellation::{ChannelAddressing, Tessellation, TessellationChannel, TessellationMesh};
+
+    for shaded in [false, true] {
+        let geometry = TessellationMesh::from_strip_lanes(
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+            shaded.then(|| vec![Vector3::new(0.0, 0.0, 1.0); 3]),
+            &[3],
+        ).unwrap();
+        let mut mesh = Tessellation::new(
+            cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#borrowed").unwrap(),
+            geometry,
+            vec![TessellationChannel::new(ChannelAddressing::Vertex {}, 1, 7, 2, vec![10, 11, 12]).unwrap()],
+        ).unwrap();
+        mesh.body = Some(cadmpeg_ir::ids::BodyId::mint("synthetic:test:body#borrowed").unwrap());
+        mesh.faces.push(cadmpeg_ir::ids::FaceId::mint("synthetic:test:face#borrowed").unwrap());
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+            crate::writer::sequential_tessellation(&mesh)
+        });
+        let std::borrow::Cow::Borrowed(borrowed) = result.unwrap() else { panic!("sequential mesh was copied"); };
+        assert_eq!(allocations, 0);
+        assert!(std::ptr::eq(borrowed, &mesh));
+        assert_eq!(borrowed.body, mesh.body);
+        assert_eq!(borrowed.faces, mesh.faces);
+        assert_eq!(borrowed.channels()[0].data(), [10, 11, 12]);
+    }
+}
