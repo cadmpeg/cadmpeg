@@ -7,7 +7,9 @@ use super::cacheless_constant_rolling_ball_point;
 use super::cacheless_law_sweep_point;
 use super::cacheless_variable_blend_point;
 use super::model_axis_revolution_point;
+use super::model_axis_revolution_jet;
 use super::model_linear_sweep_point;
+use super::model_linear_sweep_jet;
 use super::model_native_extrusion_point;
 use super::model_native_extrusion_jet;
 use super::model_native_revolution_point;
@@ -368,15 +370,23 @@ pub(super) fn model_surface_point_by_id_inner(
             procedural.and_then(|procedural| record_u_interval(procedural.record_bounds()));
         let result = match procedural.map(crate::geometry::ProceduralSurface::definition) {
             Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => {
-                point_evaluation(model_axis_revolution_point(
-                    admission,
-                    index,
-                    definition_payload.directrix(),
-                    definition_payload.axis_origin().get(),
-                    definition_payload.axis_direction(),
-                    u,
-                    v,
-                ))
+                if normal {
+                    first_evaluation(model_axis_revolution_jet(
+                        admission, index, definition_payload.directrix(),
+                        definition_payload.axis_origin().get(), definition_payload.axis_direction(),
+                        u, v, SurfaceRequest::First,
+                    ).map(|requested| requested.jet.first_order()), false)
+                } else {
+                    point_evaluation(model_axis_revolution_point(
+                        admission,
+                        index,
+                        definition_payload.directrix(),
+                        definition_payload.axis_origin().get(),
+                        definition_payload.axis_direction(),
+                        u,
+                        v,
+                    ))
+                }
             }
             Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
                 if normal {
@@ -398,9 +408,15 @@ pub(super) fn model_surface_point_by_id_inner(
                     ))
                 }
             }
-            Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => point_evaluation(
-                model_linear_sweep_point(admission, index, definition_payload, u, v),
-            ),
+            Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => {
+                if normal {
+                    first_evaluation(model_linear_sweep_jet(
+                        admission, index, definition_payload, u, v, SurfaceRequest::First,
+                    ).map(|requested| requested.jet.first_order()), false)
+                } else {
+                    point_evaluation(model_linear_sweep_point(admission, index, definition_payload, u, v))
+                }
+            }
             Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => {
                 if normal {
                     first_evaluation(
