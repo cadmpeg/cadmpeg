@@ -1935,3 +1935,5 @@ mod known_searches;
 mod xml_children;
 
 mod wide_utf8;
+
+mod hierarchy_wire;
