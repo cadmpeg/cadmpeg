@@ -706,6 +706,15 @@ impl Angle {
         Self(self.0.abs())
     }
 
+    /// Convert a finite value in degrees to an angle in canonical radians.
+    ///
+    /// The conversion factor is positive and below one, so the product is
+    /// finite. Underflow to signed zero is valid.
+    #[must_use]
+    pub fn from_degrees(value: FiniteReal) -> Self {
+        Self(value.get().to_radians())
+    }
+
     /// Assign the angle family to a dimensionless value in canonical radians.
     ///
     /// A `FiniteReal` carries no quantity family, so no conversion gives it
