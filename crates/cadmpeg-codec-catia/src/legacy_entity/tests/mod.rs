@@ -18,6 +18,7 @@ use crate::legacy_entity::STRING_OPEN;
 use crate::legacy_entity::TEXT_OPEN;
 use crate::legacy_entity::TYPE_OPEN;
 
+mod admission;
 mod identity;
 mod transfer;
 

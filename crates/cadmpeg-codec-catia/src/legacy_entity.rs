@@ -677,13 +677,18 @@ fn parse_schema_program(
         .len()
         .checked_sub(catalog_offset)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_legacy_schema_scan", u64::MAX, u64::MAX))?;
+    ctx.charge_work(0, "catia_legacy_schema_scan")?;
+    let Some(prefix_offset) = catalog_offset.checked_add(CATALOG_OPEN.len()) else {
+        return Ok(None);
+    };
+    let Some(offset) = prefix_offset.checked_add(SCHEMA_PROGRAM_PREFIX.len()) else {
+        return Ok(None);
+    };
+    if data.get(prefix_offset..offset) != Some(SCHEMA_PROGRAM_PREFIX) {
+        return Ok(None);
+    }
     charge_scan(ctx, scan_len, "catia_legacy_schema_scan")?;
     let Some((offset, boundary_offset, boundary, source)) = (|| {
-        let prefix_offset = catalog_offset.checked_add(CATALOG_OPEN.len())?;
-        let offset = prefix_offset.checked_add(SCHEMA_PROGRAM_PREFIX.len())?;
-        if data.get(prefix_offset..offset)? != SCHEMA_PROGRAM_PREFIX {
-            return None;
-        }
         let search_end = memchr::memmem::find(&data[offset..], CATALOG_OPEN)
             .and_then(|relative| offset.checked_add(relative))
             .unwrap_or(data.len());
@@ -1401,12 +1406,13 @@ pub(crate) fn parse_relation_signature(
 ) -> Result<Option<LegacyRelationSignature>, CodecError> {
     const TRIM: &str = "catia_legacy_relation_trim";
     let source = source.strip_suffix('\n').unwrap_or(source);
+    ctx.charge_work(0, "catia_legacy_relation_result_split")?;
+    let Some(source) = source.strip_prefix('(') else {
+        return Ok(None);
+    };
     let Some((clauses, result_type)) =
         ctx.rsplit_once(source, ") : ", "catia_legacy_relation_result_split")?
     else {
-        return Ok(None);
-    };
-    let Some(clauses) = clauses.strip_prefix('(') else {
         return Ok(None);
     };
     let result_type = ctx.trim_text(result_type, TRIM)?;
