@@ -555,3 +555,56 @@ fn short_revolution_axis_is_free_and_preserves_original_refusal() {
     }
     assert_eq!(ctx.resource_refusal(), Some(original));
 }
+
+#[test]
+fn revolved_pole_projection_charges_only_present_poles() {
+    use cadmpeg_ir::features::{FeatureDirection3, FinitePoint3, RevolutionAxis};
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let axis = RevolutionAxis {
+        origin: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("origin"),
+        direction: FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).expect("axis"),
+        reference: None,
+    };
+    for (knots, poles) in [
+        (vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)]),
+        (vec![0.0, 0.0, 0.25, 0.5, 1.0, 1.0],
+            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0),
+                Point3::new(2.0, 0.0, 2.0), Point3::new(2.0, 0.0, 3.0)]),
+    ] {
+        let count = u64::try_from(poles.len()).expect("small pole count");
+        let knot_count = u64::try_from(knots.len()).expect("small knot count");
+        let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(), 1, knots, poles, None, false,
+        ).expect("fixture admission").expect("finite directrix");
+        // The two outer row vectors fit their first four-slot allocation.
+        // Each nine-pole row and the knot vector starts empty, so no live
+        // backing moves. Fixed angular rows are free. Projection therefore
+        // uses one unit per present pole before the aggregate knot copy.
+        for cap in 0..count + knot_count {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut diagnostics = crate::lane_refusal::LaneRefusals::new();
+            let error = super::revolved_nurbs_surface(
+                &ctx, &curve, &axis, &"pole projection", &mut diagnostics,
+            ).expect_err("reached-work boundary");
+            let original = ctx.resource_refusal().expect("sticky resource refusal");
+            assert!(matches!(error, CodecError::ResourceLimit(actual) if actual == original));
+            let (used, additional, operation) = if cap < count {
+                (cap, 1, "creo revolved NURBS pole projection")
+            } else {
+                (count, knot_count, "creo revolved NURBS u knot copy")
+            };
+            assert_eq!((original.dimension, original.limit, original.used, original.additional,
+                original.operation), (ResourceDimension::WorkUnits, cap, used, additional, operation));
+            assert_eq!(ctx.resource_refusal(), Some(original));
+            assert!(matches!(super::revolved_nurbs_surface(
+                &ctx, &curve, &axis, &"pole projection reentry", &mut diagnostics,
+            ), Err(CodecError::ResourceLimit(actual)) if actual == original));
+            assert!(diagnostics.take_records_checked().expect("no failed geometry lane").is_empty());
+        }
+    }
+}
