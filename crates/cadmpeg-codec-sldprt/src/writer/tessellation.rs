@@ -6,6 +6,9 @@ use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::{index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::tessellation::TessellationMesh;
+
+use crate::tessellation::mesh_rows::MeshRows;
 
 pub(super) fn tessellation_payload(
     ctx: &DecodeContext<'_>,
@@ -27,7 +30,11 @@ pub(super) fn tessellation_payload(
             u32::try_from(mesh.triangle_count()).map_err(|_| {
                 CodecError::NotImplemented("tessellation triangle count overflow".into())
             })?,
-            u32::try_from(mesh.strip_lengths().len()).map_err(|_| {
+            u32::try_from(match mesh.mesh() {
+                TessellationMesh::Strips { strips } => strips.as_slice().len(),
+                TessellationMesh::ShadedStrips { strips } => strips.as_slice().len(),
+                _ => 0,
+            }).map_err(|_| {
                 CodecError::NotImplemented("tessellation strip count overflow".into())
             })?,
         ),
@@ -36,28 +43,35 @@ pub(super) fn tessellation_payload(
     out.extend_from_slice(&triangle_count.to_le_bytes());
     out.extend_from_slice(&strip_count.to_le_bytes());
     for mesh in &meshes {
-        let strips = mesh
-            .strip_lengths()
-            .iter()
-            .flat_map(|run| run.to_le_bytes())
-            .collect::<Vec<_>>();
-        descriptor(&mut out, 4, 8, 2, mesh.strip_lengths().len(), &strips)?;
+        let strip_lengths: Vec<usize> = match mesh.mesh() {
+            TessellationMesh::Strips { strips } => strips.as_slice().iter()
+                .map(|strip| strip.vertices().len()).collect(),
+            TessellationMesh::ShadedStrips { strips } => strips.as_slice().iter()
+                .map(|strip| strip.vertices().len()).collect(),
+            _ => Vec::new(),
+        };
+        let mut strips = Vec::with_capacity(strip_lengths.len() * 4);
+        for run in &strip_lengths {
+            let run = u32::try_from(*run).map_err(|_| {
+                CodecError::Malformed("tessellation strip length overflow".into())
+            })?;
+            strips.extend_from_slice(&run.to_le_bytes());
+        }
+        descriptor(&mut out, 4, 8, 2, strip_lengths.len(), &strips)?;
         let mut positions = Vec::with_capacity(mesh.vertex_count() * 12);
-        for point in mesh.vertices() {
-            for value in [point.x, point.y, point.z] {
-                positions.extend_from_slice(
-                    &tessellation_f32(value * length_scale, "position")?.to_le_bytes(),
-                );
-            }
-        }
+        append_triples(&mut positions, MeshRows::new(mesh.mesh()).map(|(point, _)| {
+            [point.x * length_scale, point.y * length_scale, point.z * length_scale]
+        }), "position")?;
         descriptor(&mut out, 12, 100, 2, mesh.vertex_count(), &positions)?;
-        let mut normals = Vec::with_capacity(mesh.vertex_normals().len() * 12);
-        for normal in mesh.vertex_normals() {
-            for value in [normal.x, normal.y, normal.z] {
-                normals.extend_from_slice(&tessellation_f32(value, "normal")?.to_le_bytes());
-            }
-        }
-        descriptor(&mut out, 12, 100, 2, mesh.vertex_normals().len(), &normals)?;
+        let normal_count = match mesh.mesh() {
+            TessellationMesh::ShadedStrips { .. } => mesh.vertex_count(),
+            _ => 0,
+        };
+        let mut normals = Vec::with_capacity(normal_count * 12);
+        append_triples(&mut normals, MeshRows::new(mesh.mesh()).filter_map(|(_, normal)| {
+            normal.map(|normal| [normal.x, normal.y, normal.z])
+        }), "normal")?;
+        descriptor(&mut out, 12, 100, 2, normal_count, &normals)?;
         // `has_core_tessellation_channels` matches at least three channels, so
         // the remainder after the core three is the complete auxiliary run.
         // The display-list table carries exactly three auxiliary channels; the
@@ -65,12 +79,6 @@ pub(super) fn tessellation_payload(
         // truncating the run the mesh states.
         let auxiliary_start = usize::from(has_core_tessellation_channels(mesh.channels())) * 3;
         let auxiliary = &mesh.channels()[auxiliary_start..];
-        let strip_lengths = mesh
-            .strip_lengths()
-            .iter()
-            .map(|run| usize::try_from(*run))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
         if !auxiliary.is_empty()
             && !crate::tessellation::auxiliary_channels_are_consistent(
                 ctx,
@@ -94,11 +102,10 @@ pub(super) fn tessellation_payload(
                 channel.data(),
             )?;
         }
-        let list_c = mesh
-            .strip_lengths()
+        let list_c = strip_lengths
             .iter()
             .map(|run| {
-                run.checked_mul(2)
+                u32::try_from(*run).ok().and_then(|run| run.checked_mul(2))
                     .and_then(|value| value.checked_sub(2))
                     .ok_or_else(|| {
                         CodecError::NotImplemented(
@@ -125,6 +132,19 @@ pub(super) fn tessellation_payload(
         }
     }
     Ok(out)
+}
+
+fn append_triples(
+    out: &mut Vec<u8>,
+    triples: impl Iterator<Item = [f64; 3]>,
+    role: &str,
+) -> Result<(), CodecError> {
+    for triple in triples {
+        for value in triple {
+            out.extend_from_slice(&tessellation_f32(value, role)?.to_le_bytes());
+        }
+    }
+    Ok(())
 }
 
 fn has_core_tessellation_channels(
@@ -304,3 +324,5 @@ mod conversion_correction_tests {
     }
 }
 
+#[cfg(test)]
+mod tests;
