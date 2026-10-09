@@ -1160,7 +1160,10 @@ fn parse_uuid(
     let mut bytes = [0_u8; 16];
     let mut count = 0;
     let mut source = raw[start..end].iter();
-    while let Some(byte) = ctx.next_charged(&mut source, "Rhino XML UUID digits")? {
+    ctx.charge_work(0, "Rhino XML UUID digits")?;
+    for _ in 0..source.len() {
+        let byte = ctx.next_charged(&mut source, "Rhino XML UUID digits")?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino XML UUID source ended early"))?;
         if *byte == b'-' {
             continue;
         }
@@ -1182,6 +1185,7 @@ fn parse_uuid(
 #[cfg(test)]
 mod tests {
     mod case_equality;
+    mod uuid_prefix;
     #[test]
     fn shut_lining_profile_refuses_positive_overflow() {
         let xml = "<xml><shut-lining-object-data><curve><profile>2147483648</profile></curve></shut-lining-object-data></xml>";
