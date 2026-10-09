@@ -10,6 +10,111 @@ use cadmpeg_core::{
 };
 
 #[test]
+fn native_signature_promotion_preserves_refusal_and_parent_storage() {
+    let source = "(#1_ : #In LENGTH,#2_ : #In Real) : LENGTH";
+    let refused = crate::test_support::with_retained_refusal(
+        &[],
+        "catia_native_signature_scratch",
+        |ctx| {
+            let result = super::super::relation_type_signature_charged(ctx, None, source);
+            let Err(CodecError::ResourceLimit(limit)) = &result else {
+                panic!("signature promotion refusal");
+            };
+            assert_eq!(limit.operation, "catia_native_signature_scratch");
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+            assert!(matches!(
+                ctx.charge_work(0, "after signature refusal"),
+                Err(CodecError::ResourceLimit(later)) if later == *limit
+            ));
+            result
+        },
+    );
+    assert!(matches!(refused, Err(CodecError::ResourceLimit(_))));
+
+    with_retained_limit(0, |ctx| -> Result<(), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "test signature parent")?;
+        let signature = storage
+            .with_storage(|| super::super::relation_type_signature_charged(ctx, None, source))?
+            .expect("complete signature");
+        assert_eq!(signature.result_type, "LENGTH");
+        assert_eq!(signature.inputs.len(), 2);
+        assert_eq!(signature.inputs[0].parameter, "#1_");
+        assert_eq!(signature.inputs[0].input_type, "LENGTH");
+        assert_eq!(signature.inputs[1].parameter, "#2_");
+        assert_eq!(signature.inputs[1].input_type, "Real");
+        assert_eq!(ctx.resource_refusal(), None);
+        drop(signature);
+        drop(storage);
+        Ok(())
+    })
+    .expect("signature transfers to its actual live parent without session retention");
+}
+
+#[test]
+fn native_program_input_promotion_preserves_refusal_and_parent_storage() {
+    use super::super::{
+        CatiaEntityReference, CatiaRelationParameterDependency, CatiaRelationTypeInput,
+        CatiaRelationTypeSignature,
+    };
+
+    let signature = CatiaRelationTypeSignature {
+        inputs: vec![CatiaRelationTypeInput {
+            parameter: "#1_".into(),
+            input_type: "LENGTH".into(),
+        }],
+        result_type: "LENGTH".into(),
+    };
+    let dependencies = [CatiaRelationParameterDependency {
+        source_offset: 7,
+        symbol: "#1_/2".into(),
+        candidates: vec![CatiaEntityReference::Resolved {
+            entity_id: 10,
+            entity: "entity-10".into(),
+            class_name: Some("param".into()),
+        }],
+    }];
+    let refused = crate::test_support::with_retained_refusal(
+        &[],
+        "catia_native_program_input_scratch",
+        |ctx| {
+            let result =
+                super::super::resolved_relation_program_inputs(ctx, &signature, &dependencies);
+            let Err(CodecError::ResourceLimit(limit)) = &result else {
+                panic!("program input promotion refusal");
+            };
+            assert_eq!(limit.operation, "catia_native_program_input_scratch");
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+            assert!(matches!(
+                ctx.charge_work(0, "after program input refusal"),
+                Err(CodecError::ResourceLimit(later)) if later == *limit
+            ));
+            result
+        },
+    );
+    assert!(matches!(refused, Err(CodecError::ResourceLimit(_))));
+
+    with_retained_limit(0, |ctx| -> Result<(), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "test program input parent")?;
+        let inputs = storage
+            .with_storage(|| {
+                super::super::resolved_relation_program_inputs(ctx, &signature, &dependencies)
+            })?
+            .expect("complete program inputs");
+        let [input] = inputs.as_slice() else {
+            panic!("one program input");
+        };
+        assert_eq!(input.parameter, "#1_");
+        assert_eq!(input.value_type, "LENGTH");
+        assert_eq!(input.entity, dependencies[0].candidates[0]);
+        assert_eq!(ctx.resource_refusal(), None);
+        drop(inputs);
+        drop(storage);
+        Ok(())
+    })
+    .expect("program inputs transfer to the actual parent without session retention");
+}
+
+#[test]
 fn native_rejected_signature_releases_speculative_storage() {
     with_materialized_limit(4096, |ctx| -> Result<_, CodecError> {
         for source in [

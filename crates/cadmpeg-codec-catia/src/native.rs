@@ -5357,10 +5357,10 @@ fn relation_type_signature_charged(
             }))
         },
     )?;
-    if signature.is_some() {
-        storage.commit()?;
+    match signature {
+        Some(signature) => storage.commit_value(signature).map(Some),
+        None => Ok(None),
     }
-    Ok(signature)
 }
 
 fn relation_parameter_symbol(parameter: &str) -> bool {
@@ -7132,8 +7132,7 @@ fn resolved_relation_program_inputs(
         output_storage
             .with_storage(|| ctx.push_vec(&mut inputs, input, "catia_native_program_inputs"))?;
     }
-    output_storage.commit()?;
-    Ok(Some(inputs))
+    output_storage.commit_value(inputs).map(Some)
 }
 
 pub(crate) fn relation_symbols(
