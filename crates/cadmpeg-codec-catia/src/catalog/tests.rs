@@ -180,3 +180,5 @@ fn catalog_scan_refuses_marker_free_work() {
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
 }
+
+mod prefix_admission;
