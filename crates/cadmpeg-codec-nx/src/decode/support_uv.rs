@@ -755,6 +755,11 @@ pub(super) fn complete_ext11_support_uv_with_budget(
     pending: &[PendingExt11SupportUv],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_work(0, "NX serialized support UV completion boundary")?;
+    refuse_geometry_work(geometry_budget)?;
+    if pending.is_empty() {
+        return Ok(());
+    }
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
     let mut replacements = Vec::new();
     for (procedural_id, samples, fit_tolerance, serialized) in pending {
@@ -927,6 +932,8 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let (support_budget, geometry_budget) = direct_budgets;
     let (coupled_support_budget, coupled_geometry_budget) = coupled_budgets;
+    refuse_geometry_work(geometry_budget)?;
+    refuse_geometry_work(coupled_geometry_budget)?;
     // A failed fit can become solvable when either lane is filled by an
     // earlier wave. Keep those dependencies as the direct and coupled retry
     // keys; unrelated progress must not repeat the same inverse problems.
@@ -936,7 +943,7 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
     let mut lane_geometry_exhausted = false;
     loop {
         let before = pending_support_lanes_requiring_completion(ctx, ir, pending)?;
-        if support_uv_budget_exhausted(support_budget) {
+        if before == 0 || support_uv_budget_exhausted(support_budget) {
             break;
         }
         geometry_budget.clear_blend_frame_cache();
@@ -1003,6 +1010,14 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
     geometry_budget: &GeometryWorkBudget<'_>,
     isolate_lanes: bool,
 ) -> Result<SupportUvValidationResult, cadmpeg_core::CodecError> {
+    ctx.charge_work(0, "NX support UV invalidation boundary")?;
+    refuse_geometry_work(geometry_budget)?;
+    if pending.is_empty() {
+        return Ok(SupportUvValidationResult {
+            endpoint_witnesses: BTreeMap::new(),
+            lane_geometry_exhausted: false,
+        });
+    }
     let (invalid, endpoint_witnesses, lane_geometry_exhausted) = {
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
         let mut invalid = Vec::new();
@@ -1196,6 +1211,10 @@ fn pending_support_lanes_requiring_completion(
     ir: &CadIr,
     pending: &[PendingExt11SupportUv],
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    ctx.charge_work(0, "NX pending support lane scan")?;
+    if pending.is_empty() {
+        return Ok(0);
+    }
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
     let mut count = 0usize;
     for (procedural_id, ..) in pending {
@@ -3147,6 +3166,18 @@ mod tests {
             source_object: None,
         });
 
+        let pending = [(
+            cadmpeg_ir::ids::ProceduralCurveId::mint("nx:model:procedural-curve#777")
+                .expect("identity"),
+            crate::intersection::chart_samples::ChartSamples::from_test_values(
+                vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+                vec![0., 1.],
+            )
+            .expect("chart samples"),
+            0.01,
+            super::SerializedSupportUv::from_values([None, None]),
+        )];
+
         crate::test_support::with_decode_context_over(
             &[],
             |policy| {
@@ -3160,7 +3191,7 @@ mod tests {
                 let error = complete_support_uv_with_budget_and_endpoint_witnesses(
                     ctx,
                     &mut ir,
-                    &[],
+                    &pending,
                     (&support_budget, &geometry_budget),
                     (&support_budget, &geometry_budget),
                     &mut endpoint_witnesses,
@@ -3438,5 +3469,81 @@ mod tests {
                 .is_none());
             });
         }
+    }
+    #[test]
+    fn empty_support_uv_completion_does_not_index_unrelated_model_records() {
+        let mut ir = CadIr::empty();
+        for i in 0..1000 {
+            ir.model.points.push(cadmpeg_ir::topology::Point::new(
+                cadmpeg_ir::ids::PointId::mint(format!("nx:model:point#{i}")).expect("identity"),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0., 0., 0.)).expect("point"),
+                None,
+            ));
+        }
+        let before = serde_json::to_value(&ir).expect("model serialization");
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 0;
+                policy.limits.max_work_units = 0;
+            },
+            |ctx| {
+                let support_budget = ctx.work_budget(100);
+                let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
+                let mut endpoint_witnesses = BTreeMap::new();
+                assert!(!complete_support_uv_with_budget_and_endpoint_witnesses(
+                    ctx,
+                    &mut ir,
+                    &[],
+                    (&support_budget, &geometry_budget),
+                    (&support_budget, &geometry_budget),
+                    &mut endpoint_witnesses,
+                )
+                .expect("an empty candidate list needs no model index"));
+                assert!(endpoint_witnesses.is_empty());
+                super::complete_ext11_support_uv_with_budget(ctx, &mut ir, &[], &geometry_budget)
+                    .expect("empty serialized completion needs no model index");
+                let validation =
+                    super::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+                        ctx,
+                        &mut ir,
+                        &[],
+                        &std::collections::BTreeSet::new(),
+                        &support_budget,
+                        &geometry_budget,
+                        false,
+                    )
+                    .expect("empty invalidation needs no model index");
+                assert!(!validation.lane_geometry_exhausted);
+                assert!(validation.endpoint_witnesses.is_empty());
+                assert!(ctx.resource_refusal().is_none());
+            },
+        );
+        assert_eq!(
+            serde_json::to_value(&ir).expect("model serialization"),
+            before
+        );
+    }
+
+    #[test]
+    fn empty_support_uv_phases_preserve_the_first_refusal() {
+        crate::test_support::with_decode_context(|ctx| {
+            let geometry_budget = GeometryWorkBudget::from_context(ctx, 0);
+            assert!(!geometry_budget.charge());
+            let first = geometry_budget
+                .resource_refusal()
+                .expect("geometry refusal");
+            let support_budget = ctx.work_budget(100);
+            let mut ir = CadIr::empty();
+            assert!(
+                matches!(super::complete_ext11_support_uv_with_budget(ctx, &mut ir, &[], &geometry_budget),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
+            );
+            assert!(
+                matches!(super::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+                ctx, &mut ir, &[], &std::collections::BTreeSet::new(), &support_budget, &geometry_budget, false),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
+            );
+        });
     }
 }

@@ -854,3 +854,33 @@ fn value_ownership_membership_keeps_the_session_work_fuse() {
         },
     );
 }
+
+#[test]
+fn attribute_owner_grouping_is_admitted_once() {
+    let mut bytes = Vec::new();
+    for xmt in 501..3501_u16 {
+        bytes.extend_from_slice(&[0, 0x51]);
+        bytes.extend_from_slice(&1_u32.to_be_bytes());
+        bytes.extend_from_slice(&xmt.to_be_bytes());
+        bytes.extend_from_slice(&2_u32.to_be_bytes());
+        bytes.extend_from_slice(&0x21_u16.to_be_bytes());
+        for reference in 3..=8_u16 {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes.extend_from_slice(&[0xaa, 0xbb]);
+    }
+    // The shared grouping helper bills N * (N + 1) / 2 units. An extra
+    // caller-side full-map charge would bill another N * (N - 1) / 2,
+    // exceeding this budget before the linear framing scans finish.
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 8_000_000,
+        |ctx| {
+            let (references, _reservation) =
+                super::referenced_value_xmts(ctx, &bytes, super::ValueMultiplicity::UniqueSnapshot)
+                    .expect("group insertion work is billed once");
+            assert!(references.contains(&8));
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
+}

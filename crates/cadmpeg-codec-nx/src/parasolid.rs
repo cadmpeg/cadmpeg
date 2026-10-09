@@ -339,10 +339,6 @@ fn referenced_value_xmts<'ctx>(
     } = entity_51_records(ctx, bytes)?;
     let mut entities = BTreeMap::<u32, Vec<Entity51Record>>::new();
     for record in entity_records {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entities.len()),
-            "group NX entity-51 identities",
-        )?;
         ctx.push_scoped_btree_group(
             &mut groups_guard,
             &mut entities,
@@ -375,10 +371,6 @@ fn referenced_value_xmts<'ctx>(
     } = field_names_records(ctx, bytes)?;
     let mut field_names = BTreeMap::<u32, Vec<FieldNamesRecord>>::new();
     for record in name_records {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(field_names.len()),
-            "group NX field-name identities",
-        )?;
         ctx.push_scoped_btree_group(
             &mut groups_guard,
             &mut field_names,
@@ -395,10 +387,6 @@ fn referenced_value_xmts<'ctx>(
     } = attribute_definitions(ctx, bytes)?;
     let mut definitions = BTreeMap::<u32, Vec<AttributeDefinition<'_>>>::new();
     for record in definition_records {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(definitions.len()),
-            "group NX attribute definitions",
-        )?;
         ctx.push_scoped_btree_group(
             &mut groups_guard,
             &mut definitions,
