@@ -62,11 +62,19 @@ use crate::index::ModelIndex;
 use crate::sketches::SketchConstraintDefinitionInput as Definition;
 
 fn non_blank_native_reference(ctx: &DecodeContext<'_>, native: &str) -> Result<bool, CodecError> {
-    ctx.charge_work(
-        u64_from_index(native.len()),
-        "native reference whitespace scan",
-    )?;
-    Ok(!native.trim().is_empty())
+    let operation = "native reference whitespace scan";
+    ctx.charge_work(0, operation)?;
+    let mut characters = native.chars();
+    while !characters.as_str().is_empty() {
+        ctx.charge_work(1, operation)?;
+        let Some(character) = characters.next() else {
+            break;
+        };
+        if !character.is_whitespace() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn same_feature_owner(
@@ -689,13 +697,10 @@ pub(super) fn check_references(
                     }
                     Ok(())
                 };
-                let mut scales =
-                    Scratch::filter_map(ctx, construction.scales.as_slice().iter(), |scale| {
-                        Ok(Some(scale))
-                    })?;
+                let mut tail_scales = [None, None];
                 match &construction.tail {
                     crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
-                        scales.push(scale.as_ref())?;
+                        tail_scales[0] = Some(scale.as_ref());
                         check_curve(curve, findings)?;
                     }
                     crate::geometry::CompoundLoftTail::Seven {
@@ -703,8 +708,8 @@ pub(super) fn check_references(
                         second_scale,
                         ..
                     } => {
-                        scales.extend(first_scale.as_slice(), |scale| scale.as_ref())?;
-                        scales.push(second_scale.as_ref())?;
+                        tail_scales[0] = first_scale.as_ref().map(|scale| scale.as_ref());
+                        tail_scales[1] = Some(second_scale.as_ref());
                     }
                     crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
                         if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
@@ -714,17 +719,13 @@ pub(super) fn check_references(
                         }
                     }
                 }
-                for scale in ctx
-                    .admit_iter(&scales[..], "topology validation scan")?
-                    .copied()
-                {
+                for scale in construction.scales.as_slice().iter().chain(tail_scales.into_iter().flatten()) {
+                    // Leading and tail slots have fixed native capacities.
                     check_curve(&scale.path, findings)?;
-                    for curve in &scale.auxiliaries {
-                        ctx.charge_work(1, "topology validation scan")?;
+                    for curve in ctx.admit_iter(scale.auxiliaries.as_slice(), "topology validation scan")? {
                         check_curve(curve, findings)?;
                     }
-                    for member in &scale.members {
-                        ctx.charge_work(1, "topology validation scan")?;
+                    for member in ctx.admit_iter(scale.members.as_slice(), "topology validation scan")? {
                         check_curve(&member.curve, findings)?;
                         let surface = &member.data.surface;
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
@@ -756,25 +757,22 @@ pub(super) fn check_references(
                     }
                     Ok(())
                 };
-                let mut scales =
-                    Scratch::filter_map(ctx, construction.scales.as_slice().iter(), |scale| {
-                        Ok(Some(scale))
-                    })?;
+                let mut tail_scales = [None, None];
                 match &construction.branch {
                     crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
                         first_scale,
                         second_scale,
                         ..
                     } => {
-                        scales.extend(first_scale.as_slice(), |scale| scale.as_ref())?;
-                        scales.push(second_scale.as_ref())?;
+                        tail_scales[0] = first_scale.as_ref().map(|scale| scale.as_ref());
+                        tail_scales[1] = Some(second_scale.as_ref());
                     }
                     crate::geometry::ScaledCompoundLoftBranch::ExtendedCurve {
                         scale,
                         curve,
                         ..
                     } => {
-                        scales.extend(scale.as_slice(), |scale| scale.as_ref())?;
+                        tail_scales[0] = scale.as_ref().map(|scale| scale.as_ref());
                         check_curve(curve, findings)?;
                     }
                     crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
@@ -786,17 +784,13 @@ pub(super) fn check_references(
                     }
                 }
                 check_curve(&construction.tail_curve, findings)?;
-                for scale in ctx
-                    .admit_iter(&scales[..], "topology validation scan")?
-                    .copied()
-                {
+                for scale in construction.scales.as_slice().iter().chain(tail_scales.into_iter().flatten()) {
+                    // Leading and tail slots have fixed native capacities.
                     check_curve(&scale.path, findings)?;
-                    for curve in &scale.auxiliaries {
-                        ctx.charge_work(1, "topology validation scan")?;
+                    for curve in ctx.admit_iter(scale.auxiliaries.as_slice(), "topology validation scan")? {
                         check_curve(curve, findings)?;
                     }
-                    for member in &scale.members {
-                        ctx.charge_work(1, "topology validation scan")?;
+                    for member in ctx.admit_iter(scale.members.as_slice(), "topology validation scan")? {
                         check_curve(&member.curve, findings)?;
                         let surface = &member.data.surface;
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
@@ -855,26 +849,24 @@ pub(super) fn check_references(
                     }
                 }
                 check_curve(&construction.parameter_curve, findings)?;
-                for variable in construction.formula.variables() {
-                    ctx.charge_work(1, "topology validation scan")?;
+                for variable in ctx.admit_iter(construction.formula.variables(), "topology validation scan")? {
                     check_law_curves(ctx, variable, ids, procedural, findings)?;
                 }
             }
             ProceduralSurfaceDefinition::Law(definition_payload) => {
                 let construction = definition_payload.construction();
-                for formula in
-                    std::iter::once(&construction.primary).chain(&construction.additional)
-                {
-                    ctx.charge_work(1, "topology validation scan")?;
-                    for variable in formula.variables() {
-                        ctx.charge_work(1, "topology validation scan")?;
+                for variable in ctx.admit_iter(construction.primary.variables(), "topology validation scan")? {
+                    check_law_curves(ctx, variable, ids, procedural, findings)?;
+                }
+                for formula in ctx.admit_iter(&construction.additional, "topology validation scan")? {
+                    for variable in ctx.admit_iter(formula.variables(), "topology validation scan")? {
                         check_law_curves(ctx, variable, ids, procedural, findings)?;
                     }
                 }
             }
             ProceduralSurfaceDefinition::Net(definition_payload) => {
                 let construction = definition_payload.construction();
-                for section in ctx.admit_iter(&construction.sections[..], "net section scan")? {
+                for section in construction.sections.iter() {
                     for entry in ctx.admit_iter(&section.entries, "topology validation scan")? {
                         for curve in entry
                             .path
@@ -911,11 +903,8 @@ pub(super) fn check_references(
                         }
                     }
                 }
-                for formula in
-                    ctx.admit_iter(&construction.formulas[..], "topology validation scan")?
-                {
-                    for variable in formula.variables() {
-                        ctx.charge_work(1, "topology validation scan")?;
+                for formula in construction.formulas.iter() {
+                    for variable in ctx.admit_iter(formula.variables(), "topology validation scan")? {
                         check_law_curves(ctx, variable, ids, procedural, findings)?;
                     }
                 }
@@ -927,7 +916,6 @@ pub(super) fn check_references(
                     .into_iter()
                     .chain(std::iter::once(&construction.second_exact_surface))
                 {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                         ref_error(
                             ctx,
@@ -957,7 +945,6 @@ pub(super) fn check_references(
                     &construction.second.curve,
                     &construction.center_curve,
                 ] {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(
                             ctx,
@@ -973,7 +960,6 @@ pub(super) fn check_references(
                 let construction = definition_payload.construction();
 
                 for side in &construction.sides {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.surface.as_str(), ctx)?.is_none() {
                             ref_error(
@@ -1008,7 +994,6 @@ pub(super) fn check_references(
                 .into_iter()
                 .flatten()
                 {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(
                             ctx,
@@ -1053,7 +1038,6 @@ pub(super) fn check_references(
                         }
                     }
                 }
-                ctx.charge_work(1, "compound loft base path scan")?;
                 let base_path = construction.base_path();
                 for curve in
                     ctx.admit_iter(base_path.path.as_slice(), "topology validation scan")?
@@ -1112,7 +1096,6 @@ pub(super) fn check_references(
                 if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
                     construction.direction()
                 {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(
                             ctx,
@@ -1124,7 +1107,6 @@ pub(super) fn check_references(
                     }
                 }
                 if let Some(curve) = construction.tail().curve() {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(
                             ctx,
@@ -1138,7 +1120,6 @@ pub(super) fn check_references(
             }
             ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
                 for side in construction.sides() {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.surface.as_str(), ctx)?.is_none() {
                             ref_error(
@@ -1264,7 +1245,6 @@ pub(super) fn check_references(
                 let spine = definition_payload.spine();
                 let native = definition_payload.native();
                 for curve in [profile, spine] {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(
                             ctx,
@@ -1278,11 +1258,11 @@ pub(super) fn check_references(
                 if let Some(native) = native {
                     let formulas = match &native.layout {
                         crate::geometry::SweepSurfaceLayout::ProfileFirst { formulas, .. } => {
-                            Scratch::filter_map(ctx, formulas.iter(), |formula| Ok(Some(formula)))?
+                            formulas.as_slice()
                         }
                         crate::geometry::SweepSurfaceLayout::ExplicitFormula {
                             formula, ..
-                        } => Scratch::filter_map(ctx, [formula], |formula| Ok(Some(formula)))?,
+                        } => std::slice::from_ref(formula),
                         crate::geometry::SweepSurfaceLayout::ExplicitGuide {
                             guide_curve, ..
                         } => {
@@ -1295,7 +1275,7 @@ pub(super) fn check_references(
                                     guide_curve.as_str(),
                                 )?;
                             }
-                            Scratch::new(ctx)?
+                            &[]
                         }
                         crate::geometry::SweepSurfaceLayout::ExplicitSurface {
                             support_surface,
@@ -1322,7 +1302,7 @@ pub(super) fn check_references(
                                     )?;
                                 }
                             }
-                            Scratch::new(ctx)?
+                            &[]
                         }
                         crate::geometry::SweepSurfaceLayout::LawDriven {
                             first_law,
@@ -1332,12 +1312,11 @@ pub(super) fn check_references(
                         } => {
                             check_law_curves(ctx, first_law, ids, procedural, findings)?;
                             check_law_curves(ctx, second_law, ids, procedural, findings)?;
-                            Scratch::filter_map(ctx, [formula], |formula| Ok(Some(formula)))?
+                            std::slice::from_ref(formula)
                         }
                     };
-                    for formula in ctx.admit_iter(&formulas[..], "topology validation scan")? {
-                        for variable in formula.variables() {
-                            ctx.charge_work(1, "topology validation scan")?;
+                    for formula in formulas {
+                        for variable in ctx.admit_iter(formula.variables(), "topology validation scan")? {
                             check_law_curves(ctx, variable, ids, procedural, findings)?;
                         }
                     }
@@ -1387,7 +1366,6 @@ pub(super) fn check_references(
             }
             ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
                 for curve in [first, second] {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(
                             ctx,
@@ -1401,7 +1379,6 @@ pub(super) fn check_references(
             }
             ProceduralSurfaceDefinition::Sum(definition_payload) => {
                 for curve in [definition_payload.first(), definition_payload.second()] {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(
                             ctx,
@@ -1418,9 +1395,7 @@ pub(super) fn check_references(
                 let spine = definition_payload.spine();
                 let native = definition_payload.native();
 
-                ctx.charge_work(u64_from_index(supports.len()), "optional support scan")?;
                 for support in supports.iter().flatten() {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if ids.surfaces(support.surface.as_str(), ctx)?.is_none() {
                         ref_error(
                             ctx,
@@ -1473,7 +1448,6 @@ pub(super) fn check_references(
                     };
                     check_curve(&native.slice, findings)?;
                     for side in &native.sides {
-                        ctx.charge_work(1, "topology validation scan")?;
                         if let Some(curve) = &side.curve {
                             check_curve(&curve.curve, findings)?;
                         }
@@ -1628,7 +1602,6 @@ pub(super) fn check_references(
                     Ok(())
                 }
                 for side in context.sides() {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
@@ -1641,10 +1614,11 @@ pub(super) fn check_references(
                         }
                     }
                 }
-                for formula in std::iter::once(primary).chain(additional) {
-                    ctx.charge_work(1, "topology validation scan")?;
-                    for variable in formula.formula().variables() {
-                        ctx.charge_work(1, "topology validation scan")?;
+                for variable in ctx.admit_iter(primary.formula().variables(), "topology validation scan")? {
+                    check(ctx, variable, ids, procedural, findings)?;
+                }
+                for formula in ctx.admit_iter(additional, "topology validation scan")? {
+                    for variable in ctx.admit_iter(formula.formula().variables(), "topology validation scan")? {
                         check(ctx, variable, ids, procedural, findings)?;
                     }
                 }
@@ -1667,7 +1641,6 @@ pub(super) fn check_references(
             }
             ProceduralCurveDefinition::Intersection { context, .. } => {
                 for side in context.sides() {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
@@ -1688,7 +1661,6 @@ pub(super) fn check_references(
                 let supports = intersection.supports();
 
                 for surface in supports {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                         ref_error(
                             ctx,
@@ -1705,7 +1677,6 @@ pub(super) fn check_references(
                 let third = definition_payload.third();
 
                 for side in context.sides().iter().chain(std::iter::once(third)) {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
@@ -1721,7 +1692,6 @@ pub(super) fn check_references(
             }
             ProceduralCurveDefinition::SurfaceCurve { family } => {
                 for side in family.context().sides() {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
@@ -1748,7 +1718,6 @@ pub(super) fn check_references(
                     )?;
                 }
                 for side in context.sides() {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
@@ -1776,7 +1745,6 @@ pub(super) fn check_references(
                         )?;
                     }
                     for side in context.sides() {
-                        ctx.charge_work(1, "topology validation scan")?;
                         if let Some(surface) = &side.surface {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(
@@ -1793,7 +1761,6 @@ pub(super) fn check_references(
             }
             ProceduralCurveDefinition::Spring(definition_payload) => {
                 for side in definition_payload.support_context().sides() {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
@@ -1823,7 +1790,6 @@ pub(super) fn check_references(
                         }
                     }
                     for side in context.sides() {
-                        ctx.charge_work(1, "topology validation scan")?;
                         if let Some(surface) = &side.surface {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(
@@ -1852,7 +1818,6 @@ pub(super) fn check_references(
                     )?;
                 }
                 for side in context.sides() {
-                    ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
@@ -1931,7 +1896,6 @@ pub(super) fn check_references(
                 let context = definition_payload.context();
                 {
                     for side in context.sides() {
-                        ctx.charge_work(1, "topology validation scan")?;
                         if let Some(surface) = &side.surface {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(
@@ -3247,7 +3211,6 @@ fn check_feature_references(
                 for group in ctx.admit_iter(groups.as_slice(), "topology validation scan")? {
                     face_selections.push(group.center_faces())?;
                     for side in [group.side_one_faces(), group.side_two_faces()] {
-                        ctx.charge_work(1, "topology validation scan")?;
                         if let crate::features::edge_treatments::FullRoundSideSelection::Explicit(
                             selection,
                         ) = side
@@ -4139,14 +4102,7 @@ fn check_feature_references(
                         "profile face",
                         &input_topologies,
                         |topology| {
-                            Scratch::filter_map(
-                                ctx,
-                                topology
-                                    .faces
-                                    .iter()
-                                    .map(crate::ids::HistoricalFaceId::as_str),
-                                |id| Ok(Some(id)),
-                            )
+                            topology.faces.iter().map(crate::ids::HistoricalFaceId::as_str)
                         },
                     )?;
                 }
@@ -4263,14 +4219,7 @@ fn check_feature_references(
                     "path edge",
                     &input_topologies,
                     |topology| {
-                        Scratch::filter_map(
-                            ctx,
-                            topology
-                                .edges
-                                .iter()
-                                .map(crate::ids::HistoricalEdgeId::as_str),
-                            |id| Ok(Some(id)),
-                        )
+                        topology.edges.iter().map(crate::ids::HistoricalEdgeId::as_str)
                     },
                 )?,
                 PathRef::Unresolved(_)
@@ -4280,11 +4229,7 @@ fn check_feature_references(
             }
         }
         drop(paths);
-        let terminations = definition_terminations(ctx, definition)?;
-        for termination in ctx
-            .admit_iter(&terminations[..], "topology validation scan")?
-            .copied()
-        {
+        for termination in definition_terminations(definition).into_iter().flatten() {
             if let Some(FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. }) =
                 termination.face()
             {
@@ -4313,7 +4258,7 @@ fn check_feature_references(
                 vertex_selections.push((vertex, "termination"))?;
             }
         }
-        drop(terminations);
+
         for (selection, consumer) in ctx
             .admit_iter(&vertex_selections[..], "topology validation scan")?
             .copied()
@@ -4366,14 +4311,7 @@ fn check_feature_references(
                     "vertex",
                     &input_topologies,
                     |topology| {
-                        Scratch::filter_map(
-                            ctx,
-                            topology
-                                .vertices
-                                .iter()
-                                .map(crate::ids::HistoricalVertexId::as_str),
-                            |id| Ok(Some(id)),
-                        )
+                        topology.vertices.iter().map(crate::ids::HistoricalVertexId::as_str)
                     },
                 )?,
                 crate::features::VertexSelection::Unresolved
@@ -4401,14 +4339,7 @@ fn check_feature_references(
                     "edge",
                     &input_topologies,
                     |topology| {
-                        Scratch::filter_map(
-                            ctx,
-                            topology
-                                .edges
-                                .iter()
-                                .map(crate::ids::HistoricalEdgeId::as_str),
-                            |id| Ok(Some(id)),
-                        )
+                        topology.edges.iter().map(crate::ids::HistoricalEdgeId::as_str)
                     },
                 )?;
             }
@@ -4480,14 +4411,7 @@ fn check_feature_references(
                     "face",
                     &input_topologies,
                     |topology| {
-                        Scratch::filter_map(
-                            ctx,
-                            topology
-                                .faces
-                                .iter()
-                                .map(crate::ids::HistoricalFaceId::as_str),
-                            |id| Ok(Some(id)),
-                        )
+                        topology.faces.iter().map(crate::ids::HistoricalFaceId::as_str)
                     },
                 )?;
             }
@@ -4577,14 +4501,7 @@ fn check_feature_references(
                         "body",
                         &input_topologies,
                         |topology| {
-                            Scratch::filter_map(
-                                ctx,
-                                topology
-                                    .bodies
-                                    .iter()
-                                    .map(crate::ids::HistoricalBodyId::as_str),
-                                |id| Ok(Some(id)),
-                            )
+                            topology.bodies.iter().map(crate::ids::HistoricalBodyId::as_str)
                         },
                     )?;
                 }
@@ -4597,14 +4514,7 @@ fn check_feature_references(
                         "body",
                         &input_topologies,
                         |topology| {
-                            Scratch::filter_map(
-                                ctx,
-                                topology
-                                    .bodies
-                                    .iter()
-                                    .map(crate::ids::HistoricalBodyId::as_str),
-                                |id| Ok(Some(id)),
-                            )
+                            topology.bodies.iter().map(crate::ids::HistoricalBodyId::as_str)
                         },
                     )?;
                 }
@@ -4666,8 +4576,8 @@ impl fmt::Display for PlaneCyclePath<'_, '_> {
     }
 }
 
-fn check_historical_members<'ctx, 'a, 'selected, T, F, M>(
-    ctx: &'ctx DecodeContext<'_>,
+fn check_historical_members<'a, 'selected, T, F, M, I>(
+    ctx: &DecodeContext<'_>,
     findings: &mut Vec<Finding>,
     selection: (
         &crate::features::FeatureId,
@@ -4681,9 +4591,8 @@ fn check_historical_members<'ctx, 'a, 'selected, T, F, M>(
 ) -> Result<(), CodecError>
 where
     F: Fn(&'selected T) -> &'selected str,
-    M: FnOnce(
-        &'a crate::features::FeatureInputTopology,
-    ) -> Result<Scratch<'ctx, &'a str>, CodecError>,
+    M: FnOnce(&'a crate::features::FeatureInputTopology) -> I,
+    I: ExactSizeIterator<Item = &'a str>,
 {
     let (feature, state_id, selected) = selection;
     let Some(state) = states.get(ctx, state_id.as_str())? else {
@@ -4712,11 +4621,14 @@ where
         )?;
     }
     let available = BorrowedIdentities::build(ctx, |add| {
-        let available_members = members(state)?;
-        for id in ctx.admit_iter(&available_members[..], "historical member scan")? {
+        let mut available_members = members(state);
+        while available_members.len() != 0 {
+            ctx.charge_work(1, "historical member scan")?;
+            let Some(id) = available_members.next() else {
+                break;
+            };
             add(id, ())?;
         }
-        drop(available_members);
         Ok(())
     })?;
     for member in ctx.admit_iter(selected, "historical selection scan")? {
@@ -4810,18 +4722,14 @@ fn regeneration_references<'ctx, 'a>(
         }
         _ => {}
     }
-    let terminations = definition_terminations(ctx, definition)?;
-    for termination in ctx
-        .admit_iter(&terminations[..], "regeneration termination scan")?
-        .copied()
-    {
+    for termination in definition_terminations(definition).into_iter().flatten() {
         if let Some(crate::features::VertexSelection::Generated { vertex, .. }) =
             termination.vertex()
         {
             references.insert_unique(vertex.feature.as_str(), &vertex.feature)?;
         }
     }
-    drop(terminations);
+
     let profiles = definition_profiles(ctx, definition)?;
     for profile in ctx
         .admit_iter(&profiles[..], "topology validation scan")?
@@ -4949,52 +4857,35 @@ impl<'a> TerminationRef<'a> {
     }
 }
 
-fn definition_terminations<'ctx, 'a>(
-    ctx: &'ctx DecodeContext<'_>,
-    definition: &'a crate::features::FeatureOperation,
-) -> Result<Scratch<'ctx, TerminationRef<'a>>, CodecError> {
-    let mut terminations = Scratch::new(ctx)?;
+fn definition_terminations(
+    definition: &crate::features::FeatureOperation,
+) -> [Option<TerminationRef<'_>>; 2] {
+    use crate::features::{ExtrudeExtent, FeatureOperation, RevolveExtent};
     match definition {
-        crate::features::FeatureOperation::Extrude { extent, .. } => match extent {
-            crate::features::ExtrudeExtent::OneSided { side }
-            | crate::features::ExtrudeExtent::Symmetric { side } => {
-                terminations.push(TerminationRef::Linear(&side.termination))?;
+        FeatureOperation::Extrude { extent, .. } => match extent {
+            ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+                [Some(TerminationRef::Linear(&side.termination)), None]
             }
-            crate::features::ExtrudeExtent::TwoSided { first, second } => {
-                terminations.extend(
-                    &[
-                        TerminationRef::Linear(&first.termination),
-                        TerminationRef::Linear(&second.termination),
-                    ],
-                    |termination| *termination,
-                )?;
-            }
+            ExtrudeExtent::TwoSided { first, second } => [
+                Some(TerminationRef::Linear(&first.termination)),
+                Some(TerminationRef::Linear(&second.termination)),
+            ],
         },
-        crate::features::FeatureOperation::Revolve { construction, .. } => {
-            match construction.extent() {
-                Some(
-                    crate::features::RevolveExtent::OneSided { termination }
-                    | crate::features::RevolveExtent::Symmetric { termination },
-                ) => terminations.push(TerminationRef::Angular(termination))?,
-                Some(crate::features::RevolveExtent::TwoSided { first, second }) => {
-                    terminations.extend(
-                        &[
-                            TerminationRef::Angular(first),
-                            TerminationRef::Angular(second),
-                        ],
-                        |termination| *termination,
-                    )?;
-                }
-                None => {}
+        FeatureOperation::Revolve { construction, .. } => match construction.extent() {
+            Some(RevolveExtent::OneSided { termination } | RevolveExtent::Symmetric { termination }) => {
+                [Some(TerminationRef::Angular(termination)), None]
             }
+            Some(RevolveExtent::TwoSided { first, second }) => [
+                Some(TerminationRef::Angular(first)),
+                Some(TerminationRef::Angular(second)),
+            ],
+            None => [None, None],
+        },
+        FeatureOperation::Hole { extent: Some(extent), .. } => {
+            [Some(TerminationRef::Linear(extent)), None]
         }
-        crate::features::FeatureOperation::Hole {
-            extent: Some(extent),
-            ..
-        } => terminations.push(TerminationRef::Linear(extent))?,
-        _ => {}
+        _ => [None, None],
     }
-    Ok(terminations)
 }
 
 fn check_configuration_state_closure(
