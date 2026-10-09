@@ -1047,3 +1047,5 @@ fn document_digest_refuses_before_hashing_source_bytes() {
         if limit.used == 0 && limit.additional == 4096)
     );
 }
+
+mod prefix_admission;
