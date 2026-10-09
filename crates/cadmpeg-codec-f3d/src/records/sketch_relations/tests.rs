@@ -368,14 +368,15 @@ fn sketch_relation_wire_entry_uses_default_limits() {
                 .to_string(),
         )
     };
+    // The padded offsets are `u32` slots. Their backing bytes are admitted
+    // before the slots. An empty input allows the 16 MiB retained base
+    // allowance, which four bytes per default collection item exceed.
     let expected = cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-        dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
-        limit: cadmpeg_core::decode::DecodePolicy::default()
-            .limits
-            .max_collection_items,
+        limit: 16 * 1024 * 1024,
         used: 0,
-        additional: u64::try_from(count).unwrap(),
+        additional: u64::try_from(count * std::mem::size_of::<u32>()).unwrap(),
         operation: "pad sketch relation offsets",
     });
     assert_eq!(error.to_string(), expected.to_string());

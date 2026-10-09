@@ -161,7 +161,9 @@ fn every_face_degree_selects_its_stated_attribute_mask_context() {
 fn jt_reconstruction_refuses_ring_work_before_traversal() {
     crate::test_support::with_decode_context_over(
         &[],
-        |policy| policy.limits.max_work_units = 0,
+        // The first vertex fills its three face slots (3) before the first
+        // face-context scan.
+        |policy| policy.limits.max_work_units = 3,
         |ctx| {
             let error = super::decode(
                 ctx,

@@ -313,46 +313,55 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         assert_eq!(scan(&ctx, &bytes, &carriers).unwrap().len(), 1);
 
-        let quartic = NurbsCurve::from_lanes(
+        // Degree 16 needs a heap basis of 17 `f64` slots; lower degrees
+        // evaluate in inline storage and admit no basis bytes.
+        let degree = 16_u32;
+        let slots = 17_usize;
+        let mut knots = vec![0.0; slots];
+        knots.extend(vec![0.005; slots]);
+        let spline = NurbsCurve::from_lanes(
             &cadmpeg_test_support::service_decode_context(),
-            4,
-            vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.005, 0.005, 0.005, 0.005, 0.005],
-            vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(0.0, 1.25, 0.0),
-                Point3::new(0.0, 2.5, 0.0),
-                Point3::new(0.0, 3.75, 0.0),
-                Point3::new(0.0, 5.0, 0.0),
-            ],
+            degree,
+            knots,
+            (0..slots)
+                .map(|pole| {
+                    Point3::new(
+                        0.0,
+                        5.0 * f64::from(u32::try_from(pole).expect("pole")) / 16.0,
+                        0.0,
+                    )
+                })
+                .collect(),
             None,
             false,
         )
         .expect("service storage")
-        .expect("quartic version of the same line");
-        let mut quartic_carriers = CarrierIndex::default();
-        quartic_carriers
+        .expect("degree-16 version of the same line");
+        let mut spline_carriers = CarrierIndex::default();
+        spline_carriers
             .insert(
                 &cadmpeg_test_support::service_decode_context(),
                 super::super::Carrier::Curve(CurveCarrier {
                     attr: 10,
                     offset: 100,
                     end: 120,
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(quartic)),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(spline)),
                     parameter_range: None,
                 }),
             )
             .unwrap();
-        policy.limits.max_materialized_bytes = 39;
+        let basis_bytes = u64::try_from(slots * std::mem::size_of::<f64>()).expect("basis bytes");
+        policy.limits.max_materialized_bytes = basis_bytes - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = scan(&ctx, &bytes, &quartic_carriers).unwrap_err();
+        let error = scan(&ctx, &bytes, &spline_carriers).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "IR B-spline basis")
         );
-        policy.limits.max_materialized_bytes = 40;
+        policy.limits.max_materialized_bytes = basis_bytes;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        assert_eq!(scan(&ctx, &bytes, &quartic_carriers).unwrap().len(), 1);
+        assert_eq!(scan(&ctx, &bytes, &spline_carriers).unwrap().len(), 1);
     }
 
     #[test]

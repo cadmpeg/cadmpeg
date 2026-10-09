@@ -875,9 +875,10 @@ fn boundary_vertex_clustering_refuses_pairwise_work_before_comparisons() {
     .map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap());
     for (cap, operation, used) in [
         (2, "iges boundary clustering comparisons", 0),
-        // Three initial pair comparisons, six initialization steps, ten union
-        // root steps and seven membership root steps precede this proof.
-        (28, "iges boundary cluster transitivity comparisons", 26),
+        // Three initial pair comparisons, six initialization steps, three size
+        // fill steps, ten union root steps and seven membership root steps
+        // precede this proof.
+        (31, "iges boundary cluster transitivity comparisons", 29),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

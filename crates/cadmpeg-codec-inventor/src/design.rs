@@ -2454,7 +2454,10 @@ mod tests {
         };
         let parameters = vec![make("c", Some("b")), make("b", Some("a")), make("a", None)];
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 3;
+        // Fill work for the indegree and adjacency rows (3 + 3), two edge
+        // indexings, the closure row (3) and the first of the two edge visits
+        // precede the refused second visit.
+        policy.limits.max_work_units = 3 + 3 + 2 + 3 + 1;
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");

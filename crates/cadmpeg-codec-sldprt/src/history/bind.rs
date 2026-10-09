@@ -869,7 +869,9 @@ mod tests {
         let mut features = [ordering_feature()];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 0;
+        // Fill work for the one-feature adjacency and indegree rows (1 + 1)
+        // precedes the identity index.
+        policy.limits.max_work_units = 1 + 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .unwrap_or_else(|error| panic!("test context failed: {error}"));
         let error = order_features_for_regeneration(&ctx, &mut features)
@@ -888,7 +890,9 @@ mod tests {
         ir.model.features.push(ordering_feature());
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 1;
+        // Fill work for the adjacency and indegree rows (1 + 1) and the one
+        // identity index (1) precede the parent scan.
+        policy.limits.max_work_units = 1 + 1 + 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .unwrap_or_else(|error| panic!("test context failed: {error}"));
         let error = order_model_features_for_regeneration(&ctx, &mut ir)

@@ -685,22 +685,21 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
 fn analytic_nurbs_endpoints_propagate_evaluator_refusal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
+    // Degree 16 needs a heap basis; lower degrees evaluate inline.
+    let mut knots = vec![0.0; 17];
+    knots.extend(vec![1.0; 17]);
     let nurbs = NurbsCurve::from_lanes(
         &cadmpeg_test_support::service_decode_context(),
-        4,
-        vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.25, 0.0, 0.0),
-            Point3::new(0.5, 0.0, 0.0),
-            Point3::new(0.75, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-        ],
+        16,
+        knots,
+        (0..17)
+            .map(|pole| Point3::new(f64::from(pole) / 16.0, 0.0, 0.0))
+            .collect(),
         None,
         false,
     )
     .expect("fixture constructor admission")
-    .expect("quartic spline");
+    .expect("degree-16 spline");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

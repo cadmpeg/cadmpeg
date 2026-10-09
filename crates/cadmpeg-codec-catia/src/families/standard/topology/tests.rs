@@ -320,19 +320,52 @@ fn standard_duplicate_search_refuses_work_limit() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
+    fn probes(row: &[(usize, u8)], point: usize) -> u64 {
+        let mut comparisons = 0;
+        let found = row.binary_search_by(|value| {
+            comparisons += 1;
+            value.0.cmp(&point)
+        });
+        assert!(found.is_ok(), "every probed point has a degree entry");
+        comparisons
+    }
+
     assert_eq!(
         crate::test_support::with_service_context(duplicate_face_slot_fixture)
             .expect("service resource budget"),
         Some(vec![[0, 1], [0, 1], [0, 1]])
     );
-    // The fixture has one unresolved edge and two face-degree rows. Admission
-    // must reach the search scan under a finite work slice.
-    assert!((0..4096).any(|budget| {
-        matches!(crate::test_support::with_work_limit(budget, duplicate_face_slot_fixture),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "catia_standard_duplicate_choice_scan")
-    }));
+    // Work admitted before the first scan charge, in call order:
+    // - copying the three edge-face pairs: 3;
+    // - the two endpoint-degree rows: 2;
+    // - three sorts of one two-item `usize` pair, none of which is a large
+    //   run: 2 for the items, then (2 * 8) bytes * 3 levels * 8 = 384 each;
+    // - the free-face key scan for the one unresolved edge (2, 0): 1 per face,
+    //   plus one per binary-search comparison. Face 0 holds degrees
+    //   [(0, 2), (1, 2), (2, 2)] and refuses at the start point; face 1 holds
+    //   [(0, 1), (1, 2), (2, 1)] and reads both end points;
+    // - sorting the single key row: 1, with no comparison;
+    // - the edge-order write-back: 1;
+    // - the assignment and mark rows, one slot each: 1 + 1.
+    let face0 = [(0, 2), (1, 2), (2, 2)];
+    let face1 = [(0, 1), (1, 2), (2, 1)];
+    let key_scan = 1 + probes(&face0, 2) + 1 + probes(&face1, 2) + probes(&face1, 0);
+    let before_scan = 3 + 2 + 3 * (2 + 16 * 3 * 8) + key_scan + 1 + 1 + (1 + 1);
+    let refusal = |budget| {
+        crate::test_support::with_work_limit(budget, duplicate_face_slot_fixture)
+            .expect_err("work slice refuses the fixture")
+    };
+    assert!(matches!(
+        refusal(before_scan),
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "catia_standard_duplicate_choice_scan"
+    ));
+    assert!(!matches!(
+        refusal(before_scan - 1),
+        CodecError::ResourceLimit(limit)
+            if limit.operation == "catia_standard_duplicate_choice_scan"
+    ));
 }
 
 #[test]

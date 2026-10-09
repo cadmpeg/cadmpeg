@@ -3504,17 +3504,36 @@ mod tests {
 
     #[test]
     fn zero_entity_isocurve_refuses_before_basis_growth() {
-        let bytes = nurbs_carrier(
-            [0x34, 0xc8],
-            &[10.0, 20.0, 30.0, 40.0, 50.0],
-            &[5, 1, 1, 1, 4],
-            &[-100.0, 0.0, 100.0, 200.0, 300.0],
-            &[4, 1, 1, 1, 4],
-        );
-        let surface = zero_entity_surface_at(&bytes, 0, &mut crate::nurbs::LaneRefusals::new())
-            .expect("valid NURBS surface");
-        let pcurve = test_pcurve(vec![Point2::new(30.0, 0.0), Point2::new(30.0, 200.0)]);
-        let endpoints = [[30.0, 0.0], [30.0, 200.0]];
+        use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+
+        // Degree 16 along the fixed axis needs a 17-slot heap basis; lower
+        // degrees evaluate in inline storage and allocate no basis.
+        let fixed_degree = 16;
+        let fixed_poles = fixed_degree + 1;
+        let mut fixed_knots = vec![0.0; fixed_poles];
+        fixed_knots.extend(vec![1.0; fixed_poles]);
+        let rows = (0..fixed_poles)
+            .map(|row| {
+                let x = cadmpeg_core::convert::f64_from_index(row)
+                    .expect("fixture index is exactly representable");
+                vec![Point3::new(x, 0.0, 0.0), Point3::new(x, 1.0, 0.0)]
+            })
+            .collect();
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+            crate::test_support::with_service_context(|ctx| {
+                NurbsSurface::from_lanes(
+                    ctx,
+                    NurbsSurfaceAxis::new(16, fixed_knots, false),
+                    NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    NurbsSurfaceLanes::new(rows, None),
+                    false,
+                )
+            })
+            .expect("fixture surface admission")
+            .expect("valid NURBS surface"),
+        ));
+        let pcurve = test_pcurve(vec![Point2::new(0.5, 0.0), Point2::new(0.5, 1.0)]);
+        let endpoints = [[0.5, 0.0], [0.5, 1.0]];
         assert!(zero_entity_model_curve(
             &surface,
             &pcurve,

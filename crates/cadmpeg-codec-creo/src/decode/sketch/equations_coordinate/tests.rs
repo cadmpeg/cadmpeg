@@ -390,7 +390,9 @@ fn unsigned_signed_branch_charges_work_before_expansion() {
     )];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    // Fill work for the two-variable adjacency, branch value and branch
+    // agreement rows (2 + 2 + 2) precedes the first branch charge.
+    policy.limits.max_work_units = 2 + 2 + 2;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("small input fits the policy");
     let error = super::solve_unsigned_dimension_coordinates(

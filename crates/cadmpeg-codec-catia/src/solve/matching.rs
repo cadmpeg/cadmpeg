@@ -691,9 +691,11 @@ mod tests {
     #[test]
     fn coordinate_bijection_refuses_unadmitted_sort_key_scan() {
         let domains = [HashSet::from([0_usize])];
-        // One-element domain admission, projection, sort, and dedup precede the key scan.
+        // One-element domain admission (1 + 1), projection (1), the class sort
+        // (1 + 16 * size_of usize) and dedup (1), and the fill work of the
+        // capacity, slot and owner rows (1 + 1 + 1) precede the key scan.
         let before_keys =
-            5 + 16 * u64::try_from(std::mem::size_of::<usize>()).expect("index bytes");
+            5 + 16 * u64::try_from(std::mem::size_of::<usize>()).expect("index bytes") + 3;
         crate::test_support::with_work_limit(before_keys, |ctx| {
             let cadmpeg_core::CodecError::ResourceLimit(limit) =
                 super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3]])
@@ -709,7 +711,14 @@ mod tests {
     #[test]
     fn coordinate_bijection_refuses_unadmitted_matching_visits() {
         let domains = [HashSet::from([0_usize])];
-        crate::test_support::with_work_limit(391, |ctx| {
+        // Everything before the key scan (see the sort-key test), the one key
+        // (1), the order sort of one (usize, usize) item (1 + 16 * 2 * 8), and
+        // the fill work of the seen-vertex, seen-slot, incoming and via rows
+        // (4) precede the first slot projection.
+        let before_keys =
+            5 + 16 * u64::try_from(std::mem::size_of::<usize>()).expect("index bytes") + 3;
+        let before_projection = before_keys + 1 + (1 + 16 * 2 * 8) + 4;
+        crate::test_support::with_work_limit(before_projection, |ctx| {
             let cadmpeg_core::CodecError::ResourceLimit(limit) =
                 super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3]])
                     .expect_err("matching visit must be admitted")
@@ -1131,9 +1140,11 @@ mod tests {
     fn matching_owner_allocation_refuses_at_collection_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        let point_count = usize::MAX;
+        let point_count = 1024;
+        // One domain slot is admitted first, so a limit of `point_count` items
+        // leaves the owner array one slot short. Its work and bytes fit.
         policy.limits.max_collection_items =
-            u64::try_from(point_count).expect("pointer width fits u64") - 1;
+            u64::try_from(point_count).expect("pointer width fits u64");
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("matching fixture fits the input limit");
         let domains = [vec![0]];

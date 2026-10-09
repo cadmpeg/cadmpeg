@@ -262,7 +262,9 @@ fn mapped_pair_scan_refuses_before_duplicate_becomes_none() {
         edge_identity_evidence: &[],
         coordinate_gauge: None,
     };
-    let result = crate::test_support::with_work_limit(386, |ctx| {
+    // One fill unit for the assigned row, then one pair sort of two items
+    // (2 + 16 * 3 * 8) for the first mapped pair, precede the second pair's scan.
+    let result = crate::test_support::with_work_limit(1 + 2 + 16 * 3 * 8, |ctx| {
         map_endpoint_relation_state(ctx, &state, gauge, &[0, 1])
     });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
