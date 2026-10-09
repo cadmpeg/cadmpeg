@@ -113,7 +113,7 @@ pub(super) fn sketch_brep(
     let mut face_loops = Vec::new();
     let mut vertex_by_position = HashMap::<(u64, u64), VertexId>::new();
     for (profile_index, profile) in profiles.iter().enumerate() {
-        let endpoints = profile
+        let generated = profile
             .iter()
             .map(|entity_use| {
                 let entity = entities.get(&entity_use.entity).ok_or_else(|| {
@@ -124,16 +124,17 @@ pub(super) fn sketch_brep(
                     ))
                 })?;
                 let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
-                Ok(if entity_use.reversed {
-                    (generated.end, generated.start)
-                } else {
-                    (generated.start, generated.end)
-                })
+                Ok((entity, generated))
             })
             .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
-        if endpoints.iter().enumerate().any(|(index, (_, end))| {
-            let (next_start, _) = endpoints[(index + 1) % endpoints.len()];
-            !same_sketch_point(*end, next_start)
+        let endpoint = |index: usize| {
+            let curve = &generated[index].1;
+            if profile[index].reversed { (curve.end, curve.start) } else { (curve.start, curve.end) }
+        };
+        if (0..generated.len()).any(|index| {
+            let (_, end) = endpoint(index);
+            let (next_start, _) = endpoint((index + 1) % generated.len());
+            !same_sketch_point(end, next_start)
         }) {
             return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                 "source-less SLDPRT sketch profile {profile_index} is not a closed endpoint chain"
@@ -148,15 +149,7 @@ pub(super) fn sketch_brep(
         );
         face_loops.push(loop_id.clone());
         let mut ring: Option<cadmpeg_ir::topology::LoopRing> = None;
-        for (use_index, entity_use) in profile.iter().enumerate() {
-            let entity = entities.get(&entity_use.entity).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "sketch {} references missing entity {}",
-                    sketch.id.as_str(),
-                    entity_use.entity.as_str()
-                ))
-            })?;
-            let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
+        for (use_index, (entity_use, (entity, generated))) in profile.iter().zip(generated).enumerate() {
             let start_vertex = sketch_vertex(
                 &mut ir,
                 &mut vertex_by_position,
@@ -1167,3 +1160,6 @@ fn polar(radius: f64, angle: f64) -> Point2 {
 fn offset_point(origin: Point2, delta: Point2) -> Point2 {
     Point2::new(origin.u + delta.u, origin.v + delta.v)
 }
+
+#[cfg(test)]
+mod tests;
