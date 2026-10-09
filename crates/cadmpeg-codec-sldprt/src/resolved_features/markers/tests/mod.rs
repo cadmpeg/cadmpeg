@@ -81,3 +81,4 @@ mod profile_curves;
 mod profile_points;
 mod spatial;
 mod spatial_boundaries;
+mod spatial_workspace;
