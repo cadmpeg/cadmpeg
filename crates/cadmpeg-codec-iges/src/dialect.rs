@@ -49,6 +49,9 @@ pub(crate) fn dialect_loss(
     global: &ResolvedGlobal,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<LossNote>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let DialectRecovery::Unverified(recovery) = global.dialect_recovery() else {
         return Ok(None);
     };

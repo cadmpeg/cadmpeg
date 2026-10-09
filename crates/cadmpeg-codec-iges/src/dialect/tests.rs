@@ -479,3 +479,5 @@ fn dialect_declarations_admit_retained_values_and_map_slots() {
         });
     }
 }
+
+mod entry_refusal;
