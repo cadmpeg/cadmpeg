@@ -289,3 +289,22 @@ fn detection_reads_fixed_magic_with_zero_work_budget() {
         );
     }
 }
+
+#[test]
+fn fixed_magic_detection_keeps_the_original_caller_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    for bytes in [b"".as_slice(), b"#UGC:2".as_slice(), b"unrelated".as_slice()] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, view) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("root bytes admitted");
+        let original = ctx.charge_work_limit(1, "seed Creo detection refusal")
+            .expect_err("zero work cap");
+        assert_eq!((original.used, original.additional), (0, 1));
+        assert!(matches!(CreoCodec.detect(&ctx, view),
+            Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert_eq!(ctx.resource_refusal(), Some(original));
+    }
+}

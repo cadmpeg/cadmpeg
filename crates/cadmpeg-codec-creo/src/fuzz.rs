@@ -88,9 +88,11 @@ pub fn container_scan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (scan, scan_storage) = ctx.with_scoped_storage("creo container scan storage", || {
+    let scan_owned_storage = ctx.with_scoped_storage("creo container scan storage", || {
         crate::container::scan_bytes(ctx, data)
     })?;
+    let scan_storage = scan_owned_storage.1;
+    let scan = scan_owned_storage.0;
     drop(scan);
     drop(scan_storage);
     Ok(())
