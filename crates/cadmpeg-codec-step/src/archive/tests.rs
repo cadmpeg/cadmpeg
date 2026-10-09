@@ -1462,5 +1462,6 @@ fn zip_reference_fragment_character_preserves_refusal() {
 }
 
 mod admission;
+mod prefix_admission;
 
 mod unsupported_directory_error;

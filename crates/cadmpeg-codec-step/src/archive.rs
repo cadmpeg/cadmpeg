@@ -69,7 +69,10 @@ pub(crate) fn open_root<'a, 'ctx>(
             error => Err(error),
         })?;
     let mut entries = archive.entries().iter();
-    while let Some(entry) = ctx.next_charged(&mut entries, "STEP open root borrowed traversal")? {
+    ctx.charge_work(0, "STEP open root borrowed traversal")?;
+    for _ in 0..entries.len() {
+        let entry = ctx.next_charged(&mut entries, "STEP open root borrowed traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         validate_entry_name(ctx, &entry.name)?;
         if entry.uses_utf8_name_encoding() {
             return Err(CodecError::Malformed(
@@ -127,8 +130,8 @@ fn resolve_uri<'a>(
             "STEP ZIP error text",
         )?));
     }
-    let mut components = Vec::new();
     let mut component_bytes = ctx.reserve_scoped(0, "step_zip_uri_components_temp")?;
+    let mut components = Vec::new();
     if let Some(separator) =
         ctx.rposition_by(base_member.as_bytes(), |byte| Ok(*byte == b'/'), "STEP ZIP base member reverse split")?
     {
@@ -211,7 +214,10 @@ fn resolve_uri<'a>(
 
     ctx.reserve_scoped_string(member_bytes, &mut member, member_len, "step_zip_uri_member")?;
     let mut visited_items = (components[..]).iter().enumerate();
-    while let Some((index, component)) = ctx.next_charged(&mut visited_items, "STEP resolve uri traversal")? {
+    ctx.charge_work(0, "STEP resolve uri traversal")?;
+    for _ in 0..visited_items.len() {
+        let (index, component) = ctx.next_charged(&mut visited_items, "STEP resolve uri traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         if index != 0 {
             member_bytes.with_storage(|| {
                 ctx.push_retained_char(&mut member, '/', "STEP ZIP member separator character")
@@ -240,14 +246,17 @@ pub(crate) fn root_reference_notes(
     let mut bindings = BTreeMap::new();
     let mut indexed = false;
     let mut references = exchange.references().iter();
-    while let Some(reference) = ctx.next_charged(
-        &mut references,
-        "STEP root reference notes borrowed traversal",
-    )? {
+    ctx.charge_work(0, "STEP root reference notes borrowed traversal")?;
+    for _ in 0..references.len() {
+        let reference = ctx.next_charged(&mut references, "STEP root reference notes borrowed traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         let name = reference.name;
         if !indexed && reference.uri.starts_with('#') && reference.uri.len() > 1 {
             let mut visited_items = (exchange.anchors()).iter();
-            while let Some(anchor) = ctx.next_charged(&mut visited_items, "STEP ZIP anchor index traversal")? {
+            ctx.charge_work(0, "STEP ZIP anchor index traversal")?;
+            for _ in 0..visited_items.len() {
+                let anchor = ctx.next_charged(&mut visited_items, "STEP ZIP anchor index traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
                 if let crate::parse::Value::Resource(target) = &anchor.value {
                     binding_storage.with_storage(|| {
                         ctx.insert_btree_map(
