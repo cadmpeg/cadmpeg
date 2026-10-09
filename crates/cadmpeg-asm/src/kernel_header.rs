@@ -151,6 +151,9 @@ fn read_u8_string_span<'bytes>(
     bytes: &'bytes [u8],
     at: usize,
 ) -> Result<Option<(&'bytes str, usize)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if bytes.get(at) != Some(&0x07) {
         return Ok(None);
     }
@@ -181,6 +184,7 @@ fn read_tagged_f64(bytes: &[u8], at: usize) -> Option<(f64, usize)> {
 
 #[cfg(test)]
 mod tests {
+    mod entry_refusal;
     #[test]
     fn binary_header_product_string_refuses_retained_limit() {
         use cadmpeg_core::decode::ResourceDimension;

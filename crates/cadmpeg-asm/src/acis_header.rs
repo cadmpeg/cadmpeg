@@ -26,6 +26,9 @@ pub fn has_acis_magic(bytes: &[u8]) -> bool {
 
 /// Parse the shared kernel metadata from a 32-bit ACIS binary header.
 pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeader>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !has_acis_magic(bytes) {
         return Ok(None);
     }
@@ -61,6 +64,9 @@ pub fn record_stream_start(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !has_acis_magic(bytes) {
         return Ok(None);
     }
@@ -75,6 +81,9 @@ pub fn record_stream_start_with_header(
     bytes: &[u8],
     header: &BinaryHeader,
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if header.width != RefWidth::Four {
         return Ok(None);
     }
@@ -88,6 +97,9 @@ pub fn solved_record_limit(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !has_acis_magic(bytes) {
         return Ok(None);
     }
@@ -109,6 +121,9 @@ pub fn solved_record_limit_with_header(
     bytes: &[u8],
     header: &BinaryHeader,
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !header.metadata.has_history_partition() {
         return Ok(None);
     }
@@ -120,6 +135,7 @@ pub fn solved_record_limit_with_header(
 
 #[cfg(test)]
 mod tests {
+    mod entry_refusal;
     use super::{parse, record_stream_start, solved_record_limit, MAGIC};
 
     #[test]

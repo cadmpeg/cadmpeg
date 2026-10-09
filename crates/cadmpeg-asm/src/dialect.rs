@@ -111,6 +111,9 @@ fn match_header(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     header: KernelHeaderRef<'_>,
 ) -> Result<DialectMatch, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     Ok(match header {
         KernelHeaderRef::Acis(header) => acis_match(ctx, header.metadata.save_format_major())?,
         KernelHeaderRef::Asm(header) => DialectMatch::admitted(asm_binary_row(header.width)),
@@ -201,6 +204,9 @@ pub fn acis_match(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     save_format_major: Option<u32>,
 ) -> Result<DialectMatch, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let row = acis_binary_row(save_format_major);
     Ok(if acis_band_verified(save_format_major) {
         DialectMatch::admitted(row)
@@ -223,6 +229,9 @@ pub fn unverified_message(
     subject: &str,
     matched: &DialectMatch,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if matched.format() != FORMAT {
         return Ok(None);
     }
@@ -289,6 +298,7 @@ pub fn asm_binary_row(width: RefWidth) -> DialectId {
 
 #[cfg(test)]
 mod tests {
+    mod entry_refusal;
     use super::{
         acis_band_verified, acis_binary_row, acis_match, classify, classify_layer,
         nearest_verified_acis, unverified_message, KernelHeaderRef, ACIS_ASM_BINARYFILE_8,
