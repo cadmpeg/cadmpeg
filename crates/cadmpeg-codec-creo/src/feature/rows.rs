@@ -604,6 +604,9 @@ fn round_replay_short_scalar(
     start: usize,
     end: usize,
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut offset = start;
     while offset < end {
         ctx.next_charged(&mut (offset..end), "creo round replay scalar traversal")?;
@@ -641,6 +644,9 @@ fn round_replay_fixed_token_end(
     offset: usize,
     end: usize,
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(&head) = body.get(offset) else {
         return Ok(None);
     };
@@ -750,6 +756,9 @@ pub(super) fn field_value(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<FeatureFieldValue, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if payload.is_empty() {
         return Ok(FeatureFieldValue::Empty);
     }
@@ -794,10 +803,10 @@ pub(super) fn field_value(
         let mut storage = ctx.reserve_scoped(0, "creo feature compact integer values")?;
         let mut values = Vec::new();
         let mut items = 0..count;
-        while ctx
-            .next_charged(&mut items, "creo compact integer field traversal")?
-            .is_some()
-        {
+        while !items.is_empty() {
+            let Some(_) = ctx.next_charged(&mut items, "creo compact integer field traversal")? else {
+                break;
+            };
             let (value, next) = psb::compact_int(payload, cursor);
             if next == cursor {
                 drop(values);
@@ -1000,6 +1009,9 @@ fn positional_datum_geometry_table_at(
     cursor: usize,
     entity_class: u32,
 ) -> Result<Option<(u32, Vec<u32>)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if body.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
         return Ok(None);
     }
@@ -1031,7 +1043,10 @@ fn positional_datum_geometry_table_at(
     let mut storage = ctx.reserve_scoped(0, "creo positional datum ids")?;
     let mut entry_ids = Vec::new();
     let mut items = 0..count;
-    while let Some(index) = ctx.next_charged(&mut items, "creo positional datum traversal")? {
+    while !items.is_empty() {
+        let Some(index) = ctx.next_charged(&mut items, "creo positional datum traversal")? else {
+            break;
+        };
         if index == 0 {
             if body.get(cursor) != Some(&psb::token::ENTITY_REF) {
                 return Ok(None);
@@ -1084,6 +1099,9 @@ fn geometry_table_at(
     mut cursor: usize,
     mut kind: FeatureGeometryTableKind,
 ) -> Result<Option<(u32, u32, FeatureGeometryTableKind)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if body
         .get(cursor)
         .is_some_and(|byte| matches!(byte, 0xf1 | 0xf2))
@@ -1111,10 +1129,10 @@ fn geometry_table_at(
         let mut entries = Vec::new();
         let mut entry_cursor = after_class;
         let mut items = 0..count;
-        while ctx
-            .next_charged(&mut items, "creo named datum traversal")?
-            .is_some()
-        {
+        while !items.is_empty() {
+            let Some(_) = ctx.next_charged(&mut items, "creo named datum traversal")? else {
+                break;
+            };
             const ENTRY: &[u8] = b"\xe0\x01dtm_id\0";
             if body.get(entry_cursor..entry_cursor + ENTRY.len()) != Some(ENTRY) {
                 entries.clear();
@@ -1186,10 +1204,10 @@ pub(crate) fn affected_ids(
                 let mut storage = ctx.reserve_scoped(0, "creo affected ids")?;
                 let mut ids = Vec::new();
                 let mut items = 0..count;
-                while ctx
-                    .next_charged(&mut items, "creo affected ID traversal")?
-                    .is_some()
-                {
+                while !items.is_empty() {
+                    let Some(_) = ctx.next_charged(&mut items, "creo affected ID traversal")? else {
+                        break;
+                    };
                     let (id, next) = psb::compact_int(&row.body, cursor);
                     if next == cursor {
                         ids.clear();
@@ -1282,10 +1300,13 @@ fn replay_ids<'a>(
     count: u32,
     mut cursor: usize,
 ) -> Option<Result<(EncodedReplayIds<'a>, usize), CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     bounded_len(u64::from(count), 1, run.len().checked_sub(cursor)?)?;
     let start = cursor;
     let mut items = 0..count;
-    loop {
+    while !items.is_empty() {
         match ctx.next_charged(&mut items, "creo replay ID traversal") {
             Ok(Some(_)) => {}
             Ok(None) => break,
@@ -1319,6 +1340,9 @@ fn replay_affected_pair<'a>(
     run: &'a [u8],
     extents: [Option<u32>; 2],
 ) -> Option<Result<ReplayAffectedPair<'a>, CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let (geometry_count, geometry_extent, cursor) =
         replay_extent(run, 0, b"geoms_affected", extents[0])?;
     let (geometry_ids, cursor) = match replay_ids(ctx, run, geometry_count, cursor)? {
@@ -1346,6 +1370,9 @@ fn explicit_replay_array<'a>(
     run: &'a [u8],
     opener: usize,
 ) -> Option<Result<(EncodedReplayIds<'a>, usize), CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     (run.get(opener) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
     let (count, cursor) = psb::compact_int(run, opener + 1);
     (cursor > opener + 1).then_some(())?;
@@ -1401,9 +1428,12 @@ fn explicit_replay_pair_before_suffix<'a>(
     row: &'a FeatureRow,
     suffix: usize,
 ) -> Option<Result<(ReplayAffectedPair<'a>, usize), CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let mut arrays = [None; 3];
     let mut bytes = row.body[..suffix].iter().enumerate();
-    loop {
+    while bytes.len() != 0 {
         let (opener, &byte) =
             match ctx.next_charged(&mut bytes, "creo explicit replay array traversal") {
                 Ok(Some(item)) => item,
@@ -1453,9 +1483,12 @@ fn unique_unanchored_replay_pair<'a>(
     row: &'a FeatureRow,
     extents: [Option<u32>; 2],
 ) -> Option<Result<(ReplayAffectedPair<'a>, usize), CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let mut candidate = None;
     let mut suffixes = row.body.windows(2).enumerate();
-    loop {
+    while suffixes.len() != 0 {
         let (suffix, window) =
             match ctx.next_charged(&mut suffixes, "creo unanchored replay suffix traversal") {
                 Ok(Some(item)) => item,
@@ -1506,7 +1539,7 @@ fn unique_unanchored_replay_pair<'a>(
             continue;
         }
         let mut starts = 1..suffix;
-        loop {
+        while !starts.is_empty() {
             let start =
                 match ctx.next_charged(&mut starts, "creo unanchored replay start traversal") {
                     Ok(Some(start)) => start,
@@ -1637,6 +1670,12 @@ pub(crate) fn agreed_feature_affected_ids<'a>(
     feature_id: u32,
     kind: AffectedIdKind,
 ) -> Result<Option<&'a [u32]>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    if records.is_empty() {
+        return Ok(None);
+    }
     let Some(first) = ctx.position_by(
         records,
         |record| Ok(record.feature_id == feature_id && record.kind == kind),
@@ -1646,6 +1685,9 @@ pub(crate) fn agreed_feature_affected_ids<'a>(
         return Ok(None);
     };
     let ids = records[first].ids.as_slice();
+    if first + 1 == records.len() {
+        return Ok(Some(ids));
+    }
     let agrees = ctx.all_by(
         &records[first + 1..],
         |record| {
@@ -1687,9 +1729,15 @@ fn positional_surface_merge_affected_ids(
     row: &FeatureRow,
     extents: [Option<u32>; 3],
 ) -> Option<Result<FeatureSurfaceMergeAffectedIds, CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     const ANCHOR: &[u8] = &[0xf7, 0x80, 0x96];
     const QUILT_SEPARATOR: &[u8] = &[0xf0, 0xf7, 0x80, 0x99];
     let mut positions = row.body.windows(ANCHOR.len()).enumerate();
+    if positions.len() == 0 {
+        return None;
+    }
     let anchor = match ctx.find_map(
         &mut positions,
         |(offset, bytes)| Ok((bytes == ANCHOR).then_some(offset)),
@@ -1699,14 +1747,16 @@ fn positional_surface_merge_affected_ids(
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
-    match ctx.any_by(
-        positions,
-        |(_, bytes)| Ok(bytes == ANCHOR),
-        "creo surface merge anchor uniqueness",
-    ) {
-        Ok(false) => {}
-        Ok(true) => return None,
-        Err(error) => return Some(Err(error)),
+    if positions.len() != 0 {
+        match ctx.any_by(
+            positions,
+            |(_, bytes)| Ok(bytes == ANCHOR),
+            "creo surface merge anchor uniqueness",
+        ) {
+            Ok(false) => {}
+            Ok(true) => return None,
+            Err(error) => return Some(Err(error)),
+        }
     }
     let (_, cursor) = match explicit_replay_array(ctx, &row.body, anchor + ANCHOR.len())? {
         Ok(decoded) => decoded,
@@ -2036,6 +2086,9 @@ fn loop_history_prototypes<'a, 'ctx>(
         CodecError,
     >,
 > {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     (count > 0 && count <= body.len().checked_sub(cursor)? / 2).then_some(())?;
     let mut storage = match ctx.reserve_scoped(0, "creo loop history prototypes") {
         Ok(storage) => storage,
@@ -2048,7 +2101,7 @@ fn loop_history_prototypes<'a, 'ctx>(
         return Some(Err(error));
     }
     let mut items = 0..count;
-    loop {
+    while !items.is_empty() {
         let index = match ctx.next_charged(&mut items, "creo loop history roster traversal") {
             Ok(Some(index)) => index,
             Ok(None) => break,
@@ -2182,6 +2235,9 @@ fn loop_history_token(
     body: &[u8],
     cursor: usize,
 ) -> Result<Option<psb::Token>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if body.get(cursor) != Some(&psb::token::NAMED_RECORD) {
         return psb::token_at(ctx, body, cursor);
     }
