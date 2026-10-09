@@ -961,7 +961,10 @@ fn resolved_edge_group_with_transition_chain(
     // member-to-edge assignment. Recipe evidence must therefore cover the
     // complete chain before it can replace the unresolved member identities.
     let identity_group_transition_is_admitted = match identity_group_transition_slots.as_deref() {
-        Some(edges) => edges.len() == members.len() || recipe_supports_transition_chain(edges)?,
+        // A singleton transition and the uniform group transition both use
+        // the first identity's sorted slots. Otherwise the selected chain is
+        // the group transition itself. Its recipe proof was already computed.
+        Some(edges) => edges.len() == members.len() || identity_transition_is_supported,
         None => false,
     };
     let identity_radius_slots = match (treatment_radius, identity_matches.as_ref()) {
