@@ -278,7 +278,7 @@ fn build_metadata_ir(
         .filter(|stream| stream.kind().is_parasolid())
         .count();
     let mut unknowns = ctx.collection_vec(unknown_count, "nx metadata unknown streams")?;
-    let mut ir = CadIr::decoded(source_meta(ctx, scan, dialects)?);
+    let mut ir = CadIr::decoded(source_meta(ctx, scan, dialects, None)?);
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();
     let source_stream = StreamHandle::new(

@@ -515,6 +515,10 @@ fn populate_body_revision_state_tails(
     stream: &[u8],
     census: &mut Census,
 ) -> Result<usize, CodecError> {
+    ctx.charge_work(0, "NX body revision state tail boundary")?;
+    if census.body_revisions.is_empty() {
+        return Ok(0);
+    }
     let mut byte_len = 0;
     let covered = merged_event_spans(ctx, census, true)?;
     for (start, end) in uncovered_spans(ctx, stream.len(), &covered)? {
@@ -578,6 +582,59 @@ fn extend_covered_spans(
 mod tests {
     use super::{extend_covered_spans, value_is_owned};
     use std::collections::BTreeSet;
+
+    #[test]
+    fn no_body_revisions_do_not_build_unrelated_event_coverage() {
+        let mut census = super::Census {
+            events: super::CensusEvents::default(),
+            bytes_decoded: 6000,
+        };
+        for index in 0..1000 {
+            census.events.tombstones.push(super::Tombstone {
+                kind: super::RecordKind::try_from(12).expect("BODY kind"),
+                xmt: u32::try_from(index + 2).expect("identity"),
+                offset: 6 * index,
+            });
+        }
+        let before = census.clone();
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 0;
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                assert_eq!(
+                    super::populate_body_revision_state_tails(ctx, &[], &mut census)
+                        .expect("no BODY revision needs a state tail"),
+                    0
+                );
+                assert!(ctx.resource_refusal().is_none());
+            },
+        );
+        assert_eq!(census, before);
+    }
+
+    #[test]
+    fn empty_body_revision_completion_preserves_the_first_refusal() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                ctx.charge_work(1, "body revision boundary test")
+                    .expect_err("work refusal");
+                let first = ctx.resource_refusal().expect("first refusal");
+                let mut census = super::Census {
+                    events: super::CensusEvents::default(),
+                    bytes_decoded: 0,
+                };
+                assert!(matches!(
+                    super::populate_body_revision_state_tails(ctx, &[], &mut census),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first
+                ));
+            },
+        );
+    }
 
     #[test]
     fn referenced_value_membership_uses_the_offset_index() {

@@ -1516,7 +1516,7 @@ pub(super) fn try_decode_geometry(
         return Ok(None);
     }
 
-    ir.source = Some(source_meta(ctx, scan, dialects)?);
+    ir.source = Some(source_meta(ctx, scan, dialects, Some(&parsed))?);
 
     ctx.admit_entities(
         cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
