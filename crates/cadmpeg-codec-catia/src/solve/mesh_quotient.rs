@@ -10337,12 +10337,12 @@ where
                 // The parent budget only decreases, so retrying the same key
                 // cannot turn an exhausted materialization into a solution.
                 if endpoint_resolution_memo.len() < MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES {
-                    let ((endpoint_key, value), storage) = ctx.with_scoped_storage("catia_endpoint_memo_entries", || {
+                    let cache_owner = ctx.with_scoped_storage("catia_endpoint_memo_entries", || {
                         Ok::<_, CodecError>((ctx.copy_slice(pairs, "catia_endpoint_memo_key")?, copy_mesh_endpoint_resolution(ctx, &resolution)?))
                     })?;
-                    let entry = endpoint_memo_storage.with_storage(|| ctx.entry_hash_map(&mut endpoint_resolution_memo, endpoint_key, "catia_endpoint_memo_entries"))?;
+                    let entry = endpoint_memo_storage.with_storage(|| ctx.entry_hash_map(&mut endpoint_resolution_memo, cache_owner.0.0, "catia_endpoint_memo_entries"))?;
                     if let std::collections::hash_map::Entry::Vacant(entry) = entry {
-                        entry.insert(ScopedValue { value, storage: Some(storage) });
+                        entry.insert(ScopedValue { value: cache_owner.0.1, storage: Some(cache_owner.1) });
                     }
 
                 }
