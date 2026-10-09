@@ -14,6 +14,7 @@ use crate::CadIr;
 mod nurbs;
 mod analytic;
 mod procedural_third;
+mod procedural_fourth;
 mod orientation;
 mod fourth;
 

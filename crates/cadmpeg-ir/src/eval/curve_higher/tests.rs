@@ -8,6 +8,7 @@ use crate::transform::Transform;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+mod fourth;
 mod nurbs_linear;
 mod nurbs_polynomial;
 
