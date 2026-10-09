@@ -2,6 +2,7 @@
 mod contours;
 mod cost;
 mod dump;
+mod envelope_admission;
 mod inline;
 mod planes;
 mod positional;

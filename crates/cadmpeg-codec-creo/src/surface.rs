@@ -4934,6 +4934,9 @@ fn decode_inline_selector_cylinder_envelope(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<InlineSurfaceEnvelope>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let candidate = (|| {
         (kind == SurfaceKind::Cylinder).then_some(())?;
         let selector_end = |cursor: usize| match body.get(cursor..) {
@@ -4992,8 +4995,8 @@ fn decode_inline_selector_cylinder_envelope(
     let Some((envelope, radial_axes, spans)) = candidate else {
         return Ok(None);
     };
-    let absent = ctx
-        .admit_iter(&radial_axes, "creo selector envelope radial count")?
+    let absent = radial_axes
+        .iter()
         .filter(|axis| spans[**axis].is_none())
         .count();
     Ok((absent <= 1).then_some(envelope))
@@ -7143,20 +7146,17 @@ fn plane_envelope_has_one_held_coordinate(
     slots: &[(Option<f64>, &[u8])],
     pairs: [[usize; 2]; 3],
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut count = 0usize;
-    for [first, second] in ctx.admit_iter(&pairs, "creo plane envelope held coordinate count")? {
+    for [first, second] in pairs {
         if ctx.equal_bytes(
-            slots[*first].1,
-            slots[*second].1,
+            slots[first].1,
+            slots[second].1,
             "creo plane envelope held coordinate bytes",
         )? {
-            count = count.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "creo plane envelope held coordinate count",
-                    u64::MAX,
-                    u64::MAX,
-                )
-            })?;
+            count += 1;
         }
     }
     Ok(count == 1)
