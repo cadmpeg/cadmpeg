@@ -23,10 +23,16 @@ fn sketch_constraint_loci_preserve_borrowed_order_and_release_storage() {
     policy.limits.max_materialized_bytes = 256;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     {
-        let loci = super::super::constraint_loci(&ctx, &definition).unwrap();
-        assert_eq!(loci.len(), elements.len());
+        let mut loci = [None; 3];
+        let mut count = 0;
+        super::super::visit_constraint_loci(&ctx, &definition, |locus| {
+            loci[count] = Some(locus);
+            count += 1;
+            Ok(())
+        }).unwrap();
+        assert_eq!(count, elements.len());
         for (actual, expected) in loci.iter().zip(elements) {
-            assert!(std::ptr::eq(*actual, expected));
+            assert!(std::ptr::eq(actual.unwrap(), expected));
         }
     }
     drop(ctx.reserve_scoped(256, "locus scopes released").unwrap());
@@ -57,15 +63,25 @@ fn sketch_constraint_loci_preserve_first_and_later_original_refusals() {
             _ => panic!("test dimension"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) =
-            super::super::constraint_loci(&ctx, &definition)
-        else {
-            panic!("locus storage must refuse");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-        );
+        let mut count = 0;
+        let result = super::super::visit_constraint_loci(&ctx, &definition, |_| {
+            count += 1;
+            Ok(())
+        });
+        if dimension == ResourceDimension::WorkUnits && cap == 0 {
+            let Err(CodecError::ResourceLimit(limit)) = result else {
+                panic!("first locus visit must refuse");
+            };
+            assert_eq!(limit.dimension, dimension);
+            assert_eq!(count, 0);
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+            );
+        } else {
+            result.unwrap();
+            assert_eq!(count, 2);
+            ctx.finish_session().unwrap();
+        }
     }
 }
 

@@ -1119,6 +1119,7 @@ fn extreme_lines_preserve_parallelism_and_span_separation() {
 }
 
 mod admission;
+mod visits;
 
 #[test]
 fn spatial_sketch_endpoint_helper_preserves_session_depth_refusal() {
