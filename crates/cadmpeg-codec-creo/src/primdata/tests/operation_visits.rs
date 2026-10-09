@@ -176,8 +176,14 @@ fn primitive_cumulative_walks_stop_at_absent_counts_and_invalid_lengths() {
 
 #[test]
 fn primitive_geometry_projects_present_points_and_stops_at_first_representation_conflict() {
-    for (shaded, conflict, need) in [(false, false, 11_u64), (false, true, 9),
-        (true, false, 20), (true, true, 18)] {
+    for (shaded, conflict) in [(false, false), (false, true), (true, false), (true, true)] {
+        // Two present arrays; compare positions, then normals when present.
+        // A conflict stops before output materialization. Agreeing records
+        // project only the selected three-vertex buffers.
+        let position_agreement = if conflict && !shaded { 1_u64 } else { 3 };
+        let normal_agreement = if shaded { if conflict { 1 } else { 3 } } else { 0 };
+        let projection = if conflict { 0 } else { 3 * (1 + u64::from(shaded)) };
+        let need = 2 + position_agreement + normal_agreement + projection;
         let field = if shaded { PrimitiveArrayField::VertexNormalsAndPositions }
             else { PrimitiveArrayField::VertexPositions };
         let values = if shaded { vec![0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
