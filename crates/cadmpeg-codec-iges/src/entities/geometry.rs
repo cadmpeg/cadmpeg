@@ -970,6 +970,10 @@ pub(crate) fn resolve_transform(
         drop(std::mem::take(path));
         return Err(error.into());
     }
+    if path.is_empty() {
+        // Removal leaves an empty root node. Destroy it before refunding its storage.
+        drop(std::mem::take(path));
+    }
     result
 }
 
@@ -1522,6 +1526,10 @@ pub(super) fn curve_geometry_coplanar(
                         geometry, index, transform, plane, resolution, active, ctx,
                     )?;
                     ctx.remove_btree_set(active, &segment.curve, "iges coplanar active removal")?;
+                    if active.is_empty() {
+                        // Destroy the empty root before this segment's storage expires.
+                        drop(std::mem::take(active));
+                    }
                     Ok(valid)
                 })();
                 let segment_valid = match result {
