@@ -505,11 +505,11 @@ fn rolling_ball_surface(
         }
         cur.take_bool()?;
         let scope = toks::subtype_span(toks, cur.pos())?;
-        let surface = propagate_resource!(reference_context
-            .and_then(
-                |table| crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, scope, table)
-            )
-            .or_else(|| crate::nurbs::core::owned_surface_cache(ctx, scope))?);
+        let surface = propagate_resource!(match reference_context {
+            Some(table) =>
+                crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, scope, table),
+            None => crate::nurbs::core::owned_surface_cache(ctx, scope, None),
+        }?);
         cur.set_pos(cur.pos() + scope.tokens().len());
         let ranges = surface_ranges(cur)?;
         return Some(Ok(RollingBallSupportSurface {
@@ -856,25 +856,35 @@ fn variable_blend_value(
     }))
 }
 
+pub(super) const VARIABLE_BLEND_NAMES: &[&str] = &[
+    "var_blend_spl_sur",
+    "varblendsplsur",
+    "srf_srf_v_bl_spl_sur",
+    "srfsrfblndsur",
+    "crv_crv_v_bl_spl_sur",
+    "crvcrvblndsur",
+    "crv_srf_v_bl_spl_sur",
+    "crvsrfblndsur",
+    "sfcv_free_bl_spl_sur",
+    "sfcvfreeblndsur",
+];
+
+pub(super) struct ParsedVariableBlend {
+    pub(super) surface: DecodedProceduralSurface,
+    pub(super) current_cache_marker: Option<usize>,
+}
+
 pub(super) fn var_blend_spl_sur(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     reference_context: Option<&SubtypeTable>,
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
+) -> Option<Result<ParsedVariableBlend, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::VariableBlendCrossSection;
-    let names = [
-        "var_blend_spl_sur",
-        "varblendsplsur",
-        "srf_srf_v_bl_spl_sur",
-        "srfsrfblndsur",
-        "crv_crv_v_bl_spl_sur",
-        "crvcrvblndsur",
-        "crv_srf_v_bl_spl_sur",
-        "crvsrfblndsur",
-        "sfcv_free_bl_spl_sur",
-        "sfcvfreeblndsur",
-    ];
-    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(
+        ctx,
+        toks,
+        VARIABLE_BLEND_NAMES
+    )?);
     let subtype = match name {
         "var_blend_spl_sur" | "varblendsplsur" => {
             cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::VariableBlend
@@ -979,6 +989,7 @@ pub(super) fn var_blend_spl_sur(
     let shape_parameter = cur.take_f64()?;
     let shape_length = cur.take_f64()? * LEN_TO_MM;
     let shape_tail = cur.take_long()?;
+    let cache_marker = start.checked_add(cur.pos())?.checked_add(1)?;
     let RevisionSurfaceTail {
         cache,
         discontinuities,
@@ -1020,49 +1031,55 @@ pub(super) fn var_blend_spl_sur(
     };
     let post_pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, &mut cur)?).value();
     cur.at_scope_end().then_some(())?;
-    Some(Ok(DecodedProceduralSurface::revision(
-        DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(EmbeddedVariableBlend {
-            subtype,
-            revision,
-            sides,
-            slice: slice.curve,
-            slice_range: slice.parameter_range,
-            offsets,
-            radii,
-            cross_section,
-            u_range: [u_lower, u_upper],
-            v_lower,
-            shape_parameter,
-            shape_length,
-            shape_tail,
-            cache: match cache.into_form()? {
-                cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
-                    match std::num::NonZeroI64::new(shape_prefix) {
-                        Some(shape_prefix) => VariableBlendCache::Current {
-                            shape_prefix,
-                            fit_tolerance,
-                        },
-                        None => VariableBlendCache::Stale {},
-                    }
-                }
-                cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(parameterization) => {
-                    VariableBlendCache::Parameterization {
-                        shape_prefix,
-                        parameterization,
-                    }
-                }
-            },
-            discontinuities,
-            tail_flag,
-            tail_extensions,
-            secondary_curve,
-            convexity,
-            render_mode,
-            post_range,
-            post_curve,
-            post_pcurve,
-        })),
-    )))
+    let cache = match cache.into_form()? {
+        cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
+            match std::num::NonZeroI64::new(shape_prefix) {
+                Some(shape_prefix) => VariableBlendCache::Current {
+                    shape_prefix,
+                    fit_tolerance,
+                },
+                None => VariableBlendCache::Stale {},
+            }
+        }
+        cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(parameterization) => {
+            VariableBlendCache::Parameterization {
+                shape_prefix,
+                parameterization,
+            }
+        }
+    };
+    let current_cache_marker =
+        matches!(cache, VariableBlendCache::Current { .. }).then_some(cache_marker);
+    Some(Ok(ParsedVariableBlend {
+        current_cache_marker,
+        surface: DecodedProceduralSurface::revision(
+            DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(EmbeddedVariableBlend {
+                subtype,
+                revision,
+                sides,
+                slice: slice.curve,
+                slice_range: slice.parameter_range,
+                offsets,
+                radii,
+                cross_section,
+                u_range: [u_lower, u_upper],
+                v_lower,
+                shape_parameter,
+                shape_length,
+                shape_tail,
+                cache,
+                discontinuities,
+                tail_flag,
+                tail_extensions,
+                secondary_curve,
+                convexity,
+                render_mode,
+                post_range,
+                post_curve,
+                post_pcurve,
+            })),
+        ),
+    }))
 }
 
 fn vertex_blend_boundary(

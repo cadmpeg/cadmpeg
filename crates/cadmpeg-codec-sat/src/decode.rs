@@ -202,33 +202,36 @@ fn decode_acis_binary(
 }
 
 fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
-    let (text_header, branch, records, framing, unread) = if ctx.container_only() {
-        let (header, branch) = sat::parse_container(ctx, bytes).map_err(|failure| {
-            failure.into_codec_error(ctx, |error| {
-                unsupported_unframed(
-                    &StreamEvidence::Text(None),
-                    format!("text container does not frame: {error}"),
-                )
-            })
-        })?;
-        (header, branch, None, Vec::new(), None)
-    } else {
-        let stream = sat::parse(ctx, bytes).map_err(|failure| {
-            failure.into_codec_error(ctx, |error| {
-                unsupported_unframed(
-                    &StreamEvidence::Text(None),
-                    format!("text stream does not frame: {error}"),
-                )
-            })
-        })?;
-        (
-            stream.header,
-            stream.terminator,
-            Some(stream.records),
-            stream.framing,
-            stream.unread,
-        )
-    };
+    let (text_header, branch, records, framing, unread, concatenated_streams, unread_stream_layout) =
+        if ctx.container_only() {
+            let (header, branch) = sat::parse_container(ctx, bytes).map_err(|failure| {
+                failure.into_codec_error(ctx, |error| {
+                    unsupported_unframed(
+                        &StreamEvidence::Text(None),
+                        format!("text container does not frame: {error}"),
+                    )
+                })
+            })?;
+            (header, branch, None, Vec::new(), None, false, false)
+        } else {
+            let stream = sat::parse(ctx, bytes).map_err(|failure| {
+                failure.into_codec_error(ctx, |error| {
+                    unsupported_unframed(
+                        &StreamEvidence::Text(None),
+                        format!("text stream does not frame: {error}"),
+                    )
+                })
+            })?;
+            (
+                stream.header,
+                stream.terminator,
+                Some(stream.records),
+                stream.framing,
+                stream.unread,
+                stream.concatenated_streams,
+                stream.unread_stream_layout,
+            )
+        };
     let header = text_header.as_kernel_header(ctx)?;
     let mut attributes = BTreeMap::new();
     header_attributes(ctx, &header, branch.into(), &mut attributes)?;
@@ -306,6 +309,10 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     crate::loss::text_stream_losses(
         ctx,
         text_header.diagnostics.iter().chain(&framing),
+        unread
+            .as_ref()
+            .filter(|_| unread_stream_layout)
+            .map(|span| span.start),
         &mut result.body.losses,
     )?;
     let extensions =
@@ -316,6 +323,14 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
                 "ACIS base extension integers and class-specific tails have no neutral projection; shared entity fields decoded; complete stream retained"),
             "SAT record extension losses")?;
     }
+    if concatenated_streams {
+        ctx.push_vec(&mut result.body.losses,
+            SatLossCode::SourceConcatenatedStreamsRecovered.note(
+                "independently headed SAT streams use separate entity and subtype tables; references rebased; complete source retained"),
+            "SAT concatenated stream recovery loss")?;
+    }
+    let concatenated_span =
+        concatenated_streams.then_some(("sat:source:concatenated-streams#0", 0..bytes.len()));
     let extension_span = extensions.then_some(("sat:source:record-extensions#0", 0..bytes.len()));
     if legacy_context {
         ctx.push_vec(&mut result.body.losses,
@@ -346,7 +361,8 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
             .chain(unread_span)
             .chain(extension_span)
             .chain(legacy_span)
-            .chain(wire_span),
+            .chain(wire_span)
+            .chain(concatenated_span),
     )?;
     Ok(result)
 }
@@ -465,6 +481,9 @@ fn build_result(
         let code = if record.id().as_str().contains(":brep:tvertex#") {
             Some((SatLossCode::VertexToleranceUnresolved,
                 "evaluated vertex tolerance is not positive and finite; tolerance left unset; source record retained"))
+        } else if record.id().as_str().contains(":brep:tedge#") {
+            Some((SatLossCode::EdgeToleranceUnresolved,
+                "edge tolerance is not positive and finite; tolerance left unset; source record retained"))
         } else if record.id().as_str().contains(":brep:shell#") {
             Some((SatLossCode::TopologyShellUnprojected,
                 "shell has no admissible members or owner; shell omitted from region references; source record retained"))
@@ -512,6 +531,25 @@ fn build_result(
             "{} face(s) rest on procedural surface constructions without a decoded carrier",
             stats.unknown_surface_faces()
         )));
+    }
+    if let Some(count) = stats
+        .other_record_kinds
+        .get("cached-procedural-surface-untyped")
+    {
+        ctx.push_vec(
+            &mut losses,
+            SatLossCode::GeometryProceduralSurfaceUntyped.note(format!(
+                "{count} surface construction(s) are untyped; solved caches and source records retained"
+            )),
+            "SAT cached construction recovery losses",
+        )?;
+    }
+    if stats.invalid_use_curve_intervals() > 0 {
+        ctx.push_vec(&mut losses,
+            SatLossCode::GeometryUseCurveIntervalInvalid.note(format!(
+                "{} tolerant-coedge use curve(s) have decreasing carrier endpoints; use curves omitted; coedges and native intervals retained",
+                stats.invalid_use_curve_intervals()
+            )), "SAT use-curve recovery losses")?;
     }
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     coverage.record(ctx, crate::coverage::UNKNOWN_RECORDS, unknowns.len())?;

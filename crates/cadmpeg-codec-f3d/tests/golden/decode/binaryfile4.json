@@ -591,7 +591,7 @@
         "f3d:brep:entity#10": {
           "scope": "fields",
           "fields": {
-            "param_range": "derived"
+            "carrier.param_range": "derived"
           }
         },
         "f3d:brep:entity#19": {

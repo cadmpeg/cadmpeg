@@ -332,3 +332,40 @@ End-of-ACIS-data\n", if version < 107 { "" } else { "$-1 " });
         .unwrap();
     }
 }
+
+#[test]
+fn legacy_tolerant_edges_normalize_base_fields_and_length_tolerance() {
+    for version in [400, 500, 600] {
+        let payload = match version {
+            400 => "$-1 $1 $2 $3 $4 forward 0.02",
+            500 => "$-1 $1 0 $2 1 $3 $4 forward 7 unknown 0.02",
+            _ => "$-1 $1 0 $2 1 $3 $4 forward 7 unknown 0.02 8 9",
+        };
+        let source = format!("{version} 0 1 0\n1 T 4 ACIS 1 D\n2 0.01 0.001\ntedge-edge {payload} #\nEnd-of-ACIS-data\n");
+        crate::test_support::with_service_context(source.as_bytes(), |ctx| {
+            let parsed = crate::sat::parse(ctx, source.as_bytes()).unwrap();
+            let record = &parsed.records[0];
+            assert_eq!(record.ref_at(3), Some(1));
+            assert_eq!(record.ref_at(5), Some(2));
+            assert_eq!(record.ref_at(7), Some(3));
+            assert_eq!(record.ref_at(8), Some(4));
+            assert_eq!(record.chunk(9), Some(&Token::False));
+            if version == 400 {
+                assert_eq!(record.chunk(4), Some(&Token::False));
+                assert_eq!(record.chunk(6), Some(&Token::False));
+                // An absent continuity field leaves the tolerance after sense.
+                assert_eq!(record.chunk(10), Some(&Token::Double(0.004)));
+            } else {
+                assert_eq!(record.chunk(4), Some(&Token::Double(0.0)));
+                assert_eq!(record.chunk(6), Some(&Token::Double(1.0)));
+                assert_eq!(record.chunk(10), Some(&Token::Str("unknown".into())));
+                assert_eq!(record.chunk(11), Some(&Token::Double(0.004)));
+            }
+            if version == 600 {
+                assert_eq!(record.chunk(12), Some(&Token::Long(8)));
+                assert_eq!(record.chunk(13), Some(&Token::Long(9)));
+            }
+        })
+        .unwrap();
+    }
+}

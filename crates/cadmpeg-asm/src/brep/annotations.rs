@@ -6,7 +6,9 @@ use super::geometry::is_edge_record;
 use super::{id, AsmBrep, Carriers};
 use crate::ids::{brep_id, IdFormat};
 use crate::sab::Record;
-use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{AttributeId, ProceduralCurveId, ProceduralSurfaceId};
 use std::collections::HashMap;
 
@@ -72,6 +74,23 @@ pub(super) fn emit_annotation_records(
             "ASM annotation curve geometry index",
         )
     })?;
+    let surface_geometries = index_storage.with_storage(|| {
+        ctx.collect_hash_map(
+            out.surfaces
+                .iter()
+                .map(|surface| (surface.id.as_str(), &surface.geometry)),
+            "ASM annotation surface geometry index",
+        )
+    })?;
+    let ranged_edges = index_storage.with_storage(|| {
+        ctx.collect_hash_set(
+            out.edges
+                .iter()
+                .filter(|edge| edge.param_range().is_some())
+                .map(|edge| edge.id.as_str()),
+            "ASM annotation ranged edges",
+        )
+    })?;
     let emitted_ids = index_storage.with_storage(|| {
         ctx.collect_hash_set(
             out.bodies
@@ -131,19 +150,48 @@ pub(super) fn emit_annotation_records(
         if emitted_ids.contains(entity_id.as_str()) {
             let mut derived_fields = Vec::new();
             match record.head() {
-                "plane" => {
+                "plane"
+                    if matches!(
+                        surface_geometries.get(entity_id.as_str()),
+                        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)))
+                    ) =>
+                {
                     derived_fields.extend(["geometry.normal", "geometry.u_axis"]);
                 }
-                "cone" => {
+                "cone"
+                    if matches!(
+                        surface_geometries.get(entity_id.as_str()),
+                        Some(SurfaceGeometry::Solved(
+                            SolvedSurfaceGeometry::Cone(_) | SolvedSurfaceGeometry::Cylinder(_)
+                        ))
+                    ) =>
+                {
                     derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
                 }
-                "sphere" => {
+                "sphere"
+                    if matches!(
+                        surface_geometries.get(entity_id.as_str()),
+                        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)))
+                    ) =>
+                {
                     derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
                 }
-                "torus" => {
+                "torus"
+                    if matches!(
+                        surface_geometries.get(entity_id.as_str()),
+                        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)))
+                    ) =>
+                {
                     derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
                 }
-                "straight" => derived_fields.push("geometry.direction"),
+                "straight"
+                    if matches!(
+                        curve_geometries.get(entity_id.as_str()),
+                        Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
+                    ) =>
+                {
+                    derived_fields.push("geometry.direction");
+                }
                 "ellipse" => match curve_geometries.get(entity_id.as_str()) {
                     Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))) => {
                         derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
@@ -155,13 +203,13 @@ pub(super) fn emit_annotation_records(
                 },
                 _ => {}
             }
-            if is_edge_record(record) {
+            if is_edge_record(record) && ranged_edges.contains(entity_id.as_str()) {
                 if let Some(curve) = record
                     .ref_at(8)
                     .and_then(|reference| by_index.get(&reference))
                 {
                     if curve.head() == "ellipse" {
-                        derived_fields.push("param_range");
+                        derived_fields.push("carrier.param_range");
                     }
                 }
             }

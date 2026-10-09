@@ -3117,7 +3117,10 @@ fn support_slot_present(
         let Some(target) = table.span(index) else {
             return Ok(false);
         };
-        if crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, target, table).is_some() {
+        if crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, target, table)
+            .transpose()?
+            .is_some()
+        {
             return Ok(true);
         }
         return crate::nurbs::proc_surface::procedural_surface_resolving_refs(
@@ -3128,7 +3131,10 @@ fn support_slot_present(
         .transpose()
         .map(|decoded| decoded.is_some());
     }
-    if crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, scope, table).is_some() {
+    if crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, scope, table)
+        .transpose()?
+        .is_some()
+    {
         return Ok(true);
     }
     crate::nurbs::proc_surface::procedural_surface_resolving_refs(ctx, scope.tokens(), table)

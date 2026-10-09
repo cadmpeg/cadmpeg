@@ -192,6 +192,11 @@ pub(crate) fn inspect(
                     crate::loss::text_stream_losses(
                         ctx,
                         stream.header.diagnostics.iter().chain(&stream.framing),
+                        stream
+                            .unread
+                            .as_ref()
+                            .filter(|_| stream.unread_stream_layout)
+                            .map(|span| span.start),
                         &mut losses,
                     )?;
                     header_attributes(ctx, kernel, stream.terminator.into(), &mut attributes)?;

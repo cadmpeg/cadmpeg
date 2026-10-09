@@ -32,8 +32,12 @@ pub(crate) enum SatLossCode {
     GeometryFramedWithoutCarriers,
     /// A face rests on a procedural surface construction without a decoded carrier.
     GeometryProceduralSurfaceUntyped,
+    /// A tolerant-coedge use curve has decreasing carrier endpoints.
+    GeometryUseCurveIntervalInvalid,
     /// A tolerant vertex has no positive finite evaluated tolerance.
     VertexToleranceUnresolved,
+    /// Tolerant-edge tolerance cannot enter the positive neutral scalar.
+    EdgeToleranceUnresolved,
     /// A shell has no admissible member or owner.
     TopologyShellUnprojected,
     /// A standalone source face has no shell owner required by the IR.
@@ -58,6 +62,10 @@ pub(crate) enum SatLossCode {
     /// The stream was read with a grammar its own save-format declaration does
     /// not select.
     SourceDialectUnverified,
+    /// Independently headed text streams have separate local reference tables.
+    SourceConcatenatedStreamsRecovered,
+    /// A later text stream has an unreadable or different native record layout.
+    SourceStreamLayoutUnprojected,
 }
 
 impl SatLossCode {
@@ -66,7 +74,9 @@ impl SatLossCode {
     const ALL: &'static [SatLossCode] = &[
         Self::GeometryFramedWithoutCarriers,
         Self::GeometryProceduralSurfaceUntyped,
+        Self::GeometryUseCurveIntervalInvalid,
         Self::VertexToleranceUnresolved,
+        Self::EdgeToleranceUnresolved,
         Self::TopologyShellUnprojected,
         Self::TopologyFaceOwnerUnprojected,
         Self::TopologyWireOwnerUnprojected,
@@ -78,6 +88,8 @@ impl SatLossCode {
         Self::FramingTerminatorMissing,
         Self::FramingRecordsUnread,
         Self::SourceDialectUnverified,
+        Self::SourceConcatenatedStreamsRecovered,
+        Self::SourceStreamLayoutUnprojected,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -86,7 +98,9 @@ impl SatLossCode {
         match self {
             Self::GeometryFramedWithoutCarriers => "geometry.framed-without-carriers",
             Self::GeometryProceduralSurfaceUntyped => "geometry.procedural-surface-untyped",
+            Self::GeometryUseCurveIntervalInvalid => "geometry.use-curve-interval-invalid",
             Self::VertexToleranceUnresolved => "vertex.tolerance-unresolved",
+            Self::EdgeToleranceUnresolved => "edge.tolerance-unresolved",
             Self::TopologyShellUnprojected => "topology.shell-unprojected",
             Self::TopologyFaceOwnerUnprojected => "topology.face-owner-unprojected",
             Self::TopologyWireOwnerUnprojected => "topology.wire-owner-unprojected",
@@ -98,6 +112,8 @@ impl SatLossCode {
             Self::FramingTerminatorMissing => "framing.terminator-missing",
             Self::FramingRecordsUnread => "framing.records-unread",
             Self::SourceDialectUnverified => "source.kernel-dialect-unverified",
+            Self::SourceConcatenatedStreamsRecovered => "source.concatenated-streams-recovered",
+            Self::SourceStreamLayoutUnprojected => "source.stream-layout-unprojected",
         }
     }
 
@@ -107,6 +123,8 @@ impl SatLossCode {
         match self {
             Self::GeometryFramedWithoutCarriers => Severity::Blocking,
             Self::GeometryProceduralSurfaceUntyped
+            | Self::GeometryUseCurveIntervalInvalid
+            | Self::EdgeToleranceUnresolved
             | Self::VertexToleranceUnresolved
             | Self::TopologyShellUnprojected
             | Self::TopologyFaceOwnerUnprojected
@@ -118,7 +136,9 @@ impl SatLossCode {
             | Self::HeaderLengthUnitUnresolved
             | Self::FramingTerminatorMissing
             | Self::FramingRecordsUnread
-            | Self::SourceDialectUnverified => Severity::Warning,
+            | Self::SourceDialectUnverified
+            | Self::SourceConcatenatedStreamsRecovered
+            | Self::SourceStreamLayoutUnprojected => Severity::Warning,
         }
     }
 
@@ -127,15 +147,19 @@ impl SatLossCode {
             Self::GeometryFramedWithoutCarriers
             | Self::GeometryProceduralSurfaceUntyped
             | Self::HeaderToleranceUnresolved
+            | Self::GeometryUseCurveIntervalInvalid
+            | Self::EdgeToleranceUnresolved
             | Self::VertexToleranceUnresolved
             | Self::TopologyShellUnprojected
             | Self::TopologyFaceOwnerUnprojected
             | Self::TopologyWireOwnerUnprojected
             | Self::HeaderLengthUnitUnresolved
-            | Self::FramingRecordsUnread => LossTaxonomy::GeometryNotTransferred,
+            | Self::FramingRecordsUnread
+            | Self::SourceStreamLayoutUnprojected => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceRecordExtensionsUnprojected => LossTaxonomy::GeometryNotTransferred,
-            Self::HeaderMetadataNoncanonical
+            Self::SourceConcatenatedStreamsRecovered
+            | Self::HeaderMetadataNoncanonical
             | Self::FramingTerminatorMissing
             | Self::SourceRecordNameUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
         }
@@ -161,6 +185,7 @@ impl SatLossCode {
 pub(crate) fn text_stream_losses<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     diagnostics: impl IntoIterator<Item = &'a cadmpeg_asm::sat::StreamDiagnostic>,
+    unread_layout_offset: Option<usize>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_asm::sat::StreamDiagnosticKind;
@@ -170,6 +195,11 @@ pub(crate) fn text_stream_losses<'a>(
             StreamDiagnosticKind::Tolerance => SatLossCode::HeaderToleranceUnresolved,
             StreamDiagnosticKind::Units => SatLossCode::HeaderLengthUnitUnresolved,
             StreamDiagnosticKind::Terminator => SatLossCode::FramingTerminatorMissing,
+            StreamDiagnosticKind::Unread
+                if unread_layout_offset == Some(diagnostic.error.offset) =>
+            {
+                SatLossCode::SourceStreamLayoutUnprojected
+            }
             StreamDiagnosticKind::Unread => SatLossCode::FramingRecordsUnread,
         };
         let message = ctx.format_retained(
@@ -226,7 +256,9 @@ mod tests {
             [
                 "geometry.framed-without-carriers",
                 "geometry.procedural-surface-untyped",
+                "geometry.use-curve-interval-invalid",
                 "vertex.tolerance-unresolved",
+                "edge.tolerance-unresolved",
                 "topology.shell-unprojected",
                 "topology.face-owner-unprojected",
                 "topology.wire-owner-unprojected",
@@ -238,6 +270,8 @@ mod tests {
                 "framing.terminator-missing",
                 "framing.records-unread",
                 "source.kernel-dialect-unverified",
+                "source.concatenated-streams-recovered",
+                "source.stream-layout-unprojected",
             ]
         );
     }

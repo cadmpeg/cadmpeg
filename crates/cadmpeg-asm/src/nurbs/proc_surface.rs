@@ -4249,6 +4249,26 @@ fn t_spl_sur(
     cur.bump();
     let trailing_value = cur.take_long()?;
     cur.at_scope_end().then_some(())?;
+    let parameter_ranges = match &layout {
+        Layout::Legacy {
+            parameter_ranges, ..
+        } => *parameter_ranges,
+        Layout::Revision(form) => {
+            let bounds = form.support_bounds;
+            [
+                [bounds[0].unwrap_or(0.0), bounds[1].unwrap_or(0.0)],
+                [bounds[2].unwrap_or(0.0), bounds[3].unwrap_or(0.0)],
+            ]
+        }
+    };
+    if parameter_ranges
+        .iter()
+        .any(|range| cadmpeg_ir::topology::ParameterInterval::new(*range).is_err())
+    {
+        // Leave the construction untyped; face admission keeps its independent
+        // solved cache and retains the complete native record.
+        return None;
+    }
     Some(Ok(match layout {
         Layout::Legacy {
             cache_fit_tolerance,
@@ -4267,26 +4287,20 @@ fn t_spl_sur(
             })),
             Some(cache_fit_tolerance),
         ),
-        Layout::Revision(form) => {
-            let bounds = form.support_bounds;
-            DecodedProceduralSurface::revision(DecodedProceduralSurfaceDefinition::TSpline(
-                Box::new(EmbeddedTSplineSurface {
-                    parameter_ranges: [
-                        [bounds[0].unwrap_or(0.0), bounds[1].unwrap_or(0.0)],
-                        [bounds[2].unwrap_or(0.0), bounds[3].unwrap_or(0.0)],
-                    ],
-                    type_code,
-                    subtransform,
-                    trailing_value,
-                    discontinuities: propagate_resource!(copy_revision_discontinuities(
-                        ctx,
-                        &form.discontinuities
-                    )),
-                    discontinuity_flag: form.tail_flag,
-                    revision_form: Some(*form),
-                }),
-            ))
-        }
+        Layout::Revision(form) => DecodedProceduralSurface::revision(
+            DecodedProceduralSurfaceDefinition::TSpline(Box::new(EmbeddedTSplineSurface {
+                parameter_ranges,
+                type_code,
+                subtransform,
+                trailing_value,
+                discontinuities: propagate_resource!(copy_revision_discontinuities(
+                    ctx,
+                    &form.discontinuities
+                )),
+                discontinuity_flag: form.tail_flag,
+                revision_form: Some(*form),
+            })),
+        ),
     }))
 }
 
@@ -4788,7 +4802,10 @@ fn procedural_resolving_refs(
         .or_else(|| rot_spl_sur(ctx, toks, Some(table)))
         .or_else(|| off_spl_sur(ctx, toks, Some(table)))
         .or_else(|| cyl_spl_sur(ctx, toks, Some(table)))
-        .or_else(|| var_blend_spl_sur(ctx, toks, Some(table)))
+        .or_else(|| {
+            var_blend_spl_sur(ctx, toks, Some(table))
+                .map(|result| result.map(|parsed| parsed.surface))
+        })
         .or_else(|| vertex_blend_spl_sur(ctx, toks, Some(table)))
         .or_else(|| full_rb_blend_spl_sur(ctx, toks, table))
         .or_else(|| compact_rb_blend_spl_sur(ctx, toks))

@@ -54,6 +54,16 @@ pub(super) fn type_record(
         "edge" if save_format < 500 => &[&[R, R, R, R, Sense]],
         "edge" if save_format < 600 => &[&[R, D, R, D, R, R, Sense], &[R, D, R, D, R, R, Sense, S]],
         "edge" => &[&[R, D, R, D, R, R, Sense, S]],
+        "tedge" if save_format < 500 => &[&[R, R, R, R, Sense, DLen]],
+        "tedge" if save_format < 600 => &[
+            &[R, D, R, D, R, R, Sense, DLen],
+            &[R, D, R, D, R, R, Sense, S, DLen],
+        ],
+        "tedge" => &[
+            &[R, D, R, D, R, R, Sense, S, DLen],
+            &[R, D, R, D, R, R, Sense, S, DLen, L],
+            &[R, D, R, D, R, R, Sense, S, DLen, L, L],
+        ],
         "vertex" => &[&[R, R]],
         "tvertex" => &[&[R, R, DLenSentinel]],
         "point" => &[&[P]],
@@ -117,7 +127,7 @@ pub(super) fn type_record(
                             _ => return None,
                         },
                     );
-                } else if head == "edge"
+                } else if matches!(head, "edge" | "tedge")
                     && matches!(slot, S)
                     && matches!(cur.peek(), Some(Prim::Word(_)))
                 {
@@ -126,7 +136,7 @@ pub(super) fn type_record(
                 } else {
                     take_slot(&mut cur, *slot, &mut out)?;
                 }
-                if head == "edge" && save_format < 500 && index < 2 {
+                if matches!(head, "edge" | "tedge") && save_format < 500 && index < 2 {
                     // These saves carry no endpoint parameters. An absent
                     // marker is not a numeric parameter estimate.
                     cur.push_token(&mut out, Token::False);
@@ -216,7 +226,9 @@ pub(super) fn type_extended_record(
             cur.long()?;
             take_slot(&mut cur, R, &mut out)?;
             for slot in slots.get(3..)? {
-                if head == "edge" && matches!(slot, S) && matches!(cur.peek(), Some(Prim::Word(_)))
+                if matches!(head, "edge" | "tedge")
+                    && matches!(slot, S)
+                    && matches!(cur.peek(), Some(Prim::Word(_)))
                 {
                     let text = cur.word()?;
                     cur.push_text_token(&mut out, text, true);

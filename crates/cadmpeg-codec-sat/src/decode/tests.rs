@@ -919,3 +919,76 @@ point $-1 0 0 0#\npoint $-1 5 0 0#\nEnd-of-ACIS-data\n";
         Some(source.as_slice())
     );
 }
+
+#[test]
+fn omitted_use_curve_interval_has_a_sat_loss_code() {
+    use cadmpeg_asm::brep::AsmBrep;
+    use cadmpeg_asm::kernel_header::KernelHeader;
+    use std::collections::BTreeMap;
+    let bytes = text_sphere_stream(1.0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let stream = cadmpeg_asm::sat::parse(&ctx, &bytes).unwrap();
+    let header: KernelHeader = stream.header.as_kernel_header(&ctx).unwrap();
+    let evidence = super::StreamEvidence::Text(Some(super::TextEvidence {
+        branch: stream.terminator,
+        header: &header,
+    }));
+    let (matched, kernel) = super::layers(&evidence);
+    let mut graph = AsmBrep::default();
+    graph
+        .stats
+        .other_record_kinds
+        .insert("tcoedge-use-curve-invalid-interval".into(), 1);
+    let result = super::build_result(
+        &ctx,
+        Some(graph),
+        BTreeMap::new(),
+        &header,
+        Some(stream.terminator),
+        matched,
+        &kernel,
+    )
+    .unwrap();
+    assert!(result
+        .body
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::GeometryUseCurveIntervalInvalid.kind()));
+}
+
+#[test]
+fn invalid_edge_tolerance_has_a_loss_and_retains_its_source_record() {
+    for tolerance in [0, -1] {
+        let record = format!(
+            "tedge-edge $-1 -1 $-1 $-1 0 $-1 1 $-1 $-1 forward @7 unknown {tolerance} 0 0 #"
+        );
+        let source = String::from_utf8(text_sphere_stream(1.0))
+            .unwrap()
+            .replace("End-of-ASM-data", &format!("{record}\nEnd-of-ASM-data"));
+        let result =
+            cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+        assert_eq!(result.ir().model.faces.len(), 1);
+        assert!(
+            matches!(result.ir().model.surfaces[0].geometry.solved(), Some(SolvedSurfaceGeometry::Sphere(sphere)) if sphere.radius().get() == 25.0)
+        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == SatLossCode::EdgeToleranceUnresolved.kind()));
+        assert_eq!(
+            result
+                .source_fidelity()
+                .retained_record("sat:brep:tedge#6")
+                .unwrap()
+                .data(),
+            Some(record.as_bytes())
+        );
+    }
+}
