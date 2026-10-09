@@ -174,3 +174,89 @@ fn sketch_visibility_output_refuses_collection_limit() {
             && failure.operation == "f3d sketch visibility records")
     );
 }
+
+#[test]
+fn sketch_visibility_retains_only_numeric_output_rows() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use crate::records::sketch_placement::DesignSketchVisibility;
+
+    let (bytes, metadata) = visibility_stream();
+    let surviving = u64::try_from(4 * std::mem::size_of::<(u64, DesignSketchVisibility)>()).unwrap();
+    for retained in [surviving, surviving - 1] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = retained;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = crate::design::decode::sketch::decode_sketch_visibilities_in_stream(
+            &ctx, &bytes, &metadata,
+        );
+        if retained == surviving {
+            let rows = result.unwrap();
+            assert_eq!(rows.capacity(), 4);
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].0, ENTITY_SUFFIX);
+            assert_eq!(rows[0].1.stream_ordinal.get(), 1);
+            assert_eq!(rows[0].1.stream_ordinal_offset(), 65);
+            assert_eq!(rows[0].1.visible_offset(), 70);
+            assert!(rows[0].1.visible);
+            assert!(ctx.resource_refusal().is_none());
+        } else {
+            let CodecError::ResourceLimit(limit) = result.err().unwrap() else {
+                panic!("expected original visibility retained refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.used, 0);
+            assert_eq!(limit.additional, surviving);
+            assert_eq!(limit.limit, retained);
+            assert_eq!(limit.operation, "f3d sketch visibility records");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
+    }
+}
+
+#[test]
+fn skipped_sketch_visibility_version_retains_no_frames() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let (bytes, mut metadata) = visibility_stream();
+    metadata.types[0].version = CURRENT_SKETCH_CONTAINER_VERSION - 1;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let rows = crate::design::decode::sketch::decode_sketch_visibilities_in_stream(
+        &ctx, &bytes, &metadata,
+    ).unwrap();
+    assert!(rows.is_empty());
+    assert_eq!(rows.capacity(), 0);
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn sketch_visibility_registration_diagnostic_is_outside_frame_scope() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (bytes, mut metadata) = visibility_stream();
+    metadata.types[0].module = "wrong".into();
+    let error = decode_sketch_visibilities_in_stream(&bytes, &metadata).err().unwrap();
+    assert!(matches!(error, CodecError::Malformed(message)
+        if message == "F3D sketch container 201 has incompatible registration metadata"));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::design::decode::sketch::decode_sketch_visibilities_in_stream(
+        &ctx, &bytes, &metadata,
+    ).err().unwrap();
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected original registration diagnostic refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.used, 0);
+    assert_eq!(limit.limit, 0);
+    assert_eq!(limit.operation, "f3d Design diagnostic");
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}
