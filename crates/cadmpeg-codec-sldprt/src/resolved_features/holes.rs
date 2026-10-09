@@ -1,5 +1,7 @@
 //! Hole construction, bore topology and hole axis projection.
 
+mod thread_history;
+
 use super::compact_reference_planes::{
     compact_profile_component_plane_frame, CompactReferencePlaneIndex,
 };
@@ -1167,101 +1169,72 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
     const OPERATION: &str = "enrich SLDPRT cosmetic thread diameters";
     let mut source_items = histories.iter_mut();
     while let Some(history) = ctx.next_charged(&mut source_items, OPERATION)? {
-        let mut history_storage = ctx.reserve_scoped(0, OPERATION)?;
-        let (records, _records_storage) = ctx.unique_index(
-            history
-                .features
-                .iter()
-                .map(|feature| (feature.id.as_str(), feature)),
-            "index SLDPRT hole profile records",
-        )?;
-        let mut features_by_id = HashMap::new();
-        let mut features_by_source = BTreeMap::new();
-        let mut source_items = history.features.iter();
-        while let Some(feature) = ctx.next_charged(&mut source_items, OPERATION)? {
-            history_storage.with_storage(|| {
-                ctx.insert_hash_map(&mut features_by_id, feature.id.as_str(), feature, OPERATION)
-            })?;
-            if let Some(source) = feature.source_id {
-                history_storage.with_storage(|| {
-                    ctx.insert_btree_map(&mut features_by_source, source, feature, OPERATION)
-                })?;
-            }
-        }
         let mut candidates_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut candidates = HashMap::<String, Option<f64>>::new();
-        let mut source_items = lanes.iter();
-        while let Some(lane) = ctx.next_charged(&mut source_items, OPERATION)? {
-            let mut source_items = lane.surface_selections.iter();
-            while let Some(selection) = ctx.next_charged(&mut source_items, OPERATION)? {
-                let Some(thread) = ctx.get_hash_map(
-                    &features_by_id,
-                    selection.feature_ref.as_str(),
-                    "resolve SLDPRT holes keys",
-                )?
-                else {
-                    continue;
-                };
-                if classify(thread) != Some(FeatureClass::CosmeticThread) {
-                    continue;
-                }
-                let mut diameter = None;
-                let mut ambiguous = false;
-                let mut producers = selection
-                    .producer_feature_refs
-                    .iter()
-                    .chain(selection.terminal_feature_ref.iter());
-                while let Some(producer) = ctx.next_charged(&mut producers, OPERATION)? {
-                    let Some(producer) = ctx
-                        .get_hash_map(
-                            &features_by_id,
-                            producer.as_str(),
-                            "resolve SLDPRT holes keys",
+        {
+            let mut lookups = thread_history::ThreadHistoryLookups::new(ctx, &history.features)?;
+            let mut source_items = lanes.iter();
+            while let Some(lane) = ctx.next_charged(&mut source_items, OPERATION)? {
+                let mut source_items = lane.surface_selections.iter();
+                while let Some(selection) = ctx.next_charged(&mut source_items, OPERATION)? {
+                    let Some(thread) = lookups.by_id(selection.feature_ref.as_str())?
+                    else {
+                        continue;
+                    };
+                    if classify(thread) != Some(FeatureClass::CosmeticThread) {
+                        continue;
+                    }
+                    let mut diameter = None;
+                    let mut ambiguous = false;
+                    let mut producers = selection
+                        .producer_feature_refs
+                        .iter()
+                        .chain(selection.terminal_feature_ref.iter());
+                    while let Some(producer) = ctx.next_charged(&mut producers, OPERATION)? {
+                        let Some(producer) = lookups.by_id(producer.as_str())?
+                        else {
+                            continue;
+                        };
+                        let Some(value) = crate::history::project::solid::threaded_hole_major_diameter(
+                            ctx,
+                            producer,
+                            |key| lookups.profile(key),
                         )?
-                        .copied()
-                    else {
+                        else {
+                            continue;
+                        };
+                        if let Some(existing) = diameter {
+                            if f64::to_bits(existing) != value.to_bits() {
+                                ambiguous = true;
+                                break;
+                            }
+                        } else {
+                            diameter = Some(value);
+                        }
+                    }
+                    if ambiguous {
+                        continue;
+                    }
+                    let Some(diameter) = diameter else {
                         continue;
                     };
-                    let Some(value) = crate::history::project::solid::threaded_hole_major_diameter(
-                        ctx,
-                        producer,
-                        &features_by_source,
-                        &records,
-                    )?
-                    else {
-                        continue;
-                    };
-                    if let Some(existing) = diameter {
-                        if f64::to_bits(existing) != value.to_bits() {
-                            ambiguous = true;
-                            break;
+                    if let Some(candidate) =
+                        ctx.get_mut_hash_map(&mut candidates, &thread.id, "resolve SLDPRT holes keys")?
+                    {
+                        if candidate.is_some_and(|value| value.to_bits() != diameter.to_bits()) {
+                            *candidate = None;
                         }
                     } else {
-                        diameter = Some(value);
+                        candidates_storage.with_storage(|| {
+                            let identity = ctx.copy_retained_text(&thread.id, OPERATION)?;
+                            ctx.insert_hash_map(
+                                &mut candidates,
+                                identity,
+                                Some(diameter),
+                                "resolve SLDPRT holes keys",
+                            )
+                        })?;
                     }
-                }
-                if ambiguous {
-                    continue;
-                }
-                let Some(diameter) = diameter else {
-                    continue;
-                };
-                if let Some(candidate) =
-                    ctx.get_mut_hash_map(&mut candidates, &thread.id, "resolve SLDPRT holes keys")?
-                {
-                    if candidate.is_some_and(|value| value.to_bits() != diameter.to_bits()) {
-                        *candidate = None;
-                    }
-                } else {
-                    candidates_storage.with_storage(|| {
-                        let identity = ctx.copy_retained_text(&thread.id, OPERATION)?;
-                        ctx.insert_hash_map(
-                            &mut candidates,
-                            identity,
-                            Some(diameter),
-                            "resolve SLDPRT holes keys",
-                        )
-                    })?;
                 }
             }
         }
