@@ -792,6 +792,27 @@ fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
         && json_bool(fields, "locked") == Some(false)
         && json_array_empty(fields, "rendering_materials")
         && json_array_empty_or_missing(fields, "per_viewport_settings")
+        && ["color", "plot_color"].into_iter().all(|key| {
+            fields
+                .get(key)
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|rgba| {
+                    rgba.len() == 4
+                        && rgba.iter().all(|channel| channel.as_u64() == Some(0))
+                })
+        })
+        && fields.get("plot_weight_mm").and_then(serde_json::Value::as_f64) == Some(0.0)
+        && [
+            "parent_uuid",
+            "expanded",
+            "description",
+            "iges_level",
+            "display_material_uuid",
+            "clipping_planes_enabled",
+            "visible_in_new_details",
+        ]
+        .into_iter()
+        .all(|key| fields.get(key).is_none_or(serde_json::Value::is_null))
 }
 
 fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
