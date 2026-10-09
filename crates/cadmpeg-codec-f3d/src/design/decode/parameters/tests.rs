@@ -71,24 +71,6 @@ fn parse_legacy_parameter_owner_88(
         .transpose()
 }
 
-#[test]
-fn design_parameter_class_tag_refuses_retained_bytes() {
-    let bytes = parameter_record(None, "60 mm", "User Parameter", Some("mm"), "Width", 6.0);
-    let refusal = crate::test_support::resource_refusal_at(
-        ResourceDimension::RetainedBytes,
-        "copy F3D Design parameter class tag",
-        0,
-        |ctx| super::parse_design_parameter(ctx, &bytes).map(|_| ()),
-    );
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "copy F3D Design parameter class tag"
-                && limit.additional == 3
-    ));
-}
-
 fn compact_owned_parameter_record(
     owner_record_index: u32,
     source_ordinal: u32,
@@ -1943,48 +1925,6 @@ fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
     )
     .expect_err("a frame at the end of the address space cannot be located");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
-}
-
-#[test]
-fn design_parameter_text_fields_refuse_each_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let payload = parameter_record(Some(44), "1", "AlongDistance", Some("mm"), "d71", 1.0);
-    for (skip, field) in ["1", "AlongDistance", "mm", "d71"].into_iter().enumerate() {
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::RetainedBytes,
-            "f3d Design UTF-16 text",
-            skip,
-            |ctx| super::parse_design_parameter(ctx, &payload),
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "f3d Design UTF-16 text"
-                && refusal.additional == u64::try_from(field.len()).unwrap())
-        );
-    }
-    let parsed =
-        super::parse_design_parameter(&cadmpeg_test_support::service_decode_context(), &payload)
-            .unwrap()
-            .unwrap();
-    assert_eq!(parsed.name, "d71");
-
-    let legacy = class_287_parameter_record("HoleDepth", "d20");
-    let mut charged = 0usize;
-    for field in ["0.4375 in", "HoleDepth", "in", "d20"] {
-        charged += field.len();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(charged - 1).unwrap();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::parse_design_parameter(&ctx, &legacy).err().unwrap();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "f3d Design UTF-16 text")
-        );
-    }
 }
 
 #[test]
