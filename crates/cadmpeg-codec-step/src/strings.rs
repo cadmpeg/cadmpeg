@@ -156,17 +156,21 @@ fn decode_chars(
                             offset: start + error.valid_up_to(),
                             message: "invalid UTF-8 direct string bytes".into(),
                         })?;
-                    for character in ctx
-                        .admit_iter(text, "STEP decode chars traversal")
-                        .map_err(cadmpeg_core::CodecError::from)?
-                    {
+                    let mut characters = text.chars();
+                    ctx.charge_work(0, "STEP decode chars traversal")?;
+                    while !characters.as_str().is_empty() {
+                        let character = ctx
+                            .next_charged(&mut characters, "STEP decode chars traversal")?
+                            .ok_or_else(|| CodecError::malformed("STEP string character source ended early"))?;
                         emit(character)?;
                     }
                 } else {
-                    for byte in ctx
-                        .admit_iter(direct, "STEP decode chars view traversal")
-                        .map_err(cadmpeg_core::CodecError::from)?
-                    {
+                    let mut bytes = direct.iter();
+                    ctx.charge_work(0, "STEP decode chars view traversal")?;
+                    for _ in 0..bytes.len() {
+                        let byte = ctx
+                            .next_charged(&mut bytes, "STEP decode chars view traversal")?
+                            .ok_or_else(|| CodecError::malformed("STEP string byte source ended early"))?;
                         emit(char::from(*byte))?;
                     }
                 }
