@@ -151,13 +151,13 @@ fn requested_placement_recipe_admits_each_actual_source_node_before_following_it
     let index = ModelIndex::build(&ir, StandardIndex);
     let geometry = &ir.model.surfaces[0].geometry;
     let first = Mapping {
-        source: Source::Stored(geometry, 0.25, 0.5), distance: Ok(0.0), reversed: [false, false], orientation: Ok(1.0),
+        source: Source::Stored(geometry, 0.25, 0.5), distance: 0.0, reversed: [false, false], orientation: 1.0,
     };
     let second = Mapping {
-        source: Source::Replica(&first, Transform::identity(), Some(1.0)), distance: Ok(0.0), reversed: [false, false], orientation: Ok(1.0),
+        source: Source::Replica(&first, Transform::identity()), distance: 0.0, reversed: [false, false], orientation: 1.0,
     };
     let third = Mapping {
-        source: Source::Replica(&second, Transform::identity(), Some(1.0)), distance: Ok(0.0), reversed: [false, false], orientation: Ok(1.0),
+        source: Source::Replica(&second, Transform::identity()), distance: 0.0, reversed: [false, false], orientation: 1.0,
     };
     assert_eq!(ir.model.surfaces[0].id, base);
     for cap in [0, 1, 2] {

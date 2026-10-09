@@ -111,3 +111,5 @@ fn reversed_stored_nurbs_zero_offset_identity_and_original_fuse_remain_exact() {
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
     }
 }
+
+mod replica;

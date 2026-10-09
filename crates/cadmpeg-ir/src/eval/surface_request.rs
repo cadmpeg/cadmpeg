@@ -77,14 +77,14 @@ impl HigherPartials {
 enum Source<'a> {
     Stored(&'a SurfaceGeometry, f64, f64),
     Procedural(&'a ProceduralSurfaceDefinition, Option<[FiniteReal; 2]>, f64, f64),
-    Replica(&'a Mapping<'a>, Transform, Option<f64>),
+    Replica(&'a Mapping<'a>, Transform),
 }
 
 struct Mapping<'a> {
     source: Source<'a>,
-    distance: Result<f64, EvaluationFailure<Point3>>,
+    distance: f64,
     reversed: [bool; 2],
-    orientation: Result<f64, EvaluationFailure<Point3>>,
+    orientation: f64,
 }
 
 impl Mapping<'_> {
@@ -94,14 +94,7 @@ impl Mapping<'_> {
         index: &ModelIndex<'_>,
         request: SurfaceRequest,
     ) -> Result<RequestedJet, EvaluationFailure<Point3>> {
-        // An invalid deferred orientation must first reach its source and
-        // placement, as the original Replica arm does. Do not ask for an
-        // unneeded third when that segment cannot form a distance.
-        let source_order = match self.distance {
-            Ok(distance) if distance != 0.0 => request.support_order(),
-            Err(_) => SurfaceRequest::First,
-            Ok(_) => request,
-        };
+        let source_order = if self.distance != 0.0 { request.support_order() } else { request };
         let source = match &self.source {
             Source::Stored(geometry, u, v) => {
                 let scratch = decode::Scratch::new(admission);
@@ -123,27 +116,20 @@ impl Mapping<'_> {
                     _ => Err(EvaluationFailure::NoValue),
                 }
             }
-            Source::Replica(source, transform, orientation) => {
+            Source::Replica(source, transform) => {
                 // The borrowed recipe follows one actual placement node here.
                 // Carrier lookup was admitted during construction; this second
                 // pointer walk is separate input-dependent work.
                 admission.independent_cost(Some(1))?;
                 admission.work(1, "IR surface placement source traversal")
                     .map_err(EvaluationFailure::ResourceLimit)?;
-                // A singular placement cannot publish an oriented chart. Its
-                // source point/first still run before that error; an offset's
-                // missing second or third does not affect this barrier.
-                let source_order = if orientation.is_none() { SurfaceRequest::First } else { source_order };
                 let source = source.evaluate(admission, index, source_order)?;
                 let jet = super::placed_jet(*transform, Ok(source.jet))?;
                 let higher = source.higher.placed(*transform);
-                // The pure orientation result is deferred until the existing
-                // source-offset and placed-point/partial barriers have run.
-                orientation.ok_or(EvaluationFailure::NoValue)?;
                 Ok(RequestedJet { jet, higher })
             }
         }?;
-        let distance = self.distance?;
+        let distance = self.distance;
         if distance == 0.0 {
             return Ok(source);
         }
@@ -192,13 +178,15 @@ fn with_mapping<R>(
         Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => with_mapping(admission, index, support, u, v, consume),
         Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
             with_mapping(admission, index, source, u, v, &mut |source| {
-                let orientation = transform.orientation();
-                let combined = source.orientation.and_then(|sign| Ok(sign * orientation.ok_or(EvaluationFailure::NoValue)?));
+                // The point owner's successful Replica normal is the placed
+                // local chart cross. Placement already changes that cross;
+                // only the delayed parameter signs remain to be applied.
+                let orientation = if source.reversed[0] == source.reversed[1] { 1.0 } else { -1.0 };
                 consume(Mapping {
-                    source: Source::Replica(&source, *transform, orientation),
-                    distance: Ok(0.0),
+                    source: Source::Replica(&source, *transform),
+                    distance: 0.0,
                     reversed: source.reversed,
-                    orientation: combined,
+                    orientation,
                 })
             })
         }
@@ -208,19 +196,19 @@ fn with_mapping<R>(
             with_mapping(admission, index, payload.support(), support_u, support_v, &mut |mut support| {
                 support.reversed[0] ^= u_derivative < 0.0;
                 support.reversed[1] ^= v_derivative < 0.0;
-                support.orientation = support.orientation.map(|sign| sign * u_derivative * v_derivative);
+                support.orientation *= u_derivative * v_derivative;
                 consume(support)
             })
         }
         Some(ProceduralSurfaceDefinition::ParallelOffset(payload)) => {
             with_mapping(admission, index, payload.support(), u, v, &mut |mut support| {
-                support.distance = support.distance.and_then(|distance| Ok(distance + payload.distance().get() * support.orientation?));
+                support.distance += payload.distance().get() * support.orientation;
                 consume(support)
             })
         }
         Some(ProceduralSurfaceDefinition::Offset(payload)) => {
             with_mapping(admission, index, payload.support(), u, v, &mut |mut support| {
-                support.distance = support.distance.and_then(|distance| Ok(distance + payload.distance().get() * support.orientation?));
+                support.distance += payload.distance().get() * support.orientation;
                 consume(support)
             })
         }
@@ -230,7 +218,7 @@ fn with_mapping<R>(
             | ProceduralSurfaceDefinition::Revolution(_)
             | ProceduralSurfaceDefinition::Ruled { .. }
             | ProceduralSurfaceDefinition::Sum(_))) => consume(Mapping {
-                source: Source::Procedural(definition, interval, u, v), distance: Ok(0.0), reversed: [false, false], orientation: Ok(1.0),
+                source: Source::Procedural(definition, interval, u, v), distance: 0.0, reversed: [false, false], orientation: 1.0,
             }),
         _ => {
             // Match the directly stored point owner's oriented normal. The
@@ -241,8 +229,8 @@ fn with_mapping<R>(
                     if nurbs.normal_reversed()
             );
             consume(Mapping {
-                source: Source::Stored(&carrier.geometry, u, v), distance: Ok(0.0),
-                reversed: [false, false], orientation: Ok(if reversed { -1.0 } else { 1.0 }),
+                source: Source::Stored(&carrier.geometry, u, v), distance: 0.0,
+                reversed: [false, false], orientation: if reversed { -1.0 } else { 1.0 },
             })
         },
     }
