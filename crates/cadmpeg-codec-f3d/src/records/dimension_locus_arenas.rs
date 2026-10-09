@@ -3,6 +3,8 @@ use cadmpeg_core::decode::DecodeContext;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
+const NONNULL_LOCUS_ERROR: &str = "design_dimension_locus_pairs requires two nonnull geometry loci and opaque_index";
+
 /// An arena containing only pairs of nonnull geometry loci with an opaque index.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -16,10 +18,25 @@ impl TryFrom<Vec<DesignDimensionLocusPair>> for DesignDimensionLocusPairs {
 
     fn try_from(pairs: Vec<DesignDimensionLocusPair>) -> Result<Self, Self::Error> {
         if pairs.iter().any(|pair| pair.opaque_index().is_none()) {
-            return Err(
-                "design_dimension_locus_pairs requires two nonnull geometry loci and opaque_index"
-                    .into(),
-            );
+            return Err(NONNULL_LOCUS_ERROR.into());
+        }
+        Ok(Self(pairs))
+    }
+}
+
+impl DesignDimensionLocusPairs {
+    /// Validate the reached pairs under the caller's admission policy.
+    pub(crate) fn from_pairs_charged(
+        ctx: &DecodeContext<'_>,
+        pairs: Vec<DesignDimensionLocusPair>,
+    ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+        const OPERATION: &str = "validate F3D nonnull locus pairs";
+        ctx.charge_work(0, OPERATION)?;
+        if !pairs.is_empty()
+            && ctx.any_by(&pairs, |pair| Ok(pair.opaque_index().is_none()), OPERATION)?
+        {
+            let message = ctx.copy_retained_text(NONNULL_LOCUS_ERROR, OPERATION)?;
+            return Err(cadmpeg_ir::NativeConvertError::ConversionMessage(message));
         }
         Ok(Self(pairs))
     }
@@ -51,7 +68,7 @@ impl<'a> IntoIterator for &'a DesignDimensionLocusPairs {
 /// An arena containing only null-first geometry pairs without an opaque index.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
-    try_from = "Vec<dimension_null_locus_wire::Entry>",
+    from = "Vec<dimension_null_locus_wire::Entry>",
     into = "Vec<dimension_null_locus_wire::Wire>"
 )]
 pub(crate) struct DesignDimensionNullLocusPairs(Vec<DesignDimensionLocusPair>);
@@ -67,15 +84,9 @@ impl TryFrom<Vec<DesignDimensionLocusPair>> for DesignDimensionNullLocusPairs {
     }
 }
 
-impl TryFrom<Vec<dimension_null_locus_wire::Entry>> for DesignDimensionNullLocusPairs {
-    type Error = String;
-
-    fn try_from(entries: Vec<dimension_null_locus_wire::Entry>) -> Result<Self, Self::Error> {
-        entries
-            .into_iter()
-            .map(|entry| entry.0)
-            .collect::<Vec<_>>()
-            .try_into()
+impl From<Vec<dimension_null_locus_wire::Entry>> for DesignDimensionNullLocusPairs {
+    fn from(entries: Vec<dimension_null_locus_wire::Entry>) -> Self {
+        Self(entries.into_iter().map(dimension_null_locus_wire::Entry::into_pair).collect())
     }
 }
 
@@ -85,10 +96,10 @@ impl DesignDimensionNullLocusPairs {
         entries: Vec<dimension_null_locus_wire::Entry>,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let pairs = ctx.collect_vec(
-            entries.into_iter().map(|entry| entry.0),
+            entries.into_iter().map(dimension_null_locus_wire::Entry::into_pair),
             "load F3D null locus pairs",
         )?;
-        Self::try_from(pairs).map_err(cadmpeg_ir::NativeConvertError::InvalidCollection)
+        Ok(Self(pairs))
     }
 }
 

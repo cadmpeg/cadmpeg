@@ -1506,10 +1506,10 @@ impl F3dNative {
                 "design_dimension_presentation_frames"
             ),
             design_dimension_locus_groups: read_arena!("design_dimension_locus_groups"),
-            design_dimension_locus_pairs: DesignDimensionLocusPairs::try_from(read_arena!(
-                "design_dimension_locus_pairs"
-            ))
-            .map_err(<serde_json::Error as serde::de::Error>::custom)?,
+            design_dimension_locus_pairs: DesignDimensionLocusPairs::from_pairs_charged(
+                ctx,
+                read_arena!("design_dimension_locus_pairs"),
+            )?,
             design_dimension_null_locus_pairs: {
                 DesignDimensionNullLocusPairs::from_entries_charged(ctx, null_locus_entries)?
             },

@@ -100,9 +100,22 @@ impl From<&DesignDimensionLocusPair> for Wire {
     }
 }
 
+/// A decoded wire entry whose first locus is null and whose second is nonnull.
 #[derive(Deserialize)]
 #[serde(try_from = "Wire")]
-pub(crate) struct Entry(pub(crate) DesignDimensionLocusPair);
+pub(crate) struct Entry(DesignDimensionLocusPair);
+
+impl Entry {
+    pub(super) fn into_pair(self) -> DesignDimensionLocusPair {
+        self.0
+    }
+
+    #[cfg(test)]
+    pub(super) fn from_null_pair_for_test(pair: DesignDimensionLocusPair) -> Self {
+        assert!(pair.opaque_index().is_none());
+        Self(pair)
+    }
+}
 
 impl TryFrom<Wire> for Entry {
     type Error = String;
