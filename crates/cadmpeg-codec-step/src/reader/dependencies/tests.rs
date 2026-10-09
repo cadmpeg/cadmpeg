@@ -371,7 +371,7 @@ fn caller_composition_binds_annex_j_style_target_after_resource_checks() {
         }
     );
     assert_eq!(
-        root.records()[&5].partials[0].parameters,
+        root.records()[&5].partials[0].parameters.as_slice(),
         vec![crate::parse::Value::Reference(10)]
     );
     assert_eq!(
@@ -379,7 +379,7 @@ fn caller_composition_binds_annex_j_style_target_after_resource_checks() {
         crate::parse::Value::Reference(12)
     );
     assert_eq!(
-        target.records()[&11].partials[0].parameters,
+        target.records()[&11].partials[0].parameters.as_slice(),
         vec![crate::parse::Value::Reference(20)]
     );
 

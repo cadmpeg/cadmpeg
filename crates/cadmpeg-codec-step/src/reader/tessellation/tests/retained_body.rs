@@ -27,6 +27,7 @@ fn decode_with_body(policy: DecodePolicy) -> Result<CadIr, CodecError> {
     )?;
     let geometry = super::super::super::geometry::decode(&exchange, &mut ir, &topology_ctx)
         .expect("resource allocation did not fail")
+        .0
         .value;
     let index = super::super::super::index::CarrierIndex::from_ir(&ir, &topology_ctx)?;
     let mut topology =

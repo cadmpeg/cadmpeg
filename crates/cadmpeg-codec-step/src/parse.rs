@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generic Part 21 record-graph parser.
 //!
-//! The parser accepts only source deviations whose value remains unambiguous:
-//! the deviation must be recoverable without guessing, observed in a real
-//! producer, represented by its own diagnostic kind, and rejectable by strict
-//! decode policy. Ambiguous records and duplicate names remain parse errors.
+//! Recoverable defects omit bounded records and their dependents. A loss
+//! reports each omission, and exact source spans remain available for fidelity.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
@@ -27,7 +25,11 @@ use crate::parse::schema_identifier::{
 };
 
 mod metadata;
+mod parameters;
+mod recovery;
 pub(crate) mod schema_identifier;
+
+use self::parameters::{ParameterValues, RecordParameters};
 
 /// One parsed Part 21 parameter value.
 #[derive(Debug, Clone, PartialEq)]
@@ -126,7 +128,7 @@ pub(crate) struct PartialRecord {
     /// Uppercase standard or `!`-prefixed user-defined entity name.
     pub(crate) name: String,
     /// Explicit external-mapping parameters.
-    pub(crate) parameters: Vec<Value>,
+    pub(crate) parameters: RecordParameters,
 }
 
 pub(crate) mod partials {
@@ -134,27 +136,47 @@ pub(crate) mod partials {
 
     /// The nonempty partial population of one entity instance.
     #[derive(Debug, Clone, PartialEq)]
-    pub(crate) struct RecordPartials(pub(super) Vec<PartialRecord>);
+    pub(crate) struct RecordPartials(Storage);
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum Storage {
+        One(PartialRecord),
+        Many(Vec<PartialRecord>),
+    }
 
     impl RecordPartials {
-        /// Builds the population of one simple entity instance.
-        #[cfg(test)]
+        /// Builds the inline population of one leaf without a heap collection.
         pub(crate) fn single(first: PartialRecord) -> Self {
-            Self(vec![first])
+            Self(Storage::One(first))
         }
 
-        pub(super) fn single_charged(
-            first: PartialRecord,
+        pub(super) fn push(
+            self,
+            next: PartialRecord,
             budget: &DecodeContext<'_>,
         ) -> Result<Self, ParseError> {
-            let mut records = Vec::new();
-            budget.push_vec(&mut records, first, "step_parse_record_partials")?;
-            Ok(Self(records))
+            let mut records = match self.0 {
+                Storage::One(first) => {
+                    let mut records = budget.collection_vec(2, "step_parse_record_partials")?;
+                    records.push(first);
+                    records.push(next);
+                    return Ok(Self(Storage::Many(records)));
+                }
+                Storage::Many(records) => records,
+            };
+            budget.push_vec(&mut records, next, "step_parse_record_partials")?;
+            Ok(Self(Storage::Many(records)))
+        }
+
+        pub(super) fn shrink_to_fit(&mut self) {
+            if let Storage::Many(records) = &mut self.0 {
+                records.shrink_to_fit();
+            }
         }
 
         /// The first partial record, which always exists.
         pub(crate) fn first(&self) -> &PartialRecord {
-            &self.0[0]
+            &self[0]
         }
     }
 
@@ -162,13 +184,19 @@ pub(crate) mod partials {
         type Target = [PartialRecord];
 
         fn deref(&self) -> &Self::Target {
-            &self.0
+            match &self.0 {
+                Storage::One(first) => std::slice::from_ref(first),
+                Storage::Many(records) => records,
+            }
         }
     }
 
     impl std::ops::DerefMut for RecordPartials {
         fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.0
+            match &mut self.0 {
+                Storage::One(first) => std::slice::from_mut(first),
+                Storage::Many(records) => records,
+            }
         }
     }
 
@@ -187,6 +215,40 @@ pub(crate) mod partials {
 
         fn into_iter(self) -> Self::IntoIter {
             self.iter_mut()
+        }
+    }
+    #[cfg(test)]
+    mod tests {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        use super::{ParseError, PartialRecord, RecordPartials};
+        use crate::parse::parameters::RecordParameters;
+        use crate::test_support::with_policy_context;
+
+        #[test]
+        fn one_partial_is_inline_and_a_second_leaf_admits_collection_storage() {
+            let partial = || PartialRecord {
+                name: String::from("ITEM"),
+                parameters: RecordParameters::default(),
+            };
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            with_policy_context(b"", &policy, |_, ctx| {
+                let parts = RecordPartials::single(partial());
+                assert_eq!(parts.len(), 1);
+                assert_eq!(parts.first().name, "ITEM");
+                assert!(
+                    matches!(parts.push(partial(), ctx), Err(ParseError::Resource(CodecError::ResourceLimit(refusal))) if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == "step_parse_record_partials")
+                );
+            });
+            policy.limits.max_collection_items = 2;
+            with_policy_context(b"", &policy, |_, ctx| {
+                let parts = RecordPartials::single(partial())
+                    .push(partial(), ctx)
+                    .expect("two complex leaves are admitted");
+                assert_eq!(parts.len(), 2);
+            });
         }
     }
 }
@@ -213,13 +275,13 @@ pub(crate) struct HeaderRecord {
     pub(crate) end: usize,
 }
 
-/// One DATA section and its ordered population.
+/// One DATA section and the source extent of its population.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DataSection {
     /// Edition-3 DATA section parameters.
     pub(crate) parameters: Vec<Value>,
-    /// Entity-instance names in source order.
-    pub(crate) records: Vec<u64>,
+    /// Half-open byte range of the DATA population, excluding ENDSEC.
+    pub(crate) span: Range<usize>,
 }
 
 /// One edition-3 ANCHOR binding.
@@ -282,6 +344,8 @@ pub(crate) struct Exchange {
     signatures: Vec<Range<usize>>,
     /// DATA instances indexed across every DATA section.
     records: BTreeMap<u64, RawRecord>,
+    /// Bounded exchange statements excluded from the interpreted graph.
+    omitted_spans: Vec<Range<usize>>,
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
     implementation_level: DeclaredImplementationLevel,
     entity_ids: EntityIndex,
@@ -349,6 +413,10 @@ impl Exchange {
         &self.records
     }
 
+    pub(crate) fn omitted_spans(&self) -> &[Range<usize>] {
+        &self.omitted_spans
+    }
+
     /// Header-admitted `FILE_SCHEMA` identifiers in source order.
     pub(crate) fn schema_identifiers(&self) -> impl Iterator<Item = &str> {
         self.schema_identifiers
@@ -412,6 +480,7 @@ impl Exchange {
         self.references.clear();
         self.data.clear();
         self.records.clear();
+        self.omitted_spans.clear();
         self.schema_identifiers.clear();
         self.entity_ids = EntityIndex::default();
         std::mem::take(&mut self.signatures)
@@ -487,6 +556,14 @@ pub(crate) enum ParseError {
 /// A recoverable deviation from canonical Part 21 source syntax.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParseDiagnosticKind {
+    /// A bounded instance or a dependent instance remains source-only.
+    RecordOmitted,
+    /// A bounded noncanonical prefix remains source-only.
+    PreambleOmitted,
+    /// Draft exchange records use the Part 21 instance grammar.
+    DraftExchangeGrammar,
+    /// EOF closes readable records without a complete exchange terminator.
+    EnvelopeIncomplete,
     /// Descriptive header metadata is nonconforming but readable.
     HeaderMetadataNoncanonical,
     /// A bounded presentation value remains source-only.
@@ -536,6 +613,7 @@ pub(crate) fn parse_inner(
         depth: 0,
         diagnostics: Vec::new(),
         omitted_entity_names: None,
+        defer_lexical_errors: false,
         budget,
     };
     parser.current = parser.lex_next()?;
@@ -559,6 +637,7 @@ struct Parser<'input, 'ctx, 'arena> {
     depth: usize,
     diagnostics: Vec<ParseDiagnostic>,
     omitted_entity_names: Option<(usize, NonZeroUsize)>,
+    defer_lexical_errors: bool,
     budget: &'ctx DecodeContext<'arena>,
 }
 
@@ -722,32 +801,53 @@ fn omitted_entity_name(partial: &PartialRecord) -> bool {
 
 impl Parser<'_, '_, '_> {
     fn exchange(mut self) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
-        self.name("ISO-10303-21")?;
+        let draft = self.lexer.is_draft();
+        let mut omitted_spans = Vec::new();
+        if let Some(offset) =
+            crate::codec::draft_exchange_offset(self.lexer.input()).filter(|&offset| offset != 0)
+        {
+            self.diagnostic(
+                0,
+                ParseDiagnosticKind::PreambleOmitted,
+                format_args!(
+                    "bounded prefix before the draft exchange omitted; exact source retained"
+                ),
+            )?;
+            self.budget
+                .push_vec(&mut omitted_spans, 0..offset, "step_omitted_record_spans")?;
+        }
+        if draft {
+            self.diagnostic(0, ParseDiagnosticKind::DraftExchangeGrammar, format_args!("pre-standard STEP/FILE_IDENTIFICATION exchange; DATA parsed with the Part 21 instance grammar, with draft @ assignments and !* comments"))?;
+        }
+        self.name(if draft { "STEP" } else { "ISO-10303-21" })?;
         self.punct(&TokenKind::Semicolon)?;
         self.name("HEADER")?;
-        self.punct(&TokenKind::Semicolon)?;
+        self.defer_lexical_errors = true;
         self.lexer.set_literal_admission(LiteralAdmission::Metadata);
+        self.punct(&TokenKind::Semicolon)?;
         let mut header = Vec::new();
-        while !self.peek_name("ENDSEC") {
-            let offset = self.current_offset();
-            let name = self.take_name()?;
-            let parameters = self.parameter_nesting(Self::parameters_inner)?;
-            self.punct(&TokenKind::Semicolon)?;
-            self.budget.push_vec(
-                &mut header,
-                HeaderRecord {
-                    name,
-                    parameters,
-                    offset,
-                    end: self.previous_end(),
-                },
-                "step_parse_header_records",
-            )?;
+        while !self.peek_name("ENDSEC") && self.current.is_some() {
+            if let Some(record) = self.recover_header_record(&mut omitted_spans)? {
+                self.budget
+                    .push_vec(&mut header, record, "step_parse_header_records")?;
+            }
         }
+        self.defer_lexical_errors = false;
         self.lexer.set_literal_admission(LiteralAdmission::Required);
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
-        let (header_admission, header_diagnostics) = match validate_header(&header, self.budget) {
+        let admission = if draft && !header.iter().any(|record| record.name == "FILE_SCHEMA") {
+            Ok((
+                HeaderAdmission {
+                    implementation_level: DeclaredImplementationLevel::new(String::new()),
+                    schema_identifiers: Vec::new(),
+                },
+                Vec::new(),
+            ))
+        } else {
+            validate_header(&header, self.budget)
+        };
+        let (header_admission, header_diagnostics) = match admission {
             Ok(admitted) => admitted,
             Err(ValidationError::Invalid(message)) => return self.err(message),
             Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
@@ -793,7 +893,7 @@ impl Parser<'_, '_, '_> {
         let mut anchors = Vec::new();
         if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
             if self.peek_name("ANCHOR") || self.peek_name("REFERENCE") {
-                return self.err(&format!("{level} forbids ANCHOR and REFERENCE sections"));
+                self.diagnostic(self.current_offset(), ParseDiagnosticKind::ImplementationLevelUnverified, format_args!("{level} forbids ANCHOR and REFERENCE sections; readable sections parsed with the 4;3 section grammar"))?;
             }
         }
         if self.peek_name("ANCHOR") {
@@ -896,6 +996,7 @@ impl Parser<'_, '_, '_> {
         }
         let mut data: Vec<DataSection> = Vec::new();
         let mut records = BTreeMap::new();
+        let mut ambiguous = BTreeSet::new();
         let mut data_name_storage = self.budget.reserve_scoped(0, "step data name lookup")?;
         let mut data_section_names = BTreeSet::new();
         while self.peek_name("DATA") {
@@ -937,32 +1038,26 @@ impl Parser<'_, '_, '_> {
                 }
                 Vec::new()
             };
+            self.defer_lexical_errors = true;
             self.punct(&TokenKind::Semicolon)?;
-            let mut ids = Vec::new();
-            while !self.peek_name("ENDSEC") {
-                let (id, record) = self.record()?;
-
-                if records.contains_key(&id) {
-                    return self.err("duplicate instance name");
-                }
-                self.budget.insert_btree_map(
-                    &mut records,
-                    id,
-                    record,
-                    "step_parse_record_table_storage",
-                )?;
-                self.budget
-                    .push_vec(&mut ids, id, "step_parse_section_ids")?;
+            let record_start = self.current_offset();
+            while !self.peek_name("ENDSEC") && self.current.is_some() {
+                self.recover_data_record(&mut records, &mut ambiguous, &mut omitted_spans)?;
             }
-            self.name("ENDSEC")?;
-            self.punct(&TokenKind::Semicolon)?;
-            ids.shrink_to_fit();
+            let record_end = self.current_offset();
+            self.defer_lexical_errors = false;
+            if self.current.is_some() {
+                self.name("ENDSEC")?;
+                if self.current.is_some() {
+                    self.punct(&TokenKind::Semicolon)?;
+                }
+            }
 
             self.budget.push_vec(
                 &mut data,
                 DataSection {
                     parameters,
-                    records: ids,
+                    span: record_start..record_end,
                 },
                 "step_parse_data_sections",
             )?;
@@ -988,8 +1083,16 @@ impl Parser<'_, '_, '_> {
                 self.budget,
             )?;
         }
-        self.name("END-ISO-10303-21")?;
-        self.punct(&TokenKind::Semicolon)?;
+        if self.current.is_none() && !data.is_empty() {
+            self.diagnostic(self.current_offset(), ParseDiagnosticKind::EnvelopeIncomplete, format_args!("readable DATA records precede EOF; closing exchange envelope is incomplete; no terminator bytes were supplied"))?;
+        } else {
+            self.name(if draft { "ENDSTEP" } else { "END-ISO-10303-21" })?;
+            if self.current.is_some() {
+                self.punct(&TokenKind::Semicolon)?;
+            } else {
+                self.diagnostic(self.current_offset(), ParseDiagnosticKind::EnvelopeIncomplete, format_args!("exchange terminator precedes EOF without its closing semicolon; no terminator bytes were supplied"))?;
+            }
+        }
         let mut signatures = Vec::new();
         if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
             if self.peek_name("SIGNATURE") {
@@ -1105,12 +1208,11 @@ impl Parser<'_, '_, '_> {
             if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
                 let parameters = &mut record.partials[0].parameters;
 
-                self.budget
-                    .reserve_vec(parameters, 1, "step_omitted_name_recovery_item")?;
-                record.partials[0]
-                    .parameters
-                    .insert(0, Value::String(Vec::new()));
-                record.partials[0].parameters.shrink_to_fit();
+                parameters.prepend(
+                    Value::String(Vec::new()),
+                    self.budget,
+                    "step_omitted_name_recovery_item",
+                )?;
                 match &mut self.omitted_entity_names {
                     Some((_, count)) => {
                         *count = count.checked_add(1).ok_or_else(storage_overflow)?;
@@ -1181,40 +1283,12 @@ impl Parser<'_, '_, '_> {
                 }
             }
         }
-        for record in records.values() {
-            for partial in &record.partials {
-                refs.clear();
-                value_refs.clear();
-                for value in &partial.parameters {
-                    reference_storage.with_storage(|| {
-                        references(value, &mut refs, &mut value_refs, self.budget)
-                    })?;
-                }
-                let unresolved = refs
-                    .iter()
-                    .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id));
-                let unresolved_value = value_refs
-                    .iter()
-                    .any(|id| !external_value_reference_ids.contains(id));
-                if (unresolved || unresolved_value) && metadata::presentation_record(&partial.name)
-                {
-                    let message = self.budget.format_retained(format_args!("{} contains an unresolved presentation reference; exact record retained", partial.name), "STEP presentation reference diagnostic")?;
-                    self.budget.push_vec(
-                        &mut self.diagnostics,
-                        ParseDiagnostic {
-                            offset: record.span.start,
-                            kind: ParseDiagnosticKind::PresentationMetadataUnusable,
-                            message,
-                        },
-                        "step_parse_diagnostics",
-                    )?;
-                } else if unresolved {
-                    return Self::err_at(record.span.start, "unresolved instance reference");
-                } else if unresolved_value {
-                    return Self::err_at(record.span.start, "unresolved value instance reference");
-                }
-            }
-        }
+        self.omit_unresolved_records(
+            &mut records,
+            &external_reference_ids,
+            &external_value_reference_ids,
+            &mut omitted_spans,
+        )?;
         if let Some(message) = class3_restriction {
             return self.err(message);
         }
@@ -1257,6 +1331,7 @@ impl Parser<'_, '_, '_> {
                 data,
                 signatures,
                 records,
+                omitted_spans,
                 schema_identifiers: header_admission.schema_identifiers,
                 implementation_level: header_admission.implementation_level,
                 entity_ids,
@@ -1268,19 +1343,20 @@ impl Parser<'_, '_, '_> {
     fn record(&mut self) -> Result<(u64, RawRecord), ParseError> {
         let start = self.current_offset();
         let diagnostic_start = self.diagnostics.len();
-        let TokenKind::Instance(id) = self.next_kind()? else {
-            return self.err("expected instance name");
+        let id = match self.next_kind()? {
+            TokenKind::Instance(id) => id,
+            TokenKind::ValueInstance(id) if self.lexer.is_draft() => id,
+            _ => return self.err("expected instance name"),
         };
         self.punct(&TokenKind::Equals)?;
         self.budget.charge_entities(1, "step_parse_record")?;
         let mut partials = if self.peek(&TokenKind::LParen) {
             self.next_kind()?;
             let first = self.partial(false)?;
-            let mut parts = partials::RecordPartials::single_charged(first, self.budget)?;
+            let mut parts = partials::RecordPartials::single(first);
             while !self.peek(&TokenKind::RParen) {
                 let partial = self.partial(false)?;
-                self.budget
-                    .push_vec(&mut parts.0, partial, "step_parse_record_partials")?;
+                parts = parts.push(partial, self.budget)?;
             }
             self.next_kind()?;
             let mut name_storage = self.budget.reserve_scoped(0, "step partial name lookup")?;
@@ -1328,14 +1404,14 @@ impl Parser<'_, '_, '_> {
             parts
         } else {
             let first = self.partial(true)?;
-            partials::RecordPartials::single_charged(first, self.budget)?
+            partials::RecordPartials::single(first)
         };
         for diagnostic in &mut self.diagnostics[diagnostic_start..] {
             if diagnostic.kind == ParseDiagnosticKind::PresentationMetadataUnusable {
                 diagnostic.offset = start;
             }
         }
-        partials.0.shrink_to_fit();
+        partials.shrink_to_fit();
         self.punct(&TokenKind::Semicolon)?;
         Ok((
             id,
@@ -1356,7 +1432,7 @@ impl Parser<'_, '_, '_> {
         let first_is_name =
             (simple || name == "REPRESENTATION_ITEM") && !named_carrier_arities(&name).is_empty();
         let parameters = self.parameter_nesting(|parser| {
-            parser.parameters_with_name(first_is_name && !presentation)
+            parser.parameters_with_name::<RecordParameters>(first_is_name && !presentation)
         })?;
         if first_is_name
             && matches!(parameters.first(), Some(Value::UninterpretedLiteral))
@@ -1400,12 +1476,15 @@ impl Parser<'_, '_, '_> {
         self.parameters_with_name(false)
     }
 
-    fn parameters_with_name(&mut self, first_is_name: bool) -> Result<Vec<Value>, ParseError> {
+    fn parameters_with_name<T: ParameterValues>(
+        &mut self,
+        first_is_name: bool,
+    ) -> Result<T, ParseError> {
         if first_is_name {
             self.lexer.set_literal_admission(LiteralAdmission::Metadata);
         }
         self.punct(&TokenKind::LParen)?;
-        let mut values = Vec::new();
+        let mut values = T::default();
         if self.peek(&TokenKind::RParen) {
             if first_is_name {
                 self.lexer.set_literal_admission(LiteralAdmission::Required);
@@ -1429,8 +1508,7 @@ impl Parser<'_, '_, '_> {
             if first_is_name {
                 self.lexer.set_literal_admission(LiteralAdmission::Required);
             }
-            self.budget
-                .push_vec(&mut values, value, "step_parse_parameter")?;
+            values.push_value(value, self.budget)?;
             if self.peek(&TokenKind::Comma) {
                 self.next_kind()?;
             } else {
@@ -1550,12 +1628,32 @@ impl Parser<'_, '_, '_> {
         let Some(token) = self.current.take() else {
             return self.err("unexpected end of input");
         };
+        if let TokenKind::InvalidSource(message) = token.kind {
+            return Err(ParseError::Syntax {
+                offset: token.span.start,
+                message,
+            });
+        }
         self.last_end = token.span.end;
         self.current = self.lex_next()?;
         Ok(token.kind)
     }
     fn lex_next(&mut self) -> Result<Option<Token>, ParseError> {
-        let token = self.lexer.next_token()?;
+        let token = match self.lexer.next_token() {
+            Ok(token) => token,
+            Err(error) if self.defer_lexical_errors => {
+                let offset = error.offset();
+                let message = error.to_string();
+                if let Some(resource) = error.into_resource_error() {
+                    return Err(ParseError::Resource(resource));
+                }
+                Some(Token {
+                    kind: TokenKind::InvalidSource(message),
+                    span: offset..offset,
+                })
+            }
+            Err(error) => return Err(ParseError::Lex(error)),
+        };
         if token.is_some() {
             self.budget.charge_work(1, "step_lex_token")?;
         }
@@ -1720,13 +1818,15 @@ fn validate_header(
     let mut admitted = Vec::new();
     let mut normalized_identifiers = BTreeSet::new();
     for value in identifiers {
-        let Value::String(bytes) = value else {
-            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        let identifier = match value {
+            Value::String(bytes) => decoded_bytes(bytes, implementation_level, budget)?,
+            _ => None,
         };
-        let Some(identifier) = decoded_bytes(bytes, implementation_level, budget)? else {
-            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        let Some(identifier) = identifier.and_then(AdmittedSchemaIdentifier::admit) else {
+            push_header_metadata_diagnostic(&mut diagnostics, schema_record.offset, format_args!("FILE_SCHEMA contains an unusable identifier; schema selected from the readable identifiers"), budget)?;
+            continue;
         };
-        let trimmed = identifier.trim();
+        let trimmed = identifier.text().trim();
         budget.charge_retained(
             u64_from_index(trimmed.len()),
             "step_schema_identifier_normalized",
@@ -1737,14 +1837,20 @@ fn validate_header(
             normalized,
             "step_schema_identifier_names",
         )? {
-            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
+            push_header_metadata_diagnostic(
+                &mut diagnostics,
+                schema_record.offset,
+                format_args!(
+                    "FILE_SCHEMA repeats an identifier; duplicate excluded from schema selection"
+                ),
+                budget,
+            )?;
+            continue;
         }
-        let Some(identifier) = AdmittedSchemaIdentifier::admit(identifier) else {
-            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
-        };
-        budget
-            .push_vec(&mut admitted, identifier, "step_schema_identifiers")
-            .map_err(ValidationError::Resource)?;
+        budget.push_vec(&mut admitted, identifier, "step_schema_identifiers")?;
+    }
+    if admitted.is_empty() {
+        return invalid("FILE_SCHEMA has no usable schema identifiers");
     }
     for diagnostic in schema_object_identifier_diagnostics(&admitted, schema_record.offset, budget)
     {
@@ -3046,28 +3152,14 @@ fn references(
     value_out: &mut Vec<u64>,
     budget: &DecodeContext<'_>,
 ) -> Result<(), ParseError> {
-    let mut pending = Vec::new();
-    budget.push_vec(&mut pending, value, "step_parse_reference_pending")?;
-    while let Some(value) = pending.pop() {
-        match value {
-            Value::Reference(id) => {
-                budget.push_vec(entity_out, *id, "step_parse_reference_ids")?;
-            }
-            Value::ExternalReference(id) => {
-                budget.push_vec(value_out, *id, "step_parse_value_reference_ids")?;
-            }
-            Value::List(values) => {
-                for child in values.iter().rev() {
-                    budget.push_vec(&mut pending, child, "step_parse_reference_pending")?;
-                }
-            }
-            Value::Typed(_, value) => {
-                budget.push_vec(&mut pending, value, "step_parse_reference_pending")?;
-            }
-            _ => {}
+    recovery::visit_references(value, budget, &mut |id, value_instance| {
+        if value_instance {
+            budget.push_vec(value_out, id, "step_parse_value_reference_ids")?;
+        } else {
+            budget.push_vec(entity_out, id, "step_parse_reference_ids")?;
         }
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn contains_class3_occurrence(value: &Value) -> bool {

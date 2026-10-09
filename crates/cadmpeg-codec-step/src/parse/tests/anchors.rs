@@ -19,7 +19,7 @@ fn parser_accepts_external_instance_references_in_edition_three() {
         crate::parse::Value::Reference(100)
     );
     assert_eq!(
-        exchange.records()[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters.as_slice(),
         vec![crate::parse::Value::Reference(100)]
     );
 }
@@ -34,14 +34,14 @@ fn standalone_relative_reference_has_no_implicit_transport_base() {
     assert!(diagnostics.is_empty());
     assert_eq!(exchange.references()[0].uri, "parts/child.p21#target");
     assert_eq!(
-        exchange.records()[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters.as_slice(),
         vec![
             crate::parse::Value::Reference(10),
             crate::parse::Value::Reference(2),
         ]
     );
     assert_eq!(
-        exchange.records()[&4].partials[0].parameters,
+        exchange.records()[&4].partials[0].parameters.as_slice(),
         vec![
             crate::parse::Value::Reference(3),
             crate::parse::Value::String(b"parts/document.p21#target".to_vec()),
@@ -58,7 +58,7 @@ fn parser_resolves_local_entity_reference_anchors_before_schema_decoding() {
 
     assert!(diagnostics.is_empty());
     assert_eq!(
-        exchange.records()[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters.as_slice(),
         vec![crate::parse::Value::Reference(2)]
     );
 }
@@ -72,7 +72,7 @@ fn parser_resolves_local_value_reference_anchors_and_nulls_invalid_targets() {
 
     assert!(diagnostics.is_empty());
     assert_eq!(
-        exchange.records()[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters.as_slice(),
         vec![
             crate::parse::Value::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite fixture")
@@ -105,7 +105,7 @@ fn parser_resolves_cyclic_local_references_to_null_values() {
     assert!(diagnostics.is_empty());
     assert_eq!(exchange.anchors()[0].value, crate::parse::Value::Omitted);
     assert_eq!(
-        exchange.records()[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters.as_slice(),
         vec![crate::parse::Value::Omitted]
     );
 }
@@ -143,7 +143,7 @@ fn parser_accepts_value_instances_and_express_constants_in_edition_three() {
         crate::parse::Value::ExpressValueConstant("E".into())
     );
     assert_eq!(
-        exchange.records()[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters.as_slice(),
         vec![
             crate::parse::Value::ConstantEntity("PI".into()),
             crate::parse::Value::ExpressValueConstant("E".into()),
@@ -203,13 +203,15 @@ fn parser_enforces_anchor_name_and_item_grammar() {
 }
 
 #[test]
-fn parser_rejects_unresolved_or_colliding_value_instances() {
+fn parser_omits_unresolved_values_and_rejects_identity_collisions() {
     let unresolved = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(@100);ENDSEC;END-ISO-10303-21;";
-    let error = crate::test_support::with_service_context(unresolved, crate::parse::parse_inner)
-        .expect_err("unresolved value instance");
-    assert!(error
-        .to_string()
-        .contains("unresolved value instance reference"));
+    let (parsed, diagnostics) =
+        crate::test_support::with_service_context(unresolved, crate::parse::parse_inner)
+            .expect("unresolved value reference omits the bounded record");
+    assert!(parsed.records().is_empty());
+    assert!(diagnostics
+        .iter()
+        .any(|item| item.message.contains("unresolved instance reference @100")));
 
     let collision = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;@100=<part.step#value>;ENDSEC;DATA;#100=ITEM();ENDSEC;END-ISO-10303-21;";
     let error = crate::test_support::with_service_context(collision, crate::parse::parse_inner)
@@ -240,7 +242,7 @@ fn parser_resolves_anchor_before_repairing_omitted_entity_names() {
         .iter()
         .all(|diagnostic| diagnostic.kind != crate::parse::ParseDiagnosticKind::OmittedEntityName));
     assert_eq!(
-        exchange.records()[&4].partials[0].parameters,
+        exchange.records()[&4].partials[0].parameters.as_slice(),
         vec![
             crate::parse::Value::String(b"anchored line".to_vec()),
             crate::parse::Value::Reference(1),
@@ -292,7 +294,7 @@ fn local_fragment_resources_resolve_while_relative_resources_keep_their_identity
         crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
     assert!(diagnostics.is_empty());
     assert_eq!(
-        exchange.records()[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters.as_slice(),
         [crate::parse::Value::String(b"local".to_vec())]
     );
     assert_eq!(

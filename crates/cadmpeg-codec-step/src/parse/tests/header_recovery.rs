@@ -145,9 +145,33 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
     }
     let source = original.replace("(0.,0.,10.)", "(0.,0.,1.E999)");
     assert_ne!(source, original, "control changes a DATA coordinate");
-    assert!(codec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .is_err());
+    let recovered = EditableDecodeResult::from(
+        codec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("invalid required coordinate omits its bounded dependent graph"),
+    );
+    assert!(recovered
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == crate::loss::StepLossCode::ParseRecordOmitted.kind() }));
+    assert!(recovered
+        .ir()
+        .native_unknowns("step")
+        .unwrap()
+        .iter()
+        .any(|record| {
+            record.id.as_str().starts_with("step:file:omitted#")
+                && recovered
+                    .source_fidelity()
+                    .retained_record(record.id.as_str())
+                    .and_then(|record| record.data())
+                    .is_some_and(|bytes| {
+                        bytes
+                            .windows(b"(0.,0.,1.E999)".len())
+                            .any(|window| window == b"(0.,0.,1.E999)")
+                    })
+        }));
 }
 
 #[test]

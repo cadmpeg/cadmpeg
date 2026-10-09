@@ -72,16 +72,26 @@ fn normalized_number_refuses_temporary_byte_limit() {
 }
 
 #[test]
-fn quoted_string_refuses_collection_item_limit() {
+fn quoted_string_is_one_byte_payload_without_per_byte_collection_slots() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
+    policy.limits.max_collection_items = 0;
+    assert_eq!(
+        lex_under_policy(b"'abc'", policy, false).expect("one bulk string copy"),
+        super::TokenKind::String(b"abc".to_vec())
+    );
+}
+
+#[test]
+fn quoted_string_refuses_retained_byte_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
     let error = lex_under_policy(b"'abc'", policy, false)
-        .expect_err("three string bytes exceed two collection items");
+        .expect_err("three string bytes exceed two retained bytes");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "step_string_lexeme_items"
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "step_string_lexeme"
     ));
 }
 

@@ -443,11 +443,6 @@ parser_vector_limit_test!(
     COMPLEX_VECTOR_SOURCE,
     "step_parse_record_partials"
 );
-parser_vector_limit_test!(
-    section_id_vector_refuses_collection_limit,
-    VECTOR_SOURCE,
-    "step_parse_section_ids"
-);
 // Map insertion admits node storage and the collection item with one operation.
 parser_vector_limit_test!(
     record_table_refuses_collection_limit,
@@ -503,11 +498,6 @@ parser_vector_limit_test!(
     "step_parse_external_reference_ids"
 );
 parser_vector_limit_test!(
-    reference_pending_vector_refuses_collection_limit,
-    VECTOR_SOURCE,
-    "step_parse_reference_pending"
-);
-parser_vector_limit_test!(
     entity_index_name_refuses_collection_limit,
     VECTOR_SOURCE,
     "step_entity_index_names"
@@ -519,7 +509,7 @@ parser_vector_limit_test!(
 );
 parser_vector_limit_test!(
     reference_id_vector_refuses_collection_limit,
-    VECTOR_SOURCE,
+    ANCHOR_VECTOR_SOURCE,
     "step_parse_reference_ids"
 );
 parser_vector_limit_test!(

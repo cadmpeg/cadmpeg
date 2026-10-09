@@ -34,24 +34,18 @@ pub(super) fn is_representation_name(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{items, parameters};
-    use crate::parse::{PartialRecord, RawRecord, Value};
+    use crate::parse::Value;
 
     #[test]
     fn shape_representation_with_parameters_uses_inherited_attributes() {
-        let record = RawRecord {
-            partials: crate::parse::partials::RecordPartials::single(PartialRecord {
-                name: "SHAPE_REPRESENTATION_WITH_PARAMETERS".into(),
-                parameters: vec![
-                    Value::String(b"datum target".to_vec()),
-                    Value::List(vec![Value::Reference(2), Value::Reference(3)]),
-                    Value::Reference(4),
-                ],
-            }),
-            span: 0..1,
-        };
+        let source = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=SHAPE_REPRESENTATION_WITH_PARAMETERS('datum target',(#2,#3),#4);#2=ITEM();#3=ITEM();#4=ITEM();ENDSEC;END-ISO-10303-21;";
+        let (exchange, _) =
+            crate::test_support::with_service_context(source, crate::parse::parse_inner)
+                .expect("representation attributes");
+        let record = &exchange.records()[&1];
 
         assert_eq!(
-            parameters(&record),
+            parameters(record),
             Some(
                 [
                     Value::String(b"datum target".to_vec()),
@@ -62,7 +56,7 @@ mod tests {
             )
         );
         assert_eq!(
-            items(&record).map(Iterator::collect::<Vec<_>>),
+            items(record).map(Iterator::collect::<Vec<_>>),
             Some(vec![2, 3])
         );
     }

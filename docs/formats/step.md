@@ -16,6 +16,13 @@ identifiers remain metadata and do not override that report. AP203, AP214, and
 AP242 documents carry exchanged product shape and product structure. Product
 occurrence relationships carry identity and placement.
 
+Draft clear-text exchanges open with `STEP;` and close with `ENDSTEP;`.
+Their header records include `FILE_IDENTIFICATION`, `FILE_DESCRIPTION`, and
+`IMP_LEVEL`; they need not contain `FILE_SCHEMA`. Draft comments use
+`!*` and `*!` delimiters. A draft entity assignment uses `@n` or `#n`, and
+`#n` references that entity. The draft attribute layouts do not imply a
+standard EXPRESS schema.
+
 Part 28 XML, Part 26 binary, AP242 BO-Model XML, and ZIP containers use
 separate encodings.
 
@@ -669,8 +676,11 @@ name any schema in the list.
 
 CADIR decision: the reader locates header records by name. Missing, duplicate,
 reordered, or invalid descriptive metadata produces a loss and does not prevent
-DATA admission. A unique, readable `FILE_SCHEMA` remains required. An
-unverified implementation-level declaration uses the edition-3 class-3 grammar
+DATA admission. In Part 21, a unique `FILE_SCHEMA` record must contain at least one
+usable identifier. Invalid entries supply no schema identity, and repeated
+identifiers supply the same identity once. Schema selection uses the first
+usable identifier. An unverified implementation-level declaration uses the
+edition-3 class-3 grammar
 and reports that choice. A header metadata loss, an unverified implementation
 level, or an out-of-range schema object identifier retains every header record
 as exact source-fidelity bytes under `step:file:header#<byte-offset>`.
@@ -716,11 +726,11 @@ AP242 edition report. The decode reports one
 identifier. The warning names the schema and the first component in source
 order that is out of range. Strict decode does not refuse this warning, because
 the decode transfers the source identifier text and reports the defect.
-An identifier that does not parse refuses the exchange structure. The
+An identifier that does not parse supplies no usable schema identity. The
 unparseable forms are an invalid schema name, an unbalanced brace, fewer than
 two components, a numeric component with a leading zero, and a component that
-does not have one of the component forms. Each other identifier defect, such as
-a duplicate identifier, also refuses the exchange structure.
+does not have one of the component forms. Duplicate identifiers define one
+schema identity after string decoding, whitespace trimming, and case normalization.
 The schema name in a parameterized DATA section compares with the
 identifier's schema-name portion when the identifier has an object identifier.
 The writer's supported schema identifiers are:
@@ -1074,6 +1084,12 @@ and CADIR keeps one carrier for each referenced entity. `$` denotes an omitted
 optional value. `*` denotes a derived attribute. An empty aggregate uses an
 empty list. Select and typed-parameter wrappers remain available to schema
 accessors.
+
+A DATA statement ends at a semicolon outside a quoted literal, resource token,
+or comment. DATA instance names are nonzero and unique across all DATA
+sections. A reference denotes a DATA instance or a REFERENCE binding. A
+duplicate name does not determine a unique reference target.
+An open literal or comment provides no continuation boundary.
 
 Length values convert to millimetres. Plane-angle values convert to radians.
 `PLANE_ANGLE_MEASURE_WITH_UNIT` requires a `PLANE_ANGLE_UNIT`, and all

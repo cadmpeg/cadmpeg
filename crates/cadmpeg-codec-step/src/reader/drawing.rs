@@ -18,6 +18,7 @@ use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, ReferenceName, Value};
 
+use super::claims::SourceClaims;
 use super::representation;
 use super::ValueExt;
 use super::{decode_text_charged, opaque_record_id, record_targets, StageOutcome};
@@ -29,7 +30,7 @@ const DRAWING_ASSOCIATION_TYPES: &[&str] = &[
 
 struct TargetContext<'a> {
     target_identities: &'a BTreeMap<u64, BTreeSet<String>>,
-    known_typed: &'a HashSet<u64>,
+    known_typed: &'a dyn SourceClaims,
     exchange: &'a Exchange,
     external_documents: &'a BTreeMap<u64, &'a str>,
     ctx: &'a DecodeContext<'a>,
@@ -150,7 +151,7 @@ impl TargetContext<'_> {
 pub(super) fn decode(
     exchange: &Exchange,
     ir: &mut CadIr,
-    known_typed: &HashSet<u64>,
+    known_typed: &dyn SourceClaims,
     product_definition_ids_by_shape: &BTreeMap<u64, ProductDefinitionId>,
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
@@ -216,7 +217,7 @@ pub(super) fn decode(
     }
 
     let mut target_identities =
-        record_targets(ir, |record_id| known_typed.contains(&record_id), ctx)?;
+        record_targets(ir, |record_id| known_typed.contains(record_id), ctx)?;
     for candidate in &candidates {
         ctx.admit_btree_entry(
             &target_identities,
@@ -450,14 +451,14 @@ fn collect_reference_ids(
 fn add_source_typed_targets(
     ir: &mut CadIr,
     exchange: &Exchange,
-    known_typed: &HashSet<u64>,
+    known_typed: &dyn SourceClaims,
     referenced_ids: &BTreeSet<u64>,
     target_identities: &mut BTreeMap<u64, BTreeSet<String>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut native_targets = Vec::new();
     for &id in referenced_ids {
-        if !known_typed.contains(&id) || target_identities.contains_key(&id) {
+        if !known_typed.contains(id) || target_identities.contains_key(&id) {
             continue;
         }
         let Some(record) = exchange.records().get(&id) else {
@@ -989,7 +990,7 @@ fn association_placeholder_reference(record: &RawRecord, parameters: &[Value]) -
 fn target_resolution(
     id: u64,
     target_identities: &BTreeMap<u64, BTreeSet<String>>,
-    known_typed: &HashSet<u64>,
+    known_typed: &dyn SourceClaims,
     exchange: &Exchange,
     external_documents: &BTreeMap<u64, &str>,
     ctx: &DecodeContext<'_>,
@@ -1025,7 +1026,7 @@ fn target_resolution(
         Some(WrapperTargetResolution::Ambiguous(identities)) => Some(identities),
         None => None,
     };
-    if !known_typed.contains(&id) {
+    if !known_typed.contains(id) {
         if let Some(record) = exchange.records().get(&id) {
             return Ok(TargetResolution::Resolved(ReferenceSelection::new(
                 ReferenceTarget::Local(opaque_record_id(id, record, ctx)?.into_string()),
