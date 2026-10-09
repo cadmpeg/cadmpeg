@@ -2803,9 +2803,9 @@ fn project_with_type_130_policy<'ctx>(
     let mut losses = Vec::new();
     let mut wire_slots_storage = ctx.reserve_scoped(0, "iges composite wire slots")?;
     let mut wire_edges = Vec::new();
-    if !ctx.any_by(
+    if ctx.all_by_limit(
         directory,
-        |entry| Ok(entry.entity_type == 102 && entry.form == 0),
+        |entry| Ok(entry.entity_type != 102 || entry.form != 0),
         "iges composite presence search",
     )? {
         return Ok(WireProjectionOutcome {
@@ -2818,9 +2818,9 @@ fn project_with_type_130_policy<'ctx>(
         });
     }
     if only_type_130_children
-        && !ctx.any_by(
+        && ctx.all_by_limit(
             directory,
-            |entry| Ok(entry.entity_type == 130 && entry.form == 0),
+            |entry| Ok(entry.entity_type != 130 || entry.form != 0),
             "iges composite Type130 presence search",
         )?
     {

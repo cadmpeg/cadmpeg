@@ -10,6 +10,7 @@ pub(crate) mod test_procedural_surfaces;
 pub(crate) mod test_solids_and_structure;
 pub(crate) mod test_surface_fixtures;
 pub(crate) mod test_tabulated_surfaces;
+pub(crate) mod sequence_index;
 
 /// Parses a scanned Global section with a test-owned decode session.
 pub(crate) fn parse_global(
