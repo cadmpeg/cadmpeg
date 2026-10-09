@@ -30,12 +30,12 @@ struct OwnerGeometry<'a, 'ctx> {
 pub(in crate::resolved_features) struct MarkerGeometryIndex<'a, 'payload, 'ctx> {
     ctx: &'ctx DecodeContext<'ctx>,
     prefixes: std::rc::Rc<MarkerPrefixIndex<'payload, 'ctx>>,
-    roster_storage: std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     owners: HashMap<Option<&'a str>, OwnerGeometry<'a, 'ctx>>,
     owner_order: Vec<Option<&'a str>>,
     _owner_order_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     object_sources: std::cell::OnceCell<HashMap<Option<u32>, Vec<&'a SketchInputEntity>>>,
     objects: HashMap<(Option<&'a str>, Option<u32>), Vec<&'a SketchInputEntity>>,
+    roster_storage: std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
