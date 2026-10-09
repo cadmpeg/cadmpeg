@@ -289,7 +289,9 @@ pub(in super::super) fn transfer_saved_spline_curves(
         else {
             continue;
         };
-        let (entities, _entity_storage) = semantic_saved_section_entities(ctx, definition)?;
+        let entities_owned_storage = semantic_saved_section_entities(ctx, definition)?;
+        let _entity_storage = entities_owned_storage.1;
+        let entities = entities_owned_storage.0;
         for spline in ctx
             .admit_iter(&entities, "creo saved section spline traversal")?
             .filter_map(|entity| match entity {
@@ -326,7 +328,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 }
                 continue;
             };
-            let (suffix, _suffix_reservation) = if let Some(entity_id) = spline.entity_id {
+            let suffix_owned_storage = if let Some(entity_id) = spline.entity_id {
                 ctx.format_scoped(
                     format_args!("{entity_id}"),
                     "creo saved spline identity suffix",
@@ -337,6 +339,8 @@ pub(in super::super) fn transfer_saved_spline_curves(
                     "creo saved spline identity suffix",
                 )?
             };
+            let _suffix_reservation = suffix_owned_storage.1;
+            let suffix = suffix_owned_storage.0;
             let curve_id = crate::identity::compose_checked::<CurveId>(
                 ctx,
                 &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
@@ -671,18 +675,24 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let Some(order_table) = &definition.order_table else {
             continue;
         };
-        let (points, _point_storage) = ctx
+        let points_owned_storage = ctx
             .with_scoped_storage("creo extrusion section point scratch", || {
                 resolved_section_points(ctx, definition)
             })?;
-        let (solved, _solved_storage) = ctx
+        let _point_storage = points_owned_storage.1;
+        let points = points_owned_storage.0;
+        let solved_owned_storage = ctx
             .with_scoped_storage("creo extrusion solved segment scratch", || {
                 extrusion_solved_segment_ids(ctx, definition)
             })?;
-        let (segments, _segment_storage) = ctx
+        let _solved_storage = solved_owned_storage.1;
+        let solved = solved_owned_storage.0;
+        let segments_owned_storage = ctx
             .with_scoped_storage("creo extrusion section row scratch", || {
                 complete_section_segment_rows(ctx, definition)
             })?;
+        let _segment_storage = segments_owned_storage.1;
+        let segments = segments_owned_storage.0;
         for segment in ctx.admit_iter(&segments, "creo extrusion section segment traversal")? {
             if !ctx.contains_btree_set(
                 &solved,
@@ -775,7 +785,9 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             transferred += 1;
         }
 
-        let (entities, _entity_storage) = semantic_saved_section_entities(ctx, definition)?;
+        let entities_owned_storage = semantic_saved_section_entities(ctx, definition)?;
+        let _entity_storage = entities_owned_storage.1;
+        let entities = entities_owned_storage.0;
         for entity in ctx.admit_iter(&entities, "creo saved section geometry traversal")? {
             let Some((internal_id, section_geometry, offset)) =
                 saved_section_entity_geometry(entity)
