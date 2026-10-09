@@ -1984,3 +1984,5 @@ mod reference_sources;
 mod reference_lifetimes;
 
 mod deleted_reference_lifetimes;
+
+mod unique_assignment_lifetimes;
