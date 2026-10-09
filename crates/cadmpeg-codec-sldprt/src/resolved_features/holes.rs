@@ -176,10 +176,10 @@ pub(crate) fn project_helix_axes(
             let Some(object) = start.and_then(|start| lane.native_payload.get(start..end)) else {
                 continue;
             };
-            let (streams, _stream_storage) = ctx
-                .with_scoped_storage("SLDPRT helix stream workspace", || {
-                    crate::parasolid::extract_streams_with_offsets(object, ctx)
-                })?;
+            let mut stream_storage = ctx.reserve_scoped(0, "SLDPRT helix stream workspace")?;
+            let streams = stream_storage.with_storage(|| {
+                crate::parasolid::extract_streams_with_offsets(object, ctx)
+            })?;
             for stream in ctx.admit_iter(&streams, "scan SLDPRT helix streams")? {
                 if let Some(points) = mesh_storage.with_storage(|| {
                     crate::parasolid::mesh_polyline_from_header(
@@ -269,8 +269,8 @@ impl<'lane, 'ctx> HoleLaneNames<'lane, 'ctx> {
     ) -> Result<Self, CodecError> {
         const OPERATION: &str = "index SLDPRT hole child name offsets";
         let names = ObjectNames::new(ctx, lane)?;
-        let (mut by_offset, storage) =
-            ctx.with_scoped_storage(OPERATION, || ctx.collect_vec(lane.names.iter(), OPERATION))?;
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut by_offset = storage.with_storage(|| ctx.collect_vec(lane.names.iter(), OPERATION))?;
         ctx.stable_sort_by(&mut by_offset, |name| &name.offset, Ord::cmp, OPERATION)?;
         Ok(Self {
             names,
@@ -503,8 +503,9 @@ fn enrich_history_hole_constructions_with_names(
             })?;
         }
         drop(records);
-        let (claimed_profiles, claims_storage) =
-            ctx.with_scoped_storage(OPERATION, || claimed_hole_profiles(ctx, &history.features))?;
+        let mut claims_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let claimed_profiles =
+            claims_storage.with_storage(|| claimed_hole_profiles(ctx, &history.features))?;
         let mut profile_claim_ranks_storage = ctx.reserve_scoped(0, "resolve SLDPRT holes keys")?;
         let mut profile_claim_ranks = HashMap::<String, (u8, usize)>::new();
         for (_, profile, rank) in ctx.admit_iter(&additions, "scan SLDPRT holes records")? {
@@ -558,13 +559,15 @@ fn enrich_history_hole_constructions_with_names(
                 OPERATION,
             )?;
         }
+        drop(source_items);
         drop((
             addition_storage,
             profile_claim_ranks,
             profile_claim_ranks_storage,
         ));
-        let (claimed_profiles, claims_storage) =
-            ctx.with_scoped_storage(OPERATION, || claimed_hole_profiles(ctx, &history.features))?;
+        let mut claims_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let claimed_profiles =
+            claims_storage.with_storage(|| claimed_hole_profiles(ctx, &history.features))?;
         let mut interval_storage =
             ctx.reserve_scoped(0, "SLDPRT hole source interval workspace")?;
         let mut hole_sources = Vec::new();
@@ -628,10 +631,10 @@ fn enrich_history_hole_constructions_with_names(
                 ctx.next_charged(&mut candidates, OPERATION)?
             {
                 let candidate = &history.features[index];
-                let (identity, _identity_storage) = ctx
-                    .with_scoped_storage("SLDPRT hole profile source identity", || {
-                        ctx.format_retained(format_args!("{candidate_source}"), OPERATION)
-                    })?;
+                let mut identity_storage = ctx.reserve_scoped(0, "SLDPRT hole profile source identity")?;
+                let identity = identity_storage.with_storage(|| {
+                    ctx.format_retained(format_args!("{candidate_source}"), OPERATION)
+                })?;
                 if ctx.contains_hash_set(
                     &claimed_profiles,
                     identity.as_str(),
@@ -1279,7 +1282,8 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "copy SLDPRT fallback thread diameters";
-    let (mut projection, mut projection_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let mut projection_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut projection = projection_storage.with_storage(|| {
         crate::records::charged_clone::clone_histories_charged(
             ctx,
             histories,
@@ -1956,14 +1960,14 @@ pub(crate) fn project_profiled_hole_constructions(
     const OPERATION: &str = "project SLDPRT profiled hole constructions";
     let mut names_storage = ctx.reserve_scoped(0, "index SLDPRT hole object names")?;
     let object_names = hole_lane_names(ctx, &mut names_storage, lanes)?;
-    let (mut enriched_histories, mut enriched_storage) =
-        ctx.with_scoped_storage("SLDPRT enriched hole history workspace", || {
-            crate::records::charged_clone::clone_histories_charged(
-                ctx,
-                histories,
-                "SLDPRT unowned incomplete-hole histories",
-            )
-        })?;
+    let mut enriched_storage = ctx.reserve_scoped(0, "SLDPRT enriched hole history workspace")?;
+    let mut enriched_histories = enriched_storage.with_storage(|| {
+        crate::records::charged_clone::clone_histories_charged(
+            ctx,
+            histories,
+            "SLDPRT unowned incomplete-hole histories",
+        )
+    })?;
     enriched_storage.with_storage(|| {
         let mut enrichment = super::parameters::ParameterEnrichment::new(ctx, &mut enriched_histories)?;
         for (lane, names) in ctx.admit_iter(lanes, "scan SLDPRT parameter lanes")?.zip(&object_names) {
@@ -1971,14 +1975,14 @@ pub(crate) fn project_profiled_hole_constructions(
         }
         enrichment.apply(true)
     })?;
-    let (mut ownership_histories, mut ownership_storage) =
-        ctx.with_scoped_storage("SLDPRT hole ownership history workspace", || {
-            crate::records::charged_clone::clone_histories_charged(
-                ctx,
-                &enriched_histories,
-                "SLDPRT unowned incomplete-hole histories",
-            )
-        })?;
+    let mut ownership_storage = ctx.reserve_scoped(0, "SLDPRT hole ownership history workspace")?;
+    let mut ownership_histories = ownership_storage.with_storage(|| {
+        crate::records::charged_clone::clone_histories_charged(
+            ctx,
+            &enriched_histories,
+            "SLDPRT unowned incomplete-hole histories",
+        )
+    })?;
     ownership_storage.with_storage(|| {
         enrich_history_hole_constructions_with_names(
             ctx,
@@ -1988,7 +1992,8 @@ pub(crate) fn project_profiled_hole_constructions(
         )
     })?;
     let histories = enriched_histories.as_slice();
-    let (records, _records_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let mut records_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let records = records_storage.with_storage(|| {
         ctx.try_collect_vec(
             histories
                 .iter()
@@ -2450,7 +2455,8 @@ pub(crate) fn project_hole_position_sketches(
         let Some(native) = &feature.native_ref else {
             continue;
         };
-        let (binding, binding_storage) = ctx.with_scoped_storage(OPERATION, || {
+        let mut binding_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let binding = binding_storage.with_storage(|| {
             Ok::<_, CodecError>((
                 feature.id.try_clone_for_decode(ctx, OPERATION)?,
                 sketch.try_clone_for_decode(ctx, OPERATION)?,
@@ -2503,9 +2509,9 @@ pub(crate) fn project_hole_position_sketches(
             Ok::<_, CodecError>(())
         })?;
     }
-    let mut markers = HashMap::new();
     let mut marker_storage =
         ctx.reserve_scoped(0, "index SLDPRT hole position marker lanes")?;
+    let mut markers = HashMap::new();
     let mut source_items = features.iter_mut();
     while let Some(feature) = ctx.next_charged(&mut source_items, OPERATION)? {
         let (projection, _projection_storage) =
@@ -3251,9 +3257,9 @@ pub(crate) fn project_spatial_hole_position_sketches(
             Ok::<_, CodecError>(())
         })?;
     }
-    let mut markers = HashMap::new();
     let mut marker_storage =
         ctx.reserve_scoped(0, "index SLDPRT hole position marker lanes")?;
+    let mut markers = HashMap::new();
     let mut source_items = 0..features.len();
     while let Some(index) =
         ctx.next_charged(&mut source_items, "project SLDPRT spatial hole positions")?
@@ -3528,10 +3534,9 @@ fn coplanar_spatial_position_placements(
     ctx: &DecodeContext<'_>,
     points: &[Point3],
 ) -> Result<Option<Vec<HolePlacement>>, CodecError> {
-    let (mut points, _storage) = ctx
-        .with_scoped_storage("SLDPRT coplanar spatial point workspace", || {
-            ctx.copy_slice(points, "sort SLDPRT spatial position points")
-        })?;
+    let mut point_storage = ctx.reserve_scoped(0, "SLDPRT coplanar spatial point workspace")?;
+    let mut points = point_storage
+        .with_storage(|| ctx.copy_slice(points, "sort SLDPRT spatial position points"))?;
     ctx.sort_unstable_by(
         &mut points,
         |value| value,
@@ -3950,13 +3955,13 @@ pub(crate) fn project_generated_hole_axes(
                     if invalid || axes.is_empty() {
                         continue;
                     }
-                    let (placements, placements_storage) =
-                        ctx.with_scoped_storage("SLDPRT generated lane placements", || {
-                            ctx.collect_vec(
-                                axes.into_values(),
-                                "collect SLDPRT generated hole placements",
-                            )
-                        })?;
+                    let mut placements_storage = ctx.reserve_scoped(0, "SLDPRT generated lane placements")?;
+                    let placements = placements_storage.with_storage(|| {
+                        ctx.collect_vec(
+                            axes.into_values(),
+                            "collect SLDPRT generated hole placements",
+                        )
+                    })?;
                     match &first_solution {
                         Some((first, _)) if !ctx.equal(first, &placements, OPERATION)? => {
                             return Ok(None)
@@ -3966,7 +3971,9 @@ pub(crate) fn project_generated_hole_axes(
                     }
                 }
                 first_solution
-                    .map(|(placements, _storage)| {
+                    .map(|owner| {
+                        let _storage = owner.1;
+                        let placements = owner.0;
                         ctx.try_collect_vec(
                             placements
                                 .iter()
@@ -4012,8 +4019,8 @@ pub(crate) fn project_hole_topology_axes(
     topology: &HoleTopology<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     const DIAMETER_LOOKUP: &str = "index SLDPRT hole diameters";
-    let mut diameter_counts = HashMap::<u64, usize>::new();
     let mut storage = ctx.reserve_scoped(0, "SLDPRT hole topology lookup workspace")?;
+    let mut diameter_counts = HashMap::<u64, usize>::new();
     let mut unresolved = Vec::new();
     let mut source_items = features.iter().enumerate();
     while let Some((index, feature)) = ctx.next_charged(&mut source_items, DIAMETER_LOOKUP)? {
@@ -5179,9 +5186,9 @@ pub(crate) fn project_hole_axes(
     }
     let object_names = hole_lane_names(ctx, &mut names_storage, lanes)?;
     let positions = PositionSketches::new(ctx, histories, &object_names)?;
-    let mut markers = HashMap::new();
     let mut marker_storage =
         ctx.reserve_scoped(0, "index SLDPRT hole position marker lanes")?;
+    let mut markers = HashMap::new();
     let mut records = None;
     let surfaces = topology.surfaces;
     let mut model_sketches_storage = ctx.reserve_scoped(0, INDEX_OPERATION)?;
@@ -5296,10 +5303,10 @@ pub(crate) fn project_hole_axes(
         else {
             continue;
         };
-        let (plane_frames, _plane_frames_storage) = ctx
-            .with_scoped_storage(INDEX_OPERATION, || {
-                lane_sketch_plane_frames(ctx, model_features, histories, lane)
-            })?;
+        let mut plane_frames_storage = ctx.reserve_scoped(0, INDEX_OPERATION)?;
+        let plane_frames = plane_frames_storage.with_storage(|| {
+            lane_sketch_plane_frames(ctx, model_features, histories, lane)
+        })?;
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         let mut source_items = native_features.values();
         while let Some(feature) = ctx.next_charged(&mut source_items, INDEX_OPERATION)? {
@@ -5995,7 +6002,9 @@ pub(crate) fn project_topological_hole_constructions(
                     )?;
                     common = Some(match common {
                         None => (candidates, candidate_storage),
-                        Some((previous, _previous_storage)) => {
+                        Some(owner) => {
+                            let _previous_storage = owner.1;
+                            let previous = owner.0;
                             let mut shared_storage =
                                 ctx.reserve_scoped(0, "SLDPRT common bore workspace")?;
                             let mut shared = Vec::new();
@@ -6425,9 +6434,9 @@ pub(crate) fn project_bore_backed_position_sketches(
     }
     drop((model_features, first_by_id));
     let mut source_items = projections.into_iter();
-    while let Some((projection, _projection_storage)) =
-        ctx.next_charged(&mut source_items, OPERATION)?
-    {
+    while let Some(owner) = ctx.next_charged(&mut source_items, OPERATION)? {
+        let _projection_storage = owner.1;
+        let projection = owner.0;
         let feature = &mut features[projection.feature];
         let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch, .. }) =
             feature.evaluation.definition()
@@ -6742,11 +6751,11 @@ fn match_marker_loci_to_bore_axes(
     if solutions.len() != 1 {
         return Ok(None);
     }
-    let Some((_, (solution, _solution_storage))) =
-        ctx.next_charged(&mut solutions.into_iter(), OPERATION)?
-    else {
+    let Some((_, owner)) = ctx.next_charged(&mut solutions.into_iter(), OPERATION)? else {
         return Ok(None);
     };
+    let _solution_storage = owner.1;
+    let solution = owner.0;
     Ok(Some(
         ctx.try_collect_vec(
             solution
