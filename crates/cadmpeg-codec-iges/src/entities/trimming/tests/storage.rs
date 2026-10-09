@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+use std::mem::{align_of, size_of};
+
+use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::scalar::PositiveReal;
+
 use super::*;
 
 #[test]
@@ -282,4 +288,77 @@ fn linear_boundary_path_refuses_collection_limit_before_append() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert!(append_path(&mut target, &[1_u8, 2, 3], &ctx).unwrap());
     assert_eq!(target, [1, 2, 3]);
+}
+
+#[test]
+fn boundary_clustering_releases_consumed_root_nodes_before_the_allocating_sort() {
+    // The core stable sorter allocates two index lanes above twenty values.
+    let points: [FinitePoint3; 21] = std::array::from_fn(|index| {
+        FinitePoint3::new(Point3::new(
+            f64::from(u32::try_from(index).unwrap()) * 2.0,
+            0.0,
+            0.0,
+        ))
+        .unwrap()
+    });
+    let parents_bytes = points.len() * size_of::<usize>();
+    let sizes_bytes = points.len() * size_of::<usize>();
+    // Core charges the insertion-built node bound: ceil(n/5) nodes, each
+    // with eleven key/value lanes, sixteen pointers and both alignments.
+    let node_bytes = 11 * (size_of::<usize>() + size_of::<Vec<usize>>())
+        + 16 * size_of::<usize>()
+        + 2 * align_of::<usize>().max(align_of::<Vec<usize>>());
+    let roots_bytes = ((points.len() - 1) / 5 + 1) * node_bytes;
+    // Each singleton member vector uses core's four-slot usize minimum.
+    let members_bytes = points.len() * 4 * size_of::<usize>();
+    let cluster_bytes = points.len() * size_of::<super::super::BoundaryVertexCluster>();
+    let before_slots = u64_from_index(parents_bytes + sizes_bytes + roots_bytes + members_bytes);
+    let peak = before_slots + u64_from_index(cluster_bytes);
+    assert!(
+        parents_bytes + sizes_bytes + members_bytes + cluster_bytes
+            + 2 * points.len() * size_of::<usize>()
+            < usize::try_from(peak).unwrap()
+    );
+    for cap in [peak - 1, peak] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = ctx.with_scoped_storage("discarded boundary clusters", || {
+            cluster_boundary_positions(&points, PositiveReal::new(1.0).unwrap(), &ctx)
+        });
+        if cap < peak {
+            let first = match result.as_ref() {
+                Err(BoundaryVertexCreationError::Resource(CodecError::ResourceLimit(first))) => {
+                    *first
+                }
+                _ => panic!("expected actual cluster-slot allocation refusal"),
+            };
+            drop(result);
+            assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(first.operation, "iges boundary cluster slots");
+            assert_eq!(
+                (first.limit, first.used, first.additional),
+                (cap, before_slots, u64_from_index(cluster_bytes))
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
+        } else {
+            let (clusters, storage) = result.unwrap();
+            assert_eq!(clusters.len(), points.len());
+            for (index, cluster) in clusters.iter().enumerate() {
+                assert_eq!(cluster.members, [index]);
+                assert_eq!(cluster.representative, points[index]);
+            }
+            drop(clusters);
+            drop(storage);
+            let released = ctx
+                .reserve_scoped(peak, "all boundary cluster scratch released")
+                .unwrap();
+            drop(released);
+            ctx.finish_session().unwrap();
+        }
+    }
 }
