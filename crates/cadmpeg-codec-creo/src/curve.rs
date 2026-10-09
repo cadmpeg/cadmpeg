@@ -1771,8 +1771,10 @@ fn extend_expression_dependencies(
                 && creo_relation_function(ctx, dependency)?.is_some();
             let constant = reserved_relation_scalar(dependency).is_some();
             if !function && !constant {
-                let (mut key, _key_storage) =
+                let key_owned_storage =
                     ctx.format_scoped(format_args!("{dependency}"), "creo dependency lookup key")?;
+                let _key_storage = key_owned_storage.1;
+                let mut key = key_owned_storage.0;
                 ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
                 if !ctx.contains_hash_set(seen, &key, "creo dependency index lookup")? {
                     storage.with_storage(|| {
@@ -2002,10 +2004,12 @@ fn curve_expression_solve_program(
                 let equation = ctx.any_by(
                     &dependencies,
                     |dependency| {
-                        let (mut key, _storage) = ctx.format_scoped(
+                        let key_owned_storage = ctx.format_scoped(
                             format_args!("{dependency}"),
                             "creo solve dependency lookup key",
                         )?;
+                        let _storage = key_owned_storage.1;
+                        let mut key = key_owned_storage.0;
                         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
                         ctx.contains_hash_set(
                             &unknown_names,
@@ -2177,8 +2181,10 @@ fn curve_expression_solve_unknowns(
         if !valid_scoped_expression_identifier(ctx, name)? {
             return Ok(None);
         }
-        let (mut key, _key_storage) =
+        let key_owned_storage =
             ctx.format_scoped(format_args!("{name}"), "creo solve unknown lookup key")?;
+        let _key_storage = key_owned_storage.1;
+        let mut key = key_owned_storage.0;
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         if ctx.contains_hash_set(&seen, &key, "creo solve unknown duplicate checks")? {
             return Ok(None);
@@ -2868,10 +2874,12 @@ fn evaluate_expression_program_details(
                     ctx.next_charged(&mut snapshots, "creo solve snapshot traversal")?
                 }
             {
-                let (mut key, _key_guard) = ctx.format_scoped(
+                let key_owned_storage = ctx.format_scoped(
                     format_args!("{}", unknown.name),
                     "creo solve snapshot lookup",
                 )?;
+                let _key_guard = key_owned_storage.1;
+                let mut key = key_owned_storage.0;
                 ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
                 let value = ctx.get_btree_map(&values, &key, "creo solve value lookup")?;
                 *dimension = value
@@ -6040,10 +6048,12 @@ impl ExpressionValue for DimensionProbeValue {
             (CreoMathFunction::Exists, [argument]) => {
                 let value = match (argument.text_value(), context.existing_symbols) {
                     (Some(name), Some(symbols)) => {
-                        let (mut key, _reservation) = ctx.format_scoped(
+                        let key_owned_storage = ctx.format_scoped(
                             format_args!("{name}"),
                             "creo dimension exists lookup key",
                         )?;
+                        let _reservation = key_owned_storage.1;
+                        let mut key = key_owned_storage.0;
                         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
                         ctx.contains_btree_set(symbols, &key, "creo dimension exists lookup")?
                             .then_some(1.0)
@@ -6480,8 +6490,10 @@ impl ExpressionValue for CurveExpressionValue {
                 let Some(symbols) = context.existing_symbols else {
                     return Ok(None);
                 };
-                let (mut key, _reservation) =
+                let key_owned_storage =
                     ctx.format_scoped(format_args!("{name}"), "creo relation exists lookup key")?;
+                let _reservation = key_owned_storage.1;
+                let mut key = key_owned_storage.0;
                 ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
                 Ok(ctx
                     .contains_btree_set(symbols, &key, "creo relation existing symbol lookup")?
@@ -7053,9 +7065,11 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             if let Some(value) = V::reserved(self.ctx, name)? {
                 return Ok(Some(value));
             }
-            let (mut key, _reservation) = self
+            let key_owned_storage = self
                 .ctx
                 .format_scoped(format_args!("{name}"), "creo relation lookup key")?;
+            let _reservation = key_owned_storage.1;
+            let mut key = key_owned_storage.0;
             self.ctx
                 .make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
             let Some(value) =
@@ -7613,10 +7627,12 @@ fn relation_string_pattern_admitted(
         cadmpeg_core::decode::u64_from_index(pattern.len()),
         "creo relation regex compile work",
     )?;
-    let (expression, _source_reservation) = ctx.format_scoped(
+    let expression_owned_storage = ctx.format_scoped(
         format_args!(r"\A(?:{pattern})\z"),
         "creo relation regex source text",
     )?;
+    let _source_reservation = expression_owned_storage.1;
+    let expression = expression_owned_storage.0;
     let _compiler_reservation = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index(RELATION_REGEX_SIZE_LIMIT),
         "creo relation regex compiler scratch",
@@ -7669,10 +7685,12 @@ fn format_relation_real_admitted(
             "creo relation real text",
         )?));
     }
-    let (formatted, _reservation) = ctx.format_scoped(
+    let formatted_owned_storage = ctx.format_scoped(
         format_args!("{value:.decimals$e}"),
         "creo relation scientific scratch",
     )?;
+    let _reservation = formatted_owned_storage.1;
+    let formatted = formatted_owned_storage.0;
     let Some((mantissa, exponent)) =
         ctx.split_once(&formatted, "e", "creo relation scientific exponent scan")?
     else {

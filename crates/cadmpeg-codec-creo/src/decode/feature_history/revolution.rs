@@ -476,7 +476,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             let crate::feature::definitions::FeatureSavedEntity::Spline(spline) = entity else {
                 return Ok(std::ops::ControlFlow::Continue(()));
             };
-            let (suffix, _suffix_reservation) = if let Some(entity_id) = spline.entity_id {
+            let suffix_owned_storage = if let Some(entity_id) = spline.entity_id {
                 ctx.format_scoped(
                     format_args!("{entity_id}"),
                     "creo revolved spline identity suffix",
@@ -487,6 +487,8 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     "creo revolved spline identity suffix",
                 )?
             };
+            let _suffix_reservation = suffix_owned_storage.1;
+            let suffix = suffix_owned_storage.0;
             let curve_id = crate::identity::compose_checked::<CurveId>(
                 ctx,
                 &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,

@@ -161,10 +161,12 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let mut cap_geometry_storage = ctx.reserve_scoped(0, "creo circular cap probe")?;
         let cap_geometry = {
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
-            let (cap_record, _cap_record_reservation) = ctx.format_scoped(
+            let cap_record_owned_storage = ctx.format_scoped(
                 format_args!("extrusion feature {feature_id} cap"),
                 "creo circular cap record",
             )?;
+            let _cap_record_reservation = cap_record_owned_storage.1;
+            let cap_record = cap_record_owned_storage.0;
             let cap = cap_geometry_storage.with_storage(|| {
                 circular_pcurve(
                     ctx,
