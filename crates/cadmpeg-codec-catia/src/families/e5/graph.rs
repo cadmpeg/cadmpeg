@@ -1065,10 +1065,10 @@ fn parse_bounds(
         }
         Ok(view.is_empty().then_some(E5Bounds { entries }))
     })?;
-    if output.is_some() {
-        output_storage.commit()?;
+    match output {
+        Some(value) => output_storage.commit_value(value).map(Some),
+        None => Ok(None),
     }
-    Ok(output)
 }
 
 fn parse_pcurve(
@@ -1254,10 +1254,10 @@ fn parse_nurbs_pcurve(
             range,
         }))
     })?;
-    if output.is_some() {
-        output_storage.commit()?;
+    match output {
+        Some(value) => output_storage.commit_value(value).map(Some),
+        None => Ok(None),
     }
-    Ok(output)
 }
 
 /// Expands strictly increasing finite knots by their nonzero multiplicities
@@ -1462,12 +1462,11 @@ fn parse_jet_pcurve(
     if !complete || sum != expected_sum {
         return Ok(None);
     }
-    storage.commit()?;
-    Ok(Some(E5Pcurve::Jet {
+    storage.commit_value(E5Pcurve::Jet {
         surface,
         sites,
         range,
-    }))
+    }).map(Some)
 }
 
 /// Derive the exact global-sense anchor for a plane-cap split circle.
@@ -2040,10 +2039,10 @@ fn parse_bodies(
         }
         Ok(Some(bodies))
     })?;
-    if output.is_some() {
-        output_storage.commit()?;
+    match output {
+        Some(value) => output_storage.commit_value(value).map(Some),
+        None => Ok(None),
     }
-    Ok(output)
 }
 
 fn parse_body_root(
@@ -2104,10 +2103,10 @@ fn parse_body_root(
         )?;
         Ok(signed.then_some(faces))
     })?;
-    if output.is_some() {
-        output_storage.commit()?;
+    match output {
+        Some(value) => output_storage.commit_value(value).map(Some),
+        None => Ok(None),
     }
-    Ok(output)
 }
 
 fn records<'a>(
@@ -3527,3 +3526,6 @@ mod budget_tests;
 
 #[cfg(test)]
 mod index_tests;
+
+#[cfg(test)]
+mod payload_transfer;
