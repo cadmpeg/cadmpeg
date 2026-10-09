@@ -536,7 +536,10 @@ pub(crate) fn hex(
         .checked_mul(2)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     let mut value = ctx.retained_string(byte_len, operation)?;
-    for byte in ctx.admit_iter(bytes, "Rhino hex traversal")? {
+    let mut source_bytes = bytes.iter();
+    for _ in 0..source_bytes.len() {
+        let byte = ctx.next_charged(&mut source_bytes, "Rhino hex traversal")?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino hex source ended early"))?;
         ctx.push_retained_char(
             &mut value,
             char::from(DIGITS[usize::from(byte >> 4)]),
@@ -1369,10 +1372,11 @@ fn apply_idef_alternative_path<D: DiagnosticSink>(
     }
 
     let mut degraded = false;
+    ctx.charge_work(0, "Rhino apply idef alternative path traversal")?;
     let mut userdata = userdata.iter();
-    while let Some(descriptor) =
-        ctx.next_charged(&mut userdata, "Rhino apply idef alternative path traversal")?
-    {
+    for _ in 0..userdata.len() {
+        let descriptor = ctx.next_charged(&mut userdata, "Rhino apply idef alternative path traversal")?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino instance source ended early"))?;
         let Some(item) = descriptor.known().filter(|item| {
             item.class_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
                 && item.item_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
@@ -1467,14 +1471,14 @@ pub(crate) fn parse_definitions<'ctx>(
         _member_storage: ctx.reserve_scoped(0, "Rhino definition member identities")?,
         _ambiguous_storage: ctx.reserve_scoped(0, "Rhino ambiguous definition identities")?,
     };
-    let mut seen = HashMap::new();
-    let mut opaque_indices = BTreeSet::new();
     let mut seen_workspace = ctx.reserve_scoped(0, "Rhino definition identity workspace")?;
     let mut opaque_workspace = ctx.reserve_scoped(0, "Rhino opaque definition workspace")?;
+    let mut seen = HashMap::new();
+    let mut opaque_indices = BTreeSet::new();
     let mut source_records = records.iter().enumerate();
-    while let Some((source_order, record)) =
-        ctx.next_charged(&mut source_records, "Rhino parse definitions traversal")?
-    {
+    for _ in 0..source_records.len() {
+        let (source_order, record) = ctx.next_charged(&mut source_records, "Rhino parse definitions traversal")?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino instance source ended early"))?;
         let mut record_storage = ctx.reserve_scoped(0, "Rhino instance definition fields")?;
         let mut warnings = ScratchDiagnostics::new(ctx, "Rhino instance definition diagnostics")?;
         let parsed = record_storage.with_storage(|| (|| {
@@ -1520,9 +1524,9 @@ pub(crate) fn parse_definitions<'ctx>(
             let mut definition = match parsed_definition {
                 Ok(definition) => {
                     let mut members = definition.members.iter();
-                    while let Some(member) =
-                        ctx.next_charged(&mut members, "Rhino instance member traversal")?
-                    {
+                    for _ in 0..members.len() {
+                        let member = ctx.next_charged(&mut members, "Rhino instance member traversal")?
+                            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino instance source ended early"))?;
                         result._member_storage.with_storage(|| {
                             ctx.insert_hash_set(
                                 &mut result.scan.member_object_ids,
@@ -1542,9 +1546,9 @@ pub(crate) fn parse_definitions<'ctx>(
                     }) {
                         Ok(member_ids) => {
                             let mut member_ids = member_ids.into_iter();
-                            while let Some(member) = ctx
-                                .next_charged(&mut member_ids, "Rhino instance member traversal")?
-                            {
+                            for _ in 0..member_ids.len() {
+                                let member = ctx.next_charged(&mut member_ids, "Rhino instance member traversal")?
+                                    .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino instance source ended early"))?;
                                 result._member_storage.with_storage(|| {
                                     ctx.insert_hash_set(
                                         &mut result.scan.member_object_ids,
@@ -1579,9 +1583,9 @@ pub(crate) fn parse_definitions<'ctx>(
             "Rhino instance definition diagnostic promotion",
         )?;
         let mut warnings = retained_warnings.into_iter();
-        while let Some(diagnostic) =
-            ctx.next_charged(&mut warnings, "Rhino definition diagnostic traversal")?
-        {
+        for _ in 0..warnings.len() {
+            let diagnostic = ctx.next_charged(&mut warnings, "Rhino definition diagnostic traversal")?
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino instance source ended early"))?;
             ctx.reserve_vec(
                 &mut result.scan.diagnostics,
                 1,
