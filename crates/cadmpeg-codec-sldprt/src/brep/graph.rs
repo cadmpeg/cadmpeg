@@ -908,14 +908,15 @@ fn resolve_sweep_surface(
         "sldprt sweep construction at byte {} for surface attr {}",
         construction.offset, face.surface_attr
     );
-    let Some(curve) = sweep::profile_nurbs(ctx, &profile.carrier().geometry, &record, refusal)?
+    let Some(profile_curve) = sweep::profile_nurbs(ctx, &profile.carrier().geometry, &record, refusal)?
     else {
         return Ok(None);
     };
+    let curve = profile_curve.curve();
     let profile_derived = matches!(profile, IndexedCurve::Derived(_));
     match &construction.kind {
         SweepKind::Spun { base, axis } => Ok(sweep::spun_nurbs(
-            ctx, &curve, *base, *axis, &record, refusal,
+            ctx, curve, *base, *axis, &record, refusal,
         )?
         .map(|surface| SweepSurfaceResolution {
             geometry: SolvedSurfaceGeometry::Nurbs(surface),
@@ -999,7 +1000,7 @@ fn resolve_sweep_surface(
             );
             Ok(sweep::swept_nurbs(
                 ctx,
-                &curve,
+                curve,
                 unit_direction,
                 v_start - pad,
                 v_end + pad,
