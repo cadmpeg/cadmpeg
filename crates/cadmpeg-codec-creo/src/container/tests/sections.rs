@@ -610,3 +610,5 @@ assert_eq!(sections[0].region, b"#BasicData\nabc");
             && resource.operation == "creo legacy toc sections sections deduplication")
     );
 }
+
+mod allocation_order;
