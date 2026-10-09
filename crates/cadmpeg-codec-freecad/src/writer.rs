@@ -323,21 +323,38 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
 }
 
 fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> {
-    validate_property_wrapper(property)?;
-    let mut replacement = property.xml.text().to_owned();
     let wrapped = format!("<Root>{}</Root>", property.xml.text());
     let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
         CodecError::malformed(format_args!("invalid retained property XML: {error}"))
     })?;
-    let source_ranges = parsed
+    let element = parsed
         .root_element()
         .first_element_child()
-        .into_iter()
-        .flat_map(|property| {
-            property
-                .descendants()
-                .filter(move |node| node.is_element() && *node != property)
-        })
+        .ok_or_else(|| CodecError::Malformed("retained property has no element".into()))?;
+    let expected_tag = if property.is_transient() {
+        "_Property"
+    } else {
+        "Property"
+    };
+    let status = element
+        .attribute("status")
+        .map(str::parse::<u64>)
+        .transpose()
+        .map_err(|_| CodecError::Malformed("retained property has invalid status".into()))?;
+    if element.tag_name().name() != expected_tag
+        || element.attribute("name") != Some(property.name.as_str())
+        || element.attribute("type") != Some(property.type_name.as_str())
+        || status != property.status
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "editing FCStd property declaration {} requires a typed serializer",
+            property.id
+        )));
+    }
+    let mut replacement = property.xml.text().to_owned();
+    let source_ranges = element
+        .descendants()
+        .filter(|node| node.is_element() && *node != element)
         .map(|node| (node.range().start - 6, node.range().end - 6))
         .collect::<Vec<_>>();
     if source_ranges.len() != property.values().len() {
@@ -371,38 +388,6 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
         replacement.replace_range(start..end, &serialized);
     }
     Ok(replacement.into_bytes())
-}
-
-fn validate_property_wrapper(property: &PropertyRecord) -> Result<(), CodecError> {
-    let wrapped = format!("<Root>{}</Root>", property.xml.text());
-    let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
-        CodecError::malformed(format_args!("invalid retained property XML: {error}"))
-    })?;
-    let element = parsed
-        .root_element()
-        .first_element_child()
-        .ok_or_else(|| CodecError::Malformed("retained property has no element".into()))?;
-    let expected_tag = if property.is_transient() {
-        "_Property"
-    } else {
-        "Property"
-    };
-    let status = element
-        .attribute("status")
-        .map(str::parse::<u64>)
-        .transpose()
-        .map_err(|_| CodecError::Malformed("retained property has invalid status".into()))?;
-    if element.tag_name().name() != expected_tag
-        || element.attribute("name") != Some(property.name.as_str())
-        || element.attribute("type") != Some(property.type_name.as_str())
-        || status != property.status
-    {
-        return Err(CodecError::NotImplemented(format!(
-            "editing FCStd property declaration {} requires a typed serializer",
-            property.id
-        )));
-    }
-    Ok(())
 }
 
 fn serialize_value(value: &ValueRecord) -> Result<String, CodecError> {
