@@ -558,7 +558,7 @@ pub(crate) fn parse_topology(
             return Ok(None);
         }
 
-        let (bound_parameters, _bound_storage) = index_bound_parameters(ctx, &bounds)?;
+        let bound_parameters = index_bound_parameters(ctx, &bounds)?;
         let mut faces = Vec::new();
         let mut reachable_edges = HashSet::new();
         let mut closed_supports = HashSet::new();
@@ -617,7 +617,7 @@ pub(crate) fn parse_topology(
                     for bound_ref in [edge.parameter_start, edge.parameter_end] {
                         if bound_representation_parameter(
                             ctx,
-                            &bound_parameters,
+                            &bound_parameters.0,
                             bound_ref,
                             *pcurve_id,
                         )?
@@ -670,7 +670,7 @@ pub(crate) fn parse_topology(
                         edges: &edges,
                         pcurves: &pcurves,
                         curve_supports: &curve_supports,
-                        bound_parameters: &bound_parameters,
+                        bound_parameters: &bound_parameters.0,
                     },
                 )?;
                 let mut members = ctx.vector_storage(raw.pcurves.len(), "catia_e5_loop_members")?;
@@ -2990,7 +2990,7 @@ mod tests {
                 },
             ),
         ]);
-        let (bound_parameters, _bound_storage) =
+        let bound_parameters =
             index_bound_parameters(&ctx, &bounds).expect("bound index");
         let hint = plane_digon_orientation_hint(
             &ctx,
@@ -3004,7 +3004,7 @@ mod tests {
                 edges: &edges,
                 pcurves: &pcurves,
                 curve_supports: &supports,
-                bound_parameters: &bound_parameters,
+                bound_parameters: &bound_parameters.0,
             },
         )
         .expect("service resource budget");
@@ -3023,7 +3023,7 @@ mod tests {
                         edges: &edges,
                         pcurves: &pcurves,
                         curve_supports: &supports,
-                        bound_parameters: &bound_parameters,
+                        bound_parameters: &bound_parameters.0,
                     },
                 )
             }),
@@ -3045,7 +3045,7 @@ mod tests {
                 f64::MAX
             });
         }
-        let (wide_parameters, _wide_storage) =
+        let wide_parameters =
             index_bound_parameters(&ctx, &wide_bounds).expect("wide bound index");
         assert_eq!(
             plane_digon_orientation_hint(
@@ -3060,7 +3060,7 @@ mod tests {
                     edges: &edges,
                     pcurves: &wide_pcurves,
                     curve_supports: &supports,
-                    bound_parameters: &wide_parameters
+                    bound_parameters: &wide_parameters.0
                 }
             )
             .expect("service resource budget"),
@@ -3128,8 +3128,8 @@ mod tests {
 
         assert_eq!(
             crate::test_support::with_service_context(|ctx| {
-                let (parameters, _storage) = index_bound_parameters(ctx, &topology.bounds)?;
-                topology.edge_representation_parameters(ctx, 1, 20, &parameters)
+                let parameters = index_bound_parameters(ctx, &topology.bounds)?;
+                topology.edge_representation_parameters(ctx, 1, 20, &parameters.0)
             })
             .expect("service resource budget"),
             Some(crate::test_support::test_b5::finite_pair([0.25, 0.75]))
@@ -3146,8 +3146,8 @@ mod tests {
             });
         assert_eq!(
             crate::test_support::with_service_context(|ctx| {
-                let (parameters, _storage) = index_bound_parameters(ctx, &topology.bounds)?;
-                topology.edge_representation_parameters(ctx, 1, 20, &parameters)
+                let parameters = index_bound_parameters(ctx, &topology.bounds)?;
+                topology.edge_representation_parameters(ctx, 1, 20, &parameters.0)
             })
             .expect("service resource budget"),
             None
