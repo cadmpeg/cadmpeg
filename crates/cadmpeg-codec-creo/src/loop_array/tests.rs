@@ -255,3 +255,5 @@ fn loop_array_framing_and_token_walks_refuse_work() {
     assert_eq!(scan.frames.len(), 1);
     assert_eq!(scan.records.len(), 1);
 }
+
+mod prototype_visits;
