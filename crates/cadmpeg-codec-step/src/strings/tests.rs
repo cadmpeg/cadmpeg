@@ -569,3 +569,5 @@ fn decoded_string_cursor_and_terminator_search_preserve_refusal() {
         );
     }
 }
+
+mod prefix;
