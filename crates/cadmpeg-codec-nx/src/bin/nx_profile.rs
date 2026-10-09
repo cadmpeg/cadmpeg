@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::{self, Cursor, Write};
+use std::io::{self, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::thread;
@@ -733,7 +733,7 @@ fn canonical_sha256(
 }
 
 fn decode_fixture_in_worker(path: &Path) -> Result<DecodedFixtureEvidence, WorkerFailure> {
-    let worker =
+    let mut worker =
         Command::new(env::current_exe().map_err(|error| WorkerFailure::Failed(error.to_string()))?)
             .arg("--decode-fixture")
             .arg(path)
@@ -741,7 +741,7 @@ fn decode_fixture_in_worker(path: &Path) -> Result<DecodedFixtureEvidence, Worke
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
-    let output = wait_for_worker(worker)?;
+    let output = wait_for_worker(&mut worker, WORKER_TIMEOUT)?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(WorkerFailure::Failed(format!(
@@ -752,29 +752,78 @@ fn decode_fixture_in_worker(path: &Path) -> Result<DecodedFixtureEvidence, Worke
     serde_json::from_slice(&output.stdout).map_err(|error| WorkerFailure::Failed(error.to_string()))
 }
 
-fn wait_for_worker(mut worker: Child) -> Result<Output, WorkerFailure> {
-    let deadline = Instant::now() + WORKER_TIMEOUT;
-    loop {
-        if worker
+fn wait_for_worker(worker: &mut Child, timeout: Duration) -> Result<Output, WorkerFailure> {
+    // Child does not terminate or reap its process on Drop. Keep cleanup active
+    // through pipe-reader creation, waiting, and every error return.
+    struct WorkerCleanup<'a>(&'a mut Child);
+
+    impl Drop for WorkerCleanup<'_> {
+        fn drop(&mut self) {
+            if self.0.kill().is_ok() {
+                let _ = self.0.wait();
+            } else {
+                let _ = self.0.try_wait();
+            }
+        }
+    }
+
+    let worker = WorkerCleanup(worker);
+    let deadline = Instant::now() + timeout;
+    let stdout = worker.0.stdout.take();
+    let stderr = worker.0.stderr.take();
+    let stdout_reader = thread::Builder::new()
+        .name("nx-profile-stdout".into())
+        .spawn(move || {
+            let mut bytes = Vec::new();
+            if let Some(mut stdout) = stdout {
+                stdout.read_to_end(&mut bytes)?;
+            }
+            Ok::<_, io::Error>(bytes)
+        })
+        .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
+    let stderr_reader = thread::Builder::new()
+        .name("nx-profile-stderr".into())
+        .spawn(move || {
+            let mut bytes = Vec::new();
+            if let Some(mut stderr) = stderr {
+                stderr.read_to_end(&mut bytes)?;
+            }
+            Ok::<_, io::Error>(bytes)
+        })
+        .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
+
+    let status = loop {
+        if let Some(status) = worker
+            .0
             .try_wait()
             .map_err(|error| WorkerFailure::Failed(error.to_string()))?
-            .is_some()
         {
-            return worker
-                .wait_with_output()
-                .map_err(|error| WorkerFailure::Failed(error.to_string()));
+            break status;
         }
         if Instant::now() >= deadline {
             worker
+                .0
                 .kill()
                 .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
             worker
+                .0
                 .wait()
                 .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
             return Err(WorkerFailure::TimedOut);
         }
         thread::sleep(Duration::from_millis(20));
-    }
+    };
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| WorkerFailure::Failed("NX profile stdout reader panicked".into()))?
+        .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| WorkerFailure::Failed("NX profile stderr reader panicked".into()))?
+        .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
+    Ok(Output { status, stdout, stderr })
 }
 
 fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
@@ -970,6 +1019,53 @@ mod tests {
             rederivation: VerificationStatus::Verified,
             rederivation_boundary: None,
         }
+    }
+
+    fn profile_test_worker(mode: &str) -> std::process::Child {
+        std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "tests::profile_worker_fixture", "--nocapture"])
+            .env("CADMPEG_NX_PROFILE_TEST_WORKER", mode)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap()
+    }
+
+    #[test]
+    fn profile_worker_fixture() {
+        use std::io::Write;
+        match std::env::var("CADMPEG_NX_PROFILE_TEST_WORKER").as_deref() {
+            Ok("large-output") => {
+                let bytes = [0x5a; 8192];
+                for _ in 0..128 {
+                    std::io::stdout().write_all(&bytes).unwrap();
+                    std::io::stderr().write_all(&bytes).unwrap();
+                }
+            }
+            Ok("timeout") => std::thread::sleep(std::time::Duration::from_secs(10)),
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn profile_worker_drains_both_pipes_before_exit() {
+        let mut worker = profile_test_worker("large-output");
+        let output = super::wait_for_worker(&mut worker, std::time::Duration::from_secs(20))
+            .expect("output larger than both pipe buffers must finish");
+        assert!(output.status.success());
+        assert_eq!(output.stdout.iter().filter(|&&byte| byte == 0x5a).count(), 8192 * 128);
+        assert_eq!(output.stderr, vec![0x5a; 8192 * 128]);
+        assert_eq!(worker.try_wait().unwrap(), Some(output.status));
+    }
+
+    #[test]
+    fn profile_worker_timeout_terminates_and_reaps_the_child() {
+        let mut worker = profile_test_worker("timeout");
+        assert!(matches!(
+            super::wait_for_worker(&mut worker, std::time::Duration::from_millis(100)),
+            Err(super::WorkerFailure::TimedOut)
+        ));
+        assert!(worker.try_wait().unwrap().is_some());
     }
 
     #[test]
