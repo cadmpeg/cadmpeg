@@ -1410,9 +1410,6 @@ fn attach_standalone_wires(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let positions =
         crate::families::ModelCurvePositions::new(admission.context(), &ir.model.curves, &[])?;
-    let mut carrier_storage = admission
-        .context()
-        .reserve_scoped(0, "catia_freeform_wire_plan_carriers")?;
     let mut plans = admission
         .context()
         .scoped_vector_storage(0, "catia_freeform_wire_plans")?;
@@ -1441,18 +1438,22 @@ fn attach_standalone_wires(
         else {
             return Ok(false);
         };
-        let carrier_id = carrier_storage.with_storage(|| {
-            curve_id.try_clone_for_decode(admission.context(), "catia_freeform_wire_plan_curve_id")
-        })?;
+        let carrier_id = admission.context().with_scoped_storage(
+            "catia_freeform_wire_plan_carriers",
+            || curve_id.try_clone_for_decode(
+                admission.context(),
+                "catia_freeform_wire_plan_curve_id",
+            ),
+        )?;
         let Some(carrier) =
-            cadmpeg_ir::topology::EdgeCarrier::new(Some(carrier_id), Some(*range)).ok()
+            cadmpeg_ir::topology::EdgeCarrier::new(Some(carrier_id.0), Some(*range)).ok()
         else {
             return Ok(false);
         };
         admission.context().push_scoped_vec(
             &mut plans.1,
             &mut plans.0,
-            (index, carrier, *pos, start, end),
+            (index, (carrier, carrier_id.1), *pos, start, end),
             "catia_freeform_wire_plans",
         )?;
     }
@@ -1512,7 +1513,6 @@ fn attach_standalone_wires(
             Exactness::Inferred,
         )?;
     }
-    carrier_storage.commit()?;
     drop(positions);
     for (index, carrier, pos, start, end) in admission
         .context()
@@ -1566,8 +1566,13 @@ fn attach_standalone_wires(
                 Exactness::Derived,
             )?;
         }
-        admission.reserve_entity(&mut ir.model.points, "catia_family_emit_points")?;
-        admission.reserve_entity(&mut ir.model.points, "catia_family_emit_points")?;
+        admission.charge()?;
+        admission.charge()?;
+        admission.context().reserve_vec(
+            &mut ir.model.points,
+            2,
+            "catia_family_emit_points",
+        )?;
         let vertex_point_ids = [
             point_ids[0]
                 .try_clone_for_decode(admission.context(), "catia_freeform_wire_vertex_point_id")?,
@@ -1587,8 +1592,13 @@ fn attach_standalone_wires(
         ];
         let [start_vertex_id, end_vertex_id] = vertex_ids;
         let [start_vertex_point_id, end_vertex_point_id] = vertex_point_ids;
-        admission.reserve_entity(&mut ir.model.vertices, "catia_family_emit_vertices")?;
-        admission.reserve_entity(&mut ir.model.vertices, "catia_family_emit_vertices")?;
+        admission.charge()?;
+        admission.charge()?;
+        admission.context().reserve_vec(
+            &mut ir.model.vertices,
+            2,
+            "catia_family_emit_vertices",
+        )?;
         ir.model.vertices.extend([
             Vertex {
                 id: end_vertex_id,
@@ -1605,7 +1615,7 @@ fn attach_standalone_wires(
         admission.reserve_entity(&mut ir.model.edges, "catia_family_emit_edges")?;
         ir.model.edges.push(Edge {
             id: edge_id,
-            carrier,
+            carrier: carrier.1.commit_value(carrier.0)?,
             start: start_edge_vertex_id,
             end: end_edge_vertex_id,
             tolerance: None,
@@ -6462,4 +6472,5 @@ mod tests {
     }
 
     mod rechart_cases;
+    mod wire_candidates;
 }
