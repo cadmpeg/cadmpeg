@@ -485,8 +485,18 @@ pub(in super::super) fn generated_cap_plane_extent(
     let (Some(start_id), Some(end_id)) = (start_id, end_id) else {
         return Ok(None);
     };
-    if side_count == 0
-        || !ctx.contains_btree_set(
+    if side_count == 0 {
+        return Ok(None);
+    }
+    for surface_id in [start_id, end_id] {
+        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id) else {
+            return Ok(None);
+        };
+        if row.feature_id != feature_id || row.kind != crate::surface::SurfaceKind::Plane {
+            return Ok(None);
+        }
+    }
+    if !ctx.contains_btree_set(
             table.unique_surface_ids(),
             &start_id,
             "creo generated cap surface membership",
@@ -502,18 +512,13 @@ pub(in super::super) fn generated_cap_plane_extent(
     let local_planes_owned_storage = ctx.with_scoped_storage("creo cap local plane scratch", || placed_planes(ctx, scan))?;
     let _local_plane_storage = local_planes_owned_storage.1;
     let local_planes = local_planes_owned_storage.0;
-    let plane = |surface_id: u32| -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError> {
-        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id) else {
-            return Ok(None);
-        };
-        if row.feature_id != feature_id || row.kind != crate::surface::SurfaceKind::Plane {
-            return Ok(None);
-        }
-        reconciled_model_plane(ctx, &local_planes, ir, source_carriers, surface_id)
+    let Some(start) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, start_id)? else {
+        return Ok(None);
     };
-    Ok(plane(start_id)?
-        .zip(plane(end_id)?)
-        .and_then(|(start, end)| ordered_parallel_cap_extent(start, end)))
+    let Some(end) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, end_id)? else {
+        return Ok(None);
+    };
+    Ok(ordered_parallel_cap_extent(start, end))
 }
 
 pub(in super::super) fn unique_available_positional_cylinder_frame_records(
