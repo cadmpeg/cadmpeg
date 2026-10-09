@@ -987,16 +987,26 @@ fn procedural_curve_recursive(
                 crate::nurbs::toks::owned_marker_positions(ctx, cache_scope).transpose()
             }));
         let positions = positions?;
+        let decode = |position| {
+            let (candidate, storage) = ctx.with_scoped_storage(
+                "ASM procedural curve cache candidate",
+                || curve_block(ctx, cache_scope, position).transpose(),
+            )?;
+            match candidate {
+                Some(candidate) => storage.commit_value(candidate).map(Some),
+                None => Ok(None),
+            }
+        };
         if vector_offset.is_some() || subset.is_some() || compound.is_some() {
             propagate_resource!(ctx.find_map(
                 positions.into_iter().rev(),
-                |position| curve_block(ctx, cache_scope, position).transpose(),
+                decode,
                 "ASM procedural curve cache candidates"
             ))
         } else {
             propagate_resource!(ctx.find_map(
                 positions,
-                |position| curve_block(ctx, cache_scope, position).transpose(),
+                decode,
                 "ASM procedural curve cache candidates"
             ))
         }
@@ -4602,3 +4612,6 @@ mod trailing_surface_bounds_work_tests {
         assert_eq!(limit.operation, "ASM trailing surface bounds prefix");
     }
 }
+
+#[cfg(test)]
+mod tests;
