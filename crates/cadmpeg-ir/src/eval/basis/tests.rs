@@ -365,6 +365,56 @@ fn requested_low_degree_third_basis_is_exact_borrowed_zero_without_resources() {
 }
 
 #[test]
+fn actual_fourth_basis_preserves_each_row_refusal_and_low_degree_zero() {
+    use crate::eval::decode::Scratch;
+    use std::borrow::Cow;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, ResourceDimension};
+    let knots = [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+    // Four actual output rows have 2+3+4+5 writes; the base is inline.
+    for cap in 0..=14 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let scratch = Scratch::new(&ctx);
+        let result = super::bspline_basis_fourth_derivative(&scratch, &knots, 4, 4, 0.25);
+        let original = if cap == 14 {
+            assert_eq!(result.unwrap().as_ref(), &[24.0, -96.0, 144.0, -96.0, 24.0]);
+            ctx.charge_work_limit(1, "test next fourth basis operation").unwrap_err()
+        } else {
+            assert!(result.is_none());
+            let original = scratch.refused().unwrap();
+            assert_eq!(original.operation, "IR B-spline fourth derivative work");
+            original
+        };
+        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+        assert_eq!((original.limit, original.used, original.additional), (cap, cap, 1));
+        assert!(super::bspline_basis_fourth_derivative(&scratch, &[], 0, 0, f64::NAN).is_none());
+        assert_eq!(scratch.refused(), Some(original));
+        drop(scratch);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    }
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_recursion_depth = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let scratch = Scratch::new(&ctx);
+    for degree in 0..=3 {
+        let result = super::bspline_basis_fourth_derivative(&scratch, &[], degree, 0, 0.0).unwrap();
+        assert!(matches!(result, Cow::Borrowed(_)));
+        assert_eq!(result.len(), degree + 1);
+        assert!(result.iter().all(|value| *value == 0.0));
+    }
+    assert_eq!(scratch.refused(), None);
+    drop(scratch);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
 fn scaled_third_basis_admits_each_actual_row_and_keeps_original_fuse() {
     use crate::eval::decode::Scratch;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, ResourceDimension};

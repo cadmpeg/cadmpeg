@@ -106,7 +106,7 @@ fn requested_third_charges_only_real_additional_basis_and_pole_visits() {
         let budget = ctx.work_budget(cap);
         let result = EvaluationAdmission::Decode(&ctx).within_work_slice(&budget, |admission| {
             let third_scratch = Scratch::new(admission);
-            local.third(&third_scratch, &first, &second)
+            local.third(&third_scratch, &first, &second).map(|third| third.lanes)
         });
         assert_eq!(budget.consumed(), usize::try_from(cap).unwrap());
         let original = if cap == 81 {
@@ -211,5 +211,9 @@ fn actual_nurbs_fourth_is_unavailable_without_erasing_true_lower_orders() {
     for (lane, expected) in fourth.higher.third().unwrap().into_iter().zip([6.0, 4.0, 6.0, 24.0]) {
         assert!((lane.z - expected).abs() <= EPS_THIRD_QUOTIENT);
     }
-    assert_eq!(fourth.higher.fourth(), Err(EvaluationFailure::NoValue));
+    // This actual cubic polynomial has total degree three; every fourth
+    // partial is zero. It is not an affine chart or a constant normal.
+    for lane in fourth.higher.fourth().unwrap() {
+        assert!(lane.get().norm() <= EPS_THIRD_QUOTIENT);
+    }
 }

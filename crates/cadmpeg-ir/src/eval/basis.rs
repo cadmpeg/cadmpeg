@@ -357,21 +357,51 @@ pub(super) fn bspline_basis_third_derivative(
     span: usize,
     t: f64,
 ) -> Option<Cow<'static, [f64]>> {
-    scratch.work(0, "IR B-spline third derivative work")?;
+    higher_basis_derivative(scratch, knots, degree, span, t, HigherBasisOrder::Third)
+}
+
+/// Fourth derivatives of the active polynomial basis. Degrees below four
+/// have zero polynomial derivatives, including for a rational carrier.
+pub(super) fn bspline_basis_fourth_derivative(
+    scratch: &decode::Scratch<'_, '_>,
+    knots: &[f64],
+    degree: usize,
+    span: usize,
+    t: f64,
+) -> Option<Cow<'static, [f64]>> {
+    higher_basis_derivative(scratch, knots, degree, span, t, HigherBasisOrder::Fourth)
+}
+
+#[derive(Clone, Copy)]
+enum HigherBasisOrder { Third, Fourth }
+
+fn higher_basis_derivative(
+    scratch: &decode::Scratch<'_, '_>,
+    knots: &[f64],
+    degree: usize,
+    span: usize,
+    t: f64,
+    order: HigherBasisOrder,
+) -> Option<Cow<'static, [f64]>> {
+    let (level, operation, work_operation) = match order {
+        HigherBasisOrder::Third => (3, "IR B-spline third derivative basis", "IR B-spline third derivative work"),
+        HigherBasisOrder::Fourth => (4, "IR B-spline fourth derivative basis", "IR B-spline fourth derivative work"),
+    };
+    scratch.work(0, work_operation)?;
     match degree {
         0 => return Some(Cow::Borrowed(&[0.0])),
         1 => return Some(Cow::Borrowed(&[0.0, 0.0])),
         2 => return Some(Cow::Borrowed(&[0.0, 0.0, 0.0])),
+        3 if matches!(order, HigherBasisOrder::Fourth) => return Some(Cow::Borrowed(&[0.0; 4])),
         _ => {}
     }
-    let base_degree = degree - 3;
+    let base_degree = degree - level;
     let base = bspline_basis(scratch, knots, base_degree, span, t)?;
     let mut lower: Cow<'_, [f64]> = Cow::Borrowed(&base);
     for row_degree in base_degree + 1..=degree {
         let degree_real = f64_from_index(row_degree)?;
         let lower_start = span - (row_degree - 1);
-        let basis = scratch.collect(
-            (0..=row_degree).map(|local| {
+        let coefficient = |local| {
                 let index = span - row_degree + local;
                 let lower_at = |global: usize| global.checked_sub(lower_start)
                     .and_then(|at| lower.get(at)).copied().unwrap_or(0.0);
@@ -416,10 +446,23 @@ pub(super) fn bspline_basis_third_derivative(
                         .map_or_else(|overflow| overflow, FiniteReal::get),
                     _ => f64::NAN,
                 })
-            }),
-            "IR B-spline third derivative basis",
-            "IR B-spline third derivative work",
-        )?;
+        };
+        let basis = match order {
+            HigherBasisOrder::Third => scratch.collect(
+                (0..=row_degree).map(coefficient), operation, work_operation,
+            )?,
+            HigherBasisOrder::Fourth => {
+                // This row's exact size is known. Reserve its empty backing
+                // once, so constructing it cannot relocate a partial row.
+                let mut values = Vec::new();
+                scratch.reserve(&mut values, row_degree.checked_add(1)?, operation)?;
+                for local in 0..=row_degree {
+                    scratch.work(1, work_operation)?;
+                    values.push(coefficient(local)?);
+                }
+                values
+            }
+        };
         lower = Cow::Owned(basis);
     }
     Some(Cow::Owned(lower.into_owned()))
