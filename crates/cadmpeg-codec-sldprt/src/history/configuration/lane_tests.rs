@@ -5,7 +5,7 @@
 use crate::history::bind::bind_unique_sketch_feature;
 use crate::history::configuration::align_configuration_parameter_kinds;
 use crate::history::configuration::bind_configuration_topology_selections;
-use crate::history::configuration::configuration_surface_carriers;
+use crate::history::configuration::surfaces::configuration_surface_carriers;
 use crate::history::configuration::inherit_configuration_reference_plane_semantics;
 use crate::history::configuration::inherit_configuration_shared_semantics;
 use crate::history::configuration::project_configuration_sketch_states;
