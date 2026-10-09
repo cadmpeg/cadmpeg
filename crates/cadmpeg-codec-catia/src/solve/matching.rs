@@ -53,10 +53,10 @@ fn complete_assignment(
     let (completed, storage) = ctx.with_scoped_storage(operation, || {
         ctx.collect_options(mates.iter().copied(), operation)
     })?;
-    if completed.is_some() {
-        storage.commit()?;
+    match completed {
+        Some(completed) => storage.commit_value(completed).map(Some),
+        None => Ok(None),
     }
-    Ok(completed)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -95,6 +95,13 @@ fn distinct_domain_mates<'a>(
     let count = domains.len();
     if count > point_count {
         return Ok(None);
+    }
+    if count == 0 {
+        return Ok(if matches!(edge_constraint, Some(MatchingEdgeConstraint::Require(..))) {
+            None
+        } else {
+            Some(Vec::new())
+        });
     }
     let mut owner = ctx.alloc_filled(point_count, None, "catia_match_owners")?;
     let mut mates = ctx.alloc_filled(count, None, "catia_match_mates")?;
@@ -274,6 +281,9 @@ fn repaired_domain_mates<'a>(
     if count != matching.len() || count > point_count {
         return Ok(None);
     }
+    if count == 0 {
+        return Ok(Some(Vec::new()));
+    }
     let mut owner = ctx.alloc_filled(point_count, None, "catia_match_repair_owners")?;
     let mut mates = ctx.alloc_filled(count, None, "catia_match_repaired")?;
     let mut unmatched = Vec::new();
@@ -366,6 +376,9 @@ pub(crate) fn retain_distinct_matching_supports(
         )?
     {
         return Ok(None);
+    }
+    if domains.is_empty() {
+        return Ok(Some(false));
     }
     let Some(node_count) = domains.len().checked_add(point_count) else {
         return Ok(None);
@@ -1364,4 +1377,6 @@ mod tests {
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "catia_match_owners"));
     }
+
+    mod empty_domains;
 }
