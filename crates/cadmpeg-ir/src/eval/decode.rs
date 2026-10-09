@@ -416,7 +416,7 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
         curve: &'curve NurbsCurve,
     ) -> Result<Self, ResourceLimit> {
         let support = curve.knots().len() - curve.pole_count();
-        let (basis, storage) = if support <= 2 {
+        let basis = if support <= 2 {
             (
                 SupportValues::Inline {
                     values: [0.0; 2],
@@ -425,8 +425,9 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
                 None,
             )
         } else {
+            let storage;
             let mut basis = Vec::new();
-            let storage = ctx.reserve_temporary_vec(&mut basis, support, "IR B-spline basis")?;
+            storage = ctx.reserve_temporary_vec(&mut basis, support, "IR B-spline basis")?;
             basis.extend(
                 ctx.admit_iter(0..support, "IR B-spline basis work")?
                     .map(|_| 0.0),
@@ -435,8 +436,8 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
         };
         Ok(Self {
             curve,
-            basis,
-            _storage: storage,
+            basis: basis.0,
+            _storage: basis.1,
         })
     }
 

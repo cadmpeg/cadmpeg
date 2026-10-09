@@ -496,8 +496,8 @@ impl SourceFidelity {
         S: cadmpeg_core::decode::iter_source::IterSource,
         S::Iter: Iterator<Item = UnknownRecord>,
     {
-        let mut incoming = BTreeMap::new();
         let mut storage = ctx.reserve_scoped(0, "stage source records")?;
+        let mut incoming = BTreeMap::new();
         for record in ctx.admit_iter(records, "retain source record batch")? {
             if ctx.contains_key_btree_map(
                 &self.retained_records,
@@ -637,7 +637,7 @@ impl SourceFidelity {
                 }
             }
         }
-        let (existing_ids, identity_storage) =
+        let existing_ids =
             ctx.with_scoped_storage("native unknown existing identities", || {
                 let mut existing_ids = BTreeSet::new();
                 for (_, namespace) in ctx.admit_iter(&ir.native.0, "native unknown namespaces")? {
@@ -657,15 +657,15 @@ impl SourceFidelity {
                 }
                 Ok::<_, CodecError>(existing_ids)
             })?;
-        let mut retained = BTreeMap::new();
         let mut storage = ctx.reserve_scoped(0, "native unknown retained index")?;
+        let mut retained = BTreeMap::new();
         for record in ctx.admit_iter(records, "native unknown incoming records")? {
             if ctx.contains_key_btree_map(
                 &self.retained_records,
                 record.id(),
                 "native unknown retained lookup",
             )? || ctx.contains_btree_set(
-                &existing_ids,
+                &existing_ids.0,
                 record.id().as_str(),
                 "native unknown existing lookup",
             )? || ctx.contains_key_btree_map(
@@ -771,7 +771,6 @@ impl SourceFidelity {
             )?));
         }
         drop(existing_ids);
-        drop(identity_storage);
         crate::annotations::admit_btree_append(
             ctx,
             &self.retained_records,
