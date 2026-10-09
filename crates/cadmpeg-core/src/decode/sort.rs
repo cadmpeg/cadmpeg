@@ -16,8 +16,8 @@ pub(super) fn admit_ordered_run<T>(
     key_bytes: &impl Fn(&T) -> usize,
     operation: &'static str,
 ) -> Result<bool, CodecError> {
-    // Small stable runs already sort in place without scratch. Keep their
-    // fixed admission estimate, including runs collected from hash tables.
+    // Small unstable runs keep their fixed admission estimate, including
+    // runs collected from hash tables.
     if values.len() <= INLINE_SORT_LIMIT {
         return Ok(false);
     }
