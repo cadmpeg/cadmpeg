@@ -2,7 +2,7 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    append_link_to_record, append_record_links, brep_free_vertex_indices, coedge_sense,
+    append_record_links, brep_free_vertex_indices, coedge_sense,
     commit_curve_tree, edge_param_range, edge_vertices, face_components, face_sense,
     hatch_loop_ids, hatch_plane_transform, hatch_source_links, region_shell_groups,
     region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
@@ -34,6 +34,9 @@ use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
 mod c2;
 mod candidate_annotations;
+mod source_links;
+
+use source_links::append_link_to_record;
 mod local_limits;
 mod source_prefix;
 

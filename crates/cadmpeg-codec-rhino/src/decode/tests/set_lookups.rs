@@ -48,7 +48,7 @@ fn fallback_self_link_equality_preserves_refusal() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let mut links = Vec::new();
-    let error = super::super::append_link_to_record(
+    let error = super::source_links::append_link_to_record(
         &ctx,
         "test:link#1",
         &mut links,
