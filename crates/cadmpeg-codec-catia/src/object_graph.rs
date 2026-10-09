@@ -2556,18 +2556,18 @@ pub(crate) fn classify_charged(
     ctx: &DecodeContext<'_>,
     fields: &[PayloadField],
 ) -> Result<PayloadSubtype, CodecError> {
+    const OPERATION: &str = "catia_object_payload_classification";
+    ctx.charge_work(0, OPERATION)?;
     let mut triplets = 0usize;
     let mut atoms = 0usize;
     let mut lists = 0usize;
     let mut aggregator = false;
     let mut blob = false;
     let mut empty = true;
-    for (index, field) in ctx
-        .admit_iter(fields, "catia_object_payload_classification")?
-        .enumerate()
-    {
+    let mut index = 0usize;
+    let no_bulk_table = ctx.all_by_limit(fields, |field| {
         match field {
-            PayloadField::BulkTable { .. } => return Ok(PayloadSubtype::BulkTable),
+            PayloadField::BulkTable { .. } => return Ok(false),
             PayloadField::Atom { .. } => atoms += 1,
             PayloadField::List { declared_count, .. } => {
                 lists += 1;
@@ -2584,6 +2584,11 @@ pub(crate) fn classify_charged(
         {
             triplets += 1;
         }
+        index += 1;
+        Ok(true)
+    }, OPERATION)?;
+    if !no_bulk_table {
+        return Ok(PayloadSubtype::BulkTable);
     }
     Ok(if triplets >= 2 {
         PayloadSubtype::TripletChain

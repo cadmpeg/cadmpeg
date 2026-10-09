@@ -928,3 +928,46 @@ fn parallel_reference_table_rows_propagate_caller_work_refusal() {
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
 }
+
+#[test]
+fn parallel_reference_table_rejects_before_unread_rows() {
+    crate::test_support::with_work_limit(1, |ctx| {
+        let columns = vec![crate::native::CatiaDesignReferenceColumn {
+            field: "catia:test:field#0".to_owned(),
+            field_class: None,
+            list_payload_offset: 0,
+        }];
+        let rows = (0..4097)
+            .map(|_| crate::native::CatiaDesignReferenceRow {
+                cells: Vec::new(),
+                matching_design_object: None,
+            })
+            .collect();
+        assert!(crate::native::CatiaDesignParallelReferenceTable::new(ctx, columns, rows)
+            .expect("only the first invalid row is visited")
+            .is_none());
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn parallel_reference_table_empty_rows_preserve_sticky_refusal() {
+    crate::test_support::with_work_limit(0, |ctx| {
+        assert!(crate::native::CatiaDesignParallelReferenceTable::new(ctx, Vec::new(), Vec::new())
+            .expect("no rows require work")
+            .is_some());
+        let rows = vec![crate::native::CatiaDesignReferenceRow {
+            cells: Vec::new(),
+            matching_design_object: None,
+        }];
+        let error = crate::native::CatiaDesignParallelReferenceTable::new(ctx, Vec::new(), rows)
+            .expect_err("the first row requires work");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal required")
+        };
+        assert_eq!(limit.operation, "catia_design_reference_table_row_visits");
+        let empty = crate::native::CatiaDesignParallelReferenceTable::new(ctx, Vec::new(), Vec::new());
+        assert!(matches!(empty, Err(cadmpeg_core::CodecError::ResourceLimit(ref sticky)) if sticky == &limit));
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
