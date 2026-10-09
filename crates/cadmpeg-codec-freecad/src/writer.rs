@@ -186,12 +186,9 @@ fn validate_properties(
     expected: &[PropertyRecord],
     written: &[PropertyRecord],
 ) -> Result<(), CodecError> {
-    let mut expected_by_id = HashMap::with_capacity(expected.len());
+    let mut expected_ids = HashSet::with_capacity(expected.len());
     for property in expected {
-        if expected_by_id
-            .insert(property.id.as_str(), property)
-            .is_some()
-        {
+        if !expected_ids.insert(property.id.as_str()) {
             return Err(CodecError::NotImplemented(format!(
                 "edited FCStd property graph has duplicate property {}",
                 property.id
@@ -210,13 +207,13 @@ fn validate_properties(
             )));
         }
     }
-    if expected_by_id.len() != written_by_id.len() {
+    if expected_ids.len() != written_by_id.len() {
         return Err(CodecError::NotImplemented(
             "edited FCStd property graph changes its record count".into(),
         ));
     }
-    for (id, property) in expected_by_id {
-        let Some(candidate) = written_by_id.get(id).copied() else {
+    for property in expected {
+        let Some(candidate) = written_by_id.get(property.id.as_str()).copied() else {
             return Err(CodecError::NotImplemented(format!(
                 "edited FCStd property {} is missing from the written graph",
                 property.id
