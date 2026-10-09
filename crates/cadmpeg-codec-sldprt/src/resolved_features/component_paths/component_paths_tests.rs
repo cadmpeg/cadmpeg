@@ -319,3 +319,5 @@ fn profile_block_identity_parsers_preserve_ownership_and_refusals() {
 }
 
 mod character_growth;
+
+mod input_identities;
