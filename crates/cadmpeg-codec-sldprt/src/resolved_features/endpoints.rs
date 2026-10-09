@@ -1812,16 +1812,15 @@ pub(super) fn output_curve_endpoint_markers<'a>(
             marker_curve_endpoint_markers(ctx, payload, curve, markers_by_id, markers, geometry)
         })?;
     if endpoints.len() == 2 {
-        endpoints_storage.commit()?;
-        return Ok(endpoints);
+        return endpoints_storage.commit_value(endpoints);
     }
     if let Some(completed) =
         same_index_radius_relation_curve_endpoint_markers(ctx, curve, markers_by_id, geometry)?
     {
+        drop((endpoints, endpoints_storage));
         return copy_endpoint_markers(ctx, &completed);
     }
-    endpoints_storage.commit()?;
-    Ok(endpoints)
+    endpoints_storage.commit_value(endpoints)
 }
 
 fn same_index_radius_relation_curve_endpoint_markers<'a>(
