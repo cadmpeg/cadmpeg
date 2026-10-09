@@ -898,6 +898,7 @@ fn mesh_edge_run_materialization_refuses_before_occurrence_copy() {
 }
 
 mod ports_and_coverage;
+mod cache;
 
 #[test]
 fn duplicate_face_search_refuses_recursive_depth() {
