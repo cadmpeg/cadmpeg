@@ -4724,28 +4724,36 @@ fn parse_texture_mapping(
     let (primitive_class_uuid, cache_requires_opaque) = if object.short() {
         (None, false)
     } else {
-        let mut warnings = Diagnostics::new();
-        let (value, userdata) =
-            parse_class_wrapper_with_userdata(ctx, data, object.range(), archive, &mut warnings)?;
-        let mut cache_requires_opaque = false;
-        ctx.charge_work(0, "Rhino parse texture mapping traversal")?;
-        let mut source = userdata.iter();
-        for _ in 0..source.len() {
-            let raw = ctx.next_charged(&mut source, "Rhino parse texture mapping traversal")?
-                .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
-            let Some(value) = UserdataDescriptor::known(raw) else {
-                continue;
-            };
-            if value.class_uuid == MAPPING_CRC_CACHE && value.item_uuid == MAPPING_CRC_CACHE
-                && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
-            {
-                cache_requires_opaque = true;
-                break;
-            }
-        }
+        let ((primitive_uuid, cache_requires_opaque), primitive_storage) = ctx.with_scoped_storage(
+            "Rhino texture mapping primitive parse scratch",
+            || {
+                let mut warnings = Diagnostics::new();
+                let (value, userdata) = parse_class_wrapper_with_userdata(
+                    ctx, data, object.range(), archive, &mut warnings,
+                )?;
+                let mut cache_requires_opaque = false;
+                ctx.charge_work(0, "Rhino parse texture mapping traversal")?;
+                let mut source = userdata.iter();
+                for _ in 0..source.len() {
+                    let raw = ctx.next_charged(&mut source, "Rhino parse texture mapping traversal")?
+                        .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
+                    let Some(value) = UserdataDescriptor::known(raw) else {
+                        continue;
+                    };
+                    if value.class_uuid == MAPPING_CRC_CACHE && value.item_uuid == MAPPING_CRC_CACHE
+                        && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
+                    {
+                        cache_requires_opaque = true;
+                        break;
+                    }
+                }
+                Ok::<_, FramingError>((value.class_uuid, cache_requires_opaque))
+            },
+        )?;
+        drop(primitive_storage);
         (
             Some(ctx.format_retained(
-                format_args!("{}", value.class_uuid),
+                format_args!("{primitive_uuid}"),
                 "Rhino texture mapping primitive UUID",
             )?),
             cache_requires_opaque,
