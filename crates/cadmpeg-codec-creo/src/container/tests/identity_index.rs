@@ -112,3 +112,81 @@ fn cmnm_fixed_length_field_rejects_invalid_text() {
         assert_eq!(actual, None);
     }
 }
+
+
+#[test]
+fn identity_owner_selection_drops_before_reference_index_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    use super::super::FeatureIdentityIndex;
+
+    // One entry uses the core growth minimum of four buckets. The bound
+    // includes entry bytes, alignment padding, and the control-byte group.
+    fn one_entry_bytes<T>() -> u64 {
+        u64::try_from(4 * std::mem::size_of::<T>()
+            + std::mem::align_of::<T>().max(16) - 1 + 4 + 16)
+            .expect("one-entry table storage")
+    }
+    let owner_bytes = one_entry_bytes::<u32>();
+    let selection_bytes = one_entry_bytes::<(u32, u8)>();
+    // Selection growth overlaps owners. Reference growth overlaps only the
+    // still-needed selection, then retains its own equal-sized table.
+    let cap = (owner_bytes + selection_bytes).max(2 * selection_bytes);
+    let row = FeatureRow {
+        feature_id: 7,
+        root_schema_class: Some(SchemaClass::DatumPlane),
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0,
+        offset: 0,
+    };
+    let reference = FeatureReferenceName {
+        feature_id: 7,
+        name_bytes: b"Datum Plane".to_vec(),
+        own_reference_id: 0,
+        reference_type: 0,
+        offset: 0,
+    };
+    let structural = std::collections::BTreeSet::new();
+    for (allowed, probe_while_live) in [(cap - 1, false), (cap, true), (cap, false)] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = allowed;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = ctx.with_scoped_storage("identity selection parent", ||
+            FeatureIdentityIndex::new(&ctx, std::slice::from_ref(&row), &structural,
+                &[], std::slice::from_ref(&reference)));
+        let original = if allowed < cap {
+            let Err(CodecError::ResourceLimit(refusal)) = result else {
+                panic!("one byte below reference growth must refuse");
+            };
+            assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(refusal.operation, "creo reference identity kinds");
+            assert_eq!((refusal.used, refusal.additional),
+                (selection_bytes, selection_bytes));
+            refusal
+        } else {
+            let (index, storage) = result.expect("owner last-use refund admits reference growth");
+            assert!(index.contains(&ctx, &row, &structural).expect("datum identity"));
+            let mut index = Some(index);
+            let retained_bytes = if probe_while_live {
+                selection_bytes
+            } else {
+                drop(index.take());
+                0
+            };
+            let refusal = ctx.reserve_scoped_limit(cap + 1, "after identity owner selection")
+                .expect_err("probe actual live index storage");
+            assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(refusal.used, retained_bytes);
+            drop(index);
+            drop(storage);
+            refusal
+        };
+        assert!(matches!(FeatureIdentityIndex::new(&ctx, std::slice::from_ref(&row),
+            &structural, &[], std::slice::from_ref(&reference)),
+            Err(CodecError::ResourceLimit(refusal)) if refusal == original));
+        assert_eq!(ctx.resource_refusal(), Some(original));
+    }
+}
