@@ -88,3 +88,66 @@ fn recipe_owner_grouping_storage_ends_before_the_ambient_parent() {
             Err(CodecError::ResourceLimit(actual)) if actual == original));
     }
 }
+
+#[test]
+fn consumed_parser_vector_ends_before_current_operation_callback() {
+    use super::super::{visit_current_operations, ParsedKind, ParsedOperation, RecipeState};
+    use std::mem::{align_of, size_of};
+
+    let state_bytes = size_of::<ParsedOperation<'_, RecipeState>>();
+    assert!((2..=1024).contains(&state_bytes), "four-slot minimum vector capacity");
+    // One grouped state retains four vector slots. The one-key tree uses the
+    // core node bound: 11 key/value lanes, 16 pointer-width metadata lanes,
+    // and two alignment widths. The consumed parser vector is no longer live.
+    let alignment = align_of::<u32>()
+        .max(align_of::<Vec<ParsedOperation<'_, RecipeState>>>())
+        .max(align_of::<usize>());
+    let group_bytes = u64::try_from(4 * state_bytes
+        + 11 * (size_of::<u32>() + size_of::<Vec<ParsedOperation<'_, RecipeState>>>())
+        + 16 * size_of::<usize>() + 2 * alignment).expect("group storage bound");
+    for nested in [false, true] {
+        for overflow in [false, true] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = EMPTY_ROOT_MATERIALIZED_BYTES;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let parent_bytes = if nested { 37 } else { 0 };
+            let mut parent = ctx.reserve_scoped(parent_bytes, "test live grouping parent")
+                .expect("parent storage");
+            let available = EMPTY_ROOT_MATERIALIZED_BYTES - group_bytes - parent_bytes;
+            let mut visits = 0;
+            let mut run = || visit_current_operations(&ctx, EXTRUDE, |operation| {
+                visits += 1;
+                assert_eq!(operation.feature_id, 7);
+                assert!(matches!(operation.kind, ParsedKind::Stored("Extrude")));
+                assert_eq!(operation.recipe.resolved(), Some(super::super::FeatureRecipe::ProtrudeExtrude));
+                let probe = ctx.reserve_scoped(available + u64::from(overflow),
+                    "current operation callback storage")?;
+                drop(probe);
+                Ok(())
+            });
+            let result = if nested { parent.with_storage(run) } else { run() };
+            assert_eq!(visits, 1);
+            drop(parent);
+            if overflow {
+                let original = ctx.resource_refusal().expect("one byte beyond live storage");
+                assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+                assert_eq!((original.dimension, original.used, original.additional, original.operation),
+                    (ResourceDimension::MaterializedBytes, group_bytes + parent_bytes,
+                        available + 1, "current operation callback storage"));
+                assert!(matches!(unique_recipe_owner(&ctx, &[]),
+                    Err(CodecError::ResourceLimit(actual)) if actual == original));
+            } else {
+                result.expect("callback uses the remaining materialized allowance");
+                let probe = ctx.reserve_scoped(EMPTY_ROOT_MATERIALIZED_BYTES,
+                    "after grouping callback storage").expect("all scoped storage ended");
+                drop(probe);
+                let original = ctx.charge_retained_limit(1, "after borrowed grouping callback")
+                    .expect_err("no retained parser or projection storage");
+                assert_eq!((original.dimension, original.used, original.additional),
+                    (ResourceDimension::RetainedBytes, 0, 1));
+            }
+        }
+    }
+}
