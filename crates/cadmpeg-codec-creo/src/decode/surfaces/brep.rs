@@ -1520,8 +1520,7 @@ fn ordered_native_parameter_face_loops<'a>(
         ctx.extend_from_slice(&mut copied_loops, loops, "creo native face loop references")
     })?;
     if let Some(ordered) = ordered_parameter_face_loops(ctx, copied_loops, &polygons)? {
-        input_storage.commit()?;
-        Ok(Some(ordered))
+        Ok(Some(input_storage.commit_value(ordered)?))
     } else {
         drop(input_storage);
         ordered_two_edge_circle_loops(
