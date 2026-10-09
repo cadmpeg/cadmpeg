@@ -786,3 +786,5 @@ fn external_body_preserves_selected_identity() {
 }
 
 mod stream_keys;
+
+mod body_faces;

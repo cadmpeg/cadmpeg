@@ -2855,13 +2855,22 @@ fn body_recipe_face_body_candidates(
     selected: &cadmpeg_ir::ids::BodyId,
     external: &ExternalBodies<'_, '_>,
 ) -> Result<(bool, bool), cadmpeg_core::CodecError> {
+    let operation = "scan F3D body recipe references";
+    ctx.charge_work(0, operation)?;
     let mut any_candidate = false;
-    let mut contains_selected = false;
-    for reference in ctx.admit_iter(operand.references(), "scan F3D body recipe references")? {
-        for face in ctx.admit_iter(
-            &reference.candidate_faces,
-            "scan F3D body recipe candidate faces",
-        )? {
+    let mut references = operand.references().iter();
+    while !references.as_slice().is_empty() {
+        let Some(reference) = ctx.next_charged(&mut references, operation)? else {
+            break;
+        };
+        let mut faces = reference.candidate_faces.iter();
+        while !faces.as_slice().is_empty() {
+            let Some(face) = ctx.next_charged(
+                &mut faces,
+                "scan F3D body recipe candidate faces",
+            )? else {
+                break;
+            };
             let Some(&body) = ctx.get_hash_map(
                 &external.body_by_face,
                 face,
@@ -2876,12 +2885,13 @@ fn body_recipe_face_body_candidates(
                 "resolve F3D body recipe face carrier",
             )? {
                 any_candidate = true;
-                contains_selected |=
-                    ctx.equal(body, selected, "compare F3D selected body recipe candidate")?;
+                if ctx.equal(body, selected, "compare F3D selected body recipe candidate")? {
+                    return Ok((true, true));
+                }
             }
         }
     }
-    Ok((any_candidate, contains_selected))
+    Ok((any_candidate, false))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -4762,31 +4772,17 @@ fn unique_history_state<'a>(
     Ok(found)
 }
 
-fn unique_history_state_in(
+fn unique_history_state_in<'a>(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
-    history: &AsmHistory,
+    history: &'a AsmHistory,
     state_id: i64,
-) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    let operation = "find F3D ASM history state";
-    let Some(index) = decode.position_by(
+) -> Result<Option<&'a AsmDeltaState>, cadmpeg_core::CodecError> {
+    unique_by(
+        decode,
         &history.states,
         |state| Ok(state.state_id == state_id),
-        operation,
-    )?
-    else {
-        return Ok(None);
-    };
-    if decode
-        .position_by(
-            &history.states[index + 1..],
-            |state| Ok(state.state_id == state_id),
-            operation,
-        )?
-        .is_some()
-    {
-        return Ok(None);
-    }
-    Ok(Some(index))
+        "find F3D ASM history state",
+    )
 }
 
 /// Return the effective input state for a scope. Some Design scope envelopes
@@ -4797,6 +4793,7 @@ pub(crate) fn effective_scope_previous_history_state_id(
     scope: &crate::records::feature::scope::DesignParameterScope,
     histories: &[AsmHistory],
 ) -> Result<Option<i64>, cadmpeg_core::CodecError> {
+    decode.charge_work(0, "find F3D history state")?;
     if let Some(previous_state_id) = scope.previous_history_state_id() {
         return Ok(Some(previous_state_id));
     }
@@ -5168,17 +5165,14 @@ fn parallel_directions(left: cadmpeg_ir::math::Vector3, right: cadmpeg_ir::math:
     dot.is_finite() && (dot.abs() - 1.0).abs() <= EPS_HISTORY_PARALLEL_DIRECTIONS_E7
 }
 
-fn history_state_pair(
+fn history_state_pair<'a>(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
-    history: &AsmHistory,
+    history: &'a AsmHistory,
     state_id: i64,
     previous_state_id: i64,
     require_direct: bool,
-) -> Result<Option<(usize, usize)>, cadmpeg_core::CodecError> {
-    let Some(state_index) = unique_history_state_in(decode, history, state_id)? else {
-        return Ok(None);
-    };
-    let Some(state) = history.states.get(state_index) else {
+) -> Result<Option<(&'a AsmDeltaState, &'a AsmDeltaState)>, cadmpeg_core::CodecError> {
+    let Some(state) = unique_history_state_in(decode, history, state_id)? else {
         return Ok(None);
     };
     if require_direct {
@@ -5189,13 +5183,18 @@ fn history_state_pair(
             return Ok(None);
         }
     }
-    let Some(previous_index) = unique_history_state_in(decode, history, previous_state_id)? else {
-        return Ok(None);
+    let previous = if state_id == previous_state_id {
+        state
+    } else {
+        let Some(previous) = unique_history_state_in(decode, history, previous_state_id)? else {
+            return Ok(None);
+        };
+        previous
     };
     if !require_direct && !history_state_reaches(decode, history, state, previous_state_id)? {
         return Ok(None);
     }
-    Ok(Some((state_index, previous_index)))
+    Ok(Some((state, previous)))
 }
 
 /// A unique state pair: its history, the state and the previous state.
@@ -5205,7 +5204,7 @@ type HistoryStatePair<'a> = (&'a AsmHistory, &'a AsmDeltaState, &'a AsmDeltaStat
 enum StatePairSearch<'a> {
     /// No history holds the pair.
     Absent,
-    /// More than one history holds it, or its states cannot be read back.
+    /// More than one history holds it.
     Ambiguous,
     /// Exactly one history holds it.
     Unique(HistoryStatePair<'a>),
@@ -5219,49 +5218,24 @@ fn unique_history_state_pair_for_link<'a>(
     require_direct: bool,
 ) -> Result<StatePairSearch<'a>, cadmpeg_core::CodecError> {
     let operation = "find F3D history state pair";
-    let mut pair_indices = None;
-    let Some(index) = decode.position_by(
-        histories,
-        |history| {
-            pair_indices =
-                history_state_pair(decode, history, state_id, previous_state_id, require_direct)?;
-            Ok(pair_indices.is_some())
-        },
-        operation,
-    )?
-    else {
-        return Ok(StatePairSearch::Absent);
-    };
-    if decode
-        .position_by(
-            &histories[index + 1..],
-            |history| {
-                Ok(history_state_pair(
-                    decode,
-                    history,
-                    state_id,
-                    previous_state_id,
-                    require_direct,
-                )?
-                .is_some())
-            },
-            operation,
-        )?
-        .is_some()
-    {
-        return Ok(StatePairSearch::Ambiguous);
+    decode.charge_work(0, operation)?;
+    let mut found = None;
+    let mut source = histories.iter();
+    while !source.as_slice().is_empty() {
+        let Some(history) = decode.next_charged(&mut source, operation)? else {
+            break;
+        };
+        let Some((state, previous)) =
+            history_state_pair(decode, history, state_id, previous_state_id, require_direct)?
+        else {
+            continue;
+        };
+        if found.is_some() {
+            return Ok(StatePairSearch::Ambiguous);
+        }
+        found = Some((history, state, previous));
     }
-    let (Some(history), Some((state_index, previous_index))) = (histories.get(index), pair_indices)
-    else {
-        return Ok(StatePairSearch::Ambiguous);
-    };
-    let (Some(state), Some(previous)) = (
-        history.states.get(state_index),
-        history.states.get(previous_index),
-    ) else {
-        return Ok(StatePairSearch::Ambiguous);
-    };
-    Ok(StatePairSearch::Unique((history, state, previous)))
+    Ok(found.map_or(StatePairSearch::Absent, StatePairSearch::Unique))
 }
 
 /// Return the one ASM history bound to a Design scope.
@@ -5277,25 +5251,12 @@ pub(crate) fn bound_scope_history<'a>(
         return Ok(None);
     };
     let operation = "find F3D bound history";
-    let Some(index) = decode.position_by(
+    unique_by(
+        decode,
         histories,
-        |history| decode.equal(history.id.as_str(), history_id.as_str(), operation),
+        |history| decode.equal_bytes(history.id.as_bytes(), history_id.as_bytes(), operation),
         operation,
-    )?
-    else {
-        return Ok(None);
-    };
-    if decode
-        .position_by(
-            &histories[index + 1..],
-            |history| decode.equal(history.id.as_str(), history_id.as_str(), operation),
-            operation,
-        )?
-        .is_some()
-    {
-        return Ok(None);
-    }
-    Ok(Some(&histories[index]))
+    )
 }
 
 fn bound_history_state_pair<'a>(
@@ -5309,18 +5270,8 @@ fn bound_history_state_pair<'a>(
     let Some(history) = bound_scope_history(decode, scope_id, scope_histories, histories)? else {
         return Ok(None);
     };
-    let Some((state_index, previous_index)) =
-        history_state_pair(decode, history, state_id, previous_state_id, false)?
-    else {
-        return Ok(None);
-    };
-    let (Some(state), Some(previous)) = (
-        history.states.get(state_index),
-        history.states.get(previous_index),
-    ) else {
-        return Ok(None);
-    };
-    Ok(Some((history, state, previous)))
+    Ok(history_state_pair(decode, history, state_id, previous_state_id, false)?
+        .map(|(state, previous)| (history, state, previous)))
 }
 
 fn insert_scope_history_binding(
@@ -5816,11 +5767,8 @@ fn history_state_reaches(
         let Some(previous_state_id) = linked_previous_state_id(decode, history, current)? else {
             return Ok(false);
         };
-        let Some(previous_index) = unique_history_state_in(decode, history, previous_state_id)?
+        let Some(previous) = unique_history_state_in(decode, history, previous_state_id)?
         else {
-            return Ok(false);
-        };
-        let Some(previous) = history.states.get(previous_index) else {
             return Ok(false);
         };
         current = previous;
@@ -5837,28 +5785,15 @@ fn linked_previous_state_id(
     history: &AsmHistory,
     state: &AsmDeltaState,
 ) -> Result<Option<i64>, cadmpeg_core::CodecError> {
+    let operation = "find F3D ASM predecessor node";
+    decode.charge_work(0, operation)?;
     let linked = if let Some(node_index) = state.next_ref {
-        let operation = "find F3D ASM predecessor node";
-        if let Some(index) = decode.position_by(
+        unique_by(
+            decode,
             &history.states,
             |candidate| Ok(candidate.node_index == node_index),
             operation,
-        )? {
-            if decode
-                .position_by(
-                    &history.states[index + 1..],
-                    |candidate| Ok(candidate.node_index == node_index),
-                    operation,
-                )?
-                .is_some()
-            {
-                None
-            } else {
-                Some(history.states[index].state_id)
-            }
-        } else {
-            None
-        }
+        )?.map(|candidate| candidate.state_id)
     } else {
         None
     };

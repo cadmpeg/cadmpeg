@@ -1181,3 +1181,5 @@ fn recipe_selector_side_count_scan_refuses_work_limit() {
 }
 
 mod global_state;
+
+mod borrowed_queries;
