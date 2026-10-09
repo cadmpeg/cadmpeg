@@ -305,3 +305,41 @@ fn revolution_fixed_prefix_search_keeps_the_64_byte_boundary_and_one_row_visit()
         });
     }
 }
+
+#[test]
+fn empty_feature_row_outputs_are_free_and_keep_original_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    for refused in [false, true] {
+        if refused {
+            ctx.charge_work_limit(1, "feature outputs seed").expect_err("zero work cap");
+        }
+        let results = [
+            super::super::round_replay_scalars(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::choices(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::choice_fields(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::geometry_tables(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::affected_ids(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::replay_affected_ids(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::surface_merge_replay_affected_ids(&ctx, &[], &[]).map(|v| v.is_empty()),
+            super::super::loop_restore_directions(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::loop_history_entries(&ctx, &[], &[]).map(|v| v.is_empty()),
+            super::super::revolution_extents(&ctx, &[]).map(|v| v.is_empty()),
+        ];
+        for result in results {
+            if refused {
+                let original = ctx.resource_refusal().expect("original refusal");
+                assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+            } else {
+                assert!(result.expect("no rows or ordering work"));
+            }
+        }
+        assert_eq!(ctx.resource_refusal().is_some(), refused);
+    }
+}
