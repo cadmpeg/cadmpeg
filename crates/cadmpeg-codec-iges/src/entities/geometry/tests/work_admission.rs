@@ -50,9 +50,12 @@ fn linear_nurbs_parameters_admit_knots_outside_the_returned_interval() {
                 .map(|_| ())
         },
     );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 1002)
-    );
+    // Validation visits all 1002 knots and performs its current terminal
+    // probe. The source pass then admits one knot before reading it.
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "iges linear NURBS parameter knots"
+            && (limit.limit, limit.used, limit.additional) == (1003, 1003, 1)));
     crate::test_support::with_service_context(&[], |ctx| {
         let (parameters, _storage) =
             super::super::linear_nurbs_parameters(1, &knots, 1000, false, [500.25, 500.75], ctx)
