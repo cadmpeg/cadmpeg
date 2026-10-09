@@ -1052,7 +1052,7 @@ fn legacy_framing_box_refuses_its_retained_slot() {
         persistence: crate::legacy::Persistence::default(),
     };
     assert!(
-        matches!(super::super::identify_layout(&ctx, &[], &[], Some(framing)), Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "creo legacy framing box")
+        matches!(super::super::identify_layout(&ctx, &[], Some(framing)), Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "creo legacy framing box")
     );
 }
 
