@@ -2221,33 +2221,41 @@ pub(super) fn canonical_profile_loci(
         .enumerate()
     {
         for (point, role) in sketch_entity_locus_points(entity).into_iter().flatten() {
-            let locus = role_locus(ctx, role, entity.id(), OPERATION)?;
             storage.with_storage(|| {
-                ctx.push_vec(&mut indexed, (source_index, point, locus), OPERATION)
+                ctx.push_vec(
+                    &mut indexed,
+                    (source_index, point, entity.id(), role),
+                    OPERATION,
+                )
             })?;
         }
     }
     // Source order breaks equal geometric and identity keys without sort scratch.
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut indexed,
-        |value| value,
-        |(left_index, left_point, left_locus), (right_index, right_point, right_locus)| {
+        |(source_index, point, entity, role)| (*source_index, *point, (*entity, *role as u8)),
+        |(left_index, left_point, (left_entity, left_role)),
+         (right_index, right_point, (right_entity, right_role))| {
             quantize(*left_point, QUANTUM)
                 .cmp(&quantize(*right_point, QUANTUM))
-                .then_with(|| locus_key(left_locus).cmp(&locus_key(right_locus)))
+                .then_with(|| {
+                    (left_entity.as_str(), *left_role)
+                        .cmp(&(right_entity.as_str(), *right_role))
+                })
                 .then_with(|| left_index.cmp(right_index))
         },
         OPERATION,
     )?;
     ctx.dedup_by(
         &mut indexed,
-        |(_, left_point, _), (_, right_point, _)| {
+        |(_, left_point, _, _), (_, right_point, _, _)| {
             Ok(quantize(*left_point, QUANTUM) == quantize(*right_point, QUANTUM))
         },
         "deduplicate SLDPRT canonical profile loci",
     )?;
     let mut loci = Vec::new();
-    for (_, point, locus) in ctx.admit_iter(indexed, OPERATION)? {
+    for (_, point, entity, role) in ctx.admit_iter(indexed, OPERATION)? {
+        let locus = role_locus(ctx, role, entity, OPERATION)?;
         ctx.push_vec(&mut loci, (point, locus), OPERATION)?;
     }
     Ok(loci)
