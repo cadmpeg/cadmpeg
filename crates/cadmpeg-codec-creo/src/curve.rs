@@ -1385,6 +1385,9 @@ fn synchronize_solve_blocks(
     assignments: &[CurveExpressionAssignment],
     solutions: &BTreeMap<usize, Vec<CurveExpressionValue>>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if blocks.is_empty() {
         return Ok(());
     }
@@ -2348,6 +2351,9 @@ fn valid_expression_identifier(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     name: &str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     Ok(!name.is_empty()
         && ctx.all_by(
             name.bytes().enumerate(),
@@ -2497,6 +2503,9 @@ fn expression_identifier_end(
     source: &[u8],
     start: usize,
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !source
         .get(start)
         .is_some_and(|byte| *byte == b'_' || byte.is_ascii_alphabetic())
@@ -2546,6 +2555,9 @@ impl ConditionalStack {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         frame: ConditionalFrame,
     ) -> Result<(), cadmpeg_core::CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         match self {
             Self::Empty => {
                 *self = Self::Open {
@@ -7667,6 +7679,9 @@ fn format_relation_real_admitted(
     decimals: Option<usize>,
     scientific: bool,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !value.is_finite() {
         return Ok(None);
     }
@@ -7738,6 +7753,9 @@ fn apply_declared_relation_unit(
     value: CurveExpressionValue,
     declared_unit: Option<&str>,
 ) -> Result<Option<CurveExpressionValue>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(declared_unit) = declared_unit else {
         return Ok(Some(value));
     };
@@ -7763,6 +7781,9 @@ pub(crate) fn expression_helix(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &CurveExpressionRecord,
 ) -> Result<Option<CurveExpressionHelix>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !record.prohibited_constructs.is_empty()
         || !record.solve_blocks.is_empty()
         || record.unresolved_solve_control

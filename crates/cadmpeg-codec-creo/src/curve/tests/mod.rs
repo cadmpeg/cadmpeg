@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod admission_recovery;
 mod affine;
 mod allocation;
 mod custody;
