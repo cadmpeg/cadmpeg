@@ -20,6 +20,7 @@ use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 mod case_equality;
 mod collection_limits;
+mod known_length;
 mod string_limits;
 
 #[test]

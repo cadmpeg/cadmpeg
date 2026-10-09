@@ -109,14 +109,16 @@ fn index_annotation_graph<'ctx>(
                     })?;
                 }
                 collect_typed_placement_candidates(record, geometry, &mut graph.placements, ctx)?;
-                for partial in ctx.admit_iter(
-                    &record.partials[..],
-                    "STEP annotation graph partial traversal",
-                )? {
-                    for parameter in ctx.admit_iter(
-                        partial.parameters.as_slice(),
-                        "STEP annotation graph parameter traversal",
-                    )? {
+                ctx.charge_work(0, "STEP annotation graph partial traversal")?;
+                let mut pmi_source = record.partials[..].iter();
+                for _ in 0..pmi_source.len() {
+                    let partial = ctx.next_charged(&mut pmi_source, "STEP annotation graph partial traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+                    ctx.charge_work(0, "STEP annotation graph parameter traversal")?;
+                    let mut pmi_source = partial.parameters.as_slice().iter();
+                    for _ in 0..pmi_source.len() {
+                        let parameter = ctx.next_charged(&mut pmi_source, "STEP annotation graph parameter traversal")?
+                            .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
                         for reference in references(parameter, ctx) {
                             let reference = reference?;
                             if !index_annotation_graph(
@@ -143,10 +145,11 @@ fn index_annotation_graph<'ctx>(
                             let child = child.as_ref().ok_or_else(|| {
                                 CodecError::malformed("STEP annotation child is incomplete")
                             })?;
-                            for &carrier in ctx.admit_iter(
-                                &child.text_carriers,
-                                "STEP annotation text carrier merge",
-                            )? {
+                            ctx.charge_work(0, "STEP annotation text carrier merge")?;
+                            let mut pmi_source = child.text_carriers.iter();
+                            for _ in 0..pmi_source.len() {
+                                let &carrier = ctx.next_charged(&mut pmi_source, "STEP annotation text carrier merge")?
+                                    .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
                                 if seen_storage.with_storage(|| {
                                     ctx.insert_btree_set(
                                         &mut text_seen,
@@ -380,14 +383,16 @@ fn annotation_graph_text_carriers(
         let (children_buffer, mut child_storage) =
             ctx.temporary_vec(0, "STEP independent annotation children")?;
         let mut children = children_buffer;
-        for partial in ctx.admit_iter(
-            &record.partials[..],
-            "STEP independent annotation partial traversal",
-        )? {
-            for parameter in ctx.admit_iter(
-                partial.parameters.as_slice(),
-                "STEP independent annotation parameter traversal",
-            )? {
+        ctx.charge_work(0, "STEP independent annotation partial traversal")?;
+        let mut pmi_source = record.partials[..].iter();
+        for _ in 0..pmi_source.len() {
+            let partial = ctx.next_charged(&mut pmi_source, "STEP independent annotation partial traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
+            ctx.charge_work(0, "STEP independent annotation parameter traversal")?;
+            let mut pmi_source = partial.parameters.as_slice().iter();
+            for _ in 0..pmi_source.len() {
+                let parameter = ctx.next_charged(&mut pmi_source, "STEP independent annotation parameter traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
                 for reference in references(parameter, ctx) {
                     ctx.push_scoped_vec(
                         &mut child_storage,
@@ -398,10 +403,11 @@ fn annotation_graph_text_carriers(
                 }
             }
         }
-        for &child in ctx
-            .admit_iter(&children, "STEP independent annotation children traversal")?
-            .rev()
-        {
+        ctx.charge_work(0, "STEP independent annotation children traversal")?;
+        let mut pmi_source = children.iter().rev();
+        for _ in 0..pmi_source.len() {
+            let &child = ctx.next_charged(&mut pmi_source, "STEP independent annotation children traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
             ctx.push_scoped_vec(
                 &mut pending_storage,
                 &mut pending,
@@ -487,15 +493,20 @@ fn indexed_annotation_text<'ctx>(
         .ok_or_else(|| CodecError::malformed("STEP annotation graph is incomplete"))?;
     let mut selected = None;
     let mut count = 0;
-    for &carrier in ctx.admit_iter(
-        &graph.text_carriers,
-        "STEP indexed annotation text traversal",
-    )? {
+    ctx.charge_work(0, "STEP indexed annotation text traversal")?;
+    let mut pmi_source = graph.text_carriers.iter();
+    for _ in 0..pmi_source.len() {
+        let &carrier = ctx.next_charged(&mut pmi_source, "STEP indexed annotation text traversal")?
+            .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
         cache_annotation_text(carrier, exchange, &mut index.texts, &mut index.storage, ctx)?;
         let cached = ctx
             .get_btree_map(&index.texts, &carrier, "STEP annotation text cache lookup")?
             .ok_or_else(|| CodecError::malformed("STEP annotation text was not indexed"))?;
-        for loss in ctx.admit_iter(&cached.losses, "STEP cached annotation loss traversal")? {
+        ctx.charge_work(0, "STEP cached annotation loss traversal")?;
+        let mut pmi_source = cached.losses.iter();
+        for _ in 0..pmi_source.len() {
+            let loss = ctx.next_charged(&mut pmi_source, "STEP cached annotation loss traversal")?
+                .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
             let loss = loss.try_clone_for_decode(ctx, "step_annotation_cached_loss_copy")?;
             ctx.push_scoped_vec(
                 &mut slot_storage.borrow_mut(),
