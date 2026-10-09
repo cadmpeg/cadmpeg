@@ -1774,50 +1774,27 @@ pub(crate) fn project_relation_solved_line_geometry(
                     };
                     Ok(next()?.is_some() && next()?.is_none())
                 };
+            let operand_slots = [(0, first_operand), (1, second_operand)];
             let line_operands = match relation.family {
-                FeatureInputRelationFamily::LineLineDistance
+                FeatureInputRelationFamily::LineLineDistance | FeatureInputRelationFamily::Angle
                     if relation_uses_solver_line_operand(relation, 0)
                         && relation_uses_solver_line_operand(relation, 1)
                         && first_operand.entity_index != second_operand.entity_index =>
                 {
                     let first_is_direct = direct_line_reference(first_operand)?;
                     let second_is_direct = direct_line_reference(second_operand)?;
-                    [first_operand, second_operand]
-                        .into_iter()
-                        .enumerate()
-                        .filter(|(index, _)| {
-                            if *index == 0 {
-                                !first_is_direct
-                            } else {
-                                !second_is_direct
-                            }
-                        })
-                        .collect::<Vec<_>>()
+                    match (first_is_direct, second_is_direct) {
+                        (false, false) => &operand_slots[..],
+                        (false, true) => &operand_slots[..1],
+                        (true, false) => &operand_slots[1..],
+                        (true, true) => &operand_slots[..0],
+                    }
                 }
                 FeatureInputRelationFamily::PointLineDistance
                     if relation_uses_solver_line_operand(relation, 1)
                         && !direct_line_reference(second_operand)? =>
                 {
-                    vec![(1, second_operand)]
-                }
-                FeatureInputRelationFamily::Angle
-                    if relation_uses_solver_line_operand(relation, 0)
-                        && relation_uses_solver_line_operand(relation, 1)
-                        && first_operand.entity_index != second_operand.entity_index =>
-                {
-                    let first_is_direct = direct_line_reference(first_operand)?;
-                    let second_is_direct = direct_line_reference(second_operand)?;
-                    [first_operand, second_operand]
-                        .into_iter()
-                        .enumerate()
-                        .filter(|(index, _)| {
-                            if *index == 0 {
-                                !first_is_direct
-                            } else {
-                                !second_is_direct
-                            }
-                        })
-                        .collect::<Vec<_>>()
+                    &operand_slots[1..]
                 }
                 _ => continue,
             };
@@ -2256,7 +2233,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                 let mut lines = Vec::new();
                 let mut used_marker_endpoints = false;
                 for &(operand_index, operand) in
-                    ctx.admit_iter(&line_operands, "build SLDPRT relation operand lines")?
+                    ctx.admit_iter(line_operands, "build SLDPRT relation operand lines")?
                 {
                     let markers = if prefer_marker_endpoints {
                         match endpoint_line_markers(operand_index)? {
@@ -5136,8 +5113,8 @@ pub(super) fn relation_display_scalar_for_parameter<'a>(
     let Some(first_kind) = first.operands.first().map(|operand| operand.kind) else {
         return Ok(None);
     };
-    let mut entity_indices = std::collections::BTreeSet::new();
     let mut indices_storage = ctx.reserve_scoped(0, "index SLDPRT display relation entities")?;
+    let mut entity_indices = std::collections::BTreeSet::new();
     if !ctx.all_by(
         &scalars,
         |scalar| {
