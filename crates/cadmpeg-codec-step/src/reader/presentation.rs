@@ -414,6 +414,7 @@ pub(super) fn decode<'ctx>(
     let mut style_colors = StyleColors {
         prefixes: BTreeMap::new(),
         values: BTreeMap::new(),
+        ctx,
         storage: ctx.reserve_scoped(0, "STEP shared color scratch")?,
     };
     let mut styles = styles.into_iter();
@@ -519,7 +520,6 @@ pub(super) fn decode<'ctx>(
             domain,
             &color_storage,
             (&mut losses, &slot_storage),
-            ctx,
         )?;
         let color = match &resolved.color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
@@ -718,7 +718,7 @@ pub(super) fn decode<'ctx>(
                 ctx.insert_btree_set(&mut typed, overridden, "step_presentation_typed_claims")
             })?;
         }
-        style_colors.claim(color_query, domain, (&mut typed, &mut claim_storage), ctx)?;
+        style_colors.claim(color_query, domain, (&mut typed, &mut claim_storage))?;
         claim_storage.with_storage(|| {
             ctx.insert_btree_set(&mut typed, color_id, "step_presentation_typed_claims")
         })?;
@@ -2065,27 +2065,28 @@ struct CachedStyleColors {
     claims_applied: bool,
 }
 
-struct StyleColors<'ctx> {
+struct StyleColors<'ctx, 'arena> {
     // Fixed-size prefix keys identify an ordered reference list without
     // variable-length map-key comparisons or repeated graph evaluation.
     prefixes: BTreeMap<(usize, u64), usize>,
     values: BTreeMap<(usize, StyleDomain), CachedStyleColors>,
+    ctx: &'ctx DecodeContext<'arena>,
     storage: ScopedReservation<'ctx>,
 }
 
-impl StyleColors<'_> {
-    fn resolve<'ctx>(
+impl StyleColors<'_, '_> {
+    fn resolve<'storage>(
         &mut self,
         references: &[u64],
         exchange: &Exchange,
         domain: StyleDomain,
-        storage: &std::cell::RefCell<ScopedReservation<'ctx>>,
+        storage: &std::cell::RefCell<ScopedReservation<'storage>>,
         (losses, slot_storage): (
             &mut Vec<LossNote>,
-            &std::cell::RefCell<ScopedReservation<'ctx>>,
+            &std::cell::RefCell<ScopedReservation<'storage>>,
         ),
-        ctx: &DecodeContext<'_>,
     ) -> Result<(usize, &CachedStyleColors), CodecError> {
+        let ctx = self.ctx;
         let mut prefix = 0;
         let mut reference_prefix = references.iter();
         ctx.charge_work(0, "STEP style color query references")?;
@@ -2213,8 +2214,8 @@ impl StyleColors<'_> {
         prefix: usize,
         domain: StyleDomain,
         (claims, storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
-        ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
+        let ctx = self.ctx;
         let cached = ctx
             .get_mut_btree_map(
                 &mut self.values,
