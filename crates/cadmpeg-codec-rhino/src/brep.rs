@@ -1651,8 +1651,8 @@ fn parse_legacy_major2(
         };
         endpoint_vertices.push(index);
     }
-    let mut vertex_index = None;
     let mut vertex_index_storage = ctx.reserve_scoped(0, "Rhino legacy Brep vertex index")?;
+    let mut vertex_index = None;
     let mut edges = ctx
         .collection_vec(edge_count, "Rhino legacy Brep edges")
         .map_err(crate::curves::GeometryError::from)?;
@@ -2646,8 +2646,8 @@ fn read_mesh_sides(
     let parsed: Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> = (|| {
         let mut result = slot_storage
             .with_storage(|| ctx.collection_vec(face_count, "Rhino Brep mesh cache slots"))?;
-        let mut children = Vec::new();
         let mut range_storage = ctx.reserve_scoped(0, "Rhino Brep mesh cache child ranges")?;
+        let mut children = Vec::new();
         for _ in 0..face_count {
             ctx.charge_work(1, "Rhino Brep mesh-side traversal")?;
             let present = child.bool()?;
