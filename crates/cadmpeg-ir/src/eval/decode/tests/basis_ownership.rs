@@ -36,3 +36,36 @@ fn reusable_basis_constructor_preserves_initialization_refusal_and_backing_lifet
         }
     }
 }
+
+#[test]
+fn reusable_basis_constructor_observes_original_refusal_before_inline_or_heap_storage() {
+    use crate::geometry::nurbs::NurbsCurve;
+    use crate::math::Point3;
+
+    for degree in 0..=3 {
+        let count = usize::try_from(degree).unwrap() + 1;
+        let knots: Vec<f64> = (0..count).map(|_| 0.0).chain((0..count).map(|_| 1.0)).collect();
+        let points: Vec<Point3> = (0..count).map(|_| Point3::new(0.0, 0.0, 0.0)).collect();
+        let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            degree,
+            knots,
+            points,
+            None,
+            false,
+        ).expect("fixture admission").expect("valid constant coordinates");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let original = ctx.charge_work_limit(1, "original evaluator constructor refusal").unwrap_err();
+        let actual = super::super::NurbsPointEvaluator::new(&ctx, &curve).err().expect("original refusal");
+        assert_eq!(actual, original);
+        assert_eq!(ctx.charge_work_limit(0, "observe evaluator constructor refusal"), Err(original));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    }
+}
