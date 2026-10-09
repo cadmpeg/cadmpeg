@@ -2339,6 +2339,11 @@ pub(crate) fn project_relation_solved_line_geometry(
                             )?
                             .zip(selected.iter())
                         {
+                            let line = if *line < generated_storage.0.len() {
+                                generated_storage.0[*line]
+                            } else {
+                                &entities[*line - generated_storage.0.len()]
+                            };
                             for entity in ctx
                                 .admit_iter(&*entities, "find SLDPRT dynamic solver-line aliases")?
                             {
@@ -2430,6 +2435,11 @@ pub(crate) fn project_relation_solved_line_geometry(
                             let Ok(id) = SketchEntityId::mint(id_text) else {
                                 continue;
                             };
+                            let line = if line < generated_storage.0.len() {
+                                generated_storage.0[line]
+                            } else {
+                                &entities[line - generated_storage.0.len()]
+                            };
                             let sketch_id = copy_planar_sketch_id(ctx, &line.sketch)?;
                             let mut endpoint_refs = Vec::new();
                             for reference in ctx.admit_iter(
@@ -2447,12 +2457,15 @@ pub(crate) fn project_relation_solved_line_geometry(
                                 )?;
                                 endpoint_refs.push(reference);
                             }
+                            // Selection admits only Line geometry, which has fixed fields.
+                            // End the source borrow before the arena can reallocate.
+                            let geometry = line.geometry.clone();
                             ctx.reserve_vec(entities, 1, "append SLDPRT dynamic solver line")?;
                             entities.push(
                                 SketchEntity::new(
                                     id,
                                     sketch_id,
-                                    line.geometry.try_clone_for_decode(
+                                    geometry.try_clone_for_decode(
                                         ctx,
                                         "copy SLDPRT relation line geometry",
                                     )?,
@@ -2581,23 +2594,32 @@ impl PointPointDistanceFamily {
     }
 }
 
-fn unique_dynamic_line_pair<'a>(
+fn unique_dynamic_line_pair(
     ctx: &DecodeContext<'_>,
     expected: f64,
     sketch: &cadmpeg_ir::sketches::SketchId,
-    entities: &'a [SketchEntity],
-    generated: &[&'a SketchEntity],
+    entities: &[SketchEntity],
+    generated: &[&SketchEntity],
     quantum: f64,
-) -> Result<Option<[SketchEntity; 2]>, cadmpeg_core::CodecError> {
+) -> Result<Option<[usize; 2]>, cadmpeg_core::CodecError> {
     if generated.len() != 2 {
         return Ok(None);
     }
     let mut candidates_storage = ctx.reserve_scoped(0, "SLDPRT dynamic line candidates")?;
-    let mut candidates = Vec::<([GridPoint; 2], &SketchEntity)>::new();
-    for entity in ctx
+    // Source positions survive appends to the entity arena. The generated prefix stays fixed.
+    let mut candidates = Vec::<([GridPoint; 2], usize)>::new();
+    let source = |position: usize| {
+        if position < generated.len() {
+            generated[position]
+        } else {
+            &entities[position - generated.len()]
+        }
+    };
+    for (position, entity) in ctx
         .admit_iter(generated, "scan SLDPRT dynamic line candidates")?
         .copied()
         .chain(ctx.admit_iter(entities, "scan SLDPRT dynamic line candidates")?)
+        .enumerate()
     {
         if !ctx.equal(&entity.sketch, sketch, "match SLDPRT dynamic line sketch")?
             || !matches!(
@@ -2620,7 +2642,7 @@ fn unique_dynamic_line_pair<'a>(
         candidates_storage.with_storage(|| {
             ctx.reserve_vec(&mut candidates, 1, "collect SLDPRT dynamic line candidates")
         })?;
-        candidates.push((key, entity));
+        candidates.push((key, position));
     }
     let mut match_pair = None;
     if !ctx.all_by(
@@ -2632,7 +2654,7 @@ fn unique_dynamic_line_pair<'a>(
             if !ctx.all_by(
                 &candidates[next_index..],
                 |(second_key, second)| {
-                    if line_line_distance(first, second)
+                    if line_line_distance(source(*first), source(*second))
                         .is_some_and(|measured| same_dimension_length(measured, expected))
                     {
                         let mut pair_key = [*first_key, *second_key];
@@ -2673,80 +2695,16 @@ fn unique_dynamic_line_pair<'a>(
     let Some(second_key) = dynamic_line_geometry_key(ctx, generated[1], quantum)? else {
         return Ok(None);
     };
-    let ordered = if dynamic_line_geometry_key(ctx, pair[0], quantum)? == Some(first_key) {
+    let ordered = if dynamic_line_geometry_key(ctx, source(pair[0]), quantum)? == Some(first_key) {
         pair
-    } else if dynamic_line_geometry_key(ctx, pair[1], quantum)? == Some(first_key)
-        || dynamic_line_geometry_key(ctx, pair[0], quantum)? == Some(second_key)
+    } else if dynamic_line_geometry_key(ctx, source(pair[1]), quantum)? == Some(first_key)
+        || dynamic_line_geometry_key(ctx, source(pair[0]), quantum)? == Some(second_key)
     {
         [pair[1], pair[0]]
     } else {
         pair
     };
-    Ok(Some([
-        copy_dynamic_line_entity(ctx, ordered[0])?,
-        copy_dynamic_line_entity(ctx, ordered[1])?,
-    ]))
-}
-
-fn copy_dynamic_line_entity(
-    ctx: &DecodeContext<'_>,
-    entity: &SketchEntity,
-) -> Result<SketchEntity, cadmpeg_core::CodecError> {
-    let id_text = ctx.format_retained(
-        format_args!("{}", entity.id().as_str()),
-        "copy SLDPRT dynamic line identity",
-    )?;
-    ctx.charge_work(
-        u64_from_index(id_text.len()),
-        "validate SLDPRT dynamic line identity",
-    )?;
-    let id = SketchEntityId::mint(id_text).map_err(|_| {
-        cadmpeg_core::CodecError::Malformed("SolidWorks dynamic line identity is invalid".into())
-    })?;
-    let sketch = copy_planar_sketch_id(ctx, &entity.sketch)?;
-    let native_ref = entity
-        .native_ref
-        .as_deref()
-        .map(|reference| {
-            ctx.format_retained(
-                format_args!("{reference}"),
-                "copy SLDPRT dynamic line native reference",
-            )
-        })
-        .transpose()?;
-    let geometry_ref = entity
-        .geometry_ref
-        .as_deref()
-        .map(|reference| {
-            ctx.format_retained(
-                format_args!("{reference}"),
-                "copy SLDPRT dynamic line geometry reference",
-            )
-        })
-        .transpose()?;
-    let mut endpoint_refs = Vec::new();
-    for reference in ctx.admit_iter(
-        &entity.endpoint_refs,
-        "copy SLDPRT dynamic line endpoint references",
-    )? {
-        let reference = ctx.format_retained(
-            format_args!("{reference}"),
-            "copy SLDPRT dynamic line endpoint reference",
-        )?;
-        ctx.reserve_vec(&mut endpoint_refs, 1, "copy SLDPRT dynamic line endpoints")?;
-        endpoint_refs.push(reference);
-    }
-    Ok(SketchEntity::new(
-        id,
-        sketch,
-        entity
-            .geometry
-            .try_clone_for_decode(ctx, "copy SLDPRT dynamic line geometry")?,
-    )
-    .with_construction(entity.construction)
-    .with_native_ref(native_ref)
-    .with_geometry_ref(geometry_ref)
-    .with_endpoint_refs(endpoint_refs))
+    Ok(Some(ordered))
 }
 
 fn dynamic_line_geometry_key(
@@ -6122,6 +6080,15 @@ mod relation_geometry_tests {
         )
         .unwrap()
         .expect("one existing line pairs with the roster solver line");
+        let source = |position: usize| {
+            if position < generated_refs.len() {
+                generated_refs[position]
+            } else {
+                &existing[position - generated_refs.len()]
+            }
+        };
+        let first = source(first);
+        let second = source(second);
         assert!(matches!(*first.geometry.definition(),
             SketchGeometryDefinition::Line { start, end }
                 if start == Point2::new(-16.0, 3.0) && end == Point2::new(-16.0, 7.0)
@@ -6407,3 +6374,6 @@ mod pair_source_storage_tests;
 
 #[cfg(test)]
 mod endpoint_reference_storage_tests;
+
+#[cfg(test)]
+mod dynamic_line_selection_tests;
