@@ -114,36 +114,33 @@ fn weight_sum(weight: Option<crate::math::sum::ScaledValue>) -> Homogeneous {
 }
 
 #[test]
-fn normalized_projection_rejects_range_loss_and_preserves_exact_constants() {
+fn projection_preserves_subnormal_rounding_and_exact_constants() {
     use crate::math::sum::scaled_finite;
     use crate::scalar::FiniteReal;
     let least = f64::from_bits(1);
     // Each numerator is nonzero. Dividing by two respectively preserves
     // one subnormal unit, ties to zero, or stays in the normal range.
     let base = weight_sum(scaled_finite(2.0));
-    for (numerator, expected, available) in [
-        (2.0 * least, least, false),
-        (least, 0.0, false),
-        (2.0 * f64::MIN_POSITIVE, f64::MIN_POSITIVE, true),
+    for (numerator, expected) in [
+        (2.0 * least, least),
+        (least, 0.0),
+        (2.0 * f64::MIN_POSITIVE, f64::MIN_POSITIVE),
     ] {
         let sum = Homogeneous {
             values: [scaled_finite(numerator), None, None, None],
             constant: [None; 3],
         };
         assert_eq!(sum.project(base, &[]).unwrap()[0].unwrap().get(), expected);
-        assert_eq!(sum.project_normalized(base, &[]).is_some(), available);
     }
-    assert_eq!(Homogeneous::zero().project_normalized(base, &[]),
-        Some([FiniteReal::ZERO; 3]));
+    assert_eq!(Homogeneous::zero().project(base, &[]),
+        Some([Ok(FiniteReal::ZERO); 3]));
     // An unchanged coordinate needs no quotient rounding. Preserve its
     // actual bits, including a subnormal and negative zero.
     let constants = [least, -0.0, f64::MAX].map(|value| FiniteReal::new(value).unwrap());
     let sum = Homogeneous { values: [None; 4], constant: constants.map(Some) };
-    for lanes in [sum.project(base, &[]).unwrap().map(Result::unwrap),
-        sum.project_normalized(base, &[]).unwrap()] {
-        assert_eq!(lanes.map(|value| value.get().to_bits()), constants.map(|value| value.get().to_bits()));
-    }
-    assert!(sum.project_normalized(weight_sum(None), &[]).is_none());
+    let lanes = sum.project(base, &[]).unwrap().map(Result::unwrap);
+    assert_eq!(lanes.map(|value| value.get().to_bits()), constants.map(|value| value.get().to_bits()));
+    assert!(sum.project(weight_sum(None), &[]).is_none());
 }
 
 #[test]
@@ -171,13 +168,13 @@ fn quadratic_orders_keep_tiny_coefficients_and_weight_derivative_cancellation() 
             assert_eq!(second.values[3].unwrap().quotient(weight).unwrap().get(), 2.0);
             // C=2q*s²/(1+s²). Its value and first two derivatives
             // differ from these powers of two below binary64 resolution.
-            let point = base.project_normalized(base, &[]).unwrap();
+            let point = finite_lanes(base.project(base, &[]).unwrap()).unwrap();
             assert_eq!(point[0].get(), 2.0_f64.powi(-899));
             assert_eq!(point[1].get().to_bits(), (-0.0_f64).to_bits());
-            let tangent = first.project_normalized(base, &[(first, point)]).unwrap();
+            let tangent = finite_lanes(first.project(base, &[(first, point)]).unwrap()).unwrap();
             assert_eq!(tangent[0].get(), 2.0_f64.powi(-298));
-            let acceleration = second.project_normalized(base,
-                &[(second, point), (first, tangent), (first, tangent)]).unwrap();
+            let acceleration = finite_lanes(second.project(base,
+                &[(second, point), (first, tangent), (first, tangent)]).unwrap()).unwrap();
             assert_eq!(acceleration[0].get(), 2.0_f64.powi(302));
         }
     }
@@ -324,4 +321,23 @@ fn homogeneous_weight_storage_is_scoped_and_slots_are_admitted_once() {
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
     );
+}
+
+#[test]
+fn quadratic_third_uses_complete_source_constant_equality_and_nonzero_weight() {
+    use crate::geometry::nurbs::WeightedPole3;
+    use crate::math::sum::scaled_finite;
+    use crate::scalar::{FiniteReal, NonZeroReal};
+    let width = scaled_finite(f64::from_bits(1)).unwrap();
+    let poles = [1.0, 1.0, 2.0].map(|weight| WeightedPole3 {
+        point: FinitePoint3::new(Point3::new(f64::MAX, -0.0, f64::from_bits(1))).unwrap(),
+        weight: NonZeroReal::new(weight).unwrap(),
+    });
+    assert_eq!(Homogeneous::quadratic_third(&poles, FiniteReal::new(0.5).unwrap(), width),
+        Some([Ok(FiniteReal::ZERO); 3]));
+    let poles = [1.0, -1.0, 1.0].map(|weight| WeightedPole3 {
+        point: FinitePoint3::new(Point3::new(f64::MAX, -0.0, f64::from_bits(1))).unwrap(),
+        weight: NonZeroReal::new(weight).unwrap(),
+    });
+    assert!(Homogeneous::quadratic_third(&poles, FiniteReal::new(0.5).unwrap(), width).is_none());
 }

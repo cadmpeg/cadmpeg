@@ -85,7 +85,7 @@ fn quadratic_third_retains_a_squared_coefficient_before_large_pole_amplification
 }
 
 #[test]
-fn quadratic_third_keeps_scaled_spans_and_separate_intermediate_limits() {
+fn quadratic_third_keeps_scaled_spans_and_only_final_range_limits() {
     let h = 2.0_f64.powi(-350);
     let tiny = curve([0.0, h], 2.0_f64.powi(-1000), [1.0, 1.0, 2.0], false);
     let overflow_h = 2.0_f64.powi(-1000);
@@ -99,18 +99,23 @@ fn quadratic_third_keeps_scaled_spans_and_separate_intermediate_limits() {
     assert!((actual - expected).abs() <= 32.0 * f64::EPSILON * expected.abs());
     assert_eq!(third(&scratch, &overflow, overflow_h / 2.0), Err(EvaluationFailure::NonFinite(())));
     assert_eq!(third(&scratch, &wide, 0.0), Ok(FiniteVector3::ZERO));
-    // Normalized C'(.5)=1.28*MAX cannot be retained by this route.
-    // The true parameter Third is -.9216*MAX, finite after division by2^3.
-    // An intermediate failure is therefore missing Third, not final overflow.
-    assert_eq!(third(&scratch, &intermediate, 1.0), Err(EvaluationFailure::NoValue));
+    // The actual normalized C'(.5)=1.28*MAX overflows binary64, but
+    // the parameter Third=(-576/625)*MAX is finite after span division.
+    let expected = (-576.0 / 625.0) * f64::MAX;
+    let actual = third(&scratch, &intermediate, 1.0).unwrap().x;
+    assert!((actual - expected).abs() <= 32.0 * f64::EPSILON * expected.abs());
     assert!(crate::eval::decode::curve_point_solved(EvaluationAdmission::Standard, &intermediate, 1.0).is_ok());
     let lost = curve([0.0, 1.0], 1.0, [1.0, 1.0, 2.0], false);
-    assert_eq!(third(&scratch, &lost, f64::from_bits(1)), Err(EvaluationFailure::NoValue));
+    // At the least-positive s, -48s differs from the actual law below
+    // the subnormal grid; 48 units are representable without a lost p0.
+    assert_eq!(third(&scratch, &lost, f64::from_bits(1)).unwrap().x, -48.0 * f64::from_bits(1));
     assert!(crate::eval::decode::curve_point_solved(EvaluationAdmission::Standard, &lost, f64::from_bits(1)).is_ok());
-    // The true Third is (-4608/625)*2^-24, finite, but normalized
-    // p0=.4*2^-1074 rounds to zero before the span division amplifies it.
+    // The true Third is (-4608/625)*2^-24, finite, although normalized
+    // p0=.4*2^-1074 would round to zero before span amplification.
     let amplified = curve([0.0, h], f64::from_bits(1), [1.0, 1.0, 2.0], false);
-    assert_eq!(third(&scratch, &amplified, h / 2.0), Err(EvaluationFailure::NoValue));
+    let expected = (-4608.0 / 625.0) * 2.0_f64.powi(-24);
+    let actual = third(&scratch, &amplified, h / 2.0).unwrap().x;
+    assert!((actual - expected).abs() <= 32.0 * f64::EPSILON * expected.abs());
     assert!(crate::eval::decode::curve_point_solved(EvaluationAdmission::Standard, &amplified, h / 2.0).is_ok());
     // Equal actual weights establish a polynomial quadratic, even where
     // first/second intermediates or the knot width cube cannot fit.
