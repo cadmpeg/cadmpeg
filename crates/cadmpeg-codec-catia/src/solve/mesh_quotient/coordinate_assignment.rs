@@ -881,26 +881,27 @@ impl<'storage> MeshCoordinateRootDomains<'storage> {
         if candidates.is_empty() && !self.supports_edge_candidate(ctx, edge, pair)? {
             return Ok(None);
         }
-        let (edge_candidates, candidate_storage) =
-            ctx.with_scoped_storage("catia_coordinate_refine_candidate_rows", || {
-                ctx.collect_indexed_vec(
-                    self.edge_candidates.len(),
-                    "catia_coordinate_refine_candidate_rows",
-                    |index| {
-                        if index == edge {
-                            let mut selected =
-                                ctx.collection_vec(1, "catia_coordinate_refine_selected_pair")?;
-                            selected.push(pair);
-                            Ok(selected)
-                        } else {
-                            ctx.copy_slice(
-                                &self.edge_candidates[index],
-                                "catia_coordinate_refine_candidate_pairs",
-                            )
-                        }
-                    },
-                )
-            })?;
+        let mut candidate_storage =
+            ctx.reserve_scoped(0, "catia_coordinate_refine_candidate_rows")?;
+        let edge_candidates = candidate_storage.with_storage(|| {
+            ctx.collect_indexed_vec(
+                self.edge_candidates.len(),
+                "catia_coordinate_refine_candidate_rows",
+                |index| {
+                    if index == edge {
+                        let mut selected =
+                            ctx.collection_vec(1, "catia_coordinate_refine_selected_pair")?;
+                        selected.push(pair);
+                        Ok(selected)
+                    } else {
+                        ctx.copy_slice(
+                            &self.edge_candidates[index],
+                            "catia_coordinate_refine_candidate_pairs",
+                        )
+                    }
+                },
+            )
+        })?;
         let (value, storage) =
             ctx.with_scoped_storage("catia_coordinate_refine_domain_rows", || {
                 ctx.copy_retained_rows(
@@ -1406,31 +1407,31 @@ impl<'storage> MeshQuotient<'storage> {
                 return Ok(None);
             };
             let edge_ids = ctx.collect_vec(0..edges.len(), "catia_quotient_edge_ids")?;
-            let (root_edges, root_edge_storage) =
-                ctx.with_scoped_storage("catia_quotient_root_edges", || {
-                    let mut root_edges =
-                        ctx.collect_indexed_vec(roots.len(), "catia_quotient_root_edges", |_| {
-                            Ok(Vec::new())
-                        })?;
-                    for (edge, &[left, right]) in ctx
-                        .admit_iter(&edges, "catia_quotient_root_edge_entries")?
-                        .enumerate()
-                    {
+            let mut root_edge_storage = ctx.reserve_scoped(0, "catia_quotient_root_edges")?;
+            let root_edges = root_edge_storage.with_storage(|| {
+                let mut root_edges =
+                    ctx.collect_indexed_vec(roots.len(), "catia_quotient_root_edges", |_| {
+                        Ok(Vec::new())
+                    })?;
+                for (edge, &[left, right]) in ctx
+                    .admit_iter(&edges, "catia_quotient_root_edge_entries")?
+                    .enumerate()
+                {
+                    ctx.push_vec(
+                        &mut root_edges[left],
+                        edge,
+                        "catia_quotient_root_edge_entries",
+                    )?;
+                    if right != left {
                         ctx.push_vec(
-                            &mut root_edges[left],
+                            &mut root_edges[right],
                             edge,
                             "catia_quotient_root_edge_entries",
                         )?;
-                        if right != left {
-                            ctx.push_vec(
-                                &mut root_edges[right],
-                                edge,
-                                "catia_quotient_root_edge_entries",
-                            )?;
-                        }
                     }
-                    Ok::<_, CodecError>(root_edges)
-                })?;
+                }
+                Ok::<_, CodecError>(root_edges)
+            })?;
             if !enforce_sparse_endpoint_membership(
                 ctx,
                 &mut domains,
@@ -1452,14 +1453,15 @@ impl<'storage> MeshQuotient<'storage> {
             )? {
                 return Ok(None);
             }
-            let (mut supported_candidates, candidate_storage) =
-                ctx.with_scoped_storage("catia_quotient_supported_candidate_rows", || {
-                    ctx.copy_retained_rows(
-                        edge_candidates,
-                        "catia_quotient_supported_candidate_rows",
-                        "catia_quotient_supported_candidate_pairs",
-                    )
-                })?;
+            let mut candidate_storage =
+                ctx.reserve_scoped(0, "catia_quotient_supported_candidate_rows")?;
+            let mut supported_candidates = candidate_storage.with_storage(|| {
+                ctx.copy_retained_rows(
+                    edge_candidates,
+                    "catia_quotient_supported_candidate_rows",
+                    "catia_quotient_supported_candidate_pairs",
+                )
+            })?;
             loop {
                 ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
                 let mut changed_storage = ctx.reserve_scoped(0, "catia_quotient_changed_edges")?;
