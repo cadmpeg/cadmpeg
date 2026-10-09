@@ -1429,3 +1429,5 @@ fn profile_entity_index_borrows_unique_entities_and_keeps_unrelated_ambiguity() 
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
 }
+
+mod admission_visits;

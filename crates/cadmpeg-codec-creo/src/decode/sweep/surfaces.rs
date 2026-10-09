@@ -268,8 +268,8 @@ pub(in super::super) fn transfer_saved_spline_curves(
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
-    let mut curve_id_index = None;
     let mut curve_id_storage = ctx.reserve_scoped(0, "creo model curve identity index scratch")?;
+    let mut curve_id_index = None;
     for transform in ctx.admit_iter(
         &scan.features.section_transforms,
         "creo sweep transform scan",
@@ -642,11 +642,11 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
-    let mut surface_id_index = None;
     let mut surface_id_storage =
         ctx.reserve_scoped(0, "creo model surface identity index scratch")?;
-    let mut curve_id_index = None;
+    let mut surface_id_index = None;
     let mut curve_id_storage = ctx.reserve_scoped(0, "creo model curve identity index scratch")?;
+    let mut curve_id_index = None;
     for transform in ctx.admit_iter(
         &scan.features.section_transforms,
         "creo sweep transform scan",
