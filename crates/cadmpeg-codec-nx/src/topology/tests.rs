@@ -187,6 +187,87 @@ fn topology_candidates_release_each_completed_selection_phase() {
 }
 
 #[test]
+fn referenced_graph_rebuild_admits_only_real_node_moves() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let mut bytes = record(18, 28);
+    put_ref(&mut bytes, 2, 2);
+    for offset in [8, 10, 12, 14] {
+        put_ref(&mut bytes, offset, 1);
+    }
+    put_ref(&mut bytes, 16, 11);
+    let mut point = record(29, 40);
+    put_ref(&mut point, 2, 11);
+    point[4..8].copy_from_slice(&u32::MAX.to_be_bytes());
+    put_vec3(&mut point, 16, [0.01, 0.02, 0.03]);
+    bytes.extend_from_slice(&point);
+
+    // The finder locates the pre-merge prefix. The rebuild suffix comes from
+    // its two actual nodes, two indexes and the real insertion operations.
+    let first = crate::test_support::resource_refusal_at(
+        &bytes,
+        ResourceDimension::WorkUnits,
+        "merge NX admitted topology nodes",
+        |ctx| Graph::parse(ctx, &bytes),
+    );
+    let CodecError::ResourceLimit(prefix) = first else {
+        panic!("the real referenced-node rebuild must reach its first move");
+    };
+    assert_eq!(prefix.additional, 1);
+    fn root_bytes<K, V>() -> usize {
+        11 * (std::mem::size_of::<K>() + std::mem::size_of::<V>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<K>()
+                .max(std::mem::align_of::<V>())
+                .max(std::mem::align_of::<usize>())
+    }
+    // The first insertion admits three node passes; the second admits one.
+    // Each second key is searched before growth and again before insertion.
+    // Both kind vectors are initially empty, so neither relocates slots.
+    let rebuild_work = cadmpeg_core::decode::u64_from_index(
+        2 + 4 * (root_bytes::<(NodeKind, u32), usize>()
+            + root_bytes::<usize, (NodeKind, usize)>())
+            + 2 * (std::mem::size_of::<NodeKind>()
+                + std::mem::size_of::<u32>() + std::mem::size_of::<usize>()),
+    );
+    let work = prefix.used + rebuild_work;
+    crate::test_support::with_decode_context_over(&bytes, |policy| {
+        policy.limits.max_work_units = work;
+    }, |ctx| {
+        let graph = Graph::parse(ctx, &bytes).unwrap();
+        let [vertex] = graph.of_kind(NodeKind::Vertex) else {
+            panic!("the baseline vertex must survive the rebuild");
+        };
+        let [selected] = graph.of_kind(NodeKind::Point) else {
+            panic!("the referenced full-domain point must survive the rebuild");
+        };
+        assert_eq!((vertex.xmt(), vertex.pos()), (2, 0));
+        assert_eq!((selected.xmt(), selected.pos()), (11, 28));
+        assert_eq!(selected.u32_at(4), Some(u32::MAX));
+        assert_eq!(selected.bytes, point);
+        assert_eq!(graph.keys.len(), 2);
+        assert_eq!(graph.by_pos.len(), 2);
+        assert!(ctx.resource_refusal().is_none());
+    });
+    crate::test_support::with_decode_context_over(&bytes, |policy| {
+        policy.limits.max_work_units = work - 1;
+    }, |ctx| {
+        let error = Graph::parse(ctx, &bytes).unwrap_err();
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("the final offset-index comparison must require its full work");
+        };
+        let additional = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, super::INDEX_OPERATION);
+        assert_eq!((limit.used, limit.additional), (work - additional, additional));
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.reserve_scoped(0, "after graph rebuild refusal"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    });
+}
+
+#[test]
 fn topology_graph_parse_refuses_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;
     let bytes = topology_partition_stream();

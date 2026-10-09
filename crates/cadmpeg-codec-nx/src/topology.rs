@@ -1179,15 +1179,17 @@ impl Graph {
         let mut index = ctx.reserve_scoped(0, INDEX_OPERATION)?;
         let mut graph = Self::default();
         for (existing, mut admitted) in std::mem::take(&mut self.kinds).into_iter().zip(added) {
-            ctx.stable_sort_by_key(
-                &mut admitted,
-                |node| node.pos,
-                Ord::cmp,
-                "sort NX admitted topology nodes",
-            )?;
+            if admitted.len() > 1 {
+                ctx.stable_sort_by_key(
+                    &mut admitted,
+                    |node| node.pos,
+                    Ord::cmp,
+                    "sort NX admitted topology nodes",
+                )?;
+            }
             let mut existing = existing.into_iter().peekable();
             let mut admitted = admitted.into_iter().peekable();
-            loop {
+            while existing.len() != 0 || admitted.len() != 0 {
                 ctx.charge_work(1, "merge NX admitted topology nodes")?;
                 let take_admitted = match (existing.peek(), admitted.peek()) {
                     (Some(existing), Some(admitted)) => admitted.pos < existing.pos,
