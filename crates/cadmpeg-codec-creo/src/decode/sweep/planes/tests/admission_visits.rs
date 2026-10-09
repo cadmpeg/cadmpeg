@@ -150,3 +150,71 @@ fn cylinder_frame_agreement_counts_present_frames_and_stops_at_first_disagreemen
         }
     }
 }
+
+#[test]
+fn invalid_generated_cap_rows_stop_before_plane_preparation() {
+    use crate::feature::entity::{FeatureEntityTable, FeatureEntityTableEntry};
+    let entry = |entity_id, class_id, source_entity_id| FeatureEntityTableEntry {
+        entity_id,
+        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+        prefixed: false, offset: 0, end_offset: 0,
+    };
+    let table = FeatureEntityTable::new(
+        917, 29,
+        vec![entry(31, 204, None), entry(32, 203, None), entry(33, 200, Some(11))],
+        &BTreeSet::new(), 0,
+    ).with_surface_ids([31, 32, 33]);
+    for invalid_id in [31, 32] {
+        for invalid_kind in 0..3 {
+            let mut scan = crate::test_support::empty_container_scan();
+            scan.features.entity_tables.push(table.clone());
+            for id in [31, 32] {
+                let mut row = plane_row(id);
+                if id == invalid_id {
+                    match invalid_kind {
+                        0 => continue,
+                        1 => row.feature_id = 918,
+                        _ => row.kind = crate::surface::SurfaceKind::Cylinder,
+                    }
+                }
+                scan.surfaces.rows.push(row);
+            }
+            // Plane preparation would allocate nodes for these unrelated
+            // outlines. Neither cap row pair can support an extent.
+            scan.planes.outlines.push(plane_outline(99, 2.0));
+            let mut ir = CadIr::empty();
+            ir.model.surfaces.push(super::plane_surface(32, 8.0));
+            // One unique table plus its three present entries is all reached
+            // input work. The two indexed cap-row checks are fixed work.
+            const VISITS: u64 = 1 + 3;
+            for cap in 0..=VISITS {
+                let arena = DecodeArena::new();
+                let policy = work_policy(cap);
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let carriers = crate::decode::source_carriers::SourceUnitCarriers::for_decode(&ctx, None);
+                let result = generated_cap_plane_extent(&ctx, &scan, &ir, &carriers, 917);
+                let original = if cap == VISITS {
+                    assert!(result.expect("absent cap rows need no plane preparation").is_none());
+                    assert_eq!(ctx.resource_refusal(), None);
+                    let original = ctx.charge_work_limit(1, "after absent generated cap rows")
+                        .expect_err("exact reached work");
+                    assert_eq!((original.dimension, original.used, original.additional),
+                        (ResourceDimension::WorkUnits, VISITS, 1));
+                    original
+                } else {
+                    let original = ctx.resource_refusal().expect("present row visit refusal");
+                    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+                    let operation = if cap == 0 { "creo generated cap table search" }
+                        else { "creo generated cap entry scan" };
+                    assert_eq!((original.dimension, original.limit, original.used,
+                        original.additional, original.operation),
+                        (ResourceDimension::WorkUnits, cap, cap, 1, operation));
+                    original
+                };
+                assert!(matches!(generated_cap_plane_extent(&ctx, &scan, &ir, &carriers, 917),
+                    Err(CodecError::ResourceLimit(actual)) if actual == original));
+                assert_eq!(ctx.resource_refusal(), Some(original));
+            }
+        }
+    }
+}
