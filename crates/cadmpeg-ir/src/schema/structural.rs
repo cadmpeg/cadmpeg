@@ -28,11 +28,6 @@ impl std::ops::Deref for Projection<'_> {
         &self.value
     }
 }
-impl std::ops::DerefMut for Projection<'_> {
-    fn deref_mut(&mut self) -> &mut Value {
-        &mut self.value
-    }
-}
 
 /// Project each node directly, preserving the source floating-point values.
 pub fn project<'ctx>(
