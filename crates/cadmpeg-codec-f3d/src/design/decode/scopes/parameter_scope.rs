@@ -679,7 +679,8 @@ pub(crate) fn admit_history_bound_scope_variants(
         ctx.collect_indexed_vec(scopes.len(), "f3d scope admission flags", |_| Ok(true))
     })?;
     {
-        let mut identities = storage.with_storage(|| {
+        let mut identities_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut identities = identities_storage.with_storage(|| {
             ctx.collect_indexed_vec(scopes.len(), "f3d scope admission identities", |index| {
                 let scope = &scopes[index];
                 let stream = record_stream(ctx, &scope.id)?.unwrap_or(ids::DEFAULT_STREAM);

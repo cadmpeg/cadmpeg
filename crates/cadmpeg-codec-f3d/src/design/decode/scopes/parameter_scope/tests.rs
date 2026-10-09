@@ -638,3 +638,63 @@ fn scope_json_equal_arrays_need_no_final_end_probe() {
         });
     }
 }
+
+#[test]
+fn scope_admission_releases_dead_identities_before_retaining_its_output() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+
+    let identity_bytes = std::mem::size_of::<(&str, u32, usize)>();
+    let output_bytes = std::mem::size_of::<DesignParameterScope>();
+    assert!(output_bytes > identity_bytes);
+    // One flag survives both phases. The identity and output vectors each
+    // hold one exact slot, but their backing is never live at the same time.
+    let peak = u64_from_index(1 + output_bytes);
+    for cap in [peak, peak - 1] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = u64_from_index(output_bytes);
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let mut output_storage = ctx.reserve_scoped(0, "test admitted scope output").unwrap();
+            let mut scopes = vec![DesignParameterScope::empty(
+                "scope",
+                DesignFeatureKind::try_from("Sketch".to_owned()).unwrap(),
+                12,
+            )];
+            let result = output_storage.with_storage(|| {
+                super::admit_history_bound_scope_variants(ctx, &mut scopes, &[])
+            });
+            if cap == peak {
+                result.expect("dead identities do not overlap the returned vector");
+                let scopes = output_storage.commit_value(scopes).unwrap();
+                assert_eq!(scopes.len(), 1);
+                assert_eq!(scopes.capacity(), 1);
+                assert_eq!(scopes[0].id, "scope");
+                assert_eq!(scopes[0].record_index, 12);
+                assert_eq!(scopes[0].kind_name(), "Sketch");
+                assert_eq!(ctx.resource_refusal(), None);
+            } else {
+                let CodecError::ResourceLimit(limit) = result.unwrap_err() else {
+                    panic!("the live output allocation must refuse one byte below its peak");
+                };
+                assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+                assert_eq!(limit.operation, "f3d scope admission retained output");
+                assert_eq!(limit.limit, cap);
+                assert_eq!(limit.used, 1);
+                assert_eq!(limit.additional, u64_from_index(output_bytes));
+                assert_eq!(scopes.len(), 1);
+                assert_eq!(scopes[0].id, "scope");
+                assert_eq!(scopes[0].record_index, 12);
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+                let CodecError::ResourceLimit(later) = ctx
+                    .charge_work(0, "after scope output allocation refusal")
+                    .unwrap_err()
+                else {
+                    panic!("the original refusal remains fused");
+                };
+                assert_eq!(later, limit);
+            }
+        });
+    }
+}

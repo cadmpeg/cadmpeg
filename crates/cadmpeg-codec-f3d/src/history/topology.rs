@@ -480,9 +480,9 @@ pub(super) fn historical_face_support_contexts(
         |_, binding| Ok(Some(binding.entity)),
         "index F3D historical support bindings",
     );
-    let history_bindings = std::cell::OnceCell::new();
     let mut history_binding_storage =
         decode.reserve_scoped(0, "index F3D history support states")?;
+    let history_bindings = std::cell::OnceCell::new();
     let mut contexts = Vec::new();
     let mut history_source = IntoIterator::into_iter(candidates);
     'candidates: while let Some(candidate) =
