@@ -613,6 +613,9 @@ impl<R: RecipeForm> ParsedOperation<'_, R> {
     }
 
     fn materialize(self, ctx: &DecodeContext<'_>) -> Result<FeatureOperation<R>, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let kind = match self.kind {
             ParsedKind::Stored(text) => {
                 OperationKind::Stored(ctx.copy_retained_text(text, "creo operation family name")?)
