@@ -317,7 +317,8 @@ fn reconcile(
 ) {
     let ctx = cadmpeg_test_support::service_decode_context();
     let index = LaneMarkerIndex::new(&ctx, lanes).unwrap();
-    let (relations, _storage) = circle_relations_by_feature(&ctx, lanes).unwrap();
+    let relations_index = circle_relations_by_feature(&ctx, lanes).unwrap();
+    let relations = &relations_index.0;
     let sketch = sketches.iter_mut().find(|sketch| &sketch.id == sketch_id);
     reconcile_direct_circle_dimension_carriers(
         &ctx,

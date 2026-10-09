@@ -140,7 +140,8 @@ impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
                     OPERATION,
                 )
             })?;
-            let (mut ordered, _ordered_storage) = ctx.with_scoped_storage(OPERATION, || {
+            let mut ordered_storage = ctx.reserve_scoped(0, OPERATION)?;
+            let mut ordered = ordered_storage.with_storage(|| {
                 ctx.collect_vec(&lane.sketch_entities, OPERATION)
             })?;
             for marker in ctx.admit_iter(&ordered, OPERATION)? {
@@ -539,17 +540,17 @@ fn dimensioned_arc_native_geometry<'a>(
     };
     let lane = &index.lanes[lane_position];
     let lane_markers = index.lane_markers(lane_position)?;
-    let (endpoints, _endpoints_storage) =
-        ctx.with_scoped_storage(DIMENSIONED_CARRIER_OPERATION, || {
-            marker_curve_endpoint_markers(
-                ctx,
-                &lane.native_payload,
-                marker,
-                &lane_markers.by_id,
-                &lane_markers.ordered,
-                &lane_markers.geometry,
-            )
-        })?;
+    let mut endpoints_storage = ctx.reserve_scoped(0, DIMENSIONED_CARRIER_OPERATION)?;
+    let endpoints = endpoints_storage.with_storage(|| {
+        marker_curve_endpoint_markers(
+            ctx,
+            &lane.native_payload,
+            marker,
+            &lane_markers.by_id,
+            &lane_markers.ordered,
+            &lane_markers.geometry,
+        )
+    })?;
     let inline = usize::try_from(marker.offset())
         .ok()
         .and_then(|offset| inline_arc_coordinates(&lane.native_payload, offset))
@@ -1191,10 +1192,10 @@ pub(crate) fn project_dimensioned_sketch_geometry(
     if sketches_by_feature.is_empty() {
         return Ok(());
     }
-    let (ownership, _ownership_storage) = ctx
-        .with_scoped_storage("SLDPRT relation ownership index", || {
-            owned_relation_parameters(ctx, features, parameters, lanes)
-        })?;
+    let mut ownership_storage = ctx.reserve_scoped(0, "SLDPRT relation ownership index")?;
+    let ownership = ownership_storage.with_storage(|| {
+        owned_relation_parameters(ctx, features, parameters, lanes)
+    })?;
     let mut parameters_by_id = HashMap::<&cadmpeg_ir::features::ParameterId, _>::new();
     for parameter in ctx.admit_iter(parameters, "scan SLDPRT dimension geometry")? {
         temporary_storage.with_storage(|| {
@@ -1219,7 +1220,8 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 .and_then(|parameter| radial_dimension_radius(parameter)))
         };
     let index = LaneMarkerIndex::new(ctx, lanes)?;
-    let (relations_by_feature, _relations_storage) = circle_relations_by_feature(ctx, lanes)?;
+    let relations_index = circle_relations_by_feature(ctx, lanes)?;
+    let relations_by_feature = &relations_index.0;
     let mut sketches_by_id = HashMap::<&str, &Sketch>::new();
     for sketch in ctx.admit_iter(sketches, "scan SLDPRT dimensions records")? {
         if !ctx.contains_key_hash_map(&sketches_by_id, sketch.id.as_str(), OPERATION)? {
@@ -1228,17 +1230,17 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             })?;
         }
     }
-    let (marker_transforms, _marker_transforms_storage) = ctx
-        .with_scoped_storage(OPERATION, || {
-            marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)
-        })?;
+    let mut marker_transforms_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let marker_transforms = marker_transforms_storage.with_storage(|| {
+        marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)
+    })?;
     let mut transforms = HashMap::<&str, _>::new();
     for (feature, sketch_id) in
         ctx.admit_iter(&sketches_by_feature, "scan SLDPRT dimension geometry")?
     {
         let mut circles = Vec::new();
         for relation in ctx.admit_iter(
-            ctx.get_hash_map(&relations_by_feature, *feature, OPERATION)?
+            ctx.get_hash_map(relations_by_feature, *feature, OPERATION)?
                 .map_or(&[][..], Vec::as_slice),
             "scan SLDPRT dimensions records",
         )? {
@@ -1531,10 +1533,10 @@ pub(crate) fn project_relation_point_dimensioned_circles(
     if sketches_by_feature.is_empty() {
         return Ok(());
     }
-    let (ownership, _ownership_storage) = ctx
-        .with_scoped_storage("SLDPRT relation ownership index", || {
-            owned_relation_parameters(ctx, features, parameters, lanes)
-        })?;
+    let mut ownership_storage = ctx.reserve_scoped(0, "SLDPRT relation ownership index")?;
+    let ownership = ownership_storage.with_storage(|| {
+        owned_relation_parameters(ctx, features, parameters, lanes)
+    })?;
     let mut parameters_by_id = HashMap::<&cadmpeg_ir::features::ParameterId, _>::new();
     for parameter in ctx.admit_iter(parameters, "scan SLDPRT dimension geometry")? {
         temporary_storage.with_storage(|| {
@@ -2329,13 +2331,16 @@ pub(crate) fn project_marker_dimensioned_circles(
 
     let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT dimension temporary storage")?;
 
-    let (transforms, _transforms_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let mut transforms_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let transforms = transforms_storage.with_storage(|| {
         marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)
     })?;
     let index = LaneMarkerIndex::new(ctx, lanes)?;
-    let (relations_by_feature, _relations_storage) = circle_relations_by_feature(ctx, lanes)?;
-    let (sketch_positions, _sketch_positions_storage) =
+    let relations_index = circle_relations_by_feature(ctx, lanes)?;
+    let relations_by_feature = &relations_index.0;
+    let sketch_index =
         super::profiles::index_sketch_ids(ctx, sketches, "find SLDPRT dimension sketch")?;
+    let sketch_positions = &sketch_index.0;
     let mut parameters_by_owner = HashMap::new();
     for parameter in ctx.admit_iter(parameters, "scan SLDPRT dimension geometry")? {
         let Some(owner) = parameter.owner.as_ref() else {
@@ -2367,7 +2372,7 @@ pub(crate) fn project_marker_dimensioned_circles(
         };
         let sketch_position = ctx
             .get_hash_map(
-                &sketch_positions,
+                sketch_positions,
                 sketch_id.as_str(),
                 "find SLDPRT dimension sketch",
             )?
@@ -2379,7 +2384,7 @@ pub(crate) fn project_marker_dimensioned_circles(
             sketch_id,
             native_ref,
             &index,
-            ctx.get_hash_map(&relations_by_feature, native_ref, OPERATION)?
+            ctx.get_hash_map(relations_by_feature, native_ref, OPERATION)?
                 .map_or(&[][..], Vec::as_slice),
         )?;
         let mut radial_dimensions = Vec::new();
@@ -2622,10 +2627,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                 &records[first_record..end_record.max(first_record)],
                 "scan SLDPRT dimensions records",
             )? {
-                let (carrier_ref, _carrier_ref_storage) = ctx
-                    .with_scoped_storage(OPERATION, || {
-                        marker_circle_carrier_reference(ctx, lane_key, record.offset)
-                    })?;
+                let mut carrier_ref_storage = ctx.reserve_scoped(0, OPERATION)?;
+                let carrier_ref = carrier_ref_storage.with_storage(|| {
+                    marker_circle_carrier_reference(ctx, lane_key, record.offset)
+                })?;
                 if ctx.contains_hash_set(
                     &native_carrier_refs,
                     carrier_ref.as_str(),
@@ -2706,10 +2711,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                 let lane_key = ctx
                     .rsplit_once(&lane.id, "#", "resolve SLDPRT dimensions keys")?
                     .map_or(lane.id.as_str(), |(_, key)| key);
-                let (carrier_ref, _carrier_ref_storage) = ctx
-                    .with_scoped_storage(OPERATION, || {
-                        marker_circle_carrier_reference(ctx, lane_key, *offset)
-                    })?;
+                let mut carrier_ref_storage = ctx.reserve_scoped(0, OPERATION)?;
+                let carrier_ref = carrier_ref_storage.with_storage(|| {
+                    marker_circle_carrier_reference(ctx, lane_key, *offset)
+                })?;
                 let mut pair_radial_object_indices = HashSet::new();
                 for (_, radial) in ctx.admit_iter(pairs, "scan SLDPRT dimension geometry")? {
                     if let Some(index) = radial.object_index() {
