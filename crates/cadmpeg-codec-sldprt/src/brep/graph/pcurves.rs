@@ -56,15 +56,120 @@ struct CoedgeSupport<'a> {
 
 /// The arenas the pcurve passes read, resolved once for all of them. No pass
 /// changes a loop, face, surface, edge, curve, vertex or point.
-struct PcurveSupports<'a> {
+struct PcurveSupports<'a, 'ctx> {
     /// The support of each coedge, in coedge order; `None` when its loop,
     /// face, surface, edge or curve does not resolve.
     coedges: Vec<Option<CoedgeSupport<'a>>>,
     /// The position of each vertex whose point resolves.
     vertex_positions: HashMap<&'a VertexId, cadmpeg_ir::math::Point3>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
-impl PcurveSupports<'_> {
+/// Read-only arenas whose references remain valid across all pcurve passes.
+struct PcurveArenas<'a> {
+    loops: &'a [cadmpeg_ir::topology::Loop],
+    faces: &'a [cadmpeg_ir::topology::Face],
+    surfaces: &'a [Surface],
+    edges: &'a [Edge],
+    curves: &'a [Curve],
+    vertices: &'a [cadmpeg_ir::topology::Vertex],
+    points: &'a [cadmpeg_ir::topology::Point],
+}
+
+impl<'a, 'ctx> PcurveSupports<'a, 'ctx> {
+    fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        arenas: PcurveArenas<'a>,
+        coedges: &[Coedge],
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        const LOOK_UP: &str = "look up Parasolid pcurve supports";
+        let PcurveArenas { loops, faces, surfaces, edges, curves, vertices, points } = arenas;
+        let (supports, workspace) = ctx.with_scoped_storage(
+            "index Parasolid pcurve supports", || {
+                let surfaces = ctx.collect_hash_map(
+                    surfaces.iter().map(|surface| (&surface.id, surface)),
+                    "index Parasolid pcurve surfaces",
+                )?;
+                let faces = ctx.collect_hash_map(
+                    faces.iter().map(|face| (&face.id, face)),
+                    "index Parasolid pcurve faces",
+                )?;
+                let mut loop_surfaces = HashMap::new();
+                for lp in ctx.admit_iter(loops, "index Parasolid pcurve loop surfaces")? {
+                    let Some(face) = ctx.get_hash_map(&faces, &lp.face, LOOK_UP)? else {
+                        continue;
+                    };
+                    let Some(&surface) = ctx.get_hash_map(&surfaces, &face.surface, LOOK_UP)? else {
+                        continue;
+                    };
+                    ctx.insert_hash_map(
+                        &mut loop_surfaces,
+                        &lp.id,
+                        surface,
+                        "index Parasolid pcurve loop surfaces",
+                    )?;
+                }
+                let edges = ctx.collect_hash_map(
+                    edges.iter().map(|edge| (&edge.id, edge)),
+                    "index Parasolid pcurve edges",
+                )?;
+                let curves = ctx.collect_hash_map(
+                    curves.iter().map(|curve| (&curve.id, curve)),
+                    "index Parasolid pcurve curves",
+                )?;
+                let (coedge_supports, storage) = ctx.with_scoped_storage(
+                    "hold Parasolid pcurve supports", || ctx.try_collect_vec(
+                    coedges.iter().map(|coedge| {
+                        let Some(&surface) =
+                            ctx.get_hash_map(&loop_surfaces, &coedge.owner_loop, LOOK_UP)?
+                        else {
+                            return Ok(None);
+                        };
+                        let Some(&edge) = ctx.get_hash_map(&edges, &coedge.edge, LOOK_UP)? else {
+                            return Ok(None);
+                        };
+                        let Some(curve_id) = edge.curve() else {
+                            return Ok(None);
+                        };
+                        let Some(&curve) = ctx.get_hash_map(&curves, curve_id, LOOK_UP)? else {
+                            return Ok(None);
+                        };
+                        Ok::<_, cadmpeg_core::CodecError>(Some(CoedgeSupport {
+                            surface,
+                            edge,
+                            curve,
+                        }))
+                    }),
+                    "resolve Parasolid pcurve supports",
+                ))?;
+                let mut supports = Self {
+                    coedges: coedge_supports,
+                    vertex_positions: HashMap::new(),
+                    _storage: storage,
+                };
+                let points = ctx.collect_hash_map(
+                    points
+                        .iter()
+                        .map(|point| (&point.id, point.position().get())),
+                    "index Parasolid pcurve points",
+                )?;
+                for vertex in ctx.admit_iter(vertices, "index Parasolid pcurve vertex points")? {
+                    if let Some(&position) = ctx.get_hash_map(&points, &vertex.point, LOOK_UP)? {
+                        supports._storage.with_storage(|| ctx.insert_hash_map(
+                            &mut supports.vertex_positions,
+                            &vertex.id,
+                            position,
+                            "index Parasolid pcurve vertex points",
+                        ))?;
+                    }
+                }
+                Ok::<_, cadmpeg_core::CodecError>(supports)
+            },
+        )?;
+        drop(workspace);
+        Ok(supports)
+    }
+
     fn position(
         &self,
         ctx: &DecodeContext<'_>,
@@ -115,7 +220,6 @@ pub(super) fn derive_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    const LOOK_UP: &str = "look up Parasolid pcurve supports";
     let Brep {
         loops,
         faces,
@@ -139,85 +243,11 @@ pub(super) fn derive_pcurves(
         &**vertices,
         &**points,
     );
-    let (supports, _supports_storage) =
-        ctx.with_scoped_storage("index Parasolid pcurve supports", || {
-            let surfaces = ctx.collect_hash_map(
-                surfaces.iter().map(|surface| (&surface.id, surface)),
-                "index Parasolid pcurve surfaces",
-            )?;
-            let faces = ctx.collect_hash_map(
-                faces.iter().map(|face| (&face.id, face)),
-                "index Parasolid pcurve faces",
-            )?;
-            let mut loop_surfaces = HashMap::new();
-            for lp in ctx.admit_iter(loops, "index Parasolid pcurve loop surfaces")? {
-                let Some(face) = ctx.get_hash_map(&faces, &lp.face, LOOK_UP)? else {
-                    continue;
-                };
-                let Some(&surface) = ctx.get_hash_map(&surfaces, &face.surface, LOOK_UP)? else {
-                    continue;
-                };
-                ctx.insert_hash_map(
-                    &mut loop_surfaces,
-                    &lp.id,
-                    surface,
-                    "index Parasolid pcurve loop surfaces",
-                )?;
-            }
-            let edges = ctx.collect_hash_map(
-                edges.iter().map(|edge| (&edge.id, edge)),
-                "index Parasolid pcurve edges",
-            )?;
-            let curves = ctx.collect_hash_map(
-                curves.iter().map(|curve| (&curve.id, curve)),
-                "index Parasolid pcurve curves",
-            )?;
-            let coedge_supports = ctx.try_collect_vec(
-                coedges.iter().map(|coedge| {
-                    let Some(&surface) =
-                        ctx.get_hash_map(&loop_surfaces, &coedge.owner_loop, LOOK_UP)?
-                    else {
-                        return Ok(None);
-                    };
-                    let Some(&edge) = ctx.get_hash_map(&edges, &coedge.edge, LOOK_UP)? else {
-                        return Ok(None);
-                    };
-                    let Some(curve_id) = edge.curve() else {
-                        return Ok(None);
-                    };
-                    let Some(&curve) = ctx.get_hash_map(&curves, curve_id, LOOK_UP)? else {
-                        return Ok(None);
-                    };
-                    Ok::<_, cadmpeg_core::CodecError>(Some(CoedgeSupport {
-                        surface,
-                        edge,
-                        curve,
-                    }))
-                }),
-                "resolve Parasolid pcurve supports",
-            )?;
-            let points = ctx.collect_hash_map(
-                points
-                    .iter()
-                    .map(|point| (&point.id, point.position().get())),
-                "index Parasolid pcurve points",
-            )?;
-            let mut vertex_positions = HashMap::new();
-            for vertex in ctx.admit_iter(vertices, "index Parasolid pcurve vertex points")? {
-                if let Some(&position) = ctx.get_hash_map(&points, &vertex.point, LOOK_UP)? {
-                    ctx.insert_hash_map(
-                        &mut vertex_positions,
-                        &vertex.id,
-                        position,
-                        "index Parasolid pcurve vertex points",
-                    )?;
-                }
-            }
-            Ok::<_, cadmpeg_core::CodecError>(PcurveSupports {
-                coedges: coedge_supports,
-                vertex_positions,
-            })
-        })?;
+    let supports = PcurveSupports::new(
+        ctx,
+        PcurveArenas { loops, faces, surfaces, edges, curves, vertices, points },
+        coedges,
+    )?;
     let mut sink = PcurveSink {
         coedges,
         pcurves,
@@ -233,7 +263,7 @@ pub(super) fn derive_pcurves(
 
 fn derive_planar_pcurves(
     ctx: &DecodeContext<'_>,
-    supports: &PcurveSupports<'_>,
+    supports: &PcurveSupports<'_, '_>,
     sink: &mut PcurveSink<'_>,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
@@ -405,7 +435,7 @@ fn derive_planar_pcurves(
 
 fn derive_cylindrical_pcurves(
     ctx: &DecodeContext<'_>,
-    supports: &PcurveSupports<'_>,
+    supports: &PcurveSupports<'_, '_>,
     sink: &mut PcurveSink<'_>,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
@@ -833,7 +863,7 @@ fn circle_azimuth_parameter(
 
 fn derive_revolved_circle_pcurves(
     ctx: &DecodeContext<'_>,
-    supports: &PcurveSupports<'_>,
+    supports: &PcurveSupports<'_, '_>,
     sink: &mut PcurveSink<'_>,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
@@ -1004,7 +1034,7 @@ pub(super) fn sphere_latitude(height: f64, radius: f64) -> Option<f64> {
 
 fn derive_spherical_pcurves(
     ctx: &DecodeContext<'_>,
-    supports: &PcurveSupports<'_>,
+    supports: &PcurveSupports<'_, '_>,
     sink: &mut PcurveSink<'_>,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
@@ -1167,7 +1197,7 @@ fn derive_spherical_pcurves(
 
 fn derive_nurbs_isoparametric_pcurves(
     ctx: &DecodeContext<'_>,
-    supports: &PcurveSupports<'_>,
+    supports: &PcurveSupports<'_, '_>,
     sink: &mut PcurveSink<'_>,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
