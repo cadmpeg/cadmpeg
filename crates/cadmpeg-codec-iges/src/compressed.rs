@@ -892,6 +892,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         return Err(malformed("Start section is missing after the flag record"));
     }
     let global_begin = cursor;
+    let start_count = global_begin - start_begin;
     loop {
         ctx.charge_work(1, "iges compressed Global section lines")?;
         if !lines
@@ -965,7 +966,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     let directory_count = entities.len().checked_mul(2).ok_or_else(|| {
         CodecError::NotImplemented("IGES Compressed ASCII Directory section exceeds usize".into())
     })?;
-    let output_estimate = start_begin
+    let output_estimate = start_count
         .checked_add(global_cards.len())
         .and_then(|count| count.checked_add(directory_count))
         .and_then(|count| count.checked_add(parameter_count))
@@ -1032,7 +1033,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     }
     append_terminate(
         &mut output,
-        start_begin,
+        start_count,
         global_cards.len(),
         directory_count,
         parameter_count,
