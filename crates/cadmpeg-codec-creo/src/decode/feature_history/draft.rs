@@ -134,9 +134,12 @@ pub(super) fn thicken_feature_definition(
         let mut resolved = Vec::new();
         let mut all_faces_resolved = true;
         let mut source_iter = source_ids.iter();
-        while let Some(surface_id) =
-            ctx.next_charged(&mut source_iter, "creo thicken source face IDs")?
-        {
+        while source_iter.len() != 0 {
+            let Some(surface_id) =
+                ctx.next_charged(&mut source_iter, "creo thicken source face IDs")?
+            else {
+                break;
+            };
             let Some(face) = ctx.find_by(
                 &ir.model.faces,
                 |candidate| {
@@ -270,6 +273,9 @@ fn admitted_hole_placements(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     candidates: [Option<HolePlacement>; 3],
 ) -> Result<Vec<HolePlacement>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut placements = Vec::new();
     for placement in candidates.into_iter().flatten() {
         ctx.reserve_vec(&mut placements, 1, "creo hole placements")?;
@@ -311,14 +317,14 @@ pub(super) fn linear_extrusion_extent_and_direction(
         let mut extent =
             generated_arc_cylinder_extent(ctx, scan, ir, source_carriers, definition, transform)?;
         if extent.is_none() {
-            if let Some((planes, _plane_storage)) =
+            if let Some(plane_storage) =
                 feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)?
             {
                 extent = extrusion_extent_and_direction(
                     ctx,
                     transform.origin(),
                     transform.normal(),
-                    planes.iter().map(|plane| (plane.origin, plane.normal)),
+                    plane_storage.0.iter().map(|plane| (plane.origin, plane.normal)),
                 )?;
             }
         }
@@ -474,7 +480,7 @@ pub(in super::super) fn schema_feature_definition(
             None
         };
         let placement = feature_outline_planes(ctx, scan, feature_id)?
-            .and_then(|(planes, _plane_storage)| hole_placement(planes));
+            .and_then(|plane_storage| hole_placement(plane_storage.0));
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             ctx,
             feature_id,
@@ -1251,6 +1257,9 @@ pub(in super::super) fn numbered_feature_name_has_family(
     name: &str,
     family: &str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(ordinal) = name
         .strip_prefix(family)
         .and_then(|suffix| suffix.strip_prefix(' '))
@@ -1398,7 +1407,10 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
     }
     let mut selected = [None; 4];
     let mut rows = tables.iter();
-    while let Some(table) = ctx.next_charged(&mut rows, "creo boundary surface entity tables")? {
+    while rows.len() != 0 {
+        let Some(table) = ctx.next_charged(&mut rows, "creo boundary surface entity tables")? else {
+            break;
+        };
         if table.feature_id != feature_id {
             continue;
         }
