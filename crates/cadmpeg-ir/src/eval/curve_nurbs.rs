@@ -325,16 +325,18 @@ pub(super) fn linear_higher(
     scratch.settle(result)
 }
 
-/// The true third of the selected polynomial span. The stored pole variant
+/// Higher orders of the selected polynomial span. The stored pole variant
 /// supplies C=sum B_i P_i; the same conclusion does not hold for a rational
 /// quotient. No first/second basis, full pole copy or per-coordinate replay
 /// is constructed by this requested-order owner.
-pub(super) fn polynomial_third(
+pub(super) fn polynomial_higher(
     scratch: &decode::Scratch<'_, '_>,
     curve: &crate::geometry::nurbs::NurbsCurve,
     parameter: FiniteReal,
-) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    fourth: bool,
+) -> Result<super::curve_higher::CurveHigher, EvaluationFailure<()>> {
     use crate::math::sum::{scaled_finite, ScaledValue};
+    use super::curve_higher::CurveHigher;
     scratch.unless_refused()?;
     let result = (|| {
         let NurbsPoles3::Polynomial { points } = curve.pole_rows() else {
@@ -347,7 +349,12 @@ pub(super) fn polynomial_third(
             degree, points.len(), parameter.get(), true)?.ok_or(EvaluationFailure::NoValue)?;
         let width = curve.knots()[span + 1] - curve.knots()[span];
         if width == 0.0 { return Err(EvaluationFailure::NoValue); }
-        if degree < 3 { return Ok(FiniteVector3::ZERO); }
+        // Each actual polynomial span below degree4 has identically zero
+        // Fourth, even when the independent Third is unavailable or overflows.
+        let fourth = if fourth && degree < 4 { Ok(FiniteVector3::ZERO) }
+            else { Err(EvaluationFailure::NoValue) };
+        if degree < 3 { return Ok(CurveHigher { third: Ok(FiniteVector3::ZERO), fourth }); }
+        let third = (|| {
         let finite_width = PositiveReal::new(width);
         let values = if let Some(scale) = finite_width {
             Cow::Owned(basis::bspline_basis_scaled_third_derivative(scratch,
@@ -387,6 +394,8 @@ pub(super) fn polynomial_third(
         });
         let [x, y, z] = sums;
         Ok(FiniteVector3::from_components(lane(x)?, lane(y)?, lane(z)?))
+        })();
+        Ok(CurveHigher { third, fourth })
     })();
     scratch.settle(result)
 }

@@ -95,12 +95,11 @@ fn stored_higher_frame(
                     fourth: Err(EvaluationFailure::NoValue),
                 })));
             }
-            let third = super::curve_nurbs::polynomial_third(scratch, curve, parameter);
-            // The actual degree-one polynomial span has zero fourth.
-            // Preserve its original selected-span work and width gate.
-            let fourth = if fourth && curve.degree() == 1
-            { third.map(|_| FiniteVector3::ZERO) } else { Err(EvaluationFailure::NoValue) };
-            Ok(HigherFrame::Local(CurveHigher { third, fourth }))
+            let higher = super::curve_nurbs::polynomial_higher(scratch, curve, parameter, fourth);
+            // Preserve the stored polynomial owner's original local envelope.
+            Ok(HigherFrame::Local(higher.unwrap_or_else(|failure| CurveHigher {
+                third: Err(failure), fourth: if fourth { Err(failure) } else { Err(EvaluationFailure::NoValue) },
+            })))
         }
         SolvedCurveGeometry::Degenerate(_)
         | SolvedCurveGeometry::Composite { .. }
