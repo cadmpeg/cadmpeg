@@ -896,12 +896,20 @@ fn matching_pole_weights(
 ) -> Result<bool, CodecError> {
     Ok(match (start, end) {
         (NurbsPoles3::Polynomial { .. }, NurbsPoles3::Polynomial { .. }) => true,
-        (NurbsPoles3::Rational { points: start }, NurbsPoles3::Rational { points: end }) => ctx
-            .all_by(
-                start.iter().zip(end.iter()),
-                |(first, second)| Ok(first.weight == second.weight),
-                "Rhino extrusion start pole weights",
-            )?,
+        (NurbsPoles3::Rational { points: start }, NurbsPoles3::Rational { points: end }) => {
+            let operation = "Rhino extrusion start pole weights";
+            ctx.charge_work(0, operation)?;
+            let mut pairs = start.iter().zip(end.iter());
+            for _ in 0..pairs.len() {
+                let Some((first, second)) = ctx.next_charged(&mut pairs, operation)? else {
+                    break;
+                };
+                if first.weight != second.weight {
+                    return Ok(false);
+                }
+            }
+            true
+        }
         _ => false,
     })
 }
