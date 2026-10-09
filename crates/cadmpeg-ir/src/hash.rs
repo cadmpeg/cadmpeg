@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Content hashing helpers shared by codecs.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Write as _;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::document::{CadIr, SortedModel, SourceMeta};
+use crate::ids::comparison::key::Key;
 use crate::native::{Native, NativeConvertError, NativeRecord};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 
@@ -18,6 +19,42 @@ pub mod digest;
 pub mod finite_json;
 
 use finite_json::{write_canonical_json, CanonicalJsonError};
+
+/// Borrowed unique owners. Repeated construction references have no owner.
+pub(crate) struct ProceduralOwners<'a, 'ctx, T>(HashMap<Key<'ctx>, Option<&'a T>>);
+
+impl<'a, T> ProceduralOwners<'a, '_, T> {
+    pub(crate) fn get(
+        &self,
+        ctx: &DecodeContext<'_>,
+        construction: &str,
+        operation: &'static str,
+    ) -> Result<Option<&'a T>, CodecError> {
+        ctx.charge_work(1, operation)?;
+        let owner = self
+            .0
+            .get(&Key::borrowed(ctx, construction, operation))
+            .copied()
+            .flatten();
+        ctx.charge_work(0, operation)?;
+        Ok(owner)
+    }
+}
+
+pub(crate) fn procedural_owners<'a: 'ctx, 'ctx, T>(
+    ctx: &'ctx DecodeContext<'_>,
+    owners: impl IntoIterator<Item = (&'a str, &'a T)>,
+    operation: &'static str,
+) -> Result<(ProceduralOwners<'a, 'ctx, T>, ScopedReservation<'ctx>), CodecError> {
+    let (table, storage) = ctx.unique_index(
+        owners
+            .into_iter()
+            .map(|(key, owner)| (Key::borrowed(ctx, key, operation), owner)),
+        |_| Ok(0),
+        operation,
+    )?;
+    Ok((ProceduralOwners(table), storage))
+}
 
 /// Returns the SHA-256 digest of `bytes`.
 #[must_use]
@@ -1160,6 +1197,92 @@ mod tests {
             .unwrap(),
             hash
         );
+    }
+    #[test]
+    fn procedural_digest_indexes_thousands_of_owners_with_linear_work() {
+        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+        use crate::ids::{CurveId, ProceduralCurveId};
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let mut ir = CadIr::empty();
+        for index in 0..4096 {
+            let construction =
+                ProceduralCurveId::mint(format!("test:model:construction#{index:04}")).unwrap();
+            ir.model.curves.push(Curve {
+                parameter_range: None,
+                id: CurveId::mint(format!("test:model:curve#{index:04}")).unwrap(),
+                geometry: CurveGeometry::Procedural {
+                    construction: construction.clone(),
+                    cache: None,
+                },
+                source_object: None,
+            });
+            ir.model.procedural_curves.push(ProceduralCurve::new(
+                construction,
+                ProceduralCurveDefinition::Exact { cache: None },
+            ));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 32_000_000;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let digest = document_local_sha256(
+            &ctx,
+            &ir,
+            None,
+            "test",
+            "test:model:unknown#source",
+            "indexed digest",
+        )
+        .unwrap();
+        ctx.finish_session().unwrap();
+        ir.model.curves.reverse();
+        ir.model.procedural_curves.reverse();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(
+            digest,
+            document_local_sha256(
+                &ctx,
+                &ir,
+                None,
+                "test",
+                "test:model:unknown#source",
+                "indexed digest"
+            )
+            .unwrap()
+        );
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn procedural_digest_still_rejects_orphan_and_ambiguous_owners() {
+        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+        use crate::ids::{CurveId, ProceduralCurveId};
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        for count in [0, 2, 3] {
+            let mut ir = CadIr::empty();
+            let construction = ProceduralCurveId::mint("test:model:construction#one").unwrap();
+            ir.model.procedural_curves.push(ProceduralCurve::new(
+                construction.clone(),
+                ProceduralCurveDefinition::Exact { cache: None },
+            ));
+            for index in 0..count {
+                ir.model.curves.push(Curve {
+                    parameter_range: None,
+                    id: CurveId::mint(format!("test:model:curve#{index}")).unwrap(),
+                    geometry: CurveGeometry::Procedural {
+                        construction: construction.clone(),
+                        cache: None,
+                    },
+                    source_object: None,
+                });
+            }
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+            assert!(
+                matches!(document_local_sha256(&ctx, &ir, None, "test", "test:model:unknown#source", "orphan digest"), Err(CodecError::Malformed(message)) if message.contains("no unique owning curve"))
+            );
+        }
     }
 }
 

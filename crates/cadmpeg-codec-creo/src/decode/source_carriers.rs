@@ -24,6 +24,7 @@ use cadmpeg_ir::transform::Transform;
 
 #[derive(Default)]
 pub(super) struct SourceUnitCarriers {
+    procedural_index: cadmpeg_ir::document::procedural::ProceduralIndex,
     length_scale_mm: Option<PositiveReal>,
     surfaces: BTreeMap<SurfaceId, SurfaceGeometry>,
     curves: BTreeMap<CurveId, CurveGeometry>,
@@ -34,6 +35,7 @@ pub(super) struct SourceUnitCarriers {
 impl SourceUnitCarriers {
     pub(super) fn new(length_scale_mm: Option<PositiveReal>) -> Self {
         Self {
+            procedural_index: cadmpeg_ir::document::procedural::ProceduralIndex::default(),
             length_scale_mm: length_scale_mm.filter(|scale| scale.get() != 1.0),
             surfaces: BTreeMap::new(),
             curves: BTreeMap::new(),
@@ -594,8 +596,8 @@ impl SourceUnitCarriers {
             crate::decode::build::units::scale_procedural_surface(ctx, &mut procedural, scale)?;
         }
 
-        ir.model
-            .add_procedural_surface(ctx, owner, procedural)?
+        self.procedural_index
+            .add_surface(ctx, &mut ir.model, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
@@ -610,8 +612,8 @@ impl SourceUnitCarriers {
             crate::decode::build::units::scale_procedural_curve(ctx, &mut procedural, scale)?;
         }
 
-        ir.model
-            .add_procedural_curve(ctx, owner, procedural)?
+        self.procedural_index
+            .add_curve(ctx, &mut ir.model, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
@@ -2015,7 +2017,8 @@ mod tests {
         });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        // Admit the owner-index bucket and entry, but no construction row.
+        policy.limits.max_collection_items = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("valid test setup or admitted service result");
         let error = SourceUnitCarriers::default()
@@ -2052,7 +2055,8 @@ mod tests {
         });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        // Admit the owner-index bucket and entry, but no construction row.
+        policy.limits.max_collection_items = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("valid test setup or admitted service result");
         let error = SourceUnitCarriers::default()

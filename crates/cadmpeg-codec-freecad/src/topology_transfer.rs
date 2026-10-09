@@ -283,6 +283,7 @@ impl SourceOccurrenceKey {
 }
 
 struct Builder<'a, 'c, 'r> {
+    procedural_admission: Option<cadmpeg_ir::document::procedural::ProceduralAdmission<'c>>,
     ctx: &'c DecodeContext<'r>,
     payload: &'a ShapePayloadRecord,
     tables: Tables<'a>,
@@ -310,6 +311,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         let source_indices = source_topology_indices(ctx, tables)?;
         Ok(Self {
             ctx,
+            procedural_admission: None,
             payload,
             tables,
             vertices: HashMap::new(),
@@ -1907,9 +1909,17 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 source_object,
             });
             if has_procedural_construction {
-                ir.model
-                    .add_procedural_surface(
-                        self.ctx,
+                if self.procedural_admission.is_none() {
+                    self.procedural_admission =
+                        Some(cadmpeg_ir::document::procedural::ProceduralAdmission::new(
+                            self.ctx, &ir.model,
+                        )?);
+                }
+                self.procedural_admission
+                    .as_mut()
+                    .expect("procedural admission was installed")
+                    .add_surface(
+                        &mut ir.model,
                         &id.try_clone_for_decode(
                             self.ctx,
                             "FreeCAD procedural surface owner identity",

@@ -4605,6 +4605,10 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
     annotations: &mut AnnotationBuilder,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    // This scope appends carriers and preserves their identity and construction links.
+    let mut procedural_admission =
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, &ir.model)?;
+
     let candidates = {
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
         let mut endpoint_surface_fits = BTreeMap::<(&SurfaceId, [u64; 3], u64), bool>::new();
@@ -4854,7 +4858,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             source_object: None,
         });
 
-        let _attached = ir.model.add_procedural_curve(ctx, &curve_id, procedural)?;
+        let _attached = procedural_admission.add_curve(&mut ir.model, &curve_id, procedural)?;
     }
     Ok(())
 }

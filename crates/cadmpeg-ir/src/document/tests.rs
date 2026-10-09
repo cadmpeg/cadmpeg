@@ -1257,3 +1257,34 @@ fn procedural_attachment_admits_owner_identity_bytes_before_comparison() {
         assert_eq!(reconstructed, model);
     }
 }
+
+#[test]
+fn repeated_finalize_admits_thousands_of_sorted_long_identities() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut model = Model::default();
+    let suffix = "x".repeat(128);
+    for index in 0..4096 {
+        model.curves.push(Curve {
+            parameter_range: None,
+            id: CurveId::mint(format!("test:model:curve#{index:04}{suffix}")).unwrap(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+    }
+    let before = model.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 200_000;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    model.finalize(&ctx).unwrap();
+    model.finalize(&ctx).unwrap();
+    assert_eq!(model, before);
+    ctx.finish_session().unwrap();
+    // Public-arena mutation must be observed on the next finalize call.
+    model.curves.reverse();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    model.finalize(&ctx).unwrap();
+    assert_eq!(model, before);
+}

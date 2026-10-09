@@ -4,6 +4,7 @@
 macro_rules! rewrite_scalar {
     ($type:ty) => {
         impl crate::schema::rewrite::typed::RewriteIdentities for $type {
+            const HAS_IDENTITY_FIELDS: bool = false;
             fn rewrite_native_value<
                 RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
             >(

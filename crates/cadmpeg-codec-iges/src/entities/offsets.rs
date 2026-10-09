@@ -284,6 +284,10 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
+    // This scope appends carriers and preserves their identity and construction links.
+    let mut procedural_admission =
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, &ir.model)?;
+
     let mut records = BTreeMap::new();
     for record in parameters {
         ctx.insert_btree_map(
@@ -1331,7 +1335,7 @@ pub(super) fn project(
         });
 
         ctx.charge_entities(1, "iges_geometry_offsets")?;
-        let _attached = ir.model.add_procedural_curve(ctx, &curve_id, procedural)?;
+        let _attached = procedural_admission.add_curve(&mut ir.model, &curve_id, procedural)?;
         ctx.reserve_vec(&mut wire_edges, 1, "iges offset wire edge slots")?;
         wire_edges.push(edge_id);
         ctx.insert_btree_set(
