@@ -176,8 +176,8 @@ fn triangle_strip_geometry(
     }
     let vertex_count =
         usize::try_from(vertex_count).map_err(|_| TriangleStripGeometryError::Missing)?;
-    let mut positions = None::<Vec<FiniteVector<3>>>;
-    let mut normals = None::<Vec<FiniteVector<3>>>;
+    let mut positions = None::<&PrimitiveScalarArray>;
+    let mut normals = None::<&PrimitiveScalarArray>;
     let mut arrays = arrays.iter();
     while arrays.len() != 0 {
         let Some(array) = ctx.next_charged(
@@ -185,120 +185,104 @@ fn triangle_strip_geometry(
         ).map_err(TriangleStripGeometryError::Resource)? else {
             break;
         };
-        let (candidate_positions, candidate_normals) = match array.field {
-            PrimitiveArrayField::VertexPositions => {
-                if array.values.len()
-                    != vertex_count
-                        .checked_mul(3)
-                        .ok_or(TriangleStripGeometryError::Missing)?
-                {
-                    continue;
-                }
-                (
-                    {
-                        let mut points = Vec::new();
-                        ctx.reserve_vec(&mut points, vertex_count, "creo triangle strip positions")
-                            .map_err(TriangleStripGeometryError::Resource)?;
-                        let mut tuples = array.values.chunks_exact(3);
-                        while tuples.len() != 0 {
-                            let Some(point) = ctx.next_charged(
-                                &mut tuples, "creo triangle strip position projection",
-                            ).map_err(TriangleStripGeometryError::Resource)? else {
-                                break;
-                            };
-                            points.push(FiniteVector::from([point[0], point[1], point[2]]));
-                        }
-                        points
-                    },
-                    None,
-                )
-            }
-            PrimitiveArrayField::VertexNormalsAndPositions => {
-                if array.values.len()
-                    != vertex_count
-                        .checked_mul(6)
-                        .ok_or(TriangleStripGeometryError::Missing)?
-                {
-                    continue;
-                }
-                (
-                    {
-                        let mut points = Vec::new();
-                        ctx.reserve_vec(&mut points, vertex_count, "creo triangle strip positions")
-                            .map_err(TriangleStripGeometryError::Resource)?;
-                        let mut tuples = array.values.chunks_exact(6);
-                        while tuples.len() != 0 {
-                            let Some(tuple) = ctx.next_charged(
-                                &mut tuples, "creo triangle strip position projection",
-                            ).map_err(TriangleStripGeometryError::Resource)? else {
-                                break;
-                            };
-                            points.push(FiniteVector::from([tuple[3], tuple[4], tuple[5]]));
-                        }
-                        points
-                    },
-                    Some({
-                        let mut normals = Vec::new();
-                        ctx.reserve_vec(&mut normals, vertex_count, "creo triangle strip normals")
-                            .map_err(TriangleStripGeometryError::Resource)?;
-                        let mut tuples = array.values.chunks_exact(6);
-                        while tuples.len() != 0 {
-                            let Some(tuple) = ctx.next_charged(
-                                &mut tuples, "creo triangle strip normal projection",
-                            ).map_err(TriangleStripGeometryError::Resource)? else {
-                                break;
-                            };
-                            normals.push(FiniteVector::from([tuple[0], tuple[1], tuple[2]]));
-                        }
-                        normals
-                    }),
-                )
-            }
+        let width = match array.field {
+            PrimitiveArrayField::VertexPositions => 3,
+            PrimitiveArrayField::VertexNormalsAndPositions => 6,
             PrimitiveArrayField::P1 | PrimitiveArrayField::P2 | PrimitiveArrayField::Points => {
-                continue
+                continue;
             }
         };
-        if let Some(selected) = &positions {
-            if selected.len() != candidate_positions.len() {
-                return Err(TriangleStripGeometryError::Conflicting);
-            }
-            let mut pairs = selected.iter().zip(&candidate_positions);
+        if array.values.len() != vertex_count.checked_mul(width)
+            .ok_or(TriangleStripGeometryError::Missing)? {
+            continue;
+        }
+        if let Some(selected) = positions {
+            let selected_width = match selected.field {
+                PrimitiveArrayField::VertexPositions => 3,
+                _ => 6,
+            };
+            let mut pairs = selected.values.chunks_exact(selected_width)
+                .zip(array.values.chunks_exact(width));
             while pairs.len() != 0 {
                 let Some((selected, candidate)) = ctx.next_charged(
                     &mut pairs, "creo triangle strip position agreement",
                 ).map_err(TriangleStripGeometryError::Resource)? else {
                     break;
                 };
+                // Both arrays have exactly vertex_count tuples. Each position
+                // occupies the final three finite scalar lanes of its tuple.
+                let first = selected_width - 3;
+                let selected = FiniteVector::from([
+                    selected[first], selected[first + 1], selected[first + 2],
+                ]);
+                let first = width - 3;
+                let candidate = FiniteVector::from([
+                    candidate[first], candidate[first + 1], candidate[first + 2],
+                ]);
                 if selected != candidate {
                     return Err(TriangleStripGeometryError::Conflicting);
                 }
             }
         }
-        positions.get_or_insert(candidate_positions);
-        if let Some(candidate_normals) = candidate_normals {
-            if let Some(selected) = &normals {
-                if selected.len() != candidate_normals.len() {
-                    return Err(TriangleStripGeometryError::Conflicting);
-                }
-                let mut pairs = selected.iter().zip(&candidate_normals);
+        positions.get_or_insert(array);
+        if width == 6 {
+            if let Some(selected) = normals {
+                let mut pairs = selected.values.chunks_exact(6)
+                    .zip(array.values.chunks_exact(6));
                 while pairs.len() != 0 {
                     let Some((selected, candidate)) = ctx.next_charged(
                         &mut pairs, "creo triangle strip normal agreement",
                     ).map_err(TriangleStripGeometryError::Resource)? else {
                         break;
                     };
-                    if selected != candidate {
+                    if [selected[0], selected[1], selected[2]]
+                        != [candidate[0], candidate[1], candidate[2]] {
                         return Err(TriangleStripGeometryError::Conflicting);
                     }
                 }
             }
-            normals.get_or_insert(candidate_normals);
+            normals.get_or_insert(array);
         }
     }
-    Ok(TriangleStripGeometry {
-        positions: positions.ok_or(TriangleStripGeometryError::Missing)?,
-        normals,
-    })
+    let selected = positions.ok_or(TriangleStripGeometryError::Missing)?;
+    let width = match selected.field {
+        PrimitiveArrayField::VertexPositions => 3,
+        _ => 6,
+    };
+    let parts = ctx.with_scoped_storage("creo triangle strip geometry storage", || {
+        let mut points = Vec::new();
+        ctx.reserve_vec(&mut points, vertex_count, "creo triangle strip positions")?;
+        let mut tuples = selected.values.chunks_exact(width);
+        while tuples.len() != 0 {
+            let Some(tuple) = ctx.next_charged(
+                &mut tuples, "creo triangle strip position projection",
+            )? else {
+                break;
+            };
+            let first = width - 3;
+            points.push(FiniteVector::from([tuple[first], tuple[first + 1], tuple[first + 2]]));
+        }
+        let normals = if let Some(selected) = normals {
+            let mut normals = Vec::new();
+            ctx.reserve_vec(&mut normals, vertex_count, "creo triangle strip normals")?;
+            let mut tuples = selected.values.chunks_exact(6);
+            while tuples.len() != 0 {
+                let Some(tuple) = ctx.next_charged(
+                    &mut tuples, "creo triangle strip normal projection",
+                )? else {
+                    break;
+                };
+                normals.push(FiniteVector::from([tuple[0], tuple[1], tuple[2]]));
+            }
+            Some(normals)
+        } else {
+            None
+        };
+        Ok::<_, CodecError>(TriangleStripGeometry { positions: points, normals })
+    }).map_err(TriangleStripGeometryError::Resource)?;
+    let storage = parts.1;
+    let geometry = parts.0;
+    storage.commit_value(geometry).map_err(TriangleStripGeometryError::Resource)
 }
 
 /// Decode named triangle-strip primitives and representation conflicts.
@@ -556,6 +540,7 @@ fn primitive_scalar(data: &[u8], offset: usize) -> Option<(f64, usize)> {
 mod tests {
     mod strip_visits;
     mod operation_visits;
+    mod geometry_storage;
     use super::{
         scalar_arrays, triangle_strip_geometry, triangle_strips, PrimitiveArrayField,
         PrimitiveScalarArray, TriangleStripGeometry, TriangleStripGeometryError,
