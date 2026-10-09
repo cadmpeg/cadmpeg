@@ -15,8 +15,8 @@ use crate::container::{self};
 use crate::CreoCodec;
 
 use super::{
-    arc_z_coordinate, conic_local_system, conic_parameter, positional_conic_local_system,
-    scalar_suffix, ConicType, ReferenceConic, ReferenceEllipse, ReferenceLineKind,
+    arc_z_coordinate, conic_local_system, conic_parameter,
+    ConicType, ReferenceConic, ReferenceEllipse, ReferenceLineKind,
 };
 use crate::scalar::ScalarCache;
 use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
@@ -32,6 +32,18 @@ fn with_reference_ctx<T>(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .expect("reference input is admitted");
     run(&ctx).expect("reference collection is admitted")
+}
+
+fn scalar_suffix<const COUNT: usize>(row: &[u8], cache: &ScalarCache) -> Option<[f64; COUNT]> {
+    with_reference_ctx(row, |ctx| super::scalar_suffix(ctx, row, cache))
+}
+
+fn positional_conic_local_system(
+    body: &[u8],
+    local_start: usize,
+    cache: &ScalarCache,
+) -> Option<(usize, cadmpeg_ir::units::FiniteVector<12>)> {
+    with_reference_ctx(body, |ctx| super::positional_conic_local_system(ctx, body, local_start, cache))
 }
 
 fn lines(payload: &[u8]) -> Vec<super::ReferenceLine> {
