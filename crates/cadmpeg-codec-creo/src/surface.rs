@@ -3826,14 +3826,14 @@ fn named_prototype_frames<'a>(
             let token = token?;
             let token_offset = close + 2 + token.offset;
             if token.kind == psb::TokenKind::NamedRecord
-                && named_record_length(payload, token_offset) == Some(token.length)
+                && named_record_length(ctx, payload, token_offset)? == Some(token.length)
             {
                 ctx.reserve_vec(&mut named, 1, "creo named prototype field positions")?;
                 named.push((token_offset, token.length));
             }
         }
         for token_offset in close + 2..record_end {
-            let Some(length) = named_record_length(payload, token_offset) else {
+            let Some(length) = named_record_length(ctx, payload, token_offset)? else {
                 continue;
             };
             let name_start = token_offset + 2;
@@ -4376,53 +4376,76 @@ fn split_cylinder_outline_bounds(
         .then_some(bounds)
 }
 
-fn named_record_length(body: &[u8], offset: usize) -> Option<usize> {
-    (body.get(offset) == Some(&psb::token::NAMED_RECORD)).then_some(())?;
-    let field_type = *body.get(offset + 1)?;
-    (field_type <= 0x24).then_some(())?;
-    let name = body.get(offset + 2..)?;
-    let name_len = name.iter().take(96).position(|byte| *byte == 0)?;
-    let name = name.get(..name_len)?;
-    (!name.is_empty()
-        && name[0].is_ascii_alphabetic()
-        && name
-            .iter()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'(' | b')')))
-    .then_some(name_len + 3)
+fn named_record_length(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    offset: usize,
+) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    if body.get(offset) != Some(&psb::token::NAMED_RECORD)
+        || !body.get(offset + 1).is_some_and(|field_type| *field_type <= 0x24)
+    {
+        return Ok(None);
+    }
+    let mut name = body[offset + 2..].iter().take(96).enumerate();
+    while name.len() != 0 {
+        let Some((index, byte)) =
+            ctx.next_charged(&mut name, "creo surface name prefix scan")?
+        else {
+            break;
+        };
+        if *byte == 0 {
+            return Ok((index > 0).then_some(index + 3));
+        }
+        if (index == 0 && !byte.is_ascii_alphabetic())
+            || (!byte.is_ascii_alphanumeric() && !matches!(byte, b'_' | b'(' | b')'))
+        {
+            return Ok(None);
+        }
+    }
+    Ok(None)
 }
 
 fn named_record_boundary(
+    ctx: &DecodeContext<'_>,
     kind: SurfaceKind,
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Option<usize> {
+) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let cone_half_angle = if kind == SurfaceKind::Cone {
         terminal_cone_half_angle_layout(body)
     } else {
         None
     };
-    let mut cursor = 0;
-    while cursor < body.len() {
+    let mut positions = 0..body.len();
+    while !positions.is_empty() {
         if let Some(layout) = cone_half_angle {
-            if cursor == layout.start {
-                cursor = layout.end;
+            if positions.start == layout.start {
+                positions.start = layout.end;
                 continue;
             }
         }
-        if named_record_length(body, cursor).is_some() {
-            return Some(cursor);
+        let Some(cursor) =
+            ctx.next_charged(&mut positions, "creo surface named boundary scan")?
+        else {
+            break;
+        };
+        if named_record_length(ctx, body, cursor)?.is_some() {
+            return Ok(Some(cursor));
         }
         if let Some((_, next)) = decode_row_scalar(kind, body, cursor, cache) {
             if cone_half_angle.is_some_and(|layout| cursor < layout.start && next > layout.start) {
-                cursor += 1;
                 continue;
             }
-            cursor = next;
-        } else {
-            cursor += 1;
+            positions.start = next;
         }
     }
-    None
+    Ok(None)
 }
 
 /// Decode bounded parameter bodies for positional `srf_array` rows.
@@ -5510,7 +5533,7 @@ fn parameter_records_for_rows(
                 boundary = SurfaceBodyBoundary::CompoundClose;
             }
             if let Some(relative) =
-                named_record_boundary(row.kind, &payload[*body_start..body_end], &cache)
+                named_record_boundary(ctx, row.kind, &payload[*body_start..body_end], &cache)?
             {
                 body_end = body_start + relative;
                 boundary = SurfaceBodyBoundary::NamedRecord;
@@ -7831,10 +7854,11 @@ fn plane_envelopes_for_rows(
         let outline = row.offset + relative;
         let scalar_start = outline + NAMED_OUTLINE.len();
         let field_end = named_record_boundary(
+            ctx,
             SurfaceKind::Plane,
             &payload[scalar_start..named_end],
             &cache,
-        )
+        )?
         .map_or(named_end, |relative| scalar_start + relative);
         let Some(slots) =
             scalar_slots_with_tokens_and_end(ctx, &payload[scalar_start..field_end], 6, &cache)?
@@ -8012,3 +8036,6 @@ fn id_ending_at(payload: &[u8], type_offset: usize) -> Option<(u32, usize)> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod prefix_visits;
