@@ -725,9 +725,9 @@ pub(in super::super) fn feature_parameters<'ctx>(
     feature_id: u32,
 ) -> Result<
     (
-        ScopedReservation<'ctx>,
-        ScopedReservation<'ctx>,
         BTreeMap<String, String>,
+        ScopedReservation<'ctx>,
+        ScopedReservation<'ctx>,
     ),
     CodecError,
 > {
@@ -1015,7 +1015,7 @@ pub(in super::super) fn feature_parameters<'ctx>(
             )?;
         }
     }
-    Ok((text_storage, node_storage, parameters))
+    Ok((parameters, text_storage, node_storage))
 }
 
 pub(in super::super) fn schema_operation_kind(schema_class: SchemaClass) -> Option<&'static str> {
@@ -1142,7 +1142,7 @@ pub(in super::super) fn feature_source_properties<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Result<(ScopedReservation<'ctx>, BTreeMap<String, String>), CodecError> {
+) -> Result<(BTreeMap<String, String>, ScopedReservation<'ctx>), CodecError> {
     let mut node_storage = ctx.reserve_scoped(0, "creo feature source property nodes")?;
     let mut properties = BTreeMap::new();
     if let Some(recipe) = super::operations::feature_recipe(ctx, scan, feature_id)? {
@@ -1183,7 +1183,7 @@ pub(in super::super) fn feature_source_properties<'ctx>(
             "ambiguous",
         )?;
     }
-    Ok((node_storage, properties))
+    Ok((properties, node_storage))
 }
 
 pub(in super::super) struct SchemaClassList<'a>(pub &'a BTreeSet<SchemaClass>);

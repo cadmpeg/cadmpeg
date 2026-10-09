@@ -1131,8 +1131,11 @@ pub(in super::super) fn schema_feature_definition(
         }
     }
     let kind = kind.into();
-    let (text_storage, node_storage, parameters) = feature_parameters(ctx, scan, feature_id)?;
-    text_storage.commit()?;
+    let parameter_storage = feature_parameters(ctx, scan, feature_id)?;
+    let text_storage = parameter_storage.1;
+    let node_storage = parameter_storage.2;
+    let parameters = parameter_storage.0;
+    let parameters = text_storage.commit_value(parameters)?;
     let parameters = cadmpeg_core::text::named_entries_for_decode(
         ctx,
         format_args!("creo:model:feature#{feature_id}"),
