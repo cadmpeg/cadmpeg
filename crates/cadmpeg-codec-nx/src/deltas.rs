@@ -570,10 +570,10 @@ fn term_use_numeric_tails(
 fn tagged_reference_lanes(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
-    census: &Census,
+    covered: &[(usize, usize)],
 ) -> Result<Vec<TaggedReferenceLane>, CodecError> {
     let mut lanes = Vec::new();
-    for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    for (offset, end) in uncovered_spans(ctx, stream.len(), covered)? {
         let mut at = offset;
         let mut references = Vec::new();
         let mut complete = true;
@@ -612,9 +612,10 @@ fn reference_type_maps(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
     census: &Census,
+    covered: &[(usize, usize)],
 ) -> Result<Vec<ReferenceTypeMap>, CodecError> {
     let mut maps = Vec::new();
-    for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    for (offset, end) in uncovered_spans(ctx, stream.len(), covered)? {
         let map = if let Some(map) =
             reference_type_map(ctx, stream, offset, ReferenceTypeMapLimit::Bounded(end))?
         {
@@ -767,10 +768,10 @@ fn reference_type_map(
 fn reference_state_packets(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
-    census: &Census,
+    covered: &[(usize, usize)],
 ) -> Result<Vec<ReferenceStatePacket>, CodecError> {
     let mut packets = Vec::new();
-    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), covered)? {
         let mut at = offset;
         while let Some(packet) = reference_state_packet(ctx, stream, at, gap_end)? {
             at = packet.end;
@@ -861,10 +862,10 @@ fn reference_state_terminal(stream: &[u8], offset: usize, gap_end: usize) -> Opt
 fn schema_reference_preambles(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
-    census: &Census,
+    covered: &[(usize, usize)],
 ) -> Result<Vec<SchemaReferencePreamble>, CodecError> {
     let mut preambles = Vec::new();
-    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), covered)? {
         let mut at = offset;
         while let Some(preamble) = schema_reference_preamble(ctx, stream, at, gap_end)? {
             at = preamble.end;
@@ -972,10 +973,10 @@ fn schema_reference_preamble(
 fn reference_marker_packets(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
-    census: &Census,
+    covered: &[(usize, usize)],
 ) -> Result<Vec<ReferenceMarkerPacket>, CodecError> {
     let mut packets = Vec::new();
-    for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    for (offset, end) in uncovered_spans(ctx, stream.len(), covered)? {
         if let Some(packet) = reference_marker_packet(stream, offset, end) {
             ctx.push_vec(&mut packets, packet, "NX reference marker packets")?;
         }
@@ -1013,11 +1014,10 @@ const BODY_SCHEMA_HEADER: &[u8] = &[
 fn inline_schema_declarations(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
-    census: &Census,
+    covered: &[(usize, usize)],
 ) -> Result<Vec<InlineSchemaDeclaration>, CodecError> {
-    let covered = merged_event_spans(ctx, census, true)?;
     let mut declarations = Vec::new();
-    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), covered)? {
         let parse_end = covered
             .iter()
             .position(|(start, end)| *start <= gap_end && gap_end < *end)
@@ -1421,9 +1421,10 @@ fn inline_body_states(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
     census: &Census,
+    covered: &[(usize, usize)],
 ) -> Result<Vec<InlineBodyState>, CodecError> {
     let mut states = Vec::new();
-    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), covered)? {
         if !census.inline_schema_declarations.iter().any(|declaration| {
             declaration.end == offset && declaration.fields == InlineSchemaFields::BodyHeader
         }) {
@@ -1582,10 +1583,10 @@ fn reference_marker_packet(
 fn type_150_state_packets(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
-    census: &Census,
+    covered: &[(usize, usize)],
 ) -> Result<Vec<Type150StatePacket>, CodecError> {
     let mut packets = Vec::new();
-    for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    for (offset, end) in uncovered_spans(ctx, stream.len(), covered)? {
         if let Some(packet) = type_150_state_packet(stream, offset, end) {
             ctx.push_vec(&mut packets, packet, "NX type 150 state packets")?;
         }
@@ -1625,13 +1626,15 @@ fn type_150_state_packet(
 fn uncovered_spans(
     ctx: &DecodeContext<'_>,
     stream_len: usize,
-    census: &Census,
-    include_derived_events: bool,
+    covered: &[(usize, usize)],
 ) -> Result<impl Iterator<Item = (usize, usize)>, CodecError> {
-    let covered = merged_event_spans(ctx, census, include_derived_events)?;
+    ctx.charge_work(
+        u64_from_index(covered.len()),
+        "scan NX deltas covered spans",
+    )?;
     let mut gaps = Vec::new();
     let mut at = 0;
-    for (start, end) in covered {
+    for &(start, end) in covered {
         if at < start {
             ctx.reserve_vec(&mut gaps, 1, "NX deltas uncovered spans")?;
             gaps.push((at, start));
@@ -2290,9 +2293,7 @@ fn mergeable_record(
     let Ok(kind) = NodeKind::try_from(kind) else {
         return Ok(false);
     };
-    Ok(crate::topology::Graph::parse(ctx, &record.canonical_bytes)?
-        .get(kind, record.xmt)
-        .is_some())
+    crate::topology::Graph::has_canonical_record(ctx, &record.canonical_bytes, kind, record.xmt)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

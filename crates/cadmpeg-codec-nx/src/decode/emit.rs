@@ -15,6 +15,7 @@ use super::pcurves::{
 use super::{offset_store_control_counts, Scan};
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
+use crate::native::substrate::ParsedStreams;
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{FaceLoopError, FaceLoopFailure, Graph, Node};
 use cadmpeg_core::bytes::assemble_u32_be;
@@ -1890,6 +1891,7 @@ pub(super) fn source_meta(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
     dialects: &DialectLayers,
+    parsed: Option<&ParsedStreams<'_>>,
 ) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
     insert_source_attribute(
@@ -2058,13 +2060,21 @@ pub(super) fn source_meta(
         preview_count += 1;
     }
     insert_source_attribute(ctx, &mut attributes, "jpeg_preview_count", preview_count)?;
-    for (index, stream) in scan
+    for (index, (ordinal, stream)) in scan
         .streams
         .iter()
-        .filter(|stream| stream.kind() == StreamKind::Deltas)
+        .enumerate()
+        .filter(|(_, stream)| stream.kind() == StreamKind::Deltas)
         .enumerate()
     {
-        let census = crate::deltas::census::walk(ctx, &stream.inflated)?;
+        let uncached;
+        let census = if let Some(census) = parsed.and_then(|parsed| parsed.delta_census(ordinal)) {
+            ctx.charge_work(1, "read NX cached deltas census")?;
+            census
+        } else {
+            uncached = crate::deltas::census::walk(ctx, &stream.inflated)?;
+            &uncached
+        };
         if census.transmit_header.is_some() {
             insert_source_attribute(
                 ctx,
@@ -2310,6 +2320,61 @@ mod tests {
     }
 
     #[test]
+    fn source_meta_reuses_the_prepared_delta_census() {
+        let mut scan = empty_source_scan();
+        scan.streams.push(Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: Vec::new(),
+            body: crate::parasolid::StreamBody::Preview,
+        });
+        scan.streams.push(Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: vec![0xaa; 50_000],
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Deltas,
+                schema: None,
+            },
+        });
+        crate::test_support::with_decode_context(|service_ctx| {
+            let (dialects, _) = crate::dialect::classify_layers(service_ctx, &scan)
+                .expect("dialects")
+                .into_report_parts();
+            let parsed = crate::native::substrate::ParsedStreams::parse(service_ctx, &scan)
+                .expect("prepared delta census");
+            let expected =
+                source_meta(service_ctx, &scan, &dialects, None).expect("uncached source metadata");
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| policy.limits.max_work_units = 40_000,
+                |ctx| {
+                    assert!(matches!(
+                        source_meta(ctx, &scan, &dialects, None),
+                        Err(CodecError::ResourceLimit(limit))
+                            if limit.dimension == ResourceDimension::WorkUnits
+                    ));
+                },
+            );
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| policy.limits.max_work_units = 40_000,
+                |ctx| {
+                    // The unknown record tags require one walk step per byte.
+                    // This budget can build metadata but cannot repeat that walk.
+                    let actual = source_meta(ctx, &scan, &dialects, Some(&parsed))
+                        .expect("source metadata reads the existing census");
+                    assert_eq!(
+                        serde_json::to_value(actual).expect("source metadata"),
+                        serde_json::to_value(expected).expect("source metadata")
+                    );
+                    assert!(ctx.resource_refusal().is_none());
+                },
+            );
+        });
+    }
+
+    #[test]
     fn source_meta_refuses_first_attribute_node_at_collection_limit() {
         let scan = empty_source_scan();
         let (dialects, _) = crate::test_support::with_decode_context(|ctx| {
@@ -2325,7 +2390,7 @@ mod tests {
             },
             |ctx| {
                 assert!(matches!(
-                    source_meta(ctx, &scan, &dialects),
+                    source_meta(ctx, &scan, &dialects, None),
                     Err(CodecError::ResourceLimit(limit))
                         if limit.dimension == ResourceDimension::CollectionItems
                             && limit.operation == "nx source attributes"
@@ -2350,7 +2415,7 @@ mod tests {
             },
             |ctx| {
                 assert!(matches!(
-                    source_meta(ctx, &scan, &dialects),
+                    source_meta(ctx, &scan, &dialects, None),
                     Err(CodecError::ResourceLimit(limit))
                         if limit.dimension == ResourceDimension::RetainedBytes
                             && limit.operation == "nx source attribute text"
@@ -2372,7 +2437,7 @@ mod tests {
             &[],
             |_| {},
             |service_ctx| {
-                let expected = source_meta(service_ctx, &scan, &dialects).unwrap();
+                let expected = source_meta(service_ctx, &scan, &dialects, None).unwrap();
                 assert_eq!(expected.attributes["file_size"], "0");
 
                 crate::test_support::with_decode_context_over(
@@ -2384,7 +2449,7 @@ mod tests {
                     },
                     |limited_ctx| {
                         assert!(matches!(
-                            source_meta(limited_ctx, &scan, &dialects),
+                            source_meta(limited_ctx, &scan, &dialects, None),
                             Err(CodecError::ResourceLimit(limit))
                                 if limit.dimension == ResourceDimension::CollectionItems
                                     && limit.operation == "named entry map nodes"
