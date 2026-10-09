@@ -271,7 +271,7 @@ pub(in crate::decode) fn mapped_pcurve_endpoints(
         map_pcurve_paths(
             ctx,
             ir,
-            faces.into_iter().map(NonZeroU32::new).zip(endpoint_sets),
+            [0, 1].map(|side| Some((NonZeroU32::new(faces[side]), endpoint_sets[side]))),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &SurfaceIndex::new(ctx, &ir.model.surfaces)?,
         )
@@ -461,7 +461,8 @@ struct MappedPcurvePath {
     endpoints: [[f64; 3]; 2],
 }
 
-type IndexedPcurvePath = (usize, (Option<NonZeroU32>, [[f64; 2]; 2]));
+type PcurvePath = (Option<NonZeroU32>, [[f64; 2]; 2]);
+type IndexedPcurvePath = (usize, PcurvePath);
 type SupportConePlaneWitness = ([[f64; 2]; 2], PlaneEquation);
 
 struct MappedPcurvePaths {
@@ -858,9 +859,13 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
 
     let mut reconciled = 0;
     let mut traversal = witnesses.iter();
-    while let Some((face_id, face_witnesses)) =
-        ctx.next_charged(&mut traversal, "creo support cone face witnesses")?
-    {
+    while traversal.len() != 0 {
+        let Some((face_id, face_witnesses)) = ctx.next_charged(
+            &mut traversal,
+            "creo support cone face witnesses",
+        )? else {
+            break;
+        };
         let Some(surface) = surface_index
             .preferred(*face_id)
             .and_then(|position| ir.model.surfaces.get_mut(position))
@@ -873,10 +878,13 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
         };
         let mut current_matches = true;
         let mut traversal = (face_witnesses).iter();
-        while let Some((endpoints, plane)) = ctx.next_charged(
-            &mut traversal,
-            "creo reconcile support apex cone parameter branches face witnesses traversal",
-        )? {
+        while traversal.len() != 0 {
+            let Some((endpoints, plane)) = ctx.next_charged(
+                &mut traversal,
+                "creo reconcile support apex cone parameter branches face witnesses traversal",
+            )? else {
+                break;
+            };
             if !support_cone_witness_matches(ctx, source_geometry, *endpoints, *plane)? {
                 current_matches = false;
                 break;
@@ -887,10 +895,13 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
         }
         let mut mirrored_matches = true;
         let mut traversal = (face_witnesses).iter();
-        while let Some((endpoints, plane)) = ctx.next_charged(
-            &mut traversal,
-            "creo reconcile support apex cone parameter branches face witnesses traversal",
-        )? {
+        while traversal.len() != 0 {
+            let Some((endpoints, plane)) = ctx.next_charged(
+                &mut traversal,
+                "creo reconcile support apex cone parameter branches face witnesses traversal",
+            )? else {
+                break;
+            };
             if !support_cone_witness_matches(ctx, &mirrored, *endpoints, *plane)? {
                 mirrored_matches = false;
                 break;
@@ -919,19 +930,19 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
 fn map_pcurve_paths(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
-    paths: impl IntoIterator<Item = (Option<NonZeroU32>, [[f64; 2]; 2])>,
+    paths: [Option<PcurvePath>; 2],
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     surface_index: &SurfaceIndex<'_>,
 ) -> Result<MappedPcurvePaths, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut result = MappedPcurvePaths {
         mapped: Vec::new(),
         missing_surfaces: 0,
         unevaluable_paths: 0,
     };
-    let mut paths = paths.into_iter();
-    while let Some((face_id, endpoints)) =
-        ctx.next_charged(&mut paths, "creo mapped pcurve path input")?
-    {
+    for (face_id, endpoints) in paths.into_iter().flatten() {
         let Some(face_id) = face_id else {
             result.missing_surfaces += 1;
             continue;
@@ -1136,7 +1147,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
                 map_pcurve_paths(
                     ctx,
                     ir,
-                    [(*face_id, *endpoints)],
+                    [Some((*face_id, *endpoints)), None],
                     source_carriers,
                     &surface_index,
                 )
@@ -1441,9 +1452,13 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         let mut authoritative = true;
         let mut agrees = true;
         let mut candidates = candidates.iter();
-        while let Some(candidate) =
-            ctx.next_charged(&mut candidates, "creo pcurve endpoint candidate agreement")?
-        {
+        while candidates.len() != 0 {
+            let Some(candidate) = ctx.next_charged(
+                &mut candidates,
+                "creo pcurve endpoint candidate agreement",
+            )? else {
+                break;
+            };
             if !admitted
                 .into_iter()
                 .zip(candidate.points)
@@ -1937,9 +1952,13 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
     }
     let mut transferred = BTreeSet::new();
     let mut traversal = candidates.iter();
-    while let Some((curve_id, candidates)) =
-        ctx.next_charged(&mut traversal, "creo analytic pcurve candidate groups")?
-    {
+    while traversal.len() != 0 {
+        let Some((curve_id, candidates)) = ctx.next_charged(
+            &mut traversal,
+            "creo analytic pcurve candidate groups",
+        )? else {
+            break;
+        };
         if ctx
             .get_btree_map(
                 &evaluable_path_counts,
@@ -1969,10 +1988,13 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
         }
         let mut compatible = true;
         let mut traversal = (candidates).iter();
-        while let Some((candidate, _)) = ctx.next_charged(
-            &mut traversal,
-            "creo transfer analytic pcurve carriers candidates traversal",
-        )? {
+        while traversal.len() != 0 {
+            let Some((candidate, _)) = ctx.next_charged(
+                &mut traversal,
+                "creo transfer analytic pcurve carriers candidates traversal",
+            )? else {
+                break;
+            };
             if !curve_contains_points(candidate, points) {
                 compatible = false;
                 break;
@@ -2318,16 +2340,24 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
     }
     let mut solved = BTreeMap::new();
     let mut traversal = domains.iter();
-    while let Some((vertex, domain)) =
-        ctx.next_charged(&mut traversal, "creo solved pcurve domain groups")?
-    {
+    while traversal.len() != 0 {
+        let Some((vertex, domain)) = ctx.next_charged(
+            &mut traversal,
+            "creo solved pcurve domain groups",
+        )? else {
+            break;
+        };
         let mut previous_kept = None;
         let mut point = None;
         let mut unique = true;
         let mut traversal = (domain).iter();
-        while let Some(candidate) =
-            ctx.next_charged(&mut traversal, "creo solved pcurve domain points")?
-        {
+        while traversal.len() != 0 {
+            let Some(candidate) = ctx.next_charged(
+                &mut traversal,
+                "creo solved pcurve domain points",
+            )? else {
+                break;
+            };
             if let Some(previous) = previous_kept {
                 if agree(previous, *candidate) {
                     continue;
@@ -2423,9 +2453,13 @@ pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
             "creo analytic candidates lookup",
         )? {
             let mut traversal = (face_candidates).iter();
-            while let Some((endpoints, _)) =
-                ctx.next_charged(&mut traversal, "creo periodic conic pcurve candidates")?
-            {
+            while traversal.len() != 0 {
+                let Some((endpoints, _)) = ctx.next_charged(
+                    &mut traversal,
+                    "creo periodic conic pcurve candidates",
+                )? else {
+                    break;
+                };
                 let Some(interior) = native_pcurve_midpoint(ctx, surface, *endpoints, points)?
                 else {
                     continue;
@@ -2489,12 +2523,18 @@ pub(in crate::decode) fn unique_oriented_native_pcurve(
     candidates: &[([[f64; 2]; 2], usize)],
     traversal: [[f64; 3]; 2],
 ) -> Result<Option<OrientedNativePcurve>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut selected: Option<OrientedNativePcurve> = None;
     let mut candidate_rows = candidates.iter();
-    while let Some((endpoints, offset)) = ctx.next_charged(
-        &mut candidate_rows,
-        "creo oriented native pcurve candidates",
-    )? {
+    while candidate_rows.len() != 0 {
+        let Some((endpoints, offset)) = ctx.next_charged(
+            &mut candidate_rows,
+            "creo oriented native pcurve candidates",
+        )? else {
+            break;
+        };
         let Some(oriented) = oriented_native_pcurve_endpoints(ctx, surface, *endpoints, traversal)?
         else {
             continue;
@@ -2564,9 +2604,13 @@ pub(in crate::decode) fn planar_curve_pcurve(
                 )
             })?;
             let mut points = points.iter();
-            while let Some(point) =
-                ctx.next_charged(&mut points, "creo planar polynomial NURBS poles")?
-            {
+            while points.len() != 0 {
+                let Some(point) = ctx.next_charged(
+                    &mut points,
+                    "creo planar polynomial NURBS poles",
+                )? else {
+                    break;
+                };
                 let Some(projected_point) = project_point(point.get()) else {
                     return Ok(None);
                 };
@@ -2593,9 +2637,13 @@ pub(in crate::decode) fn planar_curve_pcurve(
                 )
             })?;
             let mut points = points.iter();
-            while let Some(pole) =
-                ctx.next_charged(&mut points, "creo planar rational NURBS poles")?
-            {
+            while points.len() != 0 {
+                let Some(pole) = ctx.next_charged(
+                    &mut points,
+                    "creo planar rational NURBS poles",
+                )? else {
+                    break;
+                };
                 let Some(projected_point) = project_point(pole.point.get()) else {
                     return Ok(None);
                 };
@@ -2627,8 +2675,8 @@ pub(in crate::decode) fn planar_curve_pcurve(
         .with_storage(|| PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic()))?
     {
         Ok(nurbs) => {
-            pole_storage.commit()?;
-            knot_storage.commit()?;
+            let nurbs = pole_storage.commit_value(nurbs)?;
+            let nurbs = knot_storage.commit_value(nurbs)?;
             Ok(Some(PcurveGeometry::Nurbs { nurbs }))
         }
         Err(error) => {
@@ -3396,7 +3444,7 @@ mod tests {
             super::map_pcurve_paths(
                 ctx,
                 &ir,
-                [(std::num::NonZeroU32::new(7), [[0.0, 0.0], [1.0, 0.0]])],
+                [Some((std::num::NonZeroU32::new(7), [[0.0, 0.0], [1.0, 0.0]])), None],
                 &source_carriers,
                 &SurfaceIndex::new(
                     &cadmpeg_test_support::service_decode_context(),
@@ -4230,10 +4278,10 @@ mod tests {
             super::map_pcurve_paths(
                 ctx,
                 &ir,
-                [(
+                [Some((
                     std::num::NonZeroU32::new(7),
                     [[f64::MAX, 0.0], [-f64::MAX, 5.0]],
-                )],
+                )), None],
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
                 &SurfaceIndex::new(
                     &cadmpeg_test_support::service_decode_context(),
@@ -4457,10 +4505,10 @@ mod tests {
             super::map_pcurve_paths(
                 ctx,
                 &ir,
-                [(
+                [Some((
                     std::num::NonZeroU32::new(7),
                     [[f64::MAX, 0.0], [-f64::MAX, 5.0]],
-                )],
+                )), None],
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
                 &SurfaceIndex::new(
                     &cadmpeg_test_support::service_decode_context(),
@@ -4582,3 +4630,6 @@ mod evaluation_tests;
 
 #[cfg(test)]
 mod admission_recovery;
+
+#[cfg(test)]
+mod work_and_custody;
