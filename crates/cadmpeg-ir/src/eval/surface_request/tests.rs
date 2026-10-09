@@ -13,6 +13,7 @@ use crate::CadIr;
 
 mod nurbs;
 mod analytic;
+mod procedural_third;
 
 fn cylinder() -> SolvedSurfaceGeometry {
     SolvedSurfaceGeometry::Cylinder(CylinderSurface::try_new(

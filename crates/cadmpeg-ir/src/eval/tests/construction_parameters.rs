@@ -81,7 +81,7 @@ fn extrusion_partials_preserve_zero_acceleration_at_large_parameter_scale() {
         0.0,
         crate::eval::surface_request::SurfaceRequest::Second,
     )
-    .and_then(super::super::SurfaceJet::second_partials)
+    .and_then(|requested| requested.jet.second_partials())
     .unwrap()
     .into_raw();
     assert!((partials.point.x - 0.5).abs() <= 8.0 * f64::EPSILON);
