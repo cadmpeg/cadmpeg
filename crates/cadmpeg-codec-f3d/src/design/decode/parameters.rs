@@ -51,6 +51,44 @@ fn parameter_text(
     lp_utf16_bounded_charged(ctx, payload, at, bounds, "f3d Design UTF-16 text")
 }
 
+/// The exact UTF-16LE source tag of a user parameter.
+const USER_PARAMETER_SOURCE_UTF16: &[u8; 28] = b"U\0s\0e\0r\0 \0P\0a\0r\0a\0m\0e\0t\0e\0r\0";
+
+/// A fixed user source or the dynamic source text retained by an owned parameter.
+enum ParsedParameterSourceKind {
+    User,
+    Owned(String),
+}
+
+impl ParsedParameterSourceKind {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::User => "User Parameter",
+            Self::Owned(value) => value,
+        }
+    }
+}
+
+/// Recognize the fixed user tag without a temporary decoded String.
+fn parameter_source_kind_text(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    at: usize,
+) -> Result<Option<(ParsedParameterSourceKind, usize)>, CodecError> {
+    ctx.charge_work(0, "f3d Design UTF-16 text")?;
+    if View::u32_le_at(payload, at) == Some(14) {
+        if let Some(start) = at.checked_add(4) {
+            if bytes_at::<28>(payload, start) == Some(USER_PARAMETER_SOURCE_UTF16) {
+                if let Some(end) = start.checked_add(USER_PARAMETER_SOURCE_UTF16.len()) {
+                    return Ok(Some((ParsedParameterSourceKind::User, end)));
+                }
+            }
+        }
+    }
+    Ok(parameter_text(ctx, payload, at, 1..=256)?
+        .map(|(text, end)| (ParsedParameterSourceKind::Owned(text), end)))
+}
+
 /// Decode every parametric construction-recipe record (`body_recipe_data`,
 /// `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`,
 /// `vertex_recipe_data`) from each design `BulkStream` entry in `scan`.
@@ -165,7 +203,7 @@ pub(in crate::design) struct ParsedDesignParameter {
     class_tag: crate::records::references::DesignClassTag,
     record_index: u32,
     source_ordinal: u32,
-    source_kind: String,
+    source_kind: ParsedParameterSourceKind,
     owner_record_index: Option<u32>,
     family_discriminator: Option<DesignParameterDiscriminator>,
     expression: String,
@@ -192,8 +230,13 @@ impl ParsedDesignParameter {
         stream: &str,
         frame_start: u64,
     ) -> Result<Option<DesignParameter>, CodecError> {
-        let source_kind =
-            ctx.validate_nonblank_text(self.source_kind, "validate parameter source kind")?;
+        ctx.charge_work(0, "validate parameter source kind")?;
+        let source_kind = match self.source_kind {
+            ParsedParameterSourceKind::User => None,
+            ParsedParameterSourceKind::Owned(text) => Some(
+                ctx.validate_nonblank_text(text, "validate parameter source kind")?,
+            ),
+        };
         let expression =
             ctx.validate_nonblank_text(self.expression, "validate parameter expression")?;
         let name = ctx.validate_nonblank_text(self.name, "validate parameter name")?;
@@ -219,12 +262,25 @@ impl ParsedDesignParameter {
             }
             None => None,
         };
-        let Ok(source) = crate::records::parameters::DesignParameterSource::new(
-            source_kind,
-            self.owner_record_index,
-            family_discriminator,
-        ) else {
-            return Ok(None);
+        let source = match source_kind {
+            None => {
+                let (None, Some(family_discriminator)) =
+                    (self.owner_record_index, family_discriminator)
+                else {
+                    return Ok(None);
+                };
+                crate::records::parameters::DesignParameterSource::User { family_discriminator }
+            }
+            Some(source_kind) => {
+                let Ok(source) = crate::records::parameters::DesignParameterSource::new(
+                    source_kind,
+                    self.owner_record_index,
+                    family_discriminator,
+                ) else {
+                    return Ok(None);
+                };
+                source
+            }
         };
         let (
             Some(expression_offset),
@@ -400,7 +456,7 @@ pub(in crate::design) fn parse_design_parameter(
     let prefixed_kind =
         if discriminated && owner_record_index.is_some() && zeros_at::<10>(payload, expression_end)
         {
-            parameter_text(ctx, payload, prefixed_kind_at, 1..=256)?
+            parameter_source_kind_text(ctx, payload, prefixed_kind_at)?
         } else {
             None
         };
@@ -408,7 +464,7 @@ pub(in crate::design) fn parse_design_parameter(
         Some(value) => (prefixed_kind_at, value),
         None => {
             let source_kind_at = expression_end + trailer_len;
-            let Some(value) = parameter_text(ctx, payload, source_kind_at, 1..=256)? else {
+            let Some(value) = parameter_source_kind_text(ctx, payload, source_kind_at)? else {
                 return Ok(None);
             };
             (source_kind_at, value)
@@ -450,8 +506,8 @@ pub(in crate::design) fn parse_design_parameter(
     if tail.len() != 12
         || bytes_at::<2>(tail, 0) != Some(&[0, 1])
         || !zeros_at::<9>(tail, 3)
-        || !valid_design_parameter_family(family_discriminator, &source_kind, tail[2])
-        || source_kind.is_empty()
+        || !valid_design_parameter_family(family_discriminator, source_kind.as_str(), tail[2])
+        || source_kind.as_str().is_empty()
     {
         return Ok(None);
     }
@@ -507,7 +563,7 @@ fn parse_legacy_287_design_parameter(
     }
     let source_kind_at = expression_end + CLASS_287_EXPRESSION_TRAILER_LEN;
     let Some((source_kind, source_kind_end)) =
-        parameter_text(ctx, payload, source_kind_at, 1..=256)?
+        parameter_source_kind_text(ctx, payload, source_kind_at)?
     else {
         return Ok(None);
     };
@@ -544,7 +600,7 @@ fn parse_legacy_287_design_parameter(
         || bytes_at::<2>(tail, 0) != Some(&legacy_287_tail::TAIL_PREFIX_VALUE)
         || tail[legacy_287_tail::FAMILY_MARKER] != legacy_287_tail::FAMILY_MARKER_VALUE
         || !zeros_at::<9>(tail, legacy_287_tail::ZERO_RUN_9)
-        || source_kind.is_empty()
+        || source_kind.as_str().is_empty()
     {
         return Ok(None);
     }
@@ -594,7 +650,7 @@ fn parse_legacy_design_parameter(
     }
     let source_kind_at = expression_end + 5;
     let Some((source_kind, source_kind_end)) =
-        parameter_text(ctx, payload, source_kind_at, 1..=256)?
+        parameter_source_kind_text(ctx, payload, source_kind_at)?
     else {
         return Ok(None);
     };
@@ -614,7 +670,7 @@ fn parse_legacy_design_parameter(
     };
     if tail.len() != LEGACY_PARAMETER_TAIL.len()
         || bytes_at::<12>(tail, 0) != Some(&LEGACY_PARAMETER_TAIL)
-        || source_kind.is_empty()
+        || source_kind.as_str().is_empty()
     {
         return Ok(None);
     }

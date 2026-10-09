@@ -29,6 +29,7 @@ use crate::test_support::zip_test::with_scan;
 
 mod retention;
 mod payload_session;
+mod user_source_kind;
 
 impl ParsedParameterOwner {
     /// Locate this owner in a test stream through the decode path.
