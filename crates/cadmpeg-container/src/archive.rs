@@ -8,6 +8,7 @@ use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, ScopedReservati
 use cadmpeg_core::{CodecError, ContainerEntry};
 mod entry;
 mod index;
+mod local;
 mod probe;
 
 /// Compression methods supported by [`ArchiveSnapshot::open`].
@@ -37,7 +38,7 @@ impl ZipCompression {
     /// Storage of a member with these declared stored and expanded sizes.
     ///
     /// A stored member whose declared compressed size is smaller than its
-    /// uncompressed size is a malformed central-directory record, reported here
+    /// uncompressed size is a malformed declaration, reported here
     /// rather than normalized into a legal span.
     pub fn storage(
         self,
@@ -70,10 +71,10 @@ impl ZipCompression {
     }
 }
 
-/// ZIP central-directory facts retained after the parser is dropped.
+/// ZIP declaration facts retained after the parser is dropped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntryRecord {
-    /// Entry name as stored in the central directory.
+    /// Entry name from the central directory or a recovered local header.
     pub name: String,
     /// Compression method admitted by the snapshot.
     pub compression: ZipCompression,
@@ -89,24 +90,34 @@ pub struct EntryRecord {
     pub header_start: u64,
     /// Physical start of the payload, when the local member frame is readable.
     pub data_start: Option<u64>,
-    /// Physical start of the central-directory record.
+    /// Physical start of the central record, or local header during recovery.
     pub central_start: u64,
-    central_end: u64,
+    declaration: Declaration,
     utf8_name: bool,
     local_header_error: Option<&'static str>,
     unreadable_range: Option<ByteRange>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Declaration {
+    Central(ByteRange),
+    Local(ByteRange),
+}
+
 impl EntryRecord {
-    /// Exact central record declaration, including its name, extras and comment.
+    /// Whether this entry is identified by a recovered local declaration.
+    pub fn is_recovered(&self) -> bool {
+        matches!(self.declaration, Declaration::Local(_))
+    }
+
+    /// Exact central record or recovered local-header declaration.
     pub fn declaration_range(&self) -> ByteRange {
-        ByteRange {
-            start: self.central_start,
-            end: self.central_end,
+        match self.declaration {
+            Declaration::Central(range) | Declaration::Local(range) => range,
         }
     }
 
-    /// Whether the central declaration uses the Unicode filename flag.
+    /// Whether the declaration uses the Unicode filename flag.
     pub fn uses_utf8_name_encoding(&self) -> bool {
         self.utf8_name
     }
@@ -136,13 +147,14 @@ impl EntryRecord {
     }
 }
 
-/// A ZIP central-directory snapshot over one decode-session root view.
+/// A ZIP declaration snapshot over one decode-session root view.
 #[derive(Debug)]
 pub struct ArchiveSnapshot<'a> {
     root: View<'a>,
     central_start: u64,
     entries: Vec<EntryRecord>,
     by_name: BTreeMap<String, usize>,
+    recovery: Option<Box<local::Recovery>>,
 }
 
 /// Dependency index and the storage reservation that outlives its metadata.
@@ -151,9 +163,20 @@ struct ZipIndex<'bytes, 'ctx> {
     _workspace: ScopedReservation<'ctx>,
 }
 
+enum Admission<T> {
+    Indexed(T),
+    Unreadable(CodecError),
+}
+
 impl<'bytes, 'ctx> ZipIndex<'bytes, 'ctx> {
-    fn new(ctx: &'ctx DecodeContext<'_>, bytes: &'bytes [u8]) -> Result<Self, CodecError> {
-        let admitted = preflight_central_directory(ctx, bytes)?;
+    fn admit(
+        ctx: &'ctx DecodeContext<'_>,
+        bytes: &'bytes [u8],
+    ) -> Result<Admission<Self>, CodecError> {
+        let admitted = match directory_admission(ctx, bytes)? {
+            Admission::Indexed(admitted) => admitted,
+            Admission::Unreadable(error) => return Ok(Admission::Unreadable(error)),
+        };
         let directory_bytes = admitted.metadata_bytes;
         let input_bytes = cadmpeg_core::decode::u64_from_index(bytes.len());
         // zip 8.6 keeps fixed metadata in its builder and final index. Each
@@ -170,19 +193,37 @@ impl<'bytes, 'ctx> ZipIndex<'bytes, 'ctx> {
             .and_then(|work| work.checked_add(input_bytes))
             .ok_or_else(|| ctx.refuse_codec_limit("ZIP dependency indexing", u64::MAX, u64::MAX))?;
         ctx.charge_work(work, "ZIP dependency indexing")?;
-        let archive = zip::ZipArchive::new(index::NamespaceReader::new(bytes, admitted.end_record))
-            .map_err(|error| CodecError::malformed(format_args!("not a readable ZIP: {error}")))?;
-        Ok(Self {
+        let archive =
+            match zip::ZipArchive::new(index::NamespaceReader::new(bytes, admitted.end_record)) {
+                Ok(archive) => archive,
+                Err(
+                    error @ (zip::result::ZipError::InvalidArchive(_)
+                    | zip::result::ZipError::Io(_)),
+                ) => {
+                    return Ok(Admission::Unreadable(CodecError::malformed(format_args!(
+                        "not a readable ZIP: {error}"
+                    ))));
+                }
+                Err(error) => {
+                    return Err(CodecError::malformed(format_args!(
+                        "not a readable ZIP: {error}"
+                    )))
+                }
+            };
+        Ok(Admission::Indexed(Self {
             archive,
             _workspace: workspace,
-        })
+        }))
     }
 }
 
 impl<'a> ArchiveSnapshot<'a> {
-    /// Parses the central directory once and retains replayable physical facts.
+    /// Parses the directory, or recovers bounded local frames when it is unreadable.
     pub fn new(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
-        let index = ZipIndex::new(ctx, root.window())?;
+        let index = match ZipIndex::admit(ctx, root.window())? {
+            Admission::Indexed(index) => index,
+            Admission::Unreadable(error) => return local::recover(ctx, root, error),
+        };
         let archive = &index.archive;
         let archive_central_start = archive.central_directory_start();
         ctx.charge_collection_items(
@@ -207,9 +248,9 @@ impl<'a> ArchiveSnapshot<'a> {
         )?;
         let mut entries = ctx.vector_storage(archive.len(), "ZIP entry records")?;
         let mut central = archive_central_start;
-        for index in 0..archive.len() {
+        for ordinal in 0..archive.len() {
             let name = archive
-                .name_for_index(index)
+                .name_for_index(ordinal)
                 .ok_or_else(|| CodecError::malformed("ZIP indexed name is absent"))?;
             let name_len = cadmpeg_core::decode::u64_from_index(name.len());
             ctx.charge_retained(name_len, "ZIP entry record name")?;
@@ -219,7 +260,7 @@ impl<'a> ArchiveSnapshot<'a> {
                     "duplicate ZIP entry name {name}"
                 )));
             }
-            let (record, next) = entry::read(
+            let admission = entry::read(
                 ctx,
                 root.window(),
                 central,
@@ -227,6 +268,13 @@ impl<'a> ArchiveSnapshot<'a> {
                 archive.offset(),
                 archive_central_start,
             )?;
+            let (record, next) = match admission {
+                Admission::Indexed(record) => record,
+                Admission::Unreadable(error) => {
+                    drop(index);
+                    return local::recover(ctx, root, error);
+                }
+            };
             entries.push(record);
             central = next;
         }
@@ -252,6 +300,7 @@ impl<'a> ArchiveSnapshot<'a> {
             central_start: archive_central_start,
             entries,
             by_name,
+            recovery: None,
         })
     }
 
@@ -262,7 +311,10 @@ impl<'a> ArchiveSnapshot<'a> {
         root: View<'_>,
         mut matches: impl FnMut(&str) -> bool,
     ) -> Result<bool, CodecError> {
-        let index = ZipIndex::new(ctx, root.window())?;
+        let index = match ZipIndex::admit(ctx, root.window())? {
+            Admission::Indexed(index) => index,
+            Admission::Unreadable(error) => return Err(error),
+        };
         for candidate in index.archive.file_names() {
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(candidate.len()),
@@ -300,7 +352,7 @@ impl<'a> ArchiveSnapshot<'a> {
         probe::read(ctx, source)
     }
 
-    /// Returns central-directory records in archive order.
+    /// Returns declarations in directory order, or physical order during recovery.
     pub fn entries(&self) -> &[EntryRecord] {
         &self.entries
     }
@@ -308,6 +360,20 @@ impl<'a> ArchiveSnapshot<'a> {
     /// Finds an entry record by its exact archive name.
     pub fn entry(&self, name: &str) -> Option<&EntryRecord> {
         self.by_name.get(name).map(|index| &self.entries[*index])
+    }
+
+    /// Directory failure that required local recovery. A codec must report this
+    /// through its loss vocabulary even if all recovered members open.
+    pub fn recovery_reason(&self) -> Option<&str> {
+        self.recovery
+            .as_ref()
+            .map(|recovery| recovery.reason.as_str())
+    }
+
+    /// Unframed remainder after the bounded local walk. Offsets are relative to
+    /// this archive view. These bytes remain source-only, never expanded data.
+    pub fn recovery_tail(&self) -> Option<ByteRange> {
+        self.recovery.as_ref().and_then(|recovery| recovery.tail)
     }
 
     /// Opens an exact entry name as a borrowed stored slice or budgeted expanded view.
@@ -481,12 +547,27 @@ impl<'a> ArchiveSnapshot<'a> {
             );
             for (key, value) in [
                 ("header_offset", entry.header_start),
-                ("central_header_offset", entry.central_start),
+                (
+                    if entry.is_recovered() {
+                        "recovered_local_header_offset"
+                    } else {
+                        "central_header_offset"
+                    },
+                    entry.central_start,
+                ),
             ] {
                 attributes.insert(
                     ctx.copy_retained_text(key, "ZIP summary attribute key")?,
                     ctx.format_retained(format_args!("{value}"), "ZIP summary attribute value")?,
                 );
+            }
+            if let Some(reason) = self.recovery_reason() {
+                ctx.insert_btree_map(
+                    &mut attributes,
+                    ctx.copy_retained_text("archive_recovery", "ZIP recovery attribute key")?,
+                    ctx.copy_retained_text(reason, "ZIP recovery attribute value")?,
+                    "ZIP recovery attribute",
+                )?;
             }
             if let Some(offset) = entry.data_start {
                 ctx.insert_btree_map(
@@ -563,6 +644,16 @@ fn preflight_central_directory(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<DirectoryPreflight, CodecError> {
+    match directory_admission(ctx, bytes)? {
+        Admission::Indexed(admitted) => Ok(admitted),
+        Admission::Unreadable(error) => Err(error),
+    }
+}
+
+fn directory_admission(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Admission<DirectoryPreflight>, CodecError> {
     let mut first_error = None;
     let mut admitted = None;
     ctx.charge_work(
@@ -601,8 +692,11 @@ fn preflight_central_directory(
             }
         }
     }
-    admitted.ok_or_else(|| {
-        first_error.unwrap_or_else(|| CodecError::Malformed("ZIP end record is absent".into()))
+    Ok(match admitted {
+        Some(admitted) => Admission::Indexed(admitted),
+        None => Admission::Unreadable(
+            first_error.unwrap_or_else(|| CodecError::Malformed("ZIP end record is absent".into())),
+        ),
     })
 }
 
@@ -1070,7 +1164,7 @@ fn physical_ledger(
         }
 
         let mut central_order = ctx.collection_vec(entries.len(), "ZIP ledger central order")?;
-        central_order.extend(entries.iter());
+        central_order.extend(entries.iter().filter(|entry| !entry.is_recovered()));
         ctx.stable_sort_by(
             &mut central_order,
             |left, right| left.central_start.cmp(&right.central_start),
@@ -1635,7 +1729,10 @@ mod tests {
             header_start: 0,
             data_start: Some(30),
             central_start: 42,
-            central_end: 42,
+            declaration: super::Declaration::Central(cadmpeg_core::decode::ByteRange {
+                start: 42,
+                end: 42,
+            }),
             utf8_name: false,
             local_header_error: None,
             unreadable_range: None,
