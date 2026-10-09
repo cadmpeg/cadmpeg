@@ -530,13 +530,10 @@ impl FaceLoops {
     }
 
     /// Ordered loop ids: outer first when the face states one.
-    pub fn iter(&self) -> Box<dyn Iterator<Item = &LoopId> + '_> {
-        match self {
-            Self::Unspecified { loops } => Box::new(loops.iter()),
-            Self::Classified { outer, inner } => {
-                Box::new(std::iter::once(outer).chain(inner.iter()))
-            }
-        }
+    pub fn iter(&self) -> std::iter::Chain<
+        std::option::IntoIter<&LoopId>, std::slice::Iter<'_, LoopId>,
+    > {
+        self.into_iter()
     }
 
     /// Whether `id` is a loop of this face.
@@ -598,10 +595,16 @@ impl PartialEq<FaceLoops> for Vec<LoopId> {
 
 impl<'a> IntoIterator for &'a FaceLoops {
     type Item = &'a LoopId;
-    type IntoIter = Box<dyn Iterator<Item = &'a LoopId> + 'a>;
+    type IntoIter = std::iter::Chain<
+        std::option::IntoIter<&'a LoopId>, std::slice::Iter<'a, LoopId>,
+    >;
 
     fn into_iter(self) -> Self::IntoIter {
-        Box::new(self.iter())
+        let (outer, rest) = match self {
+            FaceLoops::Unspecified { loops } => (None, loops.as_slice()),
+            FaceLoops::Classified { outer, inner } => (Some(outer), inner.as_slice()),
+        };
+        outer.into_iter().chain(rest.iter())
     }
 }
 
@@ -1775,6 +1778,43 @@ mod tests {
             serde_json::from_value::<IncreasingParameterInterval>(serde_json::json!([1.0, 1.0]))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn face_loop_iterators_borrow_the_original_order_without_boxed_state() {
+        let id = |key| LoopId::mint(format!("test:model:loop#{key}")).unwrap();
+        let fixtures = [
+            FaceLoops::unspecified(Vec::new()),
+            FaceLoops::unspecified(vec![id("third"), id("first"), id("second")]),
+            FaceLoops::classified(id("outer"), Vec::new()),
+            FaceLoops::classified(id("outer"), vec![id("inner-second"), id("inner-first")]),
+        ];
+        for loops in &fixtures {
+            let expected = match loops {
+                FaceLoops::Unspecified { loops } => loops.iter().collect::<Vec<_>>(),
+                FaceLoops::Classified { outer, inner } => std::iter::once(outer).chain(inner.iter()).collect(),
+            };
+            // This exact type carries only optional/slice iterator state.
+            // No Box or trait object can satisfy this assignment.
+            let mut iterator: std::iter::Chain<
+                std::option::IntoIter<&LoopId>, std::slice::Iter<'_, LoopId>,
+            > = loops.iter();
+            assert_eq!(iterator.size_hint(), (expected.len(), Some(expected.len())));
+            for (index, member) in expected.iter().enumerate() {
+                assert!(std::ptr::eq(iterator.next().unwrap(), *member));
+                let remaining = expected.len() - index - 1;
+                assert_eq!(iterator.size_hint(), (remaining, Some(remaining)));
+            }
+            assert_eq!(iterator.next(), None);
+            assert_eq!(iterator.next(), None);
+            let via_trait: std::iter::Chain<
+                std::option::IntoIter<&LoopId>, std::slice::Iter<'_, LoopId>,
+            > = loops.into_iter();
+            assert!(via_trait.eq(expected.iter().copied()));
+            assert_eq!(loops.len(), expected.len());
+            assert_eq!(loops.is_empty(), expected.is_empty());
+            assert_eq!(loops.to_vec(), expected.into_iter().cloned().collect::<Vec<_>>());
+        }
     }
 
     #[test]
