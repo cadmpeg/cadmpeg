@@ -99,3 +99,84 @@ fn empty_owned_carriers_preserve_original_sticky_refusal() {
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(sticky)) if sticky == first));
 }
+
+fn assert_knot_handoff_without_terminal_probe(kind: Option<DefaultNurbsKnotKind>) {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Four knot slots. Uniform visits four indices; the other routes visit
+    // two distinct values and four repetitions. IR then visits its first lane.
+    policy.limits.max_work_units = if matches!(kind, Some(DefaultNurbsKnotKind::Uniform)) { 5 } else { 7 };
+    policy.limits.max_collection_items = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let result = if let Some(kind) = kind {
+        default_nurbs_knots(2, 1, kind, &ctx)
+    } else {
+        let counts = Value::List(vec![Value::Integer(2), Value::Integer(2)]);
+        let distinct = Value::List(vec![Value::Real(FiniteReal::ZERO),
+            Value::Real(FiniteReal::new(1.0).expect("finite knot"))]);
+        expand_knots(&counts, &distinct, 4, &ctx)
+    };
+    let CodecError::ResourceLimit(first) = result.expect_err("IR output slot refuses")
+        else { panic!("resource refusal") };
+    assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(first.operation, "IR finite knot values");
+    assert_eq!(first.used, 4);
+    assert_eq!(first.additional, 1);
+    assert_eq!(first.limit, 4);
+    assert_eq!(ctx.resource_refusal(), Some(first));
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == first));
+}
+
+#[test]
+fn uniform_knots_reach_ir_slot_refusal_without_terminal_probe() {
+    assert_knot_handoff_without_terminal_probe(Some(DefaultNurbsKnotKind::Uniform));
+}
+
+#[test]
+fn quasi_uniform_knots_reach_ir_slot_refusal_without_terminal_probe() {
+    assert_knot_handoff_without_terminal_probe(Some(DefaultNurbsKnotKind::QuasiUniform));
+}
+
+#[test]
+fn bezier_knots_reach_ir_slot_refusal_without_terminal_probe() {
+    assert_knot_handoff_without_terminal_probe(Some(DefaultNurbsKnotKind::Bezier));
+}
+
+#[test]
+fn explicit_knots_reach_ir_slot_refusal_without_terminal_probe() {
+    assert_knot_handoff_without_terminal_probe(None);
+}
+
+#[test]
+fn curve_strip_visits_only_one_strip_and_two_indices() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let strips = Value::List(vec![Value::List(vec![Value::Integer(1), Value::Integer(2)])]);
+    let decoded = super::super::tessellated_line_strips(Some(&strips), 2, &ctx)
+        .expect("one strip and two index visits fit").expect("valid strip");
+    assert_eq!(decoded, vec![vec![0, 1]]);
+    assert_eq!(ctx.resource_refusal(), None);
+    ctx.finish_session().expect("no scoped allocation remains");
+}
+
+#[test]
+fn curve_strip_refuses_before_second_index_with_original_operation() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let strips = Value::List(vec![Value::List(vec![Value::Integer(1), Value::Integer(2)])]);
+    let CodecError::ResourceLimit(first) = super::super::tessellated_line_strips(Some(&strips), 2, &ctx)
+        .expect_err("second index exceeds work") else { panic!("resource refusal") };
+    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(first.operation, "STEP curve strip index traversal");
+    assert_eq!(first.used, 2);
+    assert_eq!(first.additional, 1);
+    assert_eq!(first.limit, 2);
+    assert_eq!(ctx.resource_refusal(), Some(first));
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == first));
+}
