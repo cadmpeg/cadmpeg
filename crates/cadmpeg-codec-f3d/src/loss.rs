@@ -70,6 +70,8 @@ pub(crate) enum F3dLossCode {
     HistoryDependencyUnprojected,
     /// Feature history-state dependency links have multiple source scopes.
     HistoryDependencyAmbiguous,
+    /// A historical face selection cannot bind uniquely to emitted input topology members.
+    HistoricalFaceSelectionUnbound,
     /// Sketch relations retain native operands; no unique neutral relation.
     SketchRelationNativeRetained,
     /// Sketch dimensions retain native operands; no unique neutral dimension.
@@ -215,6 +217,7 @@ impl F3dLossCode {
         Self::ParameterExpressionUnbound,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
+        Self::HistoricalFaceSelectionUnbound,
         Self::SketchRelationNativeRetained,
         Self::SketchDimensionNativeRetained,
         Self::SketchPlacementUnprojected,
@@ -305,6 +308,7 @@ impl F3dLossCode {
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
+            Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
             Self::SketchRelationNativeRetained => "sketch.relation-native",
             Self::SketchDimensionNativeRetained => "sketch.dimension-native",
@@ -410,6 +414,7 @@ impl F3dLossCode {
             | Self::ParameterExpressionUnbound
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
+            | Self::HistoricalFaceSelectionUnbound
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
@@ -488,6 +493,7 @@ impl F3dLossCode {
             | Self::ParameterExpressionUnbound
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
+            | Self::HistoricalFaceSelectionUnbound
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
@@ -603,6 +609,7 @@ mod tests {
                 "parameter.expression-unbound",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
+                "history.face-selection-unbound",
                 "sketch.relation-native",
                 "sketch.dimension-native",
                 "sketch.placement-unprojected",

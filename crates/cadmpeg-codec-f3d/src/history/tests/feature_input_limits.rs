@@ -89,6 +89,7 @@ fn project(
         std::slice::from_ref(&scope),
         std::slice::from_ref(&history),
         &[],
+        &std::collections::HashMap::new(),
     )
 }
 
@@ -158,4 +159,68 @@ fn input_projection_preserves_member_order() {
         projected[0].vertices.as_slice()[0].as_str(),
         "f3d:history-input:vertex#5:input:4:4"
     );
+}
+
+#[test]
+fn input_topology_uses_scope_binding_when_global_state_numbers_repeat() {
+    let (feature, mut scope, mut history) = input_fixture();
+    scope
+        .try_edit(|draft| draft.history_state_id = Some(5))
+        .unwrap();
+    let mut current = history.states[0].clone();
+    current.id = "f3d:history:state#5".into();
+    current.state_id = 5;
+    current.node_index = 1;
+    current.next_ref = Some(0);
+    history.states.push(current);
+    let mut other = history.clone();
+    other.id = "f3d:other:history#0".into();
+    other.states[0].id = "f3d:other:state#4".into();
+    other.states[0].parent = other.id.clone();
+    other.states[1].id = "f3d:other:state#5".into();
+    other.states[1].parent = other.id.clone();
+    other.states[0].topology_cache = crate::history_records::AsmTopologyCache::Complete(
+        crate::history_records::AsmHistoricalTopology {
+            faces: vec![99],
+            ..Default::default()
+        },
+    );
+    let histories = [history, other];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let project = |bindings: &std::collections::HashMap<String, String>| {
+        super::super::project_feature_input_topologies(
+            &ctx,
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&scope),
+            &histories,
+            &[],
+            bindings,
+        )
+        .unwrap()
+    };
+    assert!(project(&std::collections::HashMap::new()).is_empty());
+    let bindings = std::collections::HashMap::from([(scope.id.clone(), histories[0].id.clone())]);
+    let inputs = project(&bindings);
+    assert_eq!(inputs.len(), 1);
+    assert_eq!(
+        inputs[0].faces.as_slice(),
+        &[crate::ids::history_input_face_id_charged(&ctx, &feature.id, 4, 2).unwrap()]
+    );
+    assert_eq!(
+        inputs[0].native_ref.as_deref(),
+        Some(histories[0].states[0].id.as_str())
+    );
+    let bindings =
+        std::collections::HashMap::from([(scope.id.clone(), "f3d:missing:history#0".into())]);
+    assert!(project(&bindings).is_empty());
+    assert!(super::super::project_feature_input_topologies(
+        &ctx,
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&scope),
+        &histories[..1],
+        &[],
+        &bindings,
+    )
+    .unwrap()
+    .is_empty());
 }

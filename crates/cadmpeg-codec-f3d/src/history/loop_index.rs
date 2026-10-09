@@ -9,7 +9,6 @@ pub(super) struct LoopIndex<'a> {
     pub(super) face_loops: HashMap<i64, Option<&'a [i64]>>,
     pub(super) loop_coedges: HashMap<i64, Option<&'a [i64]>>,
     pub(super) coedge_edges: HashMap<i64, Option<i64>>,
-    pub(super) endpoints: HashMap<i64, Option<[i64; 2]>>,
     pub(super) vertex_points: HashMap<i64, Option<i64>>,
     pub(super) positions: HashMap<i64, Option<cadmpeg_ir::math::Point3>>,
 }
@@ -57,14 +56,6 @@ impl<'a> LoopIndex<'a> {
                     .map(|row| (row.coedge, row.edge)),
                 "index F3D historical loop coedges",
             )?,
-            endpoints: unique_values(
-                ctx,
-                topology
-                    .edge_vertices
-                    .iter()
-                    .map(|row| (row.edge, [row.start_vertex, row.end_vertex])),
-                "index F3D historical loop endpoints",
-            )?,
             vertex_points: unique_values(
                 ctx,
                 topology
@@ -88,7 +79,7 @@ impl<'a> LoopIndex<'a> {
 #[cfg(test)]
 mod tests {
     use super::LoopIndex;
-    use crate::history::cache::SnapshotCache;
+    use crate::history::topology_cache::{endpoint_index, TopologyQueryCache};
     use crate::history_records::{
         AsmHistoricalCarrierBinding, AsmHistoricalEdge, AsmHistoricalPoint, AsmHistoricalTopology,
     };
@@ -115,13 +106,14 @@ mod tests {
         let second = topology(2.0);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 8;
+        policy.limits.max_collection_items = 10;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut cache = SnapshotCache::default();
+        let mut cache = TopologyQueryCache::default();
         for _ in 0..1_000 {
             for (topology, x) in [(&first, 1.0), (&second, 2.0)] {
-                let index = cache.get(&ctx, topology, LoopIndex::new).unwrap();
-                assert_eq!(index.endpoints[&1], Some([2, 2]));
+                let index = cache.loops.get(&ctx, topology, LoopIndex::new).unwrap();
+                let endpoints = cache.endpoints.get(&ctx, topology, endpoint_index).unwrap();
+                assert_eq!(endpoints[&1], Some([2, 2]));
                 assert_eq!(index.vertex_points[&2], Some(3));
                 assert_eq!(
                     index.positions[&3],
@@ -170,7 +162,8 @@ mod tests {
         };
         let ctx = cadmpeg_test_support::service_decode_context();
         let index = LoopIndex::new(&ctx, &topology).unwrap();
-        assert_eq!(index.endpoints[&1], None);
+        let endpoints = endpoint_index(&ctx, &topology).unwrap();
+        assert_eq!(endpoints[&1], None);
         assert_eq!(index.vertex_points[&2], None);
         assert_eq!(index.positions[&3], None);
     }

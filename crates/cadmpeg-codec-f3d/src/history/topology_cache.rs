@@ -5,18 +5,20 @@ use super::loop_index::LoopIndex;
 use crate::history_records::AsmHistoricalTopology;
 use std::collections::{HashMap, HashSet};
 
+pub(super) type EdgeEndpoints = HashMap<i64, Option<[i64; 2]>>;
+
 pub(super) type BoundaryEdges = HashMap<i64, HashSet<i64>>;
 
 #[derive(Default)]
 pub(super) struct TopologyQueryCache<'a> {
     pub(super) vertices: SnapshotCache<'a, AsmHistoricalTopology, VertexBoundaryIndex>,
+    pub(super) endpoints: SnapshotCache<'a, AsmHistoricalTopology, EdgeEndpoints>,
     pub(super) boundaries: SnapshotCache<'a, AsmHistoricalTopology, BoundaryEdges>,
     pub(super) loops: SnapshotCache<'a, AsmHistoricalTopology, LoopIndex<'a>>,
 }
 
 pub(super) struct VertexBoundaryIndex {
     pub(super) boundaries: BoundaryEdges,
-    pub(super) endpoints: HashMap<i64, Option<[i64; 2]>>,
     pub(super) vertices: HashSet<i64>,
     pub(super) faces: HashSet<i64>,
 }
@@ -26,17 +28,6 @@ impl VertexBoundaryIndex {
         topology: &AsmHistoricalTopology,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let boundaries = super::face_boundary_edge_index(ctx, topology)?;
-        let mut endpoints = HashMap::new();
-        for edge in &topology.edge_vertices {
-            ctx.charge_work(1, "index F3D boundary vertex endpoints")?;
-            if !endpoints.contains_key(&edge.edge) {
-                ctx.reserve_map(&mut endpoints, 1, "index F3D boundary vertex endpoints")?;
-            }
-            endpoints
-                .entry(edge.edge)
-                .and_modify(|value| *value = None)
-                .or_insert(Some([edge.start_vertex, edge.end_vertex]));
-        }
         let vertices = ctx.collect_hash_set(
             topology.vertices.iter().copied(),
             "index F3D boundary live vertices",
@@ -55,11 +46,28 @@ impl VertexBoundaryIndex {
         )?;
         Ok(Self {
             boundaries,
-            endpoints,
             vertices,
             faces,
         })
     }
+}
+
+pub(super) fn endpoint_index(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    topology: &AsmHistoricalTopology,
+) -> Result<EdgeEndpoints, cadmpeg_core::CodecError> {
+    let mut endpoints = HashMap::new();
+    for edge in &topology.edge_vertices {
+        ctx.charge_work(1, "index F3D boundary vertex endpoints")?;
+        if !endpoints.contains_key(&edge.edge) {
+            ctx.reserve_map(&mut endpoints, 1, "index F3D boundary vertex endpoints")?;
+        }
+        endpoints
+            .entry(edge.edge)
+            .and_modify(|value| *value = None)
+            .or_insert(Some([edge.start_vertex, edge.end_vertex]));
+    }
+    Ok(endpoints)
 }
 
 pub(super) fn aggregate_boundaries(

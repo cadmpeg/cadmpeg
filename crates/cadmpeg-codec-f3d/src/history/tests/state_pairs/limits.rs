@@ -662,6 +662,14 @@ fn face_boundary_loop_contexts_refuse_collection_limit() {
             crate::history::loop_index::LoopIndex::new,
         )
         .unwrap();
+    cache
+        .endpoints
+        .get(
+            &cadmpeg_test_support::service_decode_context(),
+            &topology,
+            crate::history::topology_cache::endpoint_index,
+        )
+        .unwrap();
     let error = face_boundary_contexts_for_slots(&ctx, &[1], &topology, &mut cache).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -694,6 +702,11 @@ fn historical_loop_vertices_refuse_collection_limit() {
         &ctx,
         coedges,
         &crate::history::loop_index::LoopIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            &topology,
+        )
+        .unwrap(),
+        &crate::history::topology_cache::endpoint_index(
             &cadmpeg_test_support::service_decode_context(),
             &topology,
         )

@@ -1807,7 +1807,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
                 }
             })
             .collect();
-        match crate::test_support::with_decode_context(|decode_ctx| historical_loop_boundary(decode_ctx, coedges, &crate::history::loop_index::LoopIndex::new(decode_ctx, topology)?)).unwrap() {
+        match crate::test_support::with_decode_context(|decode_ctx| historical_loop_boundary(decode_ctx, coedges, &crate::history::loop_index::LoopIndex::new(decode_ctx, topology)?, &crate::history::topology_cache::endpoint_index(decode_ctx, topology)?)).unwrap() {
             crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Vertices(rows) => Some(
                 rows.into_iter()
                     .map(|row| row.vertex_slot)

@@ -146,3 +146,33 @@ fn duplicate_boundary_incidence_keeps_aggregate_and_unique_query_semantics() {
         None
     );
 }
+
+#[test]
+fn loop_and_vertex_queries_share_the_endpoint_index() {
+    let mut topology = boundary(40, 50);
+    topology
+        .edge_vertices
+        .extend((1_000..1_511).map(|edge| AsmHistoricalEdge {
+            edge,
+            start_vertex: 40,
+            end_vertex: 40,
+        }));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // 512 endpoint entries plus the queried face and loop indexes fit. A second endpoint table does not.
+    policy.limits.max_collection_items = 600;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut cache = TopologyQueryCache::default();
+    assert_eq!(
+        common_face_vertex(&ctx, &[10], &topology, &mut cache).unwrap(),
+        Some(40)
+    );
+    let contexts =
+        crate::history::face_boundary_contexts_for_slots(&ctx, &[10], &topology, &mut cache)
+            .unwrap();
+    assert_eq!(contexts.len(), 1);
+    assert!(
+        matches!(&contexts[0].loops[0].boundary, crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Vertices(rows) if rows.len() == 1 && rows[0].vertex_slot == 40)
+    );
+    ctx.finish_session().unwrap();
+}

@@ -2724,12 +2724,20 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.configurations,
             &self.ir.model.parameters,
         )?;
+        let scope_histories = crate::history::bind_scope_histories(
+            self.ctx,
+            &self.native.design_parameter_scopes,
+            &self.native.design_body_bindings,
+            &self.native.design_body_recipe_operands,
+            &self.native.asm_histories,
+        )?;
         self.ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
             ctx,
             &self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.asm_histories,
             &self.native.design_edge_operands,
+            &scope_histories,
         )?;
         crate::history::bind_feature_outputs(
             ctx,
@@ -2901,13 +2909,6 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.native.sketch_surfaces,
                 &self.ir.model.spatial_sketch_entities,
             )?;
-        let scope_histories = crate::history::bind_scope_histories(
-            self.ctx,
-            &self.native.design_parameter_scopes,
-            &self.native.design_body_bindings,
-            &self.native.design_body_recipe_operands,
-            &self.native.asm_histories,
-        )?;
         crate::design::profile_select::bind_extrude_profile_selections(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
@@ -3036,6 +3037,13 @@ impl<'a> F3dDecodeSession<'a> {
             |a, b| a.id.cmp(&b.id),
             |constraint| constraint.id.as_str().len(),
             "sort F3D spatial sketch constraints",
+        )?;
+        crate::history::face_admission::admit_feature_input_faces(
+            ctx,
+            &mut self.ir.model.features,
+            &self.ir.model.feature_input_topologies,
+            &self.ir.model.faces,
+            &mut self.report.losses,
         )?;
         crate::design::configurations::bind_configuration_suppressed_features(
             ctx,

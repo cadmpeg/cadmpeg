@@ -14,6 +14,7 @@ use cadmpeg_core::decode::u64_from_index;
 mod body_candidates;
 mod body_index;
 mod cache;
+pub(crate) mod face_admission;
 mod loop_index;
 mod recipe_index;
 pub(crate) mod selection;
@@ -3481,6 +3482,7 @@ pub(crate) fn project_feature_input_topologies(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
     edge_operands: &[crate::records::topology::edge_identity::DesignEdgeOperand],
+    scope_histories: &HashMap<String, String>,
 ) -> Result<Vec<cadmpeg_ir::features::FeatureInputTopology>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::FeatureInputTopology;
 
@@ -3496,23 +3498,34 @@ pub(crate) fn project_feature_input_topologies(
         if matching_scopes.next().is_some() {
             continue;
         }
+        let scoped_history = if scope_histories.contains_key(&scope.id) {
+            let Some(history) = bound_scope_history(&scope.id, scope_histories, histories) else {
+                continue;
+            };
+            Some(history)
+        } else {
+            None
+        };
+        let scoped_histories = scoped_history.map_or(histories, std::slice::from_ref);
         let Some(previous_state_id) = scope
             .previous_history_state_id()
             .or_else(|| {
                 crate::design::feature_project::work_point_recipe_state_id(scope, edge_operands)
             })
             .or_else(|| crate::design::feature_project::work_plane_recipe_state_id(scope))
-            .or_else(|| effective_scope_previous_history_state_id(scope, histories))
+            .or_else(|| effective_scope_previous_history_state_id(scope, scoped_histories))
         else {
             continue;
         };
         let Some(state) = scope
             .history_state_id()
             .and_then(|state_id| {
-                unique_history_state_pair(histories, state_id, previous_state_id)
+                unique_history_state_pair(scoped_histories, state_id, previous_state_id)
                     .map(|(_, _, previous)| previous)
             })
-            .or_else(|| unique_history_state(histories, previous_state_id).map(|(_, state)| state))
+            .or_else(|| {
+                unique_history_state(scoped_histories, previous_state_id).map(|(_, state)| state)
+            })
         else {
             continue;
         };
@@ -3873,6 +3886,7 @@ fn boundary_vertices_for_faces(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
     faces: impl IntoIterator<Item = i64>,
     index: &VertexBoundaryIndex,
+    edge_endpoints: &topology_cache::EdgeEndpoints,
 ) -> Result<Option<HashSet<i64>>, cadmpeg_core::CodecError> {
     let mut vertices = HashSet::new();
     for face in faces {
@@ -3881,7 +3895,7 @@ fn boundary_vertices_for_faces(
         };
         for edge_slot in edges {
             decode.charge_work(1, "query F3D boundary vertex endpoints")?;
-            let Some([start, end]) = index.endpoints.get(edge_slot).copied().flatten() else {
+            let Some([start, end]) = edge_endpoints.get(edge_slot).copied().flatten() else {
                 return Ok(None);
             };
             if !index.vertices.contains(&start) || !index.vertices.contains(&end) {
@@ -3903,9 +3917,14 @@ fn common_face_vertex<'a>(
     let index = topology_queries
         .vertices
         .get(decode, topology, VertexBoundaryIndex::new)?;
+    let edge_endpoints =
+        topology_queries
+            .endpoints
+            .get(decode, topology, topology_cache::endpoint_index)?;
     let mut common = None::<HashSet<i64>>;
     for face in face_slots {
-        let Some(vertices) = boundary_vertices_for_faces(decode, std::iter::once(*face), index)?
+        let Some(vertices) =
+            boundary_vertices_for_faces(decode, std::iter::once(*face), index, edge_endpoints)?
         else {
             return Ok(None);
         };
@@ -3934,6 +3953,10 @@ fn recipe_reference_common_vertex<'a>(
     let index = topology_queries
         .vertices
         .get(decode, topology, VertexBoundaryIndex::new)?;
+    let edge_endpoints =
+        topology_queries
+            .endpoints
+            .get(decode, topology, topology_cache::endpoint_index)?;
     let mut common = None::<HashSet<i64>>;
     for reference in &recipe.recipe_references {
         let faces = reference
@@ -3941,7 +3964,8 @@ fn recipe_reference_common_vertex<'a>(
             .iter()
             .filter_map(|face| stable_ref(face.as_str()))
             .filter(|face| index.faces.contains(face));
-        let Some(vertices) = boundary_vertices_for_faces(decode, faces, index)? else {
+        let Some(vertices) = boundary_vertices_for_faces(decode, faces, index, edge_endpoints)?
+        else {
             return Ok(None);
         };
         if let Some(common) = &mut common {
@@ -6606,6 +6630,10 @@ fn face_boundary_contexts_for_slots<'a>(
     let index = topology_queries
         .loops
         .get(decode, topology, LoopIndex::new)?;
+    let edge_endpoints =
+        topology_queries
+            .endpoints
+            .get(decode, topology, topology_cache::endpoint_index)?;
     let mut contexts = Vec::new();
     'faces: for face_slot in face_slots {
         let Some(face_loops) = index.face_loops.get(face_slot).copied().flatten() else {
@@ -6629,7 +6657,7 @@ fn face_boundary_contexts_for_slots<'a>(
                     },
                 );
             }
-            let boundary = historical_loop_boundary(decode, coedges, index)?;
+            let boundary = historical_loop_boundary(decode, coedges, index, edge_endpoints)?;
 
             decode.reserve_vec(&mut loops, 1, "collect F3D face boundary loops")?;
             loops.push(
@@ -6655,6 +6683,7 @@ fn historical_loop_boundary(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
     coedges: Vec<crate::records::topology::historical_context::DesignHistoricalLoopCoedge>,
     index: &LoopIndex<'_>,
+    edge_endpoints: &topology_cache::EdgeEndpoints,
 ) -> Result<
     crate::records::topology::historical_context::DesignHistoricalLoopBoundary,
     cadmpeg_core::CodecError,
@@ -6669,7 +6698,7 @@ fn historical_loop_boundary(
     for (ordinal, coedge) in coedges.iter().enumerate() {
         let previous = coedges[(ordinal + coedges.len() - 1) % coedges.len()].edge_slot;
         decode.charge_work(2, "query F3D historical loop endpoints")?;
-        let endpoints = |slot| index.endpoints.get(&slot).copied().flatten();
+        let endpoints = |slot| edge_endpoints.get(&slot).copied().flatten();
         let (Some(previous), Some(current)) = (endpoints(previous), endpoints(coedge.edge_slot))
         else {
             return Ok(DesignHistoricalLoopBoundary::Coedges(coedges));
