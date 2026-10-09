@@ -601,7 +601,7 @@ pub(crate) fn install<'ctx>(
 ) -> Result<NativeInstall<'ctx>, CodecError> {
     let properties = &scan.metadata.properties;
     let (
-        (revisions, notes, applications, document_settings, previews, mut setting_records),
+        native_records,
         mut native_storage,
     ) = ctx.with_scoped_storage("Rhino document native workspace", || {
         let mut revisions = ctx.collection_vec(
@@ -680,10 +680,11 @@ pub(crate) fn install<'ctx>(
         }];
         let mut previews =
             ctx.collection_vec(properties.previews.len(), "Rhino document previews")?;
-        for (index, value) in ctx
-            .admit_iter(&properties.previews[..], "Rhino install traversal")?
-            .enumerate()
-        {
+        let mut preview_values = properties.previews.iter().enumerate();
+        for _ in 0..properties.previews.len() {
+            let (index, value) = ctx
+                .next_charged(&mut preview_values, "Rhino install traversal")?
+                .ok_or_else(|| CodecError::malformed("Rhino preview source ended early"))?;
             previews.push(PreviewRecord {
                 id: retained_numbered_id(
                     ctx,
@@ -705,10 +706,11 @@ pub(crate) fn install<'ctx>(
             settings.unsupported.len(),
             "Rhino unsupported setting records",
         )?;
-        for (index, value) in ctx
-            .admit_iter(&settings.unsupported[..], "Rhino install traversal")?
-            .enumerate()
-        {
+        let mut unsupported = settings.unsupported.iter().enumerate();
+        for _ in 0..settings.unsupported.len() {
+            let (index, value) = ctx
+                .next_charged(&mut unsupported, "Rhino install traversal")?
+                .ok_or_else(|| CodecError::malformed("Rhino unsupported setting source ended early"))?;
             setting_records.push(SettingRecord {
                 id: retained_numbered_id(
                     ctx,
@@ -736,6 +738,8 @@ pub(crate) fn install<'ctx>(
             setting_records,
         ))
     })?;
+    let (revisions, notes, applications, document_settings, previews, mut setting_records) =
+        native_records;
     let settings = &scan.metadata.settings;
     let binding = UnitBinding::from_units(settings.units.as_ref());
     let mut annotations = Vec::new();
@@ -744,11 +748,19 @@ pub(crate) fn install<'ctx>(
     let mut losses = ScratchVec::new(ctx, "Rhino document setting loss Vec")?;
     let mut opaque_records = ScratchVec::new(ctx, "Rhino document source Vec")?;
     let mut render_settings_seen = false;
-    for table in ctx.admit_iter(&scan.tables[..], "Rhino install traversal")? {
+    let mut tables = scan.tables.iter();
+    for _ in 0..scan.tables.len() {
+        let table = ctx
+            .next_charged(&mut tables, "Rhino install traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino setting table source ended early"))?;
         if table.typecode & !0x0000_8000 != SETTINGS_TABLE {
             continue;
         }
-        for record in ctx.admit_iter(&table.records[..], "Rhino install traversal")? {
+        let mut records = table.records.iter();
+        for _ in 0..table.records.len() {
+            let record = ctx
+                .next_charged(&mut records, "Rhino install traversal")?
+                .ok_or_else(|| CodecError::malformed("Rhino setting record source ended early"))?;
             if matches!(
                 record.typecode,
                 ANNOTATION_SETTINGS | GRID_DEFAULTS | RENDER_SETTINGS
