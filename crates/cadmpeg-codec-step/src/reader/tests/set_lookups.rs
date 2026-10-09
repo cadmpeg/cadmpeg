@@ -70,3 +70,51 @@ fn protected_pcurve_root_filter_preserves_lookup_refusal() {
         }
     }
 }
+
+#[test]
+fn removed_pcurve_count_uses_actual_ownership_retention() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PCURVE('',#3,#4);#2=SURFACE('',#1);#3=ITEM();#4=ITEM();ENDSEC;END-ISO-10303-21;";
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+    {
+        let (exchange, _) = crate::parse::parse_inner(source, &ctx).unwrap();
+        let mut ir = CadIr::empty();
+        ir.model.pcurves.push(Pcurve {
+            id: PcurveId::try_from("step:data:pcurve#1").unwrap(),
+            geometry: PcurveGeometry::Line(
+                LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
+            ),
+            metadata: Default::default(),
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            ProceduralSurfaceId::try_from("step:data:bounded#2").unwrap(),
+            ProceduralSurfaceDefinition::CurveBounded {
+                support: SurfaceId::try_from("step:data:surface#3").unwrap(),
+                boundaries: Vec::new(),
+                boundary_pcurves: Vec::new(),
+                implicit_outer: false,
+            },
+            None,
+        ));
+        let storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").unwrap());
+        let mut losses = Vec::new();
+        let mut typed_records = HashSet::from([1, 2, 3, 4]);
+        super::super::retain_unowned_carriers(
+            &exchange,
+            &mut ir,
+            &mut typed_records,
+            (&mut losses, &storage),
+            &ctx,
+        )
+        .unwrap();
+        // The protected surface references the pcurve record but has no pcurve use.
+        assert!(ir.model.pcurves.is_empty());
+        assert_eq!(ir.model.procedural_surfaces.len(), 1);
+        assert_eq!(typed_records, HashSet::from([2, 3, 4]));
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains("opaque_pcurves=0, protected_pcurves=1"));
+        assert!(losses[0].message.contains("deleted pcurves=1"));
+    }
+    ctx.finish_session().unwrap();
+}

@@ -90,10 +90,10 @@ fn record_graph_limit(ctx: &DecodeContext<'_>) -> usize {
 }
 
 struct StageOutcome<T> {
-    value: T,
     claims: BTreeSet<u64>,
     losses: Vec<LossNote>,
     notes: Vec<String>,
+    value: T,
 }
 
 impl<T> std::ops::Deref for StageOutcome<T> {
@@ -357,19 +357,21 @@ fn decode_exchange_mode(
     session.charge_pending_ir_entities("step_dependency_decode")?;
     let mut dependencies = dependencies::decode(exchange, session.ctx)?;
     session.charge_pending_ir_entities("step_carrier_index")?;
-    let (carrier_index, carrier_storage) = session
+    let (carrier_index_buffer, carrier_storage) = session
         .ctx
         .with_scoped_storage("STEP carrier index scratch", || {
             index::CarrierIndex::from_ir(&session.ir, session.ctx)
         })?;
+    let carrier_index = carrier_index_buffer;
     session.charge_pending_ir_entities("step_topology_decode")?;
     let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index, session.ctx)?;
     geometry::infer_edge_parameter_ranges(&mut session.ir, session.ctx)?;
-    let (owned_carriers, owned_carrier_storage) = session
+    let (owned_carriers_buffer, owned_carrier_storage) = session
         .ctx
         .with_scoped_storage("STEP topology owned carrier scratch", || {
             geometry::topology_owned_carriers(&session.ir, &carrier_index, session.ctx)
         })?;
+    let owned_carriers = owned_carriers_buffer;
     session.charge_pending_ir_entities("step_topology_association")?;
     geometry::associate_topology_carriers(
         exchange,
@@ -844,10 +846,11 @@ fn retain_unowned_carriers(
             })?;
         }
     }
-    let (referenced, _reference_storage) = ctx
+    let (referenced_buffer, _reference_storage) = ctx
         .with_scoped_storage("STEP referenced record scratch", || {
             referenced_record_ids(exchange, ctx)
         })?;
+    let referenced = referenced_buffer;
     let direct_carriers = ctx
         .admit_iter(
             &(ir.model.points)[..],
@@ -1003,23 +1006,17 @@ fn retain_unowned_carriers(
             ctx.insert_btree_set(&mut protected_roots, id, "step_unowned_protected_root_copy")
         })?;
     }
-    let (protected, _protected_storage) = ctx
+    let (protected_buffer, _protected_storage) = ctx
         .with_scoped_storage("STEP protected closure scratch", || {
             record_closure(&protected_roots, exchange, ctx)
         })?;
-    let (removed_closure, _removed_storage) = ctx
+    let protected = protected_buffer;
+    let (removed_closure_buffer, _removed_storage) = ctx
         .with_scoped_storage("STEP removed closure scratch", || {
             record_closure(&unowned_pcurves, exchange, ctx)
         })?;
-    let deleted_pcurves = ctx
-        .admit_iter(
-            &(ir.model.pcurves)[..],
-            "STEP retain unowned carriers traversal",
-        )?
-        .map(|pcurve| retains_carrier(ctx, pcurve.id.as_str(), &removed_closure, &protected))
-        .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
-            Ok(count + usize::from(!retained?))
-        })?;
+    let removed_closure = removed_closure_buffer;
+    let prior_pcurves = ir.model.pcurves.len();
     let prior_points = ir.model.points.len();
     let prior_curves = ir.model.curves.len();
     let prior_surfaces = ir.model.surfaces.len();
@@ -1061,6 +1058,7 @@ fn retain_unowned_carriers(
         |surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected),
         "STEP unowned procedural_surfaces retention",
     )?;
+    let deleted_pcurves = prior_pcurves - ir.model.pcurves.len();
     let deleted_points = prior_points - ir.model.points.len();
     let deleted_curves = prior_curves - ir.model.curves.len();
     let deleted_surfaces = prior_surfaces - ir.model.surfaces.len();
@@ -1208,8 +1206,8 @@ fn record_closure(
         else {
             continue;
         };
-        let mut references = BTreeSet::new();
         let mut reference_storage = ctx.reserve_scoped(0, "STEP closure edge scratch")?;
+        let mut references = BTreeSet::new();
         for partial in ctx.admit_iter(&record.partials[..], "STEP record closure traversal")? {
             for value in ctx.admit_iter(
                 partial.parameters.as_slice(),
@@ -1261,8 +1259,9 @@ fn record_type_text(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let (mut names, _storage) =
+    let (names_buffer, _storage) =
         ctx.temporary_vec(record.partials.len(), "STEP record type fragments")?;
+    let mut names = names_buffer;
     names.extend(
         ctx.admit_iter(&record.partials[..], "STEP record type traversal")?
             .map(|partial| partial.name.as_str()),
@@ -1384,9 +1383,10 @@ fn byte_accounting(
     typed_records: &HashSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<ByteAccounting, CodecError> {
-    let (mut classes, _class_storage) = ctx.with_scoped_storage("step byte classes", || {
+    let (classes_buffer, _class_storage) = ctx.with_scoped_storage("step byte classes", || {
         ctx.alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")
     })?;
+    let mut classes = classes_buffer;
     for (&id, record) in ctx.admit_iter(exchange.records(), "STEP byte accounting traversal")? {
         let class =
             if ctx.contains_hash_set(typed_records, &id, "STEP mod typed_records contains")? {
