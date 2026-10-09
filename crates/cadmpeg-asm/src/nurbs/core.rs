@@ -401,10 +401,12 @@ where
         if toks.is_empty() {
             return Ok(None);
         }
-        let mut seen = std::collections::HashSet::new();
         let mut visited_storage = ctx.reserve_scoped(0, "ASM subtype search visited")?;
-        let (mut pending, mut pending_storage) =
+        let mut seen = std::collections::HashSet::new();
+        let mut pending_storage;
+        let (mut pending, result_pending_storage) =
             ctx.temporary_vec(1, "ASM subtype search stack")?;
+        pending_storage = result_pending_storage;
         pending.push((toks, 0, ctx.enter_nested("resolve ASM cache search root")?));
         while let Some((tokens, position, _guard)) = pending.last_mut() {
             let Some(index) = subtypes::next_subtype_reference(ctx, tokens, position)? else {

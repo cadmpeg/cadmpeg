@@ -957,9 +957,11 @@ pub(super) fn rational_four_arc_circle(
         |scale, pole| Ok(scale.max(pole.weight.get().abs())),
         "ASM rational weight scale"
     ));
-    let (mut homogeneous, _homogeneous_storage) = propagate_resource!(
+    let _homogeneous_storage;
+    let (mut homogeneous, result_homogeneous_storage) = propagate_resource!(
         ctx.temporary_vec(points.len(), "ASM rational four-arc homogeneous poles")
     );
+    _homogeneous_storage = result_homogeneous_storage;
     for pole in propagate_resource!(ctx.admit_iter(points, "ASM rational homogeneous pole pass")) {
         let point = pole.point;
         let weight = pole.weight.get() / weight_scale;
@@ -1071,13 +1073,17 @@ fn reduce_homogeneous_bezier_to_quadratic(
     input: &[[f64; 4]],
 ) -> Option<Result<[[f64; 4]; 3], cadmpeg_core::CodecError>> {
     (|| -> Result<Option<[[f64; 4]; 3]>, cadmpeg_core::CodecError> {
-        let (mut control, mut control_storage) =
+        let mut control_storage;
+        let (mut control, result_control_storage) =
             ctx.copy_temporary_slice(input, "ASM rational four-arc control copy")?;
+        control_storage = result_control_storage;
         while control.len() > 3 {
             ctx.charge_work(1, "ASM rational four-arc reduction work")?;
             let degree = control.len() - 1;
-            let (mut reduced, reduced_storage) =
+            let reduced_storage;
+            let (mut reduced, result_reduced_storage) =
                 ctx.temporary_vec(degree, "ASM rational four-arc degree reduction")?;
+            reduced_storage = result_reduced_storage;
             reduced.push(control[0]);
             for index in ctx.admit_iter(1..degree, "ASM rational reduction poles")? {
                 let (Some(index_value), Some(degree_value)) = (
@@ -1116,8 +1122,9 @@ fn reduce_homogeneous_bezier_to_quadratic(
             control = reduced;
             control_storage = reduced_storage;
         }
+        let quadratic = control.try_into().ok();
         drop(control_storage);
-        Ok(control.try_into().ok())
+        Ok(quadratic)
     })()
     .transpose()
 }
@@ -1447,6 +1454,7 @@ mod sense_tests {
 #[cfg(test)]
 mod tests {
     mod budget;
+    mod quadratic_storage;
     mod numerical_ranges;
     use super::Point3;
     const SMALL_CURVED_SPINE_EXTENT: f64 = 1.0e-10;
