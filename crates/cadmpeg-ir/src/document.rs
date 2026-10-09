@@ -224,7 +224,8 @@ impl Serialize for SurfaceWire<'_> {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("Surface", 3)?;
+        let length = 2 + usize::from(self.0.source_object.is_some());
+        let mut state = serializer.serialize_struct("Surface", length)?;
         state.serialize_field("id", &self.0.id)?;
         match self.0.geometry.solved_cache() {
             Some(cache) => state.serialize_field("geometry", cache)?,
@@ -244,7 +245,8 @@ impl Serialize for CurveWire<'_> {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("Curve", 3)?;
+        let length = 2 + usize::from(self.0.source_object.is_some());
+        let mut state = serializer.serialize_struct("Curve", length)?;
         state.serialize_field("id", &self.0.id)?;
         match self.0.geometry.solved_cache() {
             Some(cache) => state.serialize_field("geometry", cache)?,
