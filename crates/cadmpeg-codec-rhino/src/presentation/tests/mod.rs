@@ -1891,6 +1891,8 @@ fn mapping_crc_cache_reads_version_one_and_bounded_suffix() {
 
 mod patterns;
 
+mod mapping_scratch;
+
 mod resource_limits;
 
 mod materials;
