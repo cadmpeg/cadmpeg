@@ -51,7 +51,7 @@ pub(super) fn run_case(owner: &str, ctx: &DecodeContext<'_>) -> Result<(), Codec
             &[vec![17, 17], vec![18, 18]], &[vec![17], vec![18]], ctx,
         ).map(drop),
         "edge_group_assignment_candidates" => edge_group_assignment_candidates(
-            &[], [&[18, 17, 17, 19][..], &[17, 18][..]], ctx,
+            &[], [&[18, 17, 17, 19][..], &[17, 18][..]].into_iter().map(Some), ctx,
         ).map(drop),
         "radius_edge_identity_group_candidates" => {
             let operand = identity(10, &[(17, 3.0), (17, 3.0), (18, 3.0)]);
@@ -248,7 +248,7 @@ fn edge_scalar_edits_native_candidate_order_and_unvisited_membership_suffix_are_
     let marker = "after edge scalar membership";
     let CodecError::ResourceLimit(expected) = crate::test_support::resource_refusal_at(
         ResourceDimension::WorkUnits, marker, 0, |ctx| {
-            assert_eq!(edge_group_assignment_candidates(&[], [&[18, 17, 17][..], &short[..]], ctx)?,
+            assert_eq!(edge_group_assignment_candidates(&[], [&[18, 17, 17][..], &short[..]].into_iter().map(Some), ctx)?,
                 Some(EdgeAssignmentCandidates::Edges(vec![17, 18])));
             ctx.charge_work(1, marker)
         },
@@ -257,7 +257,7 @@ fn edge_scalar_edits_native_candidate_order_and_unvisited_membership_suffix_are_
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = expected.limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(edge_group_assignment_candidates(&[], [&[18, 17, 17][..], &long[..]], &ctx).unwrap(),
+    assert_eq!(edge_group_assignment_candidates(&[], [&[18, 17, 17][..], &long[..]].into_iter().map(Some), &ctx).unwrap(),
         Some(EdgeAssignmentCandidates::Edges(vec![17, 18])));
     let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, marker)
     else { panic!("untouched suffix does not use extra work"); };

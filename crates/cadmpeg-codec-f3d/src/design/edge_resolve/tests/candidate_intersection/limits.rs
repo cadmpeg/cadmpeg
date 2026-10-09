@@ -128,9 +128,9 @@ fn edge_recipe_rejected_assignment_candidates_release_scratch() {
     policy.limits.max_materialized_bytes = 4 * u64::try_from(std::mem::size_of::<i64>()).unwrap();
     crate::test_support::with_decode_policy(&policy, |ctx| {
         for _ in 0..2 {
-            assert_eq!(super::super::super::edge_assignment_candidates(&[selector(vec![17])], [&[18][..]], ctx).unwrap(), None);
+            assert_eq!(super::super::super::edge_assignment_candidates(&[selector(vec![17])], [&[18][..]].into_iter().map(Some), ctx).unwrap(), None);
         }
-        assert!(matches!(super::super::super::edge_assignment_candidates(&[selector(vec![17])], [&[17][..]], ctx), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+        assert!(matches!(super::super::super::edge_assignment_candidates(&[selector(vec![17])], [&[17][..]].into_iter().map(Some), ctx), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
     });
 }
 
