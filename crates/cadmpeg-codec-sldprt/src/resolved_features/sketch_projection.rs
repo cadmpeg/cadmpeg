@@ -201,6 +201,8 @@ fn project_brep(
         };
         let v_axis = normal.cross(*u_axis);
         let first_entity = entities.len();
+        let mut face_storage =
+            ctx.reserve_scoped(0, "SLDPRT projected face index storage")?;
         let mut edge_entities = HashMap::<&cadmpeg_ir::ids::EdgeId, SketchEntityId>::new();
         let mut used_vertices = HashSet::<&cadmpeg_ir::ids::VertexId>::new();
         let mut profiles = Vec::new();
@@ -236,7 +238,7 @@ fn project_brep(
                     continue;
                 };
                 for vertex_id in [&edge.start, &edge.end] {
-                    temporary_storage.with_storage(|| {
+                    face_storage.with_storage(|| {
                         ctx.insert_hash_set(
                             &mut used_vertices,
                             vertex_id,
@@ -363,10 +365,10 @@ fn project_brep(
                             .with_endpoint_refs(endpoint_refs),
                     );
 
-                    let index_id = temporary_storage.with_storage(|| {
+                    let index_id = face_storage.with_storage(|| {
                         id.try_clone_for_decode(ctx, "retain SLDPRT indexed sketch entity ID")
                     })?;
-                    temporary_storage.with_storage(|| {
+                    face_storage.with_storage(|| {
                         ctx.insert_hash_map(
                             &mut edge_entities,
                             &edge.id,
@@ -816,3 +818,6 @@ mod projected_brep_output_tests {
 
 #[cfg(test)]
 mod sketch_projection_tests;
+
+#[cfg(test)]
+mod storage_tests;
