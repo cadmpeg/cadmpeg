@@ -1111,10 +1111,9 @@ impl Graph {
         // that is wholly contained in a selected record is payload data, not
         // a second serialized node. Counting it first can invalidate the real
         // node and make otherwise stable identities depend on unrelated bytes.
-        let (non_overlapping, _non_overlapping_reservation) =
+        let (non_overlapping, selected_reservation) =
             Self::select_non_overlapping_candidates(ctx, stream, candidates)?;
-        let (selected, selected_reservation) =
-            Self::select_unique_candidates(ctx, non_overlapping)?;
+        let selected = Self::select_unique_candidates(ctx, non_overlapping)?;
         // BODY and REGION carry ownership identity only. Their opaque fixed
         // payloads can contain complete-looking typed tags, so they are
         // admitted after typed topology/carrier selection and never veto a
@@ -1123,8 +1122,7 @@ impl Graph {
         // when the optional BODY or REGION record is absent.
         let (non_overlapping_ownership, _ownership_nonoverlap_reservation) =
             Self::select_non_overlapping_candidates(ctx, stream, ownership_candidates)?;
-        let (ownership, _ownership_unique_reservation) =
-            Self::select_unique_candidates(ctx, non_overlapping_ownership)?;
+        let ownership = Self::select_unique_candidates(ctx, non_overlapping_ownership)?;
         let (admitted_ownership, admitted_reservation) =
             Self::admit_disjoint_ownership(ctx, ownership, &selected)?;
         Ok(FixedRecordSelection {
@@ -1254,41 +1252,48 @@ impl Graph {
     /// the fixed-record grammar provides no discriminator that can make one
     /// authoritative. Invalidate the identity instead of ranking candidates
     /// by topology shape, reference counts, or scan position.
-    fn select_unique_candidates<'ctx>(
-        ctx: &'ctx DecodeContext<'_>,
-        candidates: Vec<NodeCandidate>,
-    ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
-        let mut by_key = BTreeMap::<(NodeKind, u32), Option<NodeCandidate>>::new();
-        for node in candidates {
-            ctx.admit_btree_entry(
-                &by_key,
-                &(node.kind, node.xmt()),
-                "NX topology unique candidate keys",
-            )?;
-            match by_key.entry((node.kind, node.xmt())) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(Some(node));
-                }
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    // A duplicate identity is invalid. Retain only the fact
-                    // that it is ambiguous; do not retain every overlapping
-                    // physical interpretation of the same identity.
-                    entry.insert(None);
-                }
+    fn select_unique_candidates(
+        ctx: &DecodeContext<'_>,
+        mut candidates: Vec<NodeCandidate>,
+    ) -> Result<Vec<NodeCandidate>, CodecError> {
+        ctx.charge_work(0, "NX topology unique candidate boundary")?;
+        ctx.sort_unstable_by(
+            &mut candidates,
+            |first, second| (first.kind, first.xmt()).cmp(&(second.kind, second.xmt())),
+            |_| 0,
+            "sort NX topology unique candidate keys",
+        )?;
+        let work = u64_from_index(candidates.len())
+            .checked_mul(4)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "select NX topology unique candidates",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
+        // Each row needs at most two key comparisons, a read, and a move.
+        ctx.charge_work(work, "select NX topology unique candidates")?;
+        let mut selected = 0;
+        let mut start = 0;
+        while let Some(first) = candidates.get(start).copied() {
+            let mut end = start + 1;
+            while candidates
+                .get(end)
+                .is_some_and(|next| next.kind == first.kind && next.xmt() == first.xmt())
+            {
+                end += 1;
             }
+            // Reject every row of an ambiguous identity, including identical
+            // interpretations. The retained rows keep the former key order.
+            if end == start + 1 {
+                candidates[selected] = first;
+                selected += 1;
+            }
+            start = end;
         }
-        let mut selected = Vec::new();
-        let mut reservation = ctx.reserve_scoped(0, "NX topology unique candidates")?;
-        for candidate in by_key.into_values().flatten() {
-            ctx.reserve_scoped_vec(
-                &mut reservation,
-                &mut selected,
-                1,
-                "NX topology unique candidates",
-            )?;
-            selected.push(candidate);
-        }
-        Ok((selected, reservation))
+        candidates.truncate(selected);
+        Ok(candidates)
     }
 
     /// Discard overlapping candidates when no serialized ownership boundary
