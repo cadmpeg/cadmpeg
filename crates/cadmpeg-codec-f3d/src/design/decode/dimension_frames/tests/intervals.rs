@@ -238,3 +238,156 @@ pub(super) fn owner_at(
     )
     .unwrap()
 }
+
+#[test]
+fn companion_boundaries_commit_only_surviving_offsets() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let scopes = [scope_at(13, 80, vec![55])];
+    // The only surviving allocation is the four-slot offset vector.
+    let output_bytes = u64::try_from(4 * std::mem::size_of::<u64>()).unwrap();
+    for retained_limit in [output_bytes - 1, output_bytes] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = retained_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let storage;
+        let (boundaries, held_storage) = ctx.with_scoped_storage("test companion boundaries", || {
+            super::super::CompanionBoundaries::build(&ctx, &[], &[], &scopes, &[])
+        }).unwrap();
+        storage = held_storage;
+        assert_eq!(boundaries.offsets, [80]);
+        assert!(boundaries.owner_scopes.is_empty());
+        assert!(boundaries.referenced_headers.is_empty());
+        assert!(boundaries.run_starts.is_empty());
+        assert_eq!(boundaries.offsets.capacity(), 4);
+        let result = storage.commit_value(boundaries);
+        if retained_limit == output_bytes {
+            let boundaries = result.unwrap();
+            assert_eq!(boundaries.offsets, [80]);
+            assert!(ctx.resource_refusal().is_none());
+        } else {
+            let failure = match result {
+                Err(CodecError::ResourceLimit(failure)) => failure,
+                _ => panic!("expected the original retained output refusal"),
+            };
+            assert_eq!(failure.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(failure.limit, output_bytes - 1);
+            assert_eq!(failure.used, 0);
+            assert_eq!(failure.additional, output_bytes);
+            assert_eq!(failure.operation, "test companion boundaries");
+            assert_eq!(ctx.resource_refusal(), Some(failure));
+        }
+    }
+}
+
+#[test]
+fn annotation_intervals_commit_only_surviving_intervals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let parameters = [parameter_at(12, 50)];
+    let owners = [owner_at(10, 13, 12, 11, 120)];
+    let mut scopes = [scope_at(13, 0, vec![13])];
+    let stream = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scope(ctx, STREAM, "test interval scope").unwrap()
+    });
+    scopes[0].id = format!("{stream}:parameter-scope#13");
+    let companions = [DesignParameterCompanion::unbound(
+        format!("{stream}:parameter-companion#11"),
+        220,
+        crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
+        11,
+        10,
+        std::num::NonZeroU64::MIN,
+        262,
+    )];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = u64::try_from(
+        4 * std::mem::size_of::<super::super::AnnotationInterval>()
+    ).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _companion_storage;
+    let (grouped, held_storage) = ctx.with_scoped_storage("test grouped companions", || {
+        super::super::Grouped::build(
+            &ctx, &companions,
+            |companion| super::super::record_stream(&ctx, companion.id()),
+            "test grouped companions",
+        )
+    }).unwrap();
+    _companion_storage = held_storage;
+    let mut boundaries = super::super::CompanionIntervals::new(
+        &ctx, &parameters, &owners, &scopes, &[],
+    ).unwrap();
+    let storage;
+    let (intervals, held_storage) = super::super::annotation_intervals(
+        &ctx, &stream, 400, &grouped, &mut boundaries,
+    ).unwrap();
+    storage = held_storage;
+    assert_eq!(intervals, [(278, 400, Some(11)), (0, 220, None)]);
+    assert_eq!(intervals.capacity(), 4);
+    let intervals = storage.commit_value(intervals).unwrap();
+    assert_eq!(intervals, [(278, 400, Some(11)), (0, 220, None)]);
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn presentation_stream_tables_commit_only_surviving_owner_groups() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use crate::records::parameters::DesignParameterOwner;
+
+    let parameters = [parameter_at(12, 50)];
+    let owners = [owner_at(10, 13, 12, 11, 120)];
+    // Installed core hash growth charges the four-bucket first table layout;
+    // push_hash_group creates an exact one-slot child vector. This tests the
+    // capture lifetime, not completeness of the shared hash implementation.
+    let slot_bytes = std::mem::size_of::<(u32, Vec<&DesignParameterOwner>)>();
+    let alignment = std::mem::align_of::<(u32, Vec<&DesignParameterOwner>)>().max(16);
+    let output_bytes = 4 * slot_bytes + alignment - 1 + 4 + 16
+        + std::mem::size_of::<&DesignParameterOwner>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = u64::try_from(output_bytes).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let stream = super::super::record_stream(&ctx, owners[0].id()).unwrap().unwrap();
+    let _parameter_storage;
+    let (index, held_storage) = super::super::dimension_parameter_index(
+        &ctx, &parameters, "test dimension parameters",
+    ).unwrap();
+    _parameter_storage = held_storage;
+    let owner_storage;
+    let (grouped, held_storage) = ctx.with_scoped_storage("test grouped owners", || {
+        super::super::Grouped::build(
+            &ctx, &owners,
+            |owner| super::super::record_stream(&ctx, owner.id()),
+            "test grouped owners",
+        )
+    }).unwrap();
+    owner_storage = held_storage;
+    let pass = super::super::PresentationPassTables {
+        owners: grouped,
+        geometry: super::super::StreamIndexRuns { streams: Vec::new(), indices: Vec::new() },
+        sketch_entities: super::super::StreamIndexRuns { streams: Vec::new(), indices: Vec::new() },
+        _storage: [
+            owner_storage,
+            ctx.reserve_scoped(0, "test empty geometry").unwrap(),
+            ctx.reserve_scoped(0, "test empty sketch entities").unwrap(),
+        ],
+    };
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&ctx, &[]).unwrap();
+    let storage;
+    let (tables, held_storage) = ctx.with_scoped_storage("test presentation table output", || {
+        super::super::PresentationStreamTables::build(&ctx, stream, &records, &pass, &index)
+    }).unwrap();
+    storage = held_storage;
+    assert_eq!(tables.owners_by_scope.capacity(), 3);
+    let table = storage.commit_value(tables).unwrap();
+    let group = table.owners_by_scope.get(&13).unwrap();
+    assert_eq!(group.len(), 1);
+    assert_eq!(group.capacity(), 1);
+    assert!(std::ptr::eq(group[0], &owners[0]));
+    assert!(table.geometry_indices.is_empty());
+    assert!(table.sketch_entities.is_empty());
+    assert!(ctx.resource_refusal().is_none());
+}
