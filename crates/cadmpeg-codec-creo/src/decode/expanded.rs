@@ -26,7 +26,9 @@ pub(super) fn attach_expanded_sections(
     // The whole expansion namespace is gated on there being expanded sections at
     // all: with none, the double-xar and primitive-scalar arenas are skipped even
     // when their scan tables are non-empty. Preserve that early return.
-    let (records, _records_storage) = expanded_section_records(ctx, scan)?;
+    let records_owned_storage = expanded_section_records(ctx, scan)?;
+    let _records_storage = records_owned_storage.1;
+    let records = records_owned_storage.0;
     if records.is_empty() {
         return Ok(());
     }
@@ -44,7 +46,9 @@ pub(super) fn attach_expanded_sections(
             exactness: Exactness::Derived,
         },
     )?;
-    let (tables, _tables_storage) = double_xar_records(ctx, scan)?;
+    let tables_owned_storage = double_xar_records(ctx, scan)?;
+    let _tables_storage = tables_owned_storage.1;
+    let tables = tables_owned_storage.0;
     emit_uniform(
         ctx,
         ir,
@@ -59,7 +63,9 @@ pub(super) fn attach_expanded_sections(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let (primitive_arrays, _primitive_arrays_storage) = primitive_scalar_array_records(ctx, scan)?;
+    let primitive_arrays_owned_storage = primitive_scalar_array_records(ctx, scan)?;
+    let _primitive_arrays_storage = primitive_arrays_owned_storage.1;
+    let primitive_arrays = primitive_arrays_owned_storage.0;
     store_arena(ctx, ir, CreoArena::PrimitiveScalarArrays, &primitive_arrays)?;
     Ok(())
 }
@@ -554,7 +560,9 @@ mod tests {
     #[test]
     fn native_surface_replay_row_refuses_collection_limit() {
         let error = with_replay_limits(u64::MAX, 0, u64::MAX, |ctx, scan| {
-            let (records, _records_storage) = feature_surface_replay_associations(ctx, scan)?;
+            let records_owned_storage = feature_surface_replay_associations(ctx, scan)?;
+            let _records_storage = records_owned_storage.1;
+            let records = records_owned_storage.0;
             Ok(serde_json::json!(records.len()))
         })
         .expect_err("one association needs an output row");
@@ -564,7 +572,9 @@ mod tests {
                 && resource.operation == "creo native surface replay records")
         );
         let record = with_replay_limits(u64::MAX, 1, u64::MAX, |ctx, scan| {
-            let (records, _records_storage) = feature_surface_replay_associations(ctx, scan)?;
+            let records_owned_storage = feature_surface_replay_associations(ctx, scan)?;
+            let _records_storage = records_owned_storage.1;
+            let records = records_owned_storage.0;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
         })
         .expect("one association record");
@@ -601,7 +611,9 @@ mod tests {
     #[test]
     fn native_double_xar_row_refuses_collection_limit() {
         let error = with_limits(u64::MAX, 0, |ctx, scan| {
-            let (records, _records_storage) = double_xar_records(ctx, scan)?;
+            let records_owned_storage = double_xar_records(ctx, scan)?;
+            let _records_storage = records_owned_storage.1;
+            let records = records_owned_storage.0;
             Ok(serde_json::json!(records.len()))
         })
         .expect_err("one table needs an output row");
@@ -611,7 +623,9 @@ mod tests {
                 && resource.operation == "creo native double-xar records")
         );
         let value = with_limits(u64::MAX, 1, |ctx, scan| {
-            let (records, _records_storage) = double_xar_records(ctx, scan)?;
+            let records_owned_storage = double_xar_records(ctx, scan)?;
+            let _records_storage = records_owned_storage.1;
+            let records = records_owned_storage.0;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
         })
         .expect("one table record");
@@ -638,7 +652,9 @@ mod tests {
     #[test]
     fn native_scalar_array_row_refuses_collection_limit() {
         let error = with_limits(u64::MAX, 0, |ctx, scan| {
-            let (records, _records_storage) = primitive_scalar_array_records(ctx, scan)?;
+            let records_owned_storage = primitive_scalar_array_records(ctx, scan)?;
+            let _records_storage = records_owned_storage.1;
+            let records = records_owned_storage.0;
             Ok(serde_json::json!(records.len()))
         })
         .expect_err("one scalar array needs an output row");
@@ -648,7 +664,9 @@ mod tests {
                 && resource.operation == "creo native scalar-array records")
         );
         let value = with_limits(u64::MAX, 1, |ctx, scan| {
-            let (records, _records_storage) = primitive_scalar_array_records(ctx, scan)?;
+            let records_owned_storage = primitive_scalar_array_records(ctx, scan)?;
+            let _records_storage = records_owned_storage.1;
+            let records = records_owned_storage.0;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
         })
         .expect("one scalar-array record");
@@ -676,7 +694,9 @@ mod tests {
     #[test]
     fn native_fc05_circle_row_refuses_collection_limit() {
         let error = with_limits(u64::MAX, 0, |ctx, scan| {
-            let (records, _records_storage) = fc05_circle_records(ctx, scan)?;
+            let records_owned_storage = fc05_circle_records(ctx, scan)?;
+            let _records_storage = records_owned_storage.1;
+            let records = records_owned_storage.0;
             Ok(serde_json::json!(records.len()))
         })
         .expect_err("one FC05 circle needs one output row");
@@ -686,7 +706,9 @@ mod tests {
                 && resource.operation == "creo native FC05 circle records")
         );
         let value = with_limits(u64::MAX, 1, |ctx, scan| {
-            let (records, _records_storage) = fc05_circle_records(ctx, scan)?;
+            let records_owned_storage = fc05_circle_records(ctx, scan)?;
+            let _records_storage = records_owned_storage.1;
+            let records = records_owned_storage.0;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
         })
         .expect("one FC05 circle record");
@@ -714,7 +736,9 @@ mod tests {
     #[test]
     fn native_fc05_cap_pair_row_refuses_collection_limit() {
         let error = with_limits(u64::MAX, 0, |ctx, scan| {
-            let (records, _records_storage) = fc05_cylinder_cap_pair_records(ctx, scan)?;
+            let records_owned_storage = fc05_cylinder_cap_pair_records(ctx, scan)?;
+            let _records_storage = records_owned_storage.1;
+            let records = records_owned_storage.0;
             Ok(serde_json::json!(records.len()))
         })
         .expect_err("one FC05 cap pair needs one output row");
@@ -724,7 +748,9 @@ mod tests {
                 && resource.operation == "creo native FC05 cap pair records")
         );
         let value = with_limits(u64::MAX, 1, |ctx, scan| {
-            let (records, _records_storage) = fc05_cylinder_cap_pair_records(ctx, scan)?;
+            let records_owned_storage = fc05_cylinder_cap_pair_records(ctx, scan)?;
+            let _records_storage = records_owned_storage.1;
+            let records = records_owned_storage.0;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
         })
         .expect("one FC05 cap-pair record");
