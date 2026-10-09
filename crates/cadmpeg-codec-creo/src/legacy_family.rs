@@ -203,12 +203,18 @@ impl<'a> Index<'a> {
         ctx: &DecodeContext<'_>,
         persistence: &'a Persistence,
     ) -> Result<Option<Self>, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let mut object_by_offset = HashMap::new();
         let mut objects_by_parent_name = BTreeMap::new();
         let mut objects = persistence.objects.iter();
-        while let Some(object) =
-            ctx.next_charged(&mut objects, "creo legacy family object traversal")?
-        {
+        while objects.len() != 0 {
+            let Some(object) =
+                ctx.next_charged(&mut objects, "creo legacy family object traversal")?
+            else {
+                break;
+            };
             match ctx.entry_hash_map(
                 &mut object_by_offset,
                 object.offset,
@@ -329,16 +335,18 @@ fn one_object<'a>(
     Ok(Some(*record))
 }
 
+struct FamilyArrayElements<'ctx, 'a> {
+    rows: Vec<&'a ObjectRecord>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
 fn array_elements<'ctx, 'a>(
     ctx: &'ctx DecodeContext<'_>,
     index: &Index<'a>,
     parent: usize,
     name: &str,
 ) -> Result<
-    Option<(
-        Vec<&'a ObjectRecord>,
-        cadmpeg_core::decode::ScopedReservation<'ctx>,
-    )>,
+    Option<FamilyArrayElements<'ctx, 'a>>,
     CodecError,
 > {
     let Some(array) = one_object(ctx, index, parent, name)? else {
@@ -355,11 +363,15 @@ fn array_elements<'ctx, 'a>(
     if dimensions.len() != 1 || usize::try_from(dimensions[0]).ok() != Some(elements.len()) {
         return Ok(None);
     }
-    let (mut rows, mut storage) = ctx.temporary_vec(0, "creo legacy family array elements")?;
+    let mut storage = ctx.reserve_scoped(0, "creo legacy family array elements")?;
+    let mut rows = Vec::new();
     let mut ids = elements.iter();
-    while let Some(element_id) =
-        ctx.next_charged(&mut ids, "creo legacy family array element traversal")?
-    {
+    while ids.len() != 0 {
+        let Some(element_id) =
+            ctx.next_charged(&mut ids, "creo legacy family array element traversal")?
+        else {
+            break;
+        };
         let Some(digits) = element_id.strip_prefix("creo:legacy_ascii:object#") else {
             return Ok(None);
         };
@@ -382,7 +394,7 @@ fn array_elements<'ctx, 'a>(
             .with_storage(|| ctx.reserve_vec(&mut rows, 1, "creo legacy family array elements"))?;
         rows.push(element);
     }
-    Ok(Some((rows, storage)))
+    Ok(Some(FamilyArrayElements { rows, _storage: storage }))
 }
 
 fn optional_integer(
@@ -584,23 +596,28 @@ fn parse_indexed(
     let generic_name = generic_name
         .map(|value| copy_string_value(ctx, value))
         .transpose()?;
-    let Some((item_rows, _item_rows_storage)) =
+    let Some(item_rows) =
         array_elements(ctx, index, root.offset, ITEMS_ARRAY)?
     else {
         return Ok(None);
     };
-    let Some((instance_rows, _instance_rows_storage)) =
+    let Some(instance_rows) =
         array_elements(ctx, index, root.offset, INSTANCES_ARRAY)?
     else {
         return Ok(None);
     };
-    if item_rows.is_empty() || instance_rows.is_empty() {
+    if item_rows.rows.is_empty() || instance_rows.rows.is_empty() {
         return Ok(None);
     }
 
     let mut items = Vec::new();
-    let mut item_rows = item_rows.into_iter();
-    while let Some(item) = ctx.next_charged(&mut item_rows, "creo legacy family items traversal")? {
+    let mut pending_items = item_rows.rows.iter().copied();
+    while pending_items.len() != 0 {
+        let Some(item) =
+            ctx.next_charged(&mut pending_items, "creo legacy family items traversal")?
+        else {
+            break;
+        };
         if !matches!(item.payload, ObjectPayload::Inline) {
             return Ok(None);
         }
@@ -637,14 +654,18 @@ fn parse_indexed(
             name: copy_string_value(ctx, name)?,
         });
     }
+    drop(item_rows);
 
     let mut name_storage = ctx.reserve_scoped(0, "creo legacy family instance name storage")?;
     let mut instance_names = BTreeSet::new();
     let mut instances = Vec::new();
-    let mut instance_rows = instance_rows.into_iter();
-    while let Some(instance) =
-        ctx.next_charged(&mut instance_rows, "creo legacy family instances traversal")?
-    {
+    let mut pending_instances = instance_rows.rows.iter().copied();
+    while pending_instances.len() != 0 {
+        let Some(instance) =
+            ctx.next_charged(&mut pending_instances, "creo legacy family instances traversal")?
+        else {
+            break;
+        };
         if !matches!(instance.payload, ObjectPayload::Arrow) {
             return Ok(None);
         }
@@ -684,19 +705,22 @@ fn parse_indexed(
         if !matches!(model.payload, ObjectPayload::Arrow) {
             return Ok(None);
         }
-        let Some((value_rows, _value_rows_storage)) =
+        let Some(value_rows) =
             array_elements(ctx, index, instance.offset, VALUES_ARRAY)?
         else {
             return Ok(None);
         };
-        if value_rows.len() != items.len() {
+        if value_rows.rows.len() != items.len() {
             return Ok(None);
         }
         let mut values = Vec::new();
-        let mut value_rows = value_rows.into_iter();
-        while let Some(value_row) =
-            ctx.next_charged(&mut value_rows, "creo legacy family values traversal")?
-        {
+        let mut pending_values = value_rows.rows.iter().copied();
+        while pending_values.len() != 0 {
+            let Some(value_row) =
+                ctx.next_charged(&mut pending_values, "creo legacy family values traversal")?
+            else {
+                break;
+            };
             if !matches!(value_row.payload, ObjectPayload::Inline) {
                 return Ok(None);
             }
@@ -720,6 +744,7 @@ fn parse_indexed(
                 value,
             });
         }
+        drop(value_rows);
         ctx.reserve_vec(&mut instances, 1, "creo legacy family instances")?;
         instances.push(FamilyTableInstance {
             offset: instance.offset,
@@ -733,6 +758,9 @@ fn parse_indexed(
             values,
         });
     }
+    drop(instance_rows);
+    drop(instance_names);
+    drop(name_storage);
 
     Ok(Some(FamilyTable {
         root_parent_id: legacy::checked_object_node_id(
@@ -1258,4 +1286,74 @@ mod tests {
             "creo legacy family string value",
         );
     }
+
+    #[test]
+    fn empty_family_index_is_free_and_preserves_original_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let persistence = Persistence::default();
+        let index = super::Index::build(&ctx, &persistence)
+            .expect("empty index has no variable work or backing")
+            .expect("empty index is structurally valid");
+        assert!(index.object_by_offset.is_empty());
+        let original = ctx.charge_work_limit(1, "seed empty family index refusal")
+            .expect_err("zero work cap");
+        assert_eq!((original.used, original.additional), (0, 1));
+        assert!(matches!(super::Index::build(&ctx, &persistence),
+            Err(CodecError::ResourceLimit(refusal)) if refusal == original));
+    }
+
+    #[test]
+    fn family_array_rows_keep_then_release_their_scoped_backing() {
+        let persistence = complete_table();
+        let index = crate::decode::with_test_decode_ctx(|ctx| super::Index::build(ctx, &persistence))
+            .expect("fixture index admission").expect("fixture index");
+        // Amortized Vec growth reserves four pointer slots for the first row.
+        const ROW_CAPACITY: usize = 4;
+        let row_backing_bytes = u64::try_from(ROW_CAPACITY * std::mem::size_of::<&ObjectRecord>())
+            .expect("four pointer slots fit the byte counter");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = row_backing_bytes;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let rows = super::array_elements(&ctx, &index, fixture_offset("root"), ITEMS_ARRAY)
+            .expect("one scoped reference row").expect("complete item array");
+        assert_eq!(rows.rows.len(), 1);
+        assert_eq!(rows.rows[0].offset, fixture_offset("item"));
+        drop(rows);
+        let replacement = ctx.reserve_scoped(row_backing_bytes, "after family reference rows")
+            .expect("the row owner released its backing");
+        drop(replacement);
+    }
+
+    #[test]
+    fn family_present_row_visits_preserve_refusals_and_native_identity() {
+        let persistence = complete_table();
+        // The fixture has nine objects, three single-element arrays, and one
+        // item, instance and value. Each traversal visits only those rows.
+        let table = crate::test_support::assert_work_boundaries(
+            &[
+                "creo legacy family object traversal",
+                "creo legacy family array element traversal",
+                "creo legacy family items traversal",
+                "creo legacy family instances traversal",
+                "creo legacy family values traversal",
+            ],
+            |ctx| parse_checked(ctx, &persistence),
+        ).expect("complete table");
+        assert_eq!(table.root_parent_id, legacy::object_node_id(fixture_offset("solid")));
+        assert_eq!(table.root_parent_name, "Solid");
+        assert_eq!(table.items[0].item_id, 17);
+        assert_eq!(table.instances[0].name, "SMALL");
+        assert_eq!(table.instances[0].values[0].source_object_id,
+            legacy::object_node_id(fixture_offset("value")));
+    }
+
 }

@@ -281,11 +281,17 @@ fn object_array_is_complete(
     dimensions: &[u32],
     elements: &[String],
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut count = 1u64;
     let mut dimensions = dimensions.iter();
-    while let Some(dimension) =
-        ctx.next_charged(&mut dimensions, "creo object array extent traversal")?
-    {
+    while dimensions.len() != 0 {
+        let Some(dimension) =
+            ctx.next_charged(&mut dimensions, "creo object array extent traversal")?
+        else {
+            break;
+        };
         let Some(product) = count.checked_mul(u64::from(*dimension)) else {
             return Ok(false);
         };
@@ -297,6 +303,9 @@ fn object_array_is_complete(
 impl ObjectPayload {
     /// Whether an array has exactly its declared extent product of elements.
     pub(crate) fn is_complete(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let Self::Array {
             dimensions,
             elements,
@@ -471,6 +480,9 @@ impl StringPayload {
     /// Whether every declared string row has a supported, complete value.
     #[cfg(test)]
     fn is_complete(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let Self::Array {
             dimensions,
             values,
@@ -495,6 +507,9 @@ impl StringPayload {
     /// Number of logical string elements represented by this payload.
     #[cfg(test)]
     pub(crate) fn element_count(&self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         Ok(match self {
             Self::Scalar { .. } => 1,
             Self::Array { values, .. } => ctx
@@ -510,6 +525,9 @@ impl StringPayload {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<usize, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         Ok(match self {
             Self::Scalar { value } => value.undecoded_encoding_count(),
             Self::Array { values, .. } => ctx
@@ -825,12 +843,18 @@ impl Persistence {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<PrincipalUnitSystem>, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let mut candidate = None;
         let mut found = false;
         let mut records = self.string_values.iter();
-        while let Some(record) =
-            ctx.next_charged(&mut records, "creo legacy principal unit selection")?
-        {
+        while records.len() != 0 {
+            let Some(record) =
+                ctx.next_charged(&mut records, "creo legacy principal unit selection")?
+            else {
+                break;
+            };
             if record.name != PRINCIPAL_UNIT_NAME {
                 continue;
             }
@@ -863,6 +887,12 @@ impl Persistence {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<PrincipalUnitSystem>, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        if self.objects.is_empty() {
+            return Ok(None);
+        }
         let Some(array) = crate::decode::uniqueness::exactly_one_by(
             ctx,
             &self.objects,
@@ -886,9 +916,12 @@ impl Persistence {
         let mut identity_storage = ctx.reserve_scoped(0, "creo legacy unit identity storage")?;
         let mut element_ids = BTreeSet::new();
         let mut ids = elements.iter();
-        while let Some(element_id) =
-            ctx.next_charged(&mut ids, "creo legacy unit identity traversal")?
-        {
+        while ids.len() != 0 {
+            let Some(element_id) =
+                ctx.next_charged(&mut ids, "creo legacy unit identity traversal")?
+            else {
+                break;
+            };
             if ctx.contains_btree_set(
                 &element_ids,
                 element_id,
@@ -927,9 +960,12 @@ impl Persistence {
         }
         let mut first = None;
         let mut ids = elements.iter();
-        while let Some(element_id) =
-            ctx.next_charged(&mut ids, "creo legacy unit element traversal")?
-        {
+        while ids.len() != 0 {
+            let Some(element_id) =
+                ctx.next_charged(&mut ids, "creo legacy unit element traversal")?
+            else {
+                break;
+            };
             let offset = match ctx.strip_prefix(
                 element_id,
                 "creo:legacy_ascii:object#",
@@ -1062,11 +1098,24 @@ pub(crate) fn line<'a>(
     data: &'a [u8],
     start: usize,
 ) -> Result<Option<(&'a [u8], usize)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(bytes) = data.get(start..) else {
         return Ok(None);
     };
-    let relative_end =
-        ctx.position_by(bytes, |byte| Ok(*byte == b'\n'), "creo legacy line scan")?;
+    let mut relative_end = None;
+    let mut positions = bytes.iter().enumerate();
+    while positions.len() != 0 {
+        let Some((offset, byte)) = ctx.next_charged(&mut positions, "creo legacy line scan")?
+        else {
+            break;
+        };
+        if *byte == b'\n' {
+            relative_end = Some(offset);
+            break;
+        }
+    }
     let end = relative_end.map_or(data.len(), |end| start + end);
     let next = relative_end.map_or(end, |_| end + 1);
     Ok(Some((
@@ -1083,6 +1132,9 @@ pub(crate) fn text_field<'a>(
     text: &mut &'a str,
     ascii: bool,
 ) -> Result<Option<&'a str>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let whitespace = |c: char| {
         if ascii {
             c.is_ascii_whitespace()
@@ -1090,21 +1142,37 @@ pub(crate) fn text_field<'a>(
             c.is_whitespace()
         }
     };
-    let Some((start, first_width)) = ctx.find_map(
-        text.char_indices(),
-        |(offset, c)| Ok((!whitespace(c)).then_some((offset, c.len_utf8()))),
-        "creo text field whitespace",
-    )?
-    else {
+    let mut first = None;
+    let mut characters = text.char_indices();
+    while !characters.as_str().is_empty() {
+        let Some((offset, c)) =
+            ctx.next_charged(&mut characters, "creo text field whitespace")?
+        else {
+            break;
+        };
+        if !whitespace(c) {
+            first = Some((offset, c.len_utf8()));
+            break;
+        }
+    }
+    let Some((start, first_width)) = first else {
         *text = "";
         return Ok(None);
     };
     let remaining = &text[start..];
-    let boundary = ctx.find_map(
-        remaining[first_width..].char_indices(),
-        |(offset, c)| Ok(whitespace(c).then_some((first_width + offset, c.len_utf8()))),
-        "creo text field boundary",
-    )?;
+    let mut boundary = None;
+    let mut characters = remaining[first_width..].char_indices();
+    while !characters.as_str().is_empty() {
+        let Some((offset, c)) =
+            ctx.next_charged(&mut characters, "creo text field boundary")?
+        else {
+            break;
+        };
+        if whitespace(c) {
+            boundary = Some((first_width + offset, c.len_utf8()));
+            break;
+        }
+    }
     let end = boundary.map_or(remaining.len(), |(end, _)| end);
     *text = boundary.map_or("", |(end, width)| &remaining[end + width..]);
     Ok(Some(&remaining[..end]))
@@ -1172,10 +1240,18 @@ fn decimal(
     bytes: &[u8],
     mut offset: usize,
 ) -> Result<Option<(u32, usize)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let start = offset;
     let mut value = 0u32;
     let mut digits = bytes.get(start..).unwrap_or_default().iter();
-    while let Some(digit) = ctx.next_charged(&mut digits, "creo legacy decimal digits")? {
+    while digits.len() != 0 {
+        let Some(digit) =
+            ctx.next_charged(&mut digits, "creo legacy decimal digits")?
+        else {
+            break;
+        };
         if !digit.is_ascii_digit() {
             break;
         }
@@ -1243,6 +1319,9 @@ fn array_dimensions(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<u32>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut dimensions = Vec::new();
     let mut cursor = 0;
     while bytes.get(cursor) == Some(&b'[') {
@@ -1399,24 +1478,16 @@ fn parent_object_offsets(
 ) -> Result<HashMap<usize, usize>, CodecError> {
     let mut parents = HashMap::new();
     for scope in ctx.admit_iter(scopes, "creo legacy scope traversal")? {
-        let (mut active_objects, mut active_storage) =
-            ctx.temporary_vec::<(u32, usize)>(0, "creo legacy active object storage")?;
+        let mut active_storage =
+            ctx.reserve_scoped(0, "creo legacy active object storage")?;
+        let mut active_objects = Vec::<(u32, usize)>::new();
         for value in ctx.admit_iter(&scope.values, "creo legacy value traversal")? {
+            while active_objects
+                .last()
+                .is_some_and(|(depth, _)| *depth >= value.depth)
             {
-                let mut expired = std::iter::from_fn(|| {
-                    if active_objects
-                        .last()
-                        .is_some_and(|(depth, _)| *depth >= value.depth)
-                    {
-                        active_objects.pop()
-                    } else {
-                        None
-                    }
-                });
-                while ctx
-                    .next_charged(&mut expired, "creo legacy active object pruning")?
-                    .is_some()
-                {}
+                let mut expired = std::iter::from_fn(|| active_objects.pop());
+                let _ = ctx.next_charged(&mut expired, "creo legacy active object pruning")?;
             }
             let parent = active_objects
                 .last()
@@ -1578,6 +1649,9 @@ fn byte_string_value(
     bytes: &[u8],
     null_token: NullToken,
 ) -> Result<StringValue, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if null_token == NullToken::RepresentsNull && bytes == b"NULL" {
         Ok(StringValue::Null)
     } else if let Ok(text) = ctx.validate_utf8(bytes, "creo UTF-8 validation")? {
@@ -1655,28 +1729,20 @@ fn string_records(
     let mut incomplete_arrays = 0usize;
     let mut unresolved = 0usize;
     for scope in ctx.admit_iter(scopes, "creo legacy scope traversal")? {
-        let (mut active_arrays, mut active_storage) =
-            ctx.temporary_vec::<(u32, usize, u32)>(0, "creo legacy active string array storage")?;
+        let mut active_storage =
+            ctx.reserve_scoped(0, "creo legacy active string array storage")?;
+        let mut active_arrays = Vec::<(u32, usize, u32)>::new();
         let mut projection_storage =
             ctx.reserve_scoped(0, "creo legacy projection index storage")?;
         let mut array_children = HashMap::<usize, Vec<&AttributeValue>>::new();
         let mut array_element_offsets = HashSet::new();
         for value in ctx.admit_iter(&scope.values, "creo legacy value traversal")? {
+            while active_arrays
+                .last()
+                .is_some_and(|(depth, _, _)| *depth >= value.depth)
             {
-                let mut expired = std::iter::from_fn(|| {
-                    if active_arrays
-                        .last()
-                        .is_some_and(|(depth, _, _)| *depth >= value.depth)
-                    {
-                        active_arrays.pop()
-                    } else {
-                        None
-                    }
-                });
-                while ctx
-                    .next_charged(&mut expired, "creo legacy active string array pruning")?
-                    .is_some()
-                {}
+                let mut expired = std::iter::from_fn(|| active_arrays.pop());
+                let _ = ctx.next_charged(&mut expired, "creo legacy active string array pruning")?;
             }
             let array_parent = active_arrays
                 .last()
@@ -1835,9 +1901,12 @@ where
     let mut unresolved = 0usize;
     for scope in ctx.admit_iter(scopes, "creo legacy scope traversal")? {
         let mut pending = scope.values.iter().enumerate();
-        while let Some((index, value)) =
-            ctx.next_charged(&mut pending, "creo legacy numeric value traversal")?
-        {
+        while pending.len() != 0 {
+            let Some((index, value)) =
+                ctx.next_charged(&mut pending, "creo legacy numeric value traversal")?
+            else {
+                break;
+            };
             let Some(declaration) = scope
                 .declaration(value.attribute_id)
                 .filter(|declaration| declaration.type_code == declaration_code(identity_kind))
@@ -1862,7 +1931,7 @@ where
                     runs
                 } else if dimensions.as_slice() == [1] {
                     let mut runs = Vec::new();
-                    loop {
+                    while pending.len() != 0 {
                         let mut probe = pending.clone();
                         let Some((position, child)) =
                             ctx.next_charged(&mut probe, "creo legacy numeric child traversal")?
@@ -2077,14 +2146,23 @@ fn scan_scope(
 }
 
 /// Scan independently scoped legacy ASCII record extents.
-pub(crate) fn scan(
+pub(crate) fn scan<I>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
-    ranges: impl IntoIterator<Item = Range<usize>>,
-) -> Result<Persistence, CodecError> {
-    let (mut scopes, mut scope_storage) = ctx.temporary_vec(0, "creo legacy scope storage")?;
+    ranges: I,
+) -> Result<Persistence, CodecError>
+where
+    I: IntoIterator<Item = Range<usize>>,
+    I::IntoIter: ExactSizeIterator,
+{
+    let mut scope_storage = ctx.reserve_scoped(0, "creo legacy scope storage")?;
+    let mut scopes = Vec::new();
     let mut ranges = ranges.into_iter();
-    while let Some(range) = ctx.next_charged(&mut ranges, "creo legacy scope extent traversal")? {
+    while ranges.len() != 0 {
+        let Some(range) = ctx.next_charged(&mut ranges, "creo legacy scope extent traversal")?
+        else {
+            break;
+        };
         if range.start < range.end && range.start < data.len() {
             if range.end > data.len() {
                 return Err(CodecError::malformed(ctx.format_retained(
