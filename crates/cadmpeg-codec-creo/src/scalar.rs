@@ -224,8 +224,8 @@ pub(crate) fn double_xar_tables(
                 .last()
                 .is_some_and(|entry| matches!(entry, DoubleXarSlot::TerminalNull))
         {
-            literal_storage.commit()?;
-            slot_storage.commit()?;
+            let entries = literal_storage.commit_value(entries)?;
+            let entries = slot_storage.commit_value(entries)?;
             ctx.reserve_vec(&mut tables, 1, "creo double_xar tables")?;
             tables.push(DoubleXarTable { offset, entries });
         }
