@@ -875,17 +875,15 @@ fn decode_sketch_visibilities_in_stream(
     bytes: &[u8],
     metadata: &crate::metastream::MetaStream,
 ) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
+    let _frame_storage;
+    let (frames, held_storage) = super::meta::TypedFrameSource::new(bytes, metadata).frames(
+        ctx,
+        SKETCH_CONTAINER_TYPE_GUID,
+        "sketch-container",
+    )?;
+    _frame_storage = held_storage;
     let mut out = Vec::new();
-    for frame in ctx.admit_iter(
-        &super::meta::typed_primary_frames(
-            ctx,
-            bytes,
-            metadata,
-            SKETCH_CONTAINER_TYPE_GUID,
-            "sketch-container",
-        )?,
-        "scan F3D sketch visibility frames",
-    )? {
+    for frame in ctx.admit_iter(&frames, "scan F3D sketch visibility frames")? {
         if frame.design_type.version != CURRENT_SKETCH_CONTAINER_VERSION {
             continue;
         }
@@ -909,15 +907,28 @@ fn decode_sketch_visibilities_in_stream(
             ));
         }
         let frame_bytes = &bytes[..frame.end];
+        let _header_storage;
+        let (settled_header, settled_storage) = ctx.with_scoped_storage(
+            "f3d sketch visibility entity header",
+            || parse_settled_entity_header(ctx, frame_bytes, frame.start),
+        )?;
+        let (header, header_storage) = match settled_header {
+            Some(header) => (Some(header), settled_storage),
+            None => {
+                drop(settled_storage);
+                ctx.with_scoped_storage("f3d sketch visibility entity header", || {
+                    parse_genesis_entity_header(ctx, frame_bytes, frame.start)
+                })?
+            }
+        };
+        _header_storage = header_storage;
         let Some(NamedEntityHeader {
             entity_id,
             end: header_end,
             ..
-        }) = (match parse_settled_entity_header(ctx, frame_bytes, frame.start)? {
-            Some(header) => Some(header),
-            None => parse_genesis_entity_header(ctx, frame_bytes, frame.start)?,
-        })
+        }) = header
         else {
+            drop(_header_storage);
             return Err(crate::design::text::malformed_design(
                 ctx,
                 format_args!(
@@ -927,6 +938,8 @@ fn decode_sketch_visibilities_in_stream(
             ));
         };
         let entity_suffix = entity_id.suffix();
+        drop(entity_id);
+        drop(_header_storage);
         if entity_suffix != frame.entity_id {
             return Err(crate::design::text::malformed_design(
                 ctx,
