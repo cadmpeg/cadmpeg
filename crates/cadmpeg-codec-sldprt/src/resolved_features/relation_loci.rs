@@ -19,7 +19,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_core::decode::{index_from_u64, DecodeContext};
+use cadmpeg_core::decode::{index_from_u64, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
@@ -1827,24 +1827,22 @@ fn unique_profile_measured_loci_pair(
     else {
         return Ok(None);
     };
-    let _loci_storage;
-    let loci;
-    (loci, _loci_storage) =
-        ctx.with_scoped_storage(OPERATION, || canonical_profile_loci(ctx, sketch, entities))?;
-    let mut selected: Option<(&SketchLocus, &SketchLocus)> = None;
+    let canonical = CanonicalProfileLoci::new(ctx, sketch, entities)?;
+    let loci = canonical.as_slice();
+    let mut selected: Option<(&CanonicalProfileLocus<'_>, &CanonicalProfileLocus<'_>)> = None;
     if !ctx.all_by(
         loci.iter().enumerate(),
-        |(first_index, (first_point, first))| {
+        |(first_index, first)| {
             let later = loci.get(first_index + 1..).unwrap_or_default();
             if !ctx.all_by(
                 later,
-                |(second_point, second)| {
-                    if !same_dimension_length(measure(first_point, second_point), distance.get()) {
+                |second| {
+                    if !same_dimension_length(measure(&first.point, &second.point), distance.get()) {
                         return Ok(true);
                     }
                     if let Some((selected_first, selected_second)) = selected {
-                        if !(ctx.equal(selected_first, first, OPERATION)?
-                            && ctx.equal(selected_second, second, OPERATION)?)
+                        if !(selected_first.same_identity(ctx, first, OPERATION)?
+                            && selected_second.same_identity(ctx, second, OPERATION)?)
                         {
                             return Ok(false);
                         }
@@ -1868,8 +1866,8 @@ fn unique_profile_measured_loci_pair(
         return Ok(None);
     };
     Ok(Some((
-        copy_locus(ctx, first, OPERATION)?,
-        copy_locus(ctx, second, OPERATION)?,
+        first.copy_locus(ctx, OPERATION)?,
+        second.copy_locus(ctx, OPERATION)?,
     )))
 }
 
@@ -1930,21 +1928,19 @@ fn unique_profile_measured_locus(
     let Some(known_point) = profile_locus_point_charged(ctx, known, entities, OPERATION)? else {
         return Ok(None);
     };
-    let _loci_storage;
-    let loci;
-    (loci, _loci_storage) =
-        ctx.with_scoped_storage(OPERATION, || canonical_profile_loci(ctx, sketch, entities))?;
-    let mut selected: Option<&SketchLocus> = None;
+    let canonical = CanonicalProfileLoci::new(ctx, sketch, entities)?;
+    let loci = canonical.as_slice();
+    let mut selected: Option<&CanonicalProfileLocus<'_>> = None;
     if !ctx.all_by(
-        &loci,
-        |(candidate_point, candidate)| {
-            if ctx.equal(candidate, known, OPERATION)?
-                || !same_dimension_length(measure(&known_point, candidate_point), distance.get())
+        loci,
+        |candidate| {
+            if candidate.matches_locus(ctx, known, OPERATION)?
+                || !same_dimension_length(measure(&known_point, &candidate.point), distance.get())
             {
                 return Ok(true);
             }
             if let Some(selected) = selected {
-                if !ctx.equal(selected, candidate, OPERATION)? {
+                if !selected.same_identity(ctx, candidate, OPERATION)? {
                     return Ok(false);
                 }
             }
@@ -1957,7 +1953,7 @@ fn unique_profile_measured_locus(
         return Ok(None);
     }
     selected
-        .map(|locus| copy_locus(ctx, locus, OPERATION))
+        .map(|locus| locus.copy_locus(ctx, OPERATION))
         .transpose()
 }
 
@@ -2204,59 +2200,126 @@ fn unique_profile_distance_loci_pair(
     })
 }
 
-/// The loci of the sketch's entities, one per quantized position, ordered by
-/// position and then by locus identity.
+/// A canonical position and its borrowed source identity.
+pub(super) struct CanonicalProfileLocus<'a> {
+    source_index: usize,
+    pub(super) point: Point2,
+    entity: &'a SketchEntityId,
+    role: SketchLocusRole,
+}
+
+impl CanonicalProfileLocus<'_> {
+    pub(super) fn same_identity(
+        &self,
+        ctx: &DecodeContext<'_>,
+        other: &Self,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        ctx.equal(
+            &(self.role as u8, self.entity),
+            &(other.role as u8, other.entity),
+            operation,
+        )
+    }
+
+    pub(super) fn matches_locus(
+        &self,
+        ctx: &DecodeContext<'_>,
+        locus: &SketchLocus,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        ctx.equal(
+            &(self.role as u8, self.entity),
+            &(SketchLocusRole::of_locus(locus) as u8, locus_entity(locus)),
+            operation,
+        )
+    }
+
+    pub(super) fn copy_locus(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<SketchLocus, CodecError> {
+        role_locus(ctx, self.role, self.entity, operation)
+    }
+}
+
+/// Scoped canonical positions. Borrowed identities remain in the source arena;
+/// this owner contains only the actual sorting vector and its backing lease.
+pub(super) struct CanonicalProfileLoci<'a, 'ctx> {
+    entries: Vec<CanonicalProfileLocus<'a>>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+impl<'a, 'ctx> CanonicalProfileLoci<'a, 'ctx> {
+    pub(super) fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        sketch: &SketchId,
+        entities: &ProfileEntities<'a>,
+    ) -> Result<Self, CodecError> {
+        const QUANTUM: f64 = 1.0e-8;
+        const OPERATION: &str = "collect SLDPRT canonical profile loci";
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut indexed = Vec::new();
+        for (source_index, entity) in ctx
+            .admit_iter(entities.in_sketch(ctx, sketch, OPERATION)?, OPERATION)?
+            .copied()
+            .enumerate()
+        {
+            for (point, role) in sketch_entity_locus_points(entity).into_iter().flatten() {
+                storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut indexed,
+                        CanonicalProfileLocus { source_index, point, entity: entity.id(), role },
+                        OPERATION,
+                    )
+                })?;
+            }
+        }
+        // Source order breaks equal geometric and identity keys without sort scratch.
+        ctx.sort_unstable_by_key(
+            &mut indexed,
+            |locus| (locus.source_index, locus.point, (locus.entity, locus.role as u8)),
+            |(left_index, left_point, (left_entity, left_role)),
+             (right_index, right_point, (right_entity, right_role))| {
+                quantize(*left_point, QUANTUM)
+                    .cmp(&quantize(*right_point, QUANTUM))
+                    .then_with(|| {
+                        (left_entity.as_str(), *left_role)
+                            .cmp(&(right_entity.as_str(), *right_role))
+                    })
+                    .then_with(|| left_index.cmp(right_index))
+            },
+            OPERATION,
+        )?;
+        ctx.dedup_by(
+            &mut indexed,
+            |left, right| {
+                Ok(quantize(left.point, QUANTUM) == quantize(right.point, QUANTUM))
+            },
+            "deduplicate SLDPRT canonical profile loci",
+        )?;
+        Ok(Self { entries: indexed, _storage: storage })
+    }
+
+    pub(super) fn as_slice(&self) -> &[CanonicalProfileLocus<'a>] {
+        &self.entries
+    }
+}
+
+/// The retained loci used by owning tests, ordered by position and identity.
+#[cfg(test)]
 pub(super) fn canonical_profile_loci(
     ctx: &DecodeContext<'_>,
     sketch: &SketchId,
     entities: &ProfileEntities<'_>,
 ) -> Result<Vec<(Point2, SketchLocus)>, CodecError> {
-    const QUANTUM: f64 = 1e-8;
     const OPERATION: &str = "collect SLDPRT canonical profile loci";
-    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut indexed = Vec::new();
-    for (source_index, entity) in ctx
-        .admit_iter(entities.in_sketch(ctx, sketch, OPERATION)?, OPERATION)?
-        .copied()
-        .enumerate()
-    {
-        for (point, role) in sketch_entity_locus_points(entity).into_iter().flatten() {
-            storage.with_storage(|| {
-                ctx.push_vec(
-                    &mut indexed,
-                    (source_index, point, entity.id(), role),
-                    OPERATION,
-                )
-            })?;
-        }
-    }
-    // Source order breaks equal geometric and identity keys without sort scratch.
-    ctx.sort_unstable_by_key(
-        &mut indexed,
-        |(source_index, point, entity, role)| (*source_index, *point, (*entity, *role as u8)),
-        |(left_index, left_point, (left_entity, left_role)),
-         (right_index, right_point, (right_entity, right_role))| {
-            quantize(*left_point, QUANTUM)
-                .cmp(&quantize(*right_point, QUANTUM))
-                .then_with(|| {
-                    (left_entity.as_str(), *left_role)
-                        .cmp(&(right_entity.as_str(), *right_role))
-                })
-                .then_with(|| left_index.cmp(right_index))
-        },
-        OPERATION,
-    )?;
-    ctx.dedup_by(
-        &mut indexed,
-        |(_, left_point, _, _), (_, right_point, _, _)| {
-            Ok(quantize(*left_point, QUANTUM) == quantize(*right_point, QUANTUM))
-        },
-        "deduplicate SLDPRT canonical profile loci",
-    )?;
+    let canonical = CanonicalProfileLoci::new(ctx, sketch, entities)?;
     let mut loci = Vec::new();
-    for (_, point, entity, role) in ctx.admit_iter(indexed, OPERATION)? {
-        let locus = role_locus(ctx, role, entity, OPERATION)?;
-        ctx.push_vec(&mut loci, (point, locus), OPERATION)?;
+    for source in ctx.admit_iter(canonical.as_slice(), OPERATION)? {
+        let locus = source.copy_locus(ctx, OPERATION)?;
+        ctx.push_vec(&mut loci, (source.point, locus), OPERATION)?;
     }
     Ok(loci)
 }

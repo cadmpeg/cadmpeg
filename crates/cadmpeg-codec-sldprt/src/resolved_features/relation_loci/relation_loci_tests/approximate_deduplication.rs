@@ -116,7 +116,7 @@ fn canonical_loci_release_borrowed_workspace_and_scoped_output_each_time() {
     let output_bytes = first_backing::<(Point2, SketchLocus)>();
     let index_bytes = first_backing::<(usize, Point2, &SketchEntityId, SketchLocusRole)>();
     policy.limits.max_retained_bytes = 0;
-    // The consuming index iterator still owns its backing when the output is built.
+    // The canonical roster still owns its backing when the output is built.
     policy.limits.max_materialized_bytes = index_bytes + identity_bytes + output_bytes;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..64 {
@@ -160,4 +160,117 @@ fn canonical_loci_keep_source_order_after_equal_position_and_identity_keys() {
     let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(super::super::canonical_profile_loci(&ctx, &sketch, &profile(&input)).unwrap(),
         [(Point2::new(0.2 * QUANTUM, 0.0), SketchLocus::Entity(input[0].id().clone()))]);
+}
+
+#[test]
+fn borrowed_canonical_roster_copies_no_identities_and_releases_its_backing() {
+    let (sketch, input) = coincident_fixture();
+    let entities = profile(&input);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    let index_bytes = first_backing::<super::super::CanonicalProfileLocus<'_>>();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = index_bytes;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        let canonical = super::super::CanonicalProfileLoci::new(&ctx, &sketch, &entities).unwrap();
+        assert_eq!(canonical.as_slice().len(), 1);
+        let winner = &canonical.as_slice()[0];
+        assert_eq!(winner.point, Point2::new(0.0, 0.0));
+        assert!(std::ptr::eq(winner.entity, input[1].id()));
+        drop(canonical);
+        drop(ctx.reserve_scoped(index_bytes, "test canonical roster teardown").unwrap());
+    }
+    ctx.finish_session().unwrap();
+}
+
+fn measured_fixture() -> (SketchId, [SketchEntity; 4], cadmpeg_ir::features::DesignParameter) {
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let input = [("a", 0.0), ("b", 5.0), ("unused-long-identity", 20.0), ("ambiguous", 25.0)]
+        .map(|(suffix, u)| SketchEntity::new(
+            SketchEntityId::mint(format!("synthetic:test:id#{suffix}")).unwrap(), sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: Point2::new(u, 0.0),
+            }).unwrap(),
+        ));
+    let parameter = DesignParameter {
+        id: ParameterId::mint("synthetic:test:id#distance").unwrap(),
+        owner: None,
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "5mm".into(),
+        display: None,
+        value: Some(ParameterValue::Length(cadmpeg_ir::scalar::Length::new(5.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        properties: std::collections::BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    };
+    (sketch, input, parameter)
+}
+
+#[test]
+fn measured_canonical_pair_copies_only_the_selected_witness() {
+    let (sketch, input, parameter) = measured_fixture();
+    let entities = profile(&input[..3]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(input[0].id().as_str().len() + input[1].id().as_str().len()).unwrap();
+    policy.limits.max_materialized_bytes = first_backing::<super::super::CanonicalProfileLocus<'_>>();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(super::super::unique_profile_distance_loci_pair(&ctx, &sketch, &parameter, &entities).unwrap(),
+        Some((SketchLocus::Entity(input[0].id().clone()), SketchLocus::Entity(input[1].id().clone()))));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn ambiguous_canonical_pairs_copy_no_witness() {
+    let (sketch, input, parameter) = measured_fixture();
+    let entities = profile(&input);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = first_backing::<super::super::CanonicalProfileLocus<'_>>();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(super::super::unique_profile_distance_loci_pair(&ctx, &sketch, &parameter, &entities).unwrap().is_none());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn measured_canonical_pair_preserves_the_selected_identity_refusal() {
+    let (sketch, input, parameter) = measured_fixture();
+    let entities = profile(&input[..3]);
+    let first_bytes = u64::try_from(input[0].id().as_str().len()).unwrap();
+    let second_bytes = u64::try_from(input[1].id().as_str().len()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = first_bytes + second_bytes - 1;
+    policy.limits.max_materialized_bytes = first_backing::<super::super::CanonicalProfileLocus<'_>>();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let CodecError::ResourceLimit(limit) = super::super::unique_profile_distance_loci_pair(&ctx, &sketch, &parameter, &entities).unwrap_err() else {
+        panic!("expected selected identity refusal");
+    };
+    assert_eq!(limit.operation, "select SLDPRT measured profile locus pair");
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.used, first_bytes);
+    assert_eq!(limit.additional, second_bytes);
+    assert_eq!(limit.limit, first_bytes + second_bytes - 1);
+    assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit));
+}
+
+#[test]
+fn measured_canonical_locus_copies_only_the_selected_partner() {
+    let (sketch, input, parameter) = measured_fixture();
+    let entities = profile(&input[..3]);
+    let known = SketchLocus::Entity(input[0].id().clone());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(input[1].id().as_str().len()).unwrap();
+    policy.limits.max_materialized_bytes = first_backing::<super::super::CanonicalProfileLocus<'_>>();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(super::super::unique_profile_distance_locus_in(&ctx, &sketch, &known, &parameter, &entities).unwrap(),
+        Some(SketchLocus::Entity(input[1].id().clone())));
+    ctx.finish_session().unwrap();
 }
