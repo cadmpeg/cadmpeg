@@ -311,3 +311,6 @@ pub(super) fn clamp_nurbs_curve_to_domain(
         false,
     )??))
 }
+
+#[cfg(test)]
+mod tests;

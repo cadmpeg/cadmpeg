@@ -494,3 +494,6 @@ pub(super) fn ruled_surface_line_pcurve(
         ),
     }))
 }
+
+#[cfg(test)]
+mod tests;

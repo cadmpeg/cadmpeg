@@ -1551,20 +1551,13 @@ fn bind_bridges(
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-mod numerical_range_tests;
 
 #[cfg(test)]
 mod evaluation_admission_tests;
 
-#[cfg(test)]
-mod inverse_candidate_tests;
+
+
+
 
 #[cfg(test)]
-mod sample_parameter_tests;
-
-#[cfg(test)]
-mod homogeneous_generation_tests;
-
-#[cfg(test)]
-mod coordinate_scale_tests;
+mod test_support;

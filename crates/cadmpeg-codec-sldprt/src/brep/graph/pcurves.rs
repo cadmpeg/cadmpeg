@@ -1675,3 +1675,6 @@ pub(super) fn intersection_support_pcurve(
         )))
     })()
 }
+
+#[cfg(test)]
+mod tests;
