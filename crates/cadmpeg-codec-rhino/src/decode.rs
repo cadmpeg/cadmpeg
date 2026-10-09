@@ -2317,9 +2317,10 @@ impl<'a> DecodeContext<'a> {
             )?,
         };
 
-        original_model
-            .0
-            .discard_appended(&mut self.session.document_mut()?.model, self.expand.ctx())?;
+        original_model.0.discard_appended(
+            self.session.edit_appended_model(&original_model.0)?,
+            self.expand.ctx(),
+        )?;
         original_links.bytes.commit()?;
         for (position, links) in original_links.links.into_iter().enumerate() {
             let (_, target) = self.session.unknown_links_mut(position)?.ok_or_else(|| {
