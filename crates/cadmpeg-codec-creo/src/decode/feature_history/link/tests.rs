@@ -619,3 +619,5 @@ fn transformed_surface_kind_walks_bases_and_preserves_family() {
         Some(crate::surface::SurfaceKind::Plane)
     );
 }
+
+mod admission_visits;

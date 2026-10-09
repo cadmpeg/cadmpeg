@@ -36,12 +36,14 @@ pub(in super::super) fn link_feature_sketch_history(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        let (owner, _owner_reservation) = crate::identity::compose_scoped::<IrFeatureId>(
+        let owner_owned_storage = crate::identity::compose_scoped::<IrFeatureId>(
             ctx,
             &crate::identity::MODEL_FEATURE,
             feature_id,
             "creo linked feature lookup identity",
         )?;
+        let _owner_reservation = owner_owned_storage.1;
+        let owner = owner_owned_storage.0;
         let Some(definition) =
             unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
         else {
@@ -75,11 +77,17 @@ fn unique_model_feature_index(
     ir: &CadIr,
     feature_id: &IrFeatureId,
 ) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut matching_index = None;
     let mut items = ir.model.features.iter().enumerate();
-    while let Some((index, feature)) =
-        ctx.next_charged(&mut items, "creo linked model feature lookup")?
-    {
+    while items.len() != 0 {
+        let Some((index, feature)) =
+            ctx.next_charged(&mut items, "creo linked model feature lookup")?
+        else {
+            break;
+        };
         if !ctx.equal(
             &feature.id,
             feature_id,
@@ -99,6 +107,9 @@ pub(in super::super) fn surface_kind_for_geometry(
     ctx: &DecodeContext<'_>,
     geometry: &SurfaceGeometry,
 ) -> Result<Option<crate::surface::SurfaceKind>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(mut basis) = geometry.solved() else {
         return Ok(None);
     };
@@ -133,18 +144,27 @@ pub(in super::super) fn generated_surface_id_for_feature(
     feature_id: u32,
     source_entity_id: u32,
 ) -> Result<Option<u32>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut surface_id = None;
     let mut table_iter = tables.iter();
-    while let Some(table) =
-        ctx.next_charged(&mut table_iter, "creo generated surface feature tables")?
-    {
+    while table_iter.len() != 0 {
+        let Some(table) =
+            ctx.next_charged(&mut table_iter, "creo generated surface feature tables")?
+        else {
+            break;
+        };
         if table.feature_id != feature_id {
             continue;
         }
         let mut entry_iter = table.entries.iter();
-        while let Some(entry) =
-            ctx.next_charged(&mut entry_iter, "creo generated surface feature entries")?
-        {
+        while entry_iter.len() != 0 {
+            let Some(entry) =
+                ctx.next_charged(&mut entry_iter, "creo generated surface feature entries")?
+            else {
+                break;
+            };
             if entry.source_entity_id() != Some(source_entity_id)
                 || !table.contains_surface_id(entry.entity_id)
             {
@@ -167,6 +187,9 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
     expected_kinds: &[crate::surface::SurfaceKind],
     rows: &crate::surface::SurfaceRows,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if entry.source_entity_id().is_none() {
         return Ok(false);
     }
@@ -207,6 +230,9 @@ pub(in super::super) fn section_entity_is_generated_profile(
     tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &crate::surface::SurfaceRows,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !segment_table_complete {
         return Ok(false);
     }
@@ -264,9 +290,12 @@ pub(in super::super) fn section_entity_is_generated_profile(
     }
     let mut found_cylinder = false;
     let mut table_iter = tables.iter();
-    while let Some(table) =
-        ctx.next_charged(&mut table_iter, "creo blind generated profile tables")?
-    {
+    while table_iter.len() != 0 {
+        let Some(table) =
+            ctx.next_charged(&mut table_iter, "creo blind generated profile tables")?
+        else {
+            break;
+        };
         if table.feature_id != feature_id {
             continue;
         }
@@ -304,6 +333,9 @@ fn generated_profile_table_shape(
     ctx: &DecodeContext<'_>,
     table: &crate::feature::entity::FeatureEntityTable,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let [first, second, rest @ ..] = table.entries.as_slice() else {
         return Ok(false);
     };
@@ -311,20 +343,29 @@ fn generated_profile_table_shape(
         || first.class_id() != 204
         || second.class_id() != 203
         || rest.is_empty()
-        || !ctx.all_by(
-            rest,
-            |entry| Ok(entry.source_entity_id().is_some()),
-            "creo generated profile remaining entries",
-        )?
     {
         return Ok(false);
+    }
+    let mut remaining = rest.iter();
+    while remaining.len() != 0 {
+        let Some(entry) =
+            ctx.next_charged(&mut remaining, "creo generated profile remaining entries")?
+        else {
+            break;
+        };
+        if entry.source_entity_id().is_none() {
+            return Ok(false);
+        }
     }
     let mut scratch = ctx.reserve_scoped(0, "creo generated profile identity index")?;
     let mut seen = std::collections::HashSet::new();
     let mut entries = table.entries.iter();
-    while let Some(entry) =
-        ctx.next_charged(&mut entries, "creo generated profile unique entry IDs")?
-    {
+    while entries.len() != 0 {
+        let Some(entry) =
+            ctx.next_charged(&mut entries, "creo generated profile unique entry IDs")?
+        else {
+            break;
+        };
         if !scratch.with_storage(|| {
             ctx.insert_hash_set(
                 &mut seen,
@@ -363,6 +404,9 @@ pub(in super::super) fn ordered_analytic_surface_id_for_feature(
     external_id: u32,
     geometry: &SurfaceGeometry,
 ) -> Result<Option<u32>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if order.internal_id(external_id).is_none() {
         return Ok(None);
     }
@@ -405,6 +449,9 @@ pub(super) fn insert_ordered_family_surface_binding(
     bindings: &mut BTreeMap<u32, u32>,
     bound_surfaces: &mut BTreeSet<u32>,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let SurfaceBindingSource {
         surface_rows,
         feature_id,
