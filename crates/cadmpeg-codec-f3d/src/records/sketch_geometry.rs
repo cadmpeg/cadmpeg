@@ -1024,12 +1024,13 @@ impl SketchPointCompanion {
 
     fn validate_charged(&self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         let operation = "index F3D sketch point incident curves";
+        let mut storage = ctx.reserve_scoped(0, operation)?;
         let mut unique = std::collections::HashSet::new();
         for curve in ctx.admit_iter(
             &self.incident_curves,
             "scan F3D sketch point incident curves",
         )? {
-            ctx.reserve_set(&mut unique, 1, operation)?;
+            storage.with_storage(|| ctx.reserve_set(&mut unique, 1, operation))?;
             if !unique.insert(curve) {
                 return Err(CodecError::Malformed(
                     "sketch point companion.incident_curves must be distinct".into(),
@@ -2622,6 +2623,8 @@ impl SketchNurbsPoles {
 mod tests {
     use super::{SketchCurveGeometry, SketchPoint, SketchSurface, SketchText};
     use serde_json::json;
+
+    mod point_companion_storage;
 
     #[test]
     fn sketch_geometry_constructors_preserve_resource_refusals_and_standard_values() {
