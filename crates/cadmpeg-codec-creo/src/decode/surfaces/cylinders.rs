@@ -252,7 +252,10 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         };
         let mut planes = Vec::new();
         let mut visits = affected.iter();
-        while let Some(id) = ctx.next_charged(&mut visits, "creo constrained slot affected IDs")? {
+        while visits.len() != 0 {
+            let Some(id) = ctx.next_charged(&mut visits, "creo constrained slot affected IDs")? else {
+                break;
+            };
             let Some(plane) = reconciled_model_plane(ctx, local_planes, ir, source_carriers, *id)?
             else {
                 break;
@@ -276,9 +279,10 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         let mut selected_row = None;
         let mut ambiguous_row = false;
         let mut visits = scan.surfaces.rows.iter();
-        while let Some(row) =
-            ctx.next_charged(&mut visits, "creo constrained slot cylinder rows")?
-        {
+        while visits.len() != 0 {
+            let Some(row) = ctx.next_charged(&mut visits, "creo constrained slot cylinder rows")? else {
+                break;
+            };
             if row.feature_id != *feature_id || row.kind != crate::surface::SurfaceKind::Cylinder {
                 continue;
             }
@@ -797,6 +801,9 @@ fn round_edge_cylinder_frame(
     radius: f64,
     support_planes: &[PlaneEquation],
 ) -> Result<Option<crate::surface::PositionalCylinderFrame>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !radius.is_finite() || radius <= 0.0 {
         return Ok(None);
     }
@@ -823,9 +830,10 @@ fn round_edge_cylinder_frame(
     };
     let mut candidate: Option<crate::surface::PositionalCylinderFrame> = None;
     let mut first_planes = support_planes.iter().copied().enumerate();
-    while let Some((first_index, first_support)) =
-        ctx.next_charged(&mut first_planes, "creo round-edge first support planes")?
-    {
+    while first_planes.len() != 0 {
+        let Some((first_index, first_support)) = ctx.next_charged(&mut first_planes, "creo round-edge first support planes")? else {
+            break;
+        };
         let Some(first_normal) = normalize(first_support.normal) else {
             continue;
         };
@@ -834,9 +842,10 @@ fn round_edge_cylinder_frame(
             normal: first_normal,
         };
         let mut second_planes = support_planes[first_index + 1..].iter().copied();
-        while let Some(second_support) =
-            ctx.next_charged(&mut second_planes, "creo round-edge second support planes")?
-        {
+        while second_planes.len() != 0 {
+            let Some(second_support) = ctx.next_charged(&mut second_planes, "creo round-edge second support planes")? else {
+                break;
+            };
             let Some(second_normal) = normalize(second_support.normal) else {
                 continue;
             };
@@ -988,7 +997,10 @@ fn unique_support_tangent_cylinder_frame(
     let mut witnessed_axis = [false; 3];
     let mut witnessed_planes = Vec::new();
     let mut visits = support_planes.iter();
-    while let Some(plane) = ctx.next_charged(&mut visits, "creo support tangent support planes")? {
+    while visits.len() != 0 {
+        let Some(plane) = ctx.next_charged(&mut visits, "creo support tangent support planes")? else {
+            break;
+        };
         let Some(normal) = normalize(plane.normal) else {
             return Ok(None);
         };
@@ -1076,9 +1088,10 @@ fn unique_support_tangent_cylinder_frame(
     }
     let mut frame = None;
     let mut visits = origins.iter();
-    while let Some(origin) =
-        ctx.next_charged(&mut visits, "creo support tangent resolved origins")?
-    {
+    while visits.len() != 0 {
+        let Some(origin) = ctx.next_charged(&mut visits, "creo support tangent resolved origins")? else {
+            break;
+        };
         let tangent_to_all = ctx.all_by(
             &witnessed_planes,
             |plane| {
@@ -1126,6 +1139,9 @@ fn perpendicular_round_edge_cylinder_frame(
     Result<crate::surface::PositionalCylinderFrame, PerpendicularRoundEdgeFailure>,
     cadmpeg_core::CodecError,
 > {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let [first, second] = envelope.vertices;
     let delta = std::array::from_fn::<_, 3, _>(|index| second[index] - first[index]);
     let plane_contains = |point: [f64; 3], plane: PlaneEquation| {
@@ -1142,10 +1158,13 @@ fn perpendicular_round_edge_cylinder_frame(
     let mut has_endpoint_incidence = false;
     let mut has_equal_radius_projections = false;
     let mut first_planes = support_planes.iter().copied().enumerate();
-    while let Some((first_index, first_support)) = ctx.next_charged(
+    while first_planes.len() != 0 {
+        let Some((first_index, first_support)) = ctx.next_charged(
         &mut first_planes,
         "creo perpendicular round-edge first support planes",
-    )? {
+    )? else {
+            break;
+        };
         let Some(first_normal) = normalize(first_support.normal) else {
             continue;
         };
@@ -1154,10 +1173,13 @@ fn perpendicular_round_edge_cylinder_frame(
             normal: first_normal,
         };
         let mut second_planes = support_planes[first_index + 1..].iter().copied();
-        while let Some(second_support) = ctx.next_charged(
+        while second_planes.len() != 0 {
+            let Some(second_support) = ctx.next_charged(
             &mut second_planes,
             "creo perpendicular round-edge second support planes",
-        )? {
+        )? else {
+                break;
+            };
             let Some(second_normal) = normalize(second_support.normal) else {
                 continue;
             };
