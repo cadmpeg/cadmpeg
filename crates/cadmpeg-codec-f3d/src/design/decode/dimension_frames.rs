@@ -459,18 +459,19 @@ impl CompanionBoundaries {
 /// Companion boundaries of the records a pass reads, built per stream on
 /// first use and held until the pass ends. The records are grouped by stream
 /// once, so a stream's boundaries read only that stream's records.
-pub(super) struct CompanionIntervals<'a, 'ctx> {
+pub(super) struct CompanionIntervals<'a, 'ctx, 'arena> {
     owners: Grouped<'a, DesignParameterOwner>,
     parameters: Grouped<'a, DesignParameter>,
     scopes: Grouped<'a, DesignParameterScope>,
     headers: Grouped<'a, DesignRecordHeader>,
     boundaries: HashMap<&'a str, CompanionBoundaries>,
     storage: ScopedReservation<'ctx>,
+    ctx: &'ctx DecodeContext<'arena>,
 }
 
-impl<'a, 'ctx> CompanionIntervals<'a, 'ctx> {
+impl<'a, 'ctx, 'arena> CompanionIntervals<'a, 'ctx, 'arena> {
     pub(super) fn new(
-        ctx: &'ctx DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'arena>,
         parameters: &'a [DesignParameter],
         owners: &'a [DesignParameterOwner],
         scopes: &'a [DesignParameterScope],
@@ -513,6 +514,7 @@ impl<'a, 'ctx> CompanionIntervals<'a, 'ctx> {
             headers,
             boundaries: HashMap::new(),
             storage,
+            ctx,
         })
     }
 
@@ -523,11 +525,11 @@ impl<'a, 'ctx> CompanionIntervals<'a, 'ctx> {
     /// references, or to the stream end.
     pub(super) fn interval(
         &mut self,
-        ctx: &DecodeContext<'_>,
         stream: &'a str,
         companion: &DesignParameterCompanion,
         stream_length: usize,
     ) -> Result<Option<(usize, usize)>, CodecError> {
+        let ctx = self.ctx;
         let (owners, parameters, scopes, headers) =
             (&self.owners, &self.parameters, &self.scopes, &self.headers);
         let boundaries = &mut self.boundaries;
@@ -552,26 +554,24 @@ impl<'a, 'ctx> CompanionIntervals<'a, 'ctx> {
     /// The owners of `stream`, in input order, admitted as visited work.
     fn owners_of(
         &self,
-        ctx: &DecodeContext<'_>,
         stream: &str,
         operation: &'static str,
     ) -> Result<impl Iterator<Item = &'a DesignParameterOwner> + '_, CodecError> {
-        self.owners.of(ctx, stream, operation)
+        self.owners.of(self.ctx, stream, operation)
     }
 
     /// The scopes of `stream`, in input order, admitted as visited work.
     fn scopes_of(
         &self,
-        ctx: &DecodeContext<'_>,
         stream: &str,
         operation: &'static str,
     ) -> Result<impl Iterator<Item = &'a DesignParameterScope> + '_, CodecError> {
-        self.scopes.of(ctx, stream, operation)
+        self.scopes.of(self.ctx, stream, operation)
     }
 
     /// The intervals of the companion boundaries in `inputs`.
     fn of_inputs(
-        ctx: &'ctx DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'arena>,
         inputs: &DimensionDecodeInputs<'a>,
     ) -> Result<Self, CodecError> {
         Self::new(
@@ -1895,7 +1895,7 @@ pub(crate) fn decode_dimension_locus_pairs<'a>(
             Some(index) => index,
             vacant => vacant.insert(CompanionIntervals::of_inputs(ctx, inputs)?),
         };
-        let Some((start, end)) = intervals.interval(ctx, scope, companion, bytes.len())? else {
+        let Some((start, end)) = intervals.interval(scope, companion, bytes.len())? else {
             continue;
         };
         let (geometry, _) = match &mut geometry {
@@ -2192,7 +2192,7 @@ pub(crate) fn decode_dimension_null_locus_pairs<'a>(
             Some(index) => index,
             vacant => vacant.insert(CompanionIntervals::of_inputs(ctx, inputs)?),
         };
-        let Some((start, end)) = intervals.interval(ctx, scope, companion, bytes.len())? else {
+        let Some((start, end)) = intervals.interval(scope, companion, bytes.len())? else {
             continue;
         };
         let (geometry, _) = match &mut geometry {
@@ -2434,7 +2434,6 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
             ctx.with_scoped_storage("f3d dimension annotation governed owners", || {
                 let mut governed_owners = HashMap::new();
                 for owner in intervals_by_stream.owners_of(
-                    ctx,
                     stream,
                     "scan F3D dimension annotation owners",
                 )? {
@@ -2594,7 +2593,7 @@ fn annotation_intervals<'a, 'ctx>(
     stream: &'a str,
     stream_length: usize,
     companions: &Grouped<'a, DesignParameterCompanion>,
-    intervals_by_stream: &mut CompanionIntervals<'a, '_>,
+    intervals_by_stream: &mut CompanionIntervals<'a, '_, '_>,
 ) -> Result<(Vec<AnnotationInterval>, ScopedReservation<'ctx>), CodecError> {
     ctx.with_scoped_storage("f3d dimension annotation intervals", || {
         let mut intervals = Vec::new();
@@ -2613,7 +2612,7 @@ fn annotation_intervals<'a, 'ctx>(
                 slot.insert(companion.byte_offset());
             }
             let Some((start, end)) =
-                intervals_by_stream.interval(ctx, stream, companion, stream_length)?
+                intervals_by_stream.interval(stream, companion, stream_length)?
             else {
                 continue;
             };
@@ -2628,7 +2627,6 @@ fn annotation_intervals<'a, 'ctx>(
             ctx.reserve_scoped(0, "f3d dimension annotation scope ends")?;
         let mut scope_ends = HashMap::new();
         for owner in intervals_by_stream.owners_of(
-            ctx,
             stream,
             "scan F3D dimension annotation interval owners",
         )? {
@@ -2659,7 +2657,6 @@ fn annotation_intervals<'a, 'ctx>(
             }
         }
         for scope in intervals_by_stream.scopes_of(
-            ctx,
             stream,
             "scan F3D dimension annotation interval scopes",
         )? {
@@ -3616,7 +3613,7 @@ pub(crate) fn decode_dimension_locus_groups<'a>(
             Some(index) => index,
             vacant => vacant.insert(CompanionIntervals::of_inputs(ctx, inputs)?),
         };
-        let Some((start, end)) = intervals.interval(ctx, scope, companion, bytes.len())? else {
+        let Some((start, end)) = intervals.interval(scope, companion, bytes.len())? else {
             continue;
         };
         let (geometry, _) = match &mut geometry {

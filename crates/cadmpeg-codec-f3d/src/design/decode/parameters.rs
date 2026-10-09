@@ -1559,7 +1559,7 @@ fn companion_payload<'a, S: std::hash::BuildHasher>(
     companion: &'a DesignParameterCompanion,
     inputs: &ParameterCompanionInputs<'_, S>,
     records: &CompanionPayloadRecords<'_>,
-    intervals: &mut CompanionIntervals<'a, '_>,
+    intervals: &mut CompanionIntervals<'a, '_, '_>,
 ) -> Result<Option<crate::records::parameters::DesignCompanionPayload>, CodecError> {
     let Some(stream) = record_stream(ctx, companion.id())? else {
         return Ok(None);
@@ -1574,7 +1574,7 @@ fn companion_payload<'a, S: std::hash::BuildHasher>(
     else {
         return Ok(None);
     };
-    let Some((start, end)) = intervals.interval(ctx, stream, companion, stream_length)? else {
+    let Some((start, end)) = intervals.interval(stream, companion, stream_length)? else {
         return Ok(None);
     };
     let (end, owned_ids) = match records.stream(ctx, stream)? {

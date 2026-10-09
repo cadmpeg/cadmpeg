@@ -963,7 +963,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         CompanionIntervals::new(&ctx, &[], &[], &[scope.clone()], &[])
             .unwrap()
-            .interval(&ctx, "f3d:native", &companion, 100)
+            .interval("f3d:native", &companion, 100)
             .unwrap(),
         Some((58, 58))
     );
@@ -981,7 +981,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         CompanionIntervals::new(&ctx, &[], &[], &[scope.clone()], &[])
             .unwrap()
-            .interval(&ctx, "f3d:native", &companion, 100)
+            .interval("f3d:native", &companion, 100)
             .unwrap(),
         Some((58, 80))
     );
@@ -1005,7 +1005,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         CompanionIntervals::new(&ctx, &[], &[], &[scope.clone()], &[foreign_header])
             .unwrap()
-            .interval(&ctx, "f3d:native", &companion, 100)
+            .interval("f3d:native", &companion, 100)
             .unwrap(),
         Some((58, 70))
     );
@@ -1027,7 +1027,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         CompanionIntervals::new(&ctx, std::slice::from_ref(&parameter), &[], &[], &[])
             .unwrap()
-            .interval(&ctx, "f3d:native", &companion, 100)
+            .interval("f3d:native", &companion, 100)
             .unwrap(),
         Some((58, 65))
     );
