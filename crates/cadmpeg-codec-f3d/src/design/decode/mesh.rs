@@ -1804,7 +1804,9 @@ where
     if collections.is_empty() {
         return Ok(Vec::new());
     }
-    let (_stream_storage, stream) = native_scope_scoped(ctx, source_entry_name)?;
+    let _stream_storage;
+    let (stream, held_scope_storage) = native_scope_scoped(ctx, source_entry_name)?;
+    _stream_storage = held_scope_storage;
     let collection_indices = mesh_collection_indices(ctx, &mut storage, &collections)?;
     let mut frames = |type_guid: &str, record_kind: &str| typed.frames(ctx, type_guid, record_kind);
     let entry_names = record_map(

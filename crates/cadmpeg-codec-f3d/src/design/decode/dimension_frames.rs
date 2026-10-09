@@ -3125,8 +3125,10 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
         if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
             continue;
         }
-        let (_stream_reservation, stream) =
+        let _stream_reservation;
+        let (stream, held_scope_storage) =
             crate::design::decode::sketch::native_scope_scoped(ctx, &entry.name)?;
+        _stream_reservation = held_scope_storage;
         let Some(prefix) = stream.strip_suffix(BULK_STREAM_FILE) else {
             continue;
         };

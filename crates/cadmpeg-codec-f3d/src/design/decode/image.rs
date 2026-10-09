@@ -144,7 +144,9 @@ pub(super) fn decode_scoped_images<T>(
             continue;
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let (_stream_storage, stream) = native_scope_scoped(ctx, &entry.name)?;
+        let _stream_storage;
+        let (stream, held_scope_storage) = native_scope_scoped(ctx, &entry.name)?;
+        _stream_storage = held_scope_storage;
         let mut stream_records = None;
         for scope in ctx.admit_iter(scopes, "scan F3D image owner scopes")? {
             // The kind is a literal name, so the comparison is constant.
