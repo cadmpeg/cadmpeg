@@ -31,6 +31,7 @@ mod sketch_binding_limits;
 mod spatial_profiles;
 mod split;
 mod surface;
+mod surface_patch_storage;
 mod sweep_limits;
 mod timeline;
 mod treatments;

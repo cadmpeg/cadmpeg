@@ -7640,14 +7640,26 @@ fn surface_patch_boundary_continuities(
     ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
 ) -> Result<Vec<cadmpeg_ir::features::SurfaceContinuity>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "f3d surface-patch continuity")?;
     let mut conditions = Vec::new();
-    for boundary in scope.surface_patch_boundaries() {
+    let mut boundaries = scope.surface_patch_boundaries().iter();
+    while !boundaries.as_slice().is_empty() {
+        let Some(boundary) =
+            ctx.next_charged(&mut boundaries, "scan F3D surface-patch continuity")?
+        else {
+            break;
+        };
         let Some(condition) = surface_patch_boundary_continuity(boundary.continuity) else {
             return Ok(Vec::new());
         };
-        ctx.push_vec(&mut conditions, condition, "f3d surface-patch continuity")?;
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut conditions,
+            condition,
+            "f3d surface-patch continuity",
+        )?;
     }
-    Ok(conditions)
+    storage.commit_value(conditions)
 }
 
 fn project_surface_patch(
@@ -7762,11 +7774,13 @@ fn project_surface_patch(
     if groups.len() != boundary_count || scope.surface_patch_boundaries().len() != boundary_count {
         return Ok(None);
     }
-    let mut occupied = ctx.alloc_filled(
-        scope.reference_members().len(),
-        false,
-        "f3d surface-patch reference occupancy",
-    )?;
+    let mut occupied = scratch_storage.with_storage(|| {
+        ctx.alloc_filled(
+            scope.reference_members().len(),
+            false,
+            "f3d surface-patch reference occupancy",
+        )
+    })?;
     for boundary in &groups {
         let Ok(group_ordinal) = usize::try_from(boundary.scope_reference_ordinal) else {
             return Ok(None);
