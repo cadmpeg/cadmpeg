@@ -337,15 +337,14 @@ pub(in super::super) fn generated_arc_cylinder_extent(
             })?;
         }
     }
-    let frame_records_owned_storage = ctx.with_scoped_storage("creo generated arc frame scratch", || {
+    let (frame_records, _frame_storage) =
+        ctx.with_scoped_storage("creo generated arc frame scratch", || {
             unique_available_positional_cylinder_frame_records(
                 ctx,
                 &surface_ids,
                 &scan.surfaces.parameters,
             )
         })?;
-    let _frame_storage = frame_records_owned_storage.1;
-    let frame_records = frame_records_owned_storage.0;
     let Some(frame_records) = frame_records else {
         return Ok(None);
     };
