@@ -1194,295 +1194,58 @@ pub(super) fn resolve_connected_marker_arcs(
                 if native_kind.as_str() == "sldprt:marker-geometry:2"
         )
     };
-    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut point_storage = ctx.reserve_scoped(0, OPERATION)?;
     // Point positions by native reference, copied because the arena is edited below.
     let mut points = HashMap::<String, Point2>::new();
-    let mut center_replacements = Vec::new();
     {
-        let mut sketch_points = BTreeMap::<&SketchId, Vec<(Option<&str>, Point2)>>::new();
-        for entity in ctx.admit_iter(&entities[..], OPERATION)? {
-            let SketchGeometryDefinition::Point { position } = *entity.geometry.definition() else {
-                continue;
-            };
-            let Some(native_ref) = entity.native_ref.as_deref() else {
-                continue;
-            };
-            storage.with_storage(|| {
-                let retained_ref =
-                    ctx.copy_retained_text(native_ref, "copy SLDPRT connected arc point identity")?;
-                ctx.insert_hash_map(
-                    &mut points,
-                    retained_ref,
-                    position.get(),
-                    "index SLDPRT connected arc points",
-                )
-            })?;
-            storage.with_storage(|| {
-                ctx.push_btree_group(
-                    &mut sketch_points,
-                    &entity.sketch,
-                    (Some(native_ref), position.get()),
-                    "index SLDPRT connected arc points",
-                    "collect SLDPRT connected arc point records",
-                )
-            })?;
-        }
-        let mut center_indexes = HashMap::new();
-        for (index, entity) in ctx.admit_iter(&entities[..], OPERATION)?.enumerate() {
-            if !is_native_arc(entity) {
-                continue;
-            }
-            let [start_ref, end_ref] = entity.endpoint_refs.as_slice() else {
-                continue;
-            };
-            let (Some(start), Some(end)) = (
-                ctx.get_hash_map(&points, start_ref.as_str(), OPERATION)?
-                    .copied(),
-                ctx.get_hash_map(&points, end_ref.as_str(), OPERATION)?
-                    .copied(),
-            ) else {
-                continue;
-            };
-            if !ctx.contains_key_hash_map(&center_indexes, &entity.sketch, OPERATION)? {
-                let Some(sketch_points) =
-                    ctx.get_btree_map(&sketch_points, &entity.sketch, OPERATION)?
-                else {
+        let mut replacements_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut center_replacements = Vec::new();
+        {
+            let mut phase_storage = ctx.reserve_scoped(0, OPERATION)?;
+            let mut sketch_points = BTreeMap::<&SketchId, Vec<(Option<&str>, Point2)>>::new();
+            for entity in ctx.admit_iter(&entities[..], OPERATION)? {
+                let SketchGeometryDefinition::Point { position } = *entity.geometry.definition() else {
                     continue;
                 };
-                let index = ArcCenterIndex::from_points(ctx, sketch_points, tolerance)?;
-                storage.with_storage(|| {
-                    ctx.insert_hash_map(&mut center_indexes, &entity.sketch, index, OPERATION)
-                })?;
-            }
-            let Some(candidates) = ctx.get_hash_map(&center_indexes, &entity.sketch, OPERATION)?
-            else {
-                continue;
-            };
-            let Some(center) = unique_arc_center_marker(
-                ctx,
-                start,
-                end,
-                candidates,
-                tolerance,
-                [Some(start_ref.as_str()), Some(end_ref.as_str())],
-            )?
-            else {
-                continue;
-            };
-            let Some(geometry) = minor_arc_geometry(start, end, center, tolerance) else {
-                continue;
-            };
-            storage.with_storage(|| {
-                ctx.push_vec(
-                    &mut center_replacements,
-                    (index, geometry),
-                    "collect SLDPRT connected arc replacements",
-                )
-            })?;
-        }
-    }
-    for (index, geometry) in ctx.admit_iter(center_replacements, OPERATION)? {
-        entities[index].geometry = geometry;
-    }
-    let mut cycle_replacements = Vec::new();
-    {
-        let mut circular_witnesses = Vec::new();
-        let mut point_by_ref = HashMap::new();
-        let mut lines_by_endpoint = HashMap::<&str, Vec<&SketchEntity>>::new();
-        for (index, entity) in ctx.admit_iter(&entities[..], OPERATION)?.enumerate() {
-            match *entity.geometry.definition() {
-                SketchGeometryDefinition::Arc { center, radius, .. } if !entity.construction => {
-                    let [start, end] = entity.endpoint_refs.as_slice() else {
-                        continue;
-                    };
-                    storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut circular_witnesses,
-                            CircularArcWitness {
-                                index,
-                                sketch: &entity.sketch,
-                                endpoints: [start.as_str(), end.as_str()],
-                                center: center.get(),
-                                radius: radius.get(),
-                            },
-                            "collect SLDPRT connected arc witnesses",
-                        )
-                    })?;
-                }
-                SketchGeometryDefinition::Point { position } => {
-                    let Some(native_ref) = entity.native_ref.as_deref() else {
-                        continue;
-                    };
-                    storage.with_storage(|| {
-                        ctx.insert_hash_map(
-                            &mut point_by_ref,
+                let Some(native_ref) = entity.native_ref.as_deref() else {
+                    continue;
+                };
+                if let Some(previous) = ctx.get_mut_hash_map(
+                    &mut points,
+                    native_ref,
+                    "index SLDPRT connected arc points",
+                )? {
+                    *previous = position.get();
+                } else {
+                    point_storage.with_storage(|| {
+                        let retained_ref = ctx.copy_retained_text(
                             native_ref,
+                            "copy SLDPRT connected arc point identity",
+                        )?;
+                        ctx.insert_hash_map(
+                            &mut points,
+                            retained_ref,
                             position.get(),
-                            "index SLDPRT connected arc point references",
+                            "index SLDPRT connected arc points",
                         )
                     })?;
                 }
-                SketchGeometryDefinition::Line { .. }
-                    if !entity.construction && entity.endpoint_refs.len() == 2 =>
-                {
-                    for endpoint in ctx.admit_iter(&entity.endpoint_refs, OPERATION)? {
-                        storage.with_storage(|| {
-                            ctx.push_hash_group(
-                                &mut lines_by_endpoint,
-                                endpoint.as_str(),
-                                entity,
-                                OPERATION,
-                                OPERATION,
-                            )
-                        })?;
-                    }
-                }
-                _ => {}
-            }
-        }
-        for (target_index, target) in ctx.admit_iter(&entities[..], OPERATION)?.enumerate() {
-            if let Some(geometry) = closed_cycle_marker_arc_geometry(
-                ctx,
-                target_index,
-                target,
-                &lines_by_endpoint,
-                &point_by_ref,
-                &circular_witnesses,
-                tolerance,
-            )? {
-                storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut cycle_replacements,
-                        (target_index, geometry),
-                        "collect SLDPRT connected arc cycle replacements",
+                phase_storage.with_storage(|| {
+                    ctx.push_btree_group(
+                        &mut sketch_points,
+                        &entity.sketch,
+                        (Some(native_ref), position.get()),
+                        "index SLDPRT connected arc points",
+                        "collect SLDPRT connected arc point records",
                     )
                 })?;
             }
-        }
-    }
-    for (index, geometry) in ctx.admit_iter(cycle_replacements, OPERATION)? {
-        entities[index].geometry = geometry;
-    }
-    let mut replacements = Vec::new();
-    {
-        // Native arcs grouped by endpoint, so a component grows through shared endpoints.
-        let mut arcs = Vec::new();
-        let mut arcs_by_endpoint = HashMap::<&str, Vec<usize>>::new();
-        for (index, entity) in ctx.admit_iter(&entities[..], OPERATION)?.enumerate() {
-            if entity.endpoint_refs.len() != 2 || !is_native_arc(entity) {
-                continue;
-            }
-            storage.with_storage(|| {
-                ctx.push_vec(&mut arcs, index, "collect SLDPRT connected native arcs")
-            })?;
-            for endpoint in ctx.admit_iter(&entity.endpoint_refs, OPERATION)? {
-                storage.with_storage(|| {
-                    ctx.push_hash_group(
-                        &mut arcs_by_endpoint,
-                        endpoint.as_str(),
-                        index,
-                        "visit SLDPRT connected native arc",
-                        "visit SLDPRT connected native arc",
-                    )
-                })?;
-            }
-        }
-        let mut visited = storage.with_storage(|| {
-            ctx.alloc_filled(entities.len(), false, "visit SLDPRT connected native arc")
-        })?;
-        for &first in ctx.admit_iter(&arcs, OPERATION)? {
-            if visited[first] {
-                continue;
-            }
-            visited[first] = true;
-            let mut component_storage = ctx.reserve_scoped(0, OPERATION)?;
-            let mut component = Vec::new();
-            component_storage.with_storage(|| {
-                ctx.push_vec(
-                    &mut component,
-                    first,
-                    "collect SLDPRT connected arc component",
-                )
-            })?;
-            let mut positions = 0..entities.len();
-            let mut cursor = 0;
-            while cursor < component.len() {
-                let Some(position) = ctx.next_charged(&mut positions, OPERATION)? else {
-                    break;
-                };
-                let current = component[position];
-                cursor = position + 1;
-                for endpoint in ctx.admit_iter(&entities[current].endpoint_refs, OPERATION)? {
-                    for &candidate in ctx.admit_iter(
-                        ctx.get_hash_map(&arcs_by_endpoint, endpoint.as_str(), OPERATION)?
-                            .map_or(&[][..], Vec::as_slice),
-                        OPERATION,
-                    )? {
-                        if visited[candidate] {
-                            continue;
-                        }
-                        visited[candidate] = true;
-                        component_storage.with_storage(|| {
-                            ctx.push_vec(
-                                &mut component,
-                                candidate,
-                                "collect SLDPRT connected arc component",
-                            )
-                        })?;
-                    }
+            let mut center_indexes = HashMap::new();
+            for (index, entity) in ctx.admit_iter(&entities[..], OPERATION)?.enumerate() {
+                if !is_native_arc(entity) {
+                    continue;
                 }
-            }
-            let mut endpoint_refs = Vec::new();
-            for index in ctx.admit_iter(&component, OPERATION)? {
-                for reference in ctx.admit_iter(&entities[*index].endpoint_refs, OPERATION)? {
-                    component_storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut endpoint_refs,
-                            reference,
-                            "collect SLDPRT connected arc endpoints",
-                        )
-                    })?;
-                }
-            }
-            ctx.sort_unstable_by(
-                &mut endpoint_refs,
-                |value| value,
-                Ord::cmp,
-                "sort SLDPRT connected arc endpoints",
-            )?;
-            ctx.dedup_vec(
-                &mut endpoint_refs,
-                "deduplicate SLDPRT connected arc endpoints",
-            )?;
-            let mut component_points = Vec::new();
-            let mut missing_point = false;
-            let mut endpoint_iter = endpoint_refs.iter();
-            while let Some(endpoint) = ctx.next_charged(&mut endpoint_iter, OPERATION)? {
-                let Some(point) = ctx
-                    .get_hash_map(&points, endpoint.as_str(), OPERATION)?
-                    .copied()
-                else {
-                    missing_point = true;
-                    break;
-                };
-                component_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut component_points,
-                        point,
-                        "collect SLDPRT connected arc component points",
-                    )
-                })?;
-            }
-            if missing_point {
-                continue;
-            }
-            let Some((center, _)) = fitted_marker_circle(ctx, &component_points, tolerance)? else {
-                continue;
-            };
-            let mut component_replacements = Vec::new();
-            let mut visited = component.iter();
-            while let Some(&index) = ctx.next_charged(&mut visited, OPERATION)? {
-                let [start_ref, end_ref] = entities[index].endpoint_refs.as_slice() else {
+                let [start_ref, end_ref] = entity.endpoint_refs.as_slice() else {
                     continue;
                 };
                 let (Some(start), Some(end)) = (
@@ -1491,34 +1254,293 @@ pub(super) fn resolve_connected_marker_arcs(
                     ctx.get_hash_map(&points, end_ref.as_str(), OPERATION)?
                         .copied(),
                 ) else {
-                    component_replacements.clear();
-                    break;
+                    continue;
+                };
+                if !ctx.contains_key_hash_map(&center_indexes, &entity.sketch, OPERATION)? {
+                    let Some(sketch_points) =
+                        ctx.get_btree_map(&sketch_points, &entity.sketch, OPERATION)?
+                    else {
+                        continue;
+                    };
+                    let index = ArcCenterIndex::from_points(ctx, sketch_points, tolerance)?;
+                    phase_storage.with_storage(|| {
+                        ctx.insert_hash_map(&mut center_indexes, &entity.sketch, index, OPERATION)
+                    })?;
+                }
+                let Some(candidates) = ctx.get_hash_map(&center_indexes, &entity.sketch, OPERATION)?
+                else {
+                    continue;
+                };
+                let Some(center) = unique_arc_center_marker(
+                    ctx,
+                    start,
+                    end,
+                    candidates,
+                    tolerance,
+                    [Some(start_ref.as_str()), Some(end_ref.as_str())],
+                )?
+                else {
+                    continue;
                 };
                 let Some(geometry) = minor_arc_geometry(start, end, center, tolerance) else {
-                    component_replacements.clear();
-                    break;
+                    continue;
                 };
-                component_storage.with_storage(|| {
+                replacements_storage.with_storage(|| {
                     ctx.push_vec(
-                        &mut component_replacements,
+                        &mut center_replacements,
                         (index, geometry),
-                        "collect SLDPRT connected arc component replacements",
-                    )
-                })?;
-            }
-            if component_replacements.len() >= 2 {
-                storage.with_storage(|| {
-                    ctx.extend_vec(
-                        &mut replacements,
-                        component_replacements,
                         "collect SLDPRT connected arc replacements",
                     )
                 })?;
             }
         }
+        for (index, geometry) in ctx.admit_iter(center_replacements, OPERATION)? {
+            entities[index].geometry = geometry;
+        }
     }
-    for (index, geometry) in ctx.admit_iter(replacements, OPERATION)? {
-        entities[index].geometry = geometry;
+    {
+        let mut replacements_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut cycle_replacements = Vec::new();
+        {
+            let mut phase_storage = ctx.reserve_scoped(0, OPERATION)?;
+            let mut circular_witnesses = Vec::new();
+            let mut point_by_ref = HashMap::new();
+            let mut lines_by_endpoint = HashMap::<&str, Vec<&SketchEntity>>::new();
+            for (index, entity) in ctx.admit_iter(&entities[..], OPERATION)?.enumerate() {
+                match *entity.geometry.definition() {
+                    SketchGeometryDefinition::Arc { center, radius, .. } if !entity.construction => {
+                        let [start, end] = entity.endpoint_refs.as_slice() else {
+                            continue;
+                        };
+                        phase_storage.with_storage(|| {
+                            ctx.push_vec(
+                                &mut circular_witnesses,
+                                CircularArcWitness {
+                                    index,
+                                    sketch: &entity.sketch,
+                                    endpoints: [start.as_str(), end.as_str()],
+                                    center: center.get(),
+                                    radius: radius.get(),
+                                },
+                                "collect SLDPRT connected arc witnesses",
+                            )
+                        })?;
+                    }
+                    SketchGeometryDefinition::Point { position } => {
+                        let Some(native_ref) = entity.native_ref.as_deref() else {
+                            continue;
+                        };
+                        phase_storage.with_storage(|| {
+                            ctx.insert_hash_map(
+                                &mut point_by_ref,
+                                native_ref,
+                                position.get(),
+                                "index SLDPRT connected arc point references",
+                            )
+                        })?;
+                    }
+                    SketchGeometryDefinition::Line { .. }
+                        if !entity.construction && entity.endpoint_refs.len() == 2 =>
+                    {
+                        for endpoint in ctx.admit_iter(&entity.endpoint_refs, OPERATION)? {
+                            phase_storage.with_storage(|| {
+                                ctx.push_hash_group(
+                                    &mut lines_by_endpoint,
+                                    endpoint.as_str(),
+                                    entity,
+                                    OPERATION,
+                                    OPERATION,
+                                )
+                            })?;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for (target_index, target) in ctx.admit_iter(&entities[..], OPERATION)?.enumerate() {
+                if let Some(geometry) = closed_cycle_marker_arc_geometry(
+                    ctx,
+                    target_index,
+                    target,
+                    &lines_by_endpoint,
+                    &point_by_ref,
+                    &circular_witnesses,
+                    tolerance,
+                )? {
+                    replacements_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut cycle_replacements,
+                            (target_index, geometry),
+                            "collect SLDPRT connected arc cycle replacements",
+                        )
+                    })?;
+                }
+            }
+        }
+        for (index, geometry) in ctx.admit_iter(cycle_replacements, OPERATION)? {
+            entities[index].geometry = geometry;
+        }
+    }
+    {
+        let mut replacements_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut replacements = Vec::new();
+        {
+            let mut phase_storage = ctx.reserve_scoped(0, OPERATION)?;
+            // Native arcs grouped by endpoint, so a component grows through shared endpoints.
+            let mut arcs = Vec::new();
+            let mut arcs_by_endpoint = HashMap::<&str, Vec<usize>>::new();
+            for (index, entity) in ctx.admit_iter(&entities[..], OPERATION)?.enumerate() {
+                if entity.endpoint_refs.len() != 2 || !is_native_arc(entity) {
+                    continue;
+                }
+                phase_storage.with_storage(|| {
+                    ctx.push_vec(&mut arcs, index, "collect SLDPRT connected native arcs")
+                })?;
+                for endpoint in ctx.admit_iter(&entity.endpoint_refs, OPERATION)? {
+                    phase_storage.with_storage(|| {
+                        ctx.push_hash_group(
+                            &mut arcs_by_endpoint,
+                            endpoint.as_str(),
+                            index,
+                            "visit SLDPRT connected native arc",
+                            "visit SLDPRT connected native arc",
+                        )
+                    })?;
+                }
+            }
+            let mut visited = phase_storage.with_storage(|| {
+                ctx.alloc_filled(entities.len(), false, "visit SLDPRT connected native arc")
+            })?;
+            for &first in ctx.admit_iter(&arcs, OPERATION)? {
+                if visited[first] {
+                    continue;
+                }
+                visited[first] = true;
+                let mut component_storage = ctx.reserve_scoped(0, OPERATION)?;
+                let mut component = Vec::new();
+                component_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut component,
+                        first,
+                        "collect SLDPRT connected arc component",
+                    )
+                })?;
+                let mut positions = 0..entities.len();
+                let mut cursor = 0;
+                while cursor < component.len() {
+                    let Some(position) = ctx.next_charged(&mut positions, OPERATION)? else {
+                        break;
+                    };
+                    let current = component[position];
+                    cursor = position + 1;
+                    for endpoint in ctx.admit_iter(&entities[current].endpoint_refs, OPERATION)? {
+                        for &candidate in ctx.admit_iter(
+                            ctx.get_hash_map(&arcs_by_endpoint, endpoint.as_str(), OPERATION)?
+                                .map_or(&[][..], Vec::as_slice),
+                            OPERATION,
+                        )? {
+                            if visited[candidate] {
+                                continue;
+                            }
+                            visited[candidate] = true;
+                            component_storage.with_storage(|| {
+                                ctx.push_vec(
+                                    &mut component,
+                                    candidate,
+                                    "collect SLDPRT connected arc component",
+                                )
+                            })?;
+                        }
+                    }
+                }
+                let mut endpoint_refs = Vec::new();
+                for index in ctx.admit_iter(&component, OPERATION)? {
+                    for reference in ctx.admit_iter(&entities[*index].endpoint_refs, OPERATION)? {
+                        component_storage.with_storage(|| {
+                            ctx.push_vec(
+                                &mut endpoint_refs,
+                                reference,
+                                "collect SLDPRT connected arc endpoints",
+                            )
+                        })?;
+                    }
+                }
+                ctx.sort_unstable_by(
+                    &mut endpoint_refs,
+                    |value| value,
+                    Ord::cmp,
+                    "sort SLDPRT connected arc endpoints",
+                )?;
+                ctx.dedup_vec(
+                    &mut endpoint_refs,
+                    "deduplicate SLDPRT connected arc endpoints",
+                )?;
+                let mut component_points = Vec::new();
+                let mut missing_point = false;
+                let mut endpoint_iter = endpoint_refs.iter();
+                while let Some(endpoint) = ctx.next_charged(&mut endpoint_iter, OPERATION)? {
+                    let Some(point) = ctx
+                        .get_hash_map(&points, endpoint.as_str(), OPERATION)?
+                        .copied()
+                    else {
+                        missing_point = true;
+                        break;
+                    };
+                    component_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut component_points,
+                            point,
+                            "collect SLDPRT connected arc component points",
+                        )
+                    })?;
+                }
+                if missing_point {
+                    continue;
+                }
+                let Some((center, _)) = fitted_marker_circle(ctx, &component_points, tolerance)? else {
+                    continue;
+                };
+                let mut component_replacements = Vec::new();
+                let mut visited = component.iter();
+                while let Some(&index) = ctx.next_charged(&mut visited, OPERATION)? {
+                    let [start_ref, end_ref] = entities[index].endpoint_refs.as_slice() else {
+                        continue;
+                    };
+                    let (Some(start), Some(end)) = (
+                        ctx.get_hash_map(&points, start_ref.as_str(), OPERATION)?
+                            .copied(),
+                        ctx.get_hash_map(&points, end_ref.as_str(), OPERATION)?
+                            .copied(),
+                    ) else {
+                        component_replacements.clear();
+                        break;
+                    };
+                    let Some(geometry) = minor_arc_geometry(start, end, center, tolerance) else {
+                        component_replacements.clear();
+                        break;
+                    };
+                    component_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut component_replacements,
+                            (index, geometry),
+                            "collect SLDPRT connected arc component replacements",
+                        )
+                    })?;
+                }
+                if component_replacements.len() >= 2 {
+                    replacements_storage.with_storage(|| {
+                        ctx.extend_vec(
+                            &mut replacements,
+                            component_replacements,
+                            "collect SLDPRT connected arc replacements",
+                        )
+                    })?;
+                }
+            }
+        }
+        for (index, geometry) in ctx.admit_iter(replacements, OPERATION)? {
+            entities[index].geometry = geometry;
+        }
     }
     for entity in ctx.admit_iter(entities, OPERATION)? {
         let SketchGeometryDefinition::Arc {

@@ -1851,3 +1851,5 @@ mod lane_candidate_storage;
 mod marker_projection;
 
 mod profile_storage;
+
+mod connected_arc_storage;
