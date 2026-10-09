@@ -100,10 +100,11 @@ pub(super) fn decode<'ctx>(
     let mut typed = BTreeSet::new();
     let mut losses = Vec::new();
     let mut annotations = Annotations::new(ctx)?;
-    let (hidden_presentation_annotations, _hidden_storage) = ctx
+    let (hidden_presentation_annotations_buffer, _hidden_storage) = ctx
         .with_scoped_storage("STEP hidden annotation index scratch", || {
             hidden_presentation_annotation_ids(exchange, ctx)
         })?;
+    let hidden_presentation_annotations = hidden_presentation_annotations_buffer;
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
     let graph_limit = super::record_graph_limit(ctx);
@@ -240,13 +241,13 @@ pub(super) fn decode<'ctx>(
                 "STEP decode traversal",
             )?
             .unwrap_or_default();
-        let mut datum_records = BTreeSet::new();
         let mut datum_record_storage = ctx.reserve_scoped(0, "STEP datum claim candidates")?;
+        let mut datum_records = BTreeSet::new();
         let mut measurements =
             measure_context(geometry, id, (&mut losses, &slot_storage), graph_limit, ctx)?;
-        let mut datum_references = Vec::new();
         let mut reference_storage =
             ctx.reserve_scoped(0, "STEP datum reference candidate scratch")?;
+        let mut datum_references = Vec::new();
         for (index, constituent) in ctx
             .admit_iter(constituents, "STEP decode traversal")?
             .enumerate()
@@ -455,10 +456,11 @@ pub(super) fn decode<'ctx>(
 
     for indexed_entity in exchange.entities(ctx, "PLUS_MINUS_TOLERANCE")? {
         let (id, record) = indexed_entity?;
-        let (refs, _reference_storage) = ctx
+        let (refs_buffer, _reference_storage) = ctx
             .with_scoped_storage("STEP PMI reference scratch", || {
                 collect_pmi_references(record.parameters(), ctx, "step_pmi_plus_minus_references")
             })?;
+        let refs = refs_buffer;
         let dimension = ctx.find_map(
             &refs[..],
             |reference| annotations.get(ctx, *reference),
@@ -683,7 +685,7 @@ pub(super) fn decode<'ctx>(
         let reference_values = record
             .partial(ctx, "GEOMETRIC_TOLERANCE")?
             .map_or(record.parameters(), |partial| partial.parameters.as_slice());
-        let (refs, _reference_storage) =
+        let (refs_buffer, _reference_storage) =
             ctx.with_scoped_storage("STEP PMI reference scratch", || {
                 collect_pmi_references(
                     reference_values,
@@ -691,6 +693,7 @@ pub(super) fn decode<'ctx>(
                     "step_pmi_geometric_tolerance_references",
                 )
             })?;
+        let refs = refs_buffer;
         let mut measurements =
             measure_context(geometry, id, (&mut losses, &slot_storage), graph_limit, ctx)?;
         let magnitude = first_measure(
@@ -721,10 +724,11 @@ pub(super) fn decode<'ctx>(
             )?,
         };
         let Some(magnitude) = magnitude.and_then(cadmpeg_ir::pmi::PmiMagnitude::new) else {
-            let (display_name, _display_storage) = ctx
+            let (display_name_buffer, _display_storage) = ctx
                 .with_scoped_storage("STEP tolerance type text scratch", || {
                     super::record_type_text(record, ctx, "step_record_display_name")
                 })?;
+            let display_name = display_name_buffer;
             let message = ctx.format_retained(
                 format_args!("{display_name} #{id} has no numeric magnitude"),
                 "step_pmi_invalid_tolerance_text",
@@ -925,8 +929,8 @@ pub(super) fn decode<'ctx>(
         let Some(name) = presentation_annotation_name(ctx, record)? else {
             continue;
         };
-        let mut text_records = BTreeSet::new();
         let mut text_record_storage = ctx.reserve_scoped(0, "STEP annotation claim candidates")?;
+        let mut text_records = BTreeSet::new();
         let text = discovery.text(
             id,
             exchange,
@@ -1068,10 +1072,12 @@ pub(super) fn decode<'ctx>(
         (&mut typed, &mut claim_storage),
         ctx,
     )?;
-    let (points_by_source, _point_storage) =
+    let (points_by_source_buffer, _point_storage) =
         ctx.with_scoped_storage("STEP PMI point source scratch", || point_sources(ir, ctx))?;
-    let (curves_by_source, _curve_storage) =
+    let points_by_source = points_by_source_buffer;
+    let (curves_by_source_buffer, _curve_storage) =
         ctx.with_scoped_storage("STEP PMI curve source scratch", || curve_sources(ir, ctx))?;
+    let curves_by_source = curves_by_source_buffer;
     let geometry_sources = GeometrySources {
         points: &points_by_source,
         curves: &curves_by_source,
@@ -1143,8 +1149,8 @@ fn mark_characteristic_representations(
     (typed, claim_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let mut visited = BTreeSet::new();
     let mut visited_storage = ctx.reserve_scoped(0, "STEP characteristic claim index scratch")?;
+    let mut visited = BTreeSet::new();
     for indexed_entity in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
         let (id, record) = indexed_entity?;
         let Some(_) = find_record_value(record, ctx, |value| {
@@ -1231,8 +1237,8 @@ fn resolve_feature_for_datum_target_relationships(
     (typed, claim_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let mut target_indices = BTreeMap::<usize, TargetIndex>::new();
     let mut target_storage = ctx.reserve_scoped(0, "STEP PMI target indices")?;
+    let mut target_indices = BTreeMap::<usize, TargetIndex>::new();
 
     for indexed_entity in exchange.entities(ctx, "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP")? {
         let (id, record) = indexed_entity?;
@@ -1246,10 +1252,11 @@ fn resolve_feature_for_datum_target_relationships(
         let PmiDefinition::DatumTarget { basis, .. } = &mut annotation.definition else {
             continue;
         };
-        let (source_id, _source_storage) = ctx
+        let (source_id_buffer, _source_storage) = ctx
             .with_scoped_storage("STEP datum basis source", || {
                 super::step_source_id(ctx, relating)
             })?;
+        let source_id = source_id_buffer;
         let seen = target_index(
             &mut target_indices,
             &mut target_storage,
@@ -1289,8 +1296,8 @@ fn resolve_geometric_item_usages(
 ) -> Result<(), CodecError> {
     let mut scratch_storage =
         ctx.reserve_scoped(0, "STEP resolve_geometric_item_usages scratch")?;
-    let mut target_indices = BTreeMap::<usize, TargetIndex>::new();
     let mut target_storage = ctx.reserve_scoped(0, "STEP PMI target indices")?;
+    let mut target_indices = BTreeMap::<usize, TargetIndex>::new();
 
     let mut aspect_annotations = BTreeMap::<u64, BTreeSet<AnnotationIndex>>::new();
     for (&annotation_id, record) in ctx.admit_iter(
@@ -1429,10 +1436,11 @@ fn resolve_geometric_item_usages(
         if annotation_indices.is_empty() {
             continue;
         }
-        let (targets, _target_storage) = ctx
+        let (targets_buffer, _target_storage) = ctx
             .with_scoped_storage("STEP geometric usage target scratch", || {
                 topology_targets(identified_item, topology, geometry_sources, ctx)
             })?;
+        let targets = targets_buffer;
         if targets.is_empty() {
             continue;
         }
@@ -1479,8 +1487,8 @@ fn topology_targets(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<PmiTarget>, CodecError> {
     let mut targets = Vec::new();
-    let mut seen: TargetIndex = std::array::from_fn(|_| BTreeSet::new());
     let mut scratch = ctx.reserve_scoped(0, "STEP PMI topology target index")?;
+    let mut seen: TargetIndex = std::array::from_fn(|_| BTreeSet::new());
     if let Some(items) = ctx.get_btree_map(
         &topology.body_by_root,
         &id,
@@ -1771,8 +1779,9 @@ fn datum_references_for_compartment(
     }
     claim_storage
         .with_storage(|| ctx.insert_btree_set(typed, compartment_id, "step_pmi_typed_claims"))?;
-    let (mut compartment_modifiers, mut modifier_storage) =
+    let (compartment_modifiers_buffer, mut modifier_storage) =
         ctx.temporary_vec(0, "step_pmi_datum_modifier_items")?;
+    let mut compartment_modifiers = compartment_modifiers_buffer;
     for modifier in ctx.admit_iter(
         datum_modifiers(ctx, compartment)?
             .and_then(ValueExt::list)
