@@ -1600,14 +1600,14 @@ fn configuration_surface_carriers(
         }
         return Ok(surfaces);
     };
-    let mut surface_ancestry_storage =
+    let mut bodies_storage =
         ctx.reserve_scoped(0, "SLDPRT temporary configuration surface ancestry")?;
     let mut bodies = HashSet::new();
     for id in ctx.admit_iter(
         body_ids,
         "scan SLDPRT configuration_surface_carriers values",
     )? {
-        surface_ancestry_storage.with_storage(|| {
+        bodies_storage.with_storage(|| {
             ctx.insert_hash_set(
                 &mut bodies,
                 id,
@@ -1615,6 +1615,8 @@ fn configuration_surface_carriers(
             )
         })?;
     }
+    let mut regions_storage =
+        ctx.reserve_scoped(0, "SLDPRT temporary configuration surface ancestry")?;
     let mut regions = HashSet::new();
     for body in ctx.admit_iter(
         &ir.model.bodies,
@@ -1629,7 +1631,7 @@ fn configuration_surface_carriers(
                 &body.regions,
                 "scan SLDPRT configuration_surface_carriers values",
             )? {
-                surface_ancestry_storage.with_storage(|| {
+                regions_storage.with_storage(|| {
                     ctx.insert_hash_set(
                         &mut regions,
                         id,
@@ -1639,6 +1641,10 @@ fn configuration_surface_carriers(
             }
         }
     }
+    drop(bodies);
+    drop(bodies_storage);
+    let mut shells_storage =
+        ctx.reserve_scoped(0, "SLDPRT temporary configuration surface ancestry")?;
     let mut shells = HashSet::new();
     for region in ctx.admit_iter(
         &ir.model.regions,
@@ -1653,7 +1659,7 @@ fn configuration_surface_carriers(
                 &region.shells,
                 "scan SLDPRT configuration_surface_carriers values",
             )? {
-                surface_ancestry_storage.with_storage(|| {
+                shells_storage.with_storage(|| {
                     ctx.insert_hash_set(
                         &mut shells,
                         id,
@@ -1663,6 +1669,10 @@ fn configuration_surface_carriers(
             }
         }
     }
+    drop(regions);
+    drop(regions_storage);
+    let mut faces_storage =
+        ctx.reserve_scoped(0, "SLDPRT temporary configuration surface ancestry")?;
     let mut faces = HashSet::new();
     for shell in ctx.admit_iter(
         &ir.model.shells,
@@ -1674,7 +1684,7 @@ fn configuration_surface_carriers(
             "match SLDPRT configuration surface ancestry",
         )? {
             for id in ctx.admit_iter(shell.faces(), "scan SLDPRT topology members")? {
-                surface_ancestry_storage.with_storage(|| {
+                faces_storage.with_storage(|| {
                     ctx.insert_hash_set(
                         &mut faces,
                         id,
@@ -1684,6 +1694,10 @@ fn configuration_surface_carriers(
             }
         }
     }
+    drop(shells);
+    drop(shells_storage);
+    let mut surface_ids_storage =
+        ctx.reserve_scoped(0, "SLDPRT temporary configuration surface ancestry")?;
     let mut surface_ids = HashSet::new();
     for face in ctx.admit_iter(
         &ir.model.faces,
@@ -1694,7 +1708,7 @@ fn configuration_surface_carriers(
             &face.id,
             "match SLDPRT configuration surface ancestry",
         )? {
-            surface_ancestry_storage.with_storage(|| {
+            surface_ids_storage.with_storage(|| {
                 ctx.insert_hash_set(
                     &mut surface_ids,
                     &face.surface,
@@ -1703,6 +1717,8 @@ fn configuration_surface_carriers(
             })?;
         }
     }
+    drop(faces);
+    drop(faces_storage);
     let mut surfaces = Vec::new();
     for surface in ctx.admit_iter(
         &ir.model.surfaces,
@@ -2025,3 +2041,6 @@ fn configuration_state_lane(lane: &crate::records::FeatureInputLane) -> bool {
 
 #[cfg(test)]
 mod temporary_storage_tests;
+
+#[cfg(test)]
+mod ancestry_storage_tests;
