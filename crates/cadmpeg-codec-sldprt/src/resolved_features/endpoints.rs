@@ -416,22 +416,6 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
     {
         return Ok(Vec::new());
     }
-    for marker in markers {
-        charge_endpoint_work(
-            ctx,
-            marker.feature_ref.as_deref().map_or(0, str::len),
-            160,
-            OPERATION,
-        )?;
-        charge_endpoint_work(
-            ctx,
-            curve.feature_ref.as_deref().map_or(0, str::len),
-            160,
-            OPERATION,
-        )?;
-        charge_endpoint_work(ctx, marker.id().len(), 8, OPERATION)?;
-        ctx.charge_work(4096, OPERATION)?;
-    }
     if let Some(endpoints) =
         legacy_compact_92_profile_object_endpoint_markers(ctx, payload, curve, markers)?
     {
@@ -543,54 +527,78 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
     }
     let index_candidates = curve_endpoint_index_candidates(payload, offset);
     if index_candidates.clone().next().is_some() {
-        let resolve_indexed = |indices: [u32; 2]| {
-            collect_endpoint_values(
-                ctx,
-                indices.into_iter().filter_map(|index| {
-                    let owned = |marker: &&SketchInputEntity| {
-                        marker.feature_ref == curve.feature_ref
-                            && marker.object_index() == Some(index)
-                            && marker.coordinates_m.is_some()
-                    };
-                    if point_object_construction {
-                        let mut points = markers.iter().copied().filter(|marker| {
-                            owned(marker)
-                                && matches!(
-                                    marker.kind(),
-                                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                                )
-                        });
-                        match (points.next(), points.next()) {
-                            (Some(point), None) => Some(point),
-                            (None, None) if selected_construction => {
-                                let mut geometry = markers.iter().copied().filter(|marker| {
-                                    owned(marker)
-                                        && matches!(
-                                            marker.kind(),
-                                            SketchInputKind::LineOrCircle | SketchInputKind::Arc
-                                        )
-                                });
-                                let candidate = geometry.next()?;
-                                geometry.next().is_none().then_some(candidate)
-                            }
-                            _ => None,
+        let resolve_indexed =
+            |indices: [u32; 2]| -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+                let mut endpoints = Vec::new();
+                for index in indices {
+                    let mut point = None;
+                    let mut many_points = false;
+                    let mut geometry = None;
+                    let mut many_geometry = false;
+                    let mut candidate = None;
+                    let mut many_candidates = false;
+                    for &marker in markers {
+                        ctx.charge_work(4, OPERATION)?;
+                        if marker.object_index() != Some(index) {
+                            continue;
                         }
-                    } else {
-                        let mut candidates = markers.iter().copied().filter(|marker| {
-                            owned(marker)
-                                && (selected_construction
-                                    || matches!(
-                                        marker.kind(),
-                                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                                    ))
-                        });
-                        let candidate = candidates.next()?;
-                        candidates.next().is_none().then_some(candidate)
+                        charge_endpoint_work(
+                            ctx,
+                            marker.feature_ref.as_deref().map_or(0, str::len),
+                            2,
+                            OPERATION,
+                        )?;
+                        charge_endpoint_work(
+                            ctx,
+                            curve.feature_ref.as_deref().map_or(0, str::len),
+                            2,
+                            OPERATION,
+                        )?;
+                        if marker.feature_ref != curve.feature_ref || marker.coordinates_m.is_none()
+                        {
+                            continue;
+                        }
+                        let is_point = matches!(
+                            marker.kind(),
+                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                        );
+                        if is_point {
+                            many_points |= point.is_some();
+                            point.get_or_insert(marker);
+                        }
+                        if matches!(
+                            marker.kind(),
+                            SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                        ) {
+                            many_geometry |= geometry.is_some();
+                            geometry.get_or_insert(marker);
+                        }
+                        if selected_construction || is_point {
+                            many_candidates |= candidate.is_some();
+                            candidate.get_or_insert(marker);
+                        }
                     }
-                }),
-                OPERATION,
-            )
-        };
+                    let endpoint = if point_object_construction {
+                        if many_points {
+                            None
+                        } else if point.is_some() {
+                            point
+                        } else if selected_construction && !many_geometry {
+                            geometry
+                        } else {
+                            None
+                        }
+                    } else if many_candidates {
+                        None
+                    } else {
+                        candidate
+                    };
+                    if let Some(endpoint) = endpoint {
+                        ctx.push_vec(&mut endpoints, endpoint, OPERATION)?;
+                    }
+                }
+                Ok(endpoints)
+            };
         let first_indexed = match index_candidates.clone().next() {
             Some(indices) => resolve_indexed(indices)?,
             None => Vec::new(),
@@ -638,6 +646,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             }
         }
         if indexed.len() != 2 {
+            admit_endpoint_marker_matching(ctx, curve, markers, OPERATION)?;
             if let Some(direct) = wide_direct_line_endpoint_markers(payload, curve, markers) {
                 return copy_endpoint_markers(ctx, &direct);
             }
@@ -714,6 +723,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
     } else {
         return Ok(Vec::new());
     };
+    admit_endpoint_marker_matching(ctx, curve, markers, OPERATION)?;
     collect_endpoint_values(
         ctx,
         endpoint_offsets.into_iter().filter_map(|relative| {
@@ -1096,43 +1106,40 @@ fn current_wide_arc_direct_markers<'a>(
     let Some(raw) = raw else {
         return Ok(None);
     };
-    for marker in markers {
+    let mut direct = [None, None];
+    for &marker in markers {
+        ctx.charge_work(3, OPERATION)?;
+        let Some(index) = raw.iter().position(|id| marker.object_index() == Some(*id)) else {
+            continue;
+        };
+        if marker.coordinates_m.is_none()
+            || !matches!(
+                marker.kind(),
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            )
+        {
+            continue;
+        }
         charge_endpoint_work(
             ctx,
             marker.feature_ref.as_deref().map_or(0, str::len),
-            8,
+            1,
             OPERATION,
         )?;
         charge_endpoint_work(
             ctx,
             curve.feature_ref.as_deref().map_or(0, str::len),
-            8,
+            1,
             OPERATION,
         )?;
-        ctx.charge_work(128, OPERATION)?;
+        if marker.feature_ref == curve.feature_ref && direct[index].replace(marker).is_some() {
+            return Ok(None);
+        }
     }
-    let direct = {
-        let resolve = |indices: [u32; 2]| {
-            let endpoints = indices.map(|index| {
-                let mut matches = markers.iter().copied().filter(|marker| {
-                    marker.feature_ref == curve.feature_ref
-                        && marker.object_index() == Some(index)
-                        && marker.coordinates_m.is_some()
-                        && matches!(
-                            marker.kind(),
-                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                        )
-                });
-                let endpoint = matches.next()?;
-                matches.next().is_none().then_some(endpoint)
-            });
-            Some([endpoints[0]?, endpoints[1]?])
-        };
-        resolve(raw)
-    };
-    let Some(direct) = direct else {
+    let [Some(first), Some(second)] = direct else {
         return Ok(None);
     };
+    let direct = [first, second];
     let [Some(start), Some(end)] = direct.map(|marker| {
         marker
             .coordinates_m
@@ -1140,18 +1147,44 @@ fn current_wide_arc_direct_markers<'a>(
     }) else {
         return Ok(None);
     };
-    let eligible = markers
-        .iter()
-        .filter(|marker| {
-            marker.feature_ref == curve.feature_ref && marker.kind() == SketchInputKind::Arc
-        })
-        .filter_map(|marker| {
-            marker
-                .coordinates_m
-                .map(cadmpeg_ir::units::FiniteVector::get)
-        })
-        .map(|[u, v]| Point2::new(u, v));
-    let candidates = collect_endpoint_values(ctx, eligible, OPERATION)?;
+    let mut candidates = Vec::new();
+    for marker in markers {
+        ctx.charge_work(1, OPERATION)?;
+        if marker.kind() != SketchInputKind::Arc {
+            continue;
+        }
+        let Some([u, v]) = marker
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get)
+        else {
+            continue;
+        };
+        charge_endpoint_work(
+            ctx,
+            marker.feature_ref.as_deref().map_or(0, str::len),
+            1,
+            OPERATION,
+        )?;
+        charge_endpoint_work(
+            ctx,
+            curve.feature_ref.as_deref().map_or(0, str::len),
+            1,
+            OPERATION,
+        )?;
+        if marker.feature_ref != curve.feature_ref {
+            continue;
+        }
+        if candidates.len() == candidates.capacity() {
+            charge_endpoint_work(
+                ctx,
+                candidates.len(),
+                u64_from_index(std::mem::size_of::<Point2>()),
+                OPERATION,
+            )?;
+        }
+        ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
+        candidates.push(Point2::new(u, v));
+    }
     let center = unique_arc_center_marker(
         ctx,
         Point2::new(start[0], start[1]),
@@ -1290,9 +1323,6 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
         || current_identity_linked_wide_curve_uses_one_based_roster(payload, offset)
         || current_complete_roster
         || compact_96_complete_roster;
-    for marker in markers {
-        charge_endpoint_work(ctx, marker.id().len(), 8, OPERATION)?;
-    }
     let resolve = |complete_entity_roster: bool,
                    one_based: bool|
      -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
@@ -1341,7 +1371,11 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
             (first.id() != second.id()).then_some([first, second])
         })())
     };
-    let fallback = if current_complete_roster
+    let main = resolve(complete_entity_roster, one_based)?;
+    let endpoints = if main.is_some() {
+        // The complete roster takes precedence over the point-roster fallback.
+        main
+    } else if current_complete_roster
         && matches!(marker_native_code(payload, offset), Some(1 | 2))
         && record_end == Some(CompactIndexedCurveRecordEnd::Marker84)
     {
@@ -1349,14 +1383,6 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
     } else {
         None
     };
-    let main = resolve(complete_entity_roster, one_based)?;
-    let endpoints =
-        if current_complete_roster && record_end == Some(CompactIndexedCurveRecordEnd::Marker84) {
-            // The complete roster takes precedence over the point-roster fallback.
-            main.or(fallback)
-        } else {
-            unique_marker_pair([main, fallback])
-        };
     match endpoints {
         Some(endpoints) => copy_endpoint_markers(ctx, &endpoints),
         None => Ok(Vec::new()),
@@ -1520,9 +1546,6 @@ fn compact_complete_marker_roster_endpoints<'a>(
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT complete endpoint roster";
     ctx.charge_work(1024, OPERATION)?;
-    for marker in markers {
-        charge_endpoint_work(ctx, marker.id().len(), 8, OPERATION)?;
-    }
     let pairs = [
         compact_complete_marker_roster_pair(ctx, payload, curve, markers, true)?,
         compact_complete_marker_roster_pair(ctx, payload, curve, markers, false)?,
@@ -1771,7 +1794,6 @@ fn compact_legacy_embedded_coordinate_roster_endpoint_markers<'a>(
     else {
         return Ok(None);
     };
-    admit_endpoint_marker_matching(ctx, curve, markers, OPERATION)?;
     let endpoint = |relative| {
         let index = usize::from(View::u16_le_at(payload, offset + relative)?);
         roster.get(index).copied()
@@ -1830,9 +1852,13 @@ fn compact_legacy_embedded_coordinate_roster<'a>(
         0
     };
     if let Some(span) = last.checked_sub(first) {
-        charge_endpoint_work(ctx, span, 1024, OPERATION)?;
+        charge_endpoint_work(ctx, span, 8, OPERATION)?;
     }
     for candidate in first..=last {
+        if !sketch_marker_prefix_at(payload, candidate) {
+            continue;
+        }
+        ctx.charge_work(1024, OPERATION)?;
         let Some(coordinates) = compact_legacy_coordinate_roster_coordinates(payload, candidate)
         else {
             continue;
@@ -4448,7 +4474,6 @@ fn admit_endpoint_marker_matching(
             8,
             operation,
         )?;
-        charge_endpoint_work(ctx, marker.id().len(), 8, operation)?;
         ctx.charge_work(256, operation)?;
     }
     Ok(())
@@ -7380,9 +7405,6 @@ pub(super) fn relation_reference_curve_record(
                 }
             }
         }
-    }
-    for marker in markers {
-        charge_endpoint_work(ctx, marker.id().len(), 8, OPERATION)?;
     }
     let candidates = unique_marker_pair([
         compact_complete_marker_roster_pair(ctx, payload, curve, markers, false)?,

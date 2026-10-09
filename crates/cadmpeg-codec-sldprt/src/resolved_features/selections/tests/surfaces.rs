@@ -243,6 +243,7 @@ fn operation_surface_selection_finds_marker_inside_class_body() {
         0,
         payload.len(),
         None,
+        &mut None,
     )
     .unwrap();
 
@@ -322,6 +323,7 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
         first_body,
         first_end,
         None,
+        &mut None,
     )
     .unwrap();
     assert_eq!(selections.len(), 1);
@@ -342,6 +344,7 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
         first_body,
         collision_end,
         None,
+        &mut None,
     )
     .unwrap()
     .is_empty());
@@ -1458,6 +1461,7 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
         0,
         payload.len(),
         Some(711),
+        &mut None,
     )
     .unwrap();
     assert_eq!(candidates.len(), 1, "{candidates:#?}");
@@ -1478,6 +1482,7 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
         0,
         payload.len(),
         Some(712),
+        &mut None,
     )
     .unwrap()
     .is_empty());

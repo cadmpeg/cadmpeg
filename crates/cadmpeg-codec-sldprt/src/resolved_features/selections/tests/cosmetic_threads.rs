@@ -347,6 +347,27 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         cosmetic_thread_diameter_child_tail(&references_ctx, &feature, &lane).unwrap(),
         Some(158..400)
     );
+    let mut unrelated = lane.clone();
+    for i in 0..1024 {
+        let mut scalar = lane.scalars[0].clone();
+        scalar.object_id = 1000 + i;
+        scalar.offset = 0;
+        unrelated.scalars.push(scalar);
+        let mut name = lane.names[0].clone();
+        name.id = format!("unrelated#{i}");
+        name.offset = 0;
+        unrelated.names.push(name);
+    }
+    let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut limited_policy = cadmpeg_core::decode::DecodePolicy::service();
+    limited_policy.limits.max_work_units = 100_000;
+    let (limited_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limited_arena, &limited_policy)
+            .unwrap();
+    assert_eq!(
+        cosmetic_thread_diameter_child_tail(&limited_ctx, &feature, &unrelated).unwrap(),
+        Some(158..400),
+    );
     let references = cosmetic_thread_cylinder_references(
         &references_ctx,
         &feature,

@@ -1186,6 +1186,7 @@ fn compact_reference_list_accepts_unframed_surface_cut_targets() {
         0,
         payload.len(),
         None,
+        &mut None,
     )
     .unwrap();
     assert_eq!(selections.len(), 1);

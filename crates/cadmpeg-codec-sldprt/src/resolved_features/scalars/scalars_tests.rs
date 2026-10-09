@@ -288,3 +288,55 @@ fn shifted_value_only_scalar_carries_standard_operand_cells() {
         ]
     );
 }
+
+#[test]
+fn indexed_feature_names_preserve_precedence_and_ambiguity() {
+    use super::FeatureObjectNames;
+    use crate::records::{FeatureInputName, ObjectId};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut names = (0u32..1000)
+        .map(|index| FeatureInputName {
+            id: format!("name#{index}"),
+            parent: "lane".into(),
+            ordinal: index,
+            offset: u64::from(index),
+            object_id: ObjectId::from_value(index + 1),
+            value: format!("F{index}"),
+        })
+        .collect::<Vec<_>>();
+    names.push(names[0].clone());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 64_000;
+    policy.limits.max_retained_bytes = 128_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    {
+        let (indexed, _storage) = FeatureObjectNames::new(&ctx, &names, "index names").unwrap();
+        assert!(indexed
+            .get(&ctx, Some(1), "F1", "query name")
+            .unwrap()
+            .is_none());
+        assert!(indexed
+            .get(&ctx, None, "F0", "query name")
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            indexed
+                .get(&ctx, Some(1001), "F1", "query name")
+                .unwrap()
+                .unwrap()
+                .id,
+            "name#1"
+        );
+        for index in 1u32..1000 {
+            let name = indexed
+                .get(&ctx, Some(index + 1), "F0", "query name")
+                .unwrap()
+                .unwrap();
+            assert_eq!(name.id, format!("name#{index}"));
+        }
+    }
+    let _released = ctx.reserve_scoped(128_000, "released index").unwrap();
+    assert!(ctx.resource_refusal().is_none());
+}

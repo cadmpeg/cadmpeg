@@ -160,8 +160,10 @@ fn native_dimensioned_circle_construction_state(
             |_| 0,
             DIMENSIONED_CARRIER_OPERATION,
         )?;
-        charge_dimensioned_carrier_work(ctx, lane.native_payload.len(), 512)?;
-        for (_, radial_index, construction) in radial_circle_records(&lane.native_payload) {
+        let (records, _storage) = ctx.with_scoped_storage(DIMENSIONED_CARRIER_OPERATION, || {
+            radial_circle_records(ctx, &lane.native_payload)
+        })?;
+        for (_, radial_index, construction) in records {
             ctx.charge_work(64, DIMENSIONED_CARRIER_OPERATION)?;
             let Some(radial) = roster.get(radial_index) else {
                 continue;
@@ -192,9 +194,17 @@ fn native_radial_record_for_marker(
         let marker = lane.sketch_entities.iter().find(|marker| {
             marker.id() == marker_id && marker.feature_ref.as_deref() == Some(feature)
         })?;
-        radial_circle_records(&lane.native_payload)
-            .find(|(offset, ..)| usize::try_from(marker.offset()).ok() == Some(*offset))
-            .map(|(_, radial_index, construction)| (radial_index, construction))
+        let offset = usize::try_from(marker.offset()).ok()?;
+        compact_radial_circle_index(&lane.native_payload, offset)
+            .or_else(|| {
+                extended_terminal_repeated_radial_circle_index(&lane.native_payload, offset)
+            })
+            .map(|radial_index| {
+                (
+                    radial_index,
+                    marker_profile_curve_role(&lane.native_payload, offset) == Some(2),
+                )
+            })
             .or_else(|| {
                 let offset = usize::try_from(marker.offset()).ok()?;
                 extended_radial_circle_index(&lane.native_payload, offset)
@@ -1574,19 +1584,43 @@ pub(super) fn compact_legacy_radial_circle_index(payload: &[u8], offset: usize) 
         .flatten()
 }
 
-fn radial_circle_records(payload: &[u8]) -> impl Iterator<Item = (usize, usize, bool)> + '_ {
-    payload
-        .windows(LEGACY_SKETCH_MARKER.len())
-        .enumerate()
-        .filter_map(move |(offset, _)| {
-            let radial = compact_radial_circle_index(payload, offset)
-                .or_else(|| extended_terminal_repeated_radial_circle_index(payload, offset))?;
-            Some((
+fn radial_circle_records(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<(usize, usize, bool)>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "index SLDPRT radial circle records";
+    // Three five-byte prefix comparisons precede every fixed-layout probe.
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(payload.len())
+            .checked_mul(16)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+        OPERATION,
+    )?;
+    let mut records = Vec::new();
+    let Some(scan_len) = payload.len().checked_sub(LEGACY_SKETCH_MARKER.len() - 1) else {
+        return Ok(records);
+    };
+    for offset in 0..scan_len {
+        if !sketch_marker_prefix_at(payload, offset) {
+            continue;
+        }
+        ctx.charge_work(512, OPERATION)?;
+        let Some(radial) = compact_radial_circle_index(payload, offset)
+            .or_else(|| extended_terminal_repeated_radial_circle_index(payload, offset))
+        else {
+            continue;
+        };
+        ctx.push_vec(
+            &mut records,
+            (
                 offset,
                 radial,
                 marker_profile_curve_role(payload, offset) == Some(2),
-            ))
-        })
+            ),
+            OPERATION,
+        )?;
+    }
+    Ok(records)
 }
 
 fn extended_terminal_repeated_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
@@ -2214,17 +2248,7 @@ pub(crate) fn project_marker_dimensioned_circles(
         marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)?;
     let mut radial_records_by_lane = HashMap::<&str, Vec<_>>::new();
     for lane in lanes {
-        let work = u64::try_from(lane.native_payload.len())
-            .ok()
-            .and_then(|len| len.checked_add(1))
-            .and_then(|work| work.checked_mul(512))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(work, OPERATION)?;
-        let mut records = Vec::new();
-        for record in radial_circle_records(&lane.native_payload) {
-            ctx.reserve_vec(&mut records, 1, OPERATION)?;
-            records.push(record);
-        }
+        let records = radial_circle_records(ctx, &lane.native_payload)?;
         ctx.charge_work(
             u64::try_from(lane.id.len())
                 .ok()
@@ -2367,7 +2391,7 @@ pub(crate) fn project_marker_dimensioned_circles(
             [carrier] if !has_resolved_curves => {
                 if let Some(reference) = carrier.native_ref.as_deref() {
                     for lane in lanes {
-                        charge_marker_circle_work(ctx, lane.native_payload.len(), 512)?;
+                        ctx.charge_work(512, OPERATION)?;
                         for marker in &lane.sketch_entities {
                             charge_marker_circle_work(ctx, marker.id().len(), 1)?;
                             charge_marker_circle_work(ctx, reference.len(), 1)?;

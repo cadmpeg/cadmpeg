@@ -1,8 +1,8 @@
 //! Compact body, edge and surface selection decoding.
 
 use super::component_paths::{
-    component_path_input_features, component_path_terminal_feature, feature_precedes_consumer,
-    surface_selection_producer_features,
+    component_feature_precedes, component_path_consumer, component_path_input_features,
+    component_path_terminal_feature, surface_selection_producer_features,
 };
 use super::endpoints::{
     legacy_wide_profile_roster_curve, marker_profile_curve_role,
@@ -29,9 +29,13 @@ use crate::records::{
     FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputEdgeSelection,
     FeatureInputLane, FeatureInputOperandKind, FeatureInputSurfaceSelection, SketchInputKind,
 };
-use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
-use std::{collections::HashSet, ops::Range};
+use std::{
+    collections::{hash_map::DefaultHasher, HashMap, HashSet},
+    hash::{Hash, Hasher},
+    ops::Range,
+};
 
 use crate::layout::{
     component_face_compact_reference_prefix as compact_face,
@@ -666,6 +670,7 @@ pub(super) fn compact_surface_selections(
         .rsplit_once('#')
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
+    let mut generated_identities = None;
     for (index, &(name, feature, _)) in objects.iter().enumerate() {
         ctx.charge_work(1, OPERATION)?;
         let classified = native_object_class(feature.input_class.as_deref().unwrap_or_default());
@@ -875,6 +880,7 @@ pub(super) fn compact_surface_selections(
                 start,
                 end,
                 name.object_id.and_then(ObjectId::value),
+                &mut generated_identities,
             )?,
             _ => continue,
         };
@@ -1208,13 +1214,19 @@ fn order_surface_candidates(
     Ok(())
 }
 
-fn operation_surface_selection_candidates(
-    ctx: &DecodeContext<'_>,
+type GeneratedIdentityCache<'ctx> = Option<(
+    Vec<crate::records::FeatureInputGeneratedSurfaceIdentity>,
+    ScopedReservation<'ctx>,
+)>;
+
+fn operation_surface_selection_candidates<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     operation: FeatureClass,
     lane: &FeatureInputLane,
     start: usize,
     end: usize,
     object_source: Option<u32>,
+    generated_identities: &mut GeneratedIdentityCache<'ctx>,
 ) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
     const OPERATION: &str = "decode SLDPRT operation surface candidates";
     if operation == FeatureClass::CutWithSurface {
@@ -1279,8 +1291,16 @@ fn operation_surface_selection_candidates(
         let Some(object_source) = object_source else {
             return Ok(Vec::new());
         };
+        if generated_identities.is_none() {
+            *generated_identities = Some(
+                ctx.with_scoped_storage(OPERATION, || generated_surface_identities(ctx, lane))?,
+            );
+        }
         let mut candidates = Vec::new();
-        for identity in generated_surface_identities(ctx, lane)? {
+        for identity in generated_identities
+            .iter()
+            .flat_map(|(identities, _)| identities)
+        {
             ctx.charge_work(1, OPERATION)?;
             let (Some(first), Some(last)) =
                 (identity.components.first(), identity.components.last())
@@ -1297,7 +1317,12 @@ fn operation_surface_selection_candidates(
                 continue;
             };
             ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
-            candidates.push((offset, identity.components));
+            let components = ctx.try_collect_retained_with(
+                identity.components.iter(),
+                OPERATION,
+                |component| component.clone_charged(ctx, OPERATION),
+            )?;
+            candidates.push((offset, components));
         }
         return Ok(candidates);
     }
@@ -1792,33 +1817,43 @@ fn cosmetic_thread_diameter_child_tail(
     lane: &FeatureInputLane,
 ) -> Result<Option<std::ops::Range<usize>>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT cosmetic diameter interval";
+    let Some(diameter_id) = feature.source_value().and_then(|id| id.checked_sub(1)) else {
+        return Ok(None);
+    };
+    let mut diameter = None;
     for scalar in &lane.scalars {
-        ctx.charge_work(2, OPERATION)?;
-        for name in &lane.names {
-            let work = u64_from_index(name.id.len())
-                .checked_add(u64_from_index(scalar.name.len()))
-                .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, OPERATION)?;
+        ctx.charge_work(1, OPERATION)?;
+        if scalar.object_id != diameter_id {
+            continue;
+        }
+        let mut name_value = None;
+        for name in lane.names.iter().rev() {
+            ctx.charge_work(
+                u64_from_index(name.id.len())
+                    .checked_add(u64_from_index(scalar.name.len()))
+                    .and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+                OPERATION,
+            )?;
+            if name.id == scalar.name {
+                name_value = Some(name.value.as_str());
+                break;
+            }
+        }
+        if name_value == Some("D2") && diameter.replace(scalar).is_some() {
+            return Ok(None);
         }
     }
-    ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
+    let Some(diameter) = diameter else {
+        return Ok(None);
+    };
+    ctx.charge_work(
+        u64_from_index(lane.scalars.len())
+            .checked_add(u64_from_index(lane.names.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+        OPERATION,
+    )?;
     Ok((|| {
-        let source_id = feature.source_value()?;
-        let diameter_id = source_id.checked_sub(1)?;
-        let mut diameters = lane.scalars.iter().filter(|scalar| {
-            scalar.object_id == diameter_id
-                && lane
-                    .names
-                    .iter()
-                    .rev()
-                    .find(|name| name.id == scalar.name)
-                    .is_some_and(|name| name.value == "D2")
-        });
-        let diameter = diameters.next()?;
-        if diameters.next().is_some() {
-            return None;
-        }
         let start = usize::try_from(diameter.offset).ok()?.checked_add(8)?;
         let end = lane
             .scalars
@@ -2913,6 +2948,8 @@ pub(crate) fn generated_surface_identities(
     }
 
     let mut result = Vec::<SurfaceIdentityFields>::new();
+    let mut identity_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut identities_by_hash = HashMap::<u64, Vec<usize>>::new();
     let Some(last) = lane.native_payload.len().checked_sub(16) else {
         return Ok(Vec::new());
     };
@@ -2969,6 +3006,7 @@ pub(crate) fn generated_surface_identities(
         else {
             continue;
         };
+        let mut component_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut components = Vec::new();
         loop {
             ctx.charge_work(32, OPERATION)?;
@@ -2978,11 +3016,27 @@ pub(crate) fn generated_surface_identities(
             let Some(component) = component else {
                 continue 'terminals;
             };
-            ctx.reserve_vec(&mut components, 1, OPERATION)?;
+            ctx.reserve_scoped_vec(&mut component_storage, &mut components, 1, OPERATION)?;
             components.push(component);
         }
+        ctx.charge_work(
+            u64_from_index(components.len())
+                .checked_add(1)
+                .and_then(|count| count.checked_mul(32))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+            OPERATION,
+        )?;
+        let mut hash = DefaultHasher::new();
+        prefix.hash(&mut hash);
+        for component in &components {
+            component.instance.hash(&mut hash);
+            component.type_signature.hash(&mut hash);
+            component.local_id.hash(&mut hash);
+        }
+        let key = hash.finish();
         let mut duplicate = false;
-        for identity in &result {
+        for &index in identities_by_hash.get(&key).into_iter().flatten() {
+            let identity = &result[index];
             ctx.charge_work(
                 u64_from_index(components.len())
                     .checked_add(1)
@@ -3000,6 +3054,19 @@ pub(crate) fn generated_surface_identities(
         let local_identity = cadmpeg_core::bytes::assemble_u32_le(tail);
         ctx.reserve_vec(&mut result, 1, OPERATION)?;
         let input_index = result.len();
+        if identities_by_hash.len() == identities_by_hash.capacity() {
+            ctx.charge_work(u64_from_index(identities_by_hash.len()), OPERATION)?;
+        }
+        identity_storage.with_storage(|| {
+            ctx.push_hash_group(
+                &mut identities_by_hash,
+                key,
+                input_index,
+                OPERATION,
+                OPERATION,
+            )
+        })?;
+        component_storage.commit()?;
         result.push(SurfaceIdentityFields {
             offset: u64_from_index(offset),
             input_index,
@@ -3674,8 +3741,10 @@ pub(crate) fn compact_edge_owner_feature_at(
             if feature.source_value() != Some(source) {
                 continue;
             }
-            if feature_precedes_consumer(ctx, feature, features, consumer_ref)? {
-                return Ok(Some(copy_selection_text(ctx, &feature.id, OPERATION)?));
+            if let Some(consumer) = component_path_consumer(ctx, features, consumer_ref)? {
+                if component_feature_precedes(ctx, feature, consumer)? {
+                    return Ok(Some(copy_selection_text(ctx, &feature.id, OPERATION)?));
+                }
             }
             break;
         }
