@@ -363,3 +363,37 @@ fn requested_low_degree_third_basis_is_exact_borrowed_zero_without_resources() {
     }
     assert!(ctx.finish_session().is_ok());
 }
+
+#[test]
+fn scaled_third_basis_admits_each_actual_row_and_keeps_original_fuse() {
+    use crate::eval::decode::Scratch;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, ResourceDimension};
+    let h = 2.0_f64.powi(-350);
+    let knots = [0.0, 0.0, 0.0, 0.0, h, h, h, h];
+    for cap in 0..=9 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_retained_bytes = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let scratch = Scratch::new(&ctx);
+        let result = super::bspline_basis_scaled_third_derivative(
+            &scratch, &knots, 3, 3, 0.0, crate::scalar::PositiveReal::new(h).unwrap());
+        let original = if cap == 9 {
+            assert_eq!(result.unwrap(), [-6.0, 18.0, -18.0, 6.0]);
+            ctx.charge_work_limit(1, "test next scaled third operation").unwrap_err()
+        } else {
+            assert!(result.is_none());
+            let original = scratch.refused().unwrap();
+            assert_eq!(original.operation, "IR scaled B-spline derivative work");
+            original
+        };
+        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+        assert_eq!((original.limit, original.used, original.additional), (cap, cap, 1));
+        assert!(super::bspline_basis_scaled_third_derivative(
+            &scratch, &[], 0, 0, f64::NAN, crate::scalar::PositiveReal::ONE).is_none());
+        assert_eq!(scratch.refused(), Some(original));
+        drop(scratch);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    }
+}

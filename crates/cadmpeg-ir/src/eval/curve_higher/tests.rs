@@ -9,6 +9,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 mod nurbs_linear;
+mod nurbs_polynomial;
 
 #[test]
 fn stored_analytic_third_follows_the_actual_curve_law() {

@@ -54,7 +54,10 @@ fn stored_third_frame(
                 ThirdFrame::Local(value) => super::placed_derivative(*placed.transform(), Ok(value)).map(ThirdFrame::Local),
             })
         }
-        SolvedCurveGeometry::Nurbs(curve) => super::curve_nurbs::linear_third(scratch, curve, parameter).map(ThirdFrame::Local),
+        SolvedCurveGeometry::Nurbs(curve) => match curve.pole_rows() {
+            crate::geometry::nurbs::NurbsPoles3::Polynomial { .. } => super::curve_nurbs::polynomial_third(scratch, curve, parameter),
+            crate::geometry::nurbs::NurbsPoles3::Rational { .. } => super::curve_nurbs::linear_third(scratch, curve, parameter),
+        }.map(ThirdFrame::Local),
         // Higher-degree rational curves still need genuine scaled local rows
         // and extended quotient corrections. Keep their lower orders intact.
         SolvedCurveGeometry::Degenerate(_)

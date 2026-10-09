@@ -19,7 +19,25 @@ pub(super) fn bspline_span<'ctx, 'arena: 'ctx>(
     count: usize,
     t: f64,
 ) -> Result<Option<usize>, ResourceLimit> {
-    let admission = admission.into();
+    match bspline_span_requested(admission.into(), knots, degree, count, t, false) {
+        Ok(span) => Ok(span),
+        Err(super::EvaluationFailure::ResourceLimit(limit)) => Err(limit),
+        // The stored-cost route has no independent refusal operation.
+        Err(super::EvaluationFailure::NoValue | super::EvaluationFailure::NonFinite(())) => Ok(None),
+    }
+}
+
+/// Search with each independent comparison charged before it runs. Existing
+/// callers retain their stored representation cost; requested higher orders
+/// select actual comparison work instead of inventing a full-search fee.
+pub(super) fn bspline_span_requested(
+    admission: EvaluationAdmission<'_, '_>,
+    knots: &[f64],
+    degree: usize,
+    count: usize,
+    t: f64,
+    independent_comparisons: bool,
+) -> Result<Option<usize>, super::EvaluationFailure<()>> {
     admission.work(0, "IR B-spline span search")?;
     let Some(required) = count
         .checked_add(degree)
@@ -42,6 +60,7 @@ pub(super) fn bspline_span<'ctx, 'arena: 'ctx>(
     let mut lo = degree;
     let mut hi = count;
     while lo < hi {
+        if independent_comparisons { admission.independent_cost(Some(1))?; }
         admission.work(1, "IR B-spline span search")?;
         let mid = usize::midpoint(lo, hi);
         if t < knots[mid] {
@@ -438,7 +457,7 @@ pub(super) fn bspline_basis_scaled_derivatives(
         });
     }
     let lower = bspline_basis(scratch, knots, degree - 1, span, t)?;
-    let first = bspline_basis_scaled_derivative_level(scratch, knots, degree, span, scale, &lower)?;
+    let first = bspline_basis_scaled_derivative_level(scratch, knots, degree, span, ScaledDerivativeOrder::Lower(scale), &lower)?;
     let second = if degree == 1 {
         scratch.filled(
             2,
@@ -453,12 +472,50 @@ pub(super) fn bspline_basis_scaled_derivatives(
             knots,
             degree - 1,
             span,
-            scale,
+            ScaledDerivativeOrder::Lower(scale),
             &lower_lower,
         )?;
-        bspline_basis_scaled_derivative_level(scratch, knots, degree, span, scale, &lower_first)?
+        bspline_basis_scaled_derivative_level(scratch, knots, degree, span, ScaledDerivativeOrder::Lower(scale), &lower_first)?
     };
     Some(ScaledBasisDerivatives { first, second })
+}
+
+/// Third derivatives in the positive active-span coordinate. The owning
+/// stored polynomial curve establishes that every nonzero knot denominator
+/// contains this span. Each scale ratio is at most one and finite degree
+/// bounds each row. A nonzero ratio or product lost to underflow reports
+/// absence: recovering it needs an extended recurrence owner.
+pub(super) fn bspline_basis_scaled_third_derivative(
+    scratch: &decode::Scratch<'_, '_>,
+    knots: &[f64],
+    degree: usize,
+    span: usize,
+    t: f64,
+    scale: PositiveReal,
+) -> Option<Vec<f64>> {
+    scratch.work(0, "IR scaled B-spline derivative work")?;
+    let base_degree = degree.checked_sub(3)?;
+    // A heap base writes q+1 initial values and performs one first write,
+    // q*(q+1)/2 blends and q saved-value writes. Inline q<=1 is fixed work.
+    let base_work = if base_degree <= 1 { 0 } else {
+        base_degree.checked_add(2)?
+            .checked_add(base_degree.checked_mul(base_degree.checked_add(1)?)?.checked_div(2)?)?
+            .checked_add(base_degree)?
+    };
+    scratch.admission.independent_cost::<()>(Some(base_work)).ok()?;
+    let base = bspline_basis(scratch, knots, base_degree, span, t)?;
+    let mut lower: Cow<'_, [f64]> = Cow::Borrowed(&base);
+    for row_degree in base_degree + 1..=degree {
+        lower = Cow::Owned(bspline_basis_scaled_derivative_level(
+            scratch, knots, row_degree, span, ScaledDerivativeOrder::Third(scale), &lower,
+        )?);
+    }
+    Some(lower.into_owned())
+}
+
+enum ScaledDerivativeOrder {
+    Lower(PositiveReal),
+    Third(PositiveReal),
 }
 
 fn bspline_basis_scaled_derivative_level(
@@ -466,13 +523,18 @@ fn bspline_basis_scaled_derivative_level(
     knots: &[f64],
     degree: usize,
     span: usize,
-    scale: PositiveReal,
+    order: ScaledDerivativeOrder,
     lower: &[f64],
 ) -> Option<Vec<f64>> {
+    let (scale, preserve_nonzero) = match order {
+        ScaledDerivativeOrder::Lower(scale) => (scale, false),
+        ScaledDerivativeOrder::Third(scale) => (scale, true),
+    };
     let degree_real = f64_from_index(degree)?;
     let lower_start = span - (degree - 1);
     scratch.collect(
         (0..degree.checked_add(1)?).map(|local| {
+            if preserve_nonzero { scratch.admission.independent_cost::<()>(Some(1)).ok()?; }
             let index = span - degree + local;
             let lower_at = |values: &[f64], global: usize| {
                 global
@@ -481,7 +543,7 @@ fn bspline_basis_scaled_derivative_level(
                     .copied()
                     .unwrap_or(0.0)
             };
-            let ratio = |hi: usize, lo: usize| {
+            let ratio = |hi: usize, lo: usize, lower: f64| {
                 if knots[hi] == knots[lo] {
                     Some(0.0)
                 } else {
@@ -493,13 +555,24 @@ fn bspline_basis_scaled_derivative_level(
                             hi_knot,
                             lo_knot,
                         )))?
-                        .map(FiniteReal::get)
+                        .and_then(|value| {
+                            // A requested third cannot recover a nonzero ratio
+                            // lost here without an extended recurrence owner.
+                            (!preserve_nonzero || lower == 0.0 || value.get() != 0.0).then_some(value.get())
+                        })
                 }
             };
-            let left = ratio(index + degree, index)?;
-            let right = ratio(index + degree + 1, index + 1)?;
-            let derivative =
-                degree_real * (left * lower_at(lower, index) - right * lower_at(lower, index + 1));
+            let left_lower = lower_at(lower, index);
+            let right_lower = lower_at(lower, index + 1);
+            let left = ratio(index + degree, index, left_lower)?;
+            let right = ratio(index + degree + 1, index + 1, right_lower)?;
+            let left_term = left * left_lower;
+            let right_term = right * right_lower;
+            if preserve_nonzero && ((left != 0.0 && left_lower != 0.0 && left_term == 0.0)
+                || (right != 0.0 && right_lower != 0.0 && right_term == 0.0)) {
+                return None;
+            }
+            let derivative = degree_real * (left_term - right_term);
             derivative.is_finite().then_some(derivative)
         }),
         "IR scaled B-spline derivative basis",
