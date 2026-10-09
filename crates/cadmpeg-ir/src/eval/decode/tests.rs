@@ -69,6 +69,8 @@ fn admitted_curve_point_refuses_basis_work() {
 
 #[test]
 fn admitted_curve_tangent_refuses_point_copy() {
+    // The old name identifies the original cap1 fixture. Poles now borrow;
+    // its first refused allocation is the actual three-value basis.
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve()));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -76,7 +78,7 @@ fn admitted_curve_tangent_refuses_point_copy() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert!(
         matches!(crate::eval::decode::outer_refusal(crate::eval::decode::curve_tangent(&ctx, &geometry, 0.5)).map_err(CodecError::from),
-        Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR NURBS derivative points")
+        Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR B-spline basis")
     );
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -323,6 +325,8 @@ fn reusable_nurbs_evaluator_keeps_constant_and_linear_spans_inline() {
 
 #[test]
 fn admitted_curve_tangent_refuses_rational_weight_copy() {
+    // Keep the original rational cap5 fixture. Neither lane is copied;
+    // basis3 plus derivative3 reaches the actual derivative-basis refusal.
     let curve = curve();
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
@@ -344,7 +348,7 @@ fn admitted_curve_tangent_refuses_rational_weight_copy() {
     policy.limits.max_collection_items = 5;
     assert!(
         matches!(with_policy(policy, |ctx| crate::eval::decode::outer_refusal(crate::eval::decode::curve_tangent(ctx, &geometry, 0.5)).map_err(CodecError::from)),
-        Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR NURBS derivative weights")
+        Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR B-spline derivative basis")
     );
     assert_eq!(
         with_policy(DecodePolicy::service(), |ctx| {
