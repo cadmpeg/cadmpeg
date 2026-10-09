@@ -204,3 +204,239 @@ fn saved_generated_header_admits_present_bytes_within_twenty_four_byte_bound() {
         });
     }
 }
+
+#[test]
+fn equation_arguments_admit_present_tokens_without_an_absent_source_visit() {
+    for (payload, end, count, visits, expected) in [
+        (b"".as_slice(), 0, Some(0), 0, Some(0)),
+        (b"".as_slice(), 0, Some(1), 0, None),
+        (b"".as_slice(), 1, None, 0, None),
+        (b"\x01".as_slice(), 1, Some(1), 1, Some(1)),
+        (b"\x01".as_slice(), 1, Some(2), 1, None),
+        (b"\xe6".as_slice(), 1, Some(3), 1, Some(3)),
+        (b"\xe6".as_slice(), 1, Some(4), 1, None),
+        (b"\xf6".as_slice(), 1, None, 0, Some(0)),
+    ] {
+        check_work(&vec![(1, "creo equation argument traversal"); visits], expected, true, |ctx| {
+            let mut offset = 0;
+            Ok(super::equation_arguments(ctx, payload, &mut offset, end, count)?
+                .map(|owned| owned.0.len()))
+        });
+    }
+}
+
+#[test]
+fn skamp_boundary_admits_only_present_items_and_preserves_missing_field_recovery() {
+    for (payload, count, visits, expected) in [
+        (b"".as_slice(), 0, 0, Some(0)),
+        (b"".as_slice(), 1, 0, None),
+        (b"\x01".as_slice(), 1, 1, None),
+        (b"\x01\x02".as_slice(), 1, 1, Some(2)),
+        (b"\x01\x02".as_slice(), 2, 1, None),
+        (b"\x01\x02\xe2".as_slice(), 2, 1, None),
+        (b"\x01\x02\xe2\x03\x04".as_slice(), 2, 2, Some(5)),
+    ] {
+        check_work(&vec![(1, "creo skamp item boundary traversal"); visits], expected, false,
+            |ctx| super::positional_skamp_item_array_body_end(ctx, payload, 0, count, &[], payload.len()));
+    }
+}
+
+#[test]
+fn dimension_candidate_scan_admits_present_offsets_and_no_end_probe() {
+    for payload in [b"".as_slice(), b"\xff", b"\xff\xff\xff"] {
+        check_work(&vec![(1, "creo self described dimension traversal"); payload.len()], None, false,
+            |ctx| super::self_described_positional_dimension_table(ctx, payload, 0, payload.len(),
+                &crate::scalar::ScalarCache::default()));
+    }
+}
+
+#[test]
+fn spline_parameter_count_admits_present_values_and_preserves_incomplete_recovery() {
+    for (suffix, count, visits, body_bytes, expected) in [
+        (b"\x00".as_slice(), 0, 0, 2, Some(0)),
+        (b"\x01".as_slice(), 1, 0, 0, None),
+        (b"\x01\x0f".as_slice(), 1, 1, 3, Some(1)),
+        (b"\x02\x0f".as_slice(), 2, 1, 0, None),
+        (b"\x01\xff".as_slice(), 1, 1, 0, None),
+    ] {
+        let mut payload = b"\xe0\x02params\0\xf8".to_vec();
+        payload.extend_from_slice(suffix);
+        // The borrowed memmem search admits both extents; each scalar visit and copy follows.
+        let mut fees = vec![((payload.len() + b"\xe0\x02params\0\xf8".len()) as u64,
+            "find Creo feature definition field")];
+        fees.extend(vec![(1, "creo saved spline parameters traversal"); visits]);
+        if body_bytes != 0 { fees.push((body_bytes, "creo saved spline parameter body")); }
+        check_work(&fees, expected, true, |ctx| {
+            Ok(super::saved_spline_parameters(ctx, &payload, 0, payload.len(), count,
+                &crate::scalar::ScalarCache::default())?.map(|field| field.value.len()))
+        });
+    }
+}
+
+#[test]
+fn saved_line_preamble_and_trailer_do_not_visit_absent_source() {
+    let cache = crate::scalar::ScalarCache::default();
+    for (payload, visits, body_bytes, expected) in [
+        (b"".as_slice(), 0, 0, 0),
+        (b"\xf7\x01".as_slice(), 2, 0, 0),
+        (b"\x01\xe2".as_slice(), 2, 2, 1),
+        (b"\x01\xe2\x0f\x0f\x0f\x0f\x0f\x0f".as_slice(), 8, 8, 1),
+    ] {
+        // One row visit, actual preamble probes and up to six scalar slots; EOF is free.
+        let mut fees = vec![(1, "creo saved line block cursor traversal"); visits];
+        if body_bytes != 0 { fees.push((body_bytes, "creo saved line body")); }
+        check_work(&fees, expected, true, |ctx| {
+            let mut entities = Vec::new();
+            super::saved_line_block(ctx, payload, 0, payload.len(), &cache, &mut entities)?;
+            Ok(entities.len())
+        });
+    }
+}
+
+fn check_same_work<T: std::fmt::Debug + PartialEq>(
+    expected: [T; 2],
+    run: impl Fn(&DecodeContext<'_>, bool) -> Result<T, CodecError>,
+) {
+    let mut work = [0; 2];
+    for (index, expected) in expected.into_iter().enumerate() {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(run(&ctx, index != 0).expect("bounded recovery"), expected);
+        let original = ctx.charge_work_limit(u64::MAX, "measure paired source work")
+            .expect_err("measurement refuses after executed work");
+        work[index] = original.used;
+        assert!(matches!(run(&ctx, index != 0),
+            Err(CodecError::ResourceLimit(actual)) if actual == original));
+    }
+    assert_eq!(work[0], work[1], "same source scans; no absent count visit");
+}
+
+#[test]
+fn named_section_missing_reference_and_dimension_source_costs_no_count_visit() {
+    for prefix in [b"\xe0\x00gsec3d_ptr\0\xe0\x00ref_planes\0\xf8".as_slice(),
+        b"\xe0\x00gsec3d_ptr\0dim_id_tab\0\xf8".as_slice()] {
+        check_same_work([0, 0], |ctx, nonzero| {
+            let mut payload = prefix.to_vec();
+            payload.push(if nonzero { 127 } else { 0 });
+            let section = super::section_3d(ctx, &payload, 0, payload.len())?.expect("section");
+            Ok(section.reference_planes.entity_ids().count() + section.dimension_ids.len())
+        });
+    }
+}
+
+#[test]
+fn positional_section_missing_row_source_costs_no_count_visit() {
+    check_same_work([0, 0], |ctx, nonzero| {
+        let mut payload = b"\x07S2D1\0\x01\xf6\xe1\xf6\x02\x00\xf8".to_vec();
+        payload.push(u8::from(nonzero));
+        payload.extend_from_slice(b"\xf7\x39\xfb\xe2\xf7\x3a");
+        let section = super::positional_section_3d(ctx, &payload, 0, payload.len())?
+            .expect("section");
+        assert_eq!(section.sketch_plane_entity_id, Some(2));
+        Ok(section.reference_planes.entity_ids().count())
+    });
+}
+
+#[test]
+fn named_skamp_missing_row_and_item_source_costs_no_count_visit() {
+    let prototype = b"\xf7\x6b\xfb\xe2\
+        \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+        \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+        \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
+        \xf3\xf7\x6b\xe2";
+    check_same_work([1, 1], |ctx, extra_row| {
+        let mut payload = b"skamp_ptr\0\xf3\xf8".to_vec();
+        payload.push(if extra_row { 2 } else { 1 });
+        payload.extend_from_slice(prototype);
+        let rows = super::feature_skamps(ctx, &payload, 0, payload.len())?;
+        assert_eq!(rows[0].id, 5);
+        assert_eq!(rows[0].items[0].entity_id, 42);
+        Ok(rows.len())
+    });
+    check_same_work([1, 1], |ctx, nonzero_items| {
+        let mut payload = b"skamp_ptr\0\xf3\xf8\x02".to_vec();
+        payload.extend_from_slice(prototype);
+        payload.extend_from_slice(b"\x06\x02\x03\x04\xf8");
+        payload.push(u8::from(nonzero_items));
+        payload.extend_from_slice(b"\xf7\x6c\xfb\xe2");
+        Ok(super::feature_skamps(ctx, &payload, 0, payload.len())?.len())
+    });
+}
+
+#[test]
+fn positional_skamp_missing_row_and_item_source_costs_no_count_visit() {
+    check_same_work([0, 0], |ctx, nonzero| {
+        let payload = [0xf8, u8::from(nonzero), 0xf7, 88, 0xfb, 0xe2, 0xf7, 89];
+        let table = super::positional_feature_skamps(ctx, &payload, 0, payload.len(), 88)?
+            .expect("table");
+        Ok(table.rows().len())
+    });
+    check_same_work([1, 0], |ctx, nonzero_items| {
+        let mut payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\x01\x00\x00\x23\xf8".to_vec();
+        payload.push(u8::from(nonzero_items));
+        payload.extend_from_slice(b"\xf7\x60\xfb\xe2\xf7\x61");
+        let table = super::positional_feature_skamps(ctx, &payload, 0, payload.len(), 88)?
+            .expect("table");
+        Ok(table.rows().len())
+    });
+}
+
+#[test]
+fn named_relation_triples_missing_row_source_costs_no_count_visit() {
+    check_same_work([1, 1], |ctx, extra_row| {
+        let mut payload = b"triples_ptr\0\xf4\x04\xf8".to_vec();
+        payload.push(if extra_row { 2 } else { 1 });
+        payload.extend_from_slice(b"\xf7\x64\xfb\xe2schema\xf1\xf7\x64\xe2");
+        Ok(super::feature_relation_triples(ctx, &payload, 0, payload.len())?.len())
+    });
+}
+
+#[test]
+fn positional_relation_triples_missing_row_source_costs_no_count_visit() {
+    check_same_work([0, 0], |ctx, nonzero| {
+        let payload = [0xf8, u8::from(nonzero), 0xf7, 100, 0xfb, 0xe2, 0xf7, 101];
+        let table = super::positional_relation_triples(ctx, &payload, 0, payload.len(), 100)?
+            .expect("table");
+        Ok(table.rows().len())
+    });
+}
+
+#[test]
+fn saved_spline_complete_point_count_has_no_end_probe() {
+    const LABEL: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0";
+    const POINTS: &[u8] = b"\xe0\x02i_pnts\0\xf9";
+    const TANGENTS: &[u8] = b"\xe0\x02end_tangts\0\xf9\x02\x03";
+    const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
+    for count in [0_u8, 1] {
+        let mut payload = LABEL.to_vec();
+        payload.extend_from_slice(POINTS);
+        payload.extend_from_slice(&[count, 3]);
+        if count != 0 { payload.extend_from_slice(&[0x0f; 3]); }
+        let body_len = payload.len() - LABEL.len();
+        let mut fees = vec![
+            ((payload.len() + LABEL.len()) as u64, "find Creo feature definition field"),
+            ((body_len + LABEL.len()) as u64, "find Creo feature definition field"),
+            ((body_len + POINTS.len()) as u64, "find Creo feature definition field"),
+        ];
+        fees.extend(vec![(1, "creo saved spline entities traversal"); usize::from(count)]);
+        fees.extend([
+            (3 + 3 * u64::from(count), "creo saved spline point body"),
+            (TANGENTS.len() as u64, "find Creo feature definition field"),
+            (PARAMETERS.len() as u64, "find Creo feature definition field"),
+            // The identifier uses named_compact_int over the empty pre-point range.
+            (b"\xe0\x01id\0".len() as u64, "find Creo named integer"),
+            ((body_len + LABEL.len()) as u64, "find Creo feature definition field"),
+        ]);
+        check_work(&fees, usize::from(count), true, |ctx| {
+            let mut entities = Vec::new();
+            super::saved_spline_entities(ctx, &payload, 0, payload.len(),
+                &crate::scalar::ScalarCache::default(), &mut entities)?;
+            let [super::FeatureSavedEntity::Spline(spline)] = entities.as_slice() else {
+                panic!("one spline");
+            };
+            assert_eq!(spline.declared_point_count, Some(u32::from(count)));
+            Ok(spline.interpolation_points.len())
+        });
+    }
+}
