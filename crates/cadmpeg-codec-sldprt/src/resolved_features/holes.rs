@@ -1,6 +1,7 @@
 //! Hole construction, bore topology and hole axis projection.
 
 mod bore_solutions;
+mod generated_placements;
 mod thread_history;
 
 use super::compact_reference_planes::{
@@ -3825,177 +3826,146 @@ pub(crate) fn project_generated_hole_axes(
 
     for feature_index in ctx.admit_iter(&(0..features.len()), OPERATION)? {
         let feature = &mut features[feature_index];
-        let mut solution_storage =
-            ctx.reserve_scoped(0, "SLDPRT generated hole solution workspace")?;
-        let solution = solution_storage.with_storage(
-            || -> Result<Option<Vec<HolePlacement>>, CodecError> {
-                let FeatureDefinition::Operation(FeatureOperation::Hole {
-                    placements, shape, ..
-                }) = feature.evaluation.definition()
-                else {
-                    return Ok(None);
-                };
-                let Some(diameter) = shape.diameter() else {
-                    return Ok(None);
-                };
-                let diameter = diameter.get();
+        let solution = (|| -> Result<Option<generated_placements::GeneratedHolePlacements<'_>>, CodecError> {
+            let FeatureDefinition::Operation(FeatureOperation::Hole {
+                placements, shape, ..
+            }) = feature.evaluation.definition()
+            else {
+                return Ok(None);
+            };
+            let Some(diameter) = shape.diameter() else {
+                return Ok(None);
+            };
+            let diameter = diameter.get();
 
-                if placements.is_some() {
-                    return Ok(None);
-                }
-                let Some(source) = match feature.native_ref.as_deref() {
-                    Some(native) => ctx.get_btree_map(
-                        &(native_features),
-                        native,
-                        "resolve SLDPRT holes references",
-                    )?,
-                    None => None,
-                }
-                .and_then(|native| native.source_id)
-                .and_then(FeatureSource::id) else {
-                    return Ok(None);
+            if placements.is_some() {
+                return Ok(None);
+            }
+            let Some(source) = match feature.native_ref.as_deref() {
+                Some(native) => ctx.get_btree_map(
+                    &(native_features),
+                    native,
+                    "resolve SLDPRT holes references",
+                )?,
+                None => None,
+            }
+            .and_then(|native| native.source_id)
+            .and_then(FeatureSource::id) else {
+                return Ok(None);
+            };
+            let radius = diameter * 0.5;
+            let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
+            let mut first_solution = None::<generated_placements::GeneratedHolePlacements<'_>>;
+            let faces = ctx
+                .get_hash_map(
+                    &faces_by_source,
+                    &source,
+                    "find SLDPRT generated hole face source",
+                )?
+                .map_or(&[][..], Vec::as_slice);
+            for by_source in ctx.admit_iter(&lane_local_ids, "scan SLDPRT holes records")? {
+                let Some(local_ids) = ctx.get_hash_map(
+                    by_source,
+                    &source,
+                    "find SLDPRT generated hole surface source",
+                )?
+                else {
+                    continue;
                 };
-                let radius = diameter * 0.5;
-                let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
-                let mut first_solution = None::<(
-                    Vec<HolePlacement>,
-                    cadmpeg_core::decode::ScopedReservation<'_>,
-                )>;
-                let faces = ctx
-                    .get_hash_map(
-                        &faces_by_source,
-                        &source,
-                        "find SLDPRT generated hole face source",
-                    )?
-                    .map_or(&[][..], Vec::as_slice);
-                for by_source in ctx.admit_iter(&lane_local_ids, "scan SLDPRT holes records")? {
-                    let Some(local_ids) = ctx.get_hash_map(
-                        by_source,
-                        &source,
-                        "find SLDPRT generated hole surface source",
-                    )?
+                let mut axes_storage =
+                    ctx.reserve_scoped(0, "index SLDPRT generated hole axes")?;
+                let mut axes = BTreeMap::<[GridCoordinate; 6], HolePlacement>::new();
+                let mut invalid = false;
+                let mut source_items = faces.iter();
+                while let Some((face, identity)) =
+                    ctx.next_charged(&mut source_items, "scan SLDPRT generated hole faces")?
+                {
+                    if !ctx.contains_hash_set(
+                        local_ids,
+                        &identity.local_id,
+                        "find SLDPRT generated hole face identity",
+                    )? {
+                        continue;
+                    }
+                    let Some(surface) = (match ctx.get_hash_map(
+                        &faces_by_id,
+                        face.as_str(),
+                        "resolve SLDPRT holes keys",
+                    )? {
+                        Some(face) => ctx.get_hash_map(
+                            &(surfaces_by_id),
+                            face.surface.as_str(),
+                            "resolve SLDPRT holes references",
+                        )?,
+                        None => None,
+                    }) else {
+                        continue;
+                    };
+                    let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+                        surface.geometry.solved()
                     else {
                         continue;
                     };
-                    let mut axes_storage =
-                        ctx.reserve_scoped(0, "index SLDPRT generated hole axes")?;
-                    let mut axes = BTreeMap::<[GridCoordinate; 6], HolePlacement>::new();
-                    let mut invalid = false;
-                    let mut source_items = faces.iter();
-                    while let Some((face, identity)) =
-                        ctx.next_charged(&mut source_items, "scan SLDPRT generated hole faces")?
-                    {
-                        if !ctx.contains_hash_set(
-                            local_ids,
-                            &identity.local_id,
-                            "find SLDPRT generated hole face identity",
-                        )? {
-                            continue;
-                        }
-                        let Some(surface) = (match ctx.get_hash_map(
-                            &faces_by_id,
-                            face.as_str(),
-                            "resolve SLDPRT holes keys",
-                        )? {
-                            Some(face) => ctx.get_hash_map(
-                                &(surfaces_by_id),
-                                face.surface.as_str(),
-                                "resolve SLDPRT holes references",
-                            )?,
-                            None => None,
-                        }) else {
-                            continue;
-                        };
-                        let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-                            surface.geometry.solved()
-                        else {
-                            continue;
-                        };
-                        let origin = cylinder_surface.origin().get();
-                        let candidate_radius = cylinder_surface.radius().get();
-                        if (candidate_radius - radius).abs() > radius_tolerance {
-                            continue;
-                        }
-                        let axis = canonical_direction(FeatureDirection3::from(
-                            *cylinder_surface.frame().axis(),
-                        ));
-                        let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis.get());
-                        let closest = Point3::new(
-                            origin.x - station * axis.x,
-                            origin.y - station * axis.y,
-                            origin.z - station * axis.z,
-                        );
-                        let Some(closest) = FinitePoint3::new(closest) else {
-                            invalid = true;
-                            break;
-                        };
-                        let key = [
-                            quantize(closest.x),
-                            quantize(closest.y),
-                            quantize(closest.z),
-                            quantize(axis.x),
-                            quantize(axis.y),
-                            quantize(axis.z),
-                        ];
-                        axes_storage.with_storage(|| {
-                            if let std::collections::btree_map::Entry::Vacant(entry) = ctx
-                                .entry_btree_map(
-                                    &mut axes,
-                                    key,
-                                    "index SLDPRT generated hole axes",
-                                )?
-                            {
-                                entry.insert(HolePlacement::Axis {
-                                    origin: closest,
-                                    axis,
-                                });
-                            }
-                            Ok::<(), CodecError>(())
-                        })?;
-                    }
-                    if invalid || axes.is_empty() {
+                    let origin = cylinder_surface.origin().get();
+                    let candidate_radius = cylinder_surface.radius().get();
+                    if (candidate_radius - radius).abs() > radius_tolerance {
                         continue;
                     }
-                    let mut placements_storage = ctx.reserve_scoped(0, "SLDPRT generated lane placements")?;
-                    let placements = placements_storage.with_storage(|| {
-                        ctx.collect_vec(
-                            axes.into_values(),
-                            "collect SLDPRT generated hole placements",
-                        )
-                    })?;
-                    match &first_solution {
-                        Some((first, _)) if !ctx.equal(first, &placements, OPERATION)? => {
-                            return Ok(None)
+                    let axis = canonical_direction(FeatureDirection3::from(
+                        *cylinder_surface.frame().axis(),
+                    ));
+                    let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis.get());
+                    let closest = Point3::new(
+                        origin.x - station * axis.x,
+                        origin.y - station * axis.y,
+                        origin.z - station * axis.z,
+                    );
+                    let Some(closest) = FinitePoint3::new(closest) else {
+                        invalid = true;
+                        break;
+                    };
+                    let key = [
+                        quantize(closest.x),
+                        quantize(closest.y),
+                        quantize(closest.z),
+                        quantize(axis.x),
+                        quantize(axis.y),
+                        quantize(axis.z),
+                    ];
+                    axes_storage.with_storage(|| {
+                        if let std::collections::btree_map::Entry::Vacant(entry) = ctx
+                            .entry_btree_map(
+                                &mut axes,
+                                key,
+                                "index SLDPRT generated hole axes",
+                            )?
+                        {
+                            entry.insert(HolePlacement::Axis {
+                                origin: closest,
+                                axis,
+                            });
                         }
-                        None => first_solution = Some((placements, placements_storage)),
-                        Some(_) => {}
-                    }
+                        Ok::<(), CodecError>(())
+                    })?;
                 }
-                first_solution
-                    .map(|owner| {
-                        let _storage = owner.1;
-                        let placements = owner.0;
-                        ctx.try_collect_vec(
-                            placements
-                                .iter()
-                                .map(|placement| placement.try_clone_for_decode(ctx, OPERATION)),
-                            OPERATION,
-                        )
-                    })
-                    .transpose()
-            },
-        )?;
-        if let Some(solution) = solution {
-            let mut retained = Vec::new();
-            for placement in ctx.admit_iter(&solution, "retain SLDPRT generated hole placements")? {
-                ctx.push_vec(
-                    &mut retained,
-                    placement
-                        .try_clone_for_decode(ctx, "retain SLDPRT generated hole placement")?,
-                    "retain SLDPRT generated hole placements",
+                if invalid || axes.is_empty() {
+                    continue;
+                }
+                let placements = generated_placements::GeneratedHolePlacements::from_axes(
+                    ctx, axes_storage, axes,
                 )?;
+                match &first_solution {
+                    Some(first) if !ctx.equal(first.placements(), placements.placements(), OPERATION)? => {
+                        return Ok(None)
+                    }
+                    None => first_solution = Some(placements),
+                    Some(_) => {}
+                }
             }
-            let solution = retained;
+            Ok(first_solution)
+        })()?;
+        if let Some(solution) = solution {
+            let solution = solution.into_output()?;
             feature.evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
                     definition
