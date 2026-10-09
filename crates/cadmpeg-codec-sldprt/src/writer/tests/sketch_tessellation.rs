@@ -892,7 +892,7 @@ fn semantic_writer_expands_indexed_tessellation() {
         .expect("valid channel")],
     )
     .expect("valid tessellation");
-    let expanded = crate::writer::sequential_tessellation(&mesh).unwrap();
+    let expanded = crate::writer::tessellation::sequential_tessellation(&mesh).unwrap();
     assert_eq!(expanded.strip_lengths(), vec![3, 3]);
     assert_eq!(expanded.triangles(), vec![[0, 1, 2], [3, 4, 5]]);
     assert_eq!(expanded.vertex_count(), 6);
@@ -909,7 +909,7 @@ fn semantic_writer_expands_indexed_tessellation() {
         }])
         .expect("valid triangle group partition");
     assert!(matches!(
-        crate::writer::sequential_tessellation(&attributed),
+        crate::writer::tessellation::sequential_tessellation(&attributed),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
     ));
 
@@ -917,7 +917,7 @@ fn semantic_writer_expands_indexed_tessellation() {
         .with_feature_edges(vec![[0, 1]])
         .expect("valid feature edge");
     assert!(matches!(
-        crate::writer::sequential_tessellation(&edged),
+        crate::writer::tessellation::sequential_tessellation(&edged),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
     ));
 }
@@ -990,7 +990,7 @@ fn semantic_writer_borrows_sequential_tessellation_without_copy() {
         mesh.body = Some(cadmpeg_ir::ids::BodyId::mint("synthetic:test:body#borrowed").unwrap());
         mesh.faces.push(cadmpeg_ir::ids::FaceId::mint("synthetic:test:face#borrowed").unwrap());
         let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
-            crate::writer::sequential_tessellation(&mesh)
+            crate::writer::tessellation::sequential_tessellation(&mesh)
         });
         let std::borrow::Cow::Borrowed(borrowed) = result.unwrap() else { panic!("sequential mesh was copied"); };
         assert_eq!(allocations, 0);
