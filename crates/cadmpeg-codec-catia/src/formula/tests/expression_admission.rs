@@ -275,3 +275,45 @@ fn formula_case_conversion_preserves_per_character_lowercase() {
         Some("οσi\u{307}".to_owned())
     );
 }
+
+#[test]
+fn formula_extremum_fold_propagates_the_original_work_refusal() {
+    for expression in ["min(8,5,7,3)", "max(1,4,2)"] {
+        let refusal = crate::test_support::with_work_refusal(
+            "catia_formula_extremum_argument_visits",
+            |ctx| {
+                let result = super::super::evaluate_formula_expression_charged(
+                    ctx,
+                    expression,
+                    &BTreeMap::new(),
+                );
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            },
+        );
+        assert!(matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_formula_extremum_argument_visits"));
+    }
+}
+
+#[test]
+fn formula_scalar_calls_keep_only_the_original_argument_slots() {
+    for (expression, cap, expected) in [
+        ("abs(-2)", 1, 2.0),
+        ("mod(7.8,3)", 2, 1.0),
+        ("min(8,5,7,3)", 4, 3.0),
+        ("max(1,4,2)", 3, 4.0),
+        ("LinearInterpolation(2,10,0.25)", 3, 4.0),
+        ("CubicInterpolation(2,10,0.25)", 3, 3.25),
+    ] {
+        let value = crate::test_support::with_collection_limit(cap, |ctx| {
+            super::super::evaluate_formula_expression_charged(ctx, expression, &BTreeMap::new())
+        })
+        .expect("one parsed argument vector")
+        .and_then(super::super::EvaluatedFormulaValue::scalar)
+        .expect("scalar result");
+        assert_eq!(value.value(), expected, "{expression}");
+    }
+}
