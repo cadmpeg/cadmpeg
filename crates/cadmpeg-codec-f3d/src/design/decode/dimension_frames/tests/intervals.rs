@@ -75,7 +75,7 @@ fn companion_intervals_end_at_every_parameter_record() {
     let mut intervals =
         super::super::CompanionIntervals::new(&ctx, &parameters, &[], &[], &[]).unwrap();
     assert_eq!(
-        intervals.interval(&ctx, &scope, &companion, 300).unwrap(),
+        intervals.interval(&scope, &companion, 300).unwrap(),
         Some((58, 100))
     );
 }
@@ -173,7 +173,7 @@ fn companion_interval_ends_at_first_header_another_scope_references() {
                     headers: &[crate::records::decal::DesignRecordHeader]| {
         super::super::CompanionIntervals::new(&ctx, &[], owners, &scopes, headers)
             .unwrap()
-            .interval(&ctx, "f3d:native", &companion, 1000)
+            .interval("f3d:native", &companion, 1000)
             .unwrap()
     };
     let own_then_foreign = [header_at(57, 90), header_at(56, 75), header_at(55, 70)];
@@ -391,3 +391,5 @@ fn presentation_stream_tables_commit_only_surviving_owner_groups() {
     assert!(table.sketch_entities.is_empty());
     assert!(ctx.resource_refusal().is_none());
 }
+
+mod session;

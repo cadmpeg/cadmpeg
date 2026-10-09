@@ -1557,7 +1557,7 @@ fn companion_interval_refuses_foreign_scope_member_limit() {
                 std::slice::from_ref(&scope),
                 std::slice::from_ref(&header),
             )?
-            .interval(ctx, "f3d:native", &companion, 100)
+            .interval("f3d:native", &companion, 100)
         },
     );
     assert!(matches!(
@@ -1569,7 +1569,7 @@ fn companion_interval_refuses_foreign_scope_member_limit() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let admitted = super::CompanionIntervals::new(&ctx, &[], &[], &[scope], &[header])
         .unwrap()
-        .interval(&ctx, "f3d:native", &companion, 100);
+        .interval("f3d:native", &companion, 100);
     assert_eq!(admitted.unwrap(), Some((58, 70)));
 }
 
