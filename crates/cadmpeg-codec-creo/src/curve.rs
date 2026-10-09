@@ -1209,8 +1209,8 @@ pub(crate) fn expression_records_with_model_name(
         let mut line_vector_storage = ctx.reserve_scoped(0, "creo expression record lines")?;
         let mut lines = Vec::new();
         let mut slots = 0..count;
-        while ctx
-            .next_charged(&mut slots, "creo expression line traversal")?
+        while slots.start < slots.end
+            && ctx.next_charged(&mut slots, "creo expression line traversal")?
             .is_some()
         {
             let Some(relative_end) = ctx.position_by(
@@ -1645,10 +1645,13 @@ fn expression_assignment(
         }
     } else if let CurveExpressionTarget::FunctionWrite { arguments, .. } = &target {
         let mut argument_steps = arguments.iter();
-        while let Some(argument) = ctx.next_charged(
-            &mut argument_steps,
-            "creo function target dependency traversal",
-        )? {
+        while argument_steps.len() != 0 {
+            let Some(argument) = ctx.next_charged(
+                &mut argument_steps,
+                "creo function target dependency traversal",
+            )? else {
+                break;
+            };
             if extend_expression_dependencies(
                 ctx,
                 &mut dependencies,
@@ -1805,13 +1808,19 @@ fn split_expression_assignment<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &'a str,
 ) -> Result<Option<(&'a str, &'a str)>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let bytes = source.as_bytes();
     let mut nesting = 0usize;
     let mut delimiter = None;
     let mut input = bytes.iter().enumerate();
-    while let Some((cursor, &byte)) =
-        ctx.next_charged(&mut input, "creo assignment separator scan")?
-    {
+    while input.len() != 0 {
+        let Some((cursor, &byte)) =
+            ctx.next_charged(&mut input, "creo assignment separator scan")?
+        else {
+            break;
+        };
         if let Some(quote) = delimiter {
             if byte == quote {
                 delimiter = None;
@@ -1967,9 +1976,12 @@ fn curve_expression_solve_program(
             let mut equation_count = 0;
             let mut assignment_count = 0;
             let mut statements = std::mem::take(&mut block.statements).into_iter();
-            while let Some(statement) =
-                ctx.next_charged(&mut statements, "creo pending solve statement traversal")?
-            {
+            while statements.len() != 0 {
+                let Some(statement) =
+                    ctx.next_charged(&mut statements, "creo pending solve statement traversal")?
+                else {
+                    break;
+                };
                 let (dependencies, dependency_storage) = ctx.with_scoped_storage(
                     "creo solve equation dependencies",
                     || -> Result<_, cadmpeg_core::CodecError> {
@@ -2433,7 +2445,10 @@ fn split_assignment_target_arguments<'a>(
     let mut nesting = 0usize;
     let mut delimiter = None;
     let mut input = source.bytes().enumerate();
-    while let Some((offset, byte)) = ctx.next_charged(&mut input, "creo target argument scan")? {
+    while input.len() != 0 {
+        let Some((offset, byte)) = ctx.next_charged(&mut input, "creo target argument scan")? else {
+            break;
+        };
         if let Some(quote) = delimiter {
             if byte == quote {
                 delimiter = None;
@@ -2647,9 +2662,12 @@ fn expression_program_control_is_valid(
     let mut scratch = ctx.reserve_scoped(0, "creo conditional validation scratch")?;
     let mut else_seen = Vec::new();
     let mut line_steps = lines.iter();
-    while let Some(line) =
-        ctx.next_charged(&mut line_steps, "creo relation control line traversal")?
-    {
+    while line_steps.len() != 0 {
+        let Some(line) =
+            ctx.next_charged(&mut line_steps, "creo relation control line traversal")?
+        else {
+            break;
+        };
         let source = ctx.trim_text(&line.text, "creo relation control line trim")?;
         if starts_relation_keyword(ctx, source, "if")? {
             if conditional_keyword_expression(ctx, source, "if")?.is_none() {
@@ -2880,7 +2898,7 @@ fn evaluate_expression_program_details(
                 .zip(&mut initial_values)
                 .zip(&block.unknowns);
             while let Some(((dimension, initial), unknown)) =
-                if block.unknowns.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
+                if block.unknowns.len() <= MAX_NONLINEAR_SOLVE_VARIABLES || snapshots.len() == 0 {
                     snapshots.next()
                 } else {
                     ctx.next_charged(&mut snapshots, "creo solve snapshot traversal")?
@@ -4037,7 +4055,7 @@ impl SimultaneousAffineValue {
         self.constant += sign * right.constant;
         let bounded = right.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES;
         let mut coefficients = right.coefficients.into_iter();
-        while let Some((variable, coefficient)) = if bounded {
+        while let Some((variable, coefficient)) = if bounded || coefficients.len() == 0 {
             coefficients.next()
         } else {
             ctx.next_charged(
@@ -4115,12 +4133,12 @@ impl SimultaneousAffineValue {
         let mut left_iter = self.coefficients.iter();
         let mut right_iter = right.coefficients.iter();
         let operation = "creo affine coefficient comparison work";
-        let mut left = if bounded {
+        let mut left = if bounded || left_iter.len() == 0 {
             left_iter.next()
         } else {
             ctx.next_charged(&mut left_iter, operation)?
         };
-        let mut right_value = if bounded {
+        let mut right_value = if bounded || right_iter.len() == 0 {
             right_iter.next()
         } else {
             ctx.next_charged(&mut right_iter, operation)?
@@ -4133,12 +4151,12 @@ impl SimultaneousAffineValue {
                             if left_value != right_coefficient {
                                 return Ok(None);
                             }
-                            left = if bounded {
+                            left = if bounded || left_iter.len() == 0 {
                                 left_iter.next()
                             } else {
                                 ctx.next_charged(&mut left_iter, operation)?
                             };
-                            right_value = if bounded {
+                            right_value = if bounded || right_iter.len() == 0 {
                                 right_iter.next()
                             } else {
                                 ctx.next_charged(&mut right_iter, operation)?
@@ -4148,7 +4166,7 @@ impl SimultaneousAffineValue {
                             if *left_value != 0.0 {
                                 return Ok(None);
                             }
-                            left = if bounded {
+                            left = if bounded || left_iter.len() == 0 {
                                 left_iter.next()
                             } else {
                                 ctx.next_charged(&mut left_iter, operation)?
@@ -4158,7 +4176,7 @@ impl SimultaneousAffineValue {
                             if *right_coefficient != 0.0 {
                                 return Ok(None);
                             }
-                            right_value = if bounded {
+                            right_value = if bounded || right_iter.len() == 0 {
                                 right_iter.next()
                             } else {
                                 ctx.next_charged(&mut right_iter, operation)?
@@ -4170,7 +4188,7 @@ impl SimultaneousAffineValue {
                     if *coefficient != 0.0 {
                         return Ok(None);
                     }
-                    left = if bounded {
+                    left = if bounded || left_iter.len() == 0 {
                         left_iter.next()
                     } else {
                         ctx.next_charged(&mut left_iter, operation)?
@@ -4180,7 +4198,7 @@ impl SimultaneousAffineValue {
                     if *coefficient != 0.0 {
                         return Ok(None);
                     }
-                    right_value = if bounded {
+                    right_value = if bounded || right_iter.len() == 0 {
                         right_iter.next()
                     } else {
                         ctx.next_charged(&mut right_iter, operation)?
@@ -4208,6 +4226,7 @@ impl ExpressionValue for SimultaneousAffineValue {
         let mut coefficients = BTreeMap::new();
         let mut coefficient_entries = self.coefficients.iter();
         while let Some((name, value)) = if self.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES
+            || coefficient_entries.len() == 0
         {
             coefficient_entries.next()
         } else {
@@ -4710,7 +4729,7 @@ impl DimensionForm {
         self.constant = constant;
         let bounded = right.variables.len() <= MAX_NONLINEAR_SOLVE_VARIABLES;
         let mut variables = right.variables.into_iter();
-        while let Some((name, coefficient)) = if bounded {
+        while let Some((name, coefficient)) = if bounded || variables.len() == 0 {
             variables.next()
         } else {
             ctx.next_charged(
@@ -4783,7 +4802,9 @@ impl DimensionForm {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut variables = BTreeMap::new();
         let mut variable_entries = self.variables.iter();
-        while let Some((name, value)) = if self.variables.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
+        while let Some((name, value)) = if self.variables.len() <= MAX_NONLINEAR_SOLVE_VARIABLES
+            || variable_entries.len() == 0
+        {
             variable_entries.next()
         } else {
             ctx.next_charged(
@@ -4839,7 +4860,7 @@ impl DimensionForm {
         self.constant = constant;
         let bounded = self.variables.len() <= MAX_NONLINEAR_SOLVE_VARIABLES;
         let mut coefficients = self.variables.iter_mut();
-        while let Some((_, coefficient)) = if bounded {
+        while let Some((_, coefficient)) = if bounded || coefficients.len() == 0 {
             coefficients.next()
         } else {
             ctx.next_charged(&mut coefficients, "creo dimension coefficient scaling")?
@@ -4868,7 +4889,7 @@ impl DimensionForm {
         self.constant = constant;
         let bounded = self.variables.len() <= MAX_NONLINEAR_SOLVE_VARIABLES;
         let mut coefficients = self.variables.iter_mut();
-        while let Some((_, coefficient)) = if bounded {
+        while let Some((_, coefficient)) = if bounded || coefficients.len() == 0 {
             coefficients.next()
         } else {
             ctx.next_charged(&mut coefficients, "creo dimension coefficient scaling")?
@@ -6866,10 +6887,13 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             return Ok(None);
         };
         let mut operators = (start..end).rev();
-        while let Some(index) = self
-            .ctx
-            .next_charged(&mut operators, "creo relation unary replay")?
-        {
+        while operators.len() != 0 {
+            let Some(index) = self
+                .ctx
+                .next_charged(&mut operators, "creo relation unary replay")?
+            else {
+                break;
+            };
             let result = match self.source[index] {
                 b'-' => value.negate_checked(self.ctx),
                 b'!' | b'~' => value.logical_not_checked(self.ctx),
@@ -7792,9 +7816,12 @@ pub(crate) fn expression_helix(
     }
     let mut present = [false; 3];
     let mut assignments = record.assignments.iter();
-    while let Some(assignment) =
-        ctx.next_charged(&mut assignments, "creo helix output scan work")?
-    {
+    while assignments.len() != 0 {
+        let Some(assignment) =
+            ctx.next_charged(&mut assignments, "creo helix output scan work")?
+        else {
+            break;
+        };
         if let Some((name, _)) = assignment.parameter_target() {
             for (slot, output) in present.iter_mut().zip(["r", "theta", "z"]) {
                 if !*slot {
@@ -7961,10 +7988,13 @@ pub(crate) fn depdb_cross_section_rows(
         )?;
         let mut selected = None;
         let mut candidates = boundaries[first_candidate..].iter().copied();
-        while let Some((end, length)) = ctx.next_charged(
-            &mut candidates,
-            "creo cross-section boundary candidate traversal",
-        )? {
+        while candidates.len() != 0 {
+            let Some((end, length)) = ctx.next_charged(
+                &mut candidates,
+                "creo cross-section boundary candidate traversal",
+            )? else {
+                break;
+            };
             if let Some(row) = row_storage.with_storage(|| {
                 parse_depdb_curve_segment(ctx, &payload[cursor..end], cursor, &cache)
             })? {
@@ -7991,6 +8021,9 @@ fn parse_depdb_curve_segment(
     absolute_offset: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<DepdbCurveRow>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut suffix_candidate = None;
     for suffix_length in 4..=11 {
         let Some(start) = segment.len().checked_sub(suffix_length) else {
@@ -8012,7 +8045,10 @@ fn parse_depdb_curve_segment(
     };
     let mut prefix_candidate: Option<(usize, TopologyPrefix)> = None;
     let mut starts = 0..suffix_start;
-    while let Some(start) = ctx.next_charged(&mut starts, "creo curve prefix scan")? {
+    while starts.len() != 0 {
+        let Some(start) = ctx.next_charged(&mut starts, "creo curve prefix scan")? else {
+            break;
+        };
         let Some(prefix) = topology_prefix_fields(segment, start) else {
             continue;
         };
@@ -8288,9 +8324,12 @@ fn framed_segment_with_face_ids(
         "creo framed curve prefixes sort",
     )?;
     let mut closes = segment.iter().enumerate().rev();
-    while let Some((close, &byte)) =
-        ctx.next_charged(&mut closes, "creo framed curve close scan")?
-    {
+    while closes.len() != 0 {
+        let Some((close, &byte)) =
+            ctx.next_charged(&mut closes, "creo framed curve close scan")?
+        else {
+            break;
+        };
         if byte != psb::token::COMPOUND_CLOSE {
             continue;
         }
@@ -8355,6 +8394,9 @@ fn complete_curve_row_linkage(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let bytes = bytes
         .strip_suffix(&[0xe1, 0xf5, 0x05, 0xf6, 0xe0, 0x00])
         .or_else(|| bytes.strip_suffix(&[0xe1, 0xe0, 0x00]))
@@ -8378,8 +8420,8 @@ fn complete_curve_row_linkage(
         };
         cursor = next;
         let mut links = 0..count;
-        while ctx
-            .next_charged(&mut links, "creo counted curve row linkage")?
+        while links.start < links.end
+            && ctx.next_charged(&mut links, "creo counted curve row linkage")?
             .is_some()
         {
             let Some((_, next)) = generic_compact_at(bytes, cursor) else {
@@ -9753,10 +9795,16 @@ fn unique_topology_suffix_in_segment(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     segment: &[u8],
 ) -> Result<Option<TopologySuffixCandidate>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut closes = segment.windows(3).enumerate().rev();
-    while let Some((close, bytes)) =
-        ctx.next_charged(&mut closes, "creo unique topology suffix close scan")?
-    {
+    while closes.len() != 0 {
+        let Some((close, bytes)) =
+            ctx.next_charged(&mut closes, "creo unique topology suffix close scan")?
+        else {
+            break;
+        };
         if bytes != [0, 0, psb::token::COMPOUND_CLOSE] {
             continue;
         }
