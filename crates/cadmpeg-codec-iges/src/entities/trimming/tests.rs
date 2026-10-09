@@ -1221,7 +1221,7 @@ fn linear_boundary_relationship_rejects_a_self_intersecting_outer_boundary() {
 
     assert_eq!(
         linear_boundary_relationship_is_valid(
-            rings.as_deref(),
+            rings.as_ref().map(|rings| rings.values.as_slice()),
             BoundarySurfaceKind::Trimmed,
             true,
             &plane,
@@ -1254,7 +1254,7 @@ fn linear_boundary_rings_refuse_outer_and_nested_point_storage() {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                linear_boundary_rings(candidates.iter().map(Option::as_ref), BoundarySpace::Parameter, &ctx)
+                linear_boundary_rings(candidates.iter().map(Option::as_ref), BoundarySpace::Parameter, &ctx).map(|_| ())
             },
         );
     }
