@@ -3082,8 +3082,8 @@ fn disambiguate_group_ids<'ctx>(
     groups: &mut [GroupRecord],
     mut staging: Option<&mut [GroupRecordStorage<'ctx>]>,
 ) -> Result<usize, CodecError> {
-    let mut counts = HashMap::<GroupIdentity, usize>::new();
     let mut workspace = ctx.reserve_scoped(0, "Rhino group identity workspace")?;
+    let mut counts = HashMap::<GroupIdentity, usize>::new();
     ctx.charge_work(0, "Rhino disambiguate group ids traversal")?;
     let mut projection_source = groups[..].iter();
     for _ in 0..projection_source.len() {
@@ -3100,8 +3100,8 @@ fn disambiguate_group_ids<'ctx>(
             .or_default();
         *count += 1;
     }
-    let mut duplicate_indices = Vec::new();
     let mut index_workspace = ctx.reserve_scoped(0, "Rhino duplicate group workspace")?;
+    let mut duplicate_indices = Vec::new();
     ctx.charge_work(0, "Rhino disambiguate group ids traversal")?;
     let mut projection_source = groups[..].iter();
     for order in 0..projection_source.len() {
@@ -5374,13 +5374,14 @@ pub(crate) fn install<'ctx>(
     let mut staging = ctx.reserve_scoped(0, "Rhino presentation staging records")?;
     let mut record_guard_storage =
         ctx.reserve_scoped(0, "Rhino presentation record guard storage")?;
+    let mut group_member_workspace;
     let mut group_storages = Vec::new();
     let mut groups = Vec::new();
     let mut record_storages = Vec::new();
     let mut materials = Vec::new();
     let mut lights = Vec::new();
-    let mut light_identities = HashSet::new();
     let mut light_index_workspace = ctx.reserve_scoped(0, "Rhino light identity workspace")?;
+    let mut light_identities = HashSet::new();
     let mut linetypes = Vec::new();
     let mut hatch_patterns = Vec::new();
     let mut dimension_styles = Vec::new();
@@ -5390,8 +5391,8 @@ pub(crate) fn install<'ctx>(
     let mut text_styles = Vec::new();
     let mut layers = Vec::new();
     let mut object_presentation = Vec::new();
-    let mut object_id_counts = HashMap::<Uuid, usize>::new();
     let mut object_count_workspace = ctx.reserve_scoped(0, "Rhino object identity workspace")?;
+    let mut object_id_counts = HashMap::<Uuid, usize>::new();
     let mut losses = ScratchVec::new(ctx, "Rhino presentation loss Vec")?;
     let mut opaque_records = ScratchVec::new(ctx, "Rhino presentation source Vec")?;
     let mut apple_runtime = None;
@@ -6167,14 +6168,14 @@ record_losses.append_admitted(
             }
         }
     }
-    let (group_index_counts, group_index_workspace) = crate::settings::index_occurrences(
+    let (group_index_workspace, group_index_counts) = crate::settings::index_occurrences(
         ctx,
         &groups,
         |group| group.archive_index,
         "Rhino group index counts",
-    )?;
+    ).map(|(value, storage)| (storage, value))?;
     let mut group_members = HashMap::<i32, Vec<String>>::new();
-    let mut group_member_workspace = ctx.reserve_scoped(0, "Rhino group member workspace")?;
+    group_member_workspace = ctx.reserve_scoped(0, "Rhino group member workspace")?;
     ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = scan.objects[..].iter();
     for source_order in 0..projection_source.len() {
@@ -6341,8 +6342,8 @@ record_losses.append_admitted(
             )?;
         }
     }
-    let mut layer_id_counts = HashMap::<Uuid, usize>::new();
     let mut layer_count_workspace = ctx.reserve_scoped(0, "Rhino layer identity workspace")?;
+    let mut layer_id_counts = HashMap::<Uuid, usize>::new();
     ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = scan.metadata.layers[..].iter();
     for _ in 0..projection_source.len() {
