@@ -130,7 +130,7 @@ mod tests {
         )
         .expect_err("input limit");
         assert!(
-            matches!(error, crate::application::refusal::ApplicationError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes && limit.limit == 4)
+            matches!(error.refusal(), Some(crate::application::refusal::ConversionRefusal::ResourceLimit { limit, .. }) if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes && limit.limit == 4)
         );
     }
 
