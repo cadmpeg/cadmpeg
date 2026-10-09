@@ -2869,6 +2869,9 @@ fn cylindrical_trim(
     surface: &SurfaceGeometry,
     topology: &TrimTopology<'_>,
 ) -> Result<Option<CylindricalTrim>, cadmpeg_core::CodecError> {
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(limit.into());
+    }
     let TrimTopology {
         loops,
         coedges,
@@ -2891,7 +2894,10 @@ fn cylindrical_trim(
     if face.loops.len() != 1 {
         return Ok(None);
     }
-    let loop_id = require_some!(face.loops.iter().next());
+    let loop_id = match &face.loops {
+        cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => require_some!(loops.first()),
+        cadmpeg_ir::topology::FaceLoops::Classified { outer, .. } => outer,
+    };
     let loop_ = *require_some!(ctx.get_hash_map(loops, loop_id, "look up SLDPRT hash key")?);
     if loop_.coedges().is_empty()
         || loop_.vertices().next().is_some()
@@ -2905,6 +2911,8 @@ fn cylindrical_trim(
     }
     let tolerance = require_some!(FaceEvaluationTolerance::of(face)).get();
     let mut axial_bounds = None::<(f64, f64)>;
+    // Declared before the vector so backing dies before its reservation.
+    let mut angle_storage = ctx.reserve_scoped(0, "collect SLDPRT cylindrical trim angles")?;
     let mut angles = Vec::new();
     for coedge_id in loop_.coedges() {
         ctx.charge_work(1, "scan SLDPRT cylindrical trim coedges")?;
@@ -2943,7 +2951,6 @@ fn cylindrical_trim(
             _ => return Ok(None),
         }
         for vertex_id in [&edge.start, &edge.end] {
-            ctx.charge_work(1, "scan SLDPRT cylindrical trim endpoints")?;
             let vertex =
                 require_some!(ctx.get_hash_map(vertices, vertex_id, "look up SLDPRT hash key")?);
             let point = *require_some!(ctx.get_hash_map(
@@ -2967,7 +2974,7 @@ fn cylindrical_trim(
                 None => (axial, axial),
             });
             let angle = require_some!(cylinder_angle(point, origin, &frame));
-            ctx.push_vec(&mut angles, angle, "collect SLDPRT cylindrical trim angles")?;
+            ctx.push_scoped_vec(&mut angle_storage, &mut angles, angle, "collect SLDPRT cylindrical trim angles")?;
         }
     }
     let (min_axial, max_axial) = require_some!(axial_bounds);
@@ -2991,6 +2998,9 @@ fn conical_trim(
     surface: &SurfaceGeometry,
     topology: &TrimTopology<'_>,
 ) -> Result<Option<ConicalTrim>, cadmpeg_core::CodecError> {
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(limit.into());
+    }
     let TrimTopology {
         loops,
         coedges,
@@ -3016,7 +3026,10 @@ fn conical_trim(
     if face.loops.len() != 1 {
         return Ok(None);
     }
-    let loop_id = require_some!(face.loops.iter().next());
+    let loop_id = match &face.loops {
+        cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => require_some!(loops.first()),
+        cadmpeg_ir::topology::FaceLoops::Classified { outer, .. } => outer,
+    };
     let loop_ = *require_some!(ctx.get_hash_map(loops, loop_id, "look up SLDPRT hash key")?);
     if loop_.coedges().is_empty()
         || loop_.vertices().next().is_some()
@@ -3030,6 +3043,8 @@ fn conical_trim(
     }
     let tolerance = require_some!(FaceEvaluationTolerance::of(face)).get();
     let mut axial_bounds = None::<(f64, f64)>;
+    // Declared before the vector so backing dies before its reservation.
+    let mut angle_storage = ctx.reserve_scoped(0, "collect SLDPRT conical trim angles")?;
     let mut angles = Vec::new();
     for coedge_id in loop_.coedges() {
         ctx.charge_work(1, "scan SLDPRT conical trim coedges")?;
@@ -3061,7 +3076,10 @@ fn conical_trim(
                 if nurbs.degree() != 1
                     || nurbs.periodic()
                     || nurbs.pole_rows().count() != 2
-                    || nurbs.control_points().iter().any(|point| {
+                    || (0..2).any(|index| {
+                        let Some(point) = nurbs.pole_rows().point_at(index) else {
+                            return true;
+                        };
                         surface.solved().is_none_or(|surface| {
                             analytic_surface_residual(surface, point.get())
                                 .is_none_or(|residual| residual > tolerance)
@@ -3124,7 +3142,6 @@ fn conical_trim(
             _ => return Ok(None),
         }
         for vertex_id in [&edge.start, &edge.end] {
-            ctx.charge_work(1, "scan SLDPRT conical trim endpoints")?;
             let vertex =
                 require_some!(ctx.get_hash_map(vertices, vertex_id, "look up SLDPRT hash key")?);
             let point = *require_some!(ctx.get_hash_map(
@@ -3148,8 +3165,7 @@ fn conical_trim(
                 Some((min_axial, max_axial)) => (min_axial.min(axial), max_axial.max(axial)),
                 None => (axial, axial),
             });
-            ctx.reserve_vec(&mut angles, 1, "collect SLDPRT conical trim angles")?;
-            angles.push(angle);
+            ctx.push_scoped_vec(&mut angle_storage, &mut angles, angle, "collect SLDPRT conical trim angles")?;
         }
     }
     let (min_axial, max_axial) = require_some!(axial_bounds);
