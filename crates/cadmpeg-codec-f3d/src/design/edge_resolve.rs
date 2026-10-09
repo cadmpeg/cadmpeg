@@ -54,6 +54,27 @@ fn native_edge_selection(
     ))
 }
 
+/// Return a recipe state only when every matched operand names it.
+fn shared_recipe_state_id(
+    operands: &[&DesignEdgeOperand],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<i64>, CodecError> {
+    ctx.charge_work(0, "resolve F3D shared edge recipe state")?;
+    let Some(state_id) = operands.first().and_then(|operand| operand.recipe_state_id) else {
+        return Ok(None);
+    };
+    let mut remaining = operands[1..].iter();
+    while !remaining.as_slice().is_empty() {
+        let Some(operand) = ctx.next_charged(&mut remaining, "scan F3D shared edge recipe states")? else {
+            break;
+        };
+        if operand.recipe_state_id != Some(state_id) {
+            return Ok(None);
+        }
+    }
+    Ok(Some(state_id))
+}
+
 fn historical_identity_slots(
     group: &DesignConstructionOperandGroup,
     state: cadmpeg_ir::ids::FeatureInputTopologyId,
@@ -170,17 +191,10 @@ pub(super) fn resolved_surface_patch_edge_group(
         }
         SurfacePatchRecipeEdges::Resolved(edges) => edges,
     };
-    let state_id = previous_state_id.or_else(|| {
-        let mut states = matched_operands
-            .iter()
-            .filter_map(|operand| operand.recipe_state_id);
-        let state_id = states.next()?;
-        (states.all(|candidate| candidate == state_id)
-            && matched_operands
-                .iter()
-                .all(|operand| operand.recipe_state_id == Some(state_id)))
-        .then_some(state_id)
-    });
+    let state_id = match previous_state_id {
+        Some(state_id) => Some(state_id),
+        None => shared_recipe_state_id(&matched_operands, ctx)?,
+    };
     let Some(state_id) = state_id else {
         return Ok(cadmpeg_ir::features::EdgeSelection::Edges(edges));
     };
@@ -741,17 +755,10 @@ fn resolved_edge_group_with_transition_chain(
         {
             return unmatched_selection(previous_state_id);
         }
-        let state_id = previous_state_id.or_else(|| {
-            let mut states = matched_operands
-                .iter()
-                .filter_map(|operand| operand.recipe_state_id);
-            let state_id = states.next()?;
-            (states.all(|candidate| candidate == state_id)
-                && matched_operands
-                    .iter()
-                    .all(|operand| operand.recipe_state_id == Some(state_id)))
-            .then_some(state_id)
-        });
+        let state_id = match previous_state_id {
+            Some(state_id) => Some(state_id),
+            None => shared_recipe_state_id(&matched_operands, ctx)?,
+        };
         let Some(state_id) = state_id else {
             return unmatched_selection(previous_state_id);
         };
@@ -1106,19 +1113,12 @@ fn resolved_edge_group_with_transition_chain(
             "f3d matched edge group operand",
         )?;
     }
-    let recipe_state_id = || {
-        let mut states = matched_operands
-            .iter()
-            .filter_map(|operand| operand.recipe_state_id);
-        let state = states.next()?;
-        (states.all(|candidate| candidate == state)
-            && matched_operands
-                .iter()
-                .all(|operand| operand.recipe_state_id == Some(state)))
-        .then_some(state)
-    };
     let transition_state_id = previous_state_id;
-    let Some(previous_state_id) = transition_state_id.or_else(recipe_state_id) else {
+    let state_id = match transition_state_id {
+        Some(state_id) => Some(state_id),
+        None => shared_recipe_state_id(&matched_operands, ctx)?,
+    };
+    let Some(previous_state_id) = state_id else {
         return if group.lost_edge_references.is_empty() {
             native_edge_selection(group, ctx)
         } else {

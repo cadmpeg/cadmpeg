@@ -1976,3 +1976,5 @@ mod membership;
 mod empty_gates;
 
 mod text_comparison;
+
+mod state_consensus;
