@@ -2944,8 +2944,8 @@ fn inline_mirror_surface_paths(
             )
         })?;
         if index_storage.with_storage(|| ctx.insert_hash_set(&mut seen, key, OPERATION))? {
-            index_storage.with_storage(|| key_storage.commit())?;
-            component_storage.commit()?;
+            seen = index_storage.with_storage(|| key_storage.commit_value(seen))?;
+            let components = component_storage.commit_value(components)?;
             ctx.push_vec(&mut result, (offset, components), OPERATION)?;
         }
     }
@@ -3181,8 +3181,8 @@ pub(crate) fn generated_surface_identities(
         if !scratch.with_storage(|| ctx.insert_hash_set(&mut seen, (prefix, key), OPERATION))? {
             continue;
         }
-        scratch.with_storage(|| key_storage.commit())?;
-        component_storage.commit()?;
+        seen = scratch.with_storage(|| key_storage.commit_value(seen))?;
+        let components = component_storage.commit_value(components)?;
         let local_identity = cadmpeg_core::bytes::assemble_u32_le(tail);
         scratch.with_storage(|| ctx.reserve_vec(&mut result, 1, OPERATION))?;
         let input_index = result.len();
@@ -3640,7 +3640,7 @@ pub(super) fn variable_fillet_control_references(
                 VariableFilletControl(name_text, references),
                 OPERATION,
             )?;
-            references_storage.commit()?;
+            result = references_storage.commit_value(std::mem::take(&mut result))?;
             Ok(())
         })?;
         start = marker;
