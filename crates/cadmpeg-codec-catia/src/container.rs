@@ -375,10 +375,7 @@ fn last_save_version_in_segments(
         }
     }
     match selected {
-        Some((version, storage)) => {
-            storage.commit()?;
-            Ok(Some(version))
-        }
+        Some((version, storage)) => storage.commit_value(version).map(Some),
         None => Ok(None),
     }
 }
@@ -980,7 +977,7 @@ pub(crate) fn consolidated_record_sources(
             if seen_storage
                 .with_storage(|| ctx.insert_hash_set(&mut seen, key, "catia_record_source_keys"))?
             {
-                source_storage.commit()?;
+                let source = source_storage.commit_value(source)?;
                 ctx.push_vec(sources, source, "catia_record_sources")?;
             }
         }
@@ -1048,9 +1045,9 @@ pub(crate) fn logical_record_streams<'storage>(
     ctx: &'storage DecodeContext<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<LogicalRecordStreams<'storage>, CodecError> {
-    let mut streams = Vec::new();
-    let mut stream_storage = Vec::new();
     let mut scratch = ctx.reserve_scoped(0, "catia_logical_record_streams")?;
+    let mut stream_storage = Vec::new();
+    let mut streams = Vec::new();
     for directory in [scan.outer.as_ref(), scan.inner.as_ref()]
         .into_iter()
         .flatten()
@@ -1058,21 +1055,24 @@ pub(crate) fn logical_record_streams<'storage>(
         for descriptor in
             ctx.admit_iter(&directory.descriptors, "catia_logical_stream_descriptors")?
         {
-            let (stream, storage) =
+            let candidate =
                 reconstruct_logical_stream(ctx, &scan.data, descriptor, directory.inner)?;
-            if !stream.is_empty() {
-                ctx.push_scoped_vec(
+            if !candidate.0.is_empty() {
+                ctx.reserve_scoped_vec(
                     &mut scratch,
                     &mut streams,
-                    stream,
+                    1,
                     "catia_logical_record_streams",
                 )?;
-                ctx.push_scoped_vec(
+                ctx.reserve_scoped_vec(
                     &mut scratch,
                     &mut stream_storage,
-                    storage,
+                    1,
                     "catia_logical_stream_reservations",
                 )?;
+                let (stream, storage) = candidate;
+                streams.push(stream);
+                stream_storage.push(storage);
             }
         }
     }
@@ -1282,7 +1282,7 @@ fn parse_directory_region(
                             .unwrap_or(0);
                     if index_from_u32(logical_length) == cum {
                         let name = descriptor_name(ctx, dirbuf, ds)?;
-                        candidate_storage.commit()?;
+                        let extents = candidate_storage.commit_value(extents)?;
                         ctx.push_vec(
                             &mut descriptors,
                             Descriptor {
@@ -1535,7 +1535,9 @@ fn reconstruct_logical_stream<'storage>(
             .and_then(|start| data.get(start..start.checked_add(index_from_u32(extent.phys_len))?));
         // An extent the image does not hold states no logical stream.
         let Some(bytes) = bytes else {
-            return Ok((Vec::new(), storage));
+            drop(out);
+            drop(storage);
+            return Ok((Vec::new(), ctx.reserve_scoped(0, "catia_logical_stream_bytes")?));
         };
         storage.with_storage(|| {
             ctx.extend_retained_bytes(&mut out, bytes, "catia_logical_stream_copy")
@@ -1565,8 +1567,8 @@ pub(crate) fn outer_container_declarations(
     let Some(data_descriptor) = data_descriptor else {
         return Ok(Vec::new());
     };
-    let (logical, _storage) = reconstruct_logical_stream(ctx, data, data_descriptor, outer.inner)?;
-    parse_outer_container_declarations(ctx, &logical, &outer.descriptors)
+    let logical = reconstruct_logical_stream(ctx, data, data_descriptor, outer.inner)?;
+    parse_outer_container_declarations(ctx, &logical.0, &outer.descriptors)
 }
 
 /// At each start, the largest ends belonging to two distinct declarations.
@@ -1699,9 +1701,8 @@ fn parse_outer_container_declarations(
     const CLASS_BLOCK: &[u8] = b"\x02\x00\x81\x20";
     const TERMINAL: &[u8] = b"\x03\x00\xf7\x00\x03\x00\x00\x00";
 
-    let mut declarations = Vec::new();
     if data.len() < 64 {
-        return Ok(declarations);
+        return Ok(Vec::new());
     }
     // The terminal positions, the descriptor names and the selected stream
     // names are scratch indexes built once.
@@ -1727,6 +1728,7 @@ fn parse_outer_container_declarations(
     }
     let mut selected_streams = HashSet::new();
     let mut output_storage = ctx.reserve_scoped(0, "catia_container_declarations")?;
+    let mut declarations = Vec::new();
     let mut starts = 0..data.len() - 64;
     while let Some(start) = ctx.next_charged(&mut starts, "catia_container_declaration_scan")? {
         if data.get(start + 8..start + 12) != Some(HEADER)
@@ -1818,8 +1820,7 @@ fn parse_outer_container_declarations(
             )
         })?;
     }
-    output_storage.commit()?;
-    Ok(declarations)
+    output_storage.commit_value(declarations)
 }
 
 /// The two NUL-terminated graphic-ASCII class names before a declaration's
@@ -1871,13 +1872,14 @@ fn brep_stream(
     let Some(surf) = unique_largest_descriptor(ctx, &dir.descriptors, "SurfacicReps")? else {
         return Ok(None);
     };
-    let (mut out, mut output_storage) = reconstruct_logical_stream(ctx, data, main, dir.inner)?;
-    let (surface, _storage) = reconstruct_logical_stream(ctx, data, surf, dir.inner)?;
+    let mut output = reconstruct_logical_stream(ctx, data, main, dir.inner)?;
+    let surface = reconstruct_logical_stream(ctx, data, surf, dir.inner)?;
+    let (out, output_storage) = &mut output;
     output_storage.with_storage(|| {
-        ctx.extend_retained_bytes(&mut out, &surface, "catia_brep_surface_bytes")
+        ctx.extend_retained_bytes(out, &surface.0, "catia_brep_surface_bytes")
     })?;
-    output_storage.commit()?;
-    Ok(Some(out))
+    let (out, output_storage) = output;
+    output_storage.commit_value(out).map(Some)
 }
 
 /// Reconstruct the unique canonical `MainDataStream`, which owns the FBB
@@ -1893,8 +1895,7 @@ fn main_data_stream(
         return Ok(None);
     };
     let (stream, storage) = reconstruct_logical_stream(ctx, data, main, dir.inner)?;
-    storage.commit()?;
-    Ok(Some(stream))
+    storage.commit_value(stream).map(Some)
 }
 
 /// The descriptor named `name` with the uniquely largest logical length.
