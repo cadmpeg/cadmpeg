@@ -289,3 +289,5 @@ fn round_envelope_rejects_an_extra_reference_circle() {
     )
     .is_none());
 }
+
+mod admission_visits;
