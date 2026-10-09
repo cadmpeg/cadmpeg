@@ -405,6 +405,19 @@ pub(super) fn consolidated_vertex_identities(
                 &key,
                 "catia_native_vertex_identity_lookup",
             )? {
+                if identity_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut reference_members,
+                        (index, identity),
+                        "catia_native_vertex_identity_reference_checks",
+                    )
+                })? {
+                    ctx.push_vec(
+                        &mut identities[index].reference_values,
+                        identity,
+                        "catia_native_vertex_identity_references",
+                    )?;
+                }
                 index
             } else {
                 let index = identities.len();
@@ -456,19 +469,6 @@ pub(super) fn consolidated_vertex_identities(
                 index
             };
             let vertex = &mut identities[index];
-            if identity_storage.with_storage(|| {
-                ctx.insert_hash_set(
-                    &mut reference_members,
-                    (index, identity),
-                    "catia_native_vertex_identity_reference_checks",
-                )
-            })? {
-                ctx.push_vec(
-                    &mut vertex.reference_values,
-                    identity,
-                    "catia_native_vertex_identity_references",
-                )?;
-            }
             let repeated_edge = match vertex.incident_edge_nodes.last() {
                 Some(last) => ctx.equal_bytes(
                     last.as_bytes(),
