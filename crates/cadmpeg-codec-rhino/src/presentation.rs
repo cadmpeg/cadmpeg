@@ -444,6 +444,13 @@ struct LightRecord {
     links: Vec<String>,
 }
 
+/// Parsed values whose vector shell ends at projection. Allocated children
+/// that move into output stay in the caller's record storage.
+struct PatternSource<'ctx, T> {
+    values: Vec<T>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
 struct SourceLinetypeSegment {
     length: FiniteReal,
     segment_type: u32,
@@ -3306,10 +3313,10 @@ fn prepare_light(
     Ok(light)
 }
 
-fn segments(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn segments<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
-) -> Result<Vec<SourceLinetypeSegment>, FramingError> {
+) -> Result<PatternSource<'ctx, SourceLinetypeSegment>, FramingError> {
     let count = reader.i32()?;
     let bytes = crate::chunks::checked_count_bytes(
         count,
@@ -3318,9 +3325,10 @@ fn segments(
         1 << 16,
         reader.position(),
     )?;
-    let mut values = ctx
-        .collection_vec(bytes / 12, "Rhino linetype segments")
-        .map_err(crate::chunks::FramingError::from)?;
+    let (storage, mut values) = ctx.with_scoped_storage(
+        "Rhino linetype source segment workspace",
+        || ctx.collection_vec(bytes / 12, "Rhino linetype segments"),
+    ).map(|(values, storage)| (storage, values))?;
     for _ in 0..bytes / 12 {
         ctx.charge_work(1, "Rhino presentation cursor traversal")
             .map_err(FramingError::from)?;
@@ -3330,7 +3338,7 @@ fn segments(
             segment_type: reader.u32()?,
         });
     }
-    Ok(values)
+    Ok(PatternSource { values, storage })
 }
 
 fn parse_linetype(
@@ -3432,10 +3440,10 @@ fn parse_linetype(
     // reader consumes its identifier and leaves a bounded suffix.
     reader.skip_remaining()?;
     let mut segments = ctx
-        .collection_vec(values.len(), "Rhino projected linetype segments")
+        .collection_vec(values.values.len(), "Rhino projected linetype segments")
         .map_err(crate::chunks::FramingError::from)?;
     ctx.charge_work(0, "Rhino linetype projection traversal")?;
-    let mut projection_source = values.into_iter();
+    let mut projection_source = values.values.into_iter();
     for _ in 0..projection_source.len() {
         let segment = ctx.next_charged(&mut projection_source, "Rhino linetype projection traversal")?
             .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
@@ -3455,6 +3463,8 @@ fn parse_linetype(
             segment_type: segment.segment_type,
         });
     }
+    drop(projection_source);
+    drop(values.storage);
     let id = component.id;
     Ok(LinetypeRecord {
         id: if id.is_nil() {
@@ -3614,9 +3624,10 @@ fn parse_hatch_pattern(
             )
             .into());
         }
-        let mut lines = ctx
-            .collection_vec(count, "Rhino modern hatch lines")
-            .map_err(crate::chunks::FramingError::from)?;
+        let (storage, mut lines) = ctx.with_scoped_storage(
+            "Rhino modern hatch source workspace",
+            || ctx.collection_vec(count, "Rhino modern hatch lines"),
+        ).map(|(values, storage)| (storage, values))?;
         for _ in 0..count {
             ctx.charge_work(1, "Rhino presentation cursor traversal")
                 .map_err(FramingError::from)?;
@@ -3649,7 +3660,7 @@ fn parse_hatch_pattern(
             });
         }
         reader.skip_remaining()?;
-        (component, fill_type, description, lines)
+        (component, fill_type, description, PatternSource { values: lines, storage })
     } else {
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
         let packed = reader.u8()?;
@@ -3676,9 +3687,10 @@ fn parse_hatch_pattern(
             )
             .into());
         }
-        let mut lines = ctx
-            .collection_vec(count, "Rhino legacy hatch lines")
-            .map_err(crate::chunks::FramingError::from)?;
+        let (storage, mut lines) = ctx.with_scoped_storage(
+            "Rhino legacy hatch source workspace",
+            || ctx.collection_vec(count, "Rhino legacy hatch lines"),
+        ).map(|(values, storage)| (storage, values))?;
         for _ in 0..count {
             ctx.charge_work(1, "Rhino presentation cursor traversal")
                 .map_err(FramingError::from)?;
@@ -3698,23 +3710,26 @@ fn parse_hatch_pattern(
             },
             fill_type,
             description,
-            lines,
+            PatternSource { values: lines, storage },
         )
     };
-    let lines = if lines.is_empty() {
+    let lines = if lines.values.is_empty() {
+        drop(lines);
         Vec::new()
     } else {
         let scale = hatch_pattern_scale(distance_settings, binding)?;
         let mut projected = ctx
-            .collection_vec(lines.len(), "Rhino projected hatch lines")
+            .collection_vec(lines.values.len(), "Rhino projected hatch lines")
             .map_err(crate::chunks::FramingError::from)?;
         ctx.charge_work(0, "Rhino hatch pattern projection traversal")?;
-        let mut projection_source = lines.into_iter();
+        let mut projection_source = lines.values.into_iter();
         for _ in 0..projection_source.len() {
             let line = ctx.next_charged(&mut projection_source, "Rhino hatch pattern projection traversal")?
                 .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
             projected.push(line.into_millimeters(ctx, scale, source_offset)?);
         }
+        drop(projection_source);
+        drop(lines.storage);
         projected
     };
     Ok(HatchPatternRecord {

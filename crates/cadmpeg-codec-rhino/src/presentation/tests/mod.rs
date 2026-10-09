@@ -1899,6 +1899,8 @@ mod error_lifetimes;
 
 mod userdata_scratch;
 
+mod pattern_scratch;
+
 mod resource_limits;
 
 mod materials;
