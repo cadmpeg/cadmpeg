@@ -1991,8 +1991,8 @@ pub(crate) fn loop_history_entries(
             Ord::cmp,
             "creo loop table key ordering",
         )?;
+        ctx.dedup_vec(&mut keys, "creo loop table key deduplication")?;
     }
-    ctx.dedup_vec(&mut keys, "creo loop table key deduplication")?;
     let mut next_tables = std::collections::HashMap::new();
     for index in ctx.admit_iter(
         0..keys.len().saturating_sub(1),

@@ -343,3 +343,18 @@ fn empty_feature_row_outputs_are_free_and_keep_original_refusal() {
         assert_eq!(ctx.resource_refusal().is_some(), refused);
     }
 }
+
+#[test]
+fn singleton_loop_table_key_has_only_two_present_table_visits() {
+    let table = super::super::FeatureGeometryTable {
+        feature_id: 7, kind: FeatureGeometryTableKind::LoopIds,
+        count: 1, entity_class: 96, offset: 102,
+    };
+    // One index-table visit and one output-table visit. No neighbor, row,
+    // comparison, dedup move or output materialization runs.
+    check_visits(2, |used| if used == 0 { "creo loop table index traversal" }
+        else { "creo loop table output traversal" }, |ctx| {
+        assert!(super::super::loop_history_entries(ctx, &[], std::slice::from_ref(&table))?.is_empty());
+        Ok(())
+    });
+}
