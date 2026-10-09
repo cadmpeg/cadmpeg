@@ -303,3 +303,51 @@ fn cached_surface_positions_fall_back_after_arena_mutation() {
     })
     .expect("source cache does not imply owning surface membership");
 }
+
+#[test]
+fn owned_sketch_nurbs_scaling_preserves_source_and_refuses_overflow_before_insertion() {
+    let geometry = |x: f64, rational: bool| {
+        SketchGeometry::nurbs(
+            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![cadmpeg_ir::math::Point2::new(x, 0.0); 2],
+                rational.then(|| vec![1.0, 2.0]),
+                false,
+            )
+            .expect("fixture construction admitted")
+            .expect("finite source curve"),
+        )
+    };
+    for rational in [false, true] {
+        for x in [1.0, f64::MAX] {
+            let source = geometry(x, rational);
+            let entity = SketchEntity::new(
+                cadmpeg_ir::sketches::SketchEntityId::mint("creo:test:owned-nurbs#1").expect("entity ID"),
+                cadmpeg_ir::sketches::SketchId::mint("creo:test:sketch#1").expect("sketch ID"),
+                source.clone(),
+            );
+            let expected_id = entity.id().clone();
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::service();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut carriers = SourceUnitCarriers::for_decode(&ctx, PositiveReal::new(2.0));
+            let mut ir = CadIr::empty();
+            let result = carriers.admit_sketch_entities(&ctx, &mut ir, vec![entity]);
+            if x == 1.0 {
+                result.expect("finite scaling admitted");
+                assert_eq!(ir.model.sketch_entities.len(), 1);
+                let actual = &ir.model.sketch_entities[0];
+                assert_eq!(actual.id(), &expected_id);
+                assert_eq!(actual.geometry, geometry(2.0, rational));
+                assert_eq!(carriers.sketch_geometry(actual).expect("source lookup"), &source);
+            } else {
+                assert!(matches!(result, Err(CodecError::NotImplemented(_))));
+                assert!(ir.model.sketch_entities.is_empty());
+                assert!(carriers.sketch_entities.is_empty());
+            }
+            assert_eq!(ctx.resource_refusal(), None);
+        }
+    }
+}
