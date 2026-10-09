@@ -18,7 +18,9 @@ pub(crate) fn validate_native(
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(Vec::new());
     };
-    let (native, _native_storage) = match ctx
+    let _native_storage;
+    let native;
+    (native, _native_storage) = match ctx
         .with_scoped_storage("load SLDPRT validation records", || {
             crate::native::SldprtNative::load_charged(ctx, namespace)
         }) {
@@ -199,7 +201,9 @@ pub(crate) fn validate_native(
             }
         }
     }
-    let (mut expected_histories, mut history_reservation) =
+    let mut history_reservation;
+    let mut expected_histories;
+    (expected_histories, history_reservation) =
         ctx.with_scoped_storage("validate SLDPRT expected histories", || {
             ctx.try_collect_retained_with(
                 native.feature_histories.iter(),
@@ -246,11 +250,8 @@ pub(crate) fn validate_native(
             }
         }
     }
-    let crate::native::lanes::ExpectedLanes {
-        pairs: expected_lanes,
-        storage: _expected_lanes_reservation,
-    } = crate::native::lanes::expected_lanes_charged(ctx, &native)?;
-    for (lane, expected_lane) in ctx.admit_iter(&expected_lanes, "scan SLDPRT expected lanes")? {
+    let expected_lanes = crate::native::lanes::expected_lanes_charged(ctx, &native)?;
+    for (lane, expected_lane) in ctx.admit_iter(&expected_lanes.pairs, "scan SLDPRT expected lanes")? {
         for (entity, expected_entity) in ctx
             .admit_iter(
                 &lane.sketch_entities,
