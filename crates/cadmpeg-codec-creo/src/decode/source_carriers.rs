@@ -213,7 +213,7 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
         ir: &mut CadIr,
         entities: Vec<SketchEntity>,
     ) -> Result<(), CodecError> {
-        for mut entity in ctx.admit_iter(entities, "creo source sketch entity traversal")? {
+        for entity in ctx.admit_iter(entities, "creo source sketch entity traversal")? {
             #[cfg(not(test))]
             let SourceContext::Decode(copy_ctx) = self.context;
             #[cfg(test)]
@@ -253,6 +253,9 @@ impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
             };
             let geometry_storage = source_geometry_parts.1;
             let source_geometry = source_geometry_parts.0;
+            // Owned scaling temporarily puts the guarded copy in the entity.
+            // Drop that entity before its geometry guard on every error route.
+            let mut entity = entity;
             let source_geometry = if let Some(scale) = self.length_scale_mm {
                 let unscaled = std::mem::replace(&mut entity.geometry, source_geometry);
                 let scaled =
