@@ -36,3 +36,31 @@ fn a_sketch_frame_holds_its_admitted_origin_axes_and_pattern_direction() {
         UnitVector2::new([0.0, -1.0]).unwrap()
     );
 }
+
+#[test]
+fn resolved_placement_wire_negatives_reach_the_nested_frame_fields() {
+    use crate::sketches::SketchPlacement;
+    let wire = serde_json::json!({
+        "kind": "resolved",
+        "frame": {
+            "origin": {"x": 1.0, "y": 2.0, "z": 3.0},
+            "normal": {"x": 0.0, "y": 0.0, "z": 2.0},
+            "u_axis": {"x": 3.0, "y": 0.0, "z": 0.0}
+        }
+    });
+    let control = SketchPlacement::try_resolved(
+        Point3::new(1.0, 2.0, 3.0), Vector3::new(0.0, 0.0, 2.0), Vector3::new(3.0, 0.0, 0.0),
+    ).unwrap();
+    assert_eq!(serde_json::from_value::<SketchPlacement>(wire.clone()).unwrap(), control);
+    for (field, invalid, expected) in [
+        ("origin", serde_json::json!({"x": null, "y": 0.0, "z": 0.0}), "invalid type: null, expected f64"),
+        ("normal", serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0}), "sketch normal must be finite and nonzero"),
+        ("u_axis", serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0}), "sketch normal and u_axis must be perpendicular"),
+    ] {
+        let mut invalid_wire = wire.clone();
+        invalid_wire["frame"][field] = invalid;
+        let error = serde_json::from_value::<SketchPlacement>(invalid_wire).unwrap_err().to_string();
+        assert!(error.contains(expected), "{field}: {error}");
+        assert!(!error.contains("unknown field"), "{field}: {error}");
+    }
+}
