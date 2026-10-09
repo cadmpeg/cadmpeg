@@ -7022,8 +7022,10 @@ fn curve_selection_parameter_domain_from_geometry(
             SolvedCurveGeometry::Polyline(polyline) => {
                 polyline.parameters().and_then(|mut parameters| {
                     let lower = parameters.next()?.get();
-                    let upper = parameters
-                        .last()
+                    let upper = polyline
+                        .point_count()
+                        .checked_sub(1)
+                        .and_then(|index| polyline.parameter_at(index))
                         .map_or(lower, cadmpeg_ir::scalar::FiniteReal::get);
                     (lower < upper).then_some([lower, upper])
                 })
