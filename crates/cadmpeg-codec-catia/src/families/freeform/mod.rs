@@ -2394,8 +2394,7 @@ pub(in crate::families) struct ConsolidatedCurveBindingCounts {
 struct ConsolidatedStandardFaceBinding<'ctx> {
     coedges: Vec<(
         usize,
-        PcurveGeometry,
-        Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+        (PcurveGeometry, cadmpeg_core::decode::ScopedReservation<'ctx>),
     )>,
     standard_surfaces: [SurfaceId; 2],
     edge_pcurves: [PcurveGeometry; 2],
@@ -3708,37 +3707,32 @@ fn append_resolved_consolidated_surface_curves(
                             let Some(coedge) = selected_coedge else {
                                 continue;
                             };
-                            let (mut geometry, geometry_storage) = ctx.with_scoped_storage(
-                                "catia_freeform_standard_coedge_pcurve_workspace",
-                                || {
-                                    standard_geometries[side].try_clone_for_decode(
-                                        admission.context(),
-                                        "catia_freeform_standard_coedge_pcurve_copy",
-                                    )
-                                },
-                            )?;
-                            let mut geometry_storage = Some(geometry_storage);
-                            if matches!(
+                            let geometry = if matches!(
                                 ir.model.coedges[coedge].sense,
                                 cadmpeg_ir::topology::Sense::Reversed
                             ) {
                                 let label = admission.context().format_scoped(format_args!(
                                         "standard pcurve of the edge block at byte {} reversed onto coedge {coedge}",
                                         resolved.block.pcurves[0].pos), "catia_freeform_reversed_standard_label")?;
-                                let Some(reversed_geometry) =
-                                    crate::nurbs::reverse_pcurve_geometry(
-                                        admission.context(),
-                                        &geometry,
-                                        resolved.block.parameters.range.endpoints(),
-                                        refusal,
-                                        &label.0,
-                                    )?
-                                else {
+                                let Some(geometry) = crate::nurbs::reverse_pcurve_geometry_scoped(
+                                    admission.context(),
+                                    &standard_geometries[side],
+                                    resolved.block.parameters.range.endpoints(),
+                                    refusal,
+                                    &label.0,
+                                )? else {
                                     continue;
                                 };
-                                geometry = reversed_geometry;
-                                drop(geometry_storage.take());
-                            }
+                                geometry
+                            } else {
+                                ctx.with_scoped_storage(
+                                    "catia_freeform_standard_coedge_pcurve_workspace",
+                                    || standard_geometries[side].try_clone_for_decode(
+                                        admission.context(),
+                                        "catia_freeform_standard_coedge_pcurve_copy",
+                                    ),
+                                )?
+                            };
                             // A pcurve binds to a face only when it lifts onto
                             // the edge through that face's carrier. Without the
                             // witness the side's chart is not this face's
@@ -3759,7 +3753,7 @@ fn append_resolved_consolidated_surface_curves(
                                 .map_or(edge_allowance, |value| edge_allowance.max(value.get()));
                             if pcurve_lift_reaches_endpoints(
                                 admission.context(),
-                                &geometry,
+                                &geometry.0,
                                 solved_surface,
                                 resolved.block.parameters.range.endpoints(),
                                 edge_endpoints,
@@ -3768,7 +3762,7 @@ fn append_resolved_consolidated_surface_curves(
                                 ctx.push_scoped_vec(
                                     &mut binding_storage,
                                     &mut coedges,
-                                    (coedge, geometry, geometry_storage),
+                                    (coedge, geometry),
                                     "catia_freeform_standard_face_coedges",
                                 )?;
                             }
@@ -3892,10 +3886,7 @@ fn append_resolved_consolidated_surface_curves(
                     binding_counts.partner_face_pcurve_pairs += 1;
                 }
                 binding_counts.standard_face_pcurves += partner_pcurves.coedges.len();
-                for (coedge_index, geometry, storage) in partner_pcurves.coedges {
-                    if let Some(storage) = storage {
-                        storage.commit()?;
-                    }
+                for (coedge_index, geometry) in partner_pcurves.coedges {
                     let pcurve_id = crate::resource::compose_index_id(
                         admission.context(),
                         &cadmpeg_ir::identity_namespace!(
@@ -3924,7 +3915,7 @@ fn append_resolved_consolidated_surface_curves(
                     )?;
                     ir.model.pcurves.push(Pcurve {
                         id: pcurve_owner_id,
-                        geometry,
+                        geometry: geometry.1.commit_value(geometry.0)?,
                         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                             None,
                             Some(cadmpeg_ir::units::FiniteVector::from(

@@ -209,6 +209,23 @@ pub(crate) fn reverse_pcurve_geometry(
     refusal: &mut LaneRefusals,
     record: &str,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    reverse_pcurve_geometry_scoped(ctx, geometry, range, refusal, record)?
+        .map(|(geometry, storage)| storage.commit_value(geometry))
+        .transpose()
+}
+
+/// Build a reversal candidate whose backing remains temporary until selection.
+/// Refusal diagnostics belong to the caller and stay outside its output lease.
+pub(crate) fn reverse_pcurve_geometry_scoped<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    geometry: &PcurveGeometry,
+    range: [f64; 2],
+    refusal: &mut LaneRefusals,
+    record: &str,
+) -> Result<
+    Option<(PcurveGeometry, cadmpeg_core::decode::ScopedReservation<'ctx>)>,
+    cadmpeg_core::CodecError,
+> {
     if !readable_range(ctx, range, true, refusal, record)? {
         return Ok(None);
     }
@@ -220,12 +237,17 @@ pub(crate) fn reverse_pcurve_geometry(
                 range[1].mul_add(direction.u, range[0].mul_add(direction.u, origin.u)),
                 range[1].mul_add(direction.v, range[0].mul_add(direction.v, origin.v)),
             ));
-            Ok(origin.map(|origin| {
+            let Some(origin) = origin else {
+                return Ok(None);
+            };
+            let storage = ctx.reserve_scoped(0, "catia_reverse_pcurve_output")?;
+            Ok(Some((
                 PcurveGeometry::Line(cadmpeg_ir::geometry::pcurve::LinePcurve::new(
                     origin,
                     line_pcurve.direction().reversed(),
-                ))
-            }))
+                )),
+                storage,
+            )))
         }
         PcurveGeometry::Nurbs { nurbs } => {
             if !pcurve_weights_are_positive(ctx, nurbs)? {
@@ -269,9 +291,7 @@ pub(crate) fn reverse_pcurve_geometry(
             )?;
             let result = note_refusal(ctx, checked, refusal, record)?;
             match result {
-                Some(nurbs) => output_storage
-                    .commit_value(PcurveGeometry::Nurbs { nurbs })
-                    .map(Some),
+                Some(nurbs) => Ok(Some((PcurveGeometry::Nurbs { nurbs }, output_storage))),
                 None => Ok(None),
             }
         }
