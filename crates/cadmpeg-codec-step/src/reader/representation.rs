@@ -20,19 +20,6 @@ pub(super) fn parameters<'a>(
     )
 }
 
-pub(super) fn items<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    record: &'a RawRecord,
-) -> Result<Option<impl DoubleEndedIterator<Item = u64> + 'a>, cadmpeg_core::CodecError> {
-    let Some(items) = item_values(ctx, record)? else {
-        return Ok(None);
-    };
-    Ok(Some(
-        ctx.admit_iter(items, "STEP representation item traversal")?
-            .filter_map(ValueExt::reference),
-    ))
-}
-
 pub(super) fn item_values<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &'a RawRecord,
@@ -58,7 +45,8 @@ pub(super) fn is_representation_name(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{items, parameters};
+    use super::{item_values, parameters};
+    use crate::reader::ValueExt;
     use crate::parse::{PartialRecord, RawRecord, Value};
 
     #[test]
@@ -88,9 +76,9 @@ mod tests {
                 )
             );
             assert_eq!(
-                items(ctx, &record)
+                item_values(ctx, &record)
                     .expect("representation items")
-                    .map(Iterator::collect::<Vec<_>>),
+                    .map(|values| values.iter().filter_map(ValueExt::reference).collect::<Vec<_>>()),
                 Some(vec![2, 3])
             );
         });
