@@ -1319,17 +1319,52 @@ fn b2_class25_scalar_lane_and_descriptor_refuse_collection_limits() {
     let mut bytes = vec![0xb2, 0x03, 0x18, 0x14, 0x05];
     bytes.extend_from_slice(&payload);
     let records = crate::wire::records::consolidated_records(&bytes);
-    for (limit, operation) in [
-        (1, "catia_b2_class25_values"),
-        (2, "catia_b2_class25_descriptors"),
-    ] {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+    for limit in [1, 2] {
+        let descriptors = crate::test_support::with_collection_limit(limit, |ctx| {
             super::b2_class25_descriptors_from_records(ctx, &bytes, &records)
-        });
-        assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation)
-        );
+        }).expect("fixed scalar lane needs only one descriptor slot");
+        assert_eq!(descriptors.len(), 1);
+        assert_eq!(descriptors[0].record_id, 0x1234);
+        assert_eq!(FiniteReal::raw_lane(descriptors[0].values.as_slice()), [3.0, 7.0]);
+    }
+    let result = crate::test_support::with_collection_limit(0, |ctx| {
+        let result = super::b2_class25_descriptors_from_records(ctx, &bytes, &records);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(error));
+        }
+        result
+    });
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_class25_descriptors"));
+}
+
+#[test]
+fn b2_class25_fixed_lane_preserves_arity_signed_zero_and_finiteness() {
+    for values in [vec![-0.0_f64, 7.0], vec![-0.0_f64, 7.0, 3.0]] {
+        let mut payload = vec![0x08, 0x34, 0x12, 0x0a];
+        for value in &values {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let mut bytes = vec![0xb2, 0x03, 0x18, u8::try_from(payload.len()).expect("fixed lane"), 0x05];
+        bytes.extend_from_slice(&payload);
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let descriptors = crate::test_support::with_collection_limit(1, |ctx| {
+            super::b2_class25_descriptors_from_records(ctx, &bytes, &records)
+        }).expect("one fixed descriptor");
+        let [descriptor] = descriptors.as_slice() else { panic!("one descriptor") };
+        assert_eq!(descriptor.control, 0x0a);
+        let lane = descriptor.values.as_slice();
+        assert_eq!(lane.len(), values.len());
+        for (actual, expected) in lane.iter().zip(&values) {
+            assert_eq!(actual.get().to_bits(), expected.to_bits());
+        }
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            bytes[9..17].copy_from_slice(&invalid.to_le_bytes());
+            let rejected = crate::test_support::with_collection_limit(0, |ctx| {
+                super::b2_class25_descriptors_from_records(ctx, &bytes, &records)
+            }).expect("nonfinite fixed lane rejects before descriptor allocation");
+            assert!(rejected.is_empty());
+        }
     }
 }
 

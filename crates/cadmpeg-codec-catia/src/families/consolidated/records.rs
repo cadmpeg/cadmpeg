@@ -1098,13 +1098,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
         ctx.push_vec(
             &mut runs,
             ConsolidatedClass25EdgeRun {
-                descriptor: B2Class25Descriptor {
-                    pos: descriptor.pos,
-                    record_id: descriptor.record_id,
-                    control: descriptor.control,
-                    values: ctx
-                        .copy_slice(&descriptor.values, "catia_class25_edge_descriptor_values")?,
-                },
+                descriptor: *descriptor,
                 node,
             },
             "catia_class25_edge_runs",

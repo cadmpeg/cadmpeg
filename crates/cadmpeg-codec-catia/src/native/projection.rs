@@ -1331,17 +1331,7 @@ pub(crate) fn consolidated_edge_nodes(
                 ctx, bytes, records,
             )?
             .into_iter()
-            .map(|run| {
-                (
-                    run.node.pos,
-                    CatiaConsolidatedClass25Descriptor {
-                        byte_offset: u64_from_index(run.descriptor.pos),
-                        record_id: run.descriptor.record_id,
-                        control: run.descriptor.control,
-                        values: run.descriptor.values,
-                    },
-                )
-            }),
+            .map(|run| (run.node.pos, run.descriptor)),
             "catia_native_class25_edge_descriptors",
         )
     })?;
@@ -1439,7 +1429,21 @@ pub(crate) fn consolidated_edge_nodes(
             definition,
             uses,
             analytic_circle,
-            class25_descriptor: ctx.remove_hash_map(&mut class25_descriptors, &node.pos, LOOKUP)?,
+            class25_descriptor: ctx
+                .remove_hash_map(&mut class25_descriptors, &node.pos, LOOKUP)?
+                .map(|descriptor| {
+                    const VALUES: &str = "catia_native_class25_descriptor_values";
+                    let mut storage = ctx.reserve_scoped(0, VALUES)?;
+                    let values = storage
+                        .with_storage(|| ctx.copy_slice(descriptor.values.as_slice(), VALUES))?;
+                    storage.commit_value(CatiaConsolidatedClass25Descriptor {
+                        byte_offset: u64_from_index(descriptor.pos),
+                        record_id: descriptor.record_id,
+                        control: descriptor.control,
+                        values,
+                    })
+                })
+                .transpose()?,
         });
     }
     Ok(output)
