@@ -276,7 +276,7 @@ fn source_link_insertion_preserves_work_refusal_before_mutation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut links = vec!["test:model:point#later".to_owned()];
     let before = links.clone();
-    let Err(CodecError::ResourceLimit(limit)) = super::super::append_link_to_record(
+    let Err(CodecError::ResourceLimit(limit)) = super::source_links::append_link_to_record(
         &ctx,
         "test:source:unknown#owner",
         &mut links,
