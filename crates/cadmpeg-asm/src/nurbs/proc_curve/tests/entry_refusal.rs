@@ -117,3 +117,128 @@ fn manual_surface_bounds_prefix_stops_at_the_last_actual_identifier() {
         }
     }
 }
+
+#[test]
+fn entry_canonical_support_chart_preserves_original_refusal_and_pcurve() {
+    crate::test_support::with_entry_context(|ctx, original| {
+        let mut curve = pcurve(); let before = curve.clone();
+        let result = super::super::normalize_support_pcurve(ctx, super::super::NativeSupportChart::Canonical, &mut curve);
+        if let Some(first) = original {
+            assert!(matches!(result, Some(Err(CodecError::ResourceLimit(last))) if last == first));
+            assert_eq!(curve, before);
+        } else {
+            result.unwrap().unwrap(); assert_eq!(curve, before);
+        }
+    });
+}
+
+#[test]
+fn entry_law_surface_null_preserves_original_refusal_and_cursor() {
+    crate::test_support::with_entry_context(|ctx, original| {
+        let tokens = [crate::sab::Token::Ident("null_surface".into())]; let mut cur = crate::nurbs::toks::Cur::at(&tokens, 0);
+        let result = super::super::nullable_law_surface(ctx, &mut cur);
+        if let Some(first) = original {
+            assert!(matches!(result, Some(Err(CodecError::ResourceLimit(last))) if last == first));
+            assert_eq!(cur.pos(), 0);
+        } else {
+            assert!(matches!(result, Some(Ok(crate::nurbs::reader::Nullable::Null)))); assert_eq!(cur.pos(), 1);
+        }
+    });
+}
+
+#[test]
+fn entry_optional_surface_null_preserves_original_refusal_and_cursor() {
+    crate::test_support::with_entry_context(|ctx, original| {
+        let tokens = [crate::sab::Token::Ident("null_surface".into())]; let mut cur = crate::nurbs::toks::Cur::at(&tokens, 0);
+        let result = super::super::optional_embedded_surface(ctx, &mut cur);
+        if let Some(first) = original {
+            assert!(matches!(result, Some(Err(CodecError::ResourceLimit(last))) if last == first));
+            assert_eq!(cur.pos(), 0);
+        } else {
+            assert!(matches!(result, Some(Ok(crate::nurbs::reader::Nullable::Null)))); assert_eq!(cur.pos(), 1);
+        }
+    });
+}
+
+#[test]
+fn entry_optional_pcurve_null_preserves_original_refusal_and_cursor() {
+    crate::test_support::with_entry_context(|ctx, original| {
+        let tokens = [crate::sab::Token::Ident("nullbs".into())]; let mut cur = crate::nurbs::toks::Cur::at(&tokens, 0);
+        let result = super::super::optional_pcurve(ctx, &mut cur);
+        if let Some(first) = original {
+            assert!(matches!(result, Some(Err(CodecError::ResourceLimit(last))) if last == first));
+            assert_eq!(cur.pos(), 0);
+        } else {
+            assert!(matches!(result, Some(Ok(crate::nurbs::reader::Nullable::Null)))); assert_eq!(cur.pos(), 1);
+        }
+    });
+}
+
+#[test]
+fn entry_analytic_surface_missing_position_preserves_original_refusal_and_cursor() {
+    crate::test_support::with_entry_context(|ctx, original| {
+        let tokens = [crate::sab::Token::Ident("plane".into())]; let mut cur = crate::nurbs::toks::Cur::at(&tokens, 0);
+        let result = super::super::embedded_surface_fields(ctx, &mut cur, false);
+        if let Some(first) = original {
+            assert!(matches!(result, Some(Err(CodecError::ResourceLimit(last))) if last == first));
+            assert_eq!(cur.pos(), 0);
+        } else {
+            assert!(result.is_none()); assert_eq!(cur.pos(), 1);
+        }
+    });
+}
+
+#[test]
+fn entry_cache_context_invalid_revision_or_enum_preserves_original_refusal_and_cursor() {
+    let table = SubtypeTable::from_records(&cadmpeg_test_support::service_decode_context(), &[]).unwrap();
+    crate::test_support::with_entry_context(|ctx, original| {
+        let zero = [crate::sab::Token::Long(0)];
+        let unknown = [crate::sab::Token::Long(1), crate::sab::Token::Enum(3)];
+        for (tokens, end) in [(&[][..], 0), (zero.as_slice(), 1), (unknown.as_slice(), 2)] {
+            let mut cur = crate::nurbs::toks::Cur::at(tokens, 0);
+            let result = super::super::cache_first_curve_context(ctx, &mut cur, &table);
+            if let Some(first) = &original {
+                assert!(matches!(result, Some(Err(CodecError::ResourceLimit(last))) if &last == first));
+                assert_eq!(cur.pos(), 0);
+            } else { assert!(result.is_none()); assert_eq!(cur.pos(), end); }
+        }
+    });
+}
+
+#[test]
+fn entry_surface_bounds_null_preserves_original_refusal_and_cursor() {
+    let table = SubtypeTable::from_records(&cadmpeg_test_support::service_decode_context(), &[]).unwrap();
+    crate::test_support::with_entry_context(|ctx, original| {
+        let tokens = [crate::sab::Token::Ident("null_surface".into())];
+        let mut cur = crate::nurbs::toks::Cur::at(&tokens, 0);
+        let result = super::super::optional_embedded_surface_with_bounds(ctx, &mut cur, &table);
+        if let Some(first) = original {
+            assert!(matches!(result, Some(Err(CodecError::ResourceLimit(last))) if last == first));
+            assert_eq!(cur.pos(), 0);
+        } else {
+            let value = result.unwrap().unwrap();
+            assert!(value.surface.is_none()); assert_eq!(value.bounds, [None; 4]); assert_eq!(cur.pos(), 1);
+        }
+    });
+}
+
+#[test]
+fn entry_intersection_cache_invalid_revision_or_enum_preserves_original_refusal() {
+    let table = SubtypeTable::from_records(&cadmpeg_test_support::service_decode_context(), &[]).unwrap();
+    let solved = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(), 1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0), cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0)],
+        None, false,
+    ).unwrap().unwrap();
+    crate::test_support::with_entry_context(|ctx, original| {
+        let zero = [crate::sab::Token::Long(0)];
+        let unknown = [crate::sab::Token::Long(1), crate::sab::Token::Enum(3)];
+        for tokens in [&[][..], zero.as_slice(), unknown.as_slice()] {
+            let result = super::super::cache_first_intersection(ctx, tokens, 0, &solved, &table);
+            if let Some(first) = original {
+                assert!(matches!(result, Some(Err(CodecError::ResourceLimit(last))) if last == first));
+            } else { assert!(result.is_none()); }
+        }
+    });
+}

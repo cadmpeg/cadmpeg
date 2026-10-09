@@ -673,6 +673,9 @@ pub(super) fn nullable_embedded_pcurve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<Nullable<PcurveNurbs>, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let saved = cur.pos();
     if cur.take_ident() == Some("nullbs") {
         return Some(Ok(Nullable::Null));
@@ -687,6 +690,9 @@ fn g2_side(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedG2Side, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let label = propagate_resource!(ctx.copy_retained_text(cur.take_str()?, "ASM G2 side label"));
     let surface = propagate_resource!(embedded_surface(ctx, cur)?);
     let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
@@ -707,6 +713,9 @@ fn bridge_token(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<cadmpeg_ir::geometry::LoftBridgeToken, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     use cadmpeg_ir::geometry::LoftBridgeToken;
     match cur.peek()? {
         Token::True | Token::False => Some(Ok(LoftBridgeToken::Boolean(cur.take_bool()?))),
@@ -1658,6 +1667,9 @@ fn compound_loft_scale(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<Nullable<EmbeddedCompoundLoftScale>, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     if matches!(cur.peek(), Some(Token::True | Token::False)) {
         return Some(Ok(Nullable::Null));
     }
@@ -1709,6 +1721,9 @@ pub(super) fn ellipse_to_nurbs(
     major: [f64; 3],
     ratio: f64,
 ) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let length = major[0].hypot(major[1]).hypot(major[2]);
     (length.is_finite() && length > 0.0).then_some(())?;
     let minor_direction = [
@@ -1848,6 +1863,9 @@ fn revision_loft_section(
     table: &SubtypeTable,
     asm_extension_present: bool,
 ) -> Option<Result<Vec<EmbeddedLoftSectionEntry>, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let count = usize::try_from(cur.take_long()?).ok()?;
     // Each entry consumes at least one double token for its parameter.
     let count = bounded_len(
@@ -1959,6 +1977,9 @@ fn loft_subdata_form(
     cur: &mut Cur<'_>,
     revision: bool,
 ) -> Option<Result<cadmpeg_ir::geometry::LoftSubdata, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     use cadmpeg_ir::geometry::{LoftSubdata, LoftSubdataRow};
     let type_code = cur.take_long()?;
     let row_count = cur.take_long()?;
@@ -2046,6 +2067,9 @@ fn loft_section(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<Vec<EmbeddedLoftSectionEntry>, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let count = usize::try_from(cur.take_long()?).ok()?;
     // Each entry consumes at least one double token for its parameter.
     let count = bounded_len(
@@ -2119,6 +2143,9 @@ fn revision_loft(
     position: usize,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let table = resolver?;
     let mut cur = Cur::at(span, position);
     let revision = PositiveI64::new(cur.take_long()?)?;
@@ -2250,6 +2277,9 @@ fn revision_cl_scale(
     table: &SubtypeTable,
     asm_extension_present: bool,
 ) -> Option<Result<(Vec<EmbeddedLoftProfileMember>, EmbeddedLoftPath), cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let member_count = usize::try_from(cur.take_long()?).ok()?;
     // Each member consumes at least its type-code token.
     let member_count = bounded_len(
@@ -2337,6 +2367,9 @@ fn revision_compound_loft(
     span: &[Token],
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let table = resolver?;
     let mut cur = Cur::at(span, 2);
     let revision = PositiveI64::new(cur.take_long()?)?;
@@ -2695,6 +2728,9 @@ fn sweep_law_expression(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedLawExpression, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     if matches!(cur.peek(), Some(Token::Str(_))) {
         let source = cur.take_str()?;
         return Some(Ok(EmbeddedLawExpression::Text(propagate_resource!(
@@ -2848,6 +2884,9 @@ fn law_formula_resolving(
     cur: &mut Cur<'_>,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<EmbeddedLawFormula, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let name = cur.take_str()?;
     if name == "null_law" {
         return Some(Ok(EmbeddedLawFormula::Null));
@@ -3409,6 +3448,9 @@ fn revision_sweep_sur(
     position: usize,
     table: &SubtypeTable,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let mut cur = Cur::at(span, position);
     let revision = PositiveI64::new(cur.take_long()?)?;
     let primary_flag = cur.take_bool()?;
@@ -3807,6 +3849,9 @@ pub fn revision_surface_tail(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<RevisionSurfaceTail, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     let enumeration = cur.take_enum()?;
     let cache = match enumeration {
         0 => {
@@ -4826,6 +4871,9 @@ fn t_spline_subtransform(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedTSplineSubtransform, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     match cur.take_ident()? {
         "t_spl_subtrans_object" => {
             let program_text = cur.take_str()?;
@@ -5773,3 +5821,6 @@ mod ellipse_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -160,6 +160,9 @@ impl<'a> Cur<'a> {
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Option<Result<Vec<f64>, cadmpeg_core::CodecError>> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Some(Err(refusal.into()));
+        }
         let mark = self.pos;
         let Some(count) = self.take_long().and_then(|c| usize::try_from(c).ok()) else {
             self.pos = mark;
@@ -389,6 +392,9 @@ pub(super) fn find_owned_subtype_marker<'n>(
     toks: &[Token],
     names: &[&'n str],
 ) -> Option<Result<(usize, &'n str), cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     if names.is_empty() {
         return None;
     }
@@ -547,6 +553,9 @@ pub(super) fn find_owned_intcurve_subtype(
     toks: &[Token],
     modern: &str,
 ) -> Option<Result<usize, cadmpeg_core::CodecError>> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Some(Err(refusal.into()));
+    }
     if modern.is_empty() {
         return None;
     }
@@ -957,6 +966,7 @@ pub fn test_table(
 #[cfg(test)]
 mod tests {
     mod index_sources;
+    mod entry_routes;
     use super::{
         cache_scope as cache_scope_ctx, lex_test_span, marker_at,
         owned_construction_subtype as owned_construction_subtype_ctx,

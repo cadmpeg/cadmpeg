@@ -228,6 +228,9 @@ impl<'a> FieldReader<'a> {
         len: usize,
         at: usize,
     ) -> Result<&'a str, StreamFailure> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(StreamFailure::from_operation(refusal.into()));
+        }
         self.pos += 1; // one separator byte after the length field
         let end = self
             .pos
@@ -327,6 +330,9 @@ fn header_int<T: cadmpeg_core::decode::text::TextScalar>(
     at: usize,
     what: &str,
 ) -> Result<T, StreamFailure> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(StreamFailure::from_operation(refusal.into()));
+    }
     let no_field = || StreamError {
         format: StreamFormat::Text,
         offset: at,
@@ -419,6 +425,9 @@ fn header_float(
     at: usize,
     what: &str,
 ) -> Result<f64, StreamFailure> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(StreamFailure::from_operation(refusal.into()));
+    }
     let malformed = || {
         StreamFailure::Malformed(StreamError {
             format: StreamFormat::Text,
@@ -762,6 +771,9 @@ fn lex_prim<'a>(
     field: &'a str,
     integer: bool,
 ) -> Result<Prim<'a>, StreamFailure> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(StreamFailure::from_operation(refusal.into()));
+    }
     if let Some(rest) = field.strip_prefix('$') {
         let index = ctx
             .parse_text::<i64>(rest, "parse SAT reference index")

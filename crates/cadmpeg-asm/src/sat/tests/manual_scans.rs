@@ -90,3 +90,61 @@ fn manual_sat_empty_fields_are_free_and_preserve_original_refusal() {
     }
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
 }
+
+#[test]
+fn entry_sat_header_integer_missing_field_preserves_original_refusal() {
+    crate::test_support::with_entry_context(|ctx, original| {
+
+        let result = super::super::header_int::<i64>(ctx, None, 7, "version");
+        if let Some(first) = original {
+            assert!(matches!(result, Err(crate::stream_error::StreamFailure::Resource(last)) if last == first));
+
+        } else {
+            let Err(StreamFailure::Parse(error)) = result else { panic!("missing field"); }; assert_eq!(error.offset, 7); assert_eq!(error.reason, "header line has no version field");
+        }
+    });
+}
+
+#[test]
+fn entry_sat_header_float_missing_field_preserves_original_refusal() {
+    crate::test_support::with_entry_context(|ctx, original| {
+
+        let result = super::super::header_float(ctx, None, 9, "tolerance");
+        if let Some(first) = original {
+            assert!(matches!(result, Err(crate::stream_error::StreamFailure::Resource(last)) if last == first));
+
+        } else {
+            let Err(StreamFailure::Malformed(error)) = result else { panic!("missing value"); }; assert_eq!(error.offset, 9); assert_eq!(error.reason, "header line has no valid tolerance value");
+        }
+    });
+}
+
+#[test]
+fn entry_sat_truncated_string_preserves_original_refusal_and_cursor() {
+    crate::test_support::with_entry_context(|ctx, original| {
+        let mut reader = FieldReader { bytes: &[], pos: 0 };
+        let result = reader.read_str_payload(ctx, 3, 11);
+        if let Some(first) = original {
+            assert!(matches!(result, Err(crate::stream_error::StreamFailure::Resource(last)) if last == first));
+            assert_eq!(reader.pos, 0);
+        } else {
+            let Err(StreamFailure::Parse(error)) = result else { panic!("truncated string"); }; assert_eq!(error.offset, 11); assert_eq!(error.reason, "truncated @3 string"); assert_eq!(reader.pos, 1);
+        }
+    });
+}
+
+#[test]
+fn entry_sat_fixed_braces_preserve_original_refusal() {
+    crate::test_support::with_entry_context(|ctx, original| {
+        for field in ["{", "}"] {
+            let mut reader = FieldReader { bytes: &[], pos: 0 };
+            let result = super::super::lex_prim(ctx, &mut reader, 0, field, false);
+            if let Some(first) = &original {
+                assert!(matches!(result, Err(StreamFailure::Resource(last)) if &last == first));
+            } else {
+                assert!(matches!((field, result.unwrap()), ("{", Prim::Open) | ("}", Prim::Close)));
+            }
+            assert_eq!(reader.pos, 0);
+        }
+    });
+}
