@@ -4,6 +4,7 @@
 use crate::scalar::{FiniteReal, NonZeroReal};
 
 pub(crate) mod quotient_third;
+pub(crate) mod quotient_fourth;
 
 /// A finite dot product with an exact-product fallback for range loss or cancellation.
 ///

@@ -391,16 +391,26 @@ pub(super) fn polynomial_third(
     scratch.settle(result)
 }
 
-/// Requested rational Third. Fixed linear and clamped quadratic owners keep
-/// their extended coefficients; other shapes use one joint local basis row.
-pub(super) fn rational_third(
+/// Requested rational higher orders. Fixed linear and clamped quadratic
+/// owners keep extended coefficients; other shapes use one joint basis walk.
+pub(super) fn rational_higher(
     scratch: &decode::Scratch<'_, '_>,
     curve: &crate::geometry::nurbs::NurbsCurve,
     parameter: FiniteReal,
-) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    fourth: bool,
+) -> Result<super::curve_higher::CurveHigher, EvaluationFailure<()>> {
     use super::rational::Homogeneous;
+    use super::curve_higher::CurveHigher;
     scratch.unless_refused()?;
-    if curve.degree() == 1 { return linear_higher(scratch, curve, parameter, false)?.third; }
+    if curve.degree() == 1 { return linear_higher(scratch, curve, parameter, fourth); }
+    let vector = |lanes: Option<[Result<FiniteReal, f64>; 3]>| {
+        finite_lanes(lanes.ok_or(EvaluationFailure::NoValue)?)
+            .map(|[x, y, z]| FiniteVector3::from_components(x, y, z))
+            .map_err(|_| EvaluationFailure::NonFinite(()))
+    };
+    let higher = |lanes: super::rational::HigherLanes| CurveHigher {
+        third: vector(lanes.third), fourth: vector(lanes.fourth),
+    };
     let result = (|| {
         let no_value = EvaluationFailure::NoValue;
         let NurbsPoles3::Rational { points } = curve.pole_rows() else { return Err(no_value); };
@@ -412,7 +422,8 @@ pub(super) fn rational_third(
                 if a == a1 && a == a2 && b == b1 && b == b2 && a < b {
                     // Equal actual weights make this exact carrier polynomial.
                     if poles[0].weight == poles[1].weight && poles[0].weight == poles[2].weight {
-                        return Ok(FiniteVector3::ZERO);
+                        return Ok(CurveHigher { third: Ok(FiniteVector3::ZERO),
+                            fourth: if fourth { Ok(FiniteVector3::ZERO) } else { Err(no_value) } });
                     }
                     let [a, b] = FiniteReal::array([*a, *b]).ok_or(no_value)?;
                     let local = difference_quotient(parameter, a, b, a)
@@ -421,9 +432,8 @@ pub(super) fn rational_third(
                     width.add_factors([b.get()]);
                     width.add_factors([-a.get()]);
                     let width = width.finish().ok_or(no_value)?;
-                    let [x, y, z] = finite_lanes(Homogeneous::quadratic_third(poles, local, width)
-                        .ok_or(no_value)?).map_err(|_| EvaluationFailure::NonFinite(()))?;
-                    return Ok(FiniteVector3::from_components(x, y, z));
+                    return Ok(higher(Homogeneous::quadratic_higher(poles, local, width, fourth)
+                        .ok_or(no_value)?));
                 }
             }
         }
@@ -434,12 +444,18 @@ pub(super) fn rational_third(
         width.add_factors([curve.knots()[span + 1]]);
         width.add_factors([-curve.knots()[span]]);
         let width = width.finish().ok_or(no_value)?;
-        let rows = basis::requested_third::rows(scratch, curve.knots(), degree, span, parameter, width)
-            .ok_or_else(|| scratch.failure(no_value))?;
-        let lanes = Homogeneous::curve_third(scratch, curve.pole_rows(), span - degree,
-            rows.as_slice(), width)?.ok_or(no_value)?;
-        let [x, y, z] = finite_lanes(lanes).map_err(|_| EvaluationFailure::NonFinite(()))?;
-        Ok(FiniteVector3::from_components(x, y, z))
+        let lanes = if fourth {
+            let rows = basis::requested_third::rows::<5>(scratch, curve.knots(), degree, span, parameter, width)
+                .ok_or_else(|| scratch.failure(no_value))?;
+            Homogeneous::curve_higher(scratch, curve.pole_rows(), span - degree,
+                rows.as_slice(), width, rows.fourth_available())?
+        } else {
+            let rows = basis::requested_third::rows::<4>(scratch, curve.knots(), degree, span, parameter, width)
+                .ok_or_else(|| scratch.failure(no_value))?;
+            Homogeneous::curve_higher(scratch, curve.pole_rows(), span - degree,
+                rows.as_slice(), width, false)?
+        };
+        Ok(higher(lanes.ok_or(no_value)?))
     })();
     scratch.settle(result)
 }

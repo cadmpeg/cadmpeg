@@ -4,6 +4,8 @@ use crate::eval::admission::EvaluationAdmission;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+mod fourth;
+
 fn width() -> ScaledValue {
     let mut sum = ExactSignedSum::default();
     sum.add_factors([1.0]);
@@ -16,7 +18,7 @@ fn joint_cubic_basis_has_independent_bernstein_orders() {
     let knots = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
     // Direct differentiation of (1-s)^3, 3s(1-s)^2,
     // 3s^2(1-s), s^3 at s=.5, not a second evaluator oracle.
-    let actual = rows(&scratch, &knots, 3, 3, FiniteReal::HALF, width()).unwrap();
+    let actual = rows::<4>(&scratch, &knots, 3, 3, FiniteReal::HALF, width()).unwrap();
     assert_eq!(actual.as_slice(), [
         [0.125, -0.75, 3.0, -6.0], [0.375, -0.75, -3.0, 18.0],
         [0.375, 0.75, -3.0, -18.0], [0.125, 0.75, 3.0, 6.0],
@@ -37,7 +39,7 @@ fn joint_heap_basis_retains_only_the_returned_backing_and_reuses_each_degree_buf
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let scratch = decode::Scratch::new(&ctx);
     for _ in 0..2 {
-        let actual = rows(&scratch, &knots, 4, 4, FiniteReal::ZERO, width()).unwrap();
+        let actual = rows::<4>(&scratch, &knots, 4, 4, FiniteReal::ZERO, width()).unwrap();
         assert_eq!(actual.as_slice(), [
             [1.0, -4.0, 12.0, -24.0], [0.0, 4.0, -24.0, 72.0],
             [0.0, 0.0, 12.0, -72.0], [0.0, 0.0, 0.0, 24.0], [0.0; 4],
@@ -69,7 +71,7 @@ fn joint_heap_basis_unwind_destroys_its_backing_with_the_reservation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let scratch = decode::Scratch::new(&ctx);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let actual = rows(&scratch, &knots, 4, 4, FiniteReal::ZERO, width()).unwrap();
+        let actual = rows::<4>(&scratch, &knots, 4, 4, FiniteReal::ZERO, width()).unwrap();
         assert_eq!(actual.as_slice().len(), 5);
         panic!("unwind with actual requested basis backing live");
     }));
@@ -90,7 +92,7 @@ fn joint_heap_basis_refuses_each_real_initialization_row_and_cell_before_executi
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let scratch = decode::Scratch::new(&ctx);
-        assert!(rows(&scratch, &knots, 4, 4, FiniteReal::ZERO, width()).is_none());
+        assert!(rows::<4>(&scratch, &knots, 4, 4, FiniteReal::ZERO, width()).is_none());
         let original = scratch.refused().unwrap();
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!((original.limit, original.used, original.additional), (cap, cap, 1));
@@ -100,7 +102,7 @@ fn joint_heap_basis_refuses_each_real_initialization_row_and_cell_before_executi
             "IR requested curve basis row"
         } else { "IR requested curve basis cell" });
         // The original fuse precedes even inspecting this unusable source.
-        assert!(rows(&scratch, &[], 4, 4, FiniteReal::ZERO, width()).is_none());
+        assert!(rows::<4>(&scratch, &[], 4, 4, FiniteReal::ZERO, width()).is_none());
         assert_eq!(scratch.refused(), Some(original));
         drop(scratch);
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));

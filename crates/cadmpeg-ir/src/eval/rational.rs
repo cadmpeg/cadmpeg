@@ -34,6 +34,48 @@ pub(super) struct Homogeneous {
     constant: [Option<FiniteReal>; 3],
 }
 
+/// Completed quotient lanes. An unavailable order does not erase another.
+pub(super) struct HigherLanes {
+    pub(super) third: Option<[Result<FiniteReal, f64>; 3]>,
+    pub(super) fourth: Option<[Result<FiniteReal, f64>; 3]>,
+}
+
+impl HigherLanes {
+    fn from_orders<const N: usize>(
+        orders: [[Option<ScaledValue>; 4]; N],
+        constant: [Option<FiniteReal>; 3],
+        width: ScaledValue,
+        fourth_available: bool,
+    ) -> Option<Self> {
+        const { assert!(N == 4 || N == 5) };
+        orders[0][3]?;
+        let third = (|| {
+            let w = std::array::from_fn(|order| orders[order][3]);
+            let mut lanes = [Ok(FiniteReal::ZERO); 3];
+            for (axis, lane) in lanes.iter_mut().enumerate() {
+                if constant[axis].is_some() { continue; }
+                *lane = crate::math::sum::quotient_third::quotient_third(
+                    std::array::from_fn(|order| orders[order][axis]), w, width)?;
+            }
+            Some(lanes)
+        })();
+        let fourth = if N == 5 {
+            (|| {
+                let w = std::array::from_fn(|order| orders[order][3]);
+                let mut lanes = [Ok(FiniteReal::ZERO); 3];
+                for (axis, lane) in lanes.iter_mut().enumerate() {
+                    if constant[axis].is_some() { continue; }
+                    if !fourth_available { return None; }
+                    *lane = crate::math::sum::quotient_fourth::quotient_fourth(
+                        std::array::from_fn(|order| orders[order][axis]), w, width)?;
+                }
+                Some(lanes)
+            })()
+        } else { None };
+        Some(Self { third, fourth })
+    }
+}
+
 impl Homogeneous {
     /// The three normalized orders of a quadratic Bezier carrier, in one
     /// fixed three-pole walk. Accumulate the expanded Bernstein terms before
@@ -78,37 +120,38 @@ impl Homogeneous {
         Some([Self { constant, ..base }, first, second])
     }
 
-    /// The complete quotient Third for this actual fixed quadratic carrier.
+    /// The complete requested quotient orders for this fixed quadratic carrier.
     /// Only the all-three-source-pole equality from quadratic_orders proves
     /// a coordinate constant. General sampled support equality does not.
-    pub(super) fn quadratic_third(
+    pub(super) fn quadratic_higher(
         poles: &[crate::geometry::nurbs::WeightedPole3<FinitePoint3>; 3],
         parameter: FiniteReal,
         width: ScaledValue,
-    ) -> Option<[Result<FiniteReal, f64>; 3]> {
+        fourth: bool,
+    ) -> Option<HigherLanes> {
         let [base, first, second] = Self::quadratic_orders(poles, parameter)?;
-        base.values[3]?;
-        let w = [base.values[3], first.values[3], second.values[3], None];
-        let mut lanes = [Ok(FiniteReal::ZERO); 3];
-        for (axis, lane) in lanes.iter_mut().enumerate() {
-            if base.constant[axis].is_some() { continue; }
-            *lane = crate::math::sum::quotient_third::quotient_third(
-                [base.values[axis], first.values[axis], second.values[axis], None], w, width)?;
+        let zero = [None; 4];
+        if fourth {
+            HigherLanes::from_orders([base.values, first.values, second.values, zero, zero],
+                base.constant, width, true)
+        } else {
+            HigherLanes::from_orders([base.values, first.values, second.values, zero],
+                base.constant, width, false)
         }
-        Some(lanes)
     }
 
     /// Complete selected-support H/W orders. All support poles participate in
     /// the constant-coordinate theorem, including poles with zero basis at t.
-    pub(super) fn curve_third(
+    pub(super) fn curve_higher<const N: usize>(
         scratch: &decode::Scratch<'_, '_>,
         poles: &crate::geometry::nurbs::NurbsPoles3<FinitePoint3>,
         first: usize,
-        rows: &[[f64; 4]],
+        rows: &[[f64; N]],
         width: ScaledValue,
-    ) -> Result<Option<[Result<FiniteReal, f64>; 3]>, super::EvaluationFailure<()>> {
+        fourth_available: bool,
+    ) -> Result<Option<HigherLanes>, super::EvaluationFailure<()>> {
         scratch.unless_refused()?;
-        let mut sums: [[ExactSignedSum; 4]; 4] =
+        let mut sums: [[ExactSignedSum; 4]; N] =
             std::array::from_fn(|_| std::array::from_fn(|_| ExactSignedSum::default()));
         let mut constant = [None; 3];
         for (local, orders) in rows.iter().enumerate() {
@@ -123,23 +166,15 @@ impl Homogeneous {
                 if local == 0 { constant[axis] = Some(coordinate); }
                 else if constant[axis] != Some(coordinate) { constant[axis] = None; }
             }
-            for (lanes, coefficient) in sums.iter_mut().zip(orders) {
+            for (order, (lanes, coefficient)) in sums.iter_mut().zip(orders).enumerate() {
+                if order == 4 && !fourth_available { continue; }
                 for (sum, coordinate) in lanes.iter_mut().zip([point.x, point.y, point.z, 1.0]) {
                     sum.add_factors([*coefficient, weight, coordinate]);
                 }
             }
         }
         let orders = sums.map(|lanes| lanes.map(ExactSignedSum::finish));
-        if orders[0][3].is_none() { return Ok(None); }
-        let w = orders.map(|lanes| lanes[3]);
-        let mut lanes = [Ok(FiniteReal::ZERO); 3];
-        for (axis, lane) in lanes.iter_mut().enumerate() {
-            if constant[axis].is_some() { continue; }
-            let Some(value) = crate::math::sum::quotient_third::quotient_third(
-                orders.map(|lanes| lanes[axis]), w, width) else { return Ok(None); };
-            *lane = value;
-        }
-        Ok(Some(lanes))
+        Ok(HigherLanes::from_orders(orders, constant, width, fourth_available))
     }
 
     /// The identically zero homogeneous derivative of a polynomial whose

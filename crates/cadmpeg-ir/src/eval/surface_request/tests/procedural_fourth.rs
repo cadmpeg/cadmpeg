@@ -144,7 +144,7 @@ fn degree_one_nurbs_curve_fourth_keeps_completed_third_and_all_lower_orders() {
 }
 
 #[test]
-fn general_rational_curve_missing_fourth_keeps_its_true_third_and_lower_orders() {
+fn quadratic_rational_curve_fourth_keeps_its_true_third_and_lower_orders() {
     use crate::geometry::nurbs::NurbsCurve;
     let mut ir = CadIr::empty();
     // C=2t^2/(1+t^2). A zero homogeneous third is not a rational zero law.
@@ -160,9 +160,9 @@ fn general_rational_curve_missing_fourth_keeps_its_true_third_and_lower_orders()
     assert_eq!(fourth.jet.point, lower.jet.point); assert_eq!(fourth.jet.first, lower.jet.first);
     assert_eq!(fourth.jet.second, lower.jet.second); assert_eq!(fourth.higher.third(), lower.higher.third());
     close(fourth.higher.third().unwrap()[0].get(), Vector3::new(-4608.0 / 625.0, 0.0, 0.0));
-    assert_eq!(fourth.higher.fourth(), Err(EvaluationFailure::NoValue));
+    close(fourth.higher.fourth().unwrap()[0].get(), Vector3::new(58368.0 / 3125.0, 0.0, 0.0));
     let shifted = offset(&mut ir, "general-missing-fourth-offset", surface, 1.0);
     let result = requested(&ir, &shifted, 0.5, 0.25, SurfaceRequest::Third);
     assert!(result.jet.first.is_ok()); assert!(result.jet.second.is_ok());
-    assert_eq!(result.higher.third(), Err(EvaluationFailure::NoValue));
+    close(result.higher.third().unwrap()[0].get(), Vector3::new(-4608.0 / 625.0, 0.0, 0.0));
 }
