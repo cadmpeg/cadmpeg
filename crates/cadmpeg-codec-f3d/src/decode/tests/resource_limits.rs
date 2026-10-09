@@ -780,8 +780,8 @@ macro_rules! mesh_outcome_loss_refuses_collection_limit {
         fn $name() {
             let arena = DecodeArena::new();
             let ctx = context(&arena, 0);
-            let mut bodies = Vec::new();
             let mut bodies_storage = ctx.reserve_scoped(0, "test joined mesh bodies").unwrap();
+            let mut bodies = Vec::new();
             let mut report = cadmpeg_ir::codec::DecodeBody::new(
                 cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
             );
@@ -827,8 +827,8 @@ mesh_outcome_loss_refuses_collection_limit!(
 fn failed_mesh_resource_limit_propagates() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
-    let mut bodies = Vec::new();
     let mut bodies_storage = ctx.reserve_scoped(0, "test joined mesh bodies").unwrap();
+    let mut bodies = Vec::new();
     let mut report = cadmpeg_ir::codec::DecodeBody::new(
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
     );

@@ -884,8 +884,8 @@ fn mesh_texture_entries(
     // A malformed entry ends either map early, so each entry is admitted as
     // it is read and storage grows with the entries read.
     let mut textures = Vec::new();
-    let mut keys = HashMap::new();
     let mut keys_storage = ctx.reserve_scoped(0, "f3d mesh texture keys")?;
+    let mut keys = HashMap::new();
     for ordinal in 0..flags_count {
         ctx.charge_work(1, "read F3D mesh texture flags")?;
         let Some((resource_guid, key, end)) = texture_guid_at(record, at) else {
@@ -2192,6 +2192,7 @@ mod tests {
     mod identity;
     mod placement;
     mod push_vec;
+    mod storage;
     mod text;
     use super::{
         parse_mesh_collection_owner_record, parse_mesh_scene_state_record,
@@ -2253,7 +2254,8 @@ mod tests {
         frame: TypedPrimaryFrame<'_>,
     ) -> Result<super::MeshTextureTableRecord, CodecError> {
         let mut storage = ctx.reserve_scoped(0, "test texture storage")?;
-        parse_mesh_texture_table_record(ctx, &mut storage, bytes, frame)
+        let table = parse_mesh_texture_table_record(ctx, &mut storage, bytes, frame)?;
+        storage.commit_value(table)
     }
 
     fn parse_mesh_design_records<F>(
