@@ -525,7 +525,8 @@ fn native_marker_relation(
         ctx.extend_vec(&mut entities, additions, OPERATION)?;
     }
     sort_marker_entity_ids(ctx, &mut entities, OPERATION)?;
-    let (owners, _owners_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let (_owners_storage, owners);
+    (owners, _owners_storage) = ctx.with_scoped_storage(OPERATION, || {
         relation_owner_markers_in(ctx, marker, index.markers)
     })?;
     for owner in ctx.admit_iter(&owners, OPERATION)? {
@@ -831,7 +832,8 @@ pub(super) fn marker_relation_definition(
             } else {
                 inferred_entities
             };
-            let (relation_owners, _owners_storage) = ctx
+            let (_owners_storage, relation_owners);
+            (relation_owners, _owners_storage) = ctx
                 .with_scoped_storage(ENTITY_OPERATION, || {
                     relation_owner_markers_in(ctx, marker, index.markers)
                 })?;
@@ -1796,7 +1798,8 @@ fn unique_axis_aligned_linked_loci_in(
     else {
         return Ok(None);
     };
-    let (loci, _loci_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let (_loci_storage, loci);
+    (loci, _loci_storage) = ctx.with_scoped_storage(OPERATION, || {
         canonical_profile_loci(ctx, sketch, index.entities)
     })?;
     let mut selected: Option<&SketchLocus> = None;
@@ -1964,7 +1967,8 @@ fn collect_axis_relation_point_loci<'a>(
         }
     }
     if include_reverse_owners {
-        let (owners, _owners_storage) = ctx.with_scoped_storage(OPERATION, || {
+        let (_owners_storage, owners);
+        (owners, _owners_storage) = ctx.with_scoped_storage(OPERATION, || {
             relation_owner_markers_in(ctx, relation, index.markers)
         })?;
         for owner in ctx.admit_iter(owners, OPERATION)? {
@@ -2091,7 +2095,8 @@ pub(crate) fn marker_owns_constraint_in(
     )? {
         return Ok(true);
     }
-    let (owners, _owners_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let (_owners_storage, owners);
+    (owners, _owners_storage) = ctx.with_scoped_storage(OPERATION, || {
         relation_owner_markers_in(ctx, marker, markers)
     })?;
     if !owners.is_empty() {
@@ -2392,7 +2397,8 @@ fn relation_owner_curve_entities(
 ) -> Result<Vec<SketchEntityId>, CodecError> {
     const OPERATION: &str = "collect SLDPRT reverse curve owner entities";
     let mut entities = Vec::new();
-    let (owners, _owners_storage) = ctx.with_scoped_storage(OPERATION, || {
+    let (_owners_storage, owners);
+    (owners, _owners_storage) = ctx.with_scoped_storage(OPERATION, || {
         relation_owner_markers_in(ctx, relation, index.markers)
     })?;
     for owner in ctx.admit_iter(owners, OPERATION)? {
@@ -2745,16 +2751,17 @@ pub(super) fn marker_curve_endpoint_markers_in<'a>(
         }
     }
     let linking = index.linking_to(ctx, curve)?;
-    let endpoints = line_endpoint_markers_from(
-        ctx,
-        curve,
-        markers_by_id,
-        linking,
-        ReverseLinkMembership::Proven,
+    let (endpoints_storage, endpoints);
+    (endpoints, endpoints_storage) = ctx.with_scoped_storage(
+        "resolve SLDPRT linked line endpoints",
+        || line_endpoint_markers_from(
+            ctx, curve, markers_by_id, linking, ReverseLinkMembership::Proven,
+        ),
     )?;
     if endpoints.len() == 2 {
-        return Ok(endpoints);
+        return endpoints_storage.commit_value(endpoints);
     }
+    drop((endpoints, endpoints_storage));
     let markers = index.feature_markers(ctx, curve)?;
     marker_curve_endpoint_layout_fallback_from(
         ctx,
@@ -2779,16 +2786,17 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     if let Some(endpoints) = extended_direct_object_line_endpoints(ctx, payload, curve, markers)? {
         return copy_endpoint_markers(ctx, &endpoints);
     }
-    let endpoints = line_endpoint_markers_from(
-        ctx,
-        curve,
-        markers_by_id,
-        markers,
-        ReverseLinkMembership::Unchecked,
+    let (endpoints_storage, endpoints);
+    (endpoints, endpoints_storage) = ctx.with_scoped_storage(
+        "resolve SLDPRT linked line endpoints",
+        || line_endpoint_markers_from(
+            ctx, curve, markers_by_id, markers, ReverseLinkMembership::Unchecked,
+        ),
     )?;
     if endpoints.len() == 2 {
-        return Ok(endpoints);
+        return endpoints_storage.commit_value(endpoints);
     }
+    drop((endpoints, endpoints_storage));
     marker_curve_endpoint_layout_fallback_from(ctx, payload, curve, markers_by_id, markers, None, geometry)
 }
 
@@ -2807,41 +2815,48 @@ fn marker_curve_endpoint_layout_fallback_from<'a>(
             .map(|indices| (offset, indices))
     });
     if let Some((offset, indices)) = shifted {
-        let endpoints = if payload.get(offset + 72..offset + 76) == Some(&[0; 4]) {
-            let mut owned =
-                collect_endpoint_markers(ctx, markers.iter().copied(), curve, |_| true, OPERATION)?;
-            sort_endpoint_markers(ctx, &mut owned, OPERATION)?;
-            let selected = indices.into_iter().filter_map(|index| {
-                let index = usize::try_from(index).ok()?.checked_sub(1)?;
-                owned.get(index).copied().filter(|marker| {
-                    marker.coordinates_m.is_some()
-                        && matches!(
-                            marker.kind(),
-                            SketchInputKind::Point
-                                | SketchInputKind::ConstrainedPoint
-                                | SketchInputKind::LineOrCircle
-                                | SketchInputKind::Arc
-                        )
-                })
-            });
-            let mut endpoints = Vec::new();
-            for endpoint in selected {
-                ctx.reserve_vec(&mut endpoints, 1, OPERATION)?;
-                endpoints.push(endpoint);
-            }
-            endpoints
-        } else {
-            super::endpoints::coordinate_roster_curve_endpoint_markers_at(
-                ctx,
-                payload,
-                curve,
-                Some(56),
-                geometry,
-            )?
-        };
+        let (endpoints_storage, endpoints);
+        (endpoints, endpoints_storage) = ctx.with_scoped_storage(OPERATION, || {
+            let endpoints = if payload.get(offset + 72..offset + 76) == Some(&[0; 4]) {
+                let mut roster_storage = ctx.reserve_scoped(0, OPERATION)?;
+                let mut owned = roster_storage.with_storage(||
+                    collect_endpoint_markers(ctx, markers.iter().copied(), curve, |_| true, OPERATION)
+                )?;
+                sort_endpoint_markers(ctx, &mut owned, OPERATION)?;
+                let selected = indices.into_iter().filter_map(|index| {
+                    let index = usize::try_from(index).ok()?.checked_sub(1)?;
+                    owned.get(index).copied().filter(|marker| {
+                        marker.coordinates_m.is_some()
+                            && matches!(
+                                marker.kind(),
+                                SketchInputKind::Point
+                                    | SketchInputKind::ConstrainedPoint
+                                    | SketchInputKind::LineOrCircle
+                                    | SketchInputKind::Arc
+                            )
+                    })
+                });
+                let mut endpoints = Vec::new();
+                for endpoint in selected {
+                    ctx.reserve_vec(&mut endpoints, 1, OPERATION)?;
+                    endpoints.push(endpoint);
+                }
+                endpoints
+            } else {
+                super::endpoints::coordinate_roster_curve_endpoint_markers_at(
+                    ctx,
+                    payload,
+                    curve,
+                    Some(56),
+                    geometry,
+                )?
+            };
+            Ok::<_, CodecError>(endpoints)
+        })?;
         if endpoints.len() == 2 {
-            return Ok(endpoints);
+            return endpoints_storage.commit_value(endpoints);
         }
+        drop((endpoints, endpoints_storage));
     }
     if let Some(endpoints) = compact_legacy_object_line_endpoints(ctx, payload, curve, markers)? {
         return copy_endpoint_markers(ctx, &endpoints);
@@ -2868,7 +2883,10 @@ fn marker_curve_endpoint_layout_fallback_from<'a>(
         return copy_endpoint_markers(ctx, &endpoints);
     }
     let roster = index.map_or(markers, |index| index.roster);
-    let endpoints = roster_curve_endpoint_markers(ctx, payload, curve, roster, geometry, index)?;
+    let (endpoints_storage, endpoints);
+    (endpoints, endpoints_storage) = ctx.with_scoped_storage(OPERATION, || {
+        roster_curve_endpoint_markers(ctx, payload, curve, roster, geometry, index)
+    })?;
     if endpoints.len() == 2 {
         if let Some(direct) = legacy_marker104_arc_endpoints(ctx, payload, curve, markers)? {
             let roster = [endpoints[0], endpoints[1]];
@@ -2877,11 +2895,13 @@ fn marker_curve_endpoint_layout_fallback_from<'a>(
                 && legacy_marker104_arc_center(ctx, payload, curve, markers, direct, geometry)?
                     .is_some()
             {
+                drop((endpoints, endpoints_storage));
                 return copy_endpoint_markers(ctx, &direct);
             }
         }
-        return Ok(endpoints);
+        return endpoints_storage.commit_value(endpoints);
     }
+    drop((endpoints, endpoints_storage));
     if let Some(endpoints) = legacy_marker104_arc_endpoints(ctx, payload, curve, markers)? {
         return copy_endpoint_markers(ctx, &endpoints);
     }
@@ -2897,15 +2917,19 @@ fn marker_curve_endpoint_layout_fallback_from<'a>(
     {
         return copy_endpoint_markers(ctx, &endpoints);
     }
-    let endpoints =
-        consecutive_legacy_profile_line_endpoints_from(ctx, payload, curve, markers, index)?;
+    let (endpoints_storage, endpoints);
+    (endpoints, endpoints_storage) = ctx.with_scoped_storage(
+        "resolve SLDPRT consecutive legacy profile line endpoints",
+        || consecutive_legacy_profile_line_endpoints_from(ctx, payload, curve, markers, index),
+    )?;
     if endpoints.len() == 2 {
-        return Ok(endpoints);
+        return endpoints_storage.commit_value(endpoints);
     }
     if let Some(pair) = coordinate_profile_line_endpoints(ctx, payload, curve, markers_by_id)? {
+        drop((endpoints, endpoints_storage));
         copy_endpoint_markers(ctx, &pair)
     } else {
-        Ok(endpoints)
+        endpoints_storage.commit_value(endpoints)
     }
 }
 
@@ -3155,7 +3179,8 @@ fn extended_wide_selected_axis_endpoints<'a>(
     let [Some(first_index), Some(second_index)] = indices else {
         return Ok(None);
     };
-    let mut points = collect_endpoint_markers(
+    let mut roster_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut points = roster_storage.with_storage(|| collect_endpoint_markers(
         ctx,
         markers.iter().copied(),
         curve,
@@ -3167,7 +3192,7 @@ fn extended_wide_selected_axis_endpoints<'a>(
                 )
         },
         OPERATION,
-    )?;
+    ))?;
     sort_endpoint_markers(ctx, &mut points, OPERATION)?;
     let (Some(first), Some(second)) = (points.get(first_index), points.get(second_index)) else {
         return Ok(None);
@@ -3270,7 +3295,8 @@ fn one_based_point_roster_line_endpoint_markers<'a>(
     )? {
         return Ok(None);
     }
-    let mut points = collect_endpoint_markers(
+    let mut roster_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut points = roster_storage.with_storage(|| collect_endpoint_markers(
         ctx,
         markers.iter().copied(),
         curve,
@@ -3282,7 +3308,7 @@ fn one_based_point_roster_line_endpoint_markers<'a>(
                 )
         },
         OPERATION,
-    )?;
+    ))?;
     sort_endpoint_markers(ctx, &mut points, OPERATION)?;
     let (Some(first), Some(second)) = (points.get(indices[0]), points.get(indices[1])) else {
         return Ok(None);
@@ -3335,7 +3361,8 @@ fn legacy_point_roster_line_endpoint_markers<'a>(
     let Some(indices) = indices else {
         return Ok(None);
     };
-    let mut points = collect_endpoint_markers(
+    let mut roster_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut points = roster_storage.with_storage(|| collect_endpoint_markers(
         ctx,
         markers.iter().copied(),
         curve,
@@ -3347,7 +3374,7 @@ fn legacy_point_roster_line_endpoint_markers<'a>(
                 )
         },
         OPERATION,
-    )?;
+    ))?;
     sort_endpoint_markers(ctx, &mut points, OPERATION)?;
     let (Some(first), Some(second)) = (points.get(indices[0]), points.get(indices[1])) else {
         return Ok(None);
@@ -3574,13 +3601,14 @@ fn coordinate_centered_line_endpoints<'a>(
     let Some([center_u, center_v]) = center else {
         return Ok(None);
     };
-    let mut coordinates = collect_endpoint_markers(
+    let mut roster_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut coordinates = roster_storage.with_storage(|| collect_endpoint_markers(
         ctx,
         markers.iter().copied(),
         line,
         |marker| marker.offset() > line.offset() && marker.coordinates_m.is_some(),
         OPERATION,
-    )?;
+    ))?;
     sort_endpoint_markers(ctx, &mut coordinates, OPERATION)?;
     Ok((|| {
         let [first, second, ..] = coordinates.as_slice() else {

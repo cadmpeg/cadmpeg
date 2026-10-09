@@ -695,3 +695,5 @@ fn numerical_followup_membership_preserves_large_finite_geometry() {
 mod deduplication;
 
 mod indexes;
+
+mod scoped_endpoints;
