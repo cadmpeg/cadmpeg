@@ -23,7 +23,7 @@ use crate::loss::RhinoLossCode;
 use crate::objects::{
     apply_attribute_userdata, parse_attribute_userdata, parse_attributes, parse_class_wrapper,
     parse_class_wrapper_with_userdata, parse_user_string_list, AttributeUserdataDescriptor,
-    ClassUserdata, ObjectAttributes, UserdataDescriptor, USER_STRING_LIST,
+    ClassDescriptor, ClassUserdata, ObjectAttributes, UserdataDescriptor, USER_STRING_LIST,
 };
 use crate::settings::{self, MillimeterScale, StandardUnit, UnitBinding};
 use crate::wire::{read_finite, scaled_coordinate, uuid, Uuid};
@@ -2082,6 +2082,20 @@ fn wide_string(
     Ok(result)
 }
 
+fn class_descriptor(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    range: Range<usize>,
+    archive: ArchiveVersion,
+) -> Result<ClassDescriptor, FramingError> {
+    let (class, diagnostics_storage) = ctx.with_scoped_storage(
+        "Rhino presentation class parse scratch",
+        || parse_class_wrapper(ctx, data, range, archive, &mut Diagnostics::new()),
+    )?;
+    drop(diagnostics_storage);
+    Ok(class)
+}
+
 fn class_data(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
@@ -2089,7 +2103,7 @@ fn class_data(
     archive: ArchiveVersion,
     expected: Uuid,
 ) -> Result<Range<usize>, FramingError> {
-    let class = parse_class_wrapper(ctx, data, record.body(), archive, &mut Diagnostics::new())?;
+    let class = class_descriptor(ctx, data, record.body(), archive)?;
     if class.class_uuid != expected {
         return Err(FramingError::structural(
             record.range.start,
@@ -2107,12 +2121,11 @@ fn class_data_prefix(
     expected: Uuid,
 ) -> Result<Range<usize>, FramingError> {
     let wrapper = chunk_at(data, record.body().start, record.body().end, archive, false)?;
-    let class = parse_class_wrapper(
+    let class = class_descriptor(
         ctx,
         data,
         wrapper.header_start..wrapper.next_offset(),
         archive,
-        &mut Diagnostics::new(),
     )?;
     if class.class_uuid != expected {
         return Err(FramingError::structural(
@@ -2565,12 +2578,11 @@ fn texture_array(
                 "texture object is short-framed",
             ));
         }
-        let class = parse_class_wrapper(
+        let class = class_descriptor(
             ctx,
             data,
             object.header_start..object.next_offset(),
             archive,
-            &mut Diagnostics::new(),
         )?;
         if class.class_uuid != TEXTURE {
             return Err(FramingError::structural(
@@ -5981,12 +5993,11 @@ attribute_losses.append_admitted(
                         )?;
                         parsed = true;
                     }
-                } else if let Some(class) = optional_malformed(parse_class_wrapper(
+                } else if let Some(class) = optional_malformed(class_descriptor(
                     ctx,
                     scan.data,
                     record.body(),
                     scan.archive,
-                    &mut Diagnostics::new(),
                 ))? {
                     if matches!(class.class_uuid, WINDOWS_BITMAP | WINDOWS_BITMAP_EX) {
                         let (value, storage) = ctx.with_scoped_storage(

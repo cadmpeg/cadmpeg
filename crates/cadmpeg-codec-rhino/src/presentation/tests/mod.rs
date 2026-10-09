@@ -1893,6 +1893,8 @@ mod patterns;
 
 mod mapping_scratch;
 
+mod class_scratch;
+
 mod resource_limits;
 
 mod materials;
