@@ -1247,3 +1247,42 @@ fn a_dropped_brep_mesh_cache_slot_carries_the_mesh_cache_code() {
         )]
     );
 }
+
+#[test]
+fn fallback_exactness_lookup_admits_thousands_of_free_carriers() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 192_000_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut staged = BrepDraft::default();
+    for index in 0..4096 {
+        let id: cadmpeg_ir::ids::CurveId =
+            format!("rhino:object:curve#{index:08}").try_into().unwrap();
+        staged.draft.model_mut().curves.push(Curve {
+            id: id.clone(),
+            parameter_range: None,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        });
+        staged.links.push(id.to_string());
+        staged
+            .draft
+            .exactness(&ctx, &id, cadmpeg_ir::Exactness::Derived)
+            .unwrap();
+    }
+    let staged = staged
+        .free_carrier_fallback(&ctx, "synthetic topology rejection")
+        .unwrap();
+    assert_eq!(staged.draft.model().curves.len(), 4096);
+    assert_eq!(staged.links.len(), 4096);
+    let old_lookup_work = 4096_u64 * 4096 * 27;
+    assert!(old_lookup_work > policy.limits.max_work_units);
+    ctx.finish_session().unwrap();
+}

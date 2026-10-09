@@ -14,6 +14,9 @@ use cadmpeg_core::CodecError;
 
 use crate::provenance::{AnnotationProvenance, Exactness, StreamName};
 
+mod sparse;
+pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
+
 /// Document-wide provenance and exactness tables keyed by globally unique
 /// entity id.
 ///
@@ -901,7 +904,7 @@ impl AnnotationState {
     }
 }
 
-fn admit_identity_work(
+pub(crate) fn admit_identity_work(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entries: usize,
     bytes: usize,
