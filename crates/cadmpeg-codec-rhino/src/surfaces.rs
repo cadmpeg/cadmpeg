@@ -857,14 +857,19 @@ pub(crate) fn extrusion_nurbs(
         .knots()
         .try_clone_for_decode(ctx, "Rhino extrusion surface knots")?;
     let [path_start, path_end] = path_domain.finite_components();
-    let path_knots =
-        KnotVector::from_finite_lanes(ctx, vec![path_start, path_start, path_end, path_end])?
-            .or_else(|error| {
-                Err(GeometryError::malformed(
-                    offset,
-                    ctx.format_retained(format_args!("{error}"), "Rhino extrusion_nurbs text")?,
-                ))
-            })?;
+    let path_knots = {
+        let operation = "Rhino extrusion path knot input";
+        let mut input_storage = ctx.reserve_scoped(0, operation)?;
+        let mut knots = input_storage.with_storage(|| ctx.collection_vec(4, operation))?;
+        knots.extend([path_start, path_start, path_end, path_end]);
+        KnotVector::from_finite_lanes(ctx, knots)?
+    }
+    .or_else(|error| {
+        Err(GeometryError::malformed(
+            offset,
+            ctx.format_retained(format_args!("{error}"), "Rhino extrusion_nurbs text")?,
+        ))
+    })?;
     let mut surface = NurbsSurface::new(
         ctx,
         NurbsSurfaceAxis::new(start.degree(), u_knots, start.periodic()),
