@@ -138,3 +138,94 @@ fn unavailable_display_span_stops_before_unneeded_tail() {
         assert_eq!(ctx.resource_refusal(), Some(original));
     }
 }
+
+
+fn check_display_staging_peak(shaded: bool) {
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::tessellation::{ShadedVertex, Strip, Strips, Tessellation, TessellationMesh};
+    let mut scan = super::inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
+    if shaded {
+        scan.primitives.triangle_strips[0] = crate::decode::with_test_decode_ctx(|ctx| {
+            crate::primdata::PrimitiveTriangleStrip::new(
+                ctx, 0,
+                scan.primitives.triangle_strips[0].positions().copied().collect(),
+                Some(vec![cadmpeg_ir::units::FiniteVector::new([0.0, 0.0, 1.0]).expect("normal"); 3]),
+                vec![3],
+            )
+        }).expect("fixture service").expect("legal shaded strip");
+    }
+    // First growth reserves four staging rows. A full four-row model vector
+    // grows after those buffers have been consumed; the peaks do not overlap.
+    let staging_bytes = 4 * std::mem::size_of::<FinitePoint3>()
+        + if shaded { 4 * std::mem::size_of::<ShadedVertex>() } else { 0 };
+    let model_bytes = 4 * std::mem::size_of::<Tessellation>();
+    assert!(model_bytes > staging_bytes);
+    let peak = u64::try_from(model_bytes).expect("fixed model peak");
+    for cap in [peak - 1, peak] {
+        let mut ir = CadIr::empty();
+        ir.model.tessellations = Vec::with_capacity(4);
+        for offset in 100..104 {
+            let id = cadmpeg_ir::tessellation::TessellationId::try_from(
+                format!("creo:solid_primdata:tessellation#{offset}"),
+            ).expect("distinct fixture identity");
+            let strip = Strip::new(vec![
+                FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("point"),
+                FinitePoint3::new(Point3::new(0.0, 1.0, 0.0)).expect("point"),
+                FinitePoint3::new(Point3::new(0.0, 0.0, 1.0)).expect("point"),
+            ]).expect("three vertices");
+            let mesh = TessellationMesh::Strips {
+                strips: Strips::new(vec![strip]).expect("one strip"),
+            };
+            ir.model.tessellations.push(Tessellation::from_parts(id, mesh, Vec::new()).expect("fixture mesh"));
+        }
+        assert_eq!(ir.model.tessellations.capacity(), 4);
+        let previous = ir.model.tessellations.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let result = transfer_display_tessellations(&ctx, &scan, &mut ir, &mut annotations);
+        assert_eq!(&ir.model.tessellations[..4], previous.as_slice());
+        let original = if cap == peak {
+            result.expect("sequential staging and model growth fit their larger peak");
+            assert_eq!(ir.model.tessellations.len(), 5);
+            let added = &ir.model.tessellations[4];
+            assert_eq!(added.id.as_str(), "creo:solid_primdata:tessellation#0");
+            assert_eq!(added.vertices(), vec![
+                FinitePoint3::new(Point3::new(25.4, 0.0, 0.0)).expect("millimeters"),
+                FinitePoint3::new(Point3::new(0.0, 50.8, 0.0)).expect("millimeters"),
+                FinitePoint3::new(Point3::new(0.0, 0.0, 101.6)).expect("millimeters"),
+            ]);
+            assert_eq!(matches!(added.mesh(), TessellationMesh::ShadedStrips { .. }), shaded);
+            assert_eq!(ctx.resource_refusal(), None);
+            let released = ctx.reserve_scoped(peak, "after display staging and model growth").expect("both scratch peaks released");
+            drop(released);
+            ctx.charge_work_limit(policy.limits.max_work_units, "after display transfer").expect_err("seed sticky refusal")
+        } else {
+            let original = ctx.resource_refusal().expect("model overlap refused");
+            assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+            assert_eq!(ir.model.tessellations.len(), 4);
+            assert_eq!((original.dimension, original.limit, original.used, original.additional, original.operation),
+                (ResourceDimension::MaterializedBytes, cap, 0, peak, "creo model tessellations"));
+            original
+        };
+        let retained_count = ir.model.tessellations.len();
+        assert!(matches!(transfer_display_tessellations(&ctx, &scan, &mut ir, &mut annotations),
+            Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert_eq!(ir.model.tessellations.len(), retained_count);
+        assert_eq!(ctx.resource_refusal(), Some(original));
+        assert_eq!(scan.primitives.triangle_strips[0].positions().next().expect("source vertex").get(), [1.0, 0.0, 0.0]);
+    }
+}
+
+#[test]
+fn unshaded_display_staging_releases_before_model_growth() {
+    check_display_staging_peak(false);
+}
+
+#[test]
+fn shaded_display_staging_releases_before_model_growth() {
+    check_display_staging_peak(true);
+}
