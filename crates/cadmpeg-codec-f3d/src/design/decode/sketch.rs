@@ -4090,12 +4090,15 @@ fn decode_sketch_point_companion<'t>(
     };
     cursor += 4;
 
+    let mut storage = ctx.reserve_scoped(0, "f3d sketch point incident curves")?;
     let mut incident_curves = Vec::new();
-    ctx.reserve_capacity(
-        &mut incident_curves,
-        count,
-        "f3d sketch point incident curves",
-    )?;
+    storage.with_storage(|| {
+        ctx.reserve_capacity(
+            &mut incident_curves,
+            count,
+            "f3d sketch point incident curves",
+        )
+    })?;
     for _ in 0..count {
         ctx.charge_work(1, "scan F3D sketch point incident curves")?;
         let Some((target, type_guid)) = take_local_sketch_reference(ctx, payload, &mut cursor)?
@@ -4114,7 +4117,8 @@ fn decode_sketch_point_companion<'t>(
         if !encoding_matches {
             return Ok(None);
         }
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut storage,
             &mut incident_curves,
             target,
             "f3d sketch point incident curves",
@@ -4138,7 +4142,7 @@ fn decode_sketch_point_companion<'t>(
     if inverse != point_record_index || !inverse_encoding_matches || cursor != payload.len() {
         return Ok(None);
     }
-    Ok(Some((
+    storage.commit_value(Some((
         record_form,
         SketchPointCompanion { incident_curves },
     )))
