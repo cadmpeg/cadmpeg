@@ -3069,18 +3069,7 @@ fn feature_definitions(
             definitions.push(definition);
         }
         if section.section.name() == "DEPDB_DATA" {
-            let mut recipe_storage =
-                ctx.reserve_scoped(0, "creo definition recipe operation storage")?;
-            let recipe_operations = recipe_storage
-                .with_storage(|| feature::operations::operations(ctx, payload))?;
-            let owner_feature_id = crate::decode::uniqueness::exactly_one_by(
-                ctx,
-                &recipe_operations,
-                |operation| Ok(operation.recipe.resolved().is_some()),
-                "creo definition recipe operation selection",
-            )?
-            .map(|operation| operation.feature_id);
-            drop((recipe_operations, recipe_storage));
+            let owner_feature_id = feature::operations::unique_recipe_owner(ctx, payload)?;
             if let Some(owner_feature_id) = owner_feature_id {
                 if let Some(mut definition) = feature::definitions::depdb_section_definition(
                     ctx,
