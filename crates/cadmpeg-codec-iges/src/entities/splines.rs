@@ -164,6 +164,9 @@ fn add_edge(
     sequences: &mut super::geometry::SourceSequences<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<EdgeId>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(parameter_range) =
         IncreasingParameterInterval::between(parameter_range[0], parameter_range[1])
     else {
