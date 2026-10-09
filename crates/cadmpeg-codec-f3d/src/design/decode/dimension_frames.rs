@@ -153,25 +153,31 @@ fn dimension_companion_keys<'a, 'ctx>(
 /// Record indices grouped by stream scope. `streams` names the stream of each
 /// index, and each stream's indices are one ascending, distinct run of
 /// `indices`.
-struct StreamIndexRuns<'a> {
+struct StreamIndexRuns<'a, 'ctx, 'arena> {
+    ctx: &'ctx DecodeContext<'arena>,
     streams: Vec<&'a str>,
     indices: Vec<u32>,
 }
 
-impl<'a> StreamIndexRuns<'a> {
+impl<'a, 'ctx, 'arena> StreamIndexRuns<'a, 'ctx, 'arena> {
     fn new(
-        ctx: &DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'arena>,
         mut keys: StreamRecordKeys<'a>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
+        ctx.charge_work(0, operation)?;
+        if keys.is_empty() {
+            return Ok(Self { ctx, streams: Vec::new(), indices: Vec::new() });
+        }
         sort_record_keys(ctx, &mut keys, operation)?;
         let (streams, indices) = ctx.unzip_vec(keys, operation)?;
-        Ok(Self { streams, indices })
+        Ok(Self { ctx, streams, indices })
     }
 
     /// The ascending, distinct record indices of `stream`.
-    fn of(&self, ctx: &DecodeContext<'_>, stream: &str) -> Result<&[u32], CodecError> {
-        let run = key_range(ctx, &self.streams, |record_stream| record_stream, stream)?;
+    fn of(&self, stream: &str) -> Result<&[u32], CodecError> {
+        self.ctx.charge_work(0, "find F3D grouped records")?;
+        let run = key_range(self.ctx, &self.streams, |record_stream| record_stream, stream)?;
         Ok(self.indices.get(run).unwrap_or(&[]))
     }
 }
@@ -185,11 +191,11 @@ fn set_contains(ctx: &DecodeContext<'_>, set: &[u32], value: u32) -> Result<bool
 
 /// Record indices of the sketch points and curves of each stream, under the
 /// returned reservation.
-fn dimension_geometry_runs<'a, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+fn dimension_geometry_runs<'a, 'ctx, 'arena>(
+    ctx: &'ctx DecodeContext<'arena>,
     points: &'a [SketchPoint],
     curves: &'a [SketchCurveIdentity],
-) -> Result<(StreamIndexRuns<'a>, ScopedReservation<'ctx>), CodecError> {
+) -> Result<(StreamIndexRuns<'a, 'ctx, 'arena>, ScopedReservation<'ctx>), CodecError> {
     let operation = "f3d dimension geometry indices";
     ctx.with_scoped_storage(operation, || {
         let mut keys_storage = ctx.reserve_scoped(0, operation)?;
@@ -214,10 +220,10 @@ fn dimension_geometry_runs<'a, 'ctx>(
 
 /// Entity suffixes of the sketch-module entities of each stream, under the
 /// returned reservation.
-fn dimension_sketch_entity_runs<'a, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+fn dimension_sketch_entity_runs<'a, 'ctx, 'arena>(
+    ctx: &'ctx DecodeContext<'arena>,
     entities: &'a [DesignEntityHeader],
-) -> Result<(StreamIndexRuns<'a>, ScopedReservation<'ctx>), CodecError> {
+) -> Result<(StreamIndexRuns<'a, 'ctx, 'arena>, ScopedReservation<'ctx>), CodecError> {
     let operation = "f3d dimension sketch entities";
     ctx.with_scoped_storage(operation, || {
         let mut keys_storage = ctx.reserve_scoped(0, operation)?;
@@ -1902,7 +1908,7 @@ pub(crate) fn decode_dimension_locus_pairs<'a>(
             Some(index) => index,
             vacant => vacant.insert(dimension_geometry_runs(ctx, points, curves)?),
         };
-        let geometry_indices = geometry.of(ctx, scope)?;
+        let geometry_indices = geometry.of(scope)?;
         let stream_records = records.get(&entry.name, bytes)?;
         let Some(parsed_pair) = find_dimension_locus_pair(
             ctx,
@@ -2199,7 +2205,7 @@ pub(crate) fn decode_dimension_null_locus_pairs<'a>(
             Some(index) => index,
             vacant => vacant.insert(dimension_geometry_runs(ctx, points, curves)?),
         };
-        let geometry_indices = geometry.of(ctx, scope)?;
+        let geometry_indices = geometry.of(scope)?;
         let stream_records = records.get(&entry.name, bytes)?;
         let Some(parsed_pair) = find_dimension_null_locus_pair(
             ctx,
@@ -2465,8 +2471,8 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
         let stream_records = records.get(&entry.name, bytes)?;
         let frame_inputs = AnnotationFrameInputs {
             governed_owners: &governed_owners,
-            geometry_indices: geometry.of(ctx, stream)?,
-            sketch_entities: sketch_entities.of(ctx, stream)?,
+            geometry_indices: geometry.of(stream)?,
+            sketch_entities: sketch_entities.of(stream)?,
             records: stream_records,
         };
         // The paired header offset of each frame decoded in this stream, by
@@ -3317,16 +3323,16 @@ fn presentation_stream_prefixes<'a, 'ctx>(
 
 /// The tables a presentation pass shares across streams, built when the
 /// first presentation-typed record appears.
-struct PresentationPassTables<'a, 'ctx> {
+struct PresentationPassTables<'a, 'ctx, 'arena> {
     owners: Grouped<'a, DesignParameterOwner>,
-    geometry: StreamIndexRuns<'a>,
-    sketch_entities: StreamIndexRuns<'a>,
+    geometry: StreamIndexRuns<'a, 'ctx, 'arena>,
+    sketch_entities: StreamIndexRuns<'a, 'ctx, 'arena>,
     _storage: [ScopedReservation<'ctx>; 3],
 }
 
-impl<'a, 'ctx> PresentationPassTables<'a, 'ctx> {
+impl<'a, 'ctx, 'arena> PresentationPassTables<'a, 'ctx, 'arena> {
     fn build(
-        ctx: &'ctx DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'arena>,
         inputs: &DimensionDecodeInputs<'a>,
         entities: &'a [DesignEntityHeader],
     ) -> Result<Self, CodecError> {
@@ -3373,7 +3379,7 @@ impl<'a, 'r> PresentationStreamTables<'a, 'r> {
         ctx: &DecodeContext<'_>,
         stream: &str,
         records: &'r IndexedRecordOffsets,
-        pass: &'r PresentationPassTables<'a, '_>,
+        pass: &'r PresentationPassTables<'a, '_, '_>,
         parameters: &ParameterIndex<'_>,
     ) -> Result<Self, CodecError> {
         let mut owner_storage =
@@ -3412,8 +3418,8 @@ impl<'a, 'r> PresentationStreamTables<'a, 'r> {
             )?;
         }
         Ok(Self {
-            geometry_indices: pass.geometry.of(ctx, stream)?,
-            sketch_entities: pass.sketch_entities.of(ctx, stream)?,
+            geometry_indices: pass.geometry.of(stream)?,
+            sketch_entities: pass.sketch_entities.of(stream)?,
             records,
             owners_by_scope,
         })
@@ -3624,8 +3630,8 @@ pub(crate) fn decode_dimension_locus_groups<'a>(
             Some(index) => index,
             vacant => vacant.insert(dimension_sketch_entity_runs(ctx, entities)?),
         };
-        let geometry_indices = geometry.of(ctx, scope)?;
-        let stream_sketch_entities = sketch_entities.of(ctx, scope)?;
+        let geometry_indices = geometry.of(scope)?;
+        let stream_sketch_entities = sketch_entities.of(scope)?;
         let stream_records = records.get(&entry.name, bytes)?;
         find_dimension_locus_groups(
             ctx,

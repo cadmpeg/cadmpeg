@@ -367,8 +367,8 @@ fn presentation_stream_tables_commit_only_surviving_owner_groups() {
     owner_storage = held_storage;
     let pass = super::super::PresentationPassTables {
         owners: grouped,
-        geometry: super::super::StreamIndexRuns { streams: Vec::new(), indices: Vec::new() },
-        sketch_entities: super::super::StreamIndexRuns { streams: Vec::new(), indices: Vec::new() },
+        geometry: super::super::StreamIndexRuns { ctx: &ctx, streams: Vec::new(), indices: Vec::new() },
+        sketch_entities: super::super::StreamIndexRuns { ctx: &ctx, streams: Vec::new(), indices: Vec::new() },
         _storage: [
             owner_storage,
             ctx.reserve_scoped(0, "test empty geometry").unwrap(),
