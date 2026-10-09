@@ -252,9 +252,11 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     }));
     let (matched, kernel) = layers(&evidence);
     let mut body_wire = false;
+    let mut standalone_faces = false;
     let record_list = records.as_deref().unwrap_or_default();
     for record in record_list {
-        ctx.charge_work(1, "scan SAT wire ownership")?;
+        ctx.charge_work(1, "scan SAT topology ownership")?;
+        standalone_faces |= record.head() == "face" && record.ref_at(5).is_none();
         if record.head() == "wire"
             && record
                 .ref_at(5)
@@ -275,13 +277,18 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
                 cadmpeg_core::decode::u64_from_index(record.tokens.len()),
                 "scan SAT legacy construction context",
             )?;
-            legacy_context |= record.tokens.windows(3).any(|tokens| {
-                matches!(tokens,
-                [sab::Token::SubtypeOpen,
-                 sab::Token::Ident(name),
-                 sab::Token::Ident(block)]
-                if matches!(name.as_str(), "exactcur" | "surfintcur" | "exactsur")
-                && matches!(block.as_str(), "nubs" | "nurbs"))
+            legacy_context |= record.tokens.windows(2).enumerate().any(|(index, tokens)| {
+                let [sab::Token::SubtypeOpen, sab::Token::Ident(name)] = tokens else {
+                    return false;
+                };
+                if !matches!(name.as_str(), "exactcur" | "surfintcur" | "exactsur") {
+                    return false;
+                }
+                let block = match record.tokens.get(index + 2) {
+                    Some(sab::Token::Enum(0)) => record.tokens.get(index + 3),
+                    block => block,
+                };
+                matches!(block, Some(sab::Token::Ident(name)) if matches!(name.as_str(), "nubs" | "nurbs"))
             });
         }
     }
@@ -349,6 +356,11 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         )?;
     }
     let wire_span = body_wire.then_some(("sat:source:body-wire#0", 0..bytes.len()));
+    // A dropped standalone face can own loops, trims and carriers that no
+    // emitted topology reaches. Retain their complete source with the face.
+    let standalone_span = (standalone_faces
+        && !(extensions || concatenated_streams || legacy_context || body_wire))
+        .then_some(("sat:source:standalone-faces#0", 0..bytes.len()));
     let header_span = (!text_header.diagnostics.is_empty())
         .then_some(("sat:source:header#0", text_header.source_span));
     let unread_span = unread.map(|span| ("sat:source:unread#0", span));
@@ -362,6 +374,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
             .chain(extension_span)
             .chain(legacy_span)
             .chain(wire_span)
+            .chain(standalone_span)
             .chain(concatenated_span),
     )?;
     Ok(result)

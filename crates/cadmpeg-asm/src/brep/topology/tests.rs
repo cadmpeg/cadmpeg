@@ -318,10 +318,21 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
             }
             bytes.extend_from_slice(&[0x0b, 0x10, 0x0b, 0x0b, 0x0b, 0x0b, 0x11]);
             ident(&mut bytes, "face");
-            for reference in [-1, -1, -1, -1, -1, -1, -1, 0] {
+            for reference in [-1, -1, -1, -1, -1, 2, -1, 0] {
                 integer(&mut bytes, 0x0c, reference, width);
             }
             bytes.push(0x11);
+            for (name, references) in [
+                ("shell", &[-1, -1, -1, -1, -1, 1, -1, 3][..]),
+                ("lump", &[-1, -1, -1, -1, 2, 4][..]),
+                ("body", &[-1, -1, -1, 3][..]),
+            ] {
+                ident(&mut bytes, name);
+                for &reference in references {
+                    integer(&mut bytes, 0x0c, reference, width);
+                }
+                bytes.push(0x11);
+            }
 
             let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
             let by_index = records

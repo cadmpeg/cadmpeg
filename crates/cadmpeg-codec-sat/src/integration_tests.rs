@@ -178,3 +178,50 @@ fn concatenated_sat_unreadable_later_header_keeps_the_first_model() {
         );
     }
 }
+
+#[test]
+fn standalone_face_children_are_retained_without_entering_the_model() {
+    let source = b"600 0 1 0\n1 T 4 ACIS 1 D\n1 0.01 0.001\n\
+face $-1 $-1 $1 $-1 $-1 $2 forward single #\n\
+loop $-1 $-1 $3 $0 #\n\
+plane-surface $-1 0 0 0 0 0 1 1 0 0 forward_v I I I I #\n\
+coedge $-1 $3 $3 $-1 $4 forward $1 $-1 #\n\
+edge $-1 $5 0 $6 1 $3 $7 forward 0 #\n\
+vertex $-1 $4 $8 #\nvertex $-1 $4 $9 #\n\
+straight-curve $-1 0 0 0 1 0 0 I I #\n\
+point $-1 0 0 0 #\npoint $-1 1 0 0 #\n\
+body $-1 $11 $-1 $-1 #\n\
+lump $-1 $-1 $12 $10 #\n\
+shell $-1 $-1 $-1 $13 $-1 $11 #\n\
+face $-1 $-1 $-1 $12 $-1 $14 forward single #\n\
+sphere-surface $-1 0 0 0 2 1 0 0 0 0 1 forward_v I I I I #\n\
+End-of-ACIS-data\n";
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
+    let model = &result.ir().model;
+    assert_eq!(model.bodies.len(), 1);
+    assert_eq!(model.faces.len(), 1);
+    assert_eq!(model.surfaces.len(), 1);
+    assert_eq!(model.faces[0].id.as_str(), "sat:brep:entity#13");
+    assert!(model.loops.is_empty());
+    assert!(model.coedges.is_empty());
+    assert!(model.edges.is_empty());
+    assert!(model.vertices.is_empty());
+    assert!(model.points.is_empty());
+    assert!(model.curves.is_empty());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .unwrap()
+        .is_ok());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::TopologyFaceOwnerUnprojected.kind()));
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:source:standalone-faces#0")
+            .unwrap()
+            .data(),
+        Some(source.as_slice())
+    );
+}

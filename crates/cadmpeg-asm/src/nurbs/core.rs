@@ -1220,7 +1220,7 @@ mod tests {
                     .unwrap()
                     .unwrap();
                     assert_eq!(
-                        decoded.surface.is_some(),
+                        decoded.surface.into_surface().is_some(),
                         current != 0,
                         "{name}, current={current}"
                     );

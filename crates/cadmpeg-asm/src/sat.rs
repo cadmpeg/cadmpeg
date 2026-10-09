@@ -1800,6 +1800,10 @@ fn bs_surface_block(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<(
     let degree_v = cur.long()?;
     push_token!(cur, out, Token::Long(degree_u));
     push_token!(cur, out, Token::Long(degree_v));
+    if matches!(cur.peek(), Some(Prim::Word(word)) if matches!(word.as_str(), "u" | "v" | "both")) {
+        let scope = cur.word()?;
+        cur.push_text_token(out, scope, false);
+    }
     cur.enum_word(CLOSURE, out)?;
     cur.enum_word(CLOSURE, out)?;
     cur.enum_word(SINGULARITY, out)?;
@@ -2175,7 +2179,7 @@ fn type_subtype_tabled(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Optio
     };
     cur.push_text_token(out, name, false);
     let matched = if cur.save_format < 700
-        && matches!(cur.peek(), Some(Prim::Word(word)) if matches!(word.as_str(), "nubs" | "nurbs"))
+        && matches!(cur.peek(), Some(Prim::Word(word)) if matches!(word.as_str(), "nubs" | "nurbs" | "full"))
         && matches!(name, "exactcur" | "surfintcur" | "exactsur")
     {
         legacy::cache_tail(cur, out, name == "exactsur")

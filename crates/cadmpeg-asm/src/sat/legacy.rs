@@ -5,14 +5,18 @@ use super::{take_slot, Cur, Prim, Slot, Token, TypedRecordFailure};
 use cadmpeg_core::decode::DecodeContext;
 use Slot::{DLen, DLenSentinel, OptB, Sense, Sides, Sub, UvSense, VLen, VUnit, B, D, L, P, R, S};
 
-/// These subtype layouts start with the solved block, without a cache-form
-/// enum. The remaining construction context stays lexical when its layout
+/// These subtype layouts start with the solved block, with an optional `full`
+/// cache form. The remaining construction context stays lexical when its layout
 /// is not represented by the modern native construction grammar.
 pub(super) fn cache_tail(
     cur: &mut Cur<'_, '_, '_>,
     out: &mut Vec<Token>,
     surface: bool,
 ) -> Option<()> {
+    if matches!(cur.peek(), Some(Prim::Word(word)) if word == "full") {
+        cur.word_is("full")?;
+        cur.push_token(out, Token::Enum(0));
+    }
     if surface {
         super::bs_surface_block(cur, out)?;
     } else {

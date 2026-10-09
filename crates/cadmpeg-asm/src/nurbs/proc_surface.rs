@@ -1801,7 +1801,7 @@ fn revision_loft_profile_data(
             Some(Ok(LoftProfileData::RevisionSupport {
                 endpoints,
                 type_code,
-                surface,
+                surface: surface.into_surface(),
                 support_bounds,
                 pcurve,
                 first_flag,
@@ -3551,7 +3551,7 @@ fn taper_spl_sur(
             Ok(support) => support,
             Err(error) => return Some(Err(error)),
         };
-        let support = support?;
+        let support = support.into_surface()?;
         let reference =
             propagate_resource!(embedded_base_curve_resolving_refs(ctx, &mut cur, table)?);
         let reference_endpoints = [
@@ -3808,7 +3808,7 @@ fn off_spl_sur(
             Ok(support) => support,
             Err(error) => return Some(Err(error)),
         };
-        let support = support?;
+        let support = support.into_surface()?;
         let distance = cur.take_f64()? * LEN_TO_MM;
         // Four booleans carry the record orientation pair and the ASM extension
         // pair. The first repeats the support sense and orients the offset

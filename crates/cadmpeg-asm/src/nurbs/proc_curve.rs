@@ -95,14 +95,6 @@ pub enum SupportSlot {
 }
 
 impl SupportSlot {
-    fn from_parsed(surface: Option<SurfaceGeometry>, declared: bool) -> Self {
-        match surface {
-            Some(surface) => Self::Surface(surface),
-            None if declared => Self::DeclaredOnly,
-            None => Self::Absent,
-        }
-    }
-
     pub(crate) fn into_surface(self) -> Option<SurfaceGeometry> {
         match self {
             Self::Surface(surface) => Some(surface),
@@ -2424,10 +2416,6 @@ fn cache_first_curve_context(
         _ => return None,
     };
     let first_surface_start = cur.pos();
-    let first_support_present = match support_slot_present(ctx, cur, table) {
-        Ok(present) => present,
-        Err(error) => return Some(Err(error)),
-    };
     let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
         surface: first_surface,
         bounds: first_bounds,
@@ -2436,10 +2424,6 @@ fn cache_first_curve_context(
         Err(error) => return Some(Err(error)),
     };
     let second_surface_start = cur.pos();
-    let second_support_present = match support_slot_present(ctx, cur, table) {
-        Ok(present) => present,
-        Err(error) => return Some(Err(error)),
-    };
     let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
         surface: second_surface,
         bounds: second_bounds,
@@ -2483,10 +2467,7 @@ fn cache_first_curve_context(
             solved_range,
             extension,
         },
-        surfaces: [
-            SupportSlot::from_parsed(first_surface, first_support_present),
-            SupportSlot::from_parsed(second_surface, second_support_present),
-        ],
+        surfaces: [first_surface, second_surface],
         pcurves,
         discontinuities,
     }))
@@ -2889,27 +2870,16 @@ fn cache_first_intersection(
     cur.set_pos(cache_end);
     cur.take_f64()?;
     let first_surface_start = cur.pos();
-    let first_support_present = match support_slot_present(ctx, &cur, table) {
-        Ok(present) => present,
-        Err(error) => return Some(Err(error)),
-    };
     let first_surface = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
         Ok(surface) => surface.surface,
         Err(error) => return Some(Err(error)),
     };
     let second_surface_start = cur.pos();
-    let second_support_present = match support_slot_present(ctx, &cur, table) {
-        Ok(present) => present,
-        Err(error) => return Some(Err(error)),
-    };
     let second_surface = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
         Ok(surface) => surface.surface,
         Err(error) => return Some(Err(error)),
     };
-    let surfaces = [
-        SupportSlot::from_parsed(first_surface, first_support_present),
-        SupportSlot::from_parsed(second_surface, second_support_present),
-    ];
+    let surfaces = [first_surface, second_surface];
     let mut pcurves = [
         propagate_resource!(nullable_embedded_pcurve(ctx, &mut cur)?).value(),
         propagate_resource!(nullable_embedded_pcurve(ctx, &mut cur)?).value(),
@@ -3064,82 +3034,6 @@ fn optional_pcurve(
     let (pcurve, end) = propagate_resource!(pcurve_block_with_end(ctx, cur.toks(), start)?);
     cur.set_pos(end);
     Some(Ok(Nullable::Value(pcurve)))
-}
-
-/// Whether the next cache-first support slot contains a valid non-null
-/// surface construction.
-///
-/// The neutral `SurfaceGeometry` field cannot represent a cacheless
-/// procedural surface without assigning it a document-level construction ID.
-/// Keep that distinction separate: a typed support reference still proves that
-/// its paired native pcurve slot is eligible, while `null_surface` does not.
-fn support_slot_present(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    cur: &Cur<'_>,
-    table: &SubtypeTable,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    let mut probe = *cur;
-    if probe.take_ident() == Some("null_surface") {
-        return Ok(false);
-    }
-
-    let mut parsed = *cur;
-    if let Some(parsed) = optional_embedded_surface_with_bounds(ctx, &mut parsed, table) {
-        if parsed?.surface.is_some() {
-            return Ok(true);
-        }
-    }
-
-    let mut probe = *cur;
-    if probe.take_ident() != Some("spline") {
-        return Ok(false);
-    }
-    if matches!(probe.peek(), Some(Token::True | Token::False)) && probe.take_bool().is_none() {
-        return Ok(false);
-    }
-    let Some(Token::SubtypeOpen) = probe.peek() else {
-        return Ok(false);
-    };
-    let start = probe.pos();
-    let Some(scope) = crate::nurbs::toks::subtype_span(probe.toks(), start) else {
-        return Ok(false);
-    };
-    let Some(Token::Ident(name)) = probe.toks().get(start + 1) else {
-        return Ok(false);
-    };
-    if name == "ref" {
-        let Some(Token::Long(index)) = probe.toks().get(start + 2) else {
-            return Ok(false);
-        };
-        let Ok(index) = usize::try_from(*index) else {
-            return Ok(false);
-        };
-        let Some(target) = table.span(index) else {
-            return Ok(false);
-        };
-        if crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, target, table)
-            .transpose()?
-            .is_some()
-        {
-            return Ok(true);
-        }
-        return crate::nurbs::proc_surface::procedural_surface_resolving_refs(
-            ctx,
-            target.tokens(),
-            table,
-        )
-        .transpose()
-        .map(|decoded| decoded.is_some());
-    }
-    if crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, scope, table)
-        .transpose()?
-        .is_some()
-    {
-        return Ok(true);
-    }
-    crate::nurbs::proc_surface::procedural_surface_resolving_refs(ctx, scope.tokens(), table)
-        .transpose()
-        .map(|decoded| decoded.is_some())
 }
 
 /// Writable scalar locations in a retained `off_int_cur` construction.
@@ -3544,9 +3438,9 @@ fn decode_embedded_surface_fields(
     }
 }
 
-/// Optional embedded support surface plus its four optional U/V bound fields.
+/// Native support presence, standalone geometry and four optional U/V bounds.
 pub(super) struct EmbeddedSurfaceWithBounds {
-    pub(super) surface: Option<SurfaceGeometry>,
+    pub(super) surface: SupportSlot,
     pub(super) bounds: [Option<f64>; 4],
 }
 
@@ -3561,7 +3455,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
     let kind = cur.take_ident();
     if kind == Some("null_surface") {
         return Some(Ok(EmbeddedSurfaceWithBounds {
-            surface: None,
+            surface: SupportSlot::Absent,
             bounds: [None; 4],
         }));
     }
@@ -3569,76 +3463,41 @@ pub(super) fn optional_embedded_surface_with_bounds(
         if matches!(cur.peek(), Some(Token::True | Token::False)) {
             cur.take_bool()?;
         }
-        let reference = cur.pos();
-        let compact_ref = matches!(toks.get(reference), Some(Token::SubtypeOpen))
-            && matches!(toks.get(reference + 1), Some(Token::Ident(name)) if name == "ref")
-            && matches!(toks.get(reference + 2), Some(Token::Long(_)));
-        if compact_ref {
-            let Some(Token::Long(index)) = toks.get(reference + 2) else {
-                return None;
+        if let Some(scope) = crate::nurbs::toks::subtype_span(toks, cur.pos()) {
+            let reference = match scope.interior() {
+                [Token::Ident(name), Token::Long(index), ..] if name == "ref" => {
+                    Some(usize::try_from(*index).ok()?)
+                }
+                _ => None,
             };
-            let index = usize::try_from(*index).ok()?;
-            let reference_span = crate::nurbs::toks::subtype_span(toks, reference)?.tokens();
-            cur.set_pos(reference + reference_span.len());
-            let surface = table
-                .span(index)
-                .and_then(|target| owned_surface_cache_resolving_refs(ctx, target, table))
-                .transpose();
-            let surface = match surface {
-                Ok(surface) => surface
-                    .map(SolvedSurfaceGeometry::Nurbs)
-                    .map(SurfaceGeometry::Solved),
-                Err(error) => return Some(Err(error)),
+            let target = match reference {
+                Some(index) => table.span(index),
+                None => Some(scope),
             };
-            let mut bounds = [None; 4];
-            for bound in &mut bounds {
-                *bound = cur.take_optional_range_value()?.value();
-            }
-            return Some(Ok(EmbeddedSurfaceWithBounds { surface, bounds }));
-        }
-    }
-    cur.set_pos(saved);
-    if let Some(surface) = embedded_surface(ctx, cur) {
-        let mut bounds = [None; 4];
-        if kind == Some("plane") || kind == Some("spline") {
-            for bound in &mut bounds {
-                *bound = cur.take_optional_range_value()?.value();
-            }
-        }
-        return Some(Ok(EmbeddedSurfaceWithBounds {
-            surface: Some(propagate_resource!(surface)),
-            bounds,
-        }));
-    }
-    // Inline `spline { <subtype> }` support scope: resolve a solved surface
-    // cache when present, or validate the procedural surface construction when
-    // the support is cacheless. A cacheless procedural support has no neutral
-    // SurfaceGeometry carrier, but it still makes its paired native pcurve
-    // slot eligible.
-    cur.set_pos(saved);
-    if kind == Some("spline") {
-        cur.take_ident()?;
-        if matches!(cur.peek(), Some(Token::True | Token::False)) {
-            cur.take_bool()?;
-        }
-        if matches!(cur.peek(), Some(Token::SubtypeOpen)) {
-            let scope = crate::nurbs::toks::subtype_span(toks, cur.pos())?;
-            let surface =
-                if let Some(surface) = owned_surface_cache_resolving_refs(ctx, scope, table) {
-                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+            let surface = if let Some(target) = target {
+                if let Some(surface) = owned_surface_cache_resolving_refs(ctx, target, table) {
+                    SupportSlot::Surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                         propagate_resource!(surface),
                     )))
-                } else {
-                    let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                } else if propagate_resource!(
+                    crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                         ctx,
-                        scope.tokens(),
+                        target.tokens(),
                         table,
-                    )?;
-                    if let Err(error) = decoded {
-                        return Some(Err(error));
-                    }
-                    None
-                };
+                    )
+                    .transpose()
+                )
+                .is_some()
+                {
+                    SupportSlot::DeclaredOnly
+                } else if reference.is_some() {
+                    SupportSlot::Absent
+                } else {
+                    return None;
+                }
+            } else {
+                SupportSlot::Absent
+            };
             cur.set_pos(cur.pos() + scope.tokens().len());
             let mut bounds = [None; 4];
             for bound in &mut bounds {
@@ -3648,7 +3507,17 @@ pub(super) fn optional_embedded_surface_with_bounds(
         }
     }
     cur.set_pos(saved);
-    None
+    let surface = propagate_resource!(embedded_surface(ctx, cur)?);
+    let mut bounds = [None; 4];
+    if kind == Some("plane") || kind == Some("spline") {
+        for bound in &mut bounds {
+            *bound = cur.take_optional_range_value()?.value();
+        }
+    }
+    Some(Ok(EmbeddedSurfaceWithBounds {
+        surface: SupportSlot::Surface(surface),
+        bounds,
+    }))
 }
 
 fn compound_definition(
@@ -3896,6 +3765,122 @@ mod cache_form_tests {
     use cadmpeg_ir::geometry::{nurbs::NurbsCurve, pcurve::PcurveNurbs};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn cache_first_support_is_decoded_once_under_collection_budget() {
+        use crate::nurbs::toks::SubtypeTable;
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        const AXIS_POLES: u32 = 16;
+        let mut support = vec![
+            Token::Ident("spline".into()),
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Long(i64::from(AXIS_POLES)),
+            Token::Long(i64::from(AXIS_POLES)),
+        ];
+        for _ in 0..2 {
+            for knot in 0..AXIS_POLES {
+                support.extend([Token::Double(f64::from(knot)), Token::Long(1)]);
+            }
+        }
+        for v in 0..AXIS_POLES {
+            for u in 0..AXIS_POLES {
+                support.extend([
+                    Token::Double(f64::from(u)),
+                    Token::Double(f64::from(v)),
+                    Token::Double(0.0),
+                ]);
+            }
+        }
+        support.extend([
+            Token::False,
+            Token::False,
+            Token::False,
+            Token::False,
+            Token::Ident("null_surface".into()),
+            Token::Ident("nullbs".into()),
+            Token::Ident("nullbs".into()),
+            Token::False,
+            Token::False,
+            Token::Long(0),
+            Token::Long(0),
+            Token::Long(0),
+            Token::Long(7),
+        ]);
+        for intersection in [false, true] {
+            let mut tokens = if intersection {
+                vec![
+                    Token::Long(23_100),
+                    Token::Enum(0),
+                    Token::Ident("nubs".into()),
+                    Token::Long(1),
+                    Token::Enum(0),
+                    Token::Long(2),
+                    Token::Double(0.0),
+                    Token::Long(1),
+                    Token::Double(1.0),
+                    Token::Long(1),
+                    Token::Double(0.0),
+                    Token::Double(0.0),
+                    Token::Double(0.0),
+                    Token::Double(1.0),
+                    Token::Double(0.0),
+                    Token::Double(0.0),
+                    Token::Double(0.0),
+                ]
+            } else {
+                vec![
+                    Token::Long(23_100),
+                    Token::Enum(2),
+                    Token::False,
+                    Token::False,
+                    Token::Enum(0),
+                ]
+            };
+            tokens.extend(support.clone());
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // One grid needs the raw poles, transposed poles, finite poles,
+            // knot vectors and row slots. This cap cannot admit two grids.
+            policy.limits.max_collection_items = 4 * u64::from(AXIS_POLES).pow(2);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let table = SubtypeTable::from_records(&ctx, &[]).unwrap();
+            let surfaces = if intersection {
+                super::cache_first_intersection(&ctx, &tokens, 0, &solved_curve(), &table)
+                    .unwrap()
+                    .unwrap()
+                    .0
+                    .surfaces
+            } else {
+                let mut cur = Cur::at(&tokens, 0);
+                let context = cache_first_curve_context(&ctx, &mut cur, &table)
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(cur.pos(), tokens.len());
+                context.surfaces
+            };
+            let [super::SupportSlot::Surface(surface), super::SupportSlot::Absent] = surfaces
+            else {
+                panic!("one solved support and one absent support");
+            };
+            let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(surface)) =
+                surface.solved()
+            else {
+                panic!("solved NURBS support");
+            };
+            assert_eq!(surface.u_count(), usize::try_from(AXIS_POLES).unwrap());
+            assert_eq!(surface.v_count(), usize::try_from(AXIS_POLES).unwrap());
+            assert_eq!(surface.poles()[0].get(), Point3::new(0.0, 0.0, 0.0));
+            assert_eq!(surface.poles()[255].get(), Point3::new(150.0, 150.0, 0.0));
+            ctx.finish_session().unwrap();
+        }
+    }
 
     #[test]
     fn support_chart_mapping_propagates_the_original_work_refusal() {
