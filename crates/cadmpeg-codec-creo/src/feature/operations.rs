@@ -411,17 +411,29 @@ pub(crate) fn reference_names(
         {
             continue;
         }
-        let Some(name_end) = payload
-            .get(name_start..)
-            .and_then(|tail| tail.iter().take(256).position(|byte| *byte == 0))
-            .map(|relative| name_start + relative)
-        else {
+        let Some(tail) = payload.get(name_start..) else {
+            continue;
+        };
+        let mut bytes = tail.iter().take(256).enumerate();
+        let mut name_end = None;
+        while bytes.len() != 0 {
+            let Some((relative, byte)) =
+                ctx.next_charged(&mut bytes, "creo reference name prefix scan")?
+            else {
+                break;
+            };
+            if *byte == 0 {
+                name_end = Some(name_start + relative);
+                break;
+            }
+            if byte.is_ascii_control() {
+                break;
+            }
+        }
+        let Some(name_end) = name_end.filter(|end| *end != name_start) else {
             continue;
         };
         let name_bytes = &payload[name_start..name_end];
-        if name_bytes.is_empty() || name_bytes.iter().any(u8::is_ascii_control) {
-            continue;
-        }
         let (first_close, after_first_close) = psb::compact_int(payload, name_end + 1);
         let (second_close, after_second_close) = psb::compact_int(payload, after_first_close);
         if after_first_close == name_end + 1
@@ -473,11 +485,23 @@ fn recipe_bindings(
             continue;
         }
         let (parent_feature_id, display_start) = psb::compact_int(payload, after_schema + 1);
-        let Some(display_end) = payload
-            .get(display_start..)
-            .and_then(|bytes| bytes.iter().take(96).position(|byte| *byte == 0))
-            .map(|relative| display_start + relative)
-        else {
+        let Some(tail) = payload.get(display_start..) else {
+            continue;
+        };
+        let mut bytes = tail.iter().take(96).enumerate();
+        let mut display_end = None;
+        while bytes.len() != 0 {
+            let Some((relative, byte)) =
+                ctx.next_charged(&mut bytes, "creo recipe display prefix scan")?
+            else {
+                break;
+            };
+            if *byte == 0 {
+                display_end = Some(display_start + relative);
+                break;
+            }
+        }
+        let Some(display_end) = display_end else {
             continue;
         };
         let recipe_start = display_end + 3;
@@ -980,6 +1004,7 @@ mod tests {
     mod decode_cost;
     mod resource_limits;
     mod admission_visits;
+    mod prefix_visits;
 
     use super::reference_names;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
