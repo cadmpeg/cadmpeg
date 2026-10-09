@@ -966,21 +966,27 @@ fn reference_settings<'a, D: DiagnosticSink>(
                 "unsupported reference settings implementation version",
             ));
         }
+        let mut children_storage =
+            ctx.reserve_scoped(0, "Rhino reference checksum children workspace")?;
         let mut children = Vec::new();
-        skip_object_array(
-            ctx,
-            data,
-            &mut implementation_payload,
-            archive,
-            &mut children,
-        )?;
-        skip_object_array(
-            ctx,
-            data,
-            &mut implementation_payload,
-            archive,
-            &mut children,
-        )?;
+        children_storage.with_storage(|| {
+            skip_object_array(
+                ctx,
+                data,
+                &mut implementation_payload,
+                archive,
+                &mut children,
+            )
+        })?;
+        children_storage.with_storage(|| {
+            skip_object_array(
+                ctx,
+                data,
+                &mut implementation_payload,
+                archive,
+                &mut children,
+            )
+        })?;
         if implementation_payload.bool()? {
             let parent = chunk_at(
                 data,
@@ -995,8 +1001,13 @@ fn reference_settings<'a, D: DiagnosticSink>(
                     "reference parent layer is short-framed",
                 ));
             }
-            ctx.reserve_vec(&mut children, 1, "Rhino reference parent layer range")
-                .map_err(crate::chunks::FramingError::from)?;
+            ctx.reserve_scoped_vec(
+                &mut children_storage,
+                &mut children,
+                1,
+                "Rhino reference parent layer range",
+            )
+            .map_err(crate::chunks::FramingError::from)?;
             children.push(parent.range());
             implementation_payload
                 .skip(parent.next_offset() - implementation_payload.position())?;
@@ -1138,9 +1149,12 @@ fn parse_v6<D: DiagnosticSink>(
     outer.skip_remaining()?;
     let component_start = reader.position();
     let (index, id, name) = model_component(ctx, data, &mut reader, archive, warnings)?;
-    let mut outer_children = ctx
-        .collection_vec(1, "Rhino instance definition checksum children")
+    let (outer_buffer, mut outer_children_storage) = ctx
+        .with_scoped_storage("Rhino instance definition checksum workspace", || {
+            ctx.collection_vec(1, "Rhino instance definition checksum children")
+        })
         .map_err(crate::chunks::FramingError::from)?;
+    let mut outer_children = outer_buffer;
     outer_children.push(component_start..reader.position());
     if id.is_nil() {
         return Err(FramingError::structural(
@@ -1151,7 +1165,8 @@ fn parse_v6<D: DiagnosticSink>(
     let kind = v6_definition_kind(reader.u32()?);
     let units_start = reader.position();
     let units = unit_detail(ctx, data, &mut reader, archive, warnings)?;
-    ctx.reserve_vec(
+    ctx.reserve_scoped_vec(
+        &mut outer_children_storage,
         &mut outer_children,
         1,
         "Rhino instance definition checksum children",
@@ -1186,15 +1201,19 @@ fn parse_v6<D: DiagnosticSink>(
             ));
         }
         let reference = file_reference(ctx, data, &mut linked, archive, warnings)?;
-        let mut linked_children = ctx
-            .collection_vec(1, "Rhino linked definition checksum children")
+        let (linked_buffer, mut linked_children_storage) = ctx
+            .with_scoped_storage("Rhino linked definition checksum workspace", || {
+                ctx.collection_vec(1, "Rhino linked definition checksum children")
+            })
             .map_err(crate::chunks::FramingError::from)?;
+        let mut linked_children = linked_buffer;
         linked_children.push(reference.source_range.clone());
         linked_depth = linked.i32()?;
         linked_appearance = linked.u32()?;
         if linked.bool()? {
             let range = reference_settings(ctx, data, &mut linked, archive, warnings)?;
-            ctx.reserve_vec(
+            ctx.reserve_scoped_vec(
+                &mut linked_children_storage,
                 &mut linked_children,
                 1,
                 "Rhino linked definition checksum children",
@@ -1211,7 +1230,8 @@ fn parse_v6<D: DiagnosticSink>(
             "linked type",
             warnings,
         )?;
-        ctx.reserve_vec(
+        ctx.reserve_scoped_vec(
+            &mut outer_children_storage,
             &mut outer_children,
             1,
             "Rhino instance definition checksum children",
