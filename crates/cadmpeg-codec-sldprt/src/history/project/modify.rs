@@ -176,8 +176,7 @@ pub(super) fn project_fillet(
                 }
             }
             Some(points) => {
-                storage.commit()?;
-                RadiusSpec::Variable { points }
+                RadiusSpec::Variable { points: storage.commit_value(points)? }
             }
         }
     };

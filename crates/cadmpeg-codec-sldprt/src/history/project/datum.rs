@@ -205,7 +205,7 @@ pub(super) fn project_equation_curve(
     let Some(curve) = curve else {
         return Ok(None);
     };
-    storage.commit()?;
+    let curve = storage.commit_value(curve)?;
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::EquationCurve { curve },
     )))

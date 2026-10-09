@@ -228,7 +228,7 @@ pub(super) fn project_pattern(
         seeds = Vec::new();
         drop(seed_storage);
     } else {
-        seed_storage.commit()?;
+        seeds = seed_storage.commit_value(seeds)?;
     }
     let curve_path = || {
         let Some(source) = property_value(ctx, feature, "Path")? else {
