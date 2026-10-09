@@ -9,9 +9,13 @@ use super::cacheless_variable_blend_point;
 use super::model_axis_revolution_point;
 use super::model_linear_sweep_point;
 use super::model_native_extrusion_point;
+use super::model_native_extrusion_jet;
 use super::model_native_revolution_point;
+use super::model_native_revolution_jet;
 use super::model_ruled_surface_point;
+use super::model_ruled_surface_jet;
 use super::model_sum_surface_point;
+use super::model_sum_surface_jet;
 use super::surface_request::{model_jet, SurfaceRequest};
 use super::model_surface_point;
 use super::offset;
@@ -188,7 +192,21 @@ pub(super) fn model_surface_point_by_id_inner(
                 admission, geometry, u, v,
             ));
         }
-        let order = match surface_first_order(admission, geometry, u, v) {
+        let reversed = matches!(
+            geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) if nurbs.normal_reversed()
+        );
+        first_evaluation(surface_first_order(admission, geometry, u, v), reversed)
+    }
+
+    /// Keep the actual selected point separate from its first-order normal.
+    /// A derivative refusal remains the original outer resource error; other
+    /// derivative failures leave this point available to readers of the point.
+    fn first_evaluation(
+        order: Result<super::SurfaceFirstOrder, EvaluationFailure<Point3>>,
+        reversed: bool,
+    ) -> Option<SurfaceEvaluation> {
+        let order = match order {
             Ok(order) => order,
             Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
             Err(EvaluationFailure::NoValue) => return None,
@@ -200,10 +218,6 @@ pub(super) fn model_surface_point_by_id_inner(
                 })
             }
         };
-        let reversed = matches!(
-            geometry,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) if nurbs.normal_reversed()
-        );
         let oriented_normal = oriented_normal(order.first, reversed);
         if let Err(EvaluationFailure::ResourceLimit(limit)) = oriented_normal {
             return Some(resource(limit));
@@ -365,34 +379,66 @@ pub(super) fn model_surface_point_by_id_inner(
                 ))
             }
             Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
-                point_evaluation(model_native_extrusion_point(
-                    admission,
-                    index,
-                    definition_payload,
-                    carrier_interval,
-                    u,
-                    v,
-                ))
+                if normal {
+                    first_evaluation(
+                        model_native_extrusion_jet(
+                            admission, index, definition_payload, carrier_interval, u, v,
+                            SurfaceRequest::First,
+                        ).map(|requested| requested.jet.first_order()),
+                        false,
+                    )
+                } else {
+                    point_evaluation(model_native_extrusion_point(
+                        admission,
+                        index,
+                        definition_payload,
+                        carrier_interval,
+                        u,
+                        v,
+                    ))
+                }
             }
             Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => point_evaluation(
                 model_linear_sweep_point(admission, index, definition_payload, u, v),
             ),
             Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => {
-                point_evaluation(model_native_revolution_point(
-                    admission,
-                    index,
-                    definition_payload,
-                    carrier_interval,
-                    u,
-                    v,
-                ))
+                if normal {
+                    first_evaluation(
+                        model_native_revolution_jet(
+                            admission, index, definition_payload, carrier_interval, u, v,
+                            SurfaceRequest::First,
+                        ).map(|requested| requested.jet.first_order()),
+                        false,
+                    )
+                } else {
+                    point_evaluation(model_native_revolution_point(
+                        admission,
+                        index,
+                        definition_payload,
+                        carrier_interval,
+                        u,
+                        v,
+                    ))
+                }
             }
-            Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => point_evaluation(
-                model_ruled_surface_point(admission, index, first, second, u, v),
-            ),
-            Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => point_evaluation(
-                model_sum_surface_point(admission, index, definition_payload, u, v),
-            ),
+            Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => {
+                if normal {
+                    first_evaluation(model_ruled_surface_jet(
+                        admission, index, first, second, u, v, SurfaceRequest::First,
+                    ).map(|requested| requested.jet.first_order()), false)
+                } else {
+                    point_evaluation(model_ruled_surface_point(admission, index, first, second, u, v))
+                }
+            }
+            Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => {
+                if normal {
+                    first_evaluation(model_sum_surface_jet(
+                        admission, index, definition_payload, u, v, SurfaceRequest::First,
+                    ).map(|requested| requested.jet.first_order()), false)
+                } else {
+                    point_evaluation(model_sum_surface_point(admission, index, definition_payload, u, v))
+                }
+            }
             Some(ProceduralSurfaceDefinition::Sweep(definition_payload)) => {
                 if let Some(construction) = definition_payload.native() {
                     let profile = definition_payload.profile();
@@ -642,3 +688,6 @@ pub(super) fn model_surface_point_by_id_inner(
     }
     evaluation.point.map_err(EvaluationFailure::NonFinite)
 }
+
+#[cfg(test)]
+mod tests;
