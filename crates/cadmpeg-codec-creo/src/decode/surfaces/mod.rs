@@ -495,13 +495,14 @@ pub(super) fn transfer_part_product(
     };
     let model_name_offset = model_name.offset;
     let model_name = &model_name.name;
-    let (product_id, product_id_reservation) =
-        crate::identity::compose_scoped::<ProductDefinitionId>(
+    let product_id_parts = crate::identity::compose_scoped::<ProductDefinitionId>(
             ctx,
             &crate::identity::MODEL_PRODUCT_DEFINITION,
             "root",
             "creo product identity",
         )?;
+    let product_id_reservation = product_id_parts.1;
+    let product_id = product_id_parts.0;
     let occurrence_id = crate::identity::compose_checked::<OccurrenceId>(
         ctx,
         &crate::identity::MODEL_OCCURRENCE,
@@ -561,7 +562,7 @@ pub(super) fn transfer_part_product(
     });
     ctx.charge_entities(1, "admit Creo model occurrences")?;
     let occurrence_name = ctx.copy_retained_text(model_name, "creo occurrence name")?;
-    product_id_reservation.commit()?;
+    let product_id = product_id_reservation.commit_value(product_id)?;
     source_carriers.admit_occurrence(
         ctx,
         ir,
@@ -880,12 +881,14 @@ pub(super) fn transfer_fc05_cap_circles(
             surface_origin[axis_index.index()] = frame.origin[axis_index.index()];
         }
         let (center, axis, ref_direction) = (witness.origin, witness.axis, witness.ref_direction);
-        let (id, id_storage) = crate::identity::compose_scoped::<CurveId>(
+        let id_parts = crate::identity::compose_scoped::<CurveId>(
             ctx,
             &crate::identity::VISIBGEOM_CURVE,
             circle.curve_id,
             "creo FC05 cap circle identity",
         )?;
+        let id_storage = id_parts.1;
+        let id = id_parts.0;
         let identity_present = curves_index
             .lookup(
                 ctx,
@@ -903,7 +906,7 @@ pub(super) fn transfer_fc05_cap_circles(
             ) else {
                 continue;
             };
-            id_storage.commit()?;
+            let id = id_storage.commit_value(id)?;
             annotate(
                 ctx,
                 annotations,
@@ -944,12 +947,14 @@ pub(super) fn transfer_fc05_cap_circles(
                 },
             )?;
         }
-        let (surface_id, surface_id_storage) = crate::identity::compose_scoped::<SurfaceId>(
+        let surface_id_parts = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             cylinder_id,
             "creo FC05 axis cylinder identity",
         )?;
+        let surface_id_storage = surface_id_parts.1;
+        let surface_id = surface_id_parts.0;
         let identity_present = surfaces_index
             .lookup(
                 ctx,
@@ -969,7 +974,7 @@ pub(super) fn transfer_fc05_cap_circles(
         ) else {
             continue;
         };
-        surface_id_storage.commit()?;
+        let surface_id = surface_id_storage.commit_value(surface_id)?;
         annotate(
             ctx,
             annotations,
