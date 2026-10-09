@@ -395,6 +395,9 @@ fn marker(card: &[u8]) -> Option<Section> {
 /// line terminator a media convention, so a stride of marked card images is a
 /// Fixed ASCII file even with no terminator in it.
 fn detect_card_stride(prefix: &[u8], ctx: &DecodeContext<'_>) -> Result<Confidence, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut cards = prefix.chunks_exact(CARD_WIDTH);
     let (Some(first), Some(second)) = (cards.next(), cards.next()) else {
         return Ok(Confidence::No);
@@ -437,6 +440,9 @@ pub(crate) fn detect_fixed_ascii(
     prefix: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<Confidence, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some((first, rest)) = take_line(prefix) else {
         return detect_card_stride(prefix, ctx);
     };
@@ -454,6 +460,9 @@ pub(crate) fn detect_fixed_ascii(
 
 /// The card count of a pre-Terminate line whose payload divides into cards.
 fn fused_card_count(payload: &[u8], ctx: &DecodeContext<'_>) -> Result<Option<usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !payload.len().is_multiple_of(CARD_WIDTH) {
         return Ok(None);
     }
@@ -675,6 +684,9 @@ fn terminate_counts(
     recoveries: &mut FramingRecoveries,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(terminate) = cards
         .get(runs[Section::Terminate.index()].clone())
         .and_then(<[_]>::first)
@@ -725,6 +737,9 @@ pub(crate) fn scan_with_context<'a>(
     source: &'a [u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<CardScan<'a>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if source.is_empty() {
         return Err(CodecError::WrongFormat("empty IGES source".into()));
     }
