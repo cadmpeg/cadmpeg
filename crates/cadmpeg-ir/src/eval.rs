@@ -905,7 +905,7 @@ fn split_rational_surface_patch<'ctx>(
         let Some(split) = bezier::split_homogeneous_bezier_midpoint(ctx, &controls)? else {
             return Ok(None);
         };
-        let [first, second] = split.into_polygons(ctx)?;
+        let [first, second] = split.into_polygons()?;
         ctx.charge_work_limit(2, "IR surface split polygon append")?;
         first_lines.push(first);
         second_lines.push(second);
