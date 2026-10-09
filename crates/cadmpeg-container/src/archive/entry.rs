@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Central declarations and deferred admission of local member frames.
 
-use super::{signature_at, u16_at, u32_at, u64_at, EntryRecord, ZipCompression};
+use super::{
+    signature_at, u16_at, u32_at, u64_at, Admission, Declaration, EntryRecord, ZipCompression,
+};
 use crate::layout::{central_header, local_header};
 use cadmpeg_core::decode::{ByteRange, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -13,7 +15,7 @@ pub(super) fn read(
     name: String,
     archive_offset: u64,
     directory_start: u64,
-) -> Result<(EntryRecord, u64), CodecError> {
+) -> Result<Admission<(EntryRecord, u64)>, CodecError> {
     ctx.charge_work(1, "ZIP entry central declaration")?;
     let flags = u16_at(
         bytes,
@@ -52,7 +54,9 @@ pub(super) fn read(
             central + cadmpeg_core::decode::u64_from_index(central_header::COMMENT_LENGTH),
         )?);
     if next > cadmpeg_core::decode::u64_from_index(bytes.len()) {
-        return Err(CodecError::malformed("ZIP central entry is truncated"));
+        return Ok(Admission::Unreadable(CodecError::malformed(
+            "ZIP central entry is truncated",
+        )));
     }
     if [compressed, expanded, local].contains(&u64::from(u32::MAX)) {
         let mut extra = name_end;
@@ -62,18 +66,24 @@ pub(super) fn read(
             let tag = u16_at(bytes, extra)?;
             let end = extra + 4 + u64::from(u16_at(bytes, extra + 2)?);
             if end > extra_end {
-                return Err(CodecError::malformed("ZIP central extra is truncated"));
+                return Ok(Admission::Unreadable(CodecError::malformed(
+                    "ZIP central extra is truncated",
+                )));
             }
             if tag == 1 {
                 if found {
-                    return Err(CodecError::malformed("duplicate ZIP64 central extra"));
+                    return Ok(Admission::Unreadable(CodecError::malformed(
+                        "duplicate ZIP64 central extra",
+                    )));
                 }
                 found = true;
                 let mut value = extra + 4;
                 for target in [&mut expanded, &mut compressed, &mut local] {
                     if *target == u64::from(u32::MAX) {
                         if value + 8 > end {
-                            return Err(CodecError::malformed("ZIP64 central value is truncated"));
+                            return Ok(Admission::Unreadable(CodecError::malformed(
+                                "ZIP64 central value is truncated",
+                            )));
                         }
                         *target = u64_at(bytes, value)?;
                         value += 8;
@@ -83,9 +93,9 @@ pub(super) fn read(
             extra = end;
         }
         if !found {
-            return Err(CodecError::malformed(
+            return Ok(Admission::Unreadable(CodecError::malformed(
                 "ZIP64 central sizes have no extra field",
-            ));
+            )));
         }
     }
     let header_start = local
@@ -97,7 +107,7 @@ pub(super) fn read(
             Ok(offset) => (Some(offset), None),
             Err(error) => (None, Some(error)),
         };
-    Ok((
+    Ok(Admission::Indexed((
         EntryRecord {
             name,
             compression: match method {
@@ -116,13 +126,16 @@ pub(super) fn read(
             header_start,
             data_start,
             central_start: central,
-            central_end: next,
+            declaration: Declaration::Central(ByteRange {
+                start: central,
+                end: next,
+            }),
             utf8_name: flags & 0x800 != 0,
             local_header_error,
             unreadable_range: None,
         },
         next,
-    ))
+    )))
 }
 
 fn local_data_start(
