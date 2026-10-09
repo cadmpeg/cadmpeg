@@ -2331,15 +2331,11 @@ pub(crate) fn revolution_extents(
         if row.body.get(schema_end) != Some(&2) {
             continue;
         }
-        let Some(choice_start) = ctx
-            .find_bytes_in(
-                &row.body,
-                PARAMETER_CHOICE_PREFIX,
-                schema_end + 1,
-                row.body.len().min(64),
-                "find Creo feature row",
-            )?
-            .map(|at| at + PARAMETER_CHOICE_PREFIX.len())
+        let Some(choice_start) = row.body
+            .get(schema_end + 1..row.body.len().min(64))
+            .and_then(|prefix| prefix.windows(PARAMETER_CHOICE_PREFIX.len())
+                .position(|window| window == PARAMETER_CHOICE_PREFIX))
+            .map(|relative| schema_end + 1 + relative + PARAMETER_CHOICE_PREFIX.len())
         else {
             continue;
         };
@@ -2356,12 +2352,14 @@ pub(crate) fn revolution_extents(
             offset: row.body_offset + choice_start + 2,
         });
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo revolution extents result ordering",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo revolution extents result ordering",
+        )?;
+    }
     Ok(result)
 }
 
