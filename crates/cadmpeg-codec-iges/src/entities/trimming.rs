@@ -2432,7 +2432,7 @@ pub(super) fn project<'ctx>(
         )?;
     }
     let mut directory_entries = directory.iter();
-    while !directory_entries.as_slice().is_empty() {
+    'boundary_candidates: while !directory_entries.as_slice().is_empty() {
         let Some(entry) =
             ctx.next_charged(&mut directory_entries, "iges trimming directory traversal")?
         else {
@@ -2492,15 +2492,17 @@ pub(super) fn project<'ctx>(
             continue;
         };
         let mut index = 5;
-        let mut segments = lookup_storage
+        let mut candidate_storage = ctx.reserve_scoped(0, "iges Type141 boundary candidate scratch")?;
+        let mut segments = candidate_storage
             .with_storage(|| ctx.collection_vec(segment_count, "iges Type141 boundary segments"))?;
-        let mut valid = true;
         let mut segment_indices = 0..segment_count;
         while ctx
             .next_charged(&mut segment_indices, "iges Type141 segment traversal")?
             .is_some()
         {
             let Some(model_curve) = pointer(record, index) else {
+                drop(segments);
+                drop(candidate_storage);
                 super::push_entity_loss_with_scoped_slots(
                     ctx,
                     &mut loss_slots_storage,
@@ -2508,13 +2510,14 @@ pub(super) fn project<'ctx>(
                     entry,
                     format_args!("{}", "boundary model-curve pointer is invalid"),
                 )?;
-                valid = false;
-                break;
+                continue 'boundary_candidates;
             };
             let sense = match record.integer(index + 1) {
                 Some(1) => Sense::Forward,
                 Some(2) => Sense::Reversed,
                 _ => {
+                    drop(segments);
+                    drop(candidate_storage);
                     super::push_entity_loss_with_scoped_slots(
                         ctx,
                         &mut loss_slots_storage,
@@ -2522,11 +2525,12 @@ pub(super) fn project<'ctx>(
                         entry,
                         format_args!("{}", "boundary segment sense is not 1 or 2"),
                     )?;
-                    valid = false;
-                    break;
+                    continue 'boundary_candidates;
                 }
             };
             let Some(pcurve_count) = record.count(index + 2) else {
+                drop(segments);
+                drop(candidate_storage);
                 super::push_entity_loss_with_scoped_slots(
                     ctx,
                     &mut loss_slots_storage,
@@ -2534,17 +2538,19 @@ pub(super) fn project<'ctx>(
                     entry,
                     format_args!("{}", "boundary pcurve count is invalid"),
                 )?;
-                valid = false;
-                break;
+                continue 'boundary_candidates;
             };
             if (boundary_type == 0 && pcurve_count != 0)
                 || (boundary_type == 1 && pcurve_count == 0)
             {
+                drop(segments);
+                drop(candidate_storage);
                 super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{}", "boundary pcurve collection cardinality disagrees with its representation type"))?;
-                valid = false;
-                break;
+                continue 'boundary_candidates;
             }
-            let mut pcurves = lookup_storage.with_storage(|| {
+            let mut pcurve_storage =
+                ctx.reserve_scoped(0, "iges Type141 segment pcurve scratch")?;
+            let mut pcurves = pcurve_storage.with_storage(|| {
                 ctx.collection_vec(pcurve_count, "iges Type141 segment pcurves")
             })?;
             let mut pcurve_indices = 0..pcurve_count;
@@ -2552,12 +2558,15 @@ pub(super) fn project<'ctx>(
                 ctx.next_charged(&mut pcurve_indices, "iges Type141 pcurve traversal")?
             {
                 let Some(pcurve) = pointer(record, index + 3 + pcurve_index) else {
-                    ctx.clear_vec(&mut pcurves, "iges trimming rejected pcurves")?;
                     break;
                 };
                 if entry_by_sequence(entries, pcurve, ctx)?.is_none_or(|entry| {
                     entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
                 }) {
+                    drop(segments);
+                    drop(candidate_storage);
+                    drop(pcurves);
+                    drop(pcurve_storage);
                     super::push_entity_loss_with_scoped_slots(
                         ctx,
                         &mut loss_slots_storage,
@@ -2565,12 +2574,22 @@ pub(super) fn project<'ctx>(
                         entry,
                         format_args!("{}", "boundary pcurve does not have entity-use flag 05"),
                     )?;
-                    ctx.clear_vec(&mut pcurves, "iges trimming rejected pcurves")?;
-                    break;
+                    super::push_entity_loss_with_scoped_slots(
+                        ctx,
+                        &mut loss_slots_storage,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "boundary pcurve pointer is invalid"),
+                    )?;
+                    continue 'boundary_candidates;
                 }
                 pcurves.push(pcurve);
             }
             if pcurves.len() != pcurve_count {
+                drop(pcurves);
+                drop(pcurve_storage);
+                drop(segments);
+                drop(candidate_storage);
                 super::push_entity_loss_with_scoped_slots(
                     ctx,
                     &mut loss_slots_storage,
@@ -2578,8 +2597,7 @@ pub(super) fn project<'ctx>(
                     entry,
                     format_args!("{}", "boundary pcurve pointer is invalid"),
                 )?;
-                valid = false;
-                break;
+                continue 'boundary_candidates;
             }
             segments.push(BoundarySegment {
                 model_curve,
@@ -2587,25 +2605,25 @@ pub(super) fn project<'ctx>(
                 sense,
                 parameter_curves_authoritative: preference != 1,
             });
+            candidate_storage.absorb(&mut pcurve_storage)?;
             index += 3 + pcurve_count;
         }
-        if valid {
-            lookup_storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut boundaries,
-                    entry.sequence,
-                    BoundaryDefinition { surface, segments },
-                    "iges trimming boundary index nodes",
-                )
-            })?;
-            ctx.insert_scoped_btree_set(
-                &mut decoded_storage,
-                &mut decoded,
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut boundaries,
                 entry.sequence,
-                "iges trimming decoded sequences",
-                "iges trimming decoded sequences",
-            )?;
-        }
+                BoundaryDefinition { surface, segments },
+                "iges trimming boundary index nodes",
+            )
+        })?;
+        lookup_storage.absorb(&mut candidate_storage)?;
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
+            &mut decoded,
+            entry.sequence,
+            "iges trimming decoded sequences",
+            "iges trimming decoded sequences",
+        )?;
     }
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {

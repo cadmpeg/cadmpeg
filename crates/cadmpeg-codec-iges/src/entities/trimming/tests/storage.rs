@@ -362,3 +362,159 @@ fn boundary_clustering_releases_consumed_root_nodes_before_the_allocating_sort()
         }
     }
 }
+
+#[derive(Clone, Copy)]
+enum RejectedBoundary {
+    ModelCurve,
+    Sense,
+    Count,
+    Cardinality,
+    Pcurve,
+    PcurveLate,
+    UseFlag,
+    UseFlagLate,
+}
+
+fn assert_rejected_type141_storage(kind: RejectedBoundary) {
+    use crate::parameter::{ParameterRecord, Token, TokenValue};
+    use cadmpeg_ir::report::loss::LossNote;
+    const ITEMS: usize = 4096;
+    const ATTEMPTS: usize = 16;
+    let pcurves = matches!(kind, RejectedBoundary::Pcurve | RejectedBoundary::PcurveLate | RejectedBoundary::UseFlag | RejectedBoundary::UseFlagLate);
+    let segment_count = if pcurves { 1 } else { ITEMS };
+    let mut values = vec![141, i64::from(pcurves), 1, 1, i64::try_from(segment_count).unwrap()];
+    let reason = match kind {
+        RejectedBoundary::ModelCurve => "boundary model-curve pointer is invalid",
+        RejectedBoundary::Sense => "boundary segment sense is not 1 or 2",
+        RejectedBoundary::Count => "boundary pcurve count is invalid",
+        RejectedBoundary::Cardinality => "boundary pcurve collection cardinality disagrees with its representation type",
+        RejectedBoundary::Pcurve | RejectedBoundary::PcurveLate | RejectedBoundary::UseFlag | RejectedBoundary::UseFlagLate => "boundary pcurve pointer is invalid",
+    };
+    if pcurves {
+        values.extend([1, 1, i64::try_from(ITEMS).unwrap()]);
+        if matches!(kind, RejectedBoundary::PcurveLate | RejectedBoundary::UseFlagLate) {
+            values.extend(std::iter::repeat_n(33, ITEMS - 1));
+            values.push(i64::from(matches!(kind, RejectedBoundary::UseFlagLate)));
+        } else {
+            values.extend(std::iter::repeat_n(i64::from(matches!(kind, RejectedBoundary::UseFlag)), ITEMS));
+        }
+    } else {
+        let tuple = match kind {
+            RejectedBoundary::ModelCurve => [0, 1, 0],
+            RejectedBoundary::Sense => [1, 0, 0],
+            RejectedBoundary::Count => [1, 1, -1],
+            RejectedBoundary::Cardinality => [1, 1, 1],
+            RejectedBoundary::Pcurve | RejectedBoundary::PcurveLate | RejectedBoundary::UseFlag | RejectedBoundary::UseFlagLate => unreachable!(),
+        };
+        for _ in 0..ITEMS { values.extend(tuple); }
+    }
+    let mut directory: Vec<_> = (0..ATTEMPTS).map(|i| {
+        crate::test_support::directory_target(u32::try_from(2 * i + 1).unwrap(), 141)
+    }).collect();
+    if matches!(kind, RejectedBoundary::PcurveLate | RejectedBoundary::UseFlagLate) {
+        let mut parametric = crate::test_support::directory_target(33, 110);
+        parametric.status = crate::directory::SourceStatus::from_codes([0, 0, 5, 0]);
+        directory.push(parametric);
+    }
+    let records: Vec<_> = directory[..ATTEMPTS].iter().map(|entry| {
+        ParameterRecord::from_test_tokens(entry.sequence, 0..0, Vec::new(), values.len(),
+            values.iter().map(|value| Token { value: TokenValue::Integer(*value), span: 0..0 }).collect(),
+            Vec::new())
+    }).collect();
+    let bytes = crate::test_support::test_owned::owned_test_file(&[]);
+    let global = crate::test_support::with_service_context(&bytes, |setup| {
+        let scan = crate::card::scan_with_context(&bytes, setup).unwrap();
+        let (global, _, _) = crate::global::parse(&scan, setup).unwrap();
+        global.length_context().unwrap()
+    });
+    let segments = u64_from_index(segment_count * size_of::<super::super::BoundarySegment>());
+    let pointers = if pcurves { u64_from_index(ITEMS * size_of::<u32>()) } else { 0 };
+    let allocation = if pcurves { pointers } else { segments };
+    let prior = if pcurves { segments } else { 0 };
+    let losses_per_attempt = if matches!(kind, RejectedBoundary::UseFlag | RejectedBoundary::UseFlagLate) { 2 } else { 1 };
+    let loss_count = ATTEMPTS * losses_per_attempt;
+    let slots = u64_from_index(loss_count * size_of::<LossNote>());
+    let peak = segments + pointers + slots;
+    // Exact rejected candidate capacity covers the old/new slot overlap of
+    // the power-of-two loss vector, without holding earlier dead candidates.
+    assert!(segments + pointers > slots);
+    for cap in [prior + allocation - 1, peak] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut derivation_storage = ctx.reserve_scoped(0, "test boundary derivation storage").unwrap();
+        let mut sequences = crate::entities::geometry::SourceSequences::new(&ctx).unwrap();
+        let mut ir = CadIr::empty();
+        let result = super::super::project(&mut ir, &directory, &records, &global,
+            (&ctx, &mut derivation_storage), &mut sequences);
+        if cap < peak {
+            let first = match result.err().expect("expected actual candidate allocation refusal") {
+                CodecError::ResourceLimit(first) => first,
+                _ => panic!("expected resource refusal"),
+            };
+            assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(first.operation, if pcurves { "iges Type141 segment pcurves" } else { "iges Type141 boundary segments" });
+            assert_eq!((first.limit, first.used, first.additional), (cap, prior, allocation));
+            drop(sequences);
+            drop(derivation_storage);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        } else {
+            let (outcome, derivations) = result.unwrap();
+            assert!(outcome.decoded.is_empty());
+            assert!(derivations.is_empty());
+            assert_eq!(outcome.losses.len(), loss_count);
+            if losses_per_attempt == 2 {
+                for pair in outcome.losses.chunks_exact(2) {
+                    assert!(pair[0].message.ends_with("boundary pcurve does not have entity-use flag 05"));
+                    assert!(pair[1].message.ends_with(reason));
+                }
+            } else { for loss in &outcome.losses { assert!(loss.message.ends_with(reason)); } }
+            assert_eq!(ir, CadIr::empty());
+            let released = ctx.reserve_scoped(cap - slots, "test rejected Type141 backing destroyed").unwrap();
+            drop(released);
+            drop(outcome);
+            drop(derivations);
+            drop(sequences);
+            drop(derivation_storage);
+            let released = ctx.reserve_scoped(cap, "test boundary outcome destroyed").unwrap();
+            drop(released);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn rejected_boundary_model_curve_releases_segments_per_attempt() {
+    assert_rejected_type141_storage(RejectedBoundary::ModelCurve);
+}
+#[test]
+fn rejected_boundary_sense_releases_segments_per_attempt() {
+    assert_rejected_type141_storage(RejectedBoundary::Sense);
+}
+#[test]
+fn rejected_boundary_count_releases_segments_per_attempt() {
+    assert_rejected_type141_storage(RejectedBoundary::Count);
+}
+#[test]
+fn rejected_boundary_cardinality_releases_segments_per_attempt() {
+    assert_rejected_type141_storage(RejectedBoundary::Cardinality);
+}
+#[test]
+fn rejected_boundary_pcurve_releases_nested_storage_per_attempt() {
+    assert_rejected_type141_storage(RejectedBoundary::Pcurve);
+}
+#[test]
+fn rejected_boundary_use_flag_preserves_two_losses_and_releases_nested_storage() {
+    assert_rejected_type141_storage(RejectedBoundary::UseFlag);
+}
+
+#[test]
+fn rejected_boundary_use_flag_after_valid_prefix_releases_nested_storage() {
+    assert_rejected_type141_storage(RejectedBoundary::UseFlagLate);
+}
+
+#[test]
+fn rejected_boundary_pointer_after_valid_prefix_releases_nested_storage() {
+    assert_rejected_type141_storage(RejectedBoundary::PcurveLate);
+}
