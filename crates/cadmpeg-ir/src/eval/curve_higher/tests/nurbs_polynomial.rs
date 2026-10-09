@@ -266,3 +266,4 @@ fn polynomial_third_reports_missing_extended_coefficients_without_fabricating_ze
 }
 
 mod fourth;
+mod joint_fourth;
