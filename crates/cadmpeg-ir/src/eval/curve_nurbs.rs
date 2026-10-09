@@ -303,5 +303,71 @@ pub(super) fn linear_third(
     scratch.settle(result)
 }
 
+/// The true third of the selected polynomial span. The stored pole variant
+/// supplies C=sum B_i P_i; the same conclusion does not hold for a rational
+/// quotient. No first/second basis, full pole copy or per-coordinate replay
+/// is constructed by this requested-order owner.
+pub(super) fn polynomial_third(
+    scratch: &decode::Scratch<'_, '_>,
+    curve: &crate::geometry::nurbs::NurbsCurve,
+    parameter: FiniteReal,
+) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    use crate::math::sum::{scaled_finite, ScaledValue};
+    scratch.unless_refused()?;
+    let result = (|| {
+        let NurbsPoles3::Polynomial { points } = curve.pole_rows() else {
+            return Err(EvaluationFailure::NoValue);
+        };
+        let parameter = super::map_nurbs_curve_parameter(curve, parameter)
+            .ok_or(EvaluationFailure::NoValue)?;
+        let degree = usize::try_from(curve.degree()).map_err(|_| EvaluationFailure::NoValue)?;
+        let span = basis::bspline_span_requested(scratch.admission, curve.knots(),
+            degree, points.len(), parameter.get(), true)?.ok_or(EvaluationFailure::NoValue)?;
+        let width = curve.knots()[span + 1] - curve.knots()[span];
+        if width == 0.0 { return Err(EvaluationFailure::NoValue); }
+        if degree < 3 { return Ok(FiniteVector3::ZERO); }
+        let finite_width = PositiveReal::new(width);
+        let values = if let Some(scale) = finite_width {
+            Cow::Owned(basis::bspline_basis_scaled_third_derivative(scratch,
+                curve.knots(), degree, span, parameter.get(), scale)
+                .ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?)
+        } else {
+            // An overflowing positive span cannot form a PositiveReal scale.
+            // The existing exact-difference recurrence owns that range.
+            let base = degree - 3;
+            let base_work = if base <= 1 { Some(0) } else {
+                base.checked_add(2).and_then(|cost| cost.checked_add(
+                    base.checked_mul(base.checked_add(1)?)?.checked_div(2)?))
+                    .and_then(|cost| cost.checked_add(base))
+            };
+            let work = base_work.and_then(|cost| cost.checked_add(degree.checked_mul(3)?));
+            scratch.admission.independent_cost(work)?;
+            basis::bspline_basis_third_derivative(scratch, curve.knots(), degree, span, parameter.get())
+                .ok_or_else(|| scratch.failure(EvaluationFailure::NonFinite(())))?
+        };
+        let mut sums = [ExactSignedSum::default(); 3];
+        for (local, coefficient) in values.iter().enumerate() {
+            scratch.admission.independent_cost(Some(1))?;
+            scratch.work(1, "IR polynomial curve third support")
+                .ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
+            if !coefficient.is_finite() { return Err(EvaluationFailure::NonFinite(())); }
+            let point = points.get(span - degree + local).ok_or(EvaluationFailure::NoValue)?;
+            for (sum, coordinate) in sums.iter_mut().zip([point.x, point.y, point.z]) {
+                sum.add_product(*coefficient, coordinate);
+            }
+        }
+        let lane = |sum: ExactSignedSum| sum.finish().map_or(Ok(FiniteReal::ZERO), |value| {
+            if let Some(scale) = finite_width {
+                let scale = scaled_finite(scale.get()).ok_or(EvaluationFailure::NoValue)?;
+                ScaledValue::product_quotient([value], [scale, scale, scale])
+                    .map_err(|_| EvaluationFailure::NonFinite(()))
+            } else { value.finite().map_err(|_| EvaluationFailure::NonFinite(())) }
+        });
+        let [x, y, z] = sums;
+        Ok(FiniteVector3::from_components(lane(x)?, lane(y)?, lane(z)?))
+    })();
+    scratch.settle(result)
+}
+
 #[cfg(test)]
 mod tests;
