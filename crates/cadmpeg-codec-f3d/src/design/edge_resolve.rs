@@ -1918,36 +1918,51 @@ fn unique_bipartite_assignment(
     candidate_sets: &[Vec<i64>],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "f3d unique edge assignment")?;
     if candidate_sets.is_empty() {
         return Ok(None);
     }
-    let mut normalized =
-        ctx.collect_indexed_vec(candidate_sets.len(), "f3d edge normalized groups", |_| {
-            Ok(Vec::<i64>::new())
+    let _normalized_storage;
+    let (normalized, held_storage) =
+        ctx.with_scoped_storage("f3d edge normalized groups", || {
+            let mut normalized = ctx.collect_indexed_vec(
+                candidate_sets.len(), "f3d edge normalized groups", |_| Ok(Vec::<i64>::new()),
+            )?;
+            for (source, candidates) in candidate_sets.iter().zip(&mut normalized) {
+                *candidates = ctx.copy_slice(source, "f3d edge normalized candidates")?;
+                ctx.sort_unstable_by(
+                    candidates, |value| value, Ord::cmp, "f3d edge normalized candidate sort",
+                )?;
+                candidates.dedup();
+                if candidates.is_empty() {
+                    return Ok::<_, CodecError>(None);
+                }
+            }
+            Ok(Some(normalized))
         })?;
-    for (source, candidates) in candidate_sets.iter().zip(&mut normalized) {
-        *candidates = ctx.alloc_filled(source.len(), 0, "f3d edge normalized candidates")?;
-        candidates.copy_from_slice(source);
-        ctx.sort_unstable_by(
-            candidates,
-            |value| value,
-            Ord::cmp,
-            "f3d edge normalized candidate sort",
-        )?;
-        candidates.dedup();
-        if candidates.is_empty() {
-            return Ok(None);
-        }
-    }
-    let Some(assignment) = bipartite_assignment(&normalized, None, ctx)? else {
+    _normalized_storage = held_storage;
+    let Some(normalized) = normalized else {
+        return Ok(None);
+    };
+    let assignment_storage;
+    let (assignment, held_storage) = ctx.with_scoped_storage("f3d edge assignment", || {
+        bipartite_assignment(&normalized, None, ctx)
+    })?;
+    assignment_storage = held_storage;
+    let Some(assignment) = assignment else {
         return Ok(None);
     };
     for (member, edge) in assignment.iter().copied().enumerate() {
-        if bipartite_assignment(&normalized, Some((member, edge)), ctx)?.is_some() {
+        let _alternative_storage;
+        let (alternative, held_storage) = ctx.with_scoped_storage("f3d edge assignment", || {
+            bipartite_assignment(&normalized, Some((member, edge)), ctx)
+        })?;
+        _alternative_storage = held_storage;
+        if alternative.is_some() {
             return Ok(None);
         }
     }
-    Ok(Some(assignment))
+    assignment_storage.commit_value(Some(assignment))
 }
 
 fn bipartite_assignment(
