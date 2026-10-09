@@ -794,7 +794,9 @@ pub(crate) fn project_relation_point_geometry(
             ctx.insert_hash_map(&mut sketches_by_feature, native_ref, sketch_id, operation)
         })?;
     }
-    let (transforms, _transforms_storage) = ctx
+    let _transforms_storage;
+    let transforms;
+    (transforms, _transforms_storage) = ctx
         .with_scoped_storage("SLDPRT relation transform workspace", || {
             marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)
         })?;
@@ -1313,7 +1315,9 @@ pub(crate) fn project_relation_point_geometry(
                     )?,
                 ),
             };
-            let (mut endpoints, mut endpoints_storage) =
+            let mut endpoints_storage;
+            let mut endpoints;
+            (endpoints, endpoints_storage) =
                 ctx.with_scoped_storage("SLDPRT relation-line endpoint workspace", || {
                     marker_curve_endpoint_markers_in(
                         ctx,
@@ -1693,18 +1697,24 @@ pub(crate) fn project_relation_solved_line_geometry(
             ctx.insert_hash_map(&mut parameters_by_id, &parameter.id, parameter, operation)
         })?;
     }
-    let (transforms, _transforms_storage) = ctx
+    let _transforms_storage;
+    let transforms;
+    (transforms, _transforms_storage) = ctx
         .with_scoped_storage("SLDPRT relation transform workspace", || {
             marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)
         })?;
-    let (markers, _markers_storage) = ctx
+    let _markers_storage;
+    let markers;
+    (markers, _markers_storage) = ctx
         .with_scoped_storage("index SLDPRT solved-line markers", || {
             RelationMarkers::new(ctx, lanes)
         })?;
     let markers_by_id = markers.by_id();
 
     for lane in ctx.admit_iter(lanes, "scan SLDPRT solved-line lanes")? {
-        let ((marker_roster, lane_markers_by_id), _roster_storage) =
+        let _roster_storage;
+        let (marker_roster, lane_markers_by_id);
+        ((marker_roster, lane_markers_by_id), _roster_storage) =
             ctx.with_scoped_storage("collect SLDPRT solved-line marker roster", || {
                 const OPERATION: &str = "collect SLDPRT solved-line marker roster";
                 let mut roster = Vec::new();
@@ -1888,7 +1898,9 @@ pub(crate) fn project_relation_solved_line_geometry(
                         )?,
                     ),
                 };
-                let (endpoints, _endpoint_storage) =
+                let _endpoint_storage;
+                let endpoints;
+                (endpoints, _endpoint_storage) =
                     ctx.with_scoped_storage("SLDPRT solved-line endpoint workspace", || {
                         marker_curve_endpoint_markers_in(
                             ctx,
@@ -2136,7 +2148,9 @@ pub(crate) fn project_relation_solved_line_geometry(
                         candidates.push(pair);
                     }
                 }
-                let (candidates, _selected_storage) = if relation.family
+                let _selected_storage;
+                let selected_candidates;
+                (selected_candidates, _selected_storage) = if relation.family
                     == FeatureInputRelationFamily::PointLineDistance
                 {
                     let mut filtered_storage =
@@ -2153,7 +2167,9 @@ pub(crate) fn project_relation_solved_line_geometry(
                         ) else {
                             continue;
                         };
-                        let (line, _line_storage) = ctx.with_scoped_storage(
+                        let _line_storage;
+                        let line;
+                        (line, _line_storage) = ctx.with_scoped_storage(
                             "SLDPRT solved-line candidate geometry",
                             || {
                                 candidate(
@@ -2214,6 +2230,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                 } else {
                     (candidates, candidates_storage)
                 };
+                let candidates = selected_candidates;
                 let [(start, end)] = candidates.as_slice() else {
                     return Ok(None);
                 };
@@ -2799,13 +2816,17 @@ pub(crate) fn project_relation_solved_point_geometry(
             ctx.insert_hash_map(&mut sketches_by_feature, native_ref, sketch, operation)
         })?;
     }
-    let (markers, _markers_storage) = ctx
+    let _markers_storage;
+    let markers;
+    (markers, _markers_storage) = ctx
         .with_scoped_storage("index SLDPRT solved-point markers", || {
             RelationMarkers::new(ctx, lanes)
         })?;
     let markers_by_id = markers.by_id();
     // The loci join the entities present before this projection appends points.
-    let ((transforms, loci_by_marker), _loci_storage) =
+    let _loci_storage;
+    let (transforms, loci_by_marker);
+    ((transforms, loci_by_marker), _loci_storage) =
         ctx.with_scoped_storage("build SLDPRT solved-point marker loci", || {
             let profile = ProfileEntities::new(ctx, entities)?;
             let transforms =
@@ -3360,8 +3381,8 @@ pub(super) fn implicit_circle_marker<'a>(
     let mut terminal_pair: Option<(&SketchInputEntity, f64)> = None;
     let mut terminal_ambiguous = false;
     for lane in ctx.admit_iter(lanes, "scan SLDPRT circle-dimension lanes")? {
-        let mut feature_markers = Vec::new();
         let mut feature_markers_storage = ctx.reserve_scoped(0, DIMENSIONED_HANDLE_OPERATION)?;
+        let mut feature_markers = Vec::new();
         feature_markers_storage.with_storage(|| {
             collect_handle_markers(
                 ctx,
@@ -3427,8 +3448,8 @@ pub(super) fn implicit_circle_marker<'a>(
     if operand_kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE) {
         return Ok(None);
     }
-    let mut markers = Vec::new();
     let mut markers_storage = ctx.reserve_scoped(0, DIMENSIONED_HANDLE_OPERATION)?;
+    let mut markers = Vec::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT ordered circle-marker lanes")? {
         markers_storage.with_storage(|| {
             collect_handle_markers(
@@ -3696,8 +3717,8 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
     if slot_index != u32::from(operand.entity_index) || marker.local_id() != Some(slot_index) {
         return Ok(None);
     }
-    let mut points = Vec::new();
     let mut points_storage = ctx.reserve_scoped(0, DIMENSIONED_HANDLE_OPERATION)?;
+    let mut points = Vec::new();
     points_storage.with_storage(|| {
         collect_handle_markers(
             ctx,
@@ -3760,8 +3781,8 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
     else {
         return Ok(None);
     };
-    let mut markers = Vec::new();
     let mut markers_storage = ctx.reserve_scoped(0, DIMENSIONED_HANDLE_OPERATION)?;
+    let mut markers = Vec::new();
     markers_storage.with_storage(|| {
         collect_handle_markers(
             ctx,
@@ -4185,8 +4206,8 @@ fn declared_entity_handle_indexed_point_pairs<'a>(
     lane: &'a FeatureInputLane,
     feature: &str,
 ) -> Result<Vec<[&'a SketchInputEntity; 2]>, cadmpeg_core::CodecError> {
-    let mut markers = Vec::new();
     let mut markers_storage = ctx.reserve_scoped(0, DIMENSIONED_HANDLE_OPERATION)?;
+    let mut markers = Vec::new();
     markers_storage.with_storage(|| {
         collect_handle_markers(
             ctx,
@@ -4240,8 +4261,8 @@ fn declared_entity_handle_declared_child_pairs<'a>(
     lane: &'a FeatureInputLane,
     feature: &str,
 ) -> Result<Vec<[&'a SketchInputEntity; 2]>, cadmpeg_core::CodecError> {
-    let mut feature_markers = Vec::new();
     let mut feature_markers_storage = ctx.reserve_scoped(0, DIMENSIONED_HANDLE_OPERATION)?;
+    let mut feature_markers = Vec::new();
     feature_markers_storage.with_storage(|| {
         collect_handle_markers(
             ctx,
@@ -4253,8 +4274,8 @@ fn declared_entity_handle_declared_child_pairs<'a>(
         )
     })?;
     sort_handle_markers(ctx, &mut feature_markers)?;
-    let mut markers = Vec::new();
     let mut markers_storage = ctx.reserve_scoped(0, DIMENSIONED_HANDLE_OPERATION)?;
+    let mut markers = Vec::new();
     markers_storage.with_storage(|| {
         collect_handle_markers(
             ctx,
@@ -4337,8 +4358,8 @@ fn declared_entity_handle_linked_pairs<'a>(
     lane: &'a FeatureInputLane,
     feature: &str,
 ) -> Result<Vec<[&'a SketchInputEntity; 2]>, cadmpeg_core::CodecError> {
-    let mut markers = Vec::new();
     let mut markers_storage = ctx.reserve_scoped(0, DIMENSIONED_HANDLE_OPERATION)?;
+    let mut markers = Vec::new();
     markers_storage.with_storage(|| {
         collect_handle_markers(
             ctx,
@@ -4422,16 +4443,22 @@ pub(crate) fn project_relation_bindings(
             ctx.insert_hash_map(&mut sketches_by_feature, native_ref, sketch, operation)
         })?;
     }
-    let (profile, _profile_storage) = ctx
+    let _profile_storage;
+    let profile;
+    (profile, _profile_storage) = ctx
         .with_scoped_storage("index SLDPRT planar relation entities", || {
             ProfileEntities::new(ctx, sketch_entities)
         })?;
-    let (markers, _markers_storage) = ctx
+    let _markers_storage;
+    let markers;
+    (markers, _markers_storage) = ctx
         .with_scoped_storage("index SLDPRT planar relation markers", || {
             RelationMarkers::new(ctx, lanes)
         })?;
     let markers_by_id = markers.by_id();
-    let ((transforms, loci_by_marker), _loci_storage) =
+    let _loci_storage;
+    let (transforms, loci_by_marker);
+    ((transforms, loci_by_marker), _loci_storage) =
         ctx.with_scoped_storage("build SLDPRT planar relation marker loci", || {
             let transforms =
                 marker_transform_candidates_in(ctx, features, sketches, &profile, lanes)?;

@@ -1069,7 +1069,9 @@ fn duplicate_binding_votes_release_candidate_identity_storage() {
     let mut storage = ctx.reserve_scoped(0, super::PATTERN_INPUTS).unwrap();
     let mut groups = BTreeMap::new();
     for _ in 0..512 {
-        let (candidate, candidate_storage) = ctx
+        let candidate_storage;
+        let candidate;
+        (candidate, candidate_storage) = ctx
             .with_scoped_storage(super::PATTERN_INPUTS, || {
                 super::copy_feature_binding_id(&ctx, &id)
             })
@@ -1079,8 +1081,7 @@ fn duplicate_binding_votes_release_candidate_identity_storage() {
             &mut storage,
             &mut groups,
             0,
-            candidate,
-            Some(candidate_storage),
+            (candidate, Some(candidate_storage)),
         )
         .unwrap();
     }
