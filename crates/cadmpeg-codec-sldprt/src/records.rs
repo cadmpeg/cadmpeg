@@ -222,6 +222,9 @@ impl FeatureSource {
         value: &str,
         operation: &'static str,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if let Some(limit) = ctx.resource_refusal() {
+            return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
+        }
         if value == RESERVED_FEATURE_SOURCE {
             return Ok(Some(Self::Reserved));
         }
@@ -2547,6 +2550,47 @@ mod tests {
                 None,
             );
         }
+    }
+
+    #[test]
+    fn feature_source_reserved_decode_uses_no_work_or_storage() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+            super::FeatureSource::parse_for_decode(&ctx, "-1", "parse test source")
+        });
+        assert_eq!(result.unwrap(), Some(super::FeatureSource::Reserved));
+        assert_eq!(allocations, 0);
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn feature_source_decode_preserves_original_refusal_on_every_grammar_route() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::CodecError;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "test original source refusal") else {
+            panic!("original work refusal");
+        };
+        for value in ["-1", "41", "not-an-id", ""] {
+            assert!(matches!(
+                super::FeatureSource::parse_for_decode(&ctx, value, "parse test source"),
+                Err(CodecError::ResourceLimit(actual)) if actual == limit
+            ));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
     }
 
     #[test]
