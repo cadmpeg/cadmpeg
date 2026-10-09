@@ -1895,6 +1895,8 @@ mod mapping_scratch;
 
 mod class_scratch;
 
+mod error_lifetimes;
+
 mod resource_limits;
 
 mod materials;

@@ -5622,7 +5622,8 @@ record_losses.append_admitted(
                             drop(record_storage);
                             return Err(CodecError::ResourceLimit(limit));
                         }
-                        Err(_) => {
+                        Err(error) => {
+                            drop(error);
                             drop(record_storage);
 record_losses.append_admitted(
                                 ctx,
@@ -5886,12 +5887,13 @@ attribute_losses.append_admitted(
                                         return Err(CodecError::ResourceLimit(limit));
                                     }
                                     Err(error) => {
-                                        drop(storage);
                                         extra_requires_opaque = true;
                                         push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
                                             "V5 dimension-style userdata at offset {} could not be transferred: {error}",
                                             record.range.start
                                         ))?;
+                                        drop(error);
+                                        drop(storage);
                                         None
                                     }
                                 }
@@ -6144,7 +6146,8 @@ record_losses.append_admitted(
                             drop(record_storage);
                             return Err(CodecError::ResourceLimit(limit))
                         }
-                        Err(_) => {
+                        Err(error) => {
+                            drop(error);
                             drop(record_storage);
 record_losses.append_admitted(
                                 ctx,
