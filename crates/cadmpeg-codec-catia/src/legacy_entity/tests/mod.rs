@@ -20,6 +20,7 @@ use crate::legacy_entity::TYPE_OPEN;
 
 mod admission;
 mod identity;
+mod roles;
 mod scans;
 mod transfer;
 

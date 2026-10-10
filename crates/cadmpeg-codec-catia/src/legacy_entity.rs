@@ -1834,79 +1834,80 @@ fn parse_role_selectors(
         ctx.push_vec(&mut roles, role, "catia_legacy_roles")?;
     }
     let mut end_storage = ctx.reserve_scoped(0, "catia_legacy_role_ends")?;
-    let mut role_ends = std::collections::HashSet::new();
-    for role in ctx.admit_iter(&roles, "catia_legacy_role_end_visits")? {
-        if let Some(offset) = role.end_offset() {
-            end_storage.with_storage(|| {
-                ctx.insert_hash_set(&mut role_ends, offset, "catia_legacy_role_ends")
-            })?;
+    let mut role_ends = None;
+    for relative in ctx.find_bytes_iter(&data[start..end], &[0xe8], "catia_legacy_role_scan")? {
+        let Some(field_offset) = start.checked_add(relative) else {
+            continue;
+        };
+        let Some(field_header_end) = field_offset.checked_add(4) else {
+            continue;
+        };
+        if field_header_end > end || data.get(field_offset + 3) != Some(&0x01) {
+            continue;
         }
-    }
-    let field_bound_roles = ctx.try_collect_vec(
-        ctx.find_bytes_iter(&data[start..end], &[0xe8], "catia_legacy_role_scan")?
-            .filter_map(|relative| {
-                let field_offset = start.checked_add(relative)?;
-                let field_header_end = field_offset.checked_add(4)?;
-                if field_header_end > end || data.get(field_offset + 3) != Some(&0x01) {
+        // Snapshot the first two scans only when a field needs membership.
+        if role_ends.is_none() {
+            let mut ends = std::collections::HashSet::new();
+            for role in ctx.admit_iter(&roles, "catia_legacy_role_end_visits")? {
+                if let Some(offset) = role.end_offset() {
+                    end_storage.with_storage(|| {
+                        ctx.insert_hash_set(&mut ends, offset, "catia_legacy_role_ends")
+                    })?;
+                }
+            }
+            role_ends = Some(ends);
+        }
+        if let Some(ends) = &role_ends {
+            if ctx.contains_hash_set(ends, &field_offset, "catia_legacy_role_ends")? {
+                continue;
+            }
+        }
+        let fixed = field_offset
+            .checked_sub(6)
+            .filter(|offset| *offset >= start)
+            .and_then(|role_offset| {
+                let name_selector = *data.get(role_offset)?;
+                (name_selector != 0 && data.get(role_offset + 1) == Some(&0x80)).then_some(())?;
+                let selector = View::u32_le_at(data, role_offset + 2)?;
+                (selector != 0).then_some(LegacyRoleSelector {
+                    offset: role_offset,
+                    entity_id,
+                    name: LegacyRoleName::Selector(name_selector),
+                    encoding: LegacyRoleSelectorEncoding::FixedU32,
+                    selector,
+                    field_code: None,
+                })
+            });
+        let paged = field_offset
+            .checked_sub(3)
+            .filter(|offset| *offset >= start)
+            .and_then(|role_offset| {
+                let name_selector = *data.get(role_offset)?;
+                let page = *data.get(role_offset + 1)?;
+                if name_selector == 0 || !(0xd1..=0xe4).contains(&page) {
                     return None;
                 }
-                match ctx.contains_hash_set(&role_ends, &field_offset, "catia_legacy_role_ends") {
-                    Ok(true) => return None,
-                    Ok(false) => {}
-                    Err(error) => return Some(Err(error)),
-                }
-                let fixed = field_offset
-                    .checked_sub(6)
-                    .filter(|offset| *offset >= start)
-                    .and_then(|role_offset| {
-                        let name_selector = *data.get(role_offset)?;
-                        (name_selector != 0 && data.get(role_offset + 1) == Some(&0x80))
-                            .then_some(())?;
-                        let selector = View::u32_le_at(data, role_offset + 2)?;
-                        (selector != 0).then_some(LegacyRoleSelector {
-                            offset: role_offset,
-                            entity_id,
-                            name: LegacyRoleName::Selector(name_selector),
-                            encoding: LegacyRoleSelectorEncoding::FixedU32,
-                            selector,
-                            field_code: None,
-                        })
-                    });
-                let paged = field_offset
-                    .checked_sub(3)
-                    .filter(|offset| *offset >= start)
-                    .and_then(|role_offset| {
-                        let name_selector = *data.get(role_offset)?;
-                        let page = *data.get(role_offset + 1)?;
-                        if name_selector == 0 || !(0xd1..=0xe4).contains(&page) {
-                            return None;
-                        }
-                        let low = *data.get(role_offset + 2)?;
-                        Some(LegacyRoleSelector {
-                            offset: role_offset,
-                            entity_id,
-                            name: LegacyRoleName::Selector(name_selector),
-                            encoding: LegacyRoleSelectorEncoding::Paged,
-                            selector: u32::from(page - 0xd1)
-                                .checked_mul(256)?
-                                .checked_add(u32::from(low))?
-                                .checked_add(1)?,
-                            field_code: None,
-                        })
-                    });
-                // DI-24: fixed-width and paged selector layouts have no
-                // precedence when both fit the same field boundary.
-                match (fixed, paged) {
-                    (Some(_), Some(_)) => None,
-                    (Some(role), None) | (None, Some(role)) => Some(role),
-                    (None, None) => None,
-                }
-                .map(Ok)
-            }),
-        "catia_legacy_bound_roles",
-    )?;
-    ctx.reserve_vec(&mut roles, field_bound_roles.len(), "catia_legacy_roles")?;
-    roles.extend(field_bound_roles);
+                let low = *data.get(role_offset + 2)?;
+                Some(LegacyRoleSelector {
+                    offset: role_offset,
+                    entity_id,
+                    name: LegacyRoleName::Selector(name_selector),
+                    encoding: LegacyRoleSelectorEncoding::Paged,
+                    selector: u32::from(page - 0xd1)
+                        .checked_mul(256)?
+                        .checked_add(u32::from(low))?
+                        .checked_add(1)?,
+                    field_code: None,
+                })
+            });
+        // DI-24: fixed-width and paged selector layouts have no
+        // precedence when both fit the same field boundary.
+        let role = match (fixed, paged) {
+            (Some(_), Some(_)) | (None, None) => continue,
+            (Some(role), None) | (None, Some(role)) => role,
+        };
+        ctx.push_vec(&mut roles, role, "catia_legacy_roles")?;
+    }
     if roles.len() == 2 {
         if roles[0].offset > roles[1].offset {
             roles.swap(0, 1);
