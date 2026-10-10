@@ -41,7 +41,9 @@ impl LoadedDocument {
     pub(crate) fn into_decode_report(self) -> Option<DecodeReport> {
         match self.origin {
             LoadOrigin::Neutral => None,
-            LoadOrigin::Decoded { report, .. } | LoadOrigin::Restored { report, .. } => Some(report),
+            LoadOrigin::Decoded { report, .. } | LoadOrigin::Restored { report, .. } => {
+                Some(report)
+            }
         }
     }
 

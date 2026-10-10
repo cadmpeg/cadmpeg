@@ -279,9 +279,12 @@ impl InputCatalog {
         ctx: &DecodeContext<'_>,
         prefix: View<'_>,
     ) -> Result<DetectionOutcome<'_>, CodecError> {
-        let _storage;
-        let mut matches = Vec::new();
-        _storage = self.candidates(ctx, prefix, &mut matches)?;
+        // The candidate vector drops before its storage reservation.
+        let (_storage, mut matches) = {
+            let mut matches = Vec::new();
+            let storage = self.candidates(ctx, prefix, &mut matches)?;
+            (storage, matches)
+        };
         let Some(best_confidence) = matches.iter().map(|(_, confidence)| *confidence).max() else {
             return Ok(DetectionOutcome::None);
         };
@@ -408,9 +411,11 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_work_units = 0;
-        let (ctx, root) = DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy)
-            .expect("root");
-        let catalog = InputCatalog { descriptors: Vec::new() };
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy).expect("root");
+        let catalog = InputCatalog {
+            descriptors: Vec::new(),
+        };
         let result = catalog.resolve_source(&ctx, root, None);
         let Err(super::ResolveSourceError::Codec(CodecError::ResourceLimit(limit))) =
             ctx.finish(result)
@@ -430,8 +435,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_work_units = 0;
-        let (ctx, root) = DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy)
-            .expect("root");
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy).expect("root");
         let catalog = InputCatalog::with_builtins();
         let result = catalog.detect(&ctx, root);
         let Err(CodecError::ResourceLimit(limit)) = ctx.finish(result) else {
@@ -453,7 +458,9 @@ mod tests {
             (b"not CAD or JSON", 1, false),
             (b" \n", 3, false),
         ];
-        let catalog = InputCatalog { descriptors: Vec::new() };
+        let catalog = InputCatalog {
+            descriptors: Vec::new(),
+        };
         for &(prefix, work, cadir) in cases {
             for (budget, success) in [(work, true), (work.saturating_sub(1), false)] {
                 if !success && work == 0 {
@@ -462,16 +469,19 @@ mod tests {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();
                 policy.limits.max_work_units = budget;
-                let (ctx, root) = DecodeContext::from_root_bytes(prefix, &arena, &policy)
-                    .expect("root");
+                let (ctx, root) =
+                    DecodeContext::from_root_bytes(prefix, &arena, &policy).expect("root");
                 let result = catalog.resolve_source(&ctx, root, None);
                 let result = ctx.finish(result);
                 if success {
-                    assert!(matches!(result,
+                    assert!(
+                        matches!(result,
                         Ok(ResolvedSource::Cadir) if cadir)
-                        || matches!(result, Ok(ResolvedSource::Unrecognized) if !cadir));
+                            || matches!(result, Ok(ResolvedSource::Unrecognized) if !cadir)
+                    );
                 } else {
-                    let Err(super::ResolveSourceError::Codec(CodecError::ResourceLimit(limit))) = result
+                    let Err(super::ResolveSourceError::Codec(CodecError::ResourceLimit(limit))) =
+                        result
                     else {
                         panic!("one fewer visited step must refuse");
                     };
@@ -490,14 +500,11 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_work_units = 0;
-        let (ctx, root) = DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy)
-            .expect("root");
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy).expect("root");
         let catalog = InputCatalog::with_builtins();
         let result = catalog.resolve_source(&ctx, root, Some(ForcedInput::Cadir));
-        assert!(matches!(
-            ctx.finish(result),
-            Ok(ResolvedSource::Cadir)
-        ));
+        assert!(matches!(ctx.finish(result), Ok(ResolvedSource::Cadir)));
     }
 
     #[cfg(feature = "step")]
@@ -506,8 +513,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_work_units = 0;
-        let (ctx, root) = DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy)
-            .expect("root");
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy).expect("root");
         let catalog = InputCatalog::with_builtins();
         let forced = crate::forced_input("step")
             .expect("embedded registry loads")

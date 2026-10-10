@@ -341,7 +341,11 @@ pub(crate) fn prepare(
             origin: LoadOrigin::Decoded { report, .. } | LoadOrigin::Restored { report, .. },
             ..
         } if policy.losses.rejects_decode() && !report.losses.is_empty() => {
-            return Err(ConversionRefusal::DecodeLossRejected { format, decode_report: report }.into());
+            return Err(ConversionRefusal::DecodeLossRejected {
+                format,
+                decode_report: report,
+            }
+            .into());
         }
         loaded => loaded,
     };
@@ -441,14 +445,20 @@ impl PlannedConversion {
     }
 
     /// Writes the artifact and sidecar, then moves the source reports to the caller.
-    pub(crate) fn write(self) -> AnyResult<(ExportEmission, Option<DecodeReport>, ValidationReport)> {
+    pub(crate) fn write(
+        self,
+    ) -> AnyResult<(ExportEmission, Option<DecodeReport>, ValidationReport)> {
         let emission = emit_export_plan(
             self.plan,
             self.prepared.selection.format,
             &self.prepared.destination,
             &self.prepared.document.origin,
         )?;
-        Ok((emission, self.prepared.document.into_decode_report(), self.prepared.validation))
+        Ok((
+            emission,
+            self.prepared.document.into_decode_report(),
+            self.prepared.validation,
+        ))
     }
 }
 
