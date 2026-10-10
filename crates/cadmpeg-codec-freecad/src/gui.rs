@@ -3306,21 +3306,13 @@ fn validate_gui_integer_list(
         "IntegerList"
     };
     let count = gui_list_count(ctx, root, property_name, tag)?;
-    let (_children_storage, children) = ctx
-        .with_scoped_storage("FCStd GUI integer-list child nodes", || {
-            ctx.collect_vec(root.children(), "FCStd GUI integer-list child nodes")
-        })
-        .map(|(children, storage)| (storage, children))?;
-    let element_count = ctx
-        .admit_iter(&children, "FCStd GUI integer-list element count")?
-        .filter(|value| value.is_element())
-        .count();
+    let element_count = gui_element_child_count(ctx, root, "FCStd GUI integer-list element count")?;
     if element_count != count
         || ctx.any_by(
-            &children,
+            root.children(),
             |value| {
                 Ok(value.is_element()
-                    && !ctx.xml_has_tag_name(*value, "I", "FCStd GUI value tag")?)
+                    && !ctx.xml_has_tag_name(value, "I", "FCStd GUI value tag")?)
             },
             "FCStd GUI integer-list tag validation",
         )?
@@ -3331,10 +3323,10 @@ fn validate_gui_integer_list(
         ));
     }
     if ctx.any_by(
-        &children,
+        root.children(),
         |value| {
             if value.is_element() {
-                has_nested_gui_elements(ctx, *value)
+                has_nested_gui_elements(ctx, value)
             } else {
                 Ok(false)
             }
@@ -3344,16 +3336,13 @@ fn validate_gui_integer_list(
         return Err(gui_nested_value_error(ctx, property_name, tag));
     }
     let mut previous = None;
-    let mut values = children.iter();
-    while values.len() != 0 {
-        let Some(value) = ctx.next_charged(&mut values, "FCStd GUI integer-list values")? else {
-            break;
-        };
+    let mut values = root.children();
+    while let Some(value) = ctx.next_charged(&mut values, "FCStd GUI integer-list values")? {
         if !value.is_element() {
             continue;
         }
         let number_text = ctx
-            .xml_attribute(*value, "v", "FCStd GUI value attribute")?
+            .xml_attribute(value, "v", "FCStd GUI value attribute")?
             .ok_or_else(|| {
                 gui_malformed(
                     ctx,
@@ -3385,21 +3374,13 @@ fn validate_gui_map(
     property_name: &str,
 ) -> Result<(), CodecError> {
     let count = gui_list_count(ctx, root, property_name, "Map")?;
-    let (_children_storage, children) = ctx
-        .with_scoped_storage("FCStd GUI Map child nodes", || {
-            ctx.collect_vec(root.children(), "FCStd GUI Map child nodes")
-        })
-        .map(|(children, storage)| (storage, children))?;
-    let element_count = ctx
-        .admit_iter(&children, "FCStd GUI Map element count")?
-        .filter(|value| value.is_element())
-        .count();
+    let element_count = gui_element_child_count(ctx, root, "FCStd GUI Map element count")?;
     if element_count != count
         || ctx.any_by(
-            &children,
+            root.children(),
             |value| {
                 Ok(value.is_element()
-                    && !ctx.xml_has_tag_name(*value, "Item", "FCStd GUI value tag")?)
+                    && !ctx.xml_has_tag_name(value, "Item", "FCStd GUI value tag")?)
             },
             "FCStd GUI Map item tag validation",
         )?
@@ -3410,10 +3391,10 @@ fn validate_gui_map(
         ));
     }
     if ctx.any_by(
-        &children,
+        root.children(),
         |value| {
             if value.is_element() {
-                has_nested_gui_elements(ctx, *value)
+                has_nested_gui_elements(ctx, value)
             } else {
                 Ok(false)
             }
@@ -3423,16 +3404,13 @@ fn validate_gui_map(
         return Err(gui_nested_value_error(ctx, property_name, "Map item"));
     }
     let mut previous_key = None;
-    let mut values = children.iter();
-    while values.len() != 0 {
-        let Some(value) = ctx.next_charged(&mut values, "FCStd GUI Map values")? else {
-            break;
-        };
+    let mut values = root.children();
+    while let Some(value) = ctx.next_charged(&mut values, "FCStd GUI Map values")? {
         if !value.is_element() {
             continue;
         }
         let key = ctx
-            .xml_attribute(*value, "key", "FCStd GUI value attribute")?
+            .xml_attribute(value, "key", "FCStd GUI value attribute")?
             .ok_or_else(|| {
                 gui_malformed(
                     ctx,
@@ -3440,7 +3418,7 @@ fn validate_gui_map(
                 )
             })?;
         if ctx
-            .xml_attribute(*value, "value", "FCStd GUI value attribute")?
+            .xml_attribute(value, "value", "FCStd GUI value attribute")?
             .is_none()
         {
             return Err(gui_malformed(
@@ -3678,26 +3656,18 @@ fn validate_gui_enumeration(
             ));
         }
     };
-    let (_children_storage, children) = ctx
-        .with_scoped_storage("FCStd GUI custom enumeration nodes", || {
-            ctx.collect_vec(custom_list.children(), "FCStd GUI custom enumeration nodes")
-        })
-        .map(|(children, storage)| (storage, children))?;
-    let element_count = ctx
-        .admit_iter(&children, "FCStd GUI custom enumeration element count")?
-        .filter(|value| value.is_element())
-        .count();
+    let element_count = gui_element_child_count(ctx, custom_list, "FCStd GUI custom enumeration element count")?;
     if element_count != count
         || ctx.any_by(
-            &children,
+            custom_list.children(),
             |value| {
                 if !value.is_element() {
                     return Ok(false);
                 }
                 Ok(
-                    !ctx.xml_has_tag_name(*value, "Enum", "FCStd GUI value tag")?
+                    !ctx.xml_has_tag_name(value, "Enum", "FCStd GUI value tag")?
                         || ctx
-                            .xml_attribute(*value, "value", "FCStd GUI value attribute")?
+                            .xml_attribute(value, "value", "FCStd GUI value attribute")?
                             .is_none(),
                 )
             },
@@ -4099,15 +4069,7 @@ fn validate_gui_techdraw_list(
             format_args!("{list_tag} has an invalid count"),
         ));
     };
-    let (_record_node_storage, record_nodes) = ctx
-        .with_scoped_storage("FCStd GUI TechDraw child nodes", || {
-            ctx.collect_vec(root.children(), "FCStd GUI TechDraw child nodes")
-        })
-        .map(|(nodes, storage)| (storage, nodes))?;
-    let record_count = ctx
-        .admit_iter(&record_nodes, "FCStd GUI TechDraw record count")?
-        .filter(|record| record.is_element())
-        .count();
+    let record_count = gui_element_child_count(ctx, root, "FCStd GUI TechDraw record count")?;
     if record_count != count {
         return Err(gui_techdraw_error(
             ctx,
@@ -4115,15 +4077,11 @@ fn validate_gui_techdraw_list(
             format_args!("{list_tag} count does not match its records"),
         ));
     }
-    let mut records = record_nodes.iter();
-    while records.len() != 0 {
-        let Some(record) = ctx.next_charged(&mut records, "FCStd GUI TechDraw records")? else {
-            break;
-        };
+    let mut records = root.children();
+    while let Some(record) = ctx.next_charged(&mut records, "FCStd GUI TechDraw records")? {
         if !record.is_element() {
             continue;
         }
-        let record = *record;
         if !ctx.xml_has_tag_name(record, record_tag, "FCStd GUI value tag")? {
             return Err(gui_techdraw_error(
                 ctx,
@@ -4423,18 +4381,7 @@ fn validate_gui_center_line_string_collection(
             "CenterLine collection has an invalid count",
         ));
     };
-    let (_children_storage, children) = ctx
-        .with_scoped_storage("FCStd GUI CenterLine collection child nodes", || {
-            ctx.collect_vec(
-                field.children(),
-                "FCStd GUI CenterLine collection child nodes",
-            )
-        })
-        .map(|(children, storage)| (storage, children))?;
-    let item_count = ctx
-        .admit_iter(&children, "FCStd GUI CenterLine collection item count")?
-        .filter(|item| item.is_element())
-        .count();
+    let item_count = gui_element_child_count(ctx, field, "FCStd GUI CenterLine collection item count")?;
     if item_count != count {
         return Err(gui_techdraw_error(
             ctx,
@@ -4442,16 +4389,11 @@ fn validate_gui_center_line_string_collection(
             "CenterLine collection count does not match its records",
         ));
     }
-    let mut items = children.iter();
-    while items.len() != 0 {
-        let Some(item) = ctx.next_charged(&mut items, "FCStd GUI CenterLine collection items")?
-        else {
-            break;
-        };
+    let mut items = field.children();
+    while let Some(item) = ctx.next_charged(&mut items, "FCStd GUI CenterLine collection items")? {
         if !item.is_element() {
             continue;
         }
-        let item = *item;
         if !ctx.xml_has_tag_name(item, item_tag, "FCStd GUI value tag")?
             || ctx
                 .xml_attribute(item, "value", "FCStd GUI value attribute")?
@@ -4825,15 +4767,7 @@ fn validate_gui_techdraw_points(
             "TechDraw Points has an invalid count",
         ));
     };
-    let (_children_storage, children) = ctx
-        .with_scoped_storage("FCStd GUI TechDraw Points child nodes", || {
-            ctx.collect_vec(field.children(), "FCStd GUI TechDraw Points child nodes")
-        })
-        .map(|(children, storage)| (storage, children))?;
-    let point_count = ctx
-        .admit_iter(&children, "FCStd GUI TechDraw point count")?
-        .filter(|point| point.is_element())
-        .count();
+    let point_count = gui_element_child_count(ctx, field, "FCStd GUI TechDraw point count")?;
     if point_count != count {
         return Err(gui_techdraw_error(
             ctx,
@@ -4841,15 +4775,11 @@ fn validate_gui_techdraw_points(
             "TechDraw Points count does not match its records",
         ));
     }
-    let mut points = children.iter();
-    while points.len() != 0 {
-        let Some(point) = ctx.next_charged(&mut points, "FCStd GUI TechDraw point records")? else {
-            break;
-        };
+    let mut points = field.children();
+    while let Some(point) = ctx.next_charged(&mut points, "FCStd GUI TechDraw point records")? {
         if !point.is_element() {
             continue;
         }
-        let point = *point;
         if !ctx.xml_has_tag_name(point, "Point", "FCStd GUI value tag")?
             || has_nested_gui_elements(ctx, point)?
         {
@@ -5202,21 +5132,13 @@ fn validate_visual_layer_list(
                 format_args!("GUI property {property_name} VisualLayerList has an invalid count"),
             )
         })?;
-    let (_children_storage, children) = ctx
-        .with_scoped_storage("FCStd GUI VisualLayerList child nodes", || {
-            ctx.collect_vec(root.children(), "FCStd GUI VisualLayerList child nodes")
-        })
-        .map(|(children, storage)| (storage, children))?;
-    let element_count = ctx
-        .admit_iter(&children, "FCStd GUI VisualLayerList element count")?
-        .filter(|layer| layer.is_element())
-        .count();
+    let element_count = gui_element_child_count(ctx, root, "FCStd GUI VisualLayerList element count")?;
     if element_count != count
         || ctx.any_by(
-            &children,
+            root.children(),
             |layer| {
                 Ok(layer.is_element()
-                    && !ctx.xml_has_tag_name(*layer, "VisualLayer", "FCStd GUI value tag")?)
+                    && !ctx.xml_has_tag_name(layer, "VisualLayer", "FCStd GUI value tag")?)
             },
             "FCStd GUI VisualLayer tag validation",
         )?
@@ -5228,16 +5150,13 @@ fn validate_visual_layer_list(
             ),
         ));
     }
-    let mut layers = children.iter();
-    while layers.len() != 0 {
-        let Some(layer) = ctx.next_charged(&mut layers, "FCStd GUI VisualLayer records")? else {
-            break;
-        };
+    let mut layers = root.children();
+    while let Some(layer) = ctx.next_charged(&mut layers, "FCStd GUI VisualLayer records")? {
         if !layer.is_element() {
             continue;
         }
         if !matches!(
-            ctx.xml_attribute(*layer, "visible", "FCStd GUI value attribute")?,
+            ctx.xml_attribute(layer, "visible", "FCStd GUI value attribute")?,
             Some("true" | "false")
         ) {
             return Err(gui_malformed(
@@ -5248,7 +5167,7 @@ fn validate_visual_layer_list(
             ));
         }
         let line_pattern = ctx
-            .xml_attribute(*layer, "linePattern", "FCStd GUI value attribute")?
+            .xml_attribute(layer, "linePattern", "FCStd GUI value attribute")?
             .ok_or_else(|| {
                 gui_malformed(
                     ctx,
@@ -5265,7 +5184,7 @@ fn validate_visual_layer_list(
                 )
             })?;
         let line_width_text = ctx
-            .xml_attribute(*layer, "lineWidth", "FCStd GUI value attribute")?
+            .xml_attribute(layer, "lineWidth", "FCStd GUI value attribute")?
             .ok_or_else(|| {
                 gui_malformed(
                     ctx,
@@ -5370,20 +5289,10 @@ fn validate_gui_expression_engine(
         ));
     }
     let count = gui_list_count(ctx, root, property_name, "ExpressionEngine")?;
-    let (_children_storage, children) = ctx
-        .with_scoped_storage("FCStd GUI ExpressionEngine child nodes", || {
-            ctx.collect_vec(root.children(), "FCStd GUI ExpressionEngine child nodes")
-        })
-        .map(|(children, storage)| (storage, children))?;
     let mut expression_count = 0_usize;
-    let mut expression_children = children.iter();
-    while expression_children.len() != 0 {
-        let Some(child) =
-            ctx.next_charged(&mut expression_children, "FCStd GUI expression count")?
-        else {
-            break;
-        };
-        if ctx.xml_has_tag_name(*child, "Expression", "FCStd GUI value tag")? {
+    let mut expression_children = root.children();
+    while let Some(child) = ctx.next_charged(&mut expression_children, "FCStd GUI expression count")? {
+        if ctx.xml_has_tag_name(child, "Expression", "FCStd GUI value tag")? {
             expression_count = expression_count
                 .checked_add(1)
                 .ok_or_else(|| CodecError::malformed("GUI expression count overflows"))?;
@@ -5391,16 +5300,16 @@ fn validate_gui_expression_engine(
     }
     if expression_count != count
         || ctx.any_by(
-            &children,
+            root.children(),
             |expression| {
-                if !ctx.xml_has_tag_name(*expression, "Expression", "FCStd GUI value tag")? {
+                if !ctx.xml_has_tag_name(expression, "Expression", "FCStd GUI value tag")? {
                     return Ok(false);
                 }
                 Ok(ctx
-                    .xml_attribute(*expression, "path", "FCStd GUI value attribute")?
+                    .xml_attribute(expression, "path", "FCStd GUI value attribute")?
                     .is_none()
                     || ctx
-                        .xml_attribute(*expression, "expression", "FCStd GUI value attribute")?
+                        .xml_attribute(expression, "expression", "FCStd GUI value attribute")?
                         .is_none())
             },
             "FCStd GUI expression attribute validation",
@@ -5495,21 +5404,13 @@ fn validate_gui_geometry_list(
         ));
     }
     let count = gui_list_count(ctx, root, property_name, "GeometryList")?;
-    let (_children_storage, children) = ctx
-        .with_scoped_storage("FCStd GUI GeometryList child nodes", || {
-            ctx.collect_vec(root.children(), "FCStd GUI GeometryList child nodes")
-        })
-        .map(|(children, storage)| (storage, children))?;
-    let element_count = ctx
-        .admit_iter(&children, "FCStd GUI GeometryList element count")?
-        .filter(|geometry| geometry.is_element())
-        .count();
+    let element_count = gui_element_child_count(ctx, root, "FCStd GUI GeometryList element count")?;
     if element_count != count
         || ctx.any_by(
-            &children,
+            root.children(),
             |geometry| {
                 Ok(geometry.is_element()
-                    && !ctx.xml_has_tag_name(*geometry, "Geometry", "FCStd GUI value tag")?)
+                    && !ctx.xml_has_tag_name(geometry, "Geometry", "FCStd GUI value tag")?)
             },
             "FCStd GUI GeometryList tag validation",
         )?
@@ -5569,33 +5470,25 @@ fn validate_gui_shape_list(
         ));
     }
     let count = gui_list_count(ctx, root, property_name, "ShapeList")?;
-    let (_children_storage, children) = ctx
-        .with_scoped_storage("FCStd GUI ShapeList child nodes", || {
-            ctx.collect_vec(root.children(), "FCStd GUI ShapeList child nodes")
-        })
-        .map(|(children, storage)| (storage, children))?;
-    let element_count = ctx
-        .admit_iter(&children, "FCStd GUI ShapeList element count")?
-        .filter(|shape| shape.is_element())
-        .count();
+    let element_count = gui_element_child_count(ctx, root, "FCStd GUI ShapeList element count")?;
     if element_count != count
         || ctx.any_by(
-            &children,
+            root.children(),
             |shape| {
                 if !shape.is_element() {
                     return Ok(false);
                 }
-                if !ctx.xml_has_tag_name(*shape, "TopoShape", "FCStd GUI value tag")? {
+                if !ctx.xml_has_tag_name(shape, "TopoShape", "FCStd GUI value tag")? {
                     return Ok(true);
                 }
                 Ok(ctx
-                    .xml_attribute(*shape, "file", "FCStd GUI value attribute")?
+                    .xml_attribute(shape, "file", "FCStd GUI value attribute")?
                     .is_none()
                     && ctx
-                        .xml_attribute(*shape, "binary", "FCStd GUI value attribute")?
+                        .xml_attribute(shape, "binary", "FCStd GUI value attribute")?
                         .is_none()
                     && ctx
-                        .xml_attribute(*shape, "brep", "FCStd GUI value attribute")?
+                        .xml_attribute(shape, "brep", "FCStd GUI value attribute")?
                         .is_none())
             },
             "FCStd GUI ShapeList record validation",
@@ -5629,21 +5522,13 @@ fn validate_gui_constraint_list(
         ));
     }
     let count = gui_list_count(ctx, root, property_name, "ConstraintList")?;
-    let (_children_storage, children) = ctx
-        .with_scoped_storage("FCStd GUI ConstraintList child nodes", || {
-            ctx.collect_vec(root.children(), "FCStd GUI ConstraintList child nodes")
-        })
-        .map(|(children, storage)| (storage, children))?;
-    let element_count = ctx
-        .admit_iter(&children, "FCStd GUI ConstraintList element count")?
-        .filter(|constraint| constraint.is_element())
-        .count();
+    let element_count = gui_element_child_count(ctx, root, "FCStd GUI ConstraintList element count")?;
     if element_count != count
         || ctx.any_by(
-            &children,
+            root.children(),
             |constraint| {
                 Ok(constraint.is_element()
-                    && !ctx.xml_has_tag_name(*constraint, "Constrain", "FCStd GUI value tag")?)
+                    && !ctx.xml_has_tag_name(constraint, "Constrain", "FCStd GUI value tag")?)
             },
             "FCStd GUI ConstraintList tag validation",
         )?
