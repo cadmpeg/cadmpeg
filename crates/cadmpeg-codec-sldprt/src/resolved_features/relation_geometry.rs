@@ -71,14 +71,15 @@ pub(super) fn is_reference_relation_parameter_in(
     ctx: &DecodeContext<'_>,
     parameter: &cadmpeg_ir::features::DesignParameter,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(ctx
-        .get_btree_map(
-            &parameter.properties,
-            RELATION_PARAMETER_ROLE_PROPERTY,
-            "resolve SLDPRT relation parameter role",
-        )?
-        .map(String::as_str)
-        == Some(RELATION_PARAMETER_ROLE_REFERENCE))
+    let Some(role) = ctx.get_btree_map(
+        &parameter.properties,
+        RELATION_PARAMETER_ROLE_PROPERTY,
+        "resolve SLDPRT relation parameter role",
+    )? else {
+        return Ok(false);
+    };
+    ctx.equal(role.as_str(), RELATION_PARAMETER_ROLE_REFERENCE,
+        "match SLDPRT relation parameter role")
 }
 
 fn relation_native_kind(family: FeatureInputRelationFamily) -> cadmpeg_core::text::NonBlankString {
@@ -3465,7 +3466,7 @@ pub(super) fn declared_entity_handle_owner<'a>(
             let Some(class) = selected_class else {
                 return Ok(false);
             };
-            if class.name != "sgEntHandle" {
+            if !ctx.equal(class.name.as_str(), "sgEntHandle", "match SLDPRT entity-handle class")? {
                 return Ok(false);
             }
             if owner.is_some() {
@@ -3560,16 +3561,19 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         |class| ctx.equal(class.id.as_str(), class_ref, DIMENSIONED_HANDLE_OPERATION),
         "find SLDPRT declared slot-handle class",
     )?;
-    let Some(entity_class) = entity_class.filter(|class| class.name == "sgEntHandle") else {
+    let Some(entity_class) = entity_class else {
         return Ok(None);
     };
+    if !ctx.equal(entity_class.name.as_str(), "sgEntHandle", "match SLDPRT slot entity-handle class")? {
+        return Ok(None);
+    }
     let bounds = (|| -> Result<_, cadmpeg_core::CodecError> {
         let mut classes = lane.classes.iter();
         let mut next_slot = || {
             ctx.find_by(
                 &mut classes,
                 |class| {
-                    Ok(class.name == "sgSlotHandle"
+                    Ok(ctx.equal(class.name.as_str(), "sgSlotHandle", "match SLDPRT slot-handle class")?
                         && class.offset > entity_class.offset
                         && class.offset < marker.offset())
                 },
@@ -6367,3 +6371,6 @@ mod endpoint_reference_storage_tests;
 
 #[cfg(test)]
 mod dynamic_line_selection_tests;
+
+#[cfg(test)]
+mod name_admission_tests;
