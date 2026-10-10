@@ -314,3 +314,86 @@ fn shared_weights_last_mismatch_accepts_exact_visits_without_allocation() {
         assert_eq!((serde_json::to_value(&first).unwrap(), serde_json::to_value(&second).unwrap()), before);
     }
 }
+
+fn ruled_row_collection_boundary(count: usize, rational: bool, weight_rows: bool, last: bool) {
+    let mut knots = vec![0.0, 0.0];
+    knots.extend((1..count - 1).map(|index| f64::from(u32::try_from(index).unwrap())));
+    let end = f64::from(u32::try_from(count - 1).unwrap());
+    knots.extend([end, end]);
+    let weight = if rational { 2.0 } else { 1.0 };
+    let curves: Vec<_> = (0..2).map(|row| NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(), 1, knots.clone(),
+        (0..count).map(|index| Point3::new(f64::from(u32::try_from(index).unwrap()),
+            f64::from(row), 0.0)).collect(),
+        rational.then(|| (0..count).map(|_| weight).collect()), false,
+    ).unwrap().unwrap()).collect();
+    for curve in &curves {
+        assert_eq!(curve.pole_count(), count);
+        assert_eq!(curve.pole_rows().weight_at(0), rational.then_some(weight));
+    }
+    let weights: Vec<_> = (0..count).map(|_| NonZeroReal::new(weight).unwrap()).collect();
+    let before = (serde_json::to_value(&curves[0]).unwrap(), serde_json::to_value(&curves[1]).unwrap());
+    // Pole rows: N outer slots and two per completed row. Weight rows
+    // follow all 3N pole slots and their own N-slot outer vector.
+    let prefix = if weight_rows { 4 * count } else { count };
+    let items = u64_from_index(prefix + if last { 2 * (count - 1) } else { 0 });
+    let pole_storage = count * (size_of::<Vec<FinitePoint3>>() + 2 * size_of::<FinitePoint3>());
+    let weight_storage = count * (size_of::<Vec<NonZeroReal>>() + 2 * size_of::<NonZeroReal>());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = items;
+    policy.limits.max_materialized_bytes = if rational {
+        u64_from_index(pole_storage + weight_storage)
+    } else { 0 };
+    policy.limits.max_retained_bytes = if rational { 0 } else { u64_from_index(pole_storage) };
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(first)) =
+        super::super::same_basis_ruled_surface(&curves[0], &curves[1], &weights, &ctx)
+    else { panic!("expected the next ruled row allocation to refuse"); };
+    assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(first.operation, if weight_rows {
+        "iges ruled same-basis weight row controls"
+    } else { "iges ruled same-basis pole row controls" });
+    assert_eq!((first.limit, first.used, first.additional), (items, items, 2));
+    for _ in 0..64 {
+        for source in [weights.as_slice(), &[]] {
+            assert!(matches!(super::super::same_basis_ruled_surface(
+                &curves[0], &curves[1], source, &ctx),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+    assert_eq!((serde_json::to_value(&curves[0]).unwrap(), serde_json::to_value(&curves[1]).unwrap()), before);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn ruled_polynomial_first_pole_row_refuses_collection() {
+    for count in [4, 64] { ruled_row_collection_boundary(count, false, false, false); }
+}
+
+#[test]
+fn ruled_polynomial_last_pole_row_refuses_collection() {
+    for count in [4, 64] { ruled_row_collection_boundary(count, false, false, true); }
+}
+
+#[test]
+fn ruled_rational_first_pole_row_refuses_collection() {
+    for count in [4, 64] { ruled_row_collection_boundary(count, true, false, false); }
+}
+
+#[test]
+fn ruled_rational_last_pole_row_refuses_collection() {
+    for count in [4, 64] { ruled_row_collection_boundary(count, true, false, true); }
+}
+
+#[test]
+fn ruled_rational_first_weight_row_refuses_collection() {
+    for count in [4, 64] { ruled_row_collection_boundary(count, true, true, false); }
+}
+
+#[test]
+fn ruled_rational_last_weight_row_refuses_collection() {
+    for count in [4, 64] { ruled_row_collection_boundary(count, true, true, true); }
+}
