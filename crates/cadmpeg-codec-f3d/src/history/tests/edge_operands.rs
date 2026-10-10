@@ -117,3 +117,5 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
     assert_eq!(operand.recipe_state_id, Some(1));
     assert_eq!(operand.resolved_edge_slot, None);
 }
+
+mod active_references;
