@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn point_carrier_membership_preserves_work_refusal() {
-        assert_point_lookup_work(|index, id, ctx| index.contains_key(id, ctx));
+        assert_point_lookup_work(CarrierIndex::contains_key);
     }
 
     #[test]
