@@ -3,10 +3,9 @@
 
 use super::{
     bound_scope_history, design_axis, effective_scope_previous_history_state_id,
-    history_state_reaches, projection_was_finalized, same_axis_line,
-    single_btree_value, stable_ref, topology::historical_edge_axis,
-    topology::treatment_edge_candidates, unique_by, unique_history_state_in,
-    unique_history_state_pair, UniqueIndex, UniqueLookup,
+    history_state_reaches, projection_was_finalized, same_axis_line, single_btree_value,
+    stable_ref, topology::historical_edge_axis, topology::treatment_edge_candidates, unique_by,
+    unique_history_state_in, unique_history_state_pair, UniqueIndex, UniqueLookup,
     EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9, EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9,
     EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8, EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9,
     HOLE_SUPPORT_NORMAL_TOLERANCE, HOLE_SUPPORT_POINT_TOLERANCE,
@@ -370,20 +369,13 @@ pub(super) fn bind_face_selection<'a, 'ctx>(
                 }
                 return Ok(None);
             }
-            let Some(group) = index.groups.get(ctx, native.as_str())? else {
+            let Some(group) =
+                super::scope_group(ctx, &index.groups, scope, native.as_str(), |_| true)?
+            else {
                 return Ok(None);
             };
-            if group.scope_record_index != scope.record_index {
-                return Ok(None);
-            }
-            let stream = crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?;
-            if !ctx.equal(
-                &crate::ids::native_stream_charged(ctx, &group.id, "split F3D native stream")?,
-                &stream,
-                "compare F3D face selection group stream",
-            )? {
-                return Ok(None);
-            }
+            let stream =
+                crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?;
             if let Some(resolved) =
         crate::design::face_resolve::resolved_historical_split_face_target_group_with_updated_faces(
             ctx,
@@ -473,21 +465,16 @@ pub(super) fn bind_body_recipe_face_selection<'a, 'ctx>(
             let FaceSelection::Native(native) = selection else {
                 return Ok(None);
             };
-            let Some(group) = index.groups.get(ctx, native.as_str())? else {
+            let Some(group) =
+                super::scope_group(ctx, &index.groups, scope, native.as_str(), |group| {
+                    group.role() == DesignOperandRole::ROLE_0X5
+                })?
+            else {
                 return Ok(None);
             };
-            if group.scope_record_index != scope.record_index
-                || group.role() != DesignOperandRole::ROLE_0X5
-            {
-                return Ok(None);
-            }
-            let stream = crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?;
-            if !ctx.equal(
-                &crate::ids::native_stream_charged(ctx, &group.id, "split F3D native stream")?,
-                &stream,
-                "compare F3D body recipe face selection group stream",
-            )? || group.members().is_empty()
-            {
+            let stream =
+                crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?;
+            if group.members().is_empty() {
                 return Ok(None);
             }
             let mut slots_storage = ctx.reserve_scoped(0, "collect F3D body recipe face slots")?;
@@ -668,7 +655,9 @@ impl HistoricalIdentityIndex {
         // reaches; both grow as the revisions are indexed.
         let mut versioned_revisions = HashSet::new();
         let mut revision_entity_refs = HashSet::new();
-        for history in decode.admit_iter(&history_entries, "scan F3D identity revision histories")? {
+        for history in
+            decode.admit_iter(&history_entries, "scan F3D identity revision histories")?
+        {
             for state in decode.admit_iter(&history.states, "scan F3D identity revision states")? {
                 if decode.contains_hash_set(
                     &ambiguous_states,
@@ -736,7 +725,9 @@ impl HistoricalIdentityIndex {
         let mut reconstructed_revisions = BTreeSet::new();
         // Finalized histories retain the entity-slot membership and the
         // bulletin-board chain after their geometry caches are compacted.
-        for history in decode.admit_iter(&history_entries, "collect F3D finalized identity histories")? {
+        for history in
+            decode.admit_iter(&history_entries, "collect F3D finalized identity histories")?
+        {
             if history.states.is_empty() {
                 continue;
             }
@@ -811,7 +802,9 @@ impl HistoricalIdentityIndex {
                 }
             }
         }
-        for history in decode.admit_iter(&history_entries, "scan F3D identity membership histories")? {
+        for history in
+            decode.admit_iter(&history_entries, "scan F3D identity membership histories")?
+        {
             for state in
                 decode.admit_iter(&history.states, "scan F3D identity membership states")?
             {
@@ -1146,14 +1139,21 @@ fn component_histories<'a>(
         return Ok(Some(Vec::new()));
     }
     let space = &naming_spaces[space_index];
-    let Some(stream) = crate::ids::native_stream_charged(decode, &space.id, "split F3D native stream")? else {
+    let Some(stream) =
+        crate::ids::native_stream_charged(decode, &space.id, "split F3D native stream")?
+    else {
         return Ok(Some(Vec::new()));
     };
     let cluster_end = decode.fold(
         naming_spaces,
         None,
         |minimum: Option<u64>, candidate| {
-            let Some(candidate_stream) = crate::ids::native_stream_charged(decode, &candidate.id, "split F3D native stream")? else {
+            let Some(candidate_stream) = crate::ids::native_stream_charged(
+                decode,
+                &candidate.id,
+                "split F3D native stream",
+            )?
+            else {
                 return Ok(minimum);
             };
             if !decode.equal(
@@ -1183,7 +1183,9 @@ fn component_histories<'a>(
     let mut blobs_storage = decode.reserve_scoped(0, "index F3D component history blobs")?;
     let mut blobs = BTreeSet::new();
     for binding in decode.admit_iter(body_bindings, "scan F3D component body bindings")? {
-        let Some(binding_stream) = crate::ids::native_stream_charged(decode, binding.id(), "split F3D native stream")? else {
+        let Some(binding_stream) =
+            crate::ids::native_stream_charged(decode, binding.id(), "split F3D native stream")?
+        else {
             continue;
         };
         if !decode.equal(
@@ -1205,7 +1207,9 @@ fn component_histories<'a>(
     }
     let mut selected = Vec::new();
     for history in decode.admit_iter(histories, "scan F3D component histories")? {
-        let Some(history_stream) = crate::ids::native_stream_charged(decode, &history.id, "split F3D native stream")? else {
+        let Some(history_stream) =
+            crate::ids::native_stream_charged(decode, &history.id, "split F3D native stream")?
+        else {
             continue;
         };
         let Some(history_entry) = decode.strip_prefix(
@@ -1379,7 +1383,8 @@ pub(crate) fn bind_entity_selection_history(
         operand.resolved_edge_slot = None;
         operand.historical_face_candidates =
             entity_selection_face_candidates(decode, operand.primary_identity, histories)?;
-        let stream = crate::ids::native_stream_charged(decode, &operand.id, "split F3D native stream")?;
+        let stream =
+            crate::ids::native_stream_charged(decode, &operand.id, "split F3D native stream")?;
         let matches_scope = |scope: &crate::records::feature::scope::DesignParameterScope| {
             if scope.record_index != operand.scope_record_index {
                 return Ok(false);
@@ -2200,7 +2205,11 @@ pub(crate) fn bind_mirror_selection_planes(
         let matches_group =
             |group: &crate::records::topology::construction::DesignConstructionOperandGroup| {
                 if !decode.equal(
-                    &crate::ids::native_stream_charged(decode, &group.id, "split F3D native stream")?,
+                    &crate::ids::native_stream_charged(
+                        decode,
+                        &group.id,
+                        "split F3D native stream",
+                    )?,
                     &stream.as_deref(),
                     "compare F3D Mirror plane group stream",
                 )? {
@@ -2234,7 +2243,11 @@ pub(crate) fn bind_mirror_selection_planes(
         let matches_operand =
             |operand: &crate::records::topology::entity_selection::DesignEntitySelectionOperand| {
                 if !decode.equal(
-                    &crate::ids::native_stream_charged(decode, &operand.id, "split F3D native stream")?,
+                    &crate::ids::native_stream_charged(
+                        decode,
+                        &operand.id,
+                        "split F3D native stream",
+                    )?,
                     &stream.as_deref(),
                     "compare F3D Mirror plane operand stream",
                 )? {
@@ -3261,19 +3274,20 @@ pub(crate) fn bind_edge_identity_history(
         decode.reserve_scoped(0, "index F3D compact edge groups")?;
     let mut compact_group_counts = HashMap::<(String, u32, u32), Option<usize>>::new();
     for operand in decode.admit_iter(&*operands, "scan F3D operands")? {
-        let Some(stream) = crate::ids::native_stream_charged(decode, &operand.id, "split F3D native stream")? else {
+        let Some(stream) =
+            crate::ids::native_stream_charged(decode, &operand.id, "split F3D native stream")?
+        else {
             continue;
         };
         let key_storage;
         let key;
-        (key, key_storage) =
-            decode.with_scoped_storage("retain F3D compact group key", || {
-                Ok::<_, cadmpeg_core::CodecError>((
-                    decode.copy_retained_text(stream, "copy F3D compact edge group stream")?,
-                    operand.scope_record_index,
-                    operand.group_record_index,
-                ))
-            })?;
+        (key, key_storage) = decode.with_scoped_storage("retain F3D compact group key", || {
+            Ok::<_, cadmpeg_core::CodecError>((
+                decode.copy_retained_text(stream, "copy F3D compact edge group stream")?,
+                operand.scope_record_index,
+                operand.group_record_index,
+            ))
+        })?;
         compact_group_counts_storage.with_storage(|| {
             match decode.entry_hash_map(
                 &mut compact_group_counts,
@@ -3297,7 +3311,9 @@ pub(crate) fn bind_edge_identity_history(
                     };
                 }
                 std::collections::hash_map::Entry::Vacant(entry) => {
-                    key_storage.commit_value(entry)?.insert(operand.layout().is_compact().then_some(1));
+                    key_storage
+                        .commit_value(entry)?
+                        .insert(operand.layout().is_compact().then_some(1));
                 }
             }
             Ok::<(), cadmpeg_core::CodecError>(())
@@ -3371,7 +3387,9 @@ pub(crate) fn bind_edge_identity_history(
         operand.resolved_edge_slots.clear();
         operand.resolved_edge_slot = None;
         operand.resolution_identity_id = None;
-        let Some(stream) = crate::ids::native_stream_charged(decode, &operand.id, "split F3D native stream")? else {
+        let Some(stream) =
+            crate::ids::native_stream_charged(decode, &operand.id, "split F3D native stream")?
+        else {
             continue;
         };
         let Some(scope) = scope_records.find(decode, &operand.id, operand.scope_record_index)?
@@ -3419,8 +3437,7 @@ pub(crate) fn bind_edge_identity_history(
         let Some(history) = bound_history else {
             continue;
         };
-        let Some(previous_state) =
-            unique_history_state_in(decode, history, previous_state_id)?
+        let Some(previous_state) = unique_history_state_in(decode, history, previous_state_id)?
         else {
             continue;
         };
@@ -3633,7 +3650,11 @@ pub(crate) fn bind_edge_identity_history(
         for identity in decode.admit_iter(identities, "scan F3D resolved edge identities")? {
             if identity.group_record_index != operand.group_record_index
                 || !decode.equal(
-                    &crate::ids::native_stream_charged(decode, &identity.id, "split F3D native stream")?,
+                    &crate::ids::native_stream_charged(
+                        decode,
+                        &identity.id,
+                        "split F3D native stream",
+                    )?,
                     &Some(stream),
                     "compare F3D resolved edge identity stream",
                 )?

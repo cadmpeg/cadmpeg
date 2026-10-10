@@ -277,13 +277,11 @@ pub(super) fn bind_historical_entity_versions(
     )? {
         return Ok(());
     }
-    let active_count_u64 = u64::try_from(active_count)
-        .map_err(|_| ctx.refuse_codec_limit("seed F3D history versions", 0, u64::MAX))?;
-    ctx.charge_work(active_count_u64, "seed F3D history versions")?;
     let mut versions_storage = ctx.reserve_scoped(0, "seed F3D history versions")?;
     let mut versions = BTreeMap::new();
     versions_storage.with_storage(|| {
-        for id in 0..active_count {
+        for id in ctx.admit_iter(0..active_count.cast_unsigned(), "seed F3D history versions")? {
+            let id = id.cast_signed();
             ctx.insert_btree_map(&mut versions, id, id, "seed F3D history versions")?;
         }
         Ok::<(), cadmpeg_core::CodecError>(())
@@ -652,7 +650,11 @@ fn historical_record_archive<'ctx>(
     let mut revision_entities_storage =
         ctx.reserve_scoped(0, "index F3D active record revisions")?;
     let mut revision_entities = HashMap::new();
-    for entity_ref in 0..active_count {
+    for entity_ref in ctx.admit_iter(
+        0..active_count.cast_unsigned(),
+        "scan F3D active record revisions",
+    )? {
+        let entity_ref = entity_ref.cast_signed();
         revision_entities_storage.with_storage(|| {
             ctx.insert_hash_map(
                 &mut revision_entities,
@@ -931,8 +933,7 @@ fn historical_transition(
         .and_then(|state| state.topology())
         .unwrap_or(&empty);
     let _current_versions_storage;
-    let (current_versions, held_storage) =
-        historical_version_map(ctx, &current.entity_versions)?;
+    let (current_versions, held_storage) = historical_version_map(ctx, &current.entity_versions)?;
     _current_versions_storage = held_storage;
     let _previous_versions_storage;
     let (previous_versions, held_storage) = historical_version_map(
@@ -1313,7 +1314,12 @@ pub(super) fn decode_history_records(
     if start >= limit {
         return Ok(Vec::new());
     }
-    match cadmpeg_asm::sab::frame_history(ctx, bytes, start, limit, width, None) {
+    let (framed, framing_storage) = ctx.with_scoped_storage("frame F3D history scratch", || {
+        Ok::<_, cadmpeg_core::CodecError>(cadmpeg_asm::sab::frame_history(
+            ctx, bytes, start, limit, width, None,
+        ))
+    })?;
+    match framed {
         Ok(records) => ctx.try_collect_vec(
             records.into_iter().map(|record| {
                 let mut entity_references = Vec::new();
@@ -1352,7 +1358,8 @@ pub(super) fn decode_history_records(
                     byte_offset: u64_from_index(record.offset),
                     framing: crate::history_records::AsmHistoryRecordFraming::Framed {
                         index: u64_from_index(record.index),
-                        name: record.name,
+                        name: ctx
+                            .copy_retained_text(&record.name, "copy F3D history record name")?,
                         entity_references,
                     },
                     raw_bytes,
@@ -1365,6 +1372,7 @@ pub(super) fn decode_history_records(
             Err(error.into_codec_error())
         }
         Err(error) => {
+            drop(framing_storage);
             let raw_bytes =
                 ctx.copy_retained(&bytes[start..limit], "retain opaque F3D history record")?;
             let mut decoded = ctx.collection_vec(1, "frame opaque F3D history record")?;

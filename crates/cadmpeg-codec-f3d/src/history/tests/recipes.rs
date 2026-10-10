@@ -1646,3 +1646,32 @@ fn opaque_history_span_retains_the_precise_framing_error() {
 }
 
 mod hem_carriers;
+
+#[test]
+fn empty_body_recipe_face_lane_skips_closures() {
+    let (scope, history, mut operands, _) = body_recipe_history_fixture();
+    for operand in &mut operands {
+        for reference in operand.reference_bindings_mut() {
+            reference.candidate_faces.clear();
+        }
+    }
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "index F3D body closure owners",
+            None,
+        );
+        super::super::bind_body_recipe_operand_history_candidates(
+            ctx,
+            &mut operands,
+            &[],
+            &[scope],
+            &[history],
+        )
+    })
+    .unwrap();
+    assert!(operands[0].resolved_body_slot.is_none());
+    assert!(operands[0].references()[0].preceding_body_slots.is_empty());
+}

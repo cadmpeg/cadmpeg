@@ -39,12 +39,19 @@ fn proof_work(operand: &DesignBodyRecipeOperand) -> u64 {
             std::slice::from_ref(&body),
             std::slice::from_ref(&region),
             std::slice::from_ref(&shell),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(body.id.as_str(), "f3d:brep:body#1");
-        assert_eq!(body_recipe_face_body_candidates(ctx, operand, &body.id, &external).unwrap(), (true, true));
+        assert_eq!(
+            body_recipe_face_body_candidates(ctx, operand, &body.id, &external).unwrap(),
+            (true, true)
+        );
         assert_eq!(ctx.resource_refusal(), None);
-        let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(u64::MAX, "measure reached body proof")
-        else { panic!("work measurement exceeds the service ceiling"); };
+        let Err(CodecError::ResourceLimit(original)) =
+            ctx.charge_work(u64::MAX, "measure reached body proof")
+        else {
+            panic!("work measurement exceeds the service ceiling");
+        };
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(ctx.resource_refusal(), Some(original.clone()));
         original.used
@@ -76,16 +83,27 @@ fn empty_body_face_query_is_free_and_keeps_original_refusal() {
     policy.limits.max_retained_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let external = crate::history::ExternalBodies {
+            regions: &[],
+            shells: &[],
             body_by_face: Default::default(),
             bodies: Default::default(),
             _storage: ctx.reserve_scoped(0, "empty body fixture").unwrap(),
         };
-        assert_eq!(body_recipe_face_body_candidates(ctx, &operand, &body.id, &external).unwrap(), (false, false));
+        assert_eq!(
+            body_recipe_face_body_candidates(ctx, &operand, &body.id, &external).unwrap(),
+            (false, false)
+        );
         assert_eq!(ctx.resource_refusal(), None);
-        let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "original body proof refusal")
-        else { panic!("original body proof refusal"); };
-        let Err(CodecError::ResourceLimit(sticky)) = body_recipe_face_body_candidates(ctx, &operand, &body.id, &external)
-        else { panic!("empty body proof keeps the original refusal"); };
+        let Err(CodecError::ResourceLimit(original)) =
+            ctx.charge_work(1, "original body proof refusal")
+        else {
+            panic!("original body proof refusal");
+        };
+        let Err(CodecError::ResourceLimit(sticky)) =
+            body_recipe_face_body_candidates(ctx, &operand, &body.id, &external)
+        else {
+            panic!("empty body proof keeps the original refusal");
+        };
         assert_eq!(sticky, original);
     });
 }
@@ -96,13 +114,29 @@ fn body_face_query_preserves_absent_and_other_body_results() {
     let selected = cadmpeg_ir::ids::BodyId::mint("f3d:brep:body#2").unwrap();
     let active = operand(0, 0);
     let mut draft = operand(0, 0).into_draft();
-    draft.references[0].candidate_faces = vec![cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#99").unwrap()];
+    draft.references[0].candidate_faces =
+        vec![cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#99").unwrap()];
     let absent = DesignBodyRecipeOperand::try_new(draft).unwrap();
     crate::test_support::with_decode_context(|ctx| {
-        let external = external_bodies(ctx, std::slice::from_ref(&body), std::slice::from_ref(&region), std::slice::from_ref(&shell)).unwrap();
-        assert_eq!(body_recipe_face_body_candidates(ctx, &active, &selected, &external).unwrap(), (true, false));
-        assert_eq!(body_recipe_face_body_candidates(ctx, &absent, &body.id, &external).unwrap(), (false, false));
-        assert_eq!(body_recipe_face_body_candidates(ctx, &active, &body.id, &external).unwrap(), (true, true));
+        let external = external_bodies(
+            ctx,
+            std::slice::from_ref(&body),
+            std::slice::from_ref(&region),
+            std::slice::from_ref(&shell),
+        )
+        .unwrap();
+        assert_eq!(
+            body_recipe_face_body_candidates(ctx, &active, &selected, &external).unwrap(),
+            (true, false)
+        );
+        assert_eq!(
+            body_recipe_face_body_candidates(ctx, &absent, &body.id, &external).unwrap(),
+            (false, false)
+        );
+        assert_eq!(
+            body_recipe_face_body_candidates(ctx, &active, &body.id, &external).unwrap(),
+            (true, true)
+        );
         assert_eq!(body.id.as_str(), "f3d:brep:body#1");
         assert_eq!(ctx.resource_refusal(), None);
     });

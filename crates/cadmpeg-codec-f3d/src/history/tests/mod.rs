@@ -12,6 +12,7 @@ mod component_spaces;
 mod draft;
 mod edge_operands;
 mod face_boundaries;
+mod face_lane_staging;
 mod feature_input_limits;
 mod feature_outputs;
 mod hole;
