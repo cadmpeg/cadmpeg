@@ -73,6 +73,7 @@ fn endpoint_gate_radius(residual: Option<PositiveReal>) -> f64 {
 
 type B5Support = (u32, u32, [FiniteReal; 2]);
 type B5SupportPlan = BTreeMap<u32, Vec<B5Support>>;
+type B5SupportIndex = HashMap<u32, HashSet<(u32, u32, [u64; 2])>>;
 
 struct RevolutionPlan {
     directrix: NurbsCurve,
@@ -358,14 +359,37 @@ fn semantic_fallthrough_or_resource(
 /// Appends a support to an edge unless the edge already holds the same one.
 fn push_distinct_support(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    supports: &mut Vec<B5Support>,
+    supports: &mut B5SupportPlan,
+    (index, index_storage): (
+        &mut B5SupportIndex,
+        &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ),
+    edge: u32,
     support: B5Support,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if !ctx.any_by(
-        &*supports,
-        |stored| Ok(*stored == support),
-        "catia_b5_edge_support_duplicate_scan",
-    )? {
+    // Finite numeric equality identifies both signs of zero.
+    let range = support.2.map(|value| {
+        let value = value.get();
+        if value == 0.0 {
+            0
+        } else {
+            value.to_bits()
+        }
+    });
+    let inserted = index_storage.with_storage(|| {
+        let members = ctx
+            .entry_hash_map(index, edge, "catia_b5_edge_support_index")?
+            .or_default();
+        ctx.insert_hash_set(
+            members,
+            (support.0, support.1, range),
+            "catia_b5_edge_support_membership",
+        )
+    })?;
+    if inserted {
+        let supports = ctx
+            .entry_btree_map(supports, edge, "catia_b5_edge_support_groups")?
+            .or_default();
         ctx.push_vec(supports, support, "catia_b5_edge_supports")?;
     }
     Ok(())
@@ -511,6 +535,8 @@ fn build_plan<'ctx>(
     let mut conflicting_edge_curves = HashSet::<u32>::new();
     let mut edge_helix_plan = HashMap::<u32, ProceduralCurveDefinition>::new();
     let mut edge_support_plan = B5SupportPlan::new();
+    let mut support_index_storage = ctx.reserve_scoped(0, "catia_b5_support_index_scratch")?;
+    let mut support_index = B5SupportIndex::new();
     let mut loop_senses = BTreeMap::new();
     let mut edge_ids = BTreeSet::new();
     let mut loops = graph.loops.iter();
@@ -577,19 +603,12 @@ fn build_plan<'ctx>(
                                         bounded_occurrence_range(parameters, parameter_range)
                                     })
                                     .unwrap_or(parameter_range);
-                            let supports = scratch
-                                .with_storage(|| {
-                                    ctx.entry_btree_map(
-                                        &mut edge_support_plan,
-                                        edge_id,
-                                        "catia_b5_edge_support_groups",
-                                    )
-                                })?
-                                .or_default();
                             scratch.with_storage(|| {
                                 push_distinct_support(
                                     ctx,
-                                    supports,
+                                    &mut edge_support_plan,
+                                    (&mut support_index, &mut support_index_storage),
+                                    edge_id,
                                     (loop_.surface, pcurve_id, support_range),
                                 )
                             })?;
@@ -707,17 +726,14 @@ fn build_plan<'ctx>(
             let support_range = occurrence_parameters
                 .and_then(|parameters| bounded_occurrence_range(parameters, parameter_range))
                 .unwrap_or(parameter_range);
-            let supports = scratch
-                .with_storage(|| {
-                    ctx.entry_btree_map(
-                        &mut edge_support_plan,
-                        edge_id,
-                        "catia_b5_edge_support_groups",
-                    )
-                })?
-                .or_default();
             scratch.with_storage(|| {
-                push_distinct_support(ctx, supports, (loop_.surface, pcurve_id, support_range))
+                push_distinct_support(
+                    ctx,
+                    &mut edge_support_plan,
+                    (&mut support_index, &mut support_index_storage),
+                    edge_id,
+                    (loop_.surface, pcurve_id, support_range),
+                )
             })?;
             let mut candidate_storage = ctx.reserve_scoped(0, "catia_b5_curve_candidate")?;
             let lifted = candidate_storage.with_storage(|| {
@@ -924,6 +940,8 @@ fn build_plan<'ctx>(
             })?;
         }
     }
+    drop(support_index);
+    drop(support_index_storage);
     let Some(loop_orientation) =
         scratch.with_storage(|| orient_loop_members(ctx, graph, loop_senses))?
     else {
