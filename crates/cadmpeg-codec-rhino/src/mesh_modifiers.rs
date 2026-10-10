@@ -536,7 +536,7 @@ fn parse_xml(
                 )?))
             })?;
     let document = admitted_document.document();
-    let root = document.root_element();
+    let root = ctx.xml_root_element(document, "Rhino XML root element search")?;
     if !root.tag_name().name().eq_ignore_ascii_case("xml") {
         return Err(FramingError::unpositioned(ctx.format_retained(
             format_args!(
@@ -605,7 +605,7 @@ fn parse_edge_softening_xml(
                 )?))
             })?;
     let document = admitted_document.document();
-    let root = document.root_element();
+    let root = ctx.xml_root_element(document, "Rhino XML root element search")?;
     if !root.tag_name().name().eq_ignore_ascii_case("xml") {
         return Err(FramingError::unpositioned(ctx.format_retained(
             format_args!(
@@ -650,7 +650,7 @@ fn parse_thickening_xml(
                 )?))
             })?;
     let document = admitted_document.document();
-    let root = document.root_element();
+    let root = ctx.xml_root_element(document, "Rhino XML root element search")?;
     if !root.tag_name().name().eq_ignore_ascii_case("xml") {
         return Err(FramingError::unpositioned(ctx.format_retained(
             format_args!(
@@ -692,7 +692,7 @@ fn parse_curve_piping_xml(
                 )?))
             })?;
     let document = admitted_document.document();
-    let root = document.root_element();
+    let root = ctx.xml_root_element(document, "Rhino XML root element search")?;
     if !root.tag_name().name().eq_ignore_ascii_case("xml") {
         return Err(FramingError::unpositioned(ctx.format_retained(
             format_args!(
@@ -735,7 +735,7 @@ fn parse_shut_lining_xml(
                 )?))
             })?;
     let document = admitted_document.document();
-    let root = document.root_element();
+    let root = ctx.xml_root_element(document, "Rhino XML root element search")?;
     if !root.tag_name().name().eq_ignore_ascii_case("xml") {
         return Err(FramingError::unpositioned(ctx.format_retained(
             format_args!(
@@ -1186,6 +1186,7 @@ fn parse_uuid(
 mod tests {
     mod case_equality;
     mod uuid_prefix;
+mod root_search;
     #[test]
     fn shut_lining_profile_refuses_positive_overflow() {
         let xml = "<xml><shut-lining-object-data><curve><profile>2147483648</profile></curve></shut-lining-object-data></xml>";

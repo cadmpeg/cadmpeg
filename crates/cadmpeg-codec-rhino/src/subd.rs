@@ -820,10 +820,7 @@ fn read_face(
                             "SubD texture remainder size disagrees",
                         ));
                     }
-                    for _ in 0..remainder {
-                        ctx.charge_work(1, "Rhino SubD texture remainder")?;
-                        read_finite_values(ctx, reader, 3, "SubD texture points")?;
-                    }
+                    read_finite_values(ctx, reader, remainder * 3, "SubD texture points")?;
                 }
             }
         }
