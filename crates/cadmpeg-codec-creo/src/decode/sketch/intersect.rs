@@ -198,21 +198,30 @@ pub(in crate::decode) fn intersect_incident_section_carriers<
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     carriers: &[T],
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if carriers.len() < 2 {
         return Ok(None);
     }
     let mut first_coordinate: Option<[f64; 2]> = None;
     let mut scale = 1.0_f64;
     let mut maximum_distance = 0.0_f64;
-    let mut first_carriers = carriers.iter().enumerate();
-    while let Some((first_index, first)) =
-        ctx.next_charged(&mut first_carriers, "creo incident section first carriers")?
-    {
+    let mut first_carriers = carriers[..carriers.len() - 1].iter().enumerate();
+    while first_carriers.len() != 0 {
+        let Some((first_index, first)) =
+            ctx.next_charged(&mut first_carriers, "creo incident section first carriers")?
+        else {
+            break;
+        };
         let mut second_carriers = carriers[first_index + 1..].iter();
-        while let Some(second) = ctx.next_charged(
-            &mut second_carriers,
-            "creo incident section second carriers",
-        )? {
+        while second_carriers.len() != 0 {
+            let Some(second) = ctx.next_charged(
+                &mut second_carriers,
+                "creo incident section second carriers",
+            )? else {
+                break;
+            };
             let Some(coordinate) = intersect_section_carriers(first.borrow(), second.borrow())
             else {
                 return Ok(None);
@@ -622,9 +631,12 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         let mut carriers = Vec::new();
         let mut complete = true;
         let mut carrier_ids = entities.iter();
-        while let Some(external_id) =
-            ctx.next_charged(&mut carrier_ids, "creo incident carrier IDs")?
-        {
+        while carrier_ids.len() != 0 {
+            let Some(external_id) =
+                ctx.next_charged(&mut carrier_ids, "creo incident carrier IDs")?
+            else {
+                break;
+            };
             let Some(carrier) = ctx.get_btree_map(
                 &intersection_carriers,
                 external_id,
@@ -865,6 +877,9 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
     segment: &crate::feature::definitions::FeatureSegment,
     missing_line: Option<&(usize, SketchGeometry)>,
 ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(trim_entities) = definition.trim_entities.as_ref() else {
         return Ok(None);
     };
@@ -1022,6 +1037,7 @@ pub(in crate::decode) fn section_xyz_in_model(
 
 #[cfg(test)]
 mod tests {
+    mod admission_visits;
     mod incident_carrier_clone;
     mod trimmed_carriers;
 
