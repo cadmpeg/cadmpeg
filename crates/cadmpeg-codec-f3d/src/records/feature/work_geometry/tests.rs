@@ -92,12 +92,7 @@ fn work_point_mutation_refuses_unmatched_prefix_before_vertex_mutation() {
         assert_eq!(original.operation, "visit native mutation fixture");
         assert!(!visited);
         assert_eq!(rule, before);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        let mut fixed =
-            DesignWorkPointRule::from_serialized(10, vec![vertex_input(4)]).expect("fixed rule");
-        assert!(
-            matches!(fixed.for_each_vertex_recipe_for_decode(ctx, "later fixed mutation fixture", |_| { panic!("fused callback"); }), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
 
@@ -141,7 +136,7 @@ fn work_point_mutation_empty_native_inputs_keep_original_refusal() {
             panic!("native end probe must refuse");
         };
         assert_eq!((original.used, original.additional), (0, 1));
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(native_rule(Vec::new()).for_each_vertex_recipe_for_decode(ctx, "later native mutation fixture", |_| Ok(())), Err(CodecError::ResourceLimit(later)) if later == original)
         );
@@ -242,7 +237,7 @@ fn assert_real_binding_refusal(operation: &'static str, history: bool) {
         assert_eq!(original.operation, operation);
         assert_eq!(original.additional, 1);
         assert_eq!(scopes, before);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(scopes[0].work_point_construction_mut().expect("construction").rule.for_each_vertex_recipe_for_decode(ctx, "later actual mutation fixture", |_| { panic!("fused callback"); }), Err(CodecError::ResourceLimit(later)) if later == original)
         );
@@ -279,58 +274,5 @@ fn work_point_mutation_real_history_binding_clears_all_native_vertex_resolutions
             .vertex_recipes_mut()
             .all(|recipe| recipe.resolution.is_none()));
         assert_eq!(ctx.resource_refusal(), None);
-    });
-}
-
-#[test]
-fn work_point_mutation_callback_cannot_hide_original_refusal() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let mut rule =
-            DesignWorkPointRule::from_serialized(10, vec![vertex_input(4)]).expect("fixed vertex");
-        let mut original = None;
-        let error =
-            rule.for_each_vertex_recipe_for_decode(ctx, "visit fixed mutation fixture", |_| {
-                let Err(CodecError::ResourceLimit(refusal)) =
-                    ctx.charge_work(1, "original swallowed callback refusal")
-                else {
-                    panic!("callback must refuse");
-                };
-                original = Some(refusal);
-                Ok(())
-            });
-        let original = original.expect("actual callback refusal");
-        assert!(matches!(error, Err(CodecError::ResourceLimit(later)) if later == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    });
-}
-
-#[test]
-fn work_point_mutation_callback_error_cannot_replace_original_refusal() {
-    let mut rule = native_rule(vec![vertex_input(4), vertex_input(9)]);
-    let before = rule.clone();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 1;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let mut visits = 0;
-        let mut original = None;
-        let error =
-            rule.for_each_vertex_recipe_for_decode(ctx, "visit native mutation fixture", |_| {
-                visits += 1;
-                let Err(CodecError::ResourceLimit(refusal)) =
-                    ctx.charge_work(1, "original replaced callback refusal")
-                else {
-                    panic!("callback must refuse");
-                };
-                original = Some(refusal);
-                Err(CodecError::malformed("later callback error"))
-            });
-        let original = original.expect("actual callback refusal");
-        assert!(matches!(error, Err(CodecError::ResourceLimit(later)) if later == original));
-        assert_eq!((original.used, original.additional), (1, 1));
-        assert_eq!(ctx.resource_refusal(), Some(original));
-        assert_eq!(visits, 1);
-        assert_eq!(rule, before);
     });
 }

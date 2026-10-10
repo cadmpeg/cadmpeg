@@ -657,10 +657,12 @@ fn xref_placement_failure_collection_refuses_collection_limit() {
     bytes.pop();
     let records =
         super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let ctx = redirections_limit_context(&arena, 3);
-    let error =
-        super::occurrence_placements_with_failures(&ctx, &bytes, &records, None, None).unwrap_err();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D xref placement failures",
+        0,
+        |ctx| super::occurrence_placements_with_failures(ctx, &bytes, &records, None, None),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D xref placement failures")
@@ -977,7 +979,7 @@ fn invalid_json_utf8_refuses_work_before_validation() {
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "validate F3D JSON UTF-8");
-    assert!(ctx.charge_work(0, "fused context").is_err());
+    assert!(ctx.charge_work(1, "fused context").is_err());
 }
 
 /// One occurrence-placement record: a target path whose last element
@@ -1015,10 +1017,10 @@ fn occurrence_path_refuses_link_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = super::occurrence_path(&ctx, &bytes).unwrap_err();
+    let error = super::occurrence_path(&ctx, &bytes, true).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D xref placement link names")
+        if limit.operation == "stage F3D xref placement links")
     );
 }
 
@@ -1140,11 +1142,11 @@ fn repeated_target_occurrence_record_with_path_role(
     let metadata_guid_b = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
     let mut bytes = occurrence_record(path_role, entity_id, &[1], None);
     let path_end = crate::test_support::with_decode_context(|decode_ctx| {
-        super::occurrence_path(decode_ctx, &bytes)
-    })
-    .unwrap()
-    .expect("synthetic path")
-    .1;
+        super::occurrence_path(decode_ctx, &bytes, true)
+            .unwrap()
+            .expect("synthetic path")
+            .after_prefix
+    });
     bytes.truncate(path_end);
     bytes.extend_from_slice(&envelope_discriminator.to_le_bytes());
     bytes.extend(

@@ -35,7 +35,7 @@ use cadmpeg_protein::{
 };
 
 use crate::bytes::{
-    is_guid_prefix, lp_utf16_bounded_charged, skip_lp_u32_bytes, take_lp_utf8, take_lp_utf8_charged,
+    lp_utf16_bounded_charged, skip_lp_u32_bytes, take_lp_utf8, take_lp_utf8_charged,
 };
 use crate::container::ContainerScan;
 use crate::design::presentation::{
@@ -1766,22 +1766,26 @@ fn legacy_face_appearance_assignments(
         let Some((visual_at, visual)) = index.checked_sub(1).and_then(|at| strings.get(at)) else {
             continue;
         };
-        let Some((_, visual_len)) = lp_utf16_string_at(ctx, bytes, *visual_at)? else {
+        let Some((_, visual_len)) = lp_utf16_string_view_at(ctx, bytes, *visual_at)? else {
             continue;
         };
         if visual_at.checked_add(visual_len) != Some(*marker_at) {
             continue;
         }
 
-        let visual_text = ctx.copy_retained_text(visual, "copy F3D face visual token")?;
-        let Some(visual) = DesignVisualToken::new(ctx, visual_text)? else {
+        let (visual, visual_storage) =
+            ctx.with_scoped_storage("stage F3D face visual token", || {
+                let text = ctx.copy_retained_text(visual, "copy F3D face visual token")?;
+                DesignVisualToken::new(ctx, text)
+            })?;
+        let Some(visual) = visual else {
             continue;
         };
         let Some(face_at) = visual_at.checked_sub(LP_GUID_BYTES + COLOR_BYTES + CARRIER_BYTES)
         else {
             continue;
         };
-        let Some((face_guid, face_len)) = lp_utf16_string_at(ctx, bytes, face_at)? else {
+        let Some((face_guid, face_len)) = lp_utf16_string_view_at(ctx, bytes, face_at)? else {
             continue;
         };
         if face_len != LP_GUID_BYTES || !is_lowercase_guid(&face_guid) {
@@ -1801,7 +1805,7 @@ fn legacy_face_appearance_assignments(
             continue;
         }
 
-        let Some((_, marker_len)) = lp_utf16_string_at(ctx, bytes, *marker_at)? else {
+        let Some((_, marker_len)) = lp_utf16_string_view_at(ctx, bytes, *marker_at)? else {
             continue;
         };
         let mut cursor = marker_at + marker_len;
@@ -1812,12 +1816,12 @@ fn legacy_face_appearance_assignments(
             cursor += 4;
         } else {
             let Some((display_name, display_name_end)) =
-                lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=256, "retain F3D UTF-16 string")?
+                crate::bytes::lp_utf16_bounded_view(ctx, bytes, cursor, 1..=256)?
             else {
                 continue;
             };
             if ctx.any_by(
-                display_name.as_str().chars(),
+                display_name.chars(),
                 |value| Ok(char::is_control(value)),
                 "validate F3D face display name",
             )? {
@@ -1825,10 +1829,10 @@ fn legacy_face_appearance_assignments(
             }
             cursor = display_name_end;
         }
-        let Some((selector, selector_len)) = lp_utf16_string_at(ctx, bytes, cursor)? else {
+        let Some((selector, selector_len)) = lp_utf16_string_view_at(ctx, bytes, cursor)? else {
             continue;
         };
-        if !legacy_face_selector_is_valid(ctx, selector_kind, &selector)? {
+        if !legacy_face_selector_is_valid(ctx, selector_kind, selector)? {
             continue;
         }
         cursor += selector_len;
@@ -1838,6 +1842,8 @@ fn legacy_face_appearance_assignments(
             continue;
         }
 
+        let visual = visual_storage.commit_value(visual)?;
+        let face_guid = face_guid.to_retained(ctx, "retain F3D UTF-16 string")?;
         ctx.push_vec(
             &mut out,
             FaceAppearanceAssignment {
@@ -1873,21 +1879,25 @@ fn legacy_face_selector_kind(carrier: Option<&[u8]>) -> Option<u8> {
 fn legacy_face_selector_is_valid(
     ctx: &DecodeContext<'_>,
     kind: u8,
-    selector: &str,
+    selector: crate::bytes::utf16::Utf16View<'_>,
 ) -> Result<bool, CodecError> {
     let (prefix, digit_only) = match kind {
         0 => ("Prism-", true),
         1 => ("Prism", false),
         _ => return Ok(false),
     };
-    let Some(suffix) = ctx.strip_prefix(selector, prefix, "select F3D legacy face preset")? else {
-        return Ok(false);
-    };
-    if suffix.is_empty() {
+    let mut suffix = selector.chars();
+    for expected in prefix.chars() {
+        // Both selector prefixes have at most six characters.
+        if suffix.next() != Some(expected) {
+            return Ok(false);
+        }
+    }
+    if selector.len() == prefix.len() {
         return Ok(false);
     }
     ctx.all_by(
-        suffix.chars(),
+        suffix,
         |character| {
             Ok({
                 if digit_only {
@@ -1942,18 +1952,22 @@ fn modern_face_appearance_assignments(
         let Some((visual_at, visual)) = index.checked_sub(1).and_then(|at| strings.get(at)) else {
             continue;
         };
-        let Some((_, visual_len)) = lp_utf16_string_at(ctx, bytes, *visual_at)? else {
+        let Some((_, visual_len)) = lp_utf16_string_view_at(ctx, bytes, *visual_at)? else {
             continue;
         };
         if visual_at.checked_add(visual_len) != Some(*marker_at) {
             continue;
         }
 
-        let visual_text = ctx.copy_retained_text(visual, "copy F3D face visual token")?;
-        let Some(visual) = DesignVisualToken::new(ctx, visual_text)? else {
+        let (visual, visual_storage) =
+            ctx.with_scoped_storage("stage F3D face visual token", || {
+                let text = ctx.copy_retained_text(visual, "copy F3D face visual token")?;
+                DesignVisualToken::new(ctx, text)
+            })?;
+        let Some(visual) = visual else {
             continue;
         };
-        let Some((_, first_library_len)) = lp_utf16_string_at(ctx, bytes, *marker_at)? else {
+        let Some((_, first_library_len)) = lp_utf16_string_view_at(ctx, bytes, *marker_at)? else {
             continue;
         };
         let Some(second_library_at) = marker_at.checked_add(first_library_len).and_then(|end| {
@@ -1972,7 +1986,7 @@ fn modern_face_appearance_assignments(
         let Some(face_at) = face_end.checked_sub(LP_GUID_BYTES) else {
             continue;
         };
-        let Some((face_guid, face_len)) = lp_utf16_string_at(ctx, bytes, face_at)? else {
+        let Some((face_guid, face_len)) = lp_utf16_string_view_at(ctx, bytes, face_at)? else {
             continue;
         };
         if face_at.checked_add(face_len) != Some(face_end)
@@ -1988,7 +2002,8 @@ fn modern_face_appearance_assignments(
         let Some(first_guid_at) = first_guid_end.checked_sub(LP_GUID_BYTES) else {
             continue;
         };
-        let Some((first_guid, first_guid_len)) = lp_utf16_string_at(ctx, bytes, first_guid_at)?
+        let Some((first_guid, first_guid_len)) =
+            lp_utf16_string_view_at(ctx, bytes, first_guid_at)?
         else {
             continue;
         };
@@ -1998,6 +2013,8 @@ fn modern_face_appearance_assignments(
         {
             continue;
         }
+        let visual = visual_storage.commit_value(visual)?;
+        let face_guid = face_guid.to_retained(ctx, "retain F3D UTF-16 string")?;
         ctx.push_vec(
             &mut out,
             FaceAppearanceAssignment {
@@ -2037,14 +2054,13 @@ fn is_face_to_visual_gap(gap: Option<&[u8]>) -> bool {
 }
 
 /// Whether the complete value is a lower-case hyphenated hexadecimal GUID.
-fn is_lowercase_guid(value: &str) -> bool {
-    if value.len() != GUID_LEN || !is_guid_prefix(value) {
+fn is_lowercase_guid(value: &crate::bytes::utf16::Utf16View<'_>) -> bool {
+    if value.len() != GUID_LEN || !value.is_guid_prefix() {
         return false;
     }
     value
-        .as_bytes()
-        .iter()
-        .all(|byte| !byte.is_ascii_uppercase())
+        .chars()
+        .all(|character| !character.is_ascii_uppercase())
 }
 
 /// Decode legacy body-presentation records that identify their body through a
@@ -2425,7 +2441,7 @@ type BodyPairKey<'a> = (&'a str, u64, u64, u64, u64);
 /// part of the key. A repeated identity is kept as ambiguous and refused when
 /// an owner selects it.
 struct BodyPairIndex<'a, 'ctx> {
-    pairs: std::collections::HashMap<Option<BodyPairKey<'a>>, Option<&'a DesignBodyBinding>>,
+    pairs: std::collections::HashMap<BodyPairKey<'a>, Option<&'a DesignBodyBinding>>,
     _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
@@ -2434,29 +2450,23 @@ impl<'a, 'ctx> BodyPairIndex<'a, 'ctx> {
         ctx: &'ctx DecodeContext<'_>,
         body_bindings: &'a [DesignBodyBinding],
     ) -> Result<Self, CodecError> {
-        // Pairs whose id names no stream cannot match an owner; they are kept
-        // under the absent key, which no lookup asks for.
-        let storage;
         let (pairs, held_storage) = ctx.unique_index(
             ctx.admit_iter(body_bindings, "scan F3D indexed material body bindings")?
                 .map(|binding| {
-                    let key = crate::ids::native_stream(binding.id()).map(|stream| {
-                        (
-                            stream,
-                            binding.asm_body_key,
-                            binding.asm_body_key_offset(),
-                            binding.entity_suffix,
-                            binding.entity_suffix_offset(),
-                        )
-                    });
+                    let key = (
+                        binding.native_stream(),
+                        binding.asm_body_key,
+                        binding.asm_body_key_offset(),
+                        binding.entity_suffix,
+                        binding.entity_suffix_offset(),
+                    );
                     (key, binding)
                 }),
             "index F3D material body-map pairs",
         )?;
-        storage = held_storage;
         Ok(Self {
             pairs,
-            _storage: storage,
+            _storage: held_storage,
         })
     }
 
@@ -2477,13 +2487,13 @@ impl<'a, 'ctx> BodyPairIndex<'a, 'ctx> {
             )
             .map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
-        let key = Some((
+        let key = (
             owner_stream,
             asm_body_key,
             asm_body_key_offset,
             entity_suffix,
             entity_suffix_offset,
-        ));
+        );
         let binding =
             match ctx.get_hash_map(&self.pairs, &key, "find exact F3D material body-map pair")? {
                 None => return Ok(None),
@@ -2748,24 +2758,37 @@ fn utf16_string_prefix_is_text(bytes: &[u8], payload_at: usize, count: usize) ->
 
 /// Decode one LP-UTF16 string at `offset`. Rejects a count outside 2..=256,
 /// invalid UTF-16, or a control character.
-fn lp_utf16_string_at(
+fn lp_utf16_string_view_at<'a>(
     ctx: &DecodeContext<'_>,
-    bytes: &[u8],
+    bytes: &'a [u8],
     offset: usize,
-) -> Result<Option<(String, usize)>, CodecError> {
-    let Some((value, end)) =
-        lp_utf16_bounded_charged(ctx, bytes, offset, 2..=256, "retain F3D UTF-16 string")?
+) -> Result<Option<(crate::bytes::utf16::Utf16View<'a>, usize)>, CodecError> {
+    let Some((value, end)) = crate::bytes::lp_utf16_bounded_view(ctx, bytes, offset, 2..=256)?
     else {
         return Ok(None);
     };
     if ctx.any_by(
-        value.as_str().chars(),
-        |value| Ok(char::is_control(value)),
+        value.chars(),
+        |character| Ok(character.is_control()),
         "check F3D Protein string controls",
     )? {
         return Ok(None);
     }
     Ok(Some((value, end - offset)))
+}
+
+fn lp_utf16_string_at(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    offset: usize,
+) -> Result<Option<(String, usize)>, CodecError> {
+    let Some((value, len)) = lp_utf16_string_view_at(ctx, bytes, offset)? else {
+        return Ok(None);
+    };
+    Ok(Some((
+        value.to_retained(ctx, "retain F3D UTF-16 string")?,
+        len,
+    )))
 }
 
 /// Select the sole ordered body-map pair carrying one material owner's Design

@@ -122,17 +122,18 @@ fn occurrence_path_range_refuses_work_after_valid_output() {
     let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
     let bytes = occurrence_record(role, 7, &[1], None);
     crate::test_support::with_decode_context(|ctx| {
-        let (links, _) = super::super::occurrence_path(ctx, &bytes)
+        let path = super::super::occurrence_path(ctx, &bytes, true)
             .expect("valid occurrence path")
             .expect("target path");
-        assert_eq!(links, vec![role.to_owned()]);
+        assert_eq!(path.links.len(), 1);
+        assert!(path.links[0].eq_str(ctx, role).unwrap());
     });
 
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "scan F3D xref occurrence links",
         0,
-        |ctx| super::super::occurrence_path(ctx, &bytes).map(|_| ()),
+        |ctx| super::super::occurrence_path(ctx, &bytes, true).map(|_| ()),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -145,16 +146,17 @@ fn placement_tail_range_refuses_work_after_valid_placement() {
     let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
     let bytes = occurrence_record(role, 7, &[1], None);
     crate::test_support::with_decode_context(|ctx| {
-        assert!(super::super::modern_occurrence_placement(ctx, &bytes, None)
-            .expect("valid placement")
-            .is_some());
+        assert!(matches!(
+            super::super::occurrence_placement(ctx, &bytes, None).expect("valid placement"),
+            super::super::OccurrenceRead::Placement(_)
+        ));
     });
 
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "scan F3D xref placement tail references",
         0,
-        |ctx| super::super::modern_occurrence_placement(ctx, &bytes, None).map(|_| ()),
+        |ctx| super::super::occurrence_placement(ctx, &bytes, None).map(|_| ()),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

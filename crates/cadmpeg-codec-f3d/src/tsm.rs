@@ -106,7 +106,11 @@ fn compact_half_edges<'ctx>(
             .ok_or_else(|| malformed(ctx, name, "half-edge names a deleted slot"))
     };
     let mut half_edges = Vec::new();
-    for half in ctx.admit_iter(&dense, "resolve T-spline compact half-edges")? {
+    let mut rows = dense.iter();
+    while rows.len() != 0 {
+        let Some(half) = ctx.next_charged(&mut rows, "resolve T-spline compact half-edges")? else {
+            break;
+        };
         let resolved = HalfEdge {
             next: remap(half.next)?,
             previous: remap(half.previous)?,
@@ -126,22 +130,34 @@ fn compact_half_edges<'ctx>(
             "collect T-spline compact half-edges",
         )?;
     }
-    for root in ctx
-        .admit_iter(face_roots, "remap T-spline face roots")?
-        .flatten()
-    {
+    let mut roots = face_roots.iter_mut();
+    while !roots.as_slice().is_empty() {
+        let Some(root) = ctx.next_charged(&mut roots, "remap T-spline face roots")? else {
+            break;
+        };
+        let Some(root) = root else {
+            continue;
+        };
         *root = remap(*root)?.index();
     }
-    for root in ctx
-        .admit_iter(edge_roots, "remap T-spline edge roots")?
-        .flatten()
-    {
+    let mut roots = edge_roots.iter_mut();
+    while !roots.as_slice().is_empty() {
+        let Some(root) = ctx.next_charged(&mut roots, "remap T-spline edge roots")? else {
+            break;
+        };
+        let Some(root) = root else {
+            continue;
+        };
         *root = remap(*root)?.index();
     }
-    for root in ctx
-        .admit_iter(vertex_roots, "remap T-spline vertex roots")?
-        .flatten()
-    {
+    let mut roots = vertex_roots.iter_mut();
+    while !roots.as_slice().is_empty() {
+        let Some(root) = ctx.next_charged(&mut roots, "remap T-spline vertex roots")? else {
+            break;
+        };
+        let Some(root) = root else {
+            continue;
+        };
         root.0 = remap(root.0)?.index();
     }
     Ok((half_edges, output_storage))
@@ -552,18 +568,12 @@ fn parse_pairs(
         ));
     }
     let mut pairs = BTreeMap::new();
-    let mut source = None;
-    for (index, value) in ctx
-        .admit_iter(&values, "pair T-spline symmetry indices")?
-        .enumerate()
-    {
-        if index % 2 == 0 {
-            source = Some(*value);
-            continue;
-        }
-        let Some(source_index) = source.take() else {
-            return Err(malformed(ctx, name, "symmetry map has an unpaired index"));
+    let mut rows = values.chunks_exact(2);
+    while rows.len() != 0 {
+        let Some(pair) = ctx.next_charged(&mut rows, "pair T-spline symmetry indices")? else {
+            break;
         };
+        let source_index = pair[0];
         if ctx.contains_key_btree_map(
             &pairs,
             &source_index,
@@ -579,7 +589,7 @@ fn parse_pairs(
             ctx.insert_btree_map(
                 &mut pairs,
                 source_index,
-                *value,
+                pair[1],
                 "index T-spline symmetry map pairs",
             )
         })?;
@@ -614,22 +624,12 @@ fn parse_radial_pairs(
     }
     let mut sources = BTreeSet::new();
     let mut pairs = Vec::new();
-    let mut source = None;
-    for (index, value) in ctx
-        .admit_iter(&values, "pair T-spline radial map indices")?
-        .enumerate()
-    {
-        if index % 2 == 0 {
-            source = Some(*value);
-            continue;
-        }
-        let Some(source_index) = source.take() else {
-            return Err(malformed(
-                ctx,
-                name,
-                "radial symmetry map has an unpaired index",
-            ));
+    let mut rows = values.chunks_exact(2);
+    while rows.len() != 0 {
+        let Some(pair) = ctx.next_charged(&mut rows, "pair T-spline radial map indices")? else {
+            break;
         };
+        let source_index = pair[0];
         if ctx.contains_btree_set(
             &sources,
             &source_index,
@@ -649,7 +649,7 @@ fn parse_radial_pairs(
         )?;
         ctx.push_vec(
             &mut pairs,
-            [source_index, *value],
+            [source_index, pair[1]],
             "read T-spline radial map pairs",
         )?;
     }
@@ -664,7 +664,13 @@ fn validate_symmetry_map(
     slots: &[bool],
     element: &str,
 ) -> Result<(), CodecError> {
-    for (&source, &target) in ctx.admit_iter(forward, "validate T-spline forward symmetry map")? {
+    let mut rows = forward.iter();
+    while rows.len() != 0 {
+        let Some((&source, &target)) =
+            ctx.next_charged(&mut rows, "validate T-spline forward symmetry map")?
+        else {
+            break;
+        };
         if !slots.get(source).copied().unwrap_or(false)
             || !slots.get(target).copied().unwrap_or(false)
         {
@@ -685,7 +691,13 @@ fn validate_symmetry_map(
             ));
         }
     }
-    for (&source, &target) in ctx.admit_iter(reverse, "validate T-spline reverse symmetry map")? {
+    let mut rows = reverse.iter();
+    while rows.len() != 0 {
+        let Some((&source, &target)) =
+            ctx.next_charged(&mut rows, "validate T-spline reverse symmetry map")?
+        else {
+            break;
+        };
         if !slots.get(source).copied().unwrap_or(false)
             || !slots.get(target).copied().unwrap_or(false)
         {
@@ -747,7 +759,13 @@ fn remap_symmetry_pairs(
     element: &str,
 ) -> Result<Vec<[u32; 2]>, CodecError> {
     let mut remapped = Vec::new();
-    for (&source, &target) in ctx.admit_iter(map, "remap T-spline symmetry pairs")? {
+    let mut rows = map.iter();
+    while rows.len() != 0 {
+        let Some((&source, &target)) =
+            ctx.next_charged(&mut rows, "remap T-spline symmetry pairs")?
+        else {
+            break;
+        };
         let source = ir_indices.get(source).copied().flatten().ok_or_else(|| {
             malformed(
                 ctx,
@@ -868,10 +886,11 @@ fn build_fan<'ctx>(
     }
 
     let mut gap = None;
-    for (index, slot) in ctx
-        .admit_iter(&fan, "validate T-spline fan gaps")?
-        .enumerate()
-    {
+    let mut rows = fan.iter().enumerate();
+    while rows.len() != 0 {
+        let Some((index, slot)) = ctx.next_charged(&mut rows, "validate T-spline fan gaps")? else {
+            break;
+        };
         if matches!(slot, FanSlot::Slot { face: None, .. }) && gap.replace(index).is_some() {
             return Err(malformed(
                 ctx,
@@ -917,7 +936,11 @@ fn grip_block(
     })?;
     *cursor = end;
     let mut grips = Vec::new();
-    for &index in ctx.admit_iter(values, "materialize T-spline grip block")? {
+    let mut rows = values.iter();
+    while rows.len() != 0 {
+        let Some(&index) = ctx.next_charged(&mut rows, "materialize T-spline grip block")? else {
+            break;
+        };
         let grip = index
             .map(|index| {
                 let point = grip_points.get(index).copied().flatten().ok_or_else(|| {
@@ -1002,7 +1025,12 @@ fn build_secondary_layouts<'ctx>(
         }
     }
 
-    for connectivity in ctx.admit_iter(derived_grips, "build T-spline secondary layouts")? {
+    let mut rows = derived_grips.iter();
+    while rows.len() != 0 {
+        let Some(connectivity) = ctx.next_charged(&mut rows, "build T-spline secondary layouts")?
+        else {
+            break;
+        };
         let vertex = connectivity.vertex;
         if !vertex_live.get(vertex).copied().unwrap_or(false) {
             return Err(malformed(ctx, name, "derived-grip vertex is out of range"));
@@ -1196,7 +1224,11 @@ fn parse<'ctx>(
     let mut current_symmetry: Option<PartialSymmetryBlock> = None;
     let mut terminal_declarations = BTreeSet::new();
     let mut unknown_record_kinds: BTreeMap<String, usize> = BTreeMap::new();
-    for raw_line in ctx.admit_iter(&lines, "scan T-spline records")? {
+    let mut rows = lines.iter();
+    while rows.len() != 0 {
+        let Some(raw_line) = ctx.next_charged(&mut rows, "scan T-spline records")? else {
+            break;
+        };
         let line = ctx.trim_text(raw_line, "trim T-spline record")?;
         if line.is_empty() {
             continue;
@@ -2066,7 +2098,11 @@ fn parse<'ctx>(
             "index T-spline live edges",
         )
     })?;
-    for edge in ctx.admit_iter(&selected_edges, "validate T-spline edge selections")? {
+    let mut rows = selected_edges.iter();
+    while rows.len() != 0 {
+        let Some(edge) = ctx.next_charged(&mut rows, "validate T-spline edge selections")? else {
+            break;
+        };
         if !edge_live.get(*edge).copied().unwrap_or(false) {
             return Err(malformed(
                 ctx,
@@ -2075,7 +2111,12 @@ fn parse<'ctx>(
             ));
         }
     }
-    for vertex in ctx.admit_iter(&selected_vertices, "validate T-spline vertex selections")? {
+    let mut rows = selected_vertices.iter();
+    while rows.len() != 0 {
+        let Some(vertex) = ctx.next_charged(&mut rows, "validate T-spline vertex selections")?
+        else {
+            break;
+        };
         if !vertex_live.get(*vertex).copied().unwrap_or(false) {
             return Err(malformed(
                 ctx,
@@ -2084,7 +2125,11 @@ fn parse<'ctx>(
             ));
         }
     }
-    for grip in ctx.admit_iter(&selected_grips, "validate T-spline grip selections")? {
+    let mut rows = selected_grips.iter();
+    while rows.len() != 0 {
+        let Some(grip) = ctx.next_charged(&mut rows, "validate T-spline grip selections")? else {
+            break;
+        };
         if !grip_points.get(*grip).is_some_and(Option::is_some) {
             return Err(malformed(
                 ctx,
@@ -2095,7 +2140,8 @@ fn parse<'ctx>(
     }
     let _typed_blocks_storage;
     let (typed_symmetry_blocks, held_storage) = ctx.try_collect_scoped_vec(
-        ctx.admit_iter(symmetry_blocks, "scan T-spline symmetry blocks")?
+        symmetry_blocks
+            .into_iter()
             .map(|block| -> Result<_, CodecError> {
                 let plane = block
                     .plane
@@ -2184,10 +2230,13 @@ fn parse<'ctx>(
     let mut grip_owners = scratch.with_storage(|| {
         ctx.alloc_filled(grip_vertices.len(), None, "f3d subd secondary-grip owners")
     })?;
-    for connectivity in ctx.admit_iter(
-        &derived_grips,
-        "validate T-spline derived-grip connectivity",
-    )? {
+    let mut rows = derived_grips.iter();
+    while rows.len() != 0 {
+        let Some(connectivity) =
+            ctx.next_charged(&mut rows, "validate T-spline derived-grip connectivity")?
+        else {
+            break;
+        };
         if !vertex_live
             .get(connectivity.vertex)
             .copied()
@@ -2199,13 +2248,16 @@ fn parse<'ctx>(
                 "derived-grip connectivity is out of range",
             ));
         }
-        for &index in ctx
-            .admit_iter(
-                &connectivity.grip_indices,
-                "validate T-spline derived-grip entries",
-            )?
-            .flatten()
-        {
+        let mut entries = connectivity.grip_indices.iter();
+        while !entries.as_slice().is_empty() {
+            let Some(index) =
+                ctx.next_charged(&mut entries, "validate T-spline derived-grip entries")?
+            else {
+                break;
+            };
+            let Some(index) = *index else {
+                continue;
+            };
             if !matches!(grip_vertices.get(index), Some(GripVertexMarker::Secondary(Some(vertex))) if *vertex == connectivity.vertex)
             {
                 return Err(malformed(
@@ -2226,10 +2278,13 @@ fn parse<'ctx>(
             }
         }
     }
-    for (index, marker) in ctx
-        .admit_iter(&grip_vertices, "validate T-spline secondary-grip owners")?
-        .enumerate()
-    {
+    let mut rows = grip_vertices.iter().enumerate();
+    while rows.len() != 0 {
+        let Some((index, marker)) =
+            ctx.next_charged(&mut rows, "validate T-spline secondary-grip owners")?
+        else {
+            break;
+        };
         if let GripVertexMarker::Secondary(Some(vertex)) = marker {
             if grip_owners[index] != Some(*vertex) {
                 return Err(malformed(
@@ -2240,10 +2295,13 @@ fn parse<'ctx>(
             }
         }
     }
-    for (marker, point) in ctx
-        .admit_iter(&grip_vertices, "validate T-spline grip point map")?
-        .zip(ctx.admit_iter(&grip_points, "validate T-spline grip point values")?)
-    {
+    let mut rows = grip_vertices.iter().zip(&grip_points);
+    while rows.len() != 0 {
+        let Some((marker, point)) =
+            ctx.next_charged(&mut rows, "validate T-spline grip point map")?
+        else {
+            break;
+        };
         match marker {
             GripVertexMarker::Primary(vertex) | GripVertexMarker::Secondary(Some(vertex)) => {
                 if point.is_none() || !vertex_live.get(*vertex).copied().unwrap_or(false) {
@@ -2256,10 +2314,13 @@ fn parse<'ctx>(
             GripVertexMarker::Secondary(None) => {}
         }
     }
-    for (index, half) in ctx
-        .admit_iter(&half_edges, "validate T-spline half-edge topology")?
-        .enumerate()
-    {
+    let mut rows = half_edges.iter().enumerate();
+    while rows.len() != 0 {
+        let Some((index, half)) =
+            ctx.next_charged(&mut rows, "validate T-spline half-edge topology")?
+        else {
+            break;
+        };
         let id = HalfEdgeId(index);
         let mate = &half_edges[half.mate.index()];
         let next = &half_edges[half.next.index()];
@@ -2272,11 +2333,12 @@ fn parse<'ctx>(
             return Err(malformed(ctx, name, "half-edge topology is inconsistent"));
         }
     }
-    for (vertex, live) in ctx
-        .admit_iter(&vertex_live, "validate T-spline vertex fans")?
-        .copied()
-        .enumerate()
-    {
+    let mut rows = vertex_live.iter().copied().enumerate();
+    while rows.len() != 0 {
+        let Some((vertex, live)) = ctx.next_charged(&mut rows, "validate T-spline vertex fans")?
+        else {
+            break;
+        };
         if live {
             let (root, _) = vertex_roots
                 .get(vertex)
@@ -2303,7 +2365,8 @@ fn parse<'ctx>(
         ctx.with_scoped_storage("compact T-spline face slots", || compact(ctx, &face_live))?;
     _face_ir_storage = held_storage;
     let symmetries = ctx.try_collect_vec(
-        ctx.admit_iter(typed_symmetry_blocks, "scan T-spline typed symmetry blocks")?
+        typed_symmetry_blocks
+            .into_iter()
             .map(|block| -> Result<_, CodecError> {
                 let plane = symmetry_plane(ctx, name, block.plane)?;
                 let (kind, face_pairs, edge_pairs, vertex_pairs) = match block.kind {
@@ -2416,7 +2479,11 @@ fn parse<'ctx>(
     })?;
     let mut edge_vertices = Vec::new();
     let mut edge = 0_u32;
-    for root in ctx.admit_iter(&edge_roots, "index T-spline edge roots")? {
+    let mut rows = edge_roots.iter();
+    while rows.len() != 0 {
+        let Some(root) = ctx.next_charged(&mut rows, "index T-spline edge roots")? else {
+            break;
+        };
         let Some(root) = *root else {
             continue;
         };
@@ -2479,11 +2546,13 @@ fn parse<'ctx>(
     _secondary_layouts_storage = held_storage;
 
     let mut faces = Vec::new();
-    for (face_slot, start) in ctx
-        .admit_iter(&face_roots, "project T-spline face rings")?
-        .copied()
-        .enumerate()
-    {
+    let mut rows = face_roots.iter().copied().enumerate();
+    while rows.len() != 0 {
+        let Some((face_slot, start)) =
+            ctx.next_charged(&mut rows, "project T-spline face rings")?
+        else {
+            break;
+        };
         let Some(start) = start else { continue };
         let start_id = HalfEdgeId(start);
         let mut ring = Vec::new();
@@ -2533,7 +2602,11 @@ fn parse<'ctx>(
         crease_incidence[index_from_u32(vertices[1])] += 1;
     }
     let mut vertices = Vec::new();
-    for index in ctx.admit_iter(&(0..live_vertices), "project T-spline vertices")? {
+    let mut rows = 0..live_vertices;
+    while !rows.is_empty() {
+        let Some(index) = ctx.next_charged(&mut rows, "project T-spline vertices")? else {
+            break;
+        };
         let secondary_layout = secondary_layouts[index].take();
         let vertex_index = u32::try_from(index)
             .map_err(|_| malformed(ctx, name, "T-spline vertex index exceeds u32"))?;
@@ -2631,6 +2704,34 @@ fn parse<'ctx>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn tsm_compact_half_edge_validation_admits_one_reached_row() {
+        use super::ParsedHalfEdge;
+        let mut slots = vec![
+            Some(ParsedHalfEdge {
+                next: 128,
+                previous: 0,
+                mate: 0,
+                vertex: 0,
+                face: -1
+            });
+            128
+        ];
+        slots.push(None);
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "resolve T-spline compact half-edges",
+            0,
+            |ctx| {
+                super::compact_half_edges(ctx, "synthetic", &slots, &mut [], &mut [], &mut [])
+                    .map(|_| ())
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 1)
+        );
+    }
+
     use cadmpeg_ir::subd;
     use cadmpeg_test_support::wire;
 

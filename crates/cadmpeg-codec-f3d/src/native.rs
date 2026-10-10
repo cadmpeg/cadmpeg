@@ -1428,6 +1428,29 @@ pub(crate) struct F3dNative {
     pub(crate) asm_histories: Vec<AsmHistory>,
 }
 
+enum NativeLoadError {
+    Native(cadmpeg_ir::NativeConvertError),
+    Locus(crate::records::dimension_locus_arenas::LocusValidationError),
+}
+
+impl From<cadmpeg_ir::NativeConvertError> for NativeLoadError {
+    fn from(error: cadmpeg_ir::NativeConvertError) -> Self {
+        Self::Native(error)
+    }
+}
+
+impl From<cadmpeg_core::CodecError> for NativeLoadError {
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        Self::Native(error.into())
+    }
+}
+
+impl From<crate::records::dimension_locus_arenas::LocusValidationError> for NativeLoadError {
+    fn from(error: crate::records::dimension_locus_arenas::LocusValidationError) -> Self {
+        Self::Locus(error)
+    }
+}
+
 impl F3dNative {
     pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
@@ -1441,20 +1464,26 @@ impl F3dNative {
         .map_err(cadmpeg_ir::NativeConvertError::Resource)?;
         let decode_ctx = &decode_ctx;
 
-        Self::load_inner(decode_ctx, namespace)
+        Self::load_inner(decode_ctx, namespace).map_err(|error| match error {
+            NativeLoadError::Native(error) => error,
+            NativeLoadError::Locus(error) => error.into_native_error(decode_ctx),
+        })
     }
 
     pub(crate) fn load_charged(
         ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        Self::load_inner(ctx, namespace).map_err(Into::into)
+        Self::load_inner(ctx, namespace).map_err(|error| match error {
+            NativeLoadError::Native(error) => error.into(),
+            NativeLoadError::Locus(error) => error.into_codec_error(ctx),
+        })
     }
 
     fn load_inner(
         ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::NativeNamespace,
-    ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+    ) -> Result<Self, NativeLoadError> {
         macro_rules! read_arena {
             ($name:literal) => {
                 namespace.arena_as_for_decode(ctx, $name)?

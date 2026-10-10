@@ -337,6 +337,9 @@ fn model_root_member(
         &description.design_description.design_graphs,
         "scan F3Z design graphs",
     )? {
+        if graph.design_objects.is_empty() {
+            continue;
+        }
         let mut root_storage = ctx.reserve_scoped(0, "index F3Z root object IDs")?;
         let root_ids = root_storage.with_storage(|| {
             ctx.collect_btree_set(
@@ -367,20 +370,7 @@ fn model_root_member(
         // Object IDs the root's derived references name, built once.
         let mut derived_storage = ctx.reserve_scoped(0, "index F3Z derived model references")?;
         let mut derived_ids = std::collections::BTreeSet::new();
-        for reference in ctx.admit_iter(&root.references, "scan F3Z root references")? {
-            if reference.reference_type != "DERIVED" {
-                continue;
-            }
-            for id in ctx.admit_iter(&reference.ids, "index F3Z derived model references")? {
-                derived_storage.with_storage(|| {
-                    ctx.insert_btree_set(
-                        &mut derived_ids,
-                        *id,
-                        "index F3Z derived model references",
-                    )
-                })?;
-            }
-        }
+        let mut derived_ready = false;
         for object in ctx.admit_iter(&graph.design_objects, "scan F3Z derived model objects")? {
             if !ctx.eq_ignore_ascii_case(
                 &object.content_type,
@@ -390,6 +380,29 @@ fn model_root_member(
                 || scan.entry_view(ctx, &object.relative_path)?.is_none()
             {
                 continue;
+            }
+            if !derived_ready {
+                for reference in ctx.admit_iter(&root.references, "scan F3Z root references")? {
+                    if !ctx.equal(
+                        reference.reference_type.as_str(),
+                        "DERIVED",
+                        "match F3Z derived reference type",
+                    )? {
+                        continue;
+                    }
+                    for id in
+                        ctx.admit_iter(&reference.ids, "index F3Z derived model references")?
+                    {
+                        derived_storage.with_storage(|| {
+                            ctx.insert_btree_set(
+                                &mut derived_ids,
+                                *id,
+                                "index F3Z derived model references",
+                            )
+                        })?;
+                    }
+                }
+                derived_ready = true;
             }
             let derived = ctx.contains_btree_set(
                 &derived_ids,
@@ -429,6 +442,59 @@ fn model_root_member(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unused_root_indexes_have_no_admission_boundary() {
+        use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension, View};
+
+        for candidate in [
+            None,
+            Some(("other", "model.f3d")),
+            Some(("f3d", "model.f2d")),
+            Some(("f3d", "missing.f3d")),
+        ] {
+            let ids: Vec<u64> = (0..128).collect();
+            let (graph, operation) = match candidate {
+                None => (
+                    serde_json::json!({"rootIds": ids, "designObjects": []}),
+                    "scan F3Z root object IDs",
+                ),
+                Some((content_type, path)) => (
+                    serde_json::json!({"rootIds": [10], "designObjects": [
+                        {"id": 10, "relativePath": "drawing.f2d", "contentType": "f2d",
+                         "references": [{"type": "DERIVED", "ids": ids}]},
+                        {"id": 11, "relativePath": path, "contentType": content_type,
+                         "references": []}
+                    ]}),
+                    "scan F3Z root references",
+                ),
+            };
+            let description = serde_json::to_vec(&serde_json::json!({
+                "designDescription": {"designGraphs": [graph]}
+            }))
+            .unwrap();
+            let bytes = crate::test_support::assembly_test::f3z_archive_with_design_description(
+                "drawing.f2d",
+                &[("drawing.f2d", b"drawing"), ("unused.f3d", b"model")],
+                &description,
+            );
+            crate::test_support::with_decode_context(|scan_ctx| {
+                let scan = crate::container::scan(scan_ctx, View::over_retained(&bytes)).unwrap();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = u64::MAX;
+                crate::test_support::with_decode_policy(&policy, |ctx| {
+                    let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+                    let mut storage = ctx.reserve_scoped(0, "test root names").unwrap();
+                    let error = super::model_root_member(ctx, &scan, "drawing.f2d", &mut storage)
+                        .unwrap_err();
+                    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
+                        if message == "f3z root member drawing.f2d is not an f3d document and has 0 unambiguous derived f3d model members"));
+                    assert!(ctx.resource_refusal().is_none());
+                });
+            });
+        }
+    }
+
     #[test]
     fn drawing_root_search_preserves_work_refusal() {
         let description = br#"{"designDescription":{"designGraphs":[{"rootIds":[1,2],"designObjects":[{"id":2,"relativePath":"drawing.f2d","contentType":"f2d","references":[]}] }]}}"#;
