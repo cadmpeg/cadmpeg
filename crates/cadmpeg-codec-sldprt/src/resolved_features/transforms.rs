@@ -358,26 +358,25 @@ pub(super) fn dimensioned_circle_surface_transforms(
     let candidates = compatible_marker_transform_candidates(ctx, &compatible)?;
     let mut result = Vec::new();
     for transform in ctx.admit_iter(candidates, OPERATION)? {
-        let mut used = HashSet::new();
-        let complete = ctx.all_by(
-            circles,
-            |(center, radius)| {
-                let Some(center) = transform.apply(*center) else {
-                    return Ok(false);
-                };
-                let hit = match ctx.get_btree_map(&targets_by_radius, radius, OPERATION)? {
-                    Some(targets) => {
-                        ctx.contains_btree_set(targets, &GridPoint::from(center), OPERATION)?
-                    }
-                    None => false,
-                };
-                Ok(hit
-                    && storage.with_storage(|| {
-                        ctx.insert_hash_set(&mut used, (*radius, center), OPERATION)
-                    })?)
-            },
-            OPERATION,
-        )?;
+        let complete = ctx.with_scoped_storage(OPERATION, || {
+            let mut used = HashSet::new();
+            ctx.all_by(
+                circles,
+                |(center, radius)| {
+                    let Some(center) = transform.apply(*center) else {
+                        return Ok(false);
+                    };
+                    let hit = match ctx.get_btree_map(&targets_by_radius, radius, OPERATION)? {
+                        Some(targets) => {
+                            ctx.contains_btree_set(targets, &GridPoint::from(center), OPERATION)?
+                        }
+                        None => false,
+                    };
+                    Ok(hit && ctx.insert_hash_set(&mut used, (*radius, center), OPERATION)?)
+                },
+                OPERATION,
+            )
+        })?.0;
         if complete {
             ctx.push_vec(&mut result, transform, OPERATION)?;
         }

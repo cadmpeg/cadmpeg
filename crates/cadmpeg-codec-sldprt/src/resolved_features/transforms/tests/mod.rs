@@ -33,6 +33,7 @@ pub(in crate::resolved_features) fn marker(
     }
 }
 
+mod circle_candidate_lifetime;
 mod frames;
 mod join;
 mod patterns;
