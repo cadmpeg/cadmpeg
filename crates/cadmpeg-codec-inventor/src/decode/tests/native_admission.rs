@@ -1229,8 +1229,10 @@ fn ufrx_external_path_validation_runs_once() {
         let value = serde_json::to_value(&record).expect("record");
         assert_eq!(value["path"], path);
         assert_eq!(value["reference_id"], 7);
-        assert_eq!(value["document_id"].as_str(),
-            (document_id != [0; 16]).then_some("01010101010101010101010101010101"));
+        assert_eq!(
+            value["document_id"].as_str(),
+            (document_id != [0; 16]).then_some("01010101010101010101010101010101")
+        );
 
         policy.limits.max_work_units = 84;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("short context");
@@ -1287,8 +1289,10 @@ fn ufrx_external_reference_retains_only_nonzero_document_ids() {
         let value = serde_json::to_value(record).expect("record");
         assert_eq!(value["path"], reference.path);
         assert_eq!(value["database_id"], "00000000000000000000000000000000");
-        assert_eq!(value["document_id"].as_str(),
-            (document_id != [0; 16]).then_some("01010101010101010101010101010101"));
+        assert_eq!(
+            value["document_id"].as_str(),
+            (document_id != [0; 16]).then_some("01010101010101010101010101010101")
+        );
     }
 }
 
