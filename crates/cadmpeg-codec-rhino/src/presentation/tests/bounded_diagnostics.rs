@@ -15,8 +15,11 @@ fn scaled_length_diagnostic_has_no_budget_fee() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-    let error = scaled_length(&ctx, &mut reader, StandardUnit::Inches.into(), "arrow size").unwrap_err();
-    assert!(matches!(error, FramingError::Structural { offset: 0, message } if message == "scaled arrow size is invalid"));
+    let error =
+        scaled_length(&ctx, &mut reader, StandardUnit::Inches.into(), "arrow size").unwrap_err();
+    assert!(
+        matches!(error, FramingError::Structural { offset: 0, message } if message == "scaled arrow size is invalid")
+    );
     assert_eq!(ctx.resource_refusal(), None);
     ctx.finish_session().unwrap();
 }
