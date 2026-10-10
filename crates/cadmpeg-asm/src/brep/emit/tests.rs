@@ -1431,3 +1431,5 @@ mod entry_refusal;
 mod law_depth;
 mod loft_identity;
 mod rolling_identity;
+
+mod collector_budgets;
