@@ -306,15 +306,7 @@ impl ObjectPayload {
         if let Some(refusal) = ctx.resource_refusal() {
             return Err(refusal.into());
         }
-        let Self::Array {
-            dimensions,
-            elements,
-            ..
-        } = self
-        else {
-            return Ok(false);
-        };
-        object_array_is_complete(ctx, dimensions, elements)
+        Ok(matches!(self, Self::Array { complete: true, .. }))
     }
 }
 
@@ -413,9 +405,6 @@ pub(crate) enum StringPayload {
         dimensions: Vec<u32>,
         /// Direct source rows, retaining unsupported continuation evidence.
         values: Vec<Result<StringValue, Continuation>>,
-        /// Header continuation retained for the test-only completeness traversal.
-        #[cfg(test)]
-        continuation: Option<Continuation>,
         /// Completeness derived while the source rows were admitted.
         complete: bool,
         /// Source indices of supported values, in source order.
@@ -473,69 +462,6 @@ impl Serialize for StringValues<'_> {
                 .get(*index)
                 .and_then(|value| value.as_ref().ok())
         }))
-    }
-}
-
-impl StringPayload {
-    /// Whether every declared string row has a supported, complete value.
-    #[cfg(test)]
-    fn is_complete(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
-        let Self::Array {
-            dimensions,
-            values,
-            continuation,
-            ..
-        } = self
-        else {
-            return Ok(false);
-        };
-        Ok(continuation.is_none()
-            && dimensions
-                .first()
-                .and_then(|dimension| usize::try_from(*dimension).ok())
-                .is_some_and(|count| count == values.len())
-            && ctx.all_by(
-                values,
-                |value| Ok(value.is_ok()),
-                "creo string array completeness traversal",
-            )?)
-    }
-
-    /// Number of logical string elements represented by this payload.
-    #[cfg(test)]
-    pub(crate) fn element_count(&self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
-        Ok(match self {
-            Self::Scalar { .. } => 1,
-            Self::Array { values, .. } => ctx
-                .admit_iter(values, "creo legacy string element count")?
-                .filter(|value| value.is_ok())
-                .count(),
-        })
-    }
-
-    /// Count elements whose character encoding remains uninterpreted.
-    #[cfg(test)]
-    pub(crate) fn undecoded_encoding_count(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<usize, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
-        Ok(match self {
-            Self::Scalar { value } => value.undecoded_encoding_count(),
-            Self::Array { values, .. } => ctx
-                .admit_iter(values, "creo legacy string encoding count")?
-                .filter_map(|value| value.as_ref().ok())
-                .map(StringValue::undecoded_encoding_count)
-                .sum(),
-        })
     }
 }
 
@@ -966,16 +892,10 @@ impl Persistence {
             else {
                 break;
             };
-            let offset = match ctx.strip_prefix(
-                element_id,
-                "creo:legacy_ascii:object#",
-                "creo legacy unit object prefix",
-            )? {
-                Some(digits) => ctx
-                    .parse_text::<usize>(digits, "creo scalar text parsing")?
-                    .ok(),
-                None => None,
-            };
+            let offset = element_id
+                .strip_prefix("creo:legacy_ascii:object#")
+                .filter(|digits| digits.len() <= usize::MAX.ilog10() as usize + 1)
+                .and_then(|digits| digits.parse::<usize>().ok());
             let Some(element) = offset
                 .and_then(|offset| objects.get(&offset))
                 .copied()
@@ -1016,12 +936,7 @@ impl Persistence {
             ctx,
             &self.integer_values.rows,
             |record| {
-                Ok(record.parent == Some(parent)
-                    && ctx.equal(
-                        record.name.as_str(),
-                        name,
-                        "creo legacy unit scalar name equality",
-                    )?)
+                Ok(record.parent == Some(parent) && record.name == name)
             },
             "creo legacy unit scalar selection",
         )?
@@ -1044,12 +959,7 @@ impl Persistence {
             ctx,
             &self.real_values.rows,
             |record| {
-                Ok(record.parent == Some(parent)
-                    && ctx.equal(
-                        record.name.as_str(),
-                        name,
-                        "creo legacy unit scalar name equality",
-                    )?)
+                Ok(record.parent == Some(parent) && record.name == name)
             },
             "creo legacy unit scalar selection",
         )?
@@ -1072,12 +982,7 @@ impl Persistence {
             ctx,
             &self.string_values,
             |record| {
-                Ok(record.parent == Some(parent)
-                    && ctx.equal(
-                        record.name.as_str(),
-                        name,
-                        "creo legacy unit scalar name equality",
-                    )?)
+                Ok(record.parent == Some(parent) && record.name == name)
             },
             "creo legacy unit scalar selection",
         )?
@@ -1487,7 +1392,7 @@ fn parent_object_offsets(
                 .is_some_and(|(depth, _)| *depth >= value.depth)
             {
                 let mut expired = std::iter::from_fn(|| active_objects.pop());
-                let _ = ctx.next_charged(&mut expired, "creo legacy active object pruning")?;
+                ctx.next_charged(&mut expired, "creo legacy active object pruning")?;
             }
             let parent = active_objects
                 .last()
@@ -1742,7 +1647,7 @@ fn string_records(
                 .is_some_and(|(depth, _, _)| *depth >= value.depth)
             {
                 let mut expired = std::iter::from_fn(|| active_arrays.pop());
-                let _ = ctx.next_charged(&mut expired, "creo legacy active string array pruning")?;
+                ctx.next_charged(&mut expired, "creo legacy active string array pruning")?;
             }
             let array_parent = active_arrays
                 .last()
@@ -1853,8 +1758,6 @@ fn string_records(
                 let payload = StringPayload::Array {
                     dimensions,
                     values,
-                    #[cfg(test)]
-                    continuation: value.continuation.clone(),
                     complete,
                     accepted_value_indices,
                 };
