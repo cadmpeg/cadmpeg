@@ -20,6 +20,7 @@
 pub mod annotations;
 pub mod attributes;
 mod emit;
+mod owner_cycle;
 pub mod geometry;
 pub mod key_maps;
 pub mod records;
@@ -630,6 +631,7 @@ struct Carriers {
     /// Source record indices of synthetic procedural surface curves.
     procedural_curve_child_sources: Vec<(i64, CurveId)>,
     surface_geo: HashMap<i64, SurfaceGeometry>,
+    unknown_surface_kinds: HashMap<i64, Option<String>>,
     procedural_surface_defs: HashMap<i64, DecodedProceduralSurface>,
     curve_geo: HashMap<i64, CurveGeometry>,
     procedural_curve_defs: HashMap<i64, ProceduralCurveSource>,
@@ -885,32 +887,38 @@ fn inherited_attribute_target(
     mut owner: i64,
     by_index: &HashMap<i64, &Record>,
     targets: &HashMap<i64, AttributeTarget>,
+    resolved: &mut HashMap<i64, Option<i64>>,
+    cache_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Option<AttributeTarget>, cadmpeg_core::CodecError> {
     let mut storage = ctx.reserve_scoped(0, "ASM inherited attribute visited")?;
-    let mut visited = HashSet::new();
-    loop {
+    let mut path = Vec::new();
+    let mut cycle = owner_cycle::OwnerCycle::new(owner);
+    let target_index = loop {
+        if let Some(target) = resolved.get(&owner) { break *target; }
         ctx.charge_work(1, "ASM inherited attribute walk")?;
-        if !storage.with_storage(|| {
-            ctx.insert_hash_set(&mut visited, owner, "ASM inherited attribute visited")
-        })? {
-            return Ok(None);
-        }
-        if let Some(target) = ctx.get_hash_map(targets, &owner, "ASM inherited target lookup")? {
-            return target
-                .try_clone_for_decode(ctx, "ASM inherited attribute target")
-                .map(Some);
+        if ctx.get_hash_map(targets, &owner, "ASM inherited target lookup")?.is_some() {
+            break Some(owner);
         }
         let Some(attribute) = ctx.get_hash_map(by_index, &owner, "ASM inherited record lookup")? else {
-            return Ok(None);
+            break None;
         };
-        if !attribute.name.ends_with("-attrib") {
-            return Ok(None);
-        }
-        let Some(parent) = attribute_owner(attribute) else {
-            return Ok(None);
-        };
+        if !attribute.name.ends_with("-attrib") { break None; }
+        ctx.push_scoped_vec(&mut storage, &mut path, owner, "ASM inherited attribute path")?;
+        let Some(parent) = attribute_owner(attribute) else { break None; };
         owner = parent;
+        if cycle.advance(Some(owner)) { break None; }
+    };
+    cycle.trim_path(ctx, &mut path, "ASM inherited cycle entry")?;
+    cache_storage.with_storage(|| ctx.reserve_map(resolved, path.len(),
+        "ASM inherited attribute cache"))?;
+    let mut entries = path.into_iter();
+    while entries.len() != 0 {
+        let Some(index) = ctx.next_charged(&mut entries, "ASM inherited cache entries")? else { break; };
+        resolved.insert(index, target_index);
     }
+    target_index.and_then(|index| targets.get(&index))
+        .map(|target| target.try_clone_for_decode(ctx, "ASM inherited attribute target"))
+        .transpose()
 }
 
 #[cfg(test)]

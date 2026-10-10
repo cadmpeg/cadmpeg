@@ -40,6 +40,7 @@ fn shared_surface_reuses_decoded_and_unavailable_procedural_results() {
         (DecodePurpose::Model, "exact_spl_sur", "scan ASM owned construction markers"),
         (DecodePurpose::Model, "unsupported", "scan ASM owned construction markers"),
         (DecodePurpose::Model, "unsupported", "scan ASM cache ownership"),
+        (DecodePurpose::Model, "unsupported", "scan ASM construction name"),
         (DecodePurpose::History, "blend_unsupported", "scan ASM owned construction markers"),
         (DecodePurpose::History, "unsupported", "scan ASM construction name"),
     ] {

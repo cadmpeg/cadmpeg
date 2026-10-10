@@ -717,11 +717,13 @@ vec![
     let targets = HashMap::from([(3, expected.clone())]);
 
     assert_eq!(
-        inherited_attribute_target(&ctx, 7, &records, &targets).unwrap(),
+        inherited_attribute_target(&ctx, 7, &records, &targets, &mut HashMap::new(),
+            &mut ctx.reserve_scoped(0, "test inherited cache").unwrap()).unwrap(),
         Some(expected.clone())
     );
     assert_eq!(
-        inherited_attribute_target(&ctx, 8, &records, &targets).unwrap(),
+        inherited_attribute_target(&ctx, 8, &records, &targets, &mut HashMap::new(),
+            &mut ctx.reserve_scoped(0, "test inherited cache").unwrap()).unwrap(),
         Some(expected)
     );
 
@@ -729,7 +731,8 @@ vec![
     let cycle_right = legacy_attribute(10, 9);
     let cycle = HashMap::from([(9, &cycle_left), (10, &cycle_right)]);
     assert_eq!(
-        inherited_attribute_target(&ctx, 9, &cycle, &targets).unwrap(),
+        inherited_attribute_target(&ctx, 9, &cycle, &targets, &mut HashMap::new(),
+            &mut ctx.reserve_scoped(0, "test inherited cache").unwrap()).unwrap(),
         None
     );
 }
@@ -1873,7 +1876,8 @@ vec![Token::Ref(-1), Token::Long(-1), Token::Ref(-1),
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                let result = inherited_attribute_target(&ctx, 7, &records, &targets);
+                let result = inherited_attribute_target(&ctx, 7, &records, &targets, &mut HashMap::new(),
+            &mut ctx.reserve_scoped(0, "test inherited cache").unwrap());
                 if let Err(CodecError::ResourceLimit(ref limit)) = result {
                     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual))
                         if actual == *limit));
@@ -1887,3 +1891,5 @@ vec![Token::Ref(-1), Token::Long(-1), Token::Ref(-1),
 }
 
 mod source_visits;
+
+mod attribute_cache;
