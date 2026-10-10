@@ -337,11 +337,11 @@ fn variable_blend_side(int_width: RefWidth, name: &str, extension: Option<i64>) 
     bytes
 }
 
+mod attempt_storage;
 mod blend_laws;
 mod cache_selection;
 mod procedural_curves;
 mod procedural_surfaces;
-mod attempt_storage;
 
 mod entry_refusal;
 

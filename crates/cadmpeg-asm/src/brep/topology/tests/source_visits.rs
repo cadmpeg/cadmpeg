@@ -24,19 +24,27 @@ impl SourcePass {
 
     fn complete_visits(self, count: usize) -> u64 {
         // Saved edges also complete the separate shell-record filter pass.
-        u64::try_from(count).unwrap() * match self {
-            Self::SavedEdges => 2,
-            _ => 1,
-        }
+        u64::try_from(count).unwrap()
+            * match self {
+                Self::SavedEdges => 2,
+                _ => 1,
+            }
     }
 
-    fn run(self, ctx: &DecodeContext<'_>, records: &[Record],
+    fn run(
+        self,
+        ctx: &DecodeContext<'_>,
+        records: &[Record],
         token_table: &nurbs::toks::SubtypeTable,
-        scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>) -> Result<(), CodecError> {
+        scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ) -> Result<(), CodecError> {
         let by_index = HashMap::new();
         let inputs = TopologyContext {
-            ctx, by_index: &by_index, token_table,
-            purpose: DecodePurpose::Model, format: crate::asm_format!("f3d"),
+            ctx,
+            by_index: &by_index,
+            token_table,
+            purpose: DecodePurpose::Model,
+            format: crate::asm_format!("f3d"),
         };
         let mut out = AsmBrep::default();
         let mut carriers = Carriers::default();
@@ -48,14 +56,31 @@ impl SourcePass {
                 assert!(inward.is_empty());
             }
             Self::Faces => keep_faces_and_carriers(
-                inputs, &mut out, records, &mut carriers, &mut reach, scratch,
+                inputs,
+                &mut out,
+                records,
+                &mut carriers,
+                &mut reach,
+                scratch,
             )?,
             Self::Reachable => walk_reachable_topology(
-                inputs, &mut out, records, &mut carriers, &mut reach, scratch,
+                inputs,
+                &mut out,
+                records,
+                &mut carriers,
+                &mut reach,
+                scratch,
             )?,
             Self::SavedEdges => {
-                let wire = collect_wire_topology(inputs, &mut out, records, Some(3),
-                    &mut carriers, &mut reach, scratch)?;
+                let wire = collect_wire_topology(
+                    inputs,
+                    &mut out,
+                    records,
+                    Some(3),
+                    &mut carriers,
+                    &mut reach,
+                    scratch,
+                )?;
                 assert!(wire.wire_edges_by_shell.is_empty());
                 assert!(wire.free_vertices_by_shell.is_empty() && wire.saved_free_edges.is_empty());
             }
@@ -80,13 +105,15 @@ fn empty_table() -> nurbs::toks::SubtypeTable {
 }
 
 fn records() -> [Record; 3] {
-    std::array::from_fn(|index| crate::test_support::sab::record(
-index,
-"unrelated".into(),
-Vec::<Token>::new().into(),
-0,
-0
-))
+    std::array::from_fn(|index| {
+        crate::test_support::sab::record(
+            index,
+            "unrelated".into(),
+            Vec::<Token>::new().into(),
+            0,
+            0,
+        )
+    })
 }
 
 fn source_refusal(pass: SourcePass) {
@@ -98,7 +125,8 @@ fn source_refusal(pass: SourcePass) {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut scratch = ctx.reserve_scoped(0, "test topology scratch").unwrap();
-    let Err(CodecError::ResourceLimit(first)) = pass.run(&ctx, &source, &token_table, &mut scratch) else {
+    let Err(CodecError::ResourceLimit(first)) = pass.run(&ctx, &source, &token_table, &mut scratch)
+    else {
         panic!("expected the first topology source visit to refuse");
     };
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
@@ -134,29 +162,53 @@ fn source_acceptance(pass: SourcePass) {
 macro_rules! source_controls {
     ($refusal:ident, $acceptance:ident, $pass:ident) => {
         #[test]
-        fn $refusal() { source_refusal(SourcePass::$pass); }
+        fn $refusal() {
+            source_refusal(SourcePass::$pass);
+        }
         #[test]
-        fn $acceptance() { source_acceptance(SourcePass::$pass); }
+        fn $acceptance() {
+            source_acceptance(SourcePass::$pass);
+        }
     };
 }
 
-source_controls!(analytic_record_source_refuses_one_visit,
-    analytic_record_source_accepts_exact_visits_and_empty_input, Analytic);
-source_controls!(face_record_source_refuses_one_visit,
-    face_record_source_accepts_exact_visits_and_empty_input, Faces);
-source_controls!(reachable_record_source_refuses_one_visit,
-    reachable_record_source_accepts_exact_visits_and_empty_input, Reachable);
-source_controls!(saved_edge_record_source_refuses_one_visit,
-    saved_edge_record_source_accepts_exact_saved_and_shell_pass_visits, SavedEdges);
-source_controls!(edge_sense_record_source_refuses_one_visit,
-    edge_sense_record_source_accepts_exact_visits_and_empty_input, CurveSenses);
+source_controls!(
+    analytic_record_source_refuses_one_visit,
+    analytic_record_source_accepts_exact_visits_and_empty_input,
+    Analytic
+);
+source_controls!(
+    face_record_source_refuses_one_visit,
+    face_record_source_accepts_exact_visits_and_empty_input,
+    Faces
+);
+source_controls!(
+    reachable_record_source_refuses_one_visit,
+    reachable_record_source_accepts_exact_visits_and_empty_input,
+    Reachable
+);
+source_controls!(
+    saved_edge_record_source_refuses_one_visit,
+    saved_edge_record_source_accepts_exact_saved_and_shell_pass_visits,
+    SavedEdges
+);
+source_controls!(
+    edge_sense_record_source_refuses_one_visit,
+    edge_sense_record_source_accepts_exact_visits_and_empty_input,
+    CurveSenses
+);
 
 #[test]
 fn analytic_carrier_allocation_refuses_after_one_record_without_visiting_the_tail() {
     let mut source = records();
     let token_table = empty_table();
-    source[0] = crate::test_support::sab::record(0, "plane-surface".into(),
-        vec![Token::Position([0.0, 0.0, 0.0])].into(), 0, 0);
+    source[0] = crate::test_support::sab::record(
+        0,
+        "plane-surface".into(),
+        vec![Token::Position([0.0, 0.0, 0.0])].into(),
+        0,
+        0,
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // One record visit, then one analytic carrier token visit.
@@ -164,15 +216,19 @@ fn analytic_carrier_allocation_refuses_after_one_record_without_visiting_the_tai
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut scratch = ctx.reserve_scoped(0, "test topology scratch").unwrap();
-    let Err(CodecError::ResourceLimit(first)) = SourcePass::Analytic.run(&ctx, &source, &token_table, &mut scratch) else {
+    let Err(CodecError::ResourceLimit(first)) =
+        SourcePass::Analytic.run(&ctx, &source, &token_table, &mut scratch)
+    else {
         panic!("expected the first actual carrier allocation to refuse");
     };
     assert_eq!(first.dimension, ResourceDimension::CollectionItems);
     assert_eq!(first.operation, "ASM carrier positions");
     assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
     for replay in [source.as_slice(), &[]] {
-        assert!(matches!(SourcePass::Analytic.run(&ctx, replay, &token_table, &mut scratch),
-            Err(CodecError::ResourceLimit(last)) if last == first));
+        assert!(
+            matches!(SourcePass::Analytic.run(&ctx, replay, &token_table, &mut scratch),
+            Err(CodecError::ResourceLimit(last)) if last == first)
+        );
     }
     drop(scratch);
     assert!(matches!(ctx.finish_session(),
@@ -191,12 +247,19 @@ fn first_index_refusal(pass: SourcePass) {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut scratch = ctx.reserve_scoped(0, "test topology scratch").unwrap();
-    let Err(CodecError::ResourceLimit(first)) = pass.run(&ctx, &source, &token_table, &mut scratch) else {
+    let Err(CodecError::ResourceLimit(first)) = pass.run(&ctx, &source, &token_table, &mut scratch)
+    else {
         panic!("expected the first record index conversion to refuse");
     };
-    assert_eq!(first.dimension, ResourceDimension::Codec("ASM record index"));
+    assert_eq!(
+        first.dimension,
+        ResourceDimension::Codec("ASM record index")
+    );
     assert_eq!(first.operation, "ASM record index");
-    assert_eq!((first.limit, first.used, first.additional), (limit, limit, 1));
+    assert_eq!(
+        (first.limit, first.used, first.additional),
+        (limit, limit, 1)
+    );
     for replay in [source.as_slice(), &[]] {
         assert!(matches!(pass.run(&ctx, replay, &token_table, &mut scratch),
             Err(CodecError::ResourceLimit(last)) if last == first));

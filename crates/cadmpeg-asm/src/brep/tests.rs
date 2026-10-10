@@ -78,17 +78,17 @@ fn subtype_definition_index_refuses_collection_limit_before_construction() {
     use cadmpeg_core::CodecError;
 
     let records = [crate::test_support::sab::record(
-0,
-"mystery".into(),
-vec![
+        0,
+        "mystery".into(),
+        vec![
             Token::SubtypeOpen,
             Token::Ident("node".into()),
             Token::SubtypeClose,
         ]
         .into(),
-0,
-0
-)];
+        0,
+        0,
+    )];
     let bytes = [0_u8];
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::CollectionItems,
@@ -558,13 +558,9 @@ fn asm_stream_delimiters_are_not_application_records() {
 
 #[test]
 fn saved_top_level_edge_projects_as_a_wire_body() {
-    let record = |index, name: &str, tokens: Vec<Token>| crate::test_support::sab::record(
-index,
-name.into(),
-tokens.into(),
-0,
-0
-);
+    let record = |index, name: &str, tokens: Vec<Token>| {
+        crate::test_support::sab::record(index, name.into(), tokens.into(), 0, 0)
+    };
     let records = vec![
         record(0, "asmheader", Vec::new()),
         record(
@@ -681,33 +677,37 @@ fn nested_attributes_inherit_their_topology_owner() {
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::ids::EdgeId;
 
-    let current_attribute = |index, owner| crate::test_support::sab::record(
-index,
-"ATTRIB_CUSTOM-attrib".into(),
-vec![
-            Token::Ref(-1),
-            Token::Long(-1),
-            Token::Ref(-1),
-            Token::Ref(-1),
-            Token::Ref(owner),
-        ]
-        .into(),
-0,
-0
-);
-    let legacy_attribute = |index, owner| crate::test_support::sab::record(
-index,
-"ATTRIB_CUSTOM-attrib".into(),
-vec![
-            Token::Ref(-1),
-            Token::Ref(-1),
-            Token::Ref(-1),
-            Token::Ref(owner),
-        ]
-        .into(),
-0,
-0
-);
+    let current_attribute = |index, owner| {
+        crate::test_support::sab::record(
+            index,
+            "ATTRIB_CUSTOM-attrib".into(),
+            vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(owner),
+            ]
+            .into(),
+            0,
+            0,
+        )
+    };
+    let legacy_attribute = |index, owner| {
+        crate::test_support::sab::record(
+            index,
+            "ATTRIB_CUSTOM-attrib".into(),
+            vec![
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(owner),
+            ]
+            .into(),
+            0,
+            0,
+        )
+    };
     let ctx = cadmpeg_test_support::service_decode_context();
     let parent = current_attribute(7, 3);
     let child = legacy_attribute(8, 7);
@@ -717,13 +717,27 @@ vec![
     let targets = HashMap::from([(3, expected.clone())]);
 
     assert_eq!(
-        inherited_attribute_target(&ctx, 7, &records, &targets, &mut HashMap::new(),
-            &mut ctx.reserve_scoped(0, "test inherited cache").unwrap()).unwrap(),
+        inherited_attribute_target(
+            &ctx,
+            7,
+            &records,
+            &targets,
+            &mut HashMap::new(),
+            &mut ctx.reserve_scoped(0, "test inherited cache").unwrap()
+        )
+        .unwrap(),
         Some(expected.clone())
     );
     assert_eq!(
-        inherited_attribute_target(&ctx, 8, &records, &targets, &mut HashMap::new(),
-            &mut ctx.reserve_scoped(0, "test inherited cache").unwrap()).unwrap(),
+        inherited_attribute_target(
+            &ctx,
+            8,
+            &records,
+            &targets,
+            &mut HashMap::new(),
+            &mut ctx.reserve_scoped(0, "test inherited cache").unwrap()
+        )
+        .unwrap(),
         Some(expected)
     );
 
@@ -731,8 +745,15 @@ vec![
     let cycle_right = legacy_attribute(10, 9);
     let cycle = HashMap::from([(9, &cycle_left), (10, &cycle_right)]);
     assert_eq!(
-        inherited_attribute_target(&ctx, 9, &cycle, &targets, &mut HashMap::new(),
-            &mut ctx.reserve_scoped(0, "test inherited cache").unwrap()).unwrap(),
+        inherited_attribute_target(
+            &ctx,
+            9,
+            &cycle,
+            &targets,
+            &mut HashMap::new(),
+            &mut ctx.reserve_scoped(0, "test inherited cache").unwrap()
+        )
+        .unwrap(),
         None
     );
 }
@@ -761,21 +782,10 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
             Token::Ref(0),
         ];
         tokens.extend(payload);
-        crate::test_support::sab::record(
-index,
-name.into(),
-tokens.into(),
-0,
-0
-)
+        crate::test_support::sab::record(index, name.into(), tokens.into(), 0, 0)
     };
-    let entity = crate::test_support::sab::record(
-0,
-"face".into(),
-vec![Token::Ref(1)].into(),
-0,
-0
-);
+    let entity =
+        crate::test_support::sab::record(0, "face".into(), vec![Token::Ref(1)].into(), 0, 0);
     let attributes = [
         record(1, "color-adesk-attrib", 2, vec![Token::Long(5)]),
         record(
@@ -892,17 +902,12 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     )
     .expect("test decode context");
 
-    let entity = crate::test_support::sab::record(
-0,
-"face".into(),
-vec![Token::Ref(1)].into(),
-0,
-0
-);
+    let entity =
+        crate::test_support::sab::record(0, "face".into(), vec![Token::Ref(1)].into(), 0, 0);
     let color = crate::test_support::sab::record(
-1,
-"rgb_color-st-attrib".into(),
-vec![
+        1,
+        "rgb_color-st-attrib".into(),
+        vec![
             Token::Ref(-1),
             Token::Ref(2),
             Token::Ref(-1),
@@ -912,13 +917,13 @@ vec![
             Token::Double(0.75),
         ]
         .into(),
-0,
-0
-);
+        0,
+        0,
+    );
     let name = crate::test_support::sab::record(
-2,
-"string_attrib-name_attrib-gen-attrib".into(),
-vec![
+        2,
+        "string_attrib-name_attrib-gen-attrib".into(),
+        vec![
             Token::Ref(-1),
             Token::Ref(-1),
             Token::Ref(1),
@@ -927,9 +932,9 @@ vec![
             Token::Str("legacy face".into()),
         ]
         .into(),
-0,
-0
-);
+        0,
+        0,
+    );
     let by_index = HashMap::from([(1, &color), (2, &name)]);
 
     let (carrier, decoded) =
@@ -991,13 +996,9 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     )
     .expect("test decode context");
 
-    let record = |index, name: &str, tokens: Vec<Token>| crate::test_support::sab::record(
-index,
-name.into(),
-tokens.into(),
-0,
-0
-);
+    let record = |index, name: &str, tokens: Vec<Token>| {
+        crate::test_support::sab::record(index, name.into(), tokens.into(), 0, 0)
+    };
     let records = vec![
         record(0, "asmheader", vec![]),
         record(1, "ATTRIB_CUSTOM-attrib", vec![Token::Ref(-1)]),
@@ -1079,13 +1080,9 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     )
     .expect("test decode context");
 
-    let record = |index, name: &str, tokens: Vec<Token>| crate::test_support::sab::record(
-index,
-name.into(),
-tokens.into(),
-0,
-0
-);
+    let record = |index, name: &str, tokens: Vec<Token>| {
+        crate::test_support::sab::record(index, name.into(), tokens.into(), 0, 0)
+    };
     let records = vec![
         record(1, "body", vec![Token::Ref(-1)]),
         record(
@@ -1266,9 +1263,9 @@ fn classify_edge_curve_senses_refuses_collection_limit() {
     use cadmpeg_core::CodecError;
 
     let records = [crate::test_support::sab::record(
-1,
-"edge".into(),
-vec![
+        1,
+        "edge".into(),
+        vec![
             Token::Ref(-1),
             Token::Ref(-1),
             Token::Ref(-1),
@@ -1281,9 +1278,9 @@ vec![
             Token::Enum(0),
         ]
         .into(),
-0,
-0
-)];
+        0,
+        0,
+    )];
     let mut reach = Reachable::default();
     reach.edges.insert(1);
     reach.curves.insert(2);
@@ -1329,9 +1326,9 @@ fn subshell_wires_project_onto_the_nearest_shell() {
 #[test]
 fn reversed_edge_negates_its_pcurve_validation_interval() {
     let edge = crate::test_support::sab::record(
-1,
-"edge".into(),
-vec![
+        1,
+        "edge".into(),
+        vec![
             Token::Ref(-1),
             Token::Long(-1),
             Token::Ref(-1),
@@ -1344,9 +1341,9 @@ vec![
             Token::True,
         ]
         .into(),
-0,
-0
-);
+        0,
+        0,
+    );
 
     assert_eq!(
         edge_pcurve_parameter_ranges(&edge),
@@ -1374,9 +1371,9 @@ vec![
 #[test]
 fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
     let edge = crate::test_support::sab::record(
-1,
-"edge".into(),
-vec![
+        1,
+        "edge".into(),
+        vec![
             Token::Ref(-1),
             Token::Long(-1),
             Token::Ref(-1),
@@ -1389,9 +1386,9 @@ vec![
             Token::False,
         ]
         .into(),
-0,
-0
-);
+        0,
+        0,
+    );
     let records = [edge];
     let by_index = records
         .iter()
@@ -1440,9 +1437,9 @@ fn tolerant_edge_tail_admits_only_nonnegative_finite_source_tolerance() {
         (f64::NAN, None, 0),
     ] {
         let edge = crate::test_support::sab::record(
-1,
-"tedge".into(),
-vec![
+            1,
+            "tedge".into(),
+            vec![
                 Token::Ref(-1),
                 Token::Long(-1),
                 Token::Ref(-1),
@@ -1459,9 +1456,9 @@ vec![
                 Token::Long(7),
             ]
             .into(),
-0,
-0
-);
+            0,
+            0,
+        );
         let records = [edge];
         let by_index = records
             .iter()
@@ -1641,9 +1638,9 @@ fn a_non_finite_attribute_double_is_refused() {
     .expect("test decode context");
 
     let record = crate::test_support::sab::record(
-1,
-"real-st-attrib".into(),
-vec![
+        1,
+        "real-st-attrib".into(),
+        vec![
             Token::Ref(-1),
             Token::Long(-1),
             Token::Ref(-1),
@@ -1652,9 +1649,9 @@ vec![
             Token::Double(f64::NAN),
         ]
         .into(),
-0,
-0
-);
+        0,
+        0,
+    );
     let error = source_attribute(&resource_ctx, &record, AttributeTarget::Document, FORMAT)
         .expect_err("a NaN attribute double is refused");
     assert_eq!(
@@ -1671,12 +1668,12 @@ fn attribute_values_refuse_collection_limit() {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let record = crate::test_support::sab::record(
-1,
-"real-st-attrib".into(),
-vec![Token::Double(1.0)].into(),
-0,
-0
-);
+        1,
+        "real-st-attrib".into(),
+        vec![Token::Double(1.0)].into(),
+        0,
+        0,
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -1696,20 +1693,15 @@ fn attribute_chain_tracking_refuses_collection_limit() {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    let entity = crate::test_support::sab::record(
-0,
-"face".into(),
-vec![Token::Ref(1)].into(),
-0,
-0
-);
+    let entity =
+        crate::test_support::sab::record(0, "face".into(), vec![Token::Ref(1)].into(), 0, 0);
     let attribute = crate::test_support::sab::record(
-1,
-"rgb_color-st-attrib".into(),
-vec![Token::Ref(-1)].into(),
-0,
-0
-);
+        1,
+        "rgb_color-st-attrib".into(),
+        vec![Token::Ref(-1)].into(),
+        0,
+        0,
+    );
     let by_index = HashMap::from([(1, &attribute)]);
     let mut emitted = HashSet::new();
     let mut out = Vec::new();
@@ -1745,25 +1737,20 @@ fn attribute_chain_name_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let entity = crate::test_support::sab::record(
-0,
-"face".into(),
-vec![Token::Ref(1)].into(),
-0,
-0
-);
+    let entity =
+        crate::test_support::sab::record(0, "face".into(), vec![Token::Ref(1)].into(), 0, 0);
     let attribute = crate::test_support::sab::record(
-1,
-"string_attrib-name_attrib-gen-attrib".into(),
-vec![
+        1,
+        "string_attrib-name_attrib-gen-attrib".into(),
+        vec![
             Token::Ref(-1),
             Token::Str("name".into()),
             Token::Str("x".into()),
         ]
         .into(),
-0,
-0
-);
+        0,
+        0,
+    );
     let by_index = HashMap::from([(1, &attribute)]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -1857,13 +1844,19 @@ fn inherited_attribute_queries_preserve_work_refusals() {
     use cadmpeg_core::CodecError;
 
     let parent = crate::test_support::sab::record(
-7,
-"ATTRIB_CUSTOM-attrib".into(),
-vec![Token::Ref(-1), Token::Long(-1), Token::Ref(-1),
-            Token::Ref(-1), Token::Ref(3)].into(),
-0,
-0
-);
+        7,
+        "ATTRIB_CUSTOM-attrib".into(),
+        vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(3),
+        ]
+        .into(),
+        0,
+        0,
+    );
     let records = HashMap::from([(7, &parent)]);
     let expected = cadmpeg_ir::attributes::AttributeTarget::Edge(
         EdgeId::mint("test:model:edge#0").expect("identity grammar"),
@@ -1871,16 +1864,26 @@ vec![Token::Ref(-1), Token::Long(-1), Token::Ref(-1),
     let targets = HashMap::from([(3, expected)]);
     for operation in ["ASM inherited target lookup", "ASM inherited record lookup"] {
         cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, operation, |cap| {
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                let result = inherited_attribute_target(&ctx, 7, &records, &targets, &mut HashMap::new(),
-            &mut ctx.reserve_scoped(0, "test inherited cache").unwrap());
+                let result = inherited_attribute_target(
+                    &ctx,
+                    7,
+                    &records,
+                    &targets,
+                    &mut HashMap::new(),
+                    &mut ctx.reserve_scoped(0, "test inherited cache").unwrap(),
+                );
                 if let Err(CodecError::ResourceLimit(ref limit)) = result {
-                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual))
-                        if actual == *limit));
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual))
+                        if actual == *limit)
+                    );
                 } else {
                     ctx.finish_session()?;
                 }

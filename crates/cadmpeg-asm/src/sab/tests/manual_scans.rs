@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{frame, frame_history, payload_subtype_range, payload_token, scan_history_boundary, Record};
+use super::super::{
+    frame, frame_history, payload_subtype_range, payload_token, scan_history_boundary, Record,
+};
 use crate::kernel_header::RefWidth;
 use crate::stream_error::StreamFailure;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -26,14 +28,20 @@ fn manual_sab_history_scan_charges_only_actual_tokens() {
                 assert!(result.unwrap().is_none());
                 ctx.finish_session().unwrap();
             } else {
-                let Err(CodecError::ResourceLimit(first)) = result else { panic!("actual history token refusal"); };
+                let Err(CodecError::ResourceLimit(first)) = result else {
+                    panic!("actual history token refusal");
+                };
                 assert_eq!(first.operation, "scan SAB history token");
                 assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
                 for input in [b"".as_slice(), bytes.as_slice()] {
-                    assert!(matches!(scan_history_boundary(&ctx, input, 0, RefWidth::Four, None),
-                        Err(CodecError::ResourceLimit(last)) if last == first));
+                    assert!(
+                        matches!(scan_history_boundary(&ctx, input, 0, RefWidth::Four, None),
+                        Err(CodecError::ResourceLimit(last)) if last == first)
+                    );
                 }
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
             }
         }
     }
@@ -52,8 +60,10 @@ fn manual_sab_framing_keeps_strict_and_history_eof_semantics() {
         // grammar rejection, with no further token visit.
         policy.limits.max_work_units = 2 + n;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(frame(&ctx, &bytes, 0, bytes.len(), RefWidth::Four, None),
-            Err(StreamFailure::Parse(error)) if error.offset == bytes.len() && error.reason == "end of stream"));
+        assert!(
+            matches!(frame(&ctx, &bytes, 0, bytes.len(), RefWidth::Four, None),
+            Err(StreamFailure::Parse(error)) if error.offset == bytes.len() && error.reason == "end of stream")
+        );
         ctx.finish_session().unwrap();
         let arena = DecodeArena::new();
         // The retained name join adds two one-part traversals and n copied
@@ -63,7 +73,10 @@ fn manual_sab_framing_keeps_strict_and_history_eof_semantics() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let records = frame_history(&ctx, &bytes, 0, bytes.len(), RefWidth::Four, None).unwrap();
         assert_eq!(records.len(), 1);
-        assert_eq!((records[0].index, records[0].offset, records[0].len), (0, 0, bytes.len()));
+        assert_eq!(
+            (records[0].index, records[0].offset, records[0].len),
+            (0, 0, bytes.len())
+        );
         assert_eq!(records[0].name, name);
         assert!(records[0].tokens.is_empty());
         ctx.finish_session().unwrap();
@@ -72,14 +85,12 @@ fn manual_sab_framing_keeps_strict_and_history_eof_semantics() {
 
 #[test]
 fn manual_sab_empty_and_invalid_routes_preserve_original_refusal() {
-    let empty = crate::test_support::sab::record(
-0,
-String::new(),
-Vec::new().into(),
-0,
-0
-);
-    let invalid = Record { offset: usize::MAX, len: 1, ..empty.clone() };
+    let empty = crate::test_support::sab::record(0, String::new(), Vec::new().into(), 0, 0);
+    let invalid = Record {
+        offset: usize::MAX,
+        len: 1,
+        ..empty.clone()
+    };
     for fused in [false, true] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -91,33 +102,58 @@ Vec::new().into(),
         policy.limits.max_recursion_depth = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if fused {
-            let Err(CodecError::ResourceLimit(first)) = ctx.charge_work(1, "test original SAB scan refusal")
-            else { panic!("original refusal"); };
+            let Err(CodecError::ResourceLimit(first)) =
+                ctx.charge_work(1, "test original SAB scan refusal")
+            else {
+                panic!("original refusal");
+            };
             for _ in 0..64 {
                 for record in [&empty, &invalid] {
-                    assert!(matches!(payload_token(&ctx, &[], record, RefWidth::Four, 0),
-                        Err(CodecError::ResourceLimit(last)) if last == first));
-                    assert!(matches!(payload_subtype_range(&ctx, &[], record, 0, RefWidth::Four, "x"),
-                        Err(CodecError::ResourceLimit(last)) if last == first));
+                    assert!(
+                        matches!(payload_token(&ctx, &[], record, RefWidth::Four, 0),
+                        Err(CodecError::ResourceLimit(last)) if last == first)
+                    );
+                    assert!(
+                        matches!(payload_subtype_range(&ctx, &[], record, 0, RefWidth::Four, "x"),
+                        Err(CodecError::ResourceLimit(last)) if last == first)
+                    );
                 }
                 for start in [0, usize::MAX] {
-                    assert!(matches!(scan_history_boundary(&ctx, &[], start, RefWidth::Four, None),
-                        Err(CodecError::ResourceLimit(last)) if last == first));
+                    assert!(
+                        matches!(scan_history_boundary(&ctx, &[], start, RefWidth::Four, None),
+                        Err(CodecError::ResourceLimit(last)) if last == first)
+                    );
                     assert!(matches!(frame(&ctx, &[], start, 0, RefWidth::Four, None),
                         Err(StreamFailure::Resource(last)) if last == first));
-                    assert!(matches!(frame_history(&ctx, &[], start, 0, RefWidth::Four, None),
-                        Err(StreamFailure::Resource(last)) if last == first));
+                    assert!(
+                        matches!(frame_history(&ctx, &[], start, 0, RefWidth::Four, None),
+                        Err(StreamFailure::Resource(last)) if last == first)
+                    );
                 }
             }
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         } else {
             for record in [&empty, &invalid] {
-                assert!(payload_token(&ctx, &[], record, RefWidth::Four, 0).unwrap().is_none());
-                assert!(payload_subtype_range(&ctx, &[], record, 0, RefWidth::Four, "x").unwrap().is_none());
+                assert!(payload_token(&ctx, &[], record, RefWidth::Four, 0)
+                    .unwrap()
+                    .is_none());
+                assert!(
+                    payload_subtype_range(&ctx, &[], record, 0, RefWidth::Four, "x")
+                        .unwrap()
+                        .is_none()
+                );
             }
-            assert!(scan_history_boundary(&ctx, &[], 0, RefWidth::Four, None).unwrap().is_none());
-            assert!(frame(&ctx, &[], 0, 0, RefWidth::Four, None).unwrap().is_empty());
-            assert!(frame_history(&ctx, &[], 0, 0, RefWidth::Four, None).unwrap().is_empty());
+            assert!(scan_history_boundary(&ctx, &[], 0, RefWidth::Four, None)
+                .unwrap()
+                .is_none());
+            assert!(frame(&ctx, &[], 0, 0, RefWidth::Four, None)
+                .unwrap()
+                .is_empty());
+            assert!(frame_history(&ctx, &[], 0, 0, RefWidth::Four, None)
+                .unwrap()
+                .is_empty());
             ctx.finish_session().unwrap();
         }
     }
@@ -131,8 +167,11 @@ fn entry_sab_fixed_primitive_and_eof_preserve_original_refusal() {
             if let Some(first) = &original {
                 assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if &last == first));
             } else if bytes.is_empty() {
-                let Err(error) = result.unwrap() else { panic!("strict EOF defect"); };
-                assert_eq!(error.offset, 0); assert_eq!(error.reason, "end of stream");
+                let Err(error) = result.unwrap() else {
+                    panic!("strict EOF defect");
+                };
+                assert_eq!(error.offset, 0);
+                assert_eq!(error.reason, "end of stream");
             } else {
                 let (token, next) = result.unwrap().unwrap();
                 assert_eq!(next, bytes.len());

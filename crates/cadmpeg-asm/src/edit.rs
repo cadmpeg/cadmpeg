@@ -2300,12 +2300,12 @@ mod tests {
         }
         bytes.push(0x10);
         let record = crate::test_support::sab::record(
-0,
-"intcurve".into(),
-Vec::new().into(),
-0,
-bytes.len()
-);
+            0,
+            "intcurve".into(),
+            Vec::new().into(),
+            0,
+            bytes.len(),
+        );
         (bytes, record)
     }
 
