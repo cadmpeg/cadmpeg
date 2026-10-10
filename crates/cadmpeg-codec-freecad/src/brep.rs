@@ -322,9 +322,8 @@ impl ShapeSet {
     }
 
     /// Checks every reference, admitting each visit through `admit`
-    /// before reading its value. `max_nodes` holds the greatest node index of each
-    /// indexed polygon, so a polygon's nodes are read once however many edges
-    /// name it.
+    /// before reading its value. `max_nodes` caches each indexed polygon's
+    /// greatest node index, so each edge checks the cached bound.
     fn check<E>(
         &self,
         max_nodes: &[u32],
@@ -4037,13 +4036,15 @@ fn parse_binary_surface(
             let rational = u_rational || v_rational;
             // Each pole consumes at least a 24-byte point3.
             let capacity = cursor.bounded(pole_count, 24, "binary Bezier surface pole")?;
-            let mut control_points = cursor
+            let mut point_storage = cursor.ctx.reserve_scoped(0, "FreeCAD surface flat poles")?;
+            let mut control_points = point_storage.with_storage(|| cursor
                 .ctx
-                .collection_vec(capacity, "FreeCAD B-rep parse_binary_surface")?;
-            let mut weights =
+                .collection_vec(capacity, "FreeCAD B-rep parse_binary_surface"))?;
+            let mut weight_storage = cursor.ctx.reserve_scoped(0, "FreeCAD surface flat weights")?;
+            let mut weights = weight_storage.with_storage(||
                 cursor
                     .ctx
-                    .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+                    .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights"))?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point3("binary Bezier surface pole")?);
                 if let Some(weights) = &mut weights {
@@ -4068,9 +4069,9 @@ fn parse_binary_surface(
                         false,
                     ),
                     NurbsSurfaceLanes::new(
-                        grid_rows(cursor.ctx, control_points, v_count)?,
+                        grid_rows(cursor.ctx, (control_points, Some(point_storage)), v_count)?,
                         weights
-                            .map(|values| grid_rows(cursor.ctx, values, v_count))
+                            .map(|values| grid_rows(cursor.ctx, (values, Some(weight_storage)), v_count))
                             .transpose()?,
                     ),
                     false,
@@ -4093,29 +4094,40 @@ fn parse_binary_surface(
             let rational = u_rational || v_rational;
             // Each pole consumes at least a 24-byte point3.
             let capacity = cursor.bounded(pole_count, 24, "binary B-spline surface pole")?;
-            let mut control_points = cursor
+            let mut point_storage = cursor.ctx.reserve_scoped(0, "FreeCAD surface flat poles")?;
+            let mut control_points = point_storage.with_storage(|| cursor
                 .ctx
-                .collection_vec(capacity, "FreeCAD B-rep parse_binary_surface")?;
-            let mut weights =
+                .collection_vec(capacity, "FreeCAD B-rep parse_binary_surface"))?;
+            let mut weight_storage = cursor.ctx.reserve_scoped(0, "FreeCAD surface flat weights")?;
+            let mut weights = weight_storage.with_storage(||
                 cursor
                     .ctx
-                    .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+                    .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights"))?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point3("binary B-spline surface pole")?);
                 if let Some(weights) = &mut weights {
                     weights.push(cursor.finite_f64("binary B-spline surface weight")?);
                 }
             }
+            let u_knots = if u_periodic {
+                let (knots, storage) = cursor.ctx.with_scoped_storage("FreeCAD periodic source knots", || cursor.expanded_knots(u_knot_count, "binary B-spline u knots"))?;
+                (knots, Some(storage))
+            } else {
+                (cursor.expanded_knots(u_knot_count, "binary B-spline u knots")?, None)
+            };
+            let v_knots = if v_periodic {
+                let (knots, storage) = cursor.ctx.with_scoped_storage("FreeCAD periodic source knots", || cursor.expanded_knots(v_knot_count, "binary B-spline v knots"))?;
+                (knots, Some(storage))
+            } else {
+                (cursor.expanded_knots(v_knot_count, "binary B-spline v knots")?, None)
+            };
             TextSurface::Nurbs(normalize_periodic_surface(
                 cursor.ctx,
                 [u_degree, v_degree],
-                [
-                    cursor.expanded_knots(u_knot_count, "binary B-spline u knots")?,
-                    cursor.expanded_knots(v_knot_count, "binary B-spline v knots")?,
-                ],
+                [u_knots, v_knots],
                 [u_count, v_count],
-                control_points,
-                weights,
+                (control_points, Some(point_storage)),
+                weights.map(|values| (values, Some(weight_storage))),
                 [u_periodic, v_periodic],
             )?)
         }
@@ -4276,7 +4288,12 @@ fn parse_binary_curve(
                     weights.push(cursor.finite_f64("binary B-spline weight")?);
                 }
             }
-            let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
+            let knots = if periodic {
+                let (knots, storage) = cursor.ctx.with_scoped_storage("FreeCAD periodic source knots", || cursor.expanded_knots(knot_count, "binary B-spline"))?;
+                (knots, Some(storage))
+            } else {
+                (cursor.expanded_knots(knot_count, "binary B-spline")?, None)
+            };
             let (knots, padding) = normalize_periodic_knots(cursor.ctx, knots, degree, periodic)?;
             append_periodic_curve_poles(
                 cursor.ctx,
@@ -4413,7 +4430,12 @@ fn parse_binary_curve2d(
                     weights.push(cursor.finite_f64("binary B-spline weight")?);
                 }
             }
-            let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
+            let knots = if periodic {
+                let (knots, storage) = cursor.ctx.with_scoped_storage("FreeCAD periodic source knots", || cursor.expanded_knots(knot_count, "binary B-spline"))?;
+                (knots, Some(storage))
+            } else {
+                (cursor.expanded_knots(knot_count, "binary B-spline")?, None)
+            };
             let (knots, padding) = normalize_periodic_knots(cursor.ctx, knots, degree, periodic)?;
             append_periodic_curve_poles(
                 cursor.ctx,
@@ -4870,7 +4892,12 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurv
             weights.push(cursor.finite_real("2D B-spline weight")?);
         }
     }
-    let knots = parse_knots(cursor, knot_count, degree, "2D B-spline knot")?;
+    let knots = if periodic {
+        let (knots, storage) = cursor.ctx.with_scoped_storage("FreeCAD periodic source knots", || parse_knots(cursor, knot_count, degree, "2D B-spline knot"))?;
+        (knots, Some(storage))
+    } else {
+        (parse_knots(cursor, knot_count, degree, "2D B-spline knot")?, None)
+    };
     let (knots, padding) = normalize_periodic_knots(
         cursor.ctx,
         knots,
@@ -5905,21 +5932,33 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSurf
         .ok_or_else(|| CodecError::Malformed("B-spline surface pole limit exceeded".into()))?;
     // Each pole consumes its three point tokens.
     let capacity = cursor.bounded(pole_count, 3, "B-spline surface pole")?;
-    let mut control_points = cursor
+    let mut point_storage = cursor.ctx.reserve_scoped(0, "FreeCAD surface flat poles")?;
+    let mut control_points = point_storage.with_storage(|| cursor
         .ctx
-        .collection_vec(capacity, "FreeCAD B-rep parse_nurbs_surface")?;
-    let mut weights =
+        .collection_vec(capacity, "FreeCAD B-rep parse_nurbs_surface"))?;
+    let mut weight_storage = cursor.ctx.reserve_scoped(0, "FreeCAD surface flat weights")?;
+    let mut weights = weight_storage.with_storage(||
         cursor
             .ctx
-            .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+            .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights"))?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point("B-spline surface pole")?);
         if let Some(weights) = &mut weights {
             weights.push(cursor.finite_real("B-spline surface weight")?);
         }
     }
-    let u_knots = parse_knots(cursor, u_knot_count, u_degree, "B-spline u knot")?;
-    let v_knots = parse_knots(cursor, v_knot_count, v_degree, "B-spline v knot")?;
+    let u_knots = if u_periodic {
+        let (knots, storage) = cursor.ctx.with_scoped_storage("FreeCAD periodic source knots", || parse_knots(cursor, u_knot_count, u_degree, "B-spline u knot"))?;
+        (knots, Some(storage))
+    } else {
+        (parse_knots(cursor, u_knot_count, u_degree, "B-spline u knot")?, None)
+    };
+    let v_knots = if v_periodic {
+        let (knots, storage) = cursor.ctx.with_scoped_storage("FreeCAD periodic source knots", || parse_knots(cursor, v_knot_count, v_degree, "B-spline v knot"))?;
+        (knots, Some(storage))
+    } else {
+        (parse_knots(cursor, v_knot_count, v_degree, "B-spline v knot")?, None)
+    };
     normalize_periodic_surface(
         cursor.ctx,
         [
@@ -5930,8 +5969,8 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSurf
         ],
         [u_knots, v_knots],
         [u_count, v_count],
-        control_points,
-        weights,
+        (control_points, Some(point_storage)),
+        weights.map(|values| (values, Some(weight_storage))),
         [u_periodic, v_periodic],
     )
 }
@@ -5947,13 +5986,15 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSur
     let pole_count = u_count
         .checked_mul(v_count)
         .ok_or_else(|| CodecError::Malformed("Bezier surface pole count overflow".into()))?;
-    let mut control_points = cursor
+    let mut point_storage = cursor.ctx.reserve_scoped(0, "FreeCAD surface flat poles")?;
+    let mut control_points = point_storage.with_storage(|| cursor
         .ctx
-        .collection_vec(pole_count, "FreeCAD B-rep parse_bezier_surface")?;
-    let mut weights =
+        .collection_vec(pole_count, "FreeCAD B-rep parse_bezier_surface"))?;
+    let mut weight_storage = cursor.ctx.reserve_scoped(0, "FreeCAD surface flat weights")?;
+    let mut weights = weight_storage.with_storage(||
         cursor
             .ctx
-            .optional_collection_vec(rational, pole_count, "FreeCAD B-rep weights")?;
+            .optional_collection_vec(rational, pole_count, "FreeCAD B-rep weights"))?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point("Bezier surface pole")?);
         if let Some(weights) = &mut weights {
@@ -5975,9 +6016,9 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSur
             false,
         ),
         NurbsSurfaceLanes::new(
-            grid_rows(cursor.ctx, control_points, v_count)?,
+            grid_rows(cursor.ctx, (control_points, Some(point_storage)), v_count)?,
             weights
-                .map(|values| grid_rows(cursor.ctx, values, v_count))
+                .map(|values| grid_rows(cursor.ctx, (values, Some(weight_storage)), v_count))
                 .transpose()?,
         ),
         false,
@@ -6014,10 +6055,13 @@ fn parse_knots(
 
 fn normalize_periodic_knots(
     ctx: &DecodeContext<'_>,
-    knots: Vec<FiniteReal>,
+    knots: (Vec<FiniteReal>, Option<ScopedReservation<'_>>),
     degree: u32,
     periodic: bool,
 ) -> Result<(Vec<FiniteReal>, usize), CodecError> {
+    let (knots, source_storage) = knots;
+    let _source_storage = source_storage;
+    let knots = knots;
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
@@ -6147,10 +6191,10 @@ fn append_periodic_curve_poles<T: Copy>(
 fn normalize_periodic_surface(
     ctx: &DecodeContext<'_>,
     degrees: [u32; 2],
-    knots: [Vec<FiniteReal>; 2],
+    knots: [(Vec<FiniteReal>, Option<ScopedReservation<'_>>); 2],
     counts: [usize; 2],
-    control_points: Vec<FinitePoint3>,
-    weights: Option<Vec<FiniteReal>>,
+    control_points: (Vec<FinitePoint3>, Option<ScopedReservation<'_>>),
+    weights: Option<(Vec<FiniteReal>, Option<ScopedReservation<'_>>)>,
     periodic: [bool; 2],
 ) -> Result<NurbsSurface, CodecError> {
     let [u_source_knots, v_source_knots] = knots;
@@ -6160,10 +6204,10 @@ fn normalize_periodic_surface(
         normalize_periodic_knots(ctx, v_source_knots, degrees[1], periodic[1])?;
     let [old_u, old_v] = counts;
     let source_count = checked_grid_count(old_u, old_v, "B-spline")?;
-    if control_points.len() != source_count
+    if control_points.0.len() != source_count
         || weights
             .as_ref()
-            .is_some_and(|values| values.len() != source_count)
+            .is_some_and(|values| values.0.len() != source_count)
     {
         return Err(CodecError::Malformed(
             "B-spline pole grid cardinality mismatch".into(),
@@ -6185,24 +6229,28 @@ fn normalize_periodic_surface(
         .filter(|count| *count <= 2_000_000)
         .ok_or_else(|| CodecError::Malformed("periodic B-spline pole limit exceeded".into()))?;
     let (control_points, weights) = if u_padding != 0 || v_padding != 0 {
-        let old_points = &control_points;
-        let old_weights = weights.as_deref();
-        let mut points = ctx.collection_vec(new_count, "FreeCAD periodic B-rep surface poles")?;
-        let mut weights = ctx.optional_collection_vec(
-            old_weights.is_some(),
-            new_count,
-            "FreeCAD periodic B-rep surface weights",
-        )?;
+        let old_points = &control_points.0;
+        let old_weights = weights.as_ref().map(|(values, _storage)| values.as_slice());
+        let points = ctx.with_scoped_storage("FreeCAD periodic surface flat poles", || ctx.collection_vec(new_count, "FreeCAD periodic B-rep surface poles"))?;
+        let point_storage = points.1;
+        let mut points = points.0;
+        let extended_weights = ctx.with_scoped_storage("FreeCAD periodic surface flat weights", || ctx.optional_collection_vec(
+            old_weights.is_some(), new_count, "FreeCAD periodic B-rep surface weights",
+        ))?;
+        let weight_storage = extended_weights.1;
+        let mut extended_weights = extended_weights.0;
         // Every reserved cell is filled; the source grid was checked above.
         for cell in ctx.admit_iter(0..new_count, "FreeCAD periodic B-rep surface poles")? {
             let (u, v) = (cell / new_v, cell % new_v);
             let source = (u % old_u) * old_v + v % old_v;
             points.push(old_points[source]);
-            if let (Some(source_weights), Some(target_weights)) = (old_weights, &mut weights) {
+            if let (Some(source_weights), Some(target_weights)) = (old_weights, &mut extended_weights) {
                 target_weights.push(source_weights[source]);
             }
         }
-        (points, weights)
+        drop(control_points);
+        drop(weights);
+        ((points, Some(point_storage)), extended_weights.map(|values| (values, Some(weight_storage))))
     } else {
         (control_points, weights)
     };
@@ -6370,7 +6418,12 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve,
             weights.push(cursor.finite_real("B-spline weight")?);
         }
     }
-    let knots = parse_knots(cursor, knot_count, degree, "B-spline knot")?;
+    let knots = if periodic {
+        let (knots, storage) = cursor.ctx.with_scoped_storage("FreeCAD periodic source knots", || parse_knots(cursor, knot_count, degree, "B-spline knot"))?;
+        (knots, Some(storage))
+    } else {
+        (parse_knots(cursor, knot_count, degree, "B-spline knot")?, None)
+    };
     let (knots, padding) = normalize_periodic_knots(
         cursor.ctx,
         knots,
@@ -6461,9 +6514,12 @@ fn clamped_bezier_knots(
 
 fn grid_rows<T>(
     ctx: &DecodeContext<'_>,
-    values: Vec<T>,
+    values: (Vec<T>, Option<ScopedReservation<'_>>),
     width: usize,
 ) -> Result<Vec<Vec<T>>, CodecError> {
+    let (values, source_storage) = values;
+    let _source_storage = source_storage;
+    let values = values;
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }

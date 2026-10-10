@@ -9,6 +9,7 @@ mod parser_recursion;
 mod reference_diagnostics;
 mod source_transfer;
 mod shape_check;
+mod storage_lanes;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -61,7 +62,7 @@ fn bezier_knot_vector_refuses_at_caller_limit() {
 
 #[test]
 fn surface_grid_rows_refuse_at_caller_limit() {
-    let result = with_collection_limit(&[], 3, |ctx| super::grid_rows(ctx, vec![1_u8, 2, 3, 4], 2));
+    let result = with_collection_limit(&[], 3, |ctx| super::grid_rows(ctx, (vec![1_u8, 2, 3, 4], None), 2));
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD B-rep surface row values"));
 }
@@ -129,7 +130,7 @@ fn periodic_brep_knot_capacity_refuses_on_collection_limit() {
         .map(|value| FiniteReal::new(value).expect("finite knot"))
         .collect();
     let result = with_collection_limit(&[], 0, |ctx| {
-        super::normalize_periodic_knots(ctx, knots, 2, true)
+        super::normalize_periodic_knots(ctx, (knots, None), 2, true)
     });
     assert!(matches!(
         result,
@@ -791,21 +792,13 @@ fn face_table_references_preserve_wire_absence_and_reject_zero_triangulation() {
 #[test]
 fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
     in_decode_context(|ctx| {
-        let normalized = normalize_periodic_surface(
-            ctx,
-            [3, 1],
-            [
-                vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0]
+        let normalized = normalize_periodic_surface(ctx, [3, 1], [(vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0]
                     .into_iter()
                     .map(|value| FiniteReal::new(value).unwrap())
-                    .collect(),
-                vec![0.0, 0.0, 1.0, 1.0]
+                    .collect(), None), (vec![0.0, 0.0, 1.0, 1.0]
                     .into_iter()
                     .map(|value| FiniteReal::new(value).unwrap())
-                    .collect(),
-            ],
-            [6, 2],
-            (0..6)
+                    .collect(), None)], [6, 2], ((0..6)
                 .flat_map(|u| {
                     [
                         Point3::new(f64::from(u), 0.0, 0.0),
@@ -813,10 +806,7 @@ fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
                     ]
                 })
                 .map(|point| FinitePoint3::new(point).unwrap())
-                .collect(),
-            None,
-            [true, false],
-        )
+                .collect(), None), None, [true, false])
         .expect("valid periodic surface");
 
         assert_eq!(normalized.u_count(), 7);
@@ -1928,28 +1918,18 @@ fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
 #[test]
 fn numerical_seventh_periodic_knots_keep_finite_exterior_knots() {
     in_decode_context(|ctx| {
-        let (knots, padding) = super::normalize_periodic_knots(
-            ctx,
-            vec![-1e308, -9e307, 9e307, 1e308]
+        let (knots, padding) = super::normalize_periodic_knots(ctx, (vec![-1e308, -9e307, 9e307, 1e308]
                 .into_iter()
                 .map(|value| FiniteReal::new(value).unwrap())
-                .collect(),
-            1,
-            true,
-        )
+                .collect(), None), 1, true)
         .unwrap();
         assert_eq!(padding, 1);
         assert!((knots[0].get() / 1e308 + 1.1).abs() <= 4.0 * f64::EPSILON);
         assert!((knots[5].get() / 1e308 - 1.1).abs() <= 4.0 * f64::EPSILON);
-        assert!(super::normalize_periodic_knots(
-            ctx,
-            vec![-1e308, 0.0, 1e308]
+        assert!(super::normalize_periodic_knots(ctx, (vec![-1e308, 0.0, 1e308]
                 .into_iter()
                 .map(|value| FiniteReal::new(value).unwrap())
-                .collect(),
-            1,
-            true
-        )
+                .collect(), None), 1, true)
         .is_err());
     });
 }
