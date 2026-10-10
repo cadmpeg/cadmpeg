@@ -2653,7 +2653,7 @@ mod tests {
     fn empty_source_scan() -> Scan<'static> {
         Scan {
             container: Container {
-                data: (&[] as &[u8]).into(),
+                data: [].as_slice().into(),
                 physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
                 entries: Vec::new(),

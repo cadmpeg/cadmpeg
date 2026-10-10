@@ -2703,7 +2703,7 @@ pub(in crate::native) fn data_block_object_frames(
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut out = Vec::new();
     for (data_block, (bytes, source_offset)) in
-        ctx.admit_iter(&*blocks, "scan NX offset-store blocks")?
+        ctx.admit_iter(blocks, "scan NX offset-store blocks")?
     {
         for (ordinal, frame) in ctx
             .admit_iter(

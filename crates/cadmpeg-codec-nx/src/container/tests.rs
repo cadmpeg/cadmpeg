@@ -792,7 +792,7 @@ fn external_reference_paths_refuse_collection_limit() {
 
 fn external_reference_path_container(payload: &[u8]) -> Container<'_> {
     Container {
-        data: (&payload[..]).into(),
+        data: payload.into(),
         physical_size: cadmpeg_core::decode::u64_from_index(payload.len()),
         layout: ContainerLayout::LegacyCfb { version: 0 },
         entries: vec![DirEntry {
