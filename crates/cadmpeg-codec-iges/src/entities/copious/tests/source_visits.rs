@@ -438,3 +438,87 @@ fn copious_placed_point_sources_accept_exact_whole_work() {
         }
     }
 }
+
+fn knot_source_boundary(count: usize, exact: bool) {
+    let bytes = crate::test_support::test_owned::owned_test_file(&[]);
+    let global = crate::test_support::with_service_context(&bytes, |setup| {
+        let scan = crate::card::scan_with_context(&bytes, setup).unwrap();
+        let (global, _, _) = crate::global::parse(&scan, setup).unwrap();
+        global.length_context().unwrap()
+    });
+    assert_eq!(global.length_factor_mm(), 1.0);
+    let mut entry = crate::test_support::directory_target(1, 106);
+    entry.form = 11;
+    let directory = [entry];
+    let entries = BTreeMap::from([(1, &directory[0])]);
+    let mut values = vec![106, 1, i64::try_from(count).unwrap(), 0];
+    for index in 0..count {
+        values.extend([i64::try_from(index).unwrap(), 0]);
+    }
+    let record = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), values.len(),
+        values.into_iter().map(|value| Token {
+            value: TokenValue::Integer(value), span: 0..0,
+        }).collect(), Vec::new());
+    let records = BTreeMap::from([(1, &record)]);
+    let prefix = point_source_work(count, 0);
+    let knots = u64::try_from(count - 2).unwrap();
+    // The tuple gate bounds every index below1_000_000 (20bits), so exact
+    // f64 conversion cannot fail. The reserved knot Vec has N+2 slots:
+    // two initial, N-2 interior and two final. All admitted visits execute.
+    let cap = prefix + knots - u64::from(!exact);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = cap;
+    policy.limits.max_collection_items = u64::try_from(2 * count + 2).unwrap();
+    policy.limits.max_entities = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut output = ctx.reserve_scoped(0, "test copious knot source output").unwrap();
+    let mut sequences = SourceSequences::new(&ctx).unwrap();
+    let mut ir = CadIr::empty();
+    let result = output.with_storage(||
+        project(&mut ir, &directory, &entries, &records, &global, &ctx, &mut sequences));
+    let first = match result.as_ref() {
+        Err(CodecError::ResourceLimit(first)) => *first,
+        _ => panic!("expected knot source or following identity refusal"),
+    };
+    drop(result);
+    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(first.limit, cap);
+    if exact {
+        assert_eq!(first.operation, "iges generated identity");
+        assert_eq!(first.used, prefix + knots);
+        assert!(first.additional > 0);
+        assert!(first.additional <= u64::try_from("iges:model:point#D1-start".len()).unwrap());
+    } else {
+        assert_eq!(first.operation, "iges copious knot construction");
+        assert_eq!((first.used, first.additional), (prefix, knots));
+    }
+    assert_eq!(ir, CadIr::empty());
+    for _ in 0..64 {
+        for source in [&directory[..], &[][..]] {
+            assert!(matches!(project(&mut ir, source, &entries, &records, &global,
+                &ctx, &mut sequences), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert_eq!(ir, CadIr::empty());
+        }
+    }
+    drop(ir);
+    drop(sequences);
+    drop(output);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn copious_knot_source_refuses_one_unit_short_before_its_infallible_bulk_loop() {
+    for count in [3, 64] {
+        knot_source_boundary(count, false);
+    }
+}
+
+#[test]
+fn copious_knot_source_accepts_exact_whole_and_empty_ranges_before_output() {
+    for count in [2, 3, 64] {
+        knot_source_boundary(count, true);
+    }
+}
