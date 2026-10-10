@@ -1809,7 +1809,7 @@ fn production_options_count_distinct_quotient_equations() {
             },
         ]],
     };
-    let assignments = vec![vec![assignment.clone()], vec![assignment]];
+    let assignments = [vec![assignment.clone()], vec![assignment]];
     let edge_candidates = vec![Vec::new(); 2];
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
 

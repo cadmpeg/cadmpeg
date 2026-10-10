@@ -27,7 +27,7 @@ fn production_options_respect_mutually_exclusive_orientations() {
             },
         ]],
     };
-    let assignments = vec![vec![assignment]];
+    let assignments = [vec![assignment]];
     let edge_candidates = vec![Vec::new(); 2];
     let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
 

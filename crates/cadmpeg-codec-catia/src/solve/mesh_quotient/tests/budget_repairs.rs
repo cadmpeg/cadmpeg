@@ -60,7 +60,8 @@ fn affected_nodes_walk_each_merged_class_once() {
     use std::{collections::HashSet, sync::Arc};
     // One class needs linear collection growth; 128 repeated rows need 16,384 items.
     crate::test_support::with_collection_limit(32 * 128, |ctx| {
-        let mut quotient = super::super::MeshQuotient::new(vec![Arc::new(HashSet::from([0])); 128]);
+        let domain = Arc::new(HashSet::from([0]));
+        let mut quotient = super::super::MeshQuotient::new(vec![domain; 128]);
         for node in 1..128 {
             quotient
                 .merge_charged(ctx, node, node - 1)
@@ -157,7 +158,8 @@ fn descending_merges_keep_the_larger_member_buffer() {
     // Moving each growing child row costs 8 * 128 * 127 / 2 = 65,024 units
     // before destination growth. Moving only the smaller row fits this cap.
     crate::test_support::with_work_limit(32_000, |ctx| {
-        let mut quotient = super::super::MeshQuotient::new(vec![Arc::new(HashSet::from([0])); 128]);
+        let domain = Arc::new(HashSet::from([0]));
+        let mut quotient = super::super::MeshQuotient::new(vec![domain; 128]);
         for node in 1..128 {
             quotient
                 .merge_charged(ctx, node, node - 1)
@@ -176,7 +178,8 @@ fn descending_merges_keep_the_larger_member_buffer() {
 fn fixed_direction_options_skip_unvisited_local_work() {
     use std::{collections::HashSet, sync::Arc};
     crate::test_support::with_service_context(|ctx| {
-        let quotient = super::super::MeshQuotient::new(vec![Arc::new(HashSet::from([0])); 2]);
+        let domain = Arc::new(HashSet::from([0]));
+        let quotient = super::super::MeshQuotient::new(vec![domain; 2]);
         let use_ = super::super::MeshBoundaryEdgeCandidate {
             edge: 0,
             start: 0,
@@ -210,7 +213,8 @@ fn fixed_direction_options_skip_unvisited_local_work() {
 fn label_direction_scan_debits_only_the_visited_prefix() {
     use std::{collections::HashSet, sync::Arc};
     crate::test_support::with_service_context(|ctx| {
-        let mut quotient = super::super::MeshQuotient::new(vec![Arc::new(HashSet::from([0])); 2]);
+        let domain = Arc::new(HashSet::from([0]));
+        let mut quotient = super::super::MeshQuotient::new(vec![domain; 2]);
         let use_ = super::super::MeshBoundaryEdgeCandidate {
             edge: 0,
             start: 0,
