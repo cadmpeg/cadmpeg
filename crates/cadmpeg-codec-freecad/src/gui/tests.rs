@@ -6,9 +6,11 @@
 mod admission_paths;
 mod body_demand;
 mod decode_budget;
+mod material_archive;
 mod numeric_text;
 mod primitive_index;
 mod resource_admission;
+mod streaming_lists;
 
 use cadmpeg_test_support::wire;
 

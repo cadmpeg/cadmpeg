@@ -501,8 +501,8 @@ fn assert_primitive_retained_refusal(operation: &str) {
 }
 
 #[test]
-fn gui_appearance_identity_copy_refuses_at_retained_limit() {
-    assert_primitive_retained_refusal("FCStd GUI appearance identity copy");
+fn gui_appearance_identity_refuses_at_retained_limit() {
+    assert_primitive_retained_refusal("FCStd GUI edge appearance identity");
 }
 
 #[test]
@@ -702,56 +702,6 @@ fn gui_color_list_refuses_at_caller_limit() {
     );
 }
 
-fn assert_gui_binary_list_refusal(
-    payload_len: usize,
-    operation: &str,
-    parse: impl Fn(
-        &cadmpeg_core::decode::DecodeContext<'_>,
-        cadmpeg_core::decode::View<'_>,
-    ) -> Result<(), cadmpeg_core::CodecError>,
-) {
-    let mut bytes = 1_u32.to_le_bytes().to_vec();
-    bytes.extend(std::iter::repeat_n(0_u8, payload_len));
-    crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
-        parse(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
-    });
-}
-
-#[test]
-fn gui_float_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(8, "FCStd GUI float-list entries", |ctx, view| {
-        super::super::parse_float_list(ctx, view, "floats")
-    });
-}
-
-#[test]
-fn gui_vector_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(24, "FCStd GUI vector-list entries", |ctx, view| {
-        super::super::parse_vector_list(ctx, view, "vectors")
-    });
-}
-
-#[test]
-fn gui_placement_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(56, "FCStd GUI placement-list entries", |ctx, view| {
-        super::super::parse_placement_list(ctx, view, "placements")
-    });
-}
-
-#[test]
-fn gui_fillet_edge_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(20, "FCStd GUI fillet-edge entries", |ctx, view| {
-        super::super::parse_fillet_edges(ctx, view, "fillets")
-    });
-}
-
-#[test]
-fn gui_raw_material_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(24, "FCStd GUI raw material entries", |ctx, view| {
-        super::super::parse_material_list(ctx, view, 2, "material", false).map(|_| ())
-    });
-}
-
 fn material_list_property() -> crate::native::GuiPropertyRecord {
     crate::native::GuiPropertyRecord {
         id: "fcstd:gui:property#ShapeAppearance".into(),
@@ -820,8 +770,17 @@ fn gui_material_list_index_refuses_at_matching_materialized_limit() {
 
 #[test]
 fn gui_material_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(24, "FCStd GUI material entries", |ctx, view| {
-        super::super::parse_material_list(ctx, view, 2, "material", false).map(|_| ())
+    let mut bytes = 1_u32.to_le_bytes().to_vec();
+    bytes.extend([0_u8; 24]);
+    crate::test_support::assert_collection_refusal_at(&[], "FCStd GUI material entries", |ctx| {
+        super::super::parse_material_list(
+            ctx,
+            cadmpeg_core::decode::View::over_retained(&bytes),
+            2,
+            "material",
+            false,
+        )
+        .map(|_| ())
     });
 }
 
@@ -881,45 +840,13 @@ fn gui_property_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn gui_provider_identity_refuses_at_materialized_limit() {
-    let text =
-        r#"<ViewProvider name="Provider With Spaces"><Properties Count="0"/></ViewProvider>"#;
-    let xml = roxmltree::Document::parse(text).expect("GUI provider XML");
-    let error = crate::test_support::refusal_at(
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        text.as_bytes(),
-        "FreeCAD native identity",
-        |ctx| {
-            let error = super::super::append_native_provider(
-                ctx,
-                text,
-                xml.root_element(),
-                0,
-                None,
-                &mut Vec::new(),
-                &mut Vec::new(),
-            )
-            .expect_err("provider identity must charge before construction");
-            Err::<(), cadmpeg_core::CodecError>(error)
-        },
-    );
-
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-        if failure.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-            && failure.operation == "FreeCAD native identity"),
-        "{error:?}"
-    );
-}
-
-#[test]
-fn gui_provider_record_identity_copy_refuses_at_retained_limit() {
+fn gui_provider_record_identity_refuses_at_retained_limit() {
     let text =
         r#"<ViewProvider name="Provider With Spaces"><Properties Count="0"/></ViewProvider>"#;
     let xml = roxmltree::Document::parse(text).expect("GUI provider XML");
     crate::test_support::assert_retained_refusal_at(
         text.as_bytes(),
-        "FCStd GUI provider record identity",
+        "FreeCAD native identity",
         |ctx| {
             super::super::append_native_provider(
                 ctx,
@@ -1234,7 +1161,7 @@ fn gui_state_records_refuse_at_caller_limit() {
 
 #[test]
 fn gui_object_name_index_refuses_at_caller_limit() {
-    let text = "<Document><Camera/></Document>";
+    let text = r#"<Document><Camera settings=""/><ViewProviderData Count="1"><ViewProvider name="P"><Properties Count="0"/></ViewProvider></ViewProviderData></Document>"#;
     let xml = roxmltree::Document::parse(text).expect("GUI document XML");
     let object = crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
