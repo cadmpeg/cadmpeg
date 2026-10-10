@@ -1337,9 +1337,9 @@ impl serde::Serialize for LateralsJson<'_> {
     }
 }
 
-struct ExtrusionJson<'borrow, 'ctx>(&'borrow crate::extrusion::DecodedExtrusion<'ctx>);
+struct ExtrusionJson<'borrow>(&'borrow crate::extrusion::DecodedExtrusion);
 
-impl serde::Serialize for ExtrusionJson<'_, '_> {
+impl serde::Serialize for ExtrusionJson<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
         let mut map = serializer.serialize_map(Some(8))?;
@@ -1686,7 +1686,7 @@ fn extended_geometry_json(
         }
     } else if crate::extrusion::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
-        let extrusion = optional_geometry(
+        let (extrusion, _extrusion_storage) = optional_geometry(
             geometry_workspace.with_storage(|| {
                 crate::extrusion::decode(
                     expand,
@@ -1714,9 +1714,7 @@ fn extended_geometry_json(
         embedded_json(expand.ctx(), &CageJson(&cage), refusal)
     } else if value.class_id == crate::morph::CLASS {
         let morph = optional_geometry(
-            geometry_workspace.with_storage(|| {
-                crate::morph::decode(expand, value.class_data_range.clone(), scale, archive)
-            }),
+            crate::morph::decode(expand, value.class_data_range.clone(), scale, archive, &mut geometry_workspace),
             refusal,
         )?;
         embedded_json(expand.ctx(), &MorphJson(&morph), refusal)

@@ -2667,11 +2667,13 @@ impl<'a> DecodeContext<'a> {
             return Ok(());
         };
         let identity = &object.identity;
+        let mut morph_storage = self.expand.ctx().reserve_scoped(0, "Rhino morph raw controls")?;
         let morph = match crate::morph::decode(
             self.expand,
             object.class_data_range.clone(),
             scale,
             self.archive(),
+            &mut morph_storage,
         ) {
             Ok(morph) => morph,
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
@@ -2722,6 +2724,8 @@ impl<'a> DecodeContext<'a> {
                 return Ok(());
             }
         };
+        drop(morph);
+        drop(morph_storage);
         let ctx = self.expand.ctx();
         let mut link_storage = ctx.reserve_scoped(0, "Rhino source link scratch")?;
         let feature_id = self.expand.ctx().format_scoped_text(
@@ -3984,7 +3988,7 @@ impl<'a> DecodeContext<'a> {
             &mut self.mesh_budget,
         );
         match decoded {
-            Ok(extrusion) => {
+            Ok((extrusion, _extrusion_storage)) => {
                 let class = self.scan.objects[source_order]
                     .class_uuid()
                     .unwrap_or_else(crate::wire::Uuid::nil);
@@ -5153,7 +5157,7 @@ impl<'a> DecodeContext<'a> {
     fn commit_extrusion(
         &mut self,
         source_order: usize,
-        mut extrusion: crate::extrusion::DecodedExtrusion<'_>,
+        mut extrusion: crate::extrusion::DecodedExtrusion,
     ) -> Result<bool, cadmpeg_core::CodecError> {
         let ctx = self.expand.ctx();
         let Some(object) = self.scan.objects.get(source_order) else {
@@ -5993,7 +5997,7 @@ fn stage_extrusion_caps(
     annotations: &mut cadmpeg_ir::Annotations,
     key: &str,
     association: &SourceObjectAssociation,
-    extrusion: &crate::extrusion::DecodedExtrusion<'_>,
+    extrusion: &crate::extrusion::DecodedExtrusion,
     boundaries: &[CommittedExtrusionBoundary<'_>],
 ) -> Result<cadmpeg_ir::ids::BodyId, CandidateError> {
     let (ctx, arena_storage) = scope;
