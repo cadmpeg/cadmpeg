@@ -332,7 +332,10 @@ pub(in super::super) fn saved_section_entity_by_internal_id<'definition>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &'definition crate::feature::definitions::FeatureDefinition,
     internal_id: u32,
-) -> Result<Option<&'definition crate::feature::definitions::FeatureSavedEntity>, cadmpeg_core::CodecError> {
+) -> Result<
+    Option<&'definition crate::feature::definitions::FeatureSavedEntity>,
+    cadmpeg_core::CodecError,
+> {
     let mut selected = None;
     let outcome = visit_semantic_saved_section_entities(ctx, definition, |entity| {
         if saved_section_entity_identity(entity).0 == Some(internal_id) {
@@ -461,9 +464,13 @@ pub(in super::super) fn materialized_saved_section_external_ids(
         std::convert::Infallible,
     >(ctx, definition, |entity| {
         let materializes = match entity {
-            crate::feature::definitions::FeatureSavedEntity::Spline(spline) => identity_storage
-                .with_storage(|| saved_spline_sketch_geometry(ctx, spline, refusal))?
-                .is_some(),
+            crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
+                let mut spline_storage =
+                    ctx.reserve_scoped(0, "creo saved spline identity geometry")?;
+                spline_storage
+                    .with_storage(|| saved_spline_sketch_geometry(ctx, spline, refusal))?
+                    .is_some()
+            }
             _ => saved_section_entity_geometry(entity).is_some(),
         };
         if !materializes {
@@ -573,6 +580,7 @@ pub(super) fn opaque_section_segment_identity_suffix_admitted(
 mod tests {
     mod admission_recovery;
     mod record_lookup;
+    mod spline_storage;
     use super::{
         saved_section_entity_fallback_allowed, saved_section_line_witness_allowed,
         saved_section_ordinary_geometry_allowed,
@@ -652,7 +660,8 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert!(
             super::saved_section_entity_by_internal_id(&ctx, &definition, 3)
-                .expect("uniqueness stops before the later prototype search").is_none()
+                .expect("uniqueness stops before the later prototype search")
+                .is_none()
         );
     }
 
