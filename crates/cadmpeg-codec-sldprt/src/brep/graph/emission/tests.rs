@@ -31,7 +31,9 @@ fn ambiguous_face_owner_stats_survive_when_all_uses_are_withheld() {
     entity_facts.entity_count = 1;
     let decoded = crate::brep::graph::emission::decode_graph(
         &ctx,
-        &crate::brep::index::view::CarrierView::Retained(&crate::brep::index::CarrierIndex::default()),
+        &crate::brep::index::view::CarrierView::Retained(
+            &crate::brep::index::CarrierIndex::default(),
+        ),
         &tables,
         entity_facts,
         &crate::brep::typed::Facts::default(),
@@ -91,4 +93,3 @@ fn topology_pruning_retains_a_procedural_blend_spine() {
     crate::brep::graph::emission::prune_rejected_topology(&ctx, &mut brep).expect("prune topology");
     assert_eq!(brep.curves.first().map(|curve| &curve.id), Some(&spine));
 }
-

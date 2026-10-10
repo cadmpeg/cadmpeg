@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! B-spline/list carrier tables.
 
-pub(crate) mod patch;
 mod demand;
+pub(crate) mod patch;
 
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::geometry::{
-    nurbs::knots_nondecreasing,
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::knots_nondecreasing, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
@@ -259,11 +259,18 @@ fn framed_array_span(bytes: &[u8], off: usize) -> Option<(u16, u8, ArraySpan)> {
     let p = array_body(bytes, off, tag)?;
     let count = View::u32_be_at(bytes, p + arr_hdr::COUNT).map(index_from_u32)?;
     let attr = View::u16_be_at(bytes, p + arr_hdr::ATTR)?;
-    if attr <= 1 || count > MAX_ARRAY_VALUES { return None; }
+    if attr <= 1 || count > MAX_ARRAY_VALUES {
+        return None;
+    }
     let start = p + arr_hdr::LEN;
     let width = if tag == 0x7f { 2 } else { 8 };
-    if count.checked_mul(width).and_then(|size| start.checked_add(size))
-        .is_none_or(|end| end > bytes.len()) { return None; }
+    if count
+        .checked_mul(width)
+        .and_then(|size| start.checked_add(size))
+        .is_none_or(|end| end > bytes.len())
+    {
+        return None;
+    }
     Some((attr, tag, ArraySpan { start, count }))
 }
 
@@ -295,7 +302,9 @@ fn scan_arrays<'ctx>(
                 }
             }
         }
-        let Some((attr, tag, span)) = framed_array_span(bytes, off) else { continue; };
+        let Some((attr, tag, span)) = framed_array_span(bytes, off) else {
+            continue;
+        };
         if let Some(required) = required_attrs {
             if !ctx.contains_btree_set(required, &attr, "select Parasolid spline arrays")? {
                 continue;
@@ -487,9 +496,17 @@ fn parse_curve_descriptor(bytes: &[u8], off: usize) -> Option<(u16, CurveDescrip
     if attr <= 1 || !(dimension == 3 || dimension == 4) || control_count == 0 {
         return None;
     }
-    Some((attr, CurveDescriptor {
-        degree, control_count, dimension, control_attr, multiplicity_attr, knot_attr,
-    }))
+    Some((
+        attr,
+        CurveDescriptor {
+            degree,
+            control_count,
+            dimension,
+            control_attr,
+            multiplicity_attr,
+            knot_attr,
+        },
+    ))
 }
 
 fn scan_curve_descriptors(
@@ -499,7 +516,9 @@ fn scan_curve_descriptors(
     let mut out = BTreeMap::new();
     let starts = 0..bytes.len().checked_sub(29).map_or(0, |end| end);
     for off in ctx.admit_iter(starts, "scan Parasolid curve descriptors")? {
-        let Some((attr, descriptor)) = parse_curve_descriptor(bytes, off) else { continue; };
+        let Some((attr, descriptor)) = parse_curve_descriptor(bytes, off) else {
+            continue;
+        };
         ctx.entry_btree_map(&mut out, attr, "collect Parasolid curve descriptors")?
             .or_insert(descriptor);
     }
@@ -550,7 +569,9 @@ fn expanded_knots(
 
     let mut storage = ctx.reserve_scoped(0, "expand Parasolid knots")?;
     let mut out = Vec::new();
-    let mut pairs = values[..scan_count].iter().zip(&multiplicities[..scan_count]);
+    let mut pairs = values[..scan_count]
+        .iter()
+        .zip(&multiplicities[..scan_count]);
     while pairs.len() != 0 {
         let Some((value, &multiplicity)) =
             ctx.next_charged(&mut pairs, "scan Parasolid knot values")?
@@ -573,9 +594,7 @@ fn expanded_knots(
             0..usize::from(multiplicity),
             "emit Parasolid expanded knots",
         )? {
-            storage.with_storage(|| {
-                ctx.push_vec(&mut out, *value, "expand Parasolid knots")
-            })?;
+            storage.with_storage(|| ctx.push_vec(&mut out, *value, "expand Parasolid knots"))?;
         }
     }
     Ok(Some(storage.commit_value(out)?))
@@ -619,14 +638,30 @@ pub(in crate::brep) fn scan_curve_carriers_into<'ctx>(
     let mut sources = demand::Sources::new(ctx, bytes, false)?;
     let mut starts = 0..bytes.len().checked_sub(6).map_or(0, |end| end);
     while starts.len() != 0 {
-        let Some(off) = ctx.next_charged(&mut starts, "scan Parasolid curve wrappers")? else { break; };
-        if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) { continue; }
+        let Some(off) = ctx.next_charged(&mut starts, "scan Parasolid curve wrappers")? else {
+            break;
+        };
+        if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) {
+            continue;
+        }
         let mut p = off + 2;
-        if bytes.get(p) == Some(&0xff) { p += 1; }
-        let Some(attr) = View::u16_be_at(bytes, p) else { continue; };
-        if out.contains(ctx, attr)? { continue; }
-        let Some(descriptor) = sources.curve_for_wrapper(p)? else { continue; };
-        for reference in [descriptor.control_attr, descriptor.multiplicity_attr, descriptor.knot_attr] {
+        if bytes.get(p) == Some(&0xff) {
+            p += 1;
+        }
+        let Some(attr) = View::u16_be_at(bytes, p) else {
+            continue;
+        };
+        if out.contains(ctx, attr)? {
+            continue;
+        }
+        let Some(descriptor) = sources.curve_for_wrapper(p)? else {
+            continue;
+        };
+        for reference in [
+            descriptor.control_attr,
+            descriptor.multiplicity_attr,
+            descriptor.knot_attr,
+        ] {
             sources.array(reference)?;
         }
         let arrays = sources.arrays();
@@ -673,7 +708,9 @@ pub(in crate::brep) fn scan_curve_carriers_into<'ctx>(
             let mut points =
                 ctx.vector_storage(descriptor.control_count, "decode Parasolid curve poles")?;
             let mut weights = if descriptor.dimension == 4 {
-                Some(ctx.vector_storage(descriptor.control_count, "decode Parasolid curve weights")?)
+                Some(
+                    ctx.vector_storage(descriptor.control_count, "decode Parasolid curve weights")?,
+                )
             } else {
                 None
             };
@@ -735,7 +772,8 @@ pub(in crate::brep) fn scan_curve_carriers_into<'ctx>(
                     false,
                 )?,
             ))
-        })? else {
+        })?
+        else {
             continue;
         };
         drop(pole_storage);
@@ -745,23 +783,25 @@ pub(in crate::brep) fn scan_curve_carriers_into<'ctx>(
                 return Err(limit.into())
             }
             Err(error) => {
-                let note = refusals.note(
-                    ctx,
-                    format_args!("curve carrier attribute {attr}: {error}"),
-                )?;
+                let note =
+                    refusals.note(ctx, format_args!("curve carrier attribute {attr}: {error}"))?;
                 drop(error);
                 drop(carrier_storage);
                 note.publish(ctx)?;
                 continue;
             }
         };
-        out.publish(ctx, CurveCarrier {
+        out.publish(
+            ctx,
+            CurveCarrier {
                 attr,
                 offset: off,
                 end: off + 2,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
                 parameter_range: None,
-            }, carrier_storage)?;
+            },
+            carrier_storage,
+        )?;
     }
     Ok(())
 }
@@ -917,7 +957,7 @@ pub(crate) fn scan_surface_carriers(
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<u16, SurfaceCarrier>, cadmpeg_core::CodecError> {
-    use super::index::publication::{SurfaceSink, LossSink};
+    use super::index::publication::{LossSink, SurfaceSink};
     let mut out = BTreeMap::new();
     let mut output = SurfaceSink::Retained(&mut out);
     let mut losses = LossSink::Retained(refusals);
@@ -934,29 +974,93 @@ pub(in crate::brep) fn scan_surface_carriers_into<'ctx>(
     let mut sources = demand::Sources::new(ctx, bytes, true)?;
     let mut starts = 0..bytes.len().checked_sub(1).map_or(0, |end| end);
     while starts.len() != 0 {
-        let Some(off) = ctx.next_charged(&mut starts, "scan Parasolid surface wrappers")? else { break; };
-        if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) { continue; }
+        let Some(off) = ctx.next_charged(&mut starts, "scan Parasolid surface wrappers")? else {
+            break;
+        };
+        if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) {
+            continue;
+        }
         let mut p = off + 2;
-        if bytes.get(p) == Some(&0xff) { p += 1; }
-        let Some(attr) = View::u16_be_at(bytes, p) else { continue; };
-        if out.contains(ctx, attr)? { continue; }
-        let Some(descriptor_at) = p.checked_add(17) else { continue; };
-        let Some(descriptor_attr) = View::u16_be_at(bytes, descriptor_at) else { continue; };
-        let Some(descriptor) = sources.surface(descriptor_attr)? else { continue; };
+        if bytes.get(p) == Some(&0xff) {
+            p += 1;
+        }
+        let Some(attr) = View::u16_be_at(bytes, p) else {
+            continue;
+        };
+        if out.contains(ctx, attr)? {
+            continue;
+        }
+        let Some(descriptor_at) = p.checked_add(17) else {
+            continue;
+        };
+        let Some(descriptor_attr) = View::u16_be_at(bytes, descriptor_at) else {
+            continue;
+        };
+        let Some(descriptor) = sources.surface(descriptor_attr)? else {
+            continue;
+        };
         for reference in descriptor.refs {
             sources.array(reference)?;
         }
-        let Some(expected_poles) = descriptor.u_count.checked_mul(descriptor.v_count) else { continue; };
-        let Some(expected_control_values) = expected_poles.checked_mul(descriptor.dimension) else { continue; };
+        let Some(expected_poles) = descriptor.u_count.checked_mul(descriptor.v_count) else {
+            continue;
+        };
+        let Some(expected_control_values) = expected_poles.checked_mul(descriptor.dimension) else {
+            continue;
+        };
         sources.prepare_control(descriptor.refs[0], expected_control_values)?;
         // Preserve the control-before-knot resolution gate.
-        if sources.control(descriptor.refs[0], expected_control_values)?.is_none() { continue; }
-        sources.prepare_knots(descriptor.refs[3], descriptor.refs[1], descriptor.u_knot_count)?;
-        if sources.knots(descriptor.refs[3], descriptor.refs[1], descriptor.u_knot_count)?.is_none() { continue; }
-        sources.prepare_knots(descriptor.refs[4], descriptor.refs[2], descriptor.v_knot_count)?;
-        let Some(control) = sources.control(descriptor.refs[0], expected_control_values)? else { continue; };
-        let Some(SurfaceKnotValues { unique: u_unique, multiplicities: u_mult }) = sources.knots(descriptor.refs[3], descriptor.refs[1], descriptor.u_knot_count)? else { continue; };
-        let Some(SurfaceKnotValues { unique: v_unique, multiplicities: v_mult }) = sources.knots(descriptor.refs[4], descriptor.refs[2], descriptor.v_knot_count)? else { continue; };
+        if sources
+            .control(descriptor.refs[0], expected_control_values)?
+            .is_none()
+        {
+            continue;
+        }
+        sources.prepare_knots(
+            descriptor.refs[3],
+            descriptor.refs[1],
+            descriptor.u_knot_count,
+        )?;
+        if sources
+            .knots(
+                descriptor.refs[3],
+                descriptor.refs[1],
+                descriptor.u_knot_count,
+            )?
+            .is_none()
+        {
+            continue;
+        }
+        sources.prepare_knots(
+            descriptor.refs[4],
+            descriptor.refs[2],
+            descriptor.v_knot_count,
+        )?;
+        let Some(control) = sources.control(descriptor.refs[0], expected_control_values)? else {
+            continue;
+        };
+        let Some(SurfaceKnotValues {
+            unique: u_unique,
+            multiplicities: u_mult,
+        }) = sources.knots(
+            descriptor.refs[3],
+            descriptor.refs[1],
+            descriptor.u_knot_count,
+        )?
+        else {
+            continue;
+        };
+        let Some(SurfaceKnotValues {
+            unique: v_unique,
+            multiplicities: v_mult,
+        }) = sources.knots(
+            descriptor.refs[4],
+            descriptor.refs[2],
+            descriptor.v_knot_count,
+        )?
+        else {
+            continue;
+        };
         if control.len() != expected_control_values {
             continue;
         }
@@ -1111,7 +1215,8 @@ pub(in crate::brep) fn scan_surface_carriers_into<'ctx>(
                     false,
                 )?,
             ))
-        })? else {
+        })?
+        else {
             continue;
         };
         drop(pole_storage);
@@ -1131,13 +1236,17 @@ pub(in crate::brep) fn scan_surface_carriers_into<'ctx>(
                 continue;
             }
         };
-        out.publish(ctx, SurfaceCarrier {
+        out.publish(
+            ctx,
+            SurfaceCarrier {
                 attr,
                 offset: off,
                 end: off + 2,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
                 orientation_reversed: false,
-            }, carrier_storage)?;
+            },
+            carrier_storage,
+        )?;
     }
     Ok(())
 }

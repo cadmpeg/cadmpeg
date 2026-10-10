@@ -60,7 +60,8 @@ fn text_geometry() -> SketchGeometry {
         placement: None,
         horizontal_alignment: None,
         vertical_alignment: None,
-    }).unwrap()
+    })
+    .unwrap()
 }
 
 fn frame() -> SketchBlockAssemblyFrame {
@@ -84,15 +85,18 @@ fn profile_child_sources_transfer_actual_set_and_discard_duplicates() {
         }
         let storage;
         let values;
-        (values, storage) = ctx.with_scoped_storage(CHILD_SOURCES, || {
-            dissectable_child_sources(&ctx, "7,9")
-        }).unwrap();
+        (values, storage) = ctx
+            .with_scoped_storage(CHILD_SOURCES, || dissectable_child_sources(&ctx, "7,9"))
+            .unwrap();
         let values = values.unwrap();
         assert_eq!(values.len(), 2);
         assert!(values.contains(&7) && values.contains(&9));
         drop(values);
         drop(storage);
-        drop(ctx.reserve_scoped(CHILD_BYTES, "reuse child source scratch").unwrap());
+        drop(
+            ctx.reserve_scoped(CHILD_BYTES, "reuse child source scratch")
+                .unwrap(),
+        );
         if retained != 0 {
             let values = dissectable_child_sources(&ctx, "7,9").unwrap().unwrap();
             assert_eq!(values.len(), 2);
@@ -103,7 +107,10 @@ fn profile_child_sources_transfer_actual_set_and_discard_duplicates() {
 
 #[test]
 fn profile_child_sources_refuse_exact_storage_limit() {
-    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::MaterializedBytes] {
+    for dimension in [
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = CHILD_BYTES;
@@ -115,7 +122,15 @@ fn profile_child_sources_refuse_exact_storage_limit() {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = dissectable_child_sources(&ctx, "7,9").unwrap_err();
-        assert_refusal(&ctx, error, dimension, CHILD_SOURCES, 0, CHILD_BYTES, CHILD_BYTES - 1);
+        assert_refusal(
+            &ctx,
+            error,
+            dimension,
+            CHILD_SOURCES,
+            0,
+            CHILD_BYTES,
+            CHILD_BYTES - 1,
+        );
     }
 }
 
@@ -131,9 +146,9 @@ fn sketch_block_rotation_output_transfers_exact_storage() {
         for _ in 0..2 {
             let storage;
             let result;
-            (result, storage) = ctx.with_scoped_storage(CANDIDATE, || {
-                sketch_block_assembly_frame(&ctx, &instances)
-            }).unwrap();
+            (result, storage) = ctx
+                .with_scoped_storage(CANDIDATE, || sketch_block_assembly_frame(&ctx, &instances))
+                .unwrap();
             let (actual, rotations) = result.unwrap();
             assert_eq!(actual.origin, Point3::new(0.0, 0.0, 0.0));
             assert_eq!(actual.normal, Vector3::new(0.0, 0.0, 1.0));
@@ -142,9 +157,18 @@ fn sketch_block_rotation_output_transfers_exact_storage() {
             drop(rotations);
             drop(storage);
         }
-        drop(ctx.reserve_scoped(ROTATION_BYTES, "reuse rotation scratch").unwrap());
+        drop(
+            ctx.reserve_scoped(ROTATION_BYTES, "reuse rotation scratch")
+                .unwrap(),
+        );
         if retained != 0 {
-            assert_eq!(sketch_block_assembly_frame(&ctx, &instances).unwrap().unwrap().1, [0.0]);
+            assert_eq!(
+                sketch_block_assembly_frame(&ctx, &instances)
+                    .unwrap()
+                    .unwrap()
+                    .1,
+                [0.0]
+            );
         }
     }
 }
@@ -152,7 +176,10 @@ fn sketch_block_rotation_output_transfers_exact_storage() {
 #[test]
 fn sketch_block_rotation_output_preserves_original_refusal() {
     let instances = [instance()];
-    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::MaterializedBytes] {
+    for dimension in [
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = ROTATION_BYTES;
@@ -166,7 +193,15 @@ fn sketch_block_rotation_output_preserves_original_refusal() {
         };
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = sketch_block_assembly_frame(&ctx, &instances).err().unwrap();
-        assert_refusal(&ctx, error, dimension, operation, 0, ROTATION_BYTES, ROTATION_BYTES - 1);
+        assert_refusal(
+            &ctx,
+            error,
+            dimension,
+            operation,
+            0,
+            ROTATION_BYTES,
+            ROTATION_BYTES - 1,
+        );
     }
 }
 
@@ -182,17 +217,33 @@ fn sketch_block_text_output_transfers_exact_storage() {
         for _ in 0..2 {
             let storage;
             let result;
-            (result, storage) = ctx.with_scoped_storage(CANDIDATE, || {
-                transform_sketch_block_geometry(&ctx, &source, Transform::identity(), frame(), 0.0)
-            }).unwrap();
+            (result, storage) = ctx
+                .with_scoped_storage(CANDIDATE, || {
+                    transform_sketch_block_geometry(
+                        &ctx,
+                        &source,
+                        Transform::identity(),
+                        frame(),
+                        0.0,
+                    )
+                })
+                .unwrap();
             let result = result.unwrap();
             assert_eq!(result, source);
             drop(result);
             drop(storage);
         }
-        drop(ctx.reserve_scoped(TEXT_BYTES, "reuse text geometry scratch").unwrap());
+        drop(
+            ctx.reserve_scoped(TEXT_BYTES, "reuse text geometry scratch")
+                .unwrap(),
+        );
         if retained != 0 {
-            assert_eq!(transform_sketch_block_geometry(&ctx, &source, Transform::identity(), frame(), 0.0).unwrap().unwrap(), source);
+            assert_eq!(
+                transform_sketch_block_geometry(&ctx, &source, Transform::identity(), frame(), 0.0)
+                    .unwrap()
+                    .unwrap(),
+                source
+            );
         }
     }
 }
@@ -200,7 +251,10 @@ fn sketch_block_text_output_transfers_exact_storage() {
 #[test]
 fn sketch_block_text_output_preserves_original_refusal() {
     let source = text_geometry();
-    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::MaterializedBytes] {
+    for dimension in [
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = TEXT_BYTES;
@@ -210,10 +264,24 @@ fn sketch_block_text_output_preserves_original_refusal() {
             (CANDIDATE, 0, TEXT_BYTES)
         } else {
             policy.limits.max_materialized_bytes -= 1;
-            ("transform SLDPRT sketch block geometry", TEXT.len() as u64, FONT.len() as u64)
+            (
+                "transform SLDPRT sketch block geometry",
+                TEXT.len() as u64,
+                FONT.len() as u64,
+            )
         };
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = transform_sketch_block_geometry(&ctx, &source, Transform::identity(), frame(), 0.0).unwrap_err();
-        assert_refusal(&ctx, error, dimension, operation, used, additional, TEXT_BYTES - 1);
+        let error =
+            transform_sketch_block_geometry(&ctx, &source, Transform::identity(), frame(), 0.0)
+                .unwrap_err();
+        assert_refusal(
+            &ctx,
+            error,
+            dimension,
+            operation,
+            used,
+            additional,
+            TEXT_BYTES - 1,
+        );
     }
 }

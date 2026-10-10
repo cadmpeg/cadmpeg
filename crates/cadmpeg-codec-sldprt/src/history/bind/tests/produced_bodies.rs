@@ -6,14 +6,16 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::Feature;
 
-use super::{face_owner_fixture, ordering_feature};
 use super::super::{derive_feature_outputs, FeatureOutputSources};
+use super::{face_owner_fixture, ordering_feature};
 use crate::records::FeatureHistory;
 
 fn history() -> FeatureHistory {
     FeatureHistory {
-        id: "history".into(), part_name: None,
-        properties: std::collections::BTreeMap::new(), content: Vec::new(),
+        id: "history".into(),
+        part_name: None,
+        properties: std::collections::BTreeMap::new(),
+        content: Vec::new(),
         configurations: Vec::new(),
         features: vec![crate::history::tests::feature("native", Some("700"), 0)],
     }
@@ -43,12 +45,28 @@ fn produced_body_membership_retires_before_output_validation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..64 {
         let mut features = [projected()];
-        derive_feature_outputs(&ctx, &mut features, &histories,
-            FeatureOutputSources { face_producers: &producers, body_modifiers: &[] },
-            &model.faces, &model.shells, &model.regions).unwrap();
-        assert_eq!(features[0].evaluation.outputs(), std::slice::from_ref(&model.bodies[0].id));
+        derive_feature_outputs(
+            &ctx,
+            &mut features,
+            &histories,
+            FeatureOutputSources {
+                face_producers: &producers,
+                body_modifiers: &[],
+            },
+            &model.faces,
+            &model.shells,
+            &model.regions,
+        )
+        .unwrap();
+        assert_eq!(
+            features[0].evaluation.outputs(),
+            std::slice::from_ref(&model.bodies[0].id)
+        );
         // Returned owned identities remain alive while all local tables release.
-        drop(ctx.reserve_scoped(MATERIALIZED, "reuse produced body workspace").unwrap());
+        drop(
+            ctx.reserve_scoped(MATERIALIZED, "reuse produced body workspace")
+                .unwrap(),
+        );
     }
     assert_eq!(ctx.resource_refusal(), None);
     ctx.finish_session().unwrap();
@@ -63,9 +81,27 @@ fn produced_body_membership_preserves_actual_refusals() {
     // Before produced membership, ordinal131 remains live while the owner
     // lookup builds region131 and shell131. Thus360 refuses the shell first.
     for (dimension, cap, used, additional, operation) in [
-        (ResourceDimension::MaterializedBytes, 360, 262, 131, "index SLDPRT face owner shells"),
-        (ResourceDimension::CollectionItems, 4, 4, 1, "collect SLDPRT produced bodies"),
-        (ResourceDimension::MaterializedBytes, 662, 564, 99, "validate distinct decoded members"),
+        (
+            ResourceDimension::MaterializedBytes,
+            360,
+            262,
+            131,
+            "index SLDPRT face owner shells",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            4,
+            4,
+            1,
+            "collect SLDPRT produced bodies",
+        ),
+        (
+            ResourceDimension::MaterializedBytes,
+            662,
+            564,
+            99,
+            "validate distinct decoded members",
+        ),
     ] {
         let mut policy = DecodePolicy::service();
         match dimension {
@@ -77,10 +113,19 @@ fn produced_body_membership_preserves_actual_refusals() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut features = [projected()];
         let Err(CodecError::ResourceLimit(limit)) = derive_feature_outputs(
-            &ctx, &mut features, &histories,
-            FeatureOutputSources { face_producers: &producers, body_modifiers: &[] },
-            &model.faces, &model.shells, &model.regions)
-        else { panic!("required produced body backing refuses before publication"); };
+            &ctx,
+            &mut features,
+            &histories,
+            FeatureOutputSources {
+                face_producers: &producers,
+                body_modifiers: &[],
+            },
+            &model.faces,
+            &model.shells,
+            &model.regions,
+        ) else {
+            panic!("required produced body backing refuses before publication");
+        };
         assert_eq!(limit.dimension, dimension);
         assert_eq!(limit.operation, operation);
         assert_eq!(limit.limit, cap);
@@ -88,7 +133,11 @@ fn produced_body_membership_preserves_actual_refusals() {
         assert_eq!(limit.additional, additional);
         assert!(features[0].evaluation.outputs().is_empty());
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after produced body refusal"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.charge_work(0, "after produced body refusal"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 }

@@ -50,8 +50,16 @@ fn projected_nurbs_value_handoff_preserves_exact_storage_and_refusal() {
         // Indexed raw lanes and converted output use exact reservations. Raw rational
         // pairing starts with four amortized slots; its lease lasts through conversion.
         let raw_bytes = source_points.len() * size_of::<Point2>()
-            + if rational { source_points.len() * size_of::<NonZeroReal>() } else { 0 };
-        let paired_bytes = if rational { 4 * size_of::<WeightedPole2<Point2>>() } else { 0 };
+            + if rational {
+                source_points.len() * size_of::<NonZeroReal>()
+            } else {
+                0
+            };
+        let paired_bytes = if rational {
+            4 * size_of::<WeightedPole2<Point2>>()
+        } else {
+            0
+        };
         let materialized_bytes = knot_bytes + raw_bytes + paired_bytes + output_pole_bytes;
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
@@ -66,7 +74,11 @@ fn projected_nurbs_value_handoff_preserves_exact_storage_and_refusal() {
             .unwrap(),
         ));
         let curves = HashMap::from([(&curve_id, &geometry)]);
-        for boundary in [None, Some(ResourceDimension::RetainedBytes), Some(ResourceDimension::MaterializedBytes)] {
+        for boundary in [
+            None,
+            Some(ResourceDimension::RetainedBytes),
+            Some(ResourceDimension::MaterializedBytes),
+        ] {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = u64::try_from(retained_bytes).unwrap()
                 - u64::from(boundary == Some(ResourceDimension::RetainedBytes));
@@ -99,12 +111,16 @@ fn projected_nurbs_value_handoff_preserves_exact_storage_and_refusal() {
                     assert_eq!(limit.additional, u64::try_from(retained_bytes).unwrap());
                 } else {
                     assert_eq!(limit.operation, "IR pcurve admitted poles");
-                    assert_eq!(limit.used, u64::try_from(materialized_bytes - output_pole_bytes).unwrap());
+                    assert_eq!(
+                        limit.used,
+                        u64::try_from(materialized_bytes - output_pole_bytes).unwrap()
+                    );
                     assert_eq!(limit.additional, u64::try_from(output_pole_bytes).unwrap());
                 }
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-                let CodecError::ResourceLimit(replayed) =
-                    ctx.reserve_scoped(0, "replay projected NURBS refusal").unwrap_err()
+                let CodecError::ResourceLimit(replayed) = ctx
+                    .reserve_scoped(0, "replay projected NURBS refusal")
+                    .unwrap_err()
                 else {
                     panic!("the original resource refusal remains sticky");
                 };
@@ -115,12 +131,23 @@ fn projected_nurbs_value_handoff_preserves_exact_storage_and_refusal() {
                     panic!("projection preserves the NURBS carrier");
                 };
                 assert_eq!(curve.knots().as_slice(), knots);
-                assert_eq!(curve.pole_rows().raw_points(), [Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)]);
+                assert_eq!(
+                    curve.pole_rows().raw_points(),
+                    [Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)]
+                );
                 assert_eq!(curve.pole_rows().weights(), weights);
                 assert!(refusals.take_records().is_empty());
-                let storage = ctx.reserve_scoped(u64::try_from(materialized_bytes).unwrap(), "reuse projected NURBS scratch").unwrap();
+                let storage = ctx
+                    .reserve_scoped(
+                        u64::try_from(materialized_bytes).unwrap(),
+                        "reuse projected NURBS scratch",
+                    )
+                    .unwrap();
                 drop(storage);
-                let CodecError::ResourceLimit(limit) = ctx.copy_retained_text("x", "projected NURBS output remains retained").unwrap_err() else {
+                let CodecError::ResourceLimit(limit) = ctx
+                    .copy_retained_text("x", "projected NURBS output remains retained")
+                    .unwrap_err()
+                else {
                     panic!("published output exhausts its exact retained allowance");
                 };
                 assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);

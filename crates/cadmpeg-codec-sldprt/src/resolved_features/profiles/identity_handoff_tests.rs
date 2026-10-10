@@ -10,9 +10,13 @@ const OPERATION: &str = "project SLDPRT compact sketch profiles";
 
 fn existing_sketch() -> Sketch {
     Sketch {
-        id: SketchId::mint(ID).unwrap(), name: None, configuration: None,
-        visible: None, placement: SketchPlacement::Unresolved {},
-        profiles: SketchProfiles::default(), native_ref: None,
+        id: SketchId::mint(ID).unwrap(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::Unresolved {},
+        profiles: SketchProfiles::default(),
+        native_ref: None,
     }
 }
 
@@ -72,7 +76,9 @@ fn compact_profile_binding_preserves_original_identity_promotion_refusal() {
         &mut losses,
     )
     .unwrap_err();
-    let CodecError::ResourceLimit(limit) = error else { panic!("expected identity promotion refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected identity promotion refusal");
+    };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(limit.operation, OPERATION);
     assert_eq!(limit.used, 0);
@@ -81,10 +87,14 @@ fn compact_profile_binding_preserves_original_identity_promotion_refusal() {
     assert_eq!(sketches, [prior]);
     assert!(entities.is_empty());
     assert!(losses.is_empty());
-    assert!(matches!(features[0].evaluation.definition(),
+    assert!(matches!(
+        features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: SketchFeatureBinding::Unresolved,
-        })));
+        })
+    ));
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
+    );
 }

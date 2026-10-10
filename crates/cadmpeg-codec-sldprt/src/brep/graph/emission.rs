@@ -1,11 +1,66 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Emit topology arenas and prune unresolved graph members.
 
-use cadmpeg_core::decode::DecodeContext;
+use super::admit_brep_entity;
+use super::bind_bridges;
+use super::body_namespace;
+use super::canonical_coedge_attr;
+use super::construction::emit_offset_surface;
+use super::construction::ensure_surface_support;
+use super::construction::resolve_sweep_surface;
+use super::construction::support_is_acyclic;
+use super::construction::BrepSink;
+use super::construction::SweepSurfaceResolution;
+use super::copy_graph_stream_name;
+use super::edge_end_vuse;
+use super::edge_parameter_range;
+use super::emit_shell_components;
+use super::forward_coedges_by_edge;
+use super::id_closed_point;
+use super::id_closed_vertex;
+use super::id_coedge;
+use super::id_curve;
+use super::id_edge;
+use super::id_face;
+use super::id_loop;
+use super::id_point;
+use super::id_surf;
+use super::id_vertex;
+use super::orientation::solve_face_orientation;
+use super::pcurve_namespace;
+use super::pcurves::derive_pcurves;
+use super::pcurves::intersection_support_pcurve;
+use super::pcurves::single_pcurve_use;
+use super::pcurves::IntersectionPcurveSource;
+use super::region_namespace;
+use super::seams::synthesize_cylinder_seams;
+use super::seams::synthesize_sphere_seams;
+use super::shell_namespace;
+use super::sorted_topology_sequences;
+use super::surface_sense;
+use super::typed_body_records;
+use super::unique_body_modifiers;
+use super::unique_face_colors;
+use super::walk_face;
+use super::Brep;
+use super::OwnedFaceColor;
+use super::Stats;
+use super::WalkedFace;
+use crate::brep::attrib;
+use crate::brep::blend::BlendSupportRef;
+use crate::brep::entity;
+use crate::brep::graph::shells::ShellFaceIndex;
+use crate::brep::index::view::CarrierView;
+use crate::brep::index::IndexedCurve;
+use crate::brep::topology;
+use crate::brep::typed;
+use crate::brep::CurveCarrier;
+use crate::brep::LEN_TO_MM;
 use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_ir::Exactness;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::annotations::StreamHandle;
+use cadmpeg_ir::geometry::pcurve::Pcurve;
 use cadmpeg_ir::geometry::BlendCrossSection;
 use cadmpeg_ir::geometry::BlendRadiusLaw;
 use cadmpeg_ir::geometry::BlendSupport;
@@ -17,7 +72,6 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::Surface;
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::geometry::pcurve::Pcurve;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::ids::CoedgeId;
 use cadmpeg_ir::ids::LoopId;
@@ -35,64 +89,10 @@ use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::topology::Region;
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::topology::Vertex;
-use crate::brep::CurveCarrier;
-use crate::brep::LEN_TO_MM;
-use crate::brep::attrib;
-use crate::brep::blend::BlendSupportRef;
-use crate::brep::entity;
-use crate::brep::graph::shells::ShellFaceIndex;
-use crate::brep::index::IndexedCurve;
-use crate::brep::index::view::CarrierView;
-use crate::brep::topology;
-use crate::brep::typed;
+use cadmpeg_ir::Exactness;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashSet;
-use super::Brep;
-use super::construction::BrepSink;
-use super::pcurves::IntersectionPcurveSource;
-use super::OwnedFaceColor;
-use super::Stats;
-use super::construction::SweepSurfaceResolution;
-use super::WalkedFace;
-use super::admit_brep_entity;
-use super::bind_bridges;
-use super::body_namespace;
-use super::canonical_coedge_attr;
-use super::copy_graph_stream_name;
-use super::pcurves::derive_pcurves;
-use super::edge_end_vuse;
-use super::edge_parameter_range;
-use super::construction::emit_offset_surface;
-use super::emit_shell_components;
-use super::construction::ensure_surface_support;
-use super::forward_coedges_by_edge;
-use super::id_closed_point;
-use super::id_closed_vertex;
-use super::id_coedge;
-use super::id_curve;
-use super::id_edge;
-use super::id_face;
-use super::id_loop;
-use super::id_point;
-use super::id_surf;
-use super::id_vertex;
-use super::pcurves::intersection_support_pcurve;
-use super::pcurves::single_pcurve_use;
-use super::pcurve_namespace;
-use super::region_namespace;
-use super::construction::resolve_sweep_surface;
-use super::shell_namespace;
-use super::orientation::solve_face_orientation;
-use super::sorted_topology_sequences;
-use super::construction::support_is_acyclic;
-use super::surface_sense;
-use super::seams::synthesize_cylinder_seams;
-use super::seams::synthesize_sphere_seams;
-use super::typed_body_records;
-use super::unique_body_modifiers;
-use super::unique_face_colors;
-use super::walk_face;
 
 pub(super) fn decode_graph(
     ctx: &DecodeContext<'_>,
@@ -107,7 +107,8 @@ pub(super) fn decode_graph(
             typed_body_records(ctx, typed_facts, t)
         })?;
     let body_records = typed_records.unwrap_or_default();
-    let body_modifiers = unique_body_modifiers(ctx, std::mem::take(&mut entity_facts.body_modifiers))?;
+    let body_modifiers =
+        unique_body_modifiers(ctx, std::mem::take(&mut entity_facts.body_modifiers))?;
     let (face_colors, conflicting_face_colors) = unique_face_colors(
         ctx,
         std::mem::take(&mut entity_facts.face_colors),
@@ -743,7 +744,9 @@ pub(super) fn decode_graph(
                                 f.surface_attr,
                                 surface,
                                 *endpoint_positions,
-                                &mut crate::lane_refusal::scoped::RefusalSink::Scoped(&mut pcurve_refusal),
+                                &mut crate::lane_refusal::scoped::RefusalSink::Scoped(
+                                    &mut pcurve_refusal,
+                                ),
                             )?
                         else {
                             return Ok(None);
@@ -796,12 +799,10 @@ pub(super) fn decode_graph(
                         });
                         Ok(Some(
                             cadmpeg_ir::geometry::DirectedParameterRange::new(parameter_range).map(
-                                |range| {
-                                    cadmpeg_ir::topology::PcurveUse {
-                                        pcurve: id,
-                                        isoparametric: None,
-                                        parameter_range: Some(range),
-                                    }
+                                |range| cadmpeg_ir::topology::PcurveUse {
+                                    pcurve: id,
+                                    isoparametric: None,
+                                    parameter_range: Some(range),
                                 },
                             ),
                         ))
@@ -812,10 +813,15 @@ pub(super) fn decode_graph(
                 // The sink is drained before the `?` below: an error on that
                 // route must not drop a refusal the walk above already pushed.
                 let mut pcurve_refusal = pcurve_refusal.into_records();
-                while let Some(record) = pcurve_refusal.next(ctx, "collect intersection pcurve losses")? {
+                while let Some(record) =
+                    pcurve_refusal.next(ctx, "collect intersection pcurve losses")?
+                {
                     let note = crate::loss::spline_lane_refusal(
                         ctx,
-                        format_args!("intersection pcurve for coedge {ce_attr}: {}", record.message),
+                        format_args!(
+                            "intersection pcurve for coedge {ce_attr}: {}",
+                            record.message
+                        ),
                     )?;
                     drop(record);
                     ctx.reserve_vec(&mut out.losses, 1, "collect intersection pcurve losses")?;
@@ -826,11 +832,9 @@ pub(super) fn decode_graph(
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?
                 {
-                    Some(value) => single_pcurve_use(
-                        ctx,
-                        value,
-                        "collect intersection Parasolid pcurve uses",
-                    )?,
+                    Some(value) => {
+                        single_pcurve_use(ctx, value, "collect intersection Parasolid pcurve uses")?
+                    }
                     None => Vec::new(),
                 };
                 let mut sense = ce.sense;
@@ -1268,11 +1272,19 @@ pub(super) fn decode_graph(
                     tag,
                     exactness,
                 }) = {
-                    let mut sweep_refusal = crate::lane_refusal::scoped::ScopedLaneRefusals::new(ctx)?;
-                    let resolved = resolve_sweep_surface(ctx, carriers, t, f,
-                        &mut crate::lane_refusal::scoped::RefusalSink::Scoped(&mut sweep_refusal))?;
+                    let mut sweep_refusal =
+                        crate::lane_refusal::scoped::ScopedLaneRefusals::new(ctx)?;
+                    let resolved = resolve_sweep_surface(
+                        ctx,
+                        carriers,
+                        t,
+                        f,
+                        &mut crate::lane_refusal::scoped::RefusalSink::Scoped(&mut sweep_refusal),
+                    )?;
                     let mut refusal_records = sweep_refusal.into_records();
-                    while let Some(record) = refusal_records.next(ctx, "collect swept surface losses")? {
+                    while let Some(record) =
+                        refusal_records.next(ctx, "collect swept surface losses")?
+                    {
                         let note = crate::loss::spline_lane_refusal(
                             ctx,
                             format_args!(
@@ -1428,7 +1440,10 @@ pub(super) fn decode_graph(
         };
     }
     let mut bound_faces = BTreeSet::new();
-    for atom in ctx.admit_iter(std::mem::take(&mut entity_facts.face_atoms), "bind Parasolid face atoms")? {
+    for atom in ctx.admit_iter(
+        std::mem::take(&mut entity_facts.face_atoms),
+        "bind Parasolid face atoms",
+    )? {
         let Some(identity) = atom.identity.as_ref() else {
             continue;
         };

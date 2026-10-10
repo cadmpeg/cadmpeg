@@ -129,7 +129,11 @@ pub(super) fn sketch_brep(
             .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
         let endpoint = |index: usize| {
             let curve = &generated[index].1;
-            if profile[index].reversed { (curve.end, curve.start) } else { (curve.start, curve.end) }
+            if profile[index].reversed {
+                (curve.end, curve.start)
+            } else {
+                (curve.start, curve.end)
+            }
         };
         if (0..generated.len()).any(|index| {
             let (_, end) = endpoint(index);
@@ -149,7 +153,9 @@ pub(super) fn sketch_brep(
         );
         face_loops.push(loop_id.clone());
         let mut ring: Option<cadmpeg_ir::topology::LoopRing> = None;
-        for (use_index, (entity_use, (entity, generated))) in profile.iter().zip(generated).enumerate() {
+        for (use_index, (entity_use, (entity, generated))) in
+            profile.iter().zip(generated).enumerate()
+        {
             let start_vertex = sketch_vertex(
                 &mut ir,
                 &mut vertex_by_position,

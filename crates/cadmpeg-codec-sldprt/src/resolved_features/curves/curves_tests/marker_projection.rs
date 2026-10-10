@@ -2,8 +2,8 @@
 
 const EPS_REFUSAL_GEOMETRY: f64 = 1.0e-9;
 
-use super::super::{resolve_connected_marker_arcs, resolve_slot_marker_arcs};
 use super::super::super::LEGACY_EXTENDED_SKETCH_MARKER;
+use super::super::{resolve_connected_marker_arcs, resolve_slot_marker_arcs};
 use crate::records::{SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;

@@ -22,13 +22,11 @@ fn lane(native_kind: u32) -> FeatureInputLane {
     marker[layout::SENTINEL..layout::NATIVE_KIND].copy_from_slice(&(-1.0_f32).to_le_bytes());
     marker[layout::NATIVE_KIND..layout::NATIVE_KIND + 4]
         .copy_from_slice(&native_kind.to_le_bytes());
-    marker[layout::PROFILE_LOCUS..layout::PROFILE_ROLE]
-        .copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+    marker[layout::PROFILE_LOCUS..layout::PROFILE_ROLE].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
     marker[layout::PROFILE_ROLE..layout::PROFILE_ROLE + 2].copy_from_slice(&1u16.to_le_bytes());
     marker[layout::SELECTOR..layout::SELECTOR + 8]
         .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
-    marker[layout::STATE_VALUE..layout::STATE_VALUE + 8]
-        .copy_from_slice(&1.0_f64.to_le_bytes());
+    marker[layout::STATE_VALUE..layout::STATE_VALUE + 8].copy_from_slice(&1.0_f64.to_le_bytes());
     marker[layout::COORDINATE_TAG..layout::COORDINATES].copy_from_slice(&[0x0e, 0x00]);
     for (index, value) in [0.125_f64, -0.25, 0.375].into_iter().enumerate() {
         let start = layout::COORDINATES + index * 8;
@@ -79,8 +77,16 @@ fn spatial_active_range_workspace_retains_only_point_output() {
     policy.limits.max_materialized_bytes = RANGE_BYTES;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let points = index.feature_points(&ctx, FEATURE, false).unwrap();
-    assert_eq!(points.as_slice(), &[(lane.sketch_entities[0].id(), Point3::new(125.0, -250.0, 375.0), MARKER_OFFSET)]);
-    ctx.reserve_scoped(RANGE_BYTES, "reuse active spatial range workspace").unwrap();
+    assert_eq!(
+        points.as_slice(),
+        &[(
+            lane.sketch_entities[0].id(),
+            Point3::new(125.0, -250.0, 375.0),
+            MARKER_OFFSET
+        )]
+    );
+    ctx.reserve_scoped(RANGE_BYTES, "reuse active spatial range workspace")
+        .unwrap();
     assert!(ctx.resource_refusal().is_none());
 }
 
@@ -96,8 +102,12 @@ fn spatial_active_range_workspace_discards_filtered_markers() {
         policy.limits.max_materialized_bytes = RANGE_BYTES;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         for _ in 0..2 {
-            assert!(index.feature_points(&ctx, FEATURE, false).unwrap().is_empty());
-            ctx.reserve_scoped(RANGE_BYTES, "reuse filtered spatial range workspace").unwrap();
+            assert!(index
+                .feature_points(&ctx, FEATURE, false)
+                .unwrap()
+                .is_empty());
+            ctx.reserve_scoped(RANGE_BYTES, "reuse filtered spatial range workspace")
+                .unwrap();
         }
         assert!(ctx.resource_refusal().is_none());
     }
@@ -106,10 +116,20 @@ fn spatial_active_range_workspace_discards_filtered_markers() {
 #[test]
 fn spatial_active_range_workspace_preserves_original_refusals() {
     for (dimension, retained, materialized, operation, additional) in [
-        (ResourceDimension::RetainedBytes, POINT_BYTES - 1, RANGE_BYTES,
-            "collect SLDPRT spatial points", POINT_BYTES),
-        (ResourceDimension::MaterializedBytes, POINT_BYTES, RANGE_BYTES - 1,
-            "collect SLDPRT active spatial relation ranges", RANGE_BYTES),
+        (
+            ResourceDimension::RetainedBytes,
+            POINT_BYTES - 1,
+            RANGE_BYTES,
+            "collect SLDPRT spatial points",
+            POINT_BYTES,
+        ),
+        (
+            ResourceDimension::MaterializedBytes,
+            POINT_BYTES,
+            RANGE_BYTES - 1,
+            "collect SLDPRT active spatial relation ranges",
+            RANGE_BYTES,
+        ),
     ] {
         let lane = lane(1);
         let index = index(&lane, (0, 100));

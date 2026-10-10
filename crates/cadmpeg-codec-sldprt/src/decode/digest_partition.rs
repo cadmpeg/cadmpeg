@@ -50,14 +50,13 @@ impl<'ctx, T> DigestPartition<'ctx, T> {
         let kept;
         let excluded;
         let kept_positions;
-        ((kept, excluded, kept_positions), storage) =
-            ctx.with_scoped_storage(operation, || {
-                Ok::<_, CodecError>((
-                    ctx.collection_vec(kept_count, operation)?,
-                    ctx.collection_vec(excluded_count, operation)?,
-                    ctx.collection_vec(kept_count, operation)?,
-                ))
-            })?;
+        ((kept, excluded, kept_positions), storage) = ctx.with_scoped_storage(operation, || {
+            Ok::<_, CodecError>((
+                ctx.collection_vec(kept_count, operation)?,
+                ctx.collection_vec(excluded_count, operation)?,
+                ctx.collection_vec(kept_count, operation)?,
+            ))
+        })?;
         Ok(PreparedDigestPartition {
             partition: Self {
                 _storage: storage,
@@ -185,9 +184,10 @@ mod tests {
 
     impl Drop for ObservedEntry<'_, '_> {
         fn drop(&mut self) {
-            *self.observation.borrow_mut() = self.ctx.reserve_scoped(
-                1, "probe SLDPRT digest partition destruction",
-            ).err();
+            *self.observation.borrow_mut() = self
+                .ctx
+                .reserve_scoped(1, "probe SLDPRT digest partition destruction")
+                .err();
         }
     }
 
@@ -199,13 +199,21 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = u64::MAX;
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("partition context");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("partition context");
         let observation = std::cell::RefCell::new(None);
-        let mut source = vec![ObservedEntry { ctx: &ctx, observation: &observation }];
+        let mut source = vec![ObservedEntry {
+            ctx: &ctx,
+            observation: &observation,
+        }];
         let partition = DigestPartition::prepare(
-            &ctx, &mut source, |_| Ok(true), "prepare observed digest partition",
-        ).expect("admitted one-entry partition").move_from();
+            &ctx,
+            &mut source,
+            |_| Ok(true),
+            "prepare observed digest partition",
+        )
+        .expect("admitted one-entry partition")
+        .move_from();
         assert!(source.is_empty());
         drop(source);
         // The decision buffer has died. One kept entry slot and its usize position
@@ -215,7 +223,8 @@ mod tests {
         );
         let probe = RefusalProbe::arm(
             ResourceDimension::MaterializedBytes,
-            "probe SLDPRT digest partition destruction", Some(1),
+            "probe SLDPRT digest partition destruction",
+            Some(1),
         );
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _partition = partition;
@@ -232,7 +241,9 @@ mod tests {
         assert_eq!(limit.used, held);
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if &first == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if &first == limit)
+        );
     }
 
     #[test]

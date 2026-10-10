@@ -237,9 +237,27 @@ impl Facts {
             |node| node.attr,
             |node| node.try_clone(ctx),
         )?;
-        merge_nodes(ctx, &mut self.shells, &other.shells, |node| node.attr, |node| Ok(*node))?;
-        merge_nodes(ctx, &mut self.regions, &other.regions, |node| node.attr, |node| Ok(*node))?;
-        merge_nodes(ctx, &mut self.faces, &other.faces, |node| node.attr, |node| Ok(*node))?;
+        merge_nodes(
+            ctx,
+            &mut self.shells,
+            &other.shells,
+            |node| node.attr,
+            |node| Ok(*node),
+        )?;
+        merge_nodes(
+            ctx,
+            &mut self.regions,
+            &other.regions,
+            |node| node.attr,
+            |node| Ok(*node),
+        )?;
+        merge_nodes(
+            ctx,
+            &mut self.faces,
+            &other.faces,
+            |node| node.attr,
+            |node| Ok(*node),
+        )?;
         Ok(())
     }
 
@@ -1047,7 +1065,11 @@ where
     let mut present = BTreeSet::new();
     for node in ctx.admit_iter(&target[..], "index typed Parasolid merge identities")? {
         storage.with_storage(|| {
-            ctx.insert_btree_set(&mut present, key(node), "index typed Parasolid merge identities")
+            ctx.insert_btree_set(
+                &mut present,
+                key(node),
+                "index typed Parasolid merge identities",
+            )
         })?;
     }
     for node in ctx.admit_iter(source, OPERATION)? {
@@ -1461,10 +1483,8 @@ mod tests {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_materialized_bytes = u64::MAX;
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &policy,
-        )
-        .expect("test context");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
         let body = |ownership_refs| BodyNode {
             attr: 3,
             node_id: 7,
@@ -1503,10 +1523,8 @@ mod tests {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_materialized_bytes = u64::MAX;
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &policy,
-        )
-        .expect("control context");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("control context");
         let source = Facts {
             bodies: vec![body(vec![11, 12])],
             ..Facts::default()

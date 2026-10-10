@@ -20,23 +20,36 @@ pub(crate) struct ScopedLaneRefusals<'ctx> {
 
 impl<'ctx> ScopedLaneRefusals<'ctx> {
     pub(crate) fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
-        Ok(Self { records: Vec::new(), shell: ctx.reserve_scoped(0, "hold SLDPRT lane refusal records")? })
+        Ok(Self {
+            records: Vec::new(),
+            shell: ctx.reserve_scoped(0, "hold SLDPRT lane refusal records")?,
+        })
     }
 
     fn note(
-        &mut self, ctx: &'ctx DecodeContext<'_>, record: impl std::fmt::Display, error: &NurbsError,
+        &mut self,
+        ctx: &'ctx DecodeContext<'_>,
+        record: impl std::fmt::Display,
+        error: &NurbsError,
     ) -> Result<(), CodecError> {
         if let NurbsError::ResourceLimit(limit) = error {
             return Err((*limit).into());
         }
         let mut storage = ctx.reserve_scoped(0, "hold SLDPRT lane refusal message")?;
         let message = storage.with_storage(|| super::format_refusal_message(ctx, record, error))?;
-        let value = ScopedRecord { message, _message_storage: storage };
-        self.shell.with_storage(|| ctx.push_vec(&mut self.records, value, "collect SLDPRT lane refusals"))
+        let value = ScopedRecord {
+            message,
+            _message_storage: storage,
+        };
+        self.shell
+            .with_storage(|| ctx.push_vec(&mut self.records, value, "collect SLDPRT lane refusals"))
     }
 
     pub(crate) fn into_records(self) -> ScopedRecords<'ctx> {
-        ScopedRecords { records: self.records.into_iter(), _shell: self.shell }
+        ScopedRecords {
+            records: self.records.into_iter(),
+            _shell: self.shell,
+        }
     }
 }
 
@@ -47,7 +60,9 @@ pub(crate) struct ScopedRecords<'ctx> {
 
 impl<'ctx> ScopedRecords<'ctx> {
     pub(crate) fn next(
-        &mut self, ctx: &DecodeContext<'_>, operation: &'static str,
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
     ) -> Result<Option<ScopedRecord<'ctx>>, CodecError> {
         if let Some(limit) = ctx.resource_refusal() {
             return Err(CodecError::ResourceLimit(limit));
@@ -69,7 +84,10 @@ pub(crate) enum RefusalSink<'out, 'ctx> {
 
 impl<'ctx> RefusalSink<'_, 'ctx> {
     pub(crate) fn note(
-        &mut self, ctx: &'ctx DecodeContext<'_>, record: impl std::fmt::Display, error: &NurbsError,
+        &mut self,
+        ctx: &'ctx DecodeContext<'_>,
+        record: impl std::fmt::Display,
+        error: &NurbsError,
     ) -> Result<(), CodecError> {
         match self {
             #[cfg(test)]

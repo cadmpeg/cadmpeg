@@ -17,17 +17,21 @@ fn lane() -> FeatureInputLane {
         id: "sldprt:feature-input:config-objects#spatial-ranges".into(),
         configuration: None,
         native_payload: Vec::new(),
-        classes: [(10, "moRelMgr_c"), (20, "sg3DPlaneHandle"), (40, "suObList")]
-            .into_iter()
-            .enumerate()
-            .map(|(index, (offset, name))| FeatureInputClass {
-                id: format!("class-{index}"),
-                parent: "sldprt:feature-input:config-objects#spatial-ranges".into(),
-                ordinal: u32::try_from(index).unwrap(),
-                offset,
-                name: name.into(),
-            })
-            .collect(),
+        classes: [
+            (10, "moRelMgr_c"),
+            (20, "sg3DPlaneHandle"),
+            (40, "suObList"),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (offset, name))| FeatureInputClass {
+            id: format!("class-{index}"),
+            parent: "sldprt:feature-input:config-objects#spatial-ranges".into(),
+            ordinal: u32::try_from(index).unwrap(),
+            offset,
+            name: name.into(),
+        })
+        .collect(),
         names: Vec::new(),
         scalars: Vec::new(),
         relation_bindings: Vec::new(),
@@ -51,9 +55,13 @@ fn detached_spatial_range_workspace_releases_unbound_ranges() {
     policy.limits.max_materialized_bytes = PEAK_BYTES;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..2 {
-        assert!(bind_detached_spatial_relation_objects(&ctx, &[], &represented, &mut lane)
-            .unwrap().is_empty());
-        ctx.reserve_scoped(PEAK_BYTES, "reuse detached spatial range workspace").unwrap();
+        assert!(
+            bind_detached_spatial_relation_objects(&ctx, &[], &represented, &mut lane)
+                .unwrap()
+                .is_empty()
+        );
+        ctx.reserve_scoped(PEAK_BYTES, "reuse detached spatial range workspace")
+            .unwrap();
     }
     assert!(ctx.resource_refusal().is_none());
 }

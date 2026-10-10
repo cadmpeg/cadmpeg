@@ -579,10 +579,10 @@ pub(super) fn bindings<'ctx>(
         };
         let identity = match identity {
             Some((feature_source_id, local_id, trailing_fields)) => {
-                let (trailing_fields, storage) = ctx.with_scoped_storage(
-                    "hold Parasolid face identity fields",
-                    || ctx.copy_slice(trailing_fields, "copy Parasolid face identity fields"),
-                )?;
+                let (trailing_fields, storage) = ctx
+                    .with_scoped_storage("hold Parasolid face identity fields", || {
+                        ctx.copy_slice(trailing_fields, "copy Parasolid face identity fields")
+                    })?;
                 Some(RawFaceIdentity {
                     value: super::PersistentFaceIdentity {
                         feature_source_id,

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::brep::graph::nurbs_pcurves::nurbs_curve_sample_parameters;
+use crate::brep::graph::nurbs_pcurves::nurbs_degree_one_cache_lanes;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis;
 use cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes;
 use cadmpeg_ir::math::Point3;
-use crate::brep::graph::nurbs_pcurves::nurbs_curve_sample_parameters;
-use crate::brep::graph::nurbs_pcurves::nurbs_degree_one_cache_lanes;
 const SMALL_PARAMETER_DOMAIN: f64 = 1e-12;
 
 fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
@@ -84,4 +84,3 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
         assert_eq!(samples.values.last(), Some(&d));
     }
 }
-

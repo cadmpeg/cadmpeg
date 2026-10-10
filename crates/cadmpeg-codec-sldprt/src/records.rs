@@ -1933,7 +1933,10 @@ impl SketchInputEntity {
         })
     }
 
-    fn payload_identity(offset: u64, payload: &[u8]) -> Result<(Option<u32>, Option<u32>), &'static str> {
+    fn payload_identity(
+        offset: u64,
+        payload: &[u8],
+    ) -> Result<(Option<u32>, Option<u32>), &'static str> {
         let position = usize::try_from(offset).map_err(|_| "sketch entity offset exceeds usize")?;
         if position >= payload.len()
             || !crate::resolved_features::markers::sketch_marker_at(payload, position)
@@ -2581,7 +2584,9 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "test original source refusal") else {
+        let Err(CodecError::ResourceLimit(limit)) =
+            ctx.charge_work(1, "test original source refusal")
+        else {
             panic!("original work refusal");
         };
         for value in ["-1", "41", "not-an-id", ""] {
@@ -2591,7 +2596,9 @@ mod tests {
             ));
             assert_eq!(ctx.resource_refusal(), Some(limit));
         }
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+        );
     }
 
     #[test]
@@ -2968,25 +2975,47 @@ mod tests {
         payload[9..17].fill(0xff);
         payload[17..21].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
         let mut entity = super::SketchInputEntity::try_new(
-            "test:marker:retained-identity".into(), "test:lane:retained-identity".into(),
-            0, 4, super::SketchInputKind::Point, &payload,
-        ).unwrap();
-        let (result, allocations) = crate::test_support::allocation::count_allocations(|| entity.validate_against_payload(&payload));
+            "test:marker:retained-identity".into(),
+            "test:lane:retained-identity".into(),
+            0,
+            4,
+            super::SketchInputKind::Point,
+            &payload,
+        )
+        .unwrap();
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+            entity.validate_against_payload(&payload)
+        });
         assert_eq!(result, Ok(()));
         assert_eq!(allocations, 0);
 
         entity.object_index = Some(99);
         entity.local_id = Some(99);
-        let (result, allocations) = crate::test_support::allocation::count_allocations(|| entity.validate_against_payload(&payload));
-        assert_eq!(result, Err("SolidWorks feature-input object index does not match its native payload"));
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+            entity.validate_against_payload(&payload)
+        });
+        assert_eq!(
+            result,
+            Err("SolidWorks feature-input object index does not match its native payload")
+        );
         assert_eq!(allocations, 0);
         entity.object_index = Some(41);
-        let (result, allocations) = crate::test_support::allocation::count_allocations(|| entity.validate_against_payload(&payload));
-        assert_eq!(result, Err("SolidWorks feature-input local object id does not match its native payload"));
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+            entity.validate_against_payload(&payload)
+        });
+        assert_eq!(
+            result,
+            Err("SolidWorks feature-input local object id does not match its native payload")
+        );
         assert_eq!(allocations, 0);
         entity.offset = u64::try_from(payload.len()).unwrap();
-        let (result, allocations) = crate::test_support::allocation::count_allocations(|| entity.validate_against_payload(&payload));
-        assert_eq!(result, Err("sketch entity offset is not a marker in native_payload"));
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+            entity.validate_against_payload(&payload)
+        });
+        assert_eq!(
+            result,
+            Err("sketch entity offset is not a marker in native_payload")
+        );
         assert_eq!(allocations, 0);
     }
 

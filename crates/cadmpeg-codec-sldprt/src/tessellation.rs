@@ -6,10 +6,10 @@ use cadmpeg_ir::units::FinitePoint2;
 
 pub(crate) mod mesh_rows;
 
-use crate::tessellation::mesh_rows::{AdmittedMesh, MeshRows, ShadedRow};
 use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
 use crate::container::{ContainerScan, Section};
+use crate::tessellation::mesh_rows::{AdmittedMesh, MeshRows, ShadedRow};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
@@ -966,7 +966,10 @@ fn persistent_surface_references(
             false,
             "decode display-list reference text",
         ) {
-            Ok((value, storage)) => ReferenceText { value, _storage: storage },
+            Ok((value, storage)) => ReferenceText {
+                value,
+                _storage: storage,
+            },
             Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
             Err(error) => return Err(error),
         };
@@ -1637,9 +1640,8 @@ pub(crate) fn assign_persistent_owners(
     })?;
     let face_bodies = indexes.with_storage(|| {
         let mut shell_storage = ctx.reserve_scoped(0, "index SLDPRT persistent shell bodies")?;
-        let shell_bodies = shell_storage.with_storage(|| {
-            shell_bodies(ctx, &model.regions, &model.shells)
-        })?;
+        let shell_bodies =
+            shell_storage.with_storage(|| shell_bodies(ctx, &model.regions, &model.shells))?;
         let mut face_bodies = HashMap::new();
         for face in ctx.admit_iter(&model.faces, "index SLDPRT tessellation faces")? {
             if let Some(body) =
@@ -2230,10 +2232,12 @@ fn planar_boundary_samples<'ctx>(
     match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => {
             const OPERATION: &str = "collect SLDPRT planar trim line samples";
-            let (points, storage) = ctx.with_scoped_storage(OPERATION, || {
-                ctx.collection_vec(1, OPERATION)
-            })?;
-            let mut samples = PlanarBoundarySamples { points, _storage: storage };
+            let (points, storage) =
+                ctx.with_scoped_storage(OPERATION, || ctx.collection_vec(1, OPERATION))?;
+            let mut samples = PlanarBoundarySamples {
+                points,
+                _storage: storage,
+            };
             samples.points.push(frame.project(start));
             Ok(Some((samples, 0.0)))
         }
@@ -2529,7 +2533,12 @@ fn planar_trim(
             let circle = require_some!(closed_planar_circle(
                 ctx, loop_, surface, frame, tolerance, topology,
             )?);
-            ctx.push_scoped_vec(&mut circle_storage, &mut circles, circle, "collect SLDPRT planar trim circles")?;
+            ctx.push_scoped_vec(
+                &mut circle_storage,
+                &mut circles,
+                circle,
+                "collect SLDPRT planar trim circles",
+            )?;
             continue;
         }
 
@@ -2607,9 +2616,9 @@ fn planar_trim(
             return Ok(None);
         }
         let mut hole_storage = ctx.reserve_scoped(0, "collect SLDPRT circular trim holes")?;
-        let (outer, holes) = require_some!(hole_storage.with_storage(|| {
-            circular_outer_and_holes(ctx, &circles, tolerance)
-        })?);
+        let (outer, holes) =
+            require_some!(hole_storage
+                .with_storage(|| { circular_outer_and_holes(ctx, &circles, tolerance) })?);
         let mut planar_holes = Vec::new();
         for hole in ctx.admit_iter(&holes, "scan SLDPRT holes values")?.copied() {
             ctx.reserve_vec(&mut planar_holes, 1, "collect SLDPRT circular planar holes")?;
@@ -2923,7 +2932,12 @@ fn cylindrical_trim(
                 None => (axial, axial),
             });
             let angle = require_some!(cylinder_angle(point, origin, &frame));
-            ctx.push_scoped_vec(&mut angle_storage, &mut angles, angle, "collect SLDPRT cylindrical trim angles")?;
+            ctx.push_scoped_vec(
+                &mut angle_storage,
+                &mut angles,
+                angle,
+                "collect SLDPRT cylindrical trim angles",
+            )?;
         }
     }
     let (min_axial, max_axial) = require_some!(axial_bounds);
@@ -3114,7 +3128,12 @@ fn conical_trim(
                 Some((min_axial, max_axial)) => (min_axial.min(axial), max_axial.max(axial)),
                 None => (axial, axial),
             });
-            ctx.push_scoped_vec(&mut angle_storage, &mut angles, angle, "collect SLDPRT conical trim angles")?;
+            ctx.push_scoped_vec(
+                &mut angle_storage,
+                &mut angles,
+                angle,
+                "collect SLDPRT conical trim angles",
+            )?;
         }
     }
     let (min_axial, max_axial) = require_some!(axial_bounds);

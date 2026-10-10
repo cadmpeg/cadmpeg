@@ -25,7 +25,11 @@ fn no_storage_policy() -> DecodePolicy {
 
 #[test]
 fn same_lane_consensus_borrows_reference_without_copying_identity_or_fallback() {
-    let votes = [Some(face("lane-0:100", Some("components:1,2,3"), "identity"))];
+    let votes = [Some(face(
+        "lane-0:100",
+        Some("components:1,2,3"),
+        "identity",
+    ))];
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &no_storage_policy()).unwrap();
     let consensus = consensus_termination_vote(&ctx, &votes).unwrap().unwrap();
@@ -50,7 +54,10 @@ fn cross_lane_consensus_borrows_first_canonical_reference() {
     let consensus = consensus_termination_vote(&ctx, &votes).unwrap().unwrap();
     let reference = consensus.reference.unwrap();
     assert_eq!(reference, "components:1,2,3");
-    let TerminationVote::Face { reference: first, .. } = votes[0].as_ref().unwrap() else {
+    let TerminationVote::Face {
+        reference: first, ..
+    } = votes[0].as_ref().unwrap()
+    else {
         panic!("face fixture");
     };
     assert!(std::ptr::eq(reference, first.canonical.as_deref().unwrap()));
@@ -73,13 +80,18 @@ fn cross_lane_consensus_without_first_fallback_keeps_reference_unresolved() {
 
 #[test]
 fn vertex_consensus_borrows_only_the_agreed_reference() {
-    let votes = [Some(TerminationVote::ToVertex { reference: "vertex".into() })];
+    let votes = [Some(TerminationVote::ToVertex {
+        reference: "vertex".into(),
+    })];
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &no_storage_policy()).unwrap();
     let consensus = consensus_termination_vote(&ctx, &votes).unwrap().unwrap();
     let reference = consensus.reference.unwrap();
     assert_eq!(reference, "vertex");
-    assert!(std::ptr::eq(reference, votes[0].as_ref().unwrap().reference().unwrap()));
+    assert!(std::ptr::eq(
+        reference,
+        votes[0].as_ref().unwrap().reference().unwrap()
+    ));
     ctx.finish_session().unwrap();
 }
 
@@ -88,7 +100,10 @@ fn disagreeing_identity_and_missing_votes_do_not_allocate_consensus() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &no_storage_policy()).unwrap();
     for votes in [
-        [Some(face("lane-0:100", None, "first")), Some(face("lane-1:200", None, "second"))],
+        [
+            Some(face("lane-0:100", None, "first")),
+            Some(face("lane-1:200", None, "second")),
+        ],
         [Some(face("lane-0:100", None, "first")), None],
     ] {
         assert!(consensus_termination_vote(&ctx, &votes).unwrap().is_none());
@@ -99,7 +114,11 @@ fn disagreeing_identity_and_missing_votes_do_not_allocate_consensus() {
 #[test]
 fn borrowed_consensus_preserves_original_first_visit_refusal() {
     const OPERATION: &str = "agree SLDPRT extrusion terminations";
-    let votes = [Some(face("lane-0:100", Some("components:1,2,3"), "identity"))];
+    let votes = [Some(face(
+        "lane-0:100",
+        Some("components:1,2,3"),
+        "identity",
+    ))];
     let arena = DecodeArena::new();
     let mut policy = no_storage_policy();
     policy.limits.max_work_units = 0;

@@ -204,9 +204,11 @@ fn decoded_brep_site_index_refuses_materialized_limit() {
                 super::super::try_decode_brep(&ctx, &scan, &streams).map(drop)
             },
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == operation && limit.additional > 0));
+                && limit.operation == operation && limit.additional > 0)
+        );
     }
 }
 
@@ -257,7 +259,6 @@ fn geometry_without_swift_root_skips_topology_and_nominal_work() {
         assert!(!decoded.ir().model.features.is_empty());
     }
 }
-
 
 #[test]
 fn decoded_brep_header_copy_refuses_work_limit() {

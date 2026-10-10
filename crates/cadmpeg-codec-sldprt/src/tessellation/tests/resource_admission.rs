@@ -360,23 +360,29 @@ fn planar_trim_refuses_a_triangle_inside_a_self_crossing_outer() {
         .unwrap());
 }
 
-
 fn boundary_sample_inputs() -> (
     cadmpeg_ir::geometry::CurveGeometry,
     cadmpeg_ir::geometry::SurfaceGeometry,
     PlaneFrame,
 ) {
-    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            Point3::new(0., 0., 0.), Vector3::new(0., 0., 1.), Vector3::new(1., 0., 0.),
-        ).unwrap(),
+            Point3::new(0., 0., 0.),
+            Vector3::new(0., 0., 1.),
+            Vector3::new(1., 0., 0.),
+        )
+        .unwrap(),
     ));
     let frame = super::super::plane_frame(surface.solved().unwrap()).unwrap();
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-            Point3::new(0., 0., 0.), Vector3::new(1., 0., 0.),
-        ).unwrap(),
+            Point3::new(0., 0., 0.),
+            Vector3::new(1., 0., 0.),
+        )
+        .unwrap(),
     ));
     (curve, surface, frame)
 }
@@ -402,7 +408,8 @@ fn boundary_test_arc() -> super::super::PlanarArc {
         center: Point3::new(0., 0., 0.),
         first_direction: Vector3::new(1., 0., 0.),
         second_direction: Vector3::new(0., 1., 0.),
-        first_radius: 1., second_radius: 1.,
+        first_radius: 1.,
+        second_radius: 1.,
     }
 }
 
@@ -414,16 +421,28 @@ fn point2_bytes() -> u64 {
 fn planar_line_sample_has_exact_live_storage_and_free_fixed_work() {
     let (curve, surface, frame) = boundary_sample_inputs();
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &boundary_sample_policy(point2_bytes())).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &boundary_sample_policy(point2_bytes()))
+            .unwrap();
     let (samples, tolerance) = super::super::planar_boundary_samples(
-        &ctx, &curve, Point3::new(2., 3., 0.), Point3::new(4., 3., 0.),
-        &surface, frame, boundary_sample_limits(1.),
-    ).unwrap().unwrap();
+        &ctx,
+        &curve,
+        Point3::new(2., 3., 0.),
+        Point3::new(4., 3., 0.),
+        &surface,
+        frame,
+        boundary_sample_limits(1.),
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(&*samples, &[Point2::new(2., 3.)]);
     assert_eq!(samples.points.capacity(), 1);
     assert_eq!(tolerance, 0.);
     drop(samples);
-    drop(ctx.reserve_scoped(point2_bytes(), "test complete line sample release").unwrap());
+    drop(
+        ctx.reserve_scoped(point2_bytes(), "test complete line sample release")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -431,18 +450,39 @@ fn planar_line_sample_has_exact_live_storage_and_free_fixed_work() {
 fn planar_line_sample_refuses_backing_before_allocation() {
     let (curve, surface, frame) = boundary_sample_inputs();
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &boundary_sample_policy(point2_bytes() - 1)).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &boundary_sample_policy(point2_bytes() - 1))
+            .unwrap();
     let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
-        super::super::planar_boundary_samples(&ctx, &curve, Point3::new(0., 0., 0.), Point3::new(1., 0., 0.), &surface, frame, boundary_sample_limits(1.))
+        super::super::planar_boundary_samples(
+            &ctx,
+            &curve,
+            Point3::new(0., 0., 0.),
+            Point3::new(1., 0., 0.),
+            &surface,
+            frame,
+            boundary_sample_limits(1.),
+        )
     });
-    let limit = match &result { Err(CodecError::ResourceLimit(limit)) => *limit, _ => panic!("line backing refusal") };
+    let limit = match &result {
+        Err(CodecError::ResourceLimit(limit)) => *limit,
+        _ => panic!("line backing refusal"),
+    };
     drop(result);
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+    );
     assert_eq!(limit.operation, "collect SLDPRT planar trim line samples");
-    assert_eq!((limit.used, limit.additional, limit.limit), (0, point2_bytes(), point2_bytes() - 1));
+    assert_eq!(
+        (limit.used, limit.additional, limit.limit),
+        (0, point2_bytes(), point2_bytes() - 1)
+    );
     assert_eq!(allocations, 0);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+    );
 }
 
 #[test]
@@ -453,13 +493,26 @@ fn planar_arc_sample_owns_only_its_actual_amortized_backing() {
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     // The quarter-circle's one segment fits a sampling tolerance of one.
-    let (samples, tolerance) = boundary_test_arc().samples(&ctx, 0., std::f64::consts::FRAC_PI_2, &surface, frame, boundary_sample_limits(1.)).unwrap().unwrap();
+    let (samples, tolerance) = boundary_test_arc()
+        .samples(
+            &ctx,
+            0.,
+            std::f64::consts::FRAC_PI_2,
+            &surface,
+            frame,
+            boundary_sample_limits(1.),
+        )
+        .unwrap()
+        .unwrap();
     assert_eq!(&*samples, &[Point2::new(1., 0.)]);
     assert_eq!(samples.points.capacity(), 4);
     let sine = (std::f64::consts::FRAC_PI_2 / 4.).sin();
     assert_eq!(tolerance, sine * (2. * sine));
     drop(samples);
-    drop(ctx.reserve_scoped(4 * point2_bytes(), "test complete arc sample release").unwrap());
+    drop(
+        ctx.reserve_scoped(4 * point2_bytes(), "test complete arc sample release")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -470,15 +523,35 @@ fn planar_arc_sample_refuses_first_backing_before_allocation() {
     let mut policy = boundary_sample_policy(4 * point2_bytes() - 1);
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (result, allocations) = crate::test_support::allocation::count_allocations(|| boundary_test_arc().samples(&ctx, 0., std::f64::consts::FRAC_PI_2, &surface, frame, boundary_sample_limits(1.)));
-    let limit = match &result { Err(CodecError::ResourceLimit(limit)) => *limit, _ => panic!("arc backing refusal") };
+    let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+        boundary_test_arc().samples(
+            &ctx,
+            0.,
+            std::f64::consts::FRAC_PI_2,
+            &surface,
+            frame,
+            boundary_sample_limits(1.),
+        )
+    });
+    let limit = match &result {
+        Err(CodecError::ResourceLimit(limit)) => *limit,
+        _ => panic!("arc backing refusal"),
+    };
     drop(result);
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+    );
     assert_eq!(limit.operation, "collect SLDPRT planar trim arc samples");
-    assert_eq!((limit.used, limit.additional, limit.limit), (0, 4 * point2_bytes(), 4 * point2_bytes() - 1));
+    assert_eq!(
+        (limit.used, limit.additional, limit.limit),
+        (0, 4 * point2_bytes(), 4 * point2_bytes() - 1)
+    );
     assert_eq!(allocations, 0);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+    );
 }
 
 #[test]
@@ -493,10 +566,22 @@ fn off_plane_arc_releases_its_sample_prefix_before_return() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     // tolerance=.2 chooses two segments. The first is on-plane; the second
     // has z=sin(tilt)*sin(pi/4) and fails the unchanged residual gate before insertion.
-    let result = arc.samples(&ctx, 0., std::f64::consts::FRAC_PI_2, &surface, frame, boundary_sample_limits(0.2)).unwrap();
+    let result = arc
+        .samples(
+            &ctx,
+            0.,
+            std::f64::consts::FRAC_PI_2,
+            &surface,
+            frame,
+            boundary_sample_limits(0.2),
+        )
+        .unwrap();
     assert!(result.is_none());
     drop(result);
-    drop(ctx.reserve_scoped(4 * point2_bytes(), "test rejected arc prefix release").unwrap());
+    drop(
+        ctx.reserve_scoped(4 * point2_bytes(), "test rejected arc prefix release")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -510,12 +595,25 @@ fn planar_sample_consumption_releases_source_and_retains_only_polygon() {
     // append_vec admits one moved source item plus its inline bytes.
     policy.limits.max_work_units = 1 + point2_bytes();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (samples, _) = super::super::planar_boundary_samples(&ctx, &curve, Point3::new(2., 3., 0.), Point3::new(4., 3., 0.), &surface, frame, boundary_sample_limits(1.)).unwrap().unwrap();
+    let (samples, _) = super::super::planar_boundary_samples(
+        &ctx,
+        &curve,
+        Point3::new(2., 3., 0.),
+        Point3::new(4., 3., 0.),
+        &surface,
+        frame,
+        boundary_sample_limits(1.),
+    )
+    .unwrap()
+    .unwrap();
     let mut polygon = Vec::new();
     samples.append_into(&ctx, &mut polygon).unwrap();
     assert_eq!(polygon, [Point2::new(2., 3.)]);
     assert_eq!(polygon.capacity(), 4);
-    drop(ctx.reserve_scoped(point2_bytes(), "test consumed source sample release").unwrap());
+    drop(
+        ctx.reserve_scoped(point2_bytes(), "test consumed source sample release")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -528,31 +626,80 @@ fn planar_sample_backing_stays_live_through_polygon_growth_refusal() {
     policy.limits.max_collection_items = 6;
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut polygon = ctx.collection_vec(4, "test initial polygon backing").unwrap();
-    let original = [Point2::new(0., 0.), Point2::new(1., 0.), Point2::new(1., 1.), Point2::new(0., 1.)];
-    for point in original { polygon.push(point); }
-    let (samples, _) = super::super::planar_boundary_samples(&ctx, &curve, Point3::new(2., 3., 0.), Point3::new(4., 3., 0.), &surface, frame, boundary_sample_limits(1.)).unwrap().unwrap();
-    let (result, allocations) = crate::test_support::allocation::count_allocations(|| samples.append_into(&ctx, &mut polygon));
-    let Err(CodecError::ResourceLimit(limit)) = result else { panic!("polygon overlap refusal"); };
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+    let mut polygon = ctx
+        .collection_vec(4, "test initial polygon backing")
+        .unwrap();
+    let original = [
+        Point2::new(0., 0.),
+        Point2::new(1., 0.),
+        Point2::new(1., 1.),
+        Point2::new(0., 1.),
+    ];
+    for point in original {
+        polygon.push(point);
+    }
+    let (samples, _) = super::super::planar_boundary_samples(
+        &ctx,
+        &curve,
+        Point3::new(2., 3., 0.),
+        Point3::new(4., 3., 0.),
+        &surface,
+        frame,
+        boundary_sample_limits(1.),
+    )
+    .unwrap()
+    .unwrap();
+    let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+        samples.append_into(&ctx, &mut polygon)
+    });
+    let Err(CodecError::ResourceLimit(limit)) = result else {
+        panic!("polygon overlap refusal");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+    );
     assert_eq!(limit.operation, "collect SLDPRT planar trim polygon");
-    assert_eq!((limit.used, limit.additional, limit.limit), (point2_bytes(), 4 * point2_bytes(), 4 * point2_bytes()));
+    assert_eq!(
+        (limit.used, limit.additional, limit.limit),
+        (point2_bytes(), 4 * point2_bytes(), 4 * point2_bytes())
+    );
     assert_eq!(polygon, original);
     assert_eq!(allocations, 0);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+    );
 }
 
 #[test]
 fn planar_sample_preserves_original_refusal_without_allocation() {
     let (curve, surface, frame) = boundary_sample_inputs();
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &boundary_sample_policy(point2_bytes())).unwrap();
-    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_collection_items(2, "test original boundary sample refusal") else { panic!("original refusal"); };
-    let (result, allocations) = crate::test_support::allocation::count_allocations(|| super::super::planar_boundary_samples(&ctx, &curve, Point3::new(0., 0., 0.), Point3::new(1., 0., 0.), &surface, frame, boundary_sample_limits(1.)));
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &boundary_sample_policy(point2_bytes()))
+            .unwrap();
+    let Err(CodecError::ResourceLimit(limit)) =
+        ctx.charge_collection_items(2, "test original boundary sample refusal")
+    else {
+        panic!("original refusal");
+    };
+    let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+        super::super::planar_boundary_samples(
+            &ctx,
+            &curve,
+            Point3::new(0., 0., 0.),
+            Point3::new(1., 0., 0.),
+            &surface,
+            frame,
+            boundary_sample_limits(1.),
+        )
+    });
     assert!(matches!(&result, Err(CodecError::ResourceLimit(actual)) if *actual == limit));
     drop(result);
     assert_eq!(allocations, 0);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+    );
 }

@@ -12,7 +12,9 @@ fn curve_attribute_lookup_preserves_carrier_scan_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    let error = super::patch::CompactCurvePatch::new(&ctx, &mut body, 10).err().unwrap();
+    let error = super::patch::CompactCurvePatch::new(&ctx, &mut body, 10)
+        .err()
+        .unwrap();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("carrier scan refusal");
     };
@@ -29,7 +31,8 @@ fn compact_attribute_patch_preserves_carrier_scan_refusal() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&original, &arena, &policy).unwrap();
     let error = super::patch::CompactCurvePatch::new(&ctx, &mut body, 10)
-        .and_then(|patch| patch.apply(&[0.0; 6])).unwrap_err();
+        .and_then(|patch| patch.apply(&[0.0; 6]))
+        .unwrap_err();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("carrier scan refusal");
     };

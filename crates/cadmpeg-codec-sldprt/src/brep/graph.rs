@@ -6,11 +6,22 @@
 //! explicit body records. It derives one body hierarchy when those records are
 //! absent. It also derives supported pcurves and periodic seams.
 
-
-
-use cadmpeg_core::decode::DecodeContext;
+use self::emission::decode_graph;
+use crate::brep::attrib;
+use crate::brep::entity;
+use crate::brep::graph::shells::ShellFaceIndex;
+use crate::brep::index::scan::scan_stream_carriers;
+use crate::brep::index::stream::StreamCarrierIndex;
+use crate::brep::index::view::CarrierView;
+use crate::brep::topology;
+use crate::brep::typed;
+use crate::brep::CurveCarrier;
+use crate::brep::LEN_TO_MM;
+use crate::parasolid::StreamHeader;
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::geometry::pcurve::Pcurve;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::ProceduralSurface;
@@ -19,7 +30,6 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::Surface;
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::geometry::pcurve::Pcurve;
 use cadmpeg_ir::ids::CoedgeId;
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::ids::EdgeId;
@@ -42,36 +52,20 @@ use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::topology::Shell;
 use cadmpeg_ir::topology::Vertex;
 use cadmpeg_ir::unknown::UnknownRecord;
-use crate::brep::CurveCarrier;
-use crate::brep::LEN_TO_MM;
-use crate::brep::attrib;
-use crate::brep::entity;
-use crate::brep::graph::shells::ShellFaceIndex;
-use crate::brep::index::scan::scan_stream_carriers;
-use crate::brep::index::stream::StreamCarrierIndex;
-use crate::brep::index::view::CarrierView;
-use crate::brep::topology;
-use crate::brep::typed;
-use crate::parasolid::StreamHeader;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashSet;
-use self::emission::decode_graph;
 
-mod shells;
-mod cylindrical_radial;
+mod clamp;
 mod construction;
+mod cylindrical_radial;
 mod emission;
-mod pcurves;
 mod inverse;
 mod nurbs_pcurves;
-mod clamp;
 mod orientation;
+mod pcurves;
 mod seams;
-
-
-
-
+mod shells;
 
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
 const EPS_PLANAR_DISTANCE: f64 = 1.0e-6;
@@ -1044,8 +1038,7 @@ pub(crate) fn decode_bodies(
     }
     drop((entity_streams, entity_streams_storage));
     for stream_typed_facts in ctx.admit_iter(&typed_streams, "scan SLDPRT decode_bodies values")? {
-        index_storage
-            .with_storage(|| typed_facts.merge_missing(ctx, stream_typed_facts))?;
+        index_storage.with_storage(|| typed_facts.merge_missing(ctx, stream_typed_facts))?;
     }
     let typed_bridge_attrs =
         index_storage.with_storage(|| typed_facts.valid_ownership_face_attrs(ctx))?;
@@ -1063,7 +1056,8 @@ pub(crate) fn decode_bodies(
                 selected_typed_face_offsets(ctx, stream_typed_facts, typed_bridge_attrs.as_ref())
             })?;
             carriers.merge_missing(ctx, scan_stream_carriers(ctx, body)?)?;
-            let curve_attrs = stream_storage.with_storage(|| CarrierView::Stream(&carriers).curve_attrs(ctx))?;
+            let curve_attrs =
+                stream_storage.with_storage(|| CarrierView::Stream(&carriers).curve_attrs(ctx))?;
             let scan_tables = || {
                 if is_deltas {
                     topology::scan_deltas_with_curve_attrs_excluding(
@@ -1107,15 +1101,26 @@ pub(crate) fn decode_bodies(
                 initialized = true;
             }
             ScannedTables::MergeSource(source) => {
-                index_storage.with_storage(|| {
-                    source.merge_into(ctx, &mut tables, selected_bridge_attrs)
-                })?;
+                index_storage
+                    .with_storage(|| source.merge_into(ctx, &mut tables, selected_bridge_attrs))?;
                 facts.append(ctx, scanned_facts)?;
             }
         }
     }
-    drop((typed_streams, typed_streams_storage, ordered, ordered_storage));
-    decode_graph(ctx, &CarrierView::Stream(&carriers), &tables, facts, &typed_facts, stream)
+    drop((
+        typed_streams,
+        typed_streams_storage,
+        ordered,
+        ordered_storage,
+    ));
+    decode_graph(
+        ctx,
+        &CarrierView::Stream(&carriers),
+        &tables,
+        facts,
+        &typed_facts,
+        stream,
+    )
 }
 
 fn decode_body(
@@ -1125,7 +1130,8 @@ fn decode_body(
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     let mut index_storage = ctx.reserve_scoped(0, "hold Parasolid source indexes")?;
     let carriers = scan_stream_carriers(ctx, body)?;
-    let curve_attrs = index_storage.with_storage(|| CarrierView::Stream(&carriers).curve_attrs(ctx))?;
+    let curve_attrs =
+        index_storage.with_storage(|| CarrierView::Stream(&carriers).curve_attrs(ctx))?;
     let typed_facts = index_storage.with_storage(|| typed::scan(body, ctx))?;
     let typed_face_attrs =
         index_storage.with_storage(|| typed_facts.valid_ownership_face_attrs(ctx))?;
@@ -1136,7 +1142,14 @@ fn decode_body(
         topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets)
     })?;
     let entity_facts = entity::scan_metadata(ctx, body, false)?;
-    decode_graph(ctx, &CarrierView::Stream(&carriers), &t, entity_facts, &typed_facts, stream)
+    decode_graph(
+        ctx,
+        &CarrierView::Stream(&carriers),
+        &t,
+        entity_facts,
+        &typed_facts,
+        stream,
+    )
 }
 
 fn admit_brep_entity(ctx: &DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError> {
@@ -1553,17 +1566,11 @@ fn bind_bridges(
     Ok((bridge_group, bridge_shell))
 }
 
-
 #[cfg(test)]
 mod tests;
 
-
 #[cfg(test)]
 mod evaluation_admission_tests;
-
-
-
-
 
 #[cfg(test)]
 mod test_support;

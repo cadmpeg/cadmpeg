@@ -16,24 +16,41 @@ pub(in crate::brep) enum CurveSink<'out, 'ctx> {
 }
 
 impl<'ctx> CurveSink<'_, 'ctx> {
-    pub(in crate::brep) fn contains(&self, ctx: &DecodeContext<'_>, attr: u16) -> Result<bool, CodecError> {
+    pub(in crate::brep) fn contains(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+    ) -> Result<bool, CodecError> {
         match self {
-            Self::Retained(out) => ctx.contains_key_btree_map(out, &attr, "collect Parasolid curve carriers"),
-            Self::Stream(out) => ctx.contains_key_btree_map(&out.entries, &attr, "collect Parasolid curve carriers"),
+            Self::Retained(out) => {
+                ctx.contains_key_btree_map(out, &attr, "collect Parasolid curve carriers")
+            }
+            Self::Stream(out) => {
+                ctx.contains_key_btree_map(&out.entries, &attr, "collect Parasolid curve carriers")
+            }
         }
     }
 
     pub(in crate::brep) fn publish(
-        &mut self, ctx: &DecodeContext<'_>, value: CurveCarrier, geometry: ScopedReservation<'ctx>,
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        value: CurveCarrier,
+        geometry: ScopedReservation<'ctx>,
     ) -> Result<(), CodecError> {
         let attr = value.attr;
         match self {
             Self::Retained(out) => {
                 let value = geometry.commit_value(value)?;
-                ctx.entry_btree_map(out, attr, "collect Parasolid curve carriers")?.or_insert(value);
+                ctx.entry_btree_map(out, attr, "collect Parasolid curve carriers")?
+                    .or_insert(value);
                 Ok(())
             }
-            Self::Stream(out) => out.keep_first(ctx, attr, StreamCurve::exact(value, geometry), "collect Parasolid curve carriers"),
+            Self::Stream(out) => out.keep_first(
+                ctx,
+                attr,
+                StreamCurve::exact(value, geometry),
+                "collect Parasolid curve carriers",
+            ),
         }
     }
 }
@@ -44,24 +61,43 @@ pub(in crate::brep) enum SurfaceSink<'out, 'ctx> {
 }
 
 impl<'ctx> SurfaceSink<'_, 'ctx> {
-    pub(in crate::brep) fn contains(&self, ctx: &DecodeContext<'_>, attr: u16) -> Result<bool, CodecError> {
+    pub(in crate::brep) fn contains(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+    ) -> Result<bool, CodecError> {
         match self {
-            Self::Retained(out) => ctx.contains_key_btree_map(out, &attr, "collect Parasolid surface carriers"),
-            Self::Stream(out) => ctx.contains_key_btree_map(&out.entries, &attr, "collect Parasolid surface carriers"),
+            Self::Retained(out) => {
+                ctx.contains_key_btree_map(out, &attr, "collect Parasolid surface carriers")
+            }
+            Self::Stream(out) => ctx.contains_key_btree_map(
+                &out.entries,
+                &attr,
+                "collect Parasolid surface carriers",
+            ),
         }
     }
 
     pub(in crate::brep) fn publish(
-        &mut self, ctx: &DecodeContext<'_>, value: SurfaceCarrier, geometry: ScopedReservation<'ctx>,
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        value: SurfaceCarrier,
+        geometry: ScopedReservation<'ctx>,
     ) -> Result<(), CodecError> {
         let attr = value.attr;
         match self {
             Self::Retained(out) => {
                 let value = geometry.commit_value(value)?;
-                ctx.entry_btree_map(out, attr, "collect Parasolid surface carriers")?.or_insert(value);
+                ctx.entry_btree_map(out, attr, "collect Parasolid surface carriers")?
+                    .or_insert(value);
                 Ok(())
             }
-            Self::Stream(out) => out.keep_first(ctx, attr, StreamSurface::new(value, geometry), "collect Parasolid surface carriers"),
+            Self::Stream(out) => out.keep_first(
+                ctx,
+                attr,
+                StreamSurface::new(value, geometry),
+                "collect Parasolid surface carriers",
+            ),
         }
     }
 }
@@ -78,8 +114,14 @@ pub(in crate::brep) struct PendingLoss<'out, 'ctx> {
 }
 
 enum PendingLossInner<'out, 'ctx> {
-    Retained { value: LossNote, output: &'out mut Vec<LossNote> },
-    Stream { value: StreamLoss<'ctx>, output: &'out mut CarrierLosses<'ctx> },
+    Retained {
+        value: LossNote,
+        output: &'out mut Vec<LossNote>,
+    },
+    Stream {
+        value: StreamLoss<'ctx>,
+        output: &'out mut CarrierLosses<'ctx>,
+    },
 }
 
 impl<'ctx> LossSink<'_, 'ctx> {
@@ -95,8 +137,12 @@ impl<'ctx> LossSink<'_, 'ctx> {
             },
             Self::Stream(output) => {
                 let mut storage = ctx.reserve_scoped(0, "hold SLDPRT spline loss message")?;
-                let value = storage.with_storage(|| crate::loss::spline_lane_refusal(ctx, record))?;
-                PendingLossInner::Stream { value: StreamLoss::new(value, storage), output }
+                let value =
+                    storage.with_storage(|| crate::loss::spline_lane_refusal(ctx, record))?;
+                PendingLossInner::Stream {
+                    value: StreamLoss::new(value, storage),
+                    output,
+                }
             }
         };
         Ok(PendingLoss { inner })
@@ -108,7 +154,11 @@ impl PendingLoss<'_, '_> {
         self.publish_at(ctx, "collect Parasolid spline refusals")
     }
 
-    pub(in crate::brep) fn publish_at(self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<(), CodecError> {
+    pub(in crate::brep) fn publish_at(
+        self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
         match self.inner {
             PendingLossInner::Retained { value, output } => ctx.push_vec(output, value, operation),
             PendingLossInner::Stream { value, output } => output.push(ctx, value, operation),
@@ -126,7 +176,11 @@ pub(in crate::brep) enum FixedSink<'out, 'ctx, V> {
 
 impl<V> FixedSink<'_, '_, V> {
     pub(in crate::brep) fn keep_first(
-        &mut self, ctx: &DecodeContext<'_>, attr: u16, value: V, operation: &'static str,
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+        value: V,
+        operation: &'static str,
     ) -> Result<(), CodecError> {
         match self {
             #[cfg(test)]
@@ -139,7 +193,11 @@ impl<V> FixedSink<'_, '_, V> {
     }
 
     pub(in crate::brep) fn replace(
-        &mut self, ctx: &DecodeContext<'_>, attr: u16, value: V, operation: &'static str,
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+        value: V,
+        operation: &'static str,
     ) -> Result<(), CodecError> {
         match self {
             #[cfg(test)]
@@ -174,11 +232,17 @@ impl PendingIntersection<'_> {
 
 impl<'ctx> IntersectionSink<'_, 'ctx> {
     pub(in crate::brep) fn publish(
-        &mut self, ctx: &DecodeContext<'_>,
+        &mut self,
+        ctx: &DecodeContext<'_>,
         value: crate::brep::intersection::IntersectionCarrier,
-        geometry: ScopedReservation<'ctx>, support_uv: ScopedReservation<'ctx>,
+        geometry: ScopedReservation<'ctx>,
+        support_uv: ScopedReservation<'ctx>,
     ) -> Result<(), CodecError> {
-        let value = PendingIntersection { value, geometry, support_uv };
+        let value = PendingIntersection {
+            value,
+            geometry,
+            support_uv,
+        };
         let attr = value.value.carrier.attr;
         match self {
             #[cfg(test)]
@@ -190,9 +254,12 @@ impl<'ctx> IntersectionSink<'_, 'ctx> {
                 }
                 Ok(())
             }
-            Self::Stream(out) => out.keep_first(ctx, attr,
+            Self::Stream(out) => out.keep_first(
+                ctx,
+                attr,
                 StreamCurve::derived(value.value, value.geometry, value.support_uv),
-                "collect Parasolid intersection carriers"),
+                "collect Parasolid intersection carriers",
+            ),
         }
     }
 }

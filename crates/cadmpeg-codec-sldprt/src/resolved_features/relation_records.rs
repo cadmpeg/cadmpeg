@@ -352,13 +352,16 @@ fn relation_declaration_candidates_impl<'a>(
         let (index, _) = match declaration_index.get() {
             Some(index) => index,
             None => {
-                let built = ctx.with_scoped_storage("index SLDPRT relation declarations", || {
-                    DeclarationIndex::new(ctx, classes, scalars, intervals)
-                })?;
+                let built = ctx
+                    .with_scoped_storage("index SLDPRT relation declarations", || {
+                        DeclarationIndex::new(ctx, classes, scalars, intervals)
+                    })?;
                 declaration_index.get_or_init(|| built)
             }
         };
-        if let Some((scalar, family)) = index.declaration(ctx, class, class_interval, allow_dynamic)? {
+        if let Some((scalar, family)) =
+            index.declaration(ctx, class, class_interval, allow_dynamic)?
+        {
             ctx.push_vec(
                 &mut candidates,
                 (class, scalar, family),
@@ -387,10 +390,10 @@ pub(super) fn unique_relation_declaration_candidates_charged<'a>(
 
     let candidates_storage;
     let candidates;
-    (candidates, candidates_storage) = ctx.with_scoped_storage(
-        "SLDPRT all relation declaration candidates",
-        || relation_declaration_candidates_impl(ctx, classes, scalars, intervals, false),
-    )?;
+    (candidates, candidates_storage) = ctx
+        .with_scoped_storage("SLDPRT all relation declaration candidates", || {
+            relation_declaration_candidates_impl(ctx, classes, scalars, intervals, false)
+        })?;
     let mut counts = HashMap::<&str, usize>::new();
     for (_, scalar, _) in ctx.admit_iter(&candidates, "count SLDPRT relation candidates")? {
         if let Some(count) = ctx.get_mut_hash_map(
@@ -489,14 +492,20 @@ pub(super) fn relation_instances(
         let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT relation grouping indexes")?;
         let candidates_storage;
         let declaration_candidates;
-        (declaration_candidates, candidates_storage) = ctx.with_scoped_storage(
-            "SLDPRT relation declaration candidates",
-            || {
-                let mut intervals_storage = ctx.reserve_scoped(0, "SLDPRT relation feature intervals")?;
-                let intervals = intervals_storage.with_storage(|| feature_intervals(ctx, histories, lane))?;
-                relation_declaration_candidates_impl(ctx, &lane.classes, &lane.scalars, &intervals, true)
-            },
-        )?;
+        (declaration_candidates, candidates_storage) =
+            ctx.with_scoped_storage("SLDPRT relation declaration candidates", || {
+                let mut intervals_storage =
+                    ctx.reserve_scoped(0, "SLDPRT relation feature intervals")?;
+                let intervals =
+                    intervals_storage.with_storage(|| feature_intervals(ctx, histories, lane))?;
+                relation_declaration_candidates_impl(
+                    ctx,
+                    &lane.classes,
+                    &lane.scalars,
+                    &intervals,
+                    true,
+                )
+            })?;
         // The offsets of every relation class, ascending, to find a class between
         // two scalars.
         let mut relation_class_offsets = Vec::new();
@@ -527,7 +536,11 @@ pub(super) fn relation_instances(
                 "lookup SLDPRT relation candidate count",
             )? {
                 *count = count.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("count SLDPRT relation candidates", u64::MAX - 1, u64::MAX)
+                    ctx.refuse_codec_limit(
+                        "count SLDPRT relation candidates",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
                 })?;
             } else {
                 temporary_storage.with_storage(|| {
@@ -665,7 +678,8 @@ pub(super) fn relation_instances(
                         )
                     })?;
                     group.scalars.push((scalar_index, scalar));
-                } else if same_scope && scalar.role == FeatureInputScalarRole::Driving
+                } else if same_scope
+                    && scalar.role == FeatureInputScalarRole::Driving
                     && same_relation_operand_signature(
                         ctx,
                         group.operands,
@@ -729,11 +743,12 @@ pub(super) fn relation_instances(
                         feature_ref,
                         "compare SLDPRT relation group features",
                     )?
-                    && (promote_class || ctx.equal(
-                        group.class_ref,
-                        class_ref,
-                        "compare SLDPRT relation group classes",
-                    )?)
+                    && (promote_class
+                        || ctx.equal(
+                            group.class_ref,
+                            class_ref,
+                            "compare SLDPRT relation group classes",
+                        )?)
                     && same_relation_operand_signature(
                         ctx,
                         group.operands,
@@ -1031,9 +1046,8 @@ pub(super) fn bind_circle_dimension_centers(
         };
         let scalars = match &mut scalars {
             Some(index) => index,
-            slot @ None => slot.insert(
-                temporary_storage.with_storage(|| last_scalars_by_id(ctx, &lane.scalars))?,
-            ),
+            slot @ None => slot
+                .insert(temporary_storage.with_storage(|| last_scalars_by_id(ctx, &lane.scalars))?),
         };
         let Some(display) = ctx
             .get_hash_map(scalars, display_id, "find SLDPRT display scalar")?
@@ -1043,9 +1057,9 @@ pub(super) fn bind_circle_dimension_centers(
         };
         let names = match &mut names {
             Some(index) => index,
-            slot @ None => slot.insert(
-                temporary_storage.with_storage(|| last_name_values(ctx, lane))?,
-            ),
+            slot @ None => {
+                slot.insert(temporary_storage.with_storage(|| last_name_values(ctx, lane))?)
+            }
         };
         let Some(display_name) = ctx.get_hash_map(
             names,
@@ -1308,26 +1322,26 @@ pub(super) fn circle_dimension_handle_driver<'a>(
             && first.offset < display.offset
             && next_relation_offset.is_none_or(|limit| driving.offset < limit)
             && match (
-            display.feature_ref.as_deref(),
-            first.feature_ref.as_deref(),
-            driving.feature_ref.as_deref(),
-        ) {
-            (Some(display), Some(first), Some(driving)) => {
-                ctx.equal(display, first, "compare SLDPRT circle features")?
-                    && ctx.equal(driving, first, "compare SLDPRT circle features")?
-            }
-            (None, None, None) => true,
-            _ => false,
-        };
+                display.feature_ref.as_deref(),
+                first.feature_ref.as_deref(),
+                driving.feature_ref.as_deref(),
+            ) {
+                (Some(display), Some(first), Some(driving)) => {
+                    ctx.equal(display, first, "compare SLDPRT circle features")?
+                        && ctx.equal(driving, first, "compare SLDPRT circle features")?
+                }
+                (None, None, None) => true,
+                _ => false,
+            };
         if qualified_pair
             && same_scalar_operands(ctx, display, first)?
             && same_scalar_operands(ctx, driving, first)?
         {
             let names = match &mut names {
                 Some(index) => index,
-                slot @ None => slot.insert(
-                    temporary_storage.with_storage(|| last_name_values(ctx, lane))?,
-                ),
+                slot @ None => {
+                    slot.insert(temporary_storage.with_storage(|| last_name_values(ctx, lane))?)
+                }
             };
             let left_name = ctx.get_hash_map(
                 names,
@@ -1377,9 +1391,9 @@ pub(super) fn bind_detached_relation_drivers(
         }
         let scalars = match &mut scalars {
             Some(index) => index,
-            slot @ None => slot.insert(
-                temporary.with_storage(|| last_scalars_by_id(ctx, &lane.scalars))?,
-            ),
+            slot @ None => {
+                slot.insert(temporary.with_storage(|| last_scalars_by_id(ctx, &lane.scalars))?)
+            }
         };
         let mut first_name = None;
         let names_match = ctx.all_by(
@@ -1393,9 +1407,9 @@ pub(super) fn bind_detached_relation_drivers(
                 }
                 let names = match &mut names {
                     Some(index) => index,
-                    slot @ None => slot.insert(
-                        temporary.with_storage(|| last_name_values(ctx, lane))?,
-                    ),
+                    slot @ None => {
+                        slot.insert(temporary.with_storage(|| last_name_values(ctx, lane))?)
+                    }
                 };
                 let Some(name) = ctx
                     .get_hash_map(names, scalar.name.as_str(), INDEX)?
@@ -1461,7 +1475,9 @@ pub(super) fn bind_detached_relation_drivers(
                     }
                 }
                 let mut built = HashMap::new();
-                for scalar in ctx.admit_iter(&lane.scalars, "match SLDPRT detached relation drivers")? {
+                for scalar in
+                    ctx.admit_iter(&lane.scalars, "match SLDPRT detached relation drivers")?
+                {
                     if scalar.role != FeatureInputScalarRole::Driving
                         || !scalar.operands.is_empty()
                         || ctx.contains_hash_set(&claimed, scalar.id.as_str(), INDEX)?
@@ -1469,7 +1485,9 @@ pub(super) fn bind_detached_relation_drivers(
                         continue;
                     }
                     let feature = scalar.feature_ref.as_deref();
-                    let name = ctx.get_hash_map(names, scalar.name.as_str(), INDEX)?.copied();
+                    let name = ctx
+                        .get_hash_map(names, scalar.name.as_str(), INDEX)?
+                        .copied();
                     let (Some(feature), Some(name)) = (feature, name) else {
                         continue;
                     };
@@ -1749,11 +1767,12 @@ fn dynamic_point_candidates<'a>(
     if let Some(entity_ref) = operand.entity_ref.as_deref().filter(|_| use_explicit) {
         let mut candidates = Vec::new();
         for entity in ctx.admit_iter(entities, "find SLDPRT explicit point references")? {
-            if !is_finite_point(entity) || !ctx.equal(
-                entity.id(),
-                entity_ref,
-                "compare SLDPRT explicit point references",
-            )?
+            if !is_finite_point(entity)
+                || !ctx.equal(
+                    entity.id(),
+                    entity_ref,
+                    "compare SLDPRT explicit point references",
+                )?
             {
                 continue;
             }
@@ -1790,12 +1809,24 @@ fn dynamic_point_candidates<'a>(
         },
         "find SLDPRT coordinate point candidate",
     )?;
-    push_point_candidate(ctx, &mut candidates, &mut seen, &mut seen_storage, coordinate_point)?;
+    push_point_candidate(
+        ctx,
+        &mut candidates,
+        &mut seen,
+        &mut seen_storage,
+        coordinate_point,
+    )?;
     for entity in ctx.admit_iter(entities, "match SLDPRT dynamic point identities")? {
         if entity.object_index() == Some(u32::from(operand.entity_index))
             || entity.local_id() == Some(u32::from(operand.entity_index))
         {
-            push_point_candidate(ctx, &mut candidates, &mut seen, &mut seen_storage, Some(entity))?;
+            push_point_candidate(
+                ctx,
+                &mut candidates,
+                &mut seen,
+                &mut seen_storage,
+                Some(entity),
+            )?;
         }
     }
     drop(seen);
@@ -2441,9 +2472,11 @@ pub(super) fn legacy_scalar_layout(payload: &[u8], trailer_offset: usize) -> boo
 
 #[cfg(test)]
 mod point_candidate_tests {
+    use crate::records::{
+        FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity, SketchInputKind,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    use crate::records::{FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity, SketchInputKind};
 
     fn fixture() -> ([SketchInputEntity; 2], FeatureInputOperand) {
         let mut first = SketchInputEntity::new("a", "lane", 0, 0, SketchInputKind::Point);
@@ -2451,13 +2484,16 @@ mod point_candidate_tests {
         let mut second = SketchInputEntity::new("b", "lane", 1, 1, SketchInputKind::Point)
             .with_test_identity(Some(0), None);
         second.coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0, 0.0]);
-        ([first, second], FeatureInputOperand {
-            offset: 0,
-            reference_ref: "reference".into(),
-            kind: FeatureInputOperandKind::D6,
-            entity_index: 0,
-            entity_ref: None,
-        })
+        (
+            [first, second],
+            FeatureInputOperand {
+                offset: 0,
+                reference_ref: "reference".into(),
+                kind: FeatureInputOperandKind::D6,
+                entity_index: 0,
+                entity_ref: None,
+            },
+        )
     }
 
     #[test]
@@ -2478,7 +2514,9 @@ mod point_candidate_tests {
         assert_eq!(candidates.len(), 2);
         assert!(std::ptr::eq(candidates[0], &markers[0]));
         assert!(std::ptr::eq(candidates[1], &markers[1]));
-        let released = ctx.reserve_scoped(99, "released point identity table").unwrap();
+        let released = ctx
+            .reserve_scoped(99, "released point identity table")
+            .unwrap();
         drop(released);
         assert_eq!(ctx.resource_refusal(), None);
         drop(candidates);
@@ -2497,17 +2535,23 @@ mod point_candidate_tests {
         for _ in 0..64 {
             let storage;
             let candidates;
-            (candidates, storage) = ctx.with_scoped_storage("point candidate test", || {
-                super::dynamic_point_candidates(&ctx, &roster, &operand, true)
-            }).unwrap();
+            (candidates, storage) = ctx
+                .with_scoped_storage("point candidate test", || {
+                    super::dynamic_point_candidates(&ctx, &roster, &operand, true)
+                })
+                .unwrap();
             assert_eq!(candidates.len(), 2);
             assert!(std::ptr::eq(candidates[0], &markers[0]));
             assert!(std::ptr::eq(candidates[1], &markers[1]));
-            let released = ctx.reserve_scoped(99, "released point identity table").unwrap();
+            let released = ctx
+                .reserve_scoped(99, "released point identity table")
+                .unwrap();
             drop(released);
             drop(candidates);
             drop(storage);
-            let released = ctx.reserve_scoped(131, "released point candidates").unwrap();
+            let released = ctx
+                .reserve_scoped(131, "released point candidates")
+                .unwrap();
             drop(released);
         }
         assert_eq!(ctx.resource_refusal(), None);
@@ -2518,9 +2562,27 @@ mod point_candidate_tests {
         let (markers, operand) = fixture();
         let roster = [&markers[0], &markers[1]];
         for (dimension, cap, used, additional, operation) in [
-            (ResourceDimension::MaterializedBytes, 98, 0, 99, "index SLDPRT relation point identity"),
-            (ResourceDimension::RetainedBytes, 31, 0, 32, "collect SLDPRT dynamic point candidates"),
-            (ResourceDimension::CollectionItems, 3, 3, 1, "collect SLDPRT dynamic point candidates"),
+            (
+                ResourceDimension::MaterializedBytes,
+                98,
+                0,
+                99,
+                "index SLDPRT relation point identity",
+            ),
+            (
+                ResourceDimension::RetainedBytes,
+                31,
+                0,
+                32,
+                "collect SLDPRT dynamic point candidates",
+            ),
+            (
+                ResourceDimension::CollectionItems,
+                3,
+                3,
+                1,
+                "collect SLDPRT dynamic point candidates",
+            ),
         ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -2536,17 +2598,23 @@ mod point_candidate_tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let Err(CodecError::ResourceLimit(limit)) =
                 super::dynamic_point_candidates(&ctx, &roster, &operand, true)
-            else { panic!("point candidate storage refusal"); };
+            else {
+                panic!("point candidate storage refusal");
+            };
             assert_eq!(limit.dimension, dimension);
             assert_eq!(limit.operation, operation);
             assert_eq!(limit.limit, cap);
             assert_eq!(limit.used, used);
             assert_eq!(limit.additional, additional);
             assert_eq!(ctx.resource_refusal(), Some(limit));
-            assert!(matches!(ctx.charge_work(0, "after point candidate storage refusal"),
-                Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
-                if sticky == limit));
+            assert!(
+                matches!(ctx.charge_work(0, "after point candidate storage refusal"),
+                Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
+                if sticky == limit)
+            );
         }
     }
 }

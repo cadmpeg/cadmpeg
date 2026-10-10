@@ -128,9 +128,8 @@ pub(super) fn move_body_translation_record(
             continue;
         };
         let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-        let local_body_ids = storage.with_storage(|| {
-            super::selections::read_compact_body_ids(ctx, ids, OPERATION)
-        })?;
+        let local_body_ids = storage
+            .with_storage(|| super::selections::read_compact_body_ids(ctx, ids, OPERATION))?;
         if ctx.contains(&local_body_ids, &0, OPERATION)? {
             continue;
         }

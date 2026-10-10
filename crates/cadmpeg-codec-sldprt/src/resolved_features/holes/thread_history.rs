@@ -43,49 +43,79 @@ impl<'features, 'ctx, 'arena> ThreadHistoryLookups<'features, 'ctx, 'arena> {
 
     pub(super) fn by_id(&mut self, id: &str) -> Result<Option<&'features Feature>, CodecError> {
         if let Some(entries) = &self.by_id {
-            return Ok(self.context.get_hash_map(entries, id, "resolve SLDPRT holes keys")?.copied());
+            return Ok(self
+                .context
+                .get_hash_map(entries, id, "resolve SLDPRT holes keys")?
+                .copied());
         }
         let mut entries = HashMap::new();
         let mut source = self.features.iter();
         while let Some(feature) = self.context.next_charged(&mut source, OPERATION)? {
             self.storage.with_storage(|| {
-                self.context.insert_hash_map(&mut entries, feature.id.as_str(), feature, OPERATION)
+                self.context
+                    .insert_hash_map(&mut entries, feature.id.as_str(), feature, OPERATION)
             })?;
         }
-        let found = self.context.get_hash_map(&entries, id, "resolve SLDPRT holes keys")?.copied();
+        let found = self
+            .context
+            .get_hash_map(&entries, id, "resolve SLDPRT holes keys")?
+            .copied();
         self.by_id = Some(entries);
         Ok(found)
     }
 
-    pub(super) fn profile(&mut self, key: HoleProfileKey<'_>) -> Result<Option<&'features Feature>, CodecError> {
+    pub(super) fn profile(
+        &mut self,
+        key: HoleProfileKey<'_>,
+    ) -> Result<Option<&'features Feature>, CodecError> {
         match key {
             HoleProfileKey::Source(source) => {
                 if let Some(entries) = &self.by_source {
-                    return Ok(self.context.get_btree_map(entries, &source, "look up SLDPRT feature source")?.copied());
+                    return Ok(self
+                        .context
+                        .get_btree_map(entries, &source, "look up SLDPRT feature source")?
+                        .copied());
                 }
                 let mut entries = BTreeMap::new();
                 let mut features = self.features.iter();
                 while let Some(feature) = self.context.next_charged(&mut features, OPERATION)? {
                     if let Some(source) = feature.source_id {
                         self.storage.with_storage(|| {
-                            self.context.insert_btree_map(&mut entries, source, feature, OPERATION)
+                            self.context
+                                .insert_btree_map(&mut entries, source, feature, OPERATION)
                         })?;
                     }
                 }
-                let found = self.context.get_btree_map(&entries, &source, "look up SLDPRT feature source")?.copied();
+                let found = self
+                    .context
+                    .get_btree_map(&entries, &source, "look up SLDPRT feature source")?
+                    .copied();
                 self.by_source = Some(entries);
                 Ok(found)
             }
             HoleProfileKey::Record(id) => {
                 if let Some(records) = &self.records {
-                    return Ok(self.context.get_hash_map(&records.entries, id, "find SLDPRT hole profile record")?.copied().flatten());
+                    return Ok(self
+                        .context
+                        .get_hash_map(&records.entries, id, "find SLDPRT hole profile record")?
+                        .copied()
+                        .flatten());
                 }
                 let (entries, storage) = self.context.unique_index(
-                    self.features.iter().map(|feature| (feature.id.as_str(), feature)),
+                    self.features
+                        .iter()
+                        .map(|feature| (feature.id.as_str(), feature)),
                     RECORDS,
                 )?;
-                let records = UniqueRecords { entries, _storage: storage };
-                let found = self.context.get_hash_map(&records.entries, id, "find SLDPRT hole profile record")?.copied().flatten();
+                let records = UniqueRecords {
+                    entries,
+                    _storage: storage,
+                };
+                let found = self
+                    .context
+                    .get_hash_map(&records.entries, id, "find SLDPRT hole profile record")?
+                    .copied()
+                    .flatten();
                 self.records = Some(records);
                 Ok(found)
             }

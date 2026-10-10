@@ -2287,12 +2287,8 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         Some(_) => ctx.find_by(&mut remaining, is_curve, OPERATION)?.copied(),
         None => None,
     };
-    let curve_endpoints = profile_curve_endpoint_ids_with(
-        ctx,
-        &mut storage,
-        owned,
-        false,
-        |curve| {
+    let curve_endpoints =
+        profile_curve_endpoint_ids_with(ctx, &mut storage, owned, false, |curve| {
             roster_curve_endpoint_markers_lazy(
                 ctx,
                 &lane.native_payload,
@@ -2301,8 +2297,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
                 &mut geometry,
                 Some(&curve_markers),
             )
-        },
-    )?;
+        })?;
     let bounding = profile_bounding_points(ctx, &mut storage, owned, &curve_endpoints)?;
     let bounded = |endpoints: [&SketchInputEntity; 2]| {
         let [Some(start), Some(end)] = endpoints.map(|endpoint| {

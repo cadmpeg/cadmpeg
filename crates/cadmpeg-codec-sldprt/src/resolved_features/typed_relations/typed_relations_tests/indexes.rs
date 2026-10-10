@@ -95,12 +95,9 @@ fn linked_curve_endpoints_skip_the_feature_join() {
         .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     let index = CurveMarkers::new(&ctx, &roster).unwrap();
-    let geometry = MarkerGeometryIndex::new(
-        &ctx,
-        &roster,
-        MarkerPrefixIndex::new(&ctx, &[]).unwrap(),
-    )
-    .unwrap();
+    let geometry =
+        MarkerGeometryIndex::new(&ctx, &roster, MarkerPrefixIndex::new(&ctx, &[]).unwrap())
+            .unwrap();
     let _feature_join_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "index SLDPRT curve feature markers",
@@ -109,7 +106,10 @@ fn linked_curve_endpoints_skip_the_feature_join() {
     let endpoints =
         marker_curve_endpoint_markers_in(&ctx, &[], &curve, &by_id, &index, &geometry).unwrap();
     assert_eq!(
-        endpoints.iter().map(|marker| marker.id()).collect::<Vec<_>>(),
+        endpoints
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
         ["first", "second"]
     );
     assert_eq!(ctx.resource_refusal(), None);
@@ -117,9 +117,14 @@ fn linked_curve_endpoints_skip_the_feature_join() {
     let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
         .charge_work(1, "index SLDPRT curve feature markers")
         .expect_err("linked endpoints must leave the feature-join probe armed")
-    else { panic!("work refusal"); };
+    else {
+        panic!("work refusal");
+    };
     assert_eq!(limit.operation, "index SLDPRT curve feature markers");
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
@@ -134,7 +139,13 @@ fn curve_marker_offset_index_sorts_only_the_queried_group() {
     let missing_curve = point("missing-curve", 0, Some("missing"));
     let unrelated: Vec<_> = (0..32)
         .rev()
-        .map(|offset| point(&format!("foreign-{offset}"), offset, Some("foreign-feature")))
+        .map(|offset| {
+            point(
+                &format!("foreign-{offset}"),
+                offset,
+                Some("foreign-feature"),
+            )
+        })
         .collect();
     let roster: Vec<_> = unrelated.iter().collect();
     let index = CurveMarkers::new(&ctx, &roster).unwrap();
@@ -149,9 +160,14 @@ fn curve_marker_offset_index_sorts_only_the_queried_group() {
     let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
         .charge_work(1, SORT)
         .expect_err("an unrelated group must leave the sort probe armed")
-    else { panic!("work refusal"); };
+    else {
+        panic!("work refusal");
+    };
     assert_eq!(limit.operation, SORT);
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     drop(_unrelated_sort_probe);
@@ -164,9 +180,11 @@ fn curve_marker_offset_index_sorts_only_the_queried_group() {
         let index = CurveMarkers::new(ctx, &selected)?;
         index.next_after(ctx, &curve).map(|_| ())
     });
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == SORT
-            && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+            && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
@@ -174,22 +192,16 @@ fn unlinked_curve_endpoint_route_still_queries_feature_markers() {
     let curve = point("curve", 0, Some("feature"));
     let roster = [&curve];
     let by_id = HashMap::from([(curve.id(), &curve)]);
-    let error = crate::test_support::work_refusal_at(
-        "index SLDPRT curve feature markers",
-        |ctx| {
-            let index = CurveMarkers::new(ctx, &roster)?;
-            let geometry = MarkerGeometryIndex::new(
-                ctx,
-                &roster,
-            MarkerPrefixIndex::new(ctx, &[])?,
-            )?;
-            marker_curve_endpoint_markers_in(ctx, &[], &curve, &by_id, &index, &geometry)
-                .map(|_| ())
-        },
-    );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    let error = crate::test_support::work_refusal_at("index SLDPRT curve feature markers", |ctx| {
+        let index = CurveMarkers::new(ctx, &roster)?;
+        let geometry = MarkerGeometryIndex::new(ctx, &roster, MarkerPrefixIndex::new(ctx, &[])?)?;
+        marker_curve_endpoint_markers_in(ctx, &[], &curve, &by_id, &index, &geometry).map(|_| ())
+    });
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index SLDPRT curve feature markers"
-            && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+            && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
@@ -210,18 +222,18 @@ fn curve_marker_index_storage_is_scoped_and_refuses_before_growth() {
         let index = CurveMarkers::new(ctx, &roster)?;
         index.feature_markers(ctx, &marker).map(|_| ())
     });
-    let source_error = crate::test_support::work_refusal_at(
-        "scan SLDPRT curve feature markers",
-        |ctx| {
+    let source_error =
+        crate::test_support::work_refusal_at("scan SLDPRT curve feature markers", |ctx| {
             let index = CurveMarkers::new(ctx, &roster)?;
             index.feature_markers(ctx, &marker).map(|_| ())
-        },
-    );
-    assert!(matches!(source_error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        });
+    assert!(
+        matches!(source_error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && limit.operation == "scan SLDPRT curve feature markers"
             && limit.used == 0
-            && limit.additional == 1));
+            && limit.additional == 1)
+    );
 }
 
 #[test]

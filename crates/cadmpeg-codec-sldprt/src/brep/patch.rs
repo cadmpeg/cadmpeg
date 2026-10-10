@@ -31,7 +31,9 @@ pub(crate) struct CompactCurvePatch<'body, 'ctx, 'arena> {
 
 impl<'body, 'ctx, 'arena> CompactCurvePatch<'body, 'ctx, 'arena> {
     pub(crate) fn new(
-        ctx: &'ctx DecodeContext<'arena>, body: &'body mut [u8], attr: u16,
+        ctx: &'ctx DecodeContext<'arena>,
+        body: &'body mut [u8],
+        attr: u16,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let selection = {
             let carriers = scan_stream_carriers(ctx, body)?;
@@ -39,14 +41,25 @@ impl<'body, 'ctx, 'arena> CompactCurvePatch<'body, 'ctx, 'arena> {
             view.curve(ctx, attr)?.map(|indexed| {
                 let carrier = indexed.carrier();
                 let family = match carrier.geometry.solved() {
-                    Some(SolvedCurveGeometry::Circle(curve)) => CompactCurveFamily::Circle(*curve.frame()),
-                    Some(SolvedCurveGeometry::Ellipse(curve)) => CompactCurveFamily::Ellipse(*curve.frame().axis()),
+                    Some(SolvedCurveGeometry::Circle(curve)) => {
+                        CompactCurveFamily::Circle(*curve.frame())
+                    }
+                    Some(SolvedCurveGeometry::Ellipse(curve)) => {
+                        CompactCurveFamily::Ellipse(*curve.frame().axis())
+                    }
                     _ => CompactCurveFamily::Other,
                 };
-                CompactCurveSelection { end: carrier.end, family }
+                CompactCurveSelection {
+                    end: carrier.end,
+                    family,
+                }
             })
         };
-        Ok(Self { body, context: ctx, selection })
+        Ok(Self {
+            body,
+            context: ctx,
+            selection,
+        })
     }
 
     pub(crate) fn family(&self) -> Option<CompactCurveFamily> {
@@ -59,11 +72,22 @@ impl<'body, 'ctx, 'arena> CompactCurvePatch<'body, 'ctx, 'arena> {
         if let Some(limit) = ctx.resource_refusal() {
             return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
         }
-        let Some(selection) = self.selection else { return Ok(false); };
-        let Some(size) = values.len().checked_mul(8) else { return Ok(false); };
-        let Some(start) = selection.end.checked_sub(size) else { return Ok(false); };
-        let Some(bytes) = self.body.get_mut(start..selection.end) else { return Ok(false); };
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(size), "patch SLDPRT compact values")?;
+        let Some(selection) = self.selection else {
+            return Ok(false);
+        };
+        let Some(size) = values.len().checked_mul(8) else {
+            return Ok(false);
+        };
+        let Some(start) = selection.end.checked_sub(size) else {
+            return Ok(false);
+        };
+        let Some(bytes) = self.body.get_mut(start..selection.end) else {
+            return Ok(false);
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(size),
+            "patch SLDPRT compact values",
+        )?;
         for (slot, value) in bytes.chunks_exact_mut(8).zip(values) {
             slot.copy_from_slice(&value.to_be_bytes());
         }
@@ -89,7 +113,6 @@ pub(crate) fn patch_nurbs_by_attr(
     };
     Ok(patch_nurbs_curve(ctx, body, carrier.offset, old, new, 0.001)?.is_some())
 }
-
 
 #[cfg(test)]
 mod tests;

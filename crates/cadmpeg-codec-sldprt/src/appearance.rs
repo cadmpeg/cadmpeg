@@ -197,8 +197,8 @@ fn display_assignments(
 ) -> Result<Vec<DisplayAppearanceAssignment>, cadmpeg_core::CodecError> {
     let _classes_storage;
     let classes;
-    (classes, _classes_storage) =
-        ctx.with_scoped_storage("SLDPRT appearance class workspace", || {
+    (classes, _classes_storage) = ctx
+        .with_scoped_storage("SLDPRT appearance class workspace", || {
             crate::tessellation::class_intervals(ctx, section.payload())
         })?;
     let mut assignments = Vec::new();
@@ -334,8 +334,8 @@ pub(crate) fn feature_assignments(
         let bytes = section.payload();
         let _classes_storage;
         let classes;
-        (classes, _classes_storage) =
-            ctx.with_scoped_storage("SLDPRT appearance class workspace", || {
+        (classes, _classes_storage) = ctx
+            .with_scoped_storage("SLDPRT appearance class workspace", || {
                 crate::tessellation::class_intervals(ctx, bytes)
             })?;
         for marker_offset in ctx
@@ -432,8 +432,8 @@ pub(crate) fn resolve_display_appearances(
 
     let _feature_records_storage;
     let feature_records;
-    (feature_records, _feature_records_storage) =
-        ctx.with_scoped_storage("SLDPRT feature appearance workspace", || {
+    (feature_records, _feature_records_storage) = ctx
+        .with_scoped_storage("SLDPRT feature appearance workspace", || {
             feature_assignments(ctx, scan)
         })?;
     let mut feature_index_storage =
@@ -506,10 +506,8 @@ pub(crate) fn resolve_display_appearances(
             .admit_iter(face_indexes, "scan SLDPRT feature appearance face indexes")?
             .copied()
         {
-            let name = ctx.copy_retained_text(
-                FEATURE_APPEARANCE_NAME,
-                "copy SLDPRT appearance name",
-            )?;
+            let name =
+                ctx.copy_retained_text(FEATURE_APPEARANCE_NAME, "copy SLDPRT appearance name")?;
             let copied = AppearanceDefinition {
                 name,
                 color: assignment.color,

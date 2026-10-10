@@ -1064,9 +1064,10 @@ pub(super) fn relation_definition(
                             known,
                             entities,
                             |known, candidate| {
-                                line_line_distance(&known.geometry, &candidate.geometry).is_some_and(|measured| {
-                                    same_relation_dimension_length(measured, expected.get())
-                                })
+                                line_line_distance(&known.geometry, &candidate.geometry)
+                                    .is_some_and(|measured| {
+                                        same_relation_dimension_length(measured, expected.get())
+                                    })
                             },
                         )
                     };
@@ -1837,7 +1838,8 @@ fn unique_profile_measured_loci_pair(
             if !ctx.all_by(
                 later,
                 |second| {
-                    if !same_dimension_length(measure(&first.point, &second.point), distance.get()) {
+                    if !same_dimension_length(measure(&first.point, &second.point), distance.get())
+                    {
                         return Ok(true);
                     }
                     if let Some((selected_first, selected_second)) = selected {
@@ -2270,7 +2272,12 @@ impl<'a, 'ctx> CanonicalProfileLoci<'a, 'ctx> {
                 storage.with_storage(|| {
                     ctx.push_vec(
                         &mut indexed,
-                        CanonicalProfileLocus { source_index, point, entity: entity.id(), role },
+                        CanonicalProfileLocus {
+                            source_index,
+                            point,
+                            entity: entity.id(),
+                            role,
+                        },
                         OPERATION,
                     )
                 })?;
@@ -2279,7 +2286,13 @@ impl<'a, 'ctx> CanonicalProfileLoci<'a, 'ctx> {
         // Source order breaks equal geometric and identity keys without sort scratch.
         ctx.sort_unstable_by_key(
             &mut indexed,
-            |locus| (locus.source_index, locus.point, (locus.entity, locus.role as u8)),
+            |locus| {
+                (
+                    locus.source_index,
+                    locus.point,
+                    (locus.entity, locus.role as u8),
+                )
+            },
             |(left_index, left_point, (left_entity, left_role)),
              (right_index, right_point, (right_entity, right_role))| {
                 quantize(*left_point, QUANTUM)
@@ -2294,12 +2307,13 @@ impl<'a, 'ctx> CanonicalProfileLoci<'a, 'ctx> {
         )?;
         ctx.dedup_by(
             &mut indexed,
-            |left, right| {
-                Ok(quantize(left.point, QUANTUM) == quantize(right.point, QUANTUM))
-            },
+            |left, right| Ok(quantize(left.point, QUANTUM) == quantize(right.point, QUANTUM)),
             "deduplicate SLDPRT canonical profile loci",
         )?;
-        Ok(Self { entries: indexed, _storage: storage })
+        Ok(Self {
+            entries: indexed,
+            _storage: storage,
+        })
     }
 
     pub(super) fn as_slice(&self) -> &[CanonicalProfileLocus<'a>] {
@@ -3173,9 +3187,11 @@ fn unique_point_line_candidate_pair(
                     let Some(line_entity) = entities.entity(ctx, line, OPERATION)? else {
                         return Ok(false);
                     };
-                    if !point_line_distance_value(point_position, &line_entity.geometry).is_some_and(
-                        |measured| same_relation_dimension_length(measured, expected.get()),
-                    ) {
+                    if !point_line_distance_value(point_position, &line_entity.geometry)
+                        .is_some_and(|measured| {
+                            same_relation_dimension_length(measured, expected.get())
+                        })
+                    {
                         return Ok(true);
                     }
                     if let Some((selected_point, selected_line)) = selected {

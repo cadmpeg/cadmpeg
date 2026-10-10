@@ -421,40 +421,66 @@ fn roster_curve_endpoint_route<'curve, 'payload>(
     {
         return None;
     }
-    Some(RosterCurveEndpointRoute { payload, curve, offset, selected_construction, point_object_construction })
+    Some(RosterCurveEndpointRoute {
+        payload,
+        curve,
+        offset,
+        selected_construction,
+        point_object_construction,
+    })
 }
 
 pub(super) fn roster_curve_endpoint_markers<'a>(
-    ctx: &DecodeContext<'_>, payload: &[u8], curve: &SketchInputEntity,
-    markers: &[&'a SketchInputEntity], geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+    geometry: &MarkerGeometryIndex<'a, '_, '_>,
     curve_markers: Option<&super::typed_relations::CurveMarkers<'_, 'a, '_>>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
-    let Some(route) = roster_curve_endpoint_route(payload, curve) else { return Ok(Vec::new()); };
+    let Some(route) = roster_curve_endpoint_route(payload, curve) else {
+        return Ok(Vec::new());
+    };
     roster_curve_endpoint_markers_for_route(ctx, markers, geometry, curve_markers, route)
 }
 
 pub(super) fn roster_curve_endpoint_markers_lazy<'a, 'payload, 'ctx>(
-    ctx: &'ctx DecodeContext<'ctx>, payload: &'payload [u8], curve: &SketchInputEntity,
+    ctx: &'ctx DecodeContext<'ctx>,
+    payload: &'payload [u8],
+    curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
     geometry: &mut Option<MarkerGeometryIndex<'a, 'payload, 'ctx>>,
     curve_markers: Option<&super::typed_relations::CurveMarkers<'_, 'a, '_>>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
-    let Some(route) = roster_curve_endpoint_route(payload, curve) else { return Ok(Vec::new()); };
+    let Some(route) = roster_curve_endpoint_route(payload, curve) else {
+        return Ok(Vec::new());
+    };
     let geometry = match geometry {
         Some(geometry) => geometry,
-        None => geometry.insert(MarkerGeometryIndex::new(ctx, markers, MarkerPrefixIndex::new(ctx, payload)?)?),
+        None => geometry.insert(MarkerGeometryIndex::new(
+            ctx,
+            markers,
+            MarkerPrefixIndex::new(ctx, payload)?,
+        )?),
     };
     roster_curve_endpoint_markers_for_route(ctx, markers, geometry, curve_markers, route)
 }
 
 fn roster_curve_endpoint_markers_for_route<'a>(
     ctx: &DecodeContext<'_>,
-    markers: &[&'a SketchInputEntity], geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    markers: &[&'a SketchInputEntity],
+    geometry: &MarkerGeometryIndex<'a, '_, '_>,
     curve_markers: Option<&super::typed_relations::CurveMarkers<'_, 'a, '_>>,
     route: RosterCurveEndpointRoute<'_, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT curve endpoint roster";
-    let RosterCurveEndpointRoute { payload, curve, offset, selected_construction, point_object_construction } = route;
+    let RosterCurveEndpointRoute {
+        payload,
+        curve,
+        offset,
+        selected_construction,
+        point_object_construction,
+    } = route;
     let owned_group = |index: u32| geometry.object_markers(ctx, curve, Some(index));
     let is_point = |marker: &SketchInputEntity| {
         matches!(

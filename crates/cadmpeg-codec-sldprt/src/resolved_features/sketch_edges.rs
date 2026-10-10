@@ -242,35 +242,34 @@ pub(super) fn project_edge<'ctx>(
             let knots = nurbs.knots().try_clone_for_decode(ctx, operation)?;
             let _lanes_storage;
             let (projected, weights);
-            ((projected, weights), _lanes_storage) =
-                ctx.with_scoped_storage(operation, || {
-                    let projected = match nurbs.pole_rows() {
-                        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => ctx
-                            .collect_indexed_vec(points.len(), operation, |index| {
-                                Ok(project_point(points[index].get(), origin, u_axis, v_axis))
-                            })?,
-                        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => ctx
-                            .collect_indexed_vec(points.len(), operation, |index| {
-                                Ok(project_point(
-                                    points[index].point.get(),
-                                    origin,
-                                    u_axis,
-                                    v_axis,
-                                ))
-                            })?,
-                    };
-                    let weights = match nurbs.pole_rows() {
-                        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => None,
-                        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-                            Some(ctx.collect_indexed_vec(
-                                points.len(),
-                                "project SLDPRT sketch NURBS weights",
-                                |index| Ok(points[index].weight),
-                            )?)
-                        }
-                    };
-                    Ok::<_, cadmpeg_core::CodecError>((projected, weights))
-                })?;
+            ((projected, weights), _lanes_storage) = ctx.with_scoped_storage(operation, || {
+                let projected = match nurbs.pole_rows() {
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => ctx
+                        .collect_indexed_vec(points.len(), operation, |index| {
+                            Ok(project_point(points[index].get(), origin, u_axis, v_axis))
+                        })?,
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => ctx
+                        .collect_indexed_vec(points.len(), operation, |index| {
+                            Ok(project_point(
+                                points[index].point.get(),
+                                origin,
+                                u_axis,
+                                v_axis,
+                            ))
+                        })?,
+                };
+                let weights = match nurbs.pole_rows() {
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => None,
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                        Some(ctx.collect_indexed_vec(
+                            points.len(),
+                            "project SLDPRT sketch NURBS weights",
+                            |index| Ok(points[index].weight),
+                        )?)
+                    }
+                };
+                Ok::<_, cadmpeg_core::CodecError>((projected, weights))
+            })?;
             cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
                 ctx,
                 nurbs.degree(),

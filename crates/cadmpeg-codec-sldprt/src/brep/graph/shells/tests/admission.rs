@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-
 fn one_face_shell() -> crate::brep::graph::Brep {
     use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::{Face, FaceLoops, Sense};
@@ -25,8 +24,12 @@ fn shell_components(
     brep: &crate::brep::graph::Brep,
     shell: &str,
 ) -> Result<Vec<Vec<usize>>, cadmpeg_core::CodecError> {
-    let mut index =
-        crate::brep::graph::shells::ShellFaceIndex::new(ctx, &brep.faces, &brep.loops, &brep.coedges)?;
+    let mut index = crate::brep::graph::shells::ShellFaceIndex::new(
+        ctx,
+        &brep.faces,
+        &brep.loops,
+        &brep.coedges,
+    )?;
     index.take_components(shell)?.into_retained()
 }
 
@@ -46,8 +49,10 @@ fn shell_components_use_linear_stars_within_each_shell() {
             let mut face = template.clone();
             face.id = crate::brep::graph::id_face(i + 2);
             if i < 2 {
-                face.shell =
-                    cadmpeg_ir::ids::ShellId::compose(&crate::brep::graph::shell_namespace(), 2_u16);
+                face.shell = cadmpeg_ir::ids::ShellId::compose(
+                    &crate::brep::graph::shell_namespace(),
+                    2_u16,
+                );
             }
             face
         })
@@ -73,8 +78,13 @@ fn shell_components_use_linear_stars_within_each_shell() {
             pcurves: Vec::new(),
         });
     }
-    let mut index =
-        crate::brep::graph::shells::ShellFaceIndex::new(&ctx, &brep.faces, &brep.loops, &brep.coedges).unwrap();
+    let mut index = crate::brep::graph::shells::ShellFaceIndex::new(
+        &ctx,
+        &brep.faces,
+        &brep.loops,
+        &brep.coedges,
+    )
+    .unwrap();
     assert_eq!(
         index
             .neighbors()
@@ -84,14 +94,19 @@ fn shell_components_use_linear_stars_within_each_shell() {
         6
     );
     assert_eq!(
-        index.take_components("test:model:shell#1").unwrap().into_retained().unwrap(),
+        index
+            .take_components("test:model:shell#1")
+            .unwrap()
+            .into_retained()
+            .unwrap(),
         vec![vec![2, 3, 4]]
     );
     assert_eq!(
         index
             .take_components("sldprt:brep:shell#2")
             .unwrap()
-            .into_retained().unwrap(),
+            .into_retained()
+            .unwrap(),
         vec![vec![0, 1]]
     );
 }
@@ -123,4 +138,3 @@ fn shell_components_refuse_work_limit() {
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
 }
-

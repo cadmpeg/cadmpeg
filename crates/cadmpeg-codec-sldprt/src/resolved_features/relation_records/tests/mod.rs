@@ -122,6 +122,6 @@ fn dynamic_scalar(
     scalar
 }
 
-mod declarations;
 mod circles;
+mod declarations;
 mod dynamic_operands;

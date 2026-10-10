@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::brep::entity;
+use crate::brep::graph::test_support::with_test_context;
+use crate::brep::graph::unique_face_colors;
 use crate::brep::topology::Bridge;
 use crate::brep::topology::Coedge;
-use cadmpeg_ir::topology::Color;
-use cadmpeg_ir::topology::Sense;
 use crate::brep::topology::EdgeReferences;
 use crate::brep::topology::EdgeUse;
 use crate::brep::topology::Loop;
-use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use crate::brep::topology::Tables;
-use crate::brep::entity;
-use crate::brep::graph::unique_face_colors;
-use crate::brep::graph::test_support::with_test_context;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::topology::Sense;
 
 mod admission;
 
@@ -278,7 +278,8 @@ fn canonical_edge_direction_uses_explicit_or_unique_forward_coedge() {
     let prefixed_edge = edge(7, EdgeReferences::Compact { curve: 300 });
     let ctx = cadmpeg_test_support::service_decode_context();
     let canonical = |edge_use: &EdgeUse, coedges: &BTreeMap<u16, Coedge>| {
-        let forward = crate::brep::graph::forward_coedges_by_edge(&ctx, coedges).expect("forward coedge index");
+        let forward = crate::brep::graph::forward_coedges_by_edge(&ctx, coedges)
+            .expect("forward coedge index");
         crate::brep::graph::canonical_coedge_attr(&ctx, 7, Some(edge_use), coedges, &forward)
             .expect("canonical coedge lookup")
     };
@@ -332,13 +333,22 @@ fn boundary_coedge_uses_ring_endpoint_but_reciprocal_twin_supplies_edge_end() {
 fn normalized_surface_parameter_reversal_toggles_face_sense() {
     use cadmpeg_ir::topology::Sense;
 
-    assert_eq!(crate::brep::graph::surface_sense(Sense::Forward, false), Sense::Forward);
+    assert_eq!(
+        crate::brep::graph::surface_sense(Sense::Forward, false),
+        Sense::Forward
+    );
     assert_eq!(
         crate::brep::graph::surface_sense(Sense::Reversed, false),
         Sense::Reversed
     );
-    assert_eq!(crate::brep::graph::surface_sense(Sense::Forward, true), Sense::Reversed);
-    assert_eq!(crate::brep::graph::surface_sense(Sense::Reversed, true), Sense::Forward);
+    assert_eq!(
+        crate::brep::graph::surface_sense(Sense::Forward, true),
+        Sense::Reversed
+    );
+    assert_eq!(
+        crate::brep::graph::surface_sense(Sense::Reversed, true),
+        Sense::Forward
+    );
 }
 
 #[test]

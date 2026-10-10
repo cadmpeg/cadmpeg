@@ -21,7 +21,10 @@ struct ObservedText<'ctx, 'session> {
 
 impl PartialEq for ObservedText<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
-        assert!(!self.panic_on_compare && !other.panic_on_compare, "comparison unwind");
+        assert!(
+            !self.panic_on_compare && !other.panic_on_compare,
+            "comparison unwind"
+        );
         self.text == other.text
     }
 }
@@ -65,9 +68,11 @@ fn observe_candidate_drop(panic_on_compare: bool) {
     let mut table_storage = ctx.reserve_scoped(0, PATTERN_INPUTS).unwrap();
     let candidate_storage;
     let copied;
-    (copied, candidate_storage) = ctx.with_scoped_storage(PATTERN_INPUTS, || {
-        ctx.copy_retained_text(TEXT, PATTERN_INPUTS)
-    }).unwrap();
+    (copied, candidate_storage) = ctx
+        .with_scoped_storage(PATTERN_INPUTS, || {
+            ctx.copy_retained_text(TEXT, PATTERN_INPUTS)
+        })
+        .unwrap();
     let candidate = ObservedText {
         text: Cow::Owned(copied),
         ctx: &ctx,

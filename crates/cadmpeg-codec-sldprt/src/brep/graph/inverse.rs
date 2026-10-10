@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolve scalar inverse candidates and coordinate-scale tolerances.
 
+use super::EPS_NURBS_WEIGHT;
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::eval::nurbs_curve_parameter_domain;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
-use super::EPS_NURBS_WEIGHT;
 
 pub(super) enum InverseResolution<T> {
     NoMatch,
@@ -70,8 +70,7 @@ pub(super) fn surface_poles<'s>(
     let count = surface.u_count().checked_mul(v_count).ok_or_else(|| {
         ctx.refuse_codec_limit("scan Parasolid surface poles", u64::MAX - 1, u64::MAX)
     })?;
-    Ok((0..count)
-        .filter_map(move |index| surface.pole(index / v_count, index % v_count)))
+    Ok((0..count).filter_map(move |index| surface.pole(index / v_count, index % v_count)))
 }
 
 fn golden_section_minimum<F>(
@@ -139,9 +138,11 @@ pub(super) struct InverseCandidates<'ctx, 'arena> {
 }
 
 impl InverseCandidates<'_, '_> {
-    pub(super) fn resolve(self, tolerance: f64, domain: [f64; 2])
-        -> Result<InverseResolution<f64>, cadmpeg_core::CodecError>
-    {
+    pub(super) fn resolve(
+        self,
+        tolerance: f64,
+        domain: [f64; 2],
+    ) -> Result<InverseResolution<f64>, cadmpeg_core::CodecError> {
         // The remaining lease stays live until the consumed values have been
         // destroyed inside selection, including any refusal or unwind.
         unique_inverse_parameter(self.context, self.values, tolerance, domain)
@@ -160,74 +161,82 @@ pub(super) fn sampled_parameter_minima<'ctx, 'arena, F>(
 where
     F: FnMut(f64) -> Result<Option<f64>, cadmpeg_core::CodecError>,
 {
-    let (candidates, storage) = ctx.with_scoped_storage("hold Parasolid inverse candidates", || {
-    let mut candidates = Vec::new();
-    for span in ctx
-        .admit_iter(knots, "sample Parasolid inverse knot spans")?
-        .windows(const { crate::nonzero(2) })
-        .filter(|span| span[0] < span[1])
-    {
-        let start = span[0].max(domain[0]);
-        let end = span[1].min(domain[1]);
-        if start >= end {
-            continue;
-        }
-        let mut samples_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
-        let mut samples = Vec::new();
-        samples_storage.with_storage(|| {
-            ctx.reserve_capacity(
-                &mut samples,
-                INVERSE_SAMPLE_COUNT + 1,
-                "sample Parasolid inverse span",
-            )
-        })?;
-        for index in 0..=INVERSE_SAMPLE_COUNT {
-            ctx.charge_work(1, "sample Parasolid inverse span")?;
-            let (Some(position), Some(span_count)) =
-                (f64_from_index(index), f64_from_index(INVERSE_SAMPLE_COUNT))
-            else {
-                return Ok(None);
-            };
-            let Some(parameter) = cadmpeg_ir::math::interpolate(start, end, position / span_count)
-            else {
-                return Ok(None);
-            };
-            let parameter = parameter.get();
-            let Some(distance) = objective(parameter)? else {
-                return Ok(None);
-            };
-            samples_storage.with_storage(|| {
-                ctx.push_vec(
-                    &mut (samples),
-                    (parameter, distance),
-                    "sample Parasolid inverse span",
-                )
-            })?;
-        }
-        ctx.extend_from_slice(
-            &mut candidates,
-            &samples,
-            "collect Parasolid inverse candidates",
-        )?;
-        for index in 1..INVERSE_SAMPLE_COUNT {
-            if samples[index].1 <= samples[index - 1].1 && samples[index].1 <= samples[index + 1].1
+    let (candidates, storage) =
+        ctx.with_scoped_storage("hold Parasolid inverse candidates", || {
+            let mut candidates = Vec::new();
+            for span in ctx
+                .admit_iter(knots, "sample Parasolid inverse knot spans")?
+                .windows(const { crate::nonzero(2) })
+                .filter(|span| span[0] < span[1])
             {
-                let Some(minimum) = golden_section_minimum(
-                    samples[index - 1].0,
-                    samples[index + 1].0,
-                    &mut objective,
-                )?
-                else {
-                    return Ok(None);
-                };
-                ctx.reserve_vec(&mut candidates, 1, "collect Parasolid inverse minima")?;
-                candidates.push(minimum);
+                let start = span[0].max(domain[0]);
+                let end = span[1].min(domain[1]);
+                if start >= end {
+                    continue;
+                }
+                let mut samples_storage =
+                    ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
+                let mut samples = Vec::new();
+                samples_storage.with_storage(|| {
+                    ctx.reserve_capacity(
+                        &mut samples,
+                        INVERSE_SAMPLE_COUNT + 1,
+                        "sample Parasolid inverse span",
+                    )
+                })?;
+                for index in 0..=INVERSE_SAMPLE_COUNT {
+                    ctx.charge_work(1, "sample Parasolid inverse span")?;
+                    let (Some(position), Some(span_count)) =
+                        (f64_from_index(index), f64_from_index(INVERSE_SAMPLE_COUNT))
+                    else {
+                        return Ok(None);
+                    };
+                    let Some(parameter) =
+                        cadmpeg_ir::math::interpolate(start, end, position / span_count)
+                    else {
+                        return Ok(None);
+                    };
+                    let parameter = parameter.get();
+                    let Some(distance) = objective(parameter)? else {
+                        return Ok(None);
+                    };
+                    samples_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut (samples),
+                            (parameter, distance),
+                            "sample Parasolid inverse span",
+                        )
+                    })?;
+                }
+                ctx.extend_from_slice(
+                    &mut candidates,
+                    &samples,
+                    "collect Parasolid inverse candidates",
+                )?;
+                for index in 1..INVERSE_SAMPLE_COUNT {
+                    if samples[index].1 <= samples[index - 1].1
+                        && samples[index].1 <= samples[index + 1].1
+                    {
+                        let Some(minimum) = golden_section_minimum(
+                            samples[index - 1].0,
+                            samples[index + 1].0,
+                            &mut objective,
+                        )?
+                        else {
+                            return Ok(None);
+                        };
+                        ctx.reserve_vec(&mut candidates, 1, "collect Parasolid inverse minima")?;
+                        candidates.push(minimum);
+                    }
+                }
             }
-        }
-    }
-    Ok::<_, cadmpeg_core::CodecError>(Some(candidates))
-    })?;
-    Ok(candidates.map(|values| InverseCandidates { context: ctx, values, _storage: storage }))
+            Ok::<_, cadmpeg_core::CodecError>(Some(candidates))
+        })?;
+    Ok(candidates.map(|values| InverseCandidates {
+        context: ctx,
+        values,
+        _storage: storage,
+    }))
 }
 
 pub(super) fn unique_inverse_parameter(
@@ -303,7 +312,8 @@ pub(super) fn nurbs_parameter_at_point(
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
             inverse_coordinate_tolerance(
                 ctx,
-                points.iter()
+                points
+                    .iter()
                     .copied()
                     .map(FinitePoint3::get)
                     .chain(std::iter::once(target)),
@@ -312,7 +322,8 @@ pub(super) fn nurbs_parameter_at_point(
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
             inverse_coordinate_tolerance(
                 ctx,
-                points.iter()
+                points
+                    .iter()
                     .map(|pole| pole.point.get())
                     .chain(std::iter::once(target)),
             )?
@@ -397,10 +408,12 @@ pub(super) fn ruled_surface_line_pcurve(
             };
             let (u0, v0) = parameters(varying_min);
             let (u1, v1) = parameters(varying_max);
-            let Some(first) = crate::brep::evaluation::nurbs_surface_point(ctx, surface, u0, v0)? else {
+            let Some(first) = crate::brep::evaluation::nurbs_surface_point(ctx, surface, u0, v0)?
+            else {
                 return Ok(None);
             };
-            let Some(second) = crate::brep::evaluation::nurbs_surface_point(ctx, surface, u1, v1)? else {
+            let Some(second) = crate::brep::evaluation::nurbs_surface_point(ctx, surface, u1, v1)?
+            else {
                 return Ok(None);
             };
             Ok(Some((first, second)))

@@ -127,12 +127,17 @@ pub(super) fn scan_sweep_carriers(
     bytes: &[u8],
 ) -> Result<BTreeMap<u16, SweepCarrier>, cadmpeg_core::CodecError> {
     let mut values = BTreeMap::new();
-    scan_into(ctx, bytes, &mut super::index::publication::FixedSink::Retained(&mut values))?;
+    scan_into(
+        ctx,
+        bytes,
+        &mut super::index::publication::FixedSink::Retained(&mut values),
+    )?;
     Ok(values)
 }
 
 pub(in crate::brep) fn scan_into(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8],
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
     out: &mut super::index::publication::FixedSink<'_, '_, SweepCarrier>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let starts = 0..bytes.len().checked_sub(20).map_or(0, |end| end);
@@ -168,18 +173,27 @@ impl<'source, 'ctx> ProfileNurbs<'source, 'ctx> {
     fn into_retained(self) -> Result<Cow<'source, NurbsCurve>, CodecError> {
         match self {
             Self::Borrowed(curve) => Ok(Cow::Borrowed(curve)),
-            Self::Generated(profile) => Ok(Cow::Owned(profile.storage.commit_value(profile.curve)?)),
+            Self::Generated(profile) => {
+                Ok(Cow::Owned(profile.storage.commit_value(profile.curve)?))
+            }
         }
     }
 }
 
 /// Full rational circle ring, clamped at both ends.
 const FULL_RING_KNOTS: [f64; 12] = [
-    0.0, 0.0, 0.0,
-    std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2,
-    std::f64::consts::PI, std::f64::consts::PI,
-    3.0 * std::f64::consts::FRAC_PI_2, 3.0 * std::f64::consts::FRAC_PI_2,
-    2.0 * std::f64::consts::PI, 2.0 * std::f64::consts::PI, 2.0 * std::f64::consts::PI,
+    0.0,
+    0.0,
+    0.0,
+    std::f64::consts::FRAC_PI_2,
+    std::f64::consts::FRAC_PI_2,
+    std::f64::consts::PI,
+    std::f64::consts::PI,
+    3.0 * std::f64::consts::FRAC_PI_2,
+    3.0 * std::f64::consts::FRAC_PI_2,
+    2.0 * std::f64::consts::PI,
+    2.0 * std::f64::consts::PI,
+    2.0 * std::f64::consts::PI,
 ];
 
 /// Convert an exact analytic sweep profile to its exact rational NURBS form.
@@ -193,7 +207,9 @@ pub(super) fn profile_nurbs<'a, 'ctx>(
     record: &dyn std::fmt::Display,
     refusal: &mut RefusalSink<'_, 'ctx>,
 ) -> Result<Option<ProfileNurbs<'a, 'ctx>>, CodecError> {
-    if let Some(limit) = ctx.resource_refusal() { return Err(limit.into()); }
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(limit.into());
+    }
     let (center, frame, major_radius, minor_radius) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
             return Ok(Some(ProfileNurbs::Borrowed(curve)))
@@ -220,47 +236,46 @@ pub(super) fn profile_nurbs<'a, 'ctx>(
     let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
     let mut pole_storage = ctx.reserve_scoped(0, "hold SLDPRT sweep profile raw lanes")?;
     let (control_points, weights) = pole_storage.with_storage(|| {
-    let mut control_points = ctx.vector_storage(9, "construct SLDPRT sweep profile poles")?;
-    let mut weights = ctx.vector_storage(9, "construct SLDPRT sweep profile weights")?;
-    for index in 0_i32..9 {
-        let angle = f64::from(index) * std::f64::consts::FRAC_PI_4;
-        let (sin, cos) = angle.sin_cos();
-        let tangent_scale = if index % 2 == 0 {
-            1.0
-        } else {
-            std::f64::consts::SQRT_2
-        };
-        ctx.push_vec(
-            &mut (control_points),
-            center
-                .translated(major, tangent_scale * major_radius * cos)
-                .translated(minor, tangent_scale * minor_radius * sin),
-            "collect SLDPRT decoded vector items",
-        )?;
-        ctx.push_vec(
-            &mut (weights),
-            if index % 2 == 0 { 1.0 } else { half_sqrt2 },
-            "collect SLDPRT decoded vector items",
-        )?;
-    }
+        let mut control_points = ctx.vector_storage(9, "construct SLDPRT sweep profile poles")?;
+        let mut weights = ctx.vector_storage(9, "construct SLDPRT sweep profile weights")?;
+        for index in 0_i32..9 {
+            let angle = f64::from(index) * std::f64::consts::FRAC_PI_4;
+            let (sin, cos) = angle.sin_cos();
+            let tangent_scale = if index % 2 == 0 {
+                1.0
+            } else {
+                std::f64::consts::SQRT_2
+            };
+            ctx.push_vec(
+                &mut (control_points),
+                center
+                    .translated(major, tangent_scale * major_radius * cos)
+                    .translated(minor, tangent_scale * minor_radius * sin),
+                "collect SLDPRT decoded vector items",
+            )?;
+            ctx.push_vec(
+                &mut (weights),
+                if index % 2 == 0 { 1.0 } else { half_sqrt2 },
+                "collect SLDPRT decoded vector items",
+            )?;
+        }
         Ok::<_, CodecError>((control_points, weights))
     })?;
     let mut curve_storage = ctx.reserve_scoped(0, "hold SLDPRT generated sweep profile")?;
     let result = curve_storage.with_storage(|| {
-        let mut knots = ctx.collection_vec(FULL_RING_KNOTS.len(), "construct SLDPRT sweep profile knots")?;
+        let mut knots = ctx.collection_vec(
+            FULL_RING_KNOTS.len(),
+            "construct SLDPRT sweep profile knots",
+        )?;
         knots.extend_from_slice(&FULL_RING_KNOTS);
-        NurbsCurve::from_lanes(
-        ctx,
-        2,
-        knots,
-        control_points,
-        Some(weights),
-        false,
-        )
+        NurbsCurve::from_lanes(ctx, 2, knots, control_points, Some(weights), false)
     })?;
     drop(pole_storage);
     match result {
-        Ok(curve) => Ok(Some(ProfileNurbs::Generated(GeneratedProfile { curve, storage: curve_storage }))),
+        Ok(curve) => Ok(Some(ProfileNurbs::Generated(GeneratedProfile {
+            curve,
+            storage: curve_storage,
+        }))),
         Err(error) => {
             refusal.note(
                 ctx,
@@ -297,7 +312,9 @@ pub(super) fn swept_nurbs<'ctx>(
     record: &dyn std::fmt::Display,
     refusal: &mut RefusalSink<'_, 'ctx>,
 ) -> Result<Option<NurbsSurface>, CodecError> {
-    if let Some(limit) = ctx.resource_refusal() { return Err(limit.into()); }
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(limit.into());
+    }
     let direction = direction.as_raw();
     if !(v_start.is_finite() && v_end.is_finite()) || v_end <= v_start {
         return Ok(None);
@@ -306,61 +323,59 @@ pub(super) fn swept_nurbs<'ctx>(
     let n = profile.pole_count();
     let rational = matches!(profile.pole_rows(), NurbsPoles3::Rational { .. });
     let (raw_grid, grid_storage) = ctx.with_scoped_storage("hold SLDPRT sweep raw grid", || {
-    let mut control_rows = ctx.vector_storage(n, "construct swept surface pole rows")?;
-    let mut weight_rows = if rational {
-        Some(ctx.vector_storage(n, "construct swept surface weight rows")?)
-    } else {
-        None
-    };
-    for i in ctx.admit_iter(0..n, "solve swept surface poles")? {
-        let Some((pole, weight)) = profile_pole(profile, i) else {
-            return Ok(None);
+        let mut control_rows = ctx.vector_storage(n, "construct swept surface pole rows")?;
+        let mut weight_rows = if rational {
+            Some(ctx.vector_storage(n, "construct swept surface weight rows")?)
+        } else {
+            None
         };
-        let mut row = ctx.vector_storage(2, "construct swept surface poles")?;
-        for v in [v_start, v_end] {
-            ctx.push_vec(
-                &mut row,
-                Point3::new(
-                    pole.x + v * direction.x,
-                    pole.y + v * direction.y,
-                    pole.z + v * direction.z,
-                ),
-                "construct swept surface poles",
-            )?;
+        for i in ctx.admit_iter(0..n, "solve swept surface poles")? {
+            let Some((pole, weight)) = profile_pole(profile, i) else {
+                return Ok(None);
+            };
+            let mut row = ctx.vector_storage(2, "construct swept surface poles")?;
+            for v in [v_start, v_end] {
+                ctx.push_vec(
+                    &mut row,
+                    Point3::new(
+                        pole.x + v * direction.x,
+                        pole.y + v * direction.y,
+                        pole.z + v * direction.z,
+                    ),
+                    "construct swept surface poles",
+                )?;
+            }
+            ctx.push_vec(&mut control_rows, row, "construct swept surface pole rows")?;
+            if let (Some(rows), Some(weight)) = (&mut weight_rows, weight) {
+                let mut row = ctx.vector_storage(2, "construct swept surface weights")?;
+                ctx.extend_vec(
+                    &mut row,
+                    [weight, weight],
+                    "construct swept surface weights",
+                )?;
+                ctx.push_vec(rows, row, "construct swept surface weight rows")?;
+            }
         }
-        ctx.push_vec(&mut control_rows, row, "construct swept surface pole rows")?;
-        if let (Some(rows), Some(weight)) = (&mut weight_rows, weight) {
-            let mut row = ctx.vector_storage(2, "construct swept surface weights")?;
-            ctx.extend_vec(
-                &mut row,
-                [weight, weight],
-                "construct swept surface weights",
-            )?;
-            ctx.push_vec(rows, row, "construct swept surface weight rows")?;
-        }
-    }
         Ok::<_, CodecError>(Some((control_rows, weight_rows)))
     })?;
-    let Some((control_rows, weight_rows)) = raw_grid else { return Ok(None); };
+    let Some((control_rows, weight_rows)) = raw_grid else {
+        return Ok(None);
+    };
     let mut surface_storage = ctx.reserve_scoped(0, "retain SLDPRT sweep surface candidate")?;
     let result = surface_storage.with_storage(|| {
-    let knots = ctx.copy_slice(profile.knots().as_slice(), "copy sweep profile knots")?;
+        let knots = ctx.copy_slice(profile.knots().as_slice(), "copy sweep profile knots")?;
         let mut v_knots = ctx.collection_vec(4, "construct swept surface knots")?;
         v_knots.extend_from_slice(&[v_start, v_start, v_end, v_end]);
         NurbsSurface::from_checked_lanes(
-        ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            profile.degree(),
-            knots,
-            profile.periodic(),
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            1,
-            v_knots,
+            ctx,
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                profile.degree(),
+                knots,
+                profile.periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, v_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_rows, weight_rows),
             false,
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_rows, weight_rows),
-        false,
         )
     })?;
     drop(grid_storage);
@@ -395,37 +410,87 @@ pub(super) fn spun_nurbs<'ctx>(
     let n = profile.pole_count();
     let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
     let (raw_grid, grid_storage) = ctx.with_scoped_storage("hold SLDPRT sweep raw grid", || {
-    let mut control_rows = ctx.vector_storage(n, "construct spun surface pole rows")?;
-    let mut weight_rows = ctx.vector_storage(n, "construct spun surface weight rows")?;
-    for i in ctx.admit_iter(0..n, "solve spun surface poles")? {
-        let Some((pole, pole_weight)) = profile_pole(profile, i) else {
-            return Ok(None);
-        };
-        let pole_weight = pole_weight.map_or(1.0, cadmpeg_ir::scalar::NonZeroReal::get);
-        let mut control = ctx.vector_storage(9, "construct spun surface poles")?;
-        let mut weights = ctx.vector_storage(9, "construct spun surface weights")?;
-        let offset = [pole.x - base.x, pole.y - base.y, pole.z - base.z];
-        let along = offset[0] * axis.x + offset[1] * axis.y + offset[2] * axis.z;
-        let center = Point3::new(
-            base.x + along * axis.x,
-            base.y + along * axis.y,
-            base.z + along * axis.z,
-        );
-        let radial = [pole.x - center.x, pole.y - center.y, pole.z - center.z];
-        let radius = radial[0].hypot(radial[1]).hypot(radial[2]);
-        if radius <= f64::EPSILON {
-            // Degenerate ring: the pole sits on the axis.
-            for k in 0..9 {
-                ctx.push_vec(&mut control, center, "construct spun surface poles")?;
+        let mut control_rows = ctx.vector_storage(n, "construct spun surface pole rows")?;
+        let mut weight_rows = ctx.vector_storage(n, "construct spun surface weight rows")?;
+        for i in ctx.admit_iter(0..n, "solve spun surface poles")? {
+            let Some((pole, pole_weight)) = profile_pole(profile, i) else {
+                return Ok(None);
+            };
+            let pole_weight = pole_weight.map_or(1.0, cadmpeg_ir::scalar::NonZeroReal::get);
+            let mut control = ctx.vector_storage(9, "construct spun surface poles")?;
+            let mut weights = ctx.vector_storage(9, "construct spun surface weights")?;
+            let offset = [pole.x - base.x, pole.y - base.y, pole.z - base.z];
+            let along = offset[0] * axis.x + offset[1] * axis.y + offset[2] * axis.z;
+            let center = Point3::new(
+                base.x + along * axis.x,
+                base.y + along * axis.y,
+                base.z + along * axis.z,
+            );
+            let radial = [pole.x - center.x, pole.y - center.y, pole.z - center.z];
+            let radius = radial[0].hypot(radial[1]).hypot(radial[2]);
+            if radius <= f64::EPSILON {
+                // Degenerate ring: the pole sits on the axis.
+                for k in 0..9 {
+                    ctx.push_vec(&mut control, center, "construct spun surface poles")?;
+                    ctx.push_vec(
+                        &mut weights,
+                        if k % 2 == 1 {
+                            pole_weight * half_sqrt2
+                        } else {
+                            pole_weight
+                        },
+                        "construct spun surface weights",
+                    )?;
+                }
                 ctx.push_vec(
-                    &mut weights,
-                    if k % 2 == 1 {
-                        pole_weight * half_sqrt2
-                    } else {
-                        pole_weight
-                    },
-                    "construct spun surface weights",
+                    &mut control_rows,
+                    control,
+                    "construct spun surface pole rows",
                 )?;
+                ctx.push_vec(
+                    &mut weight_rows,
+                    weights,
+                    "construct spun surface weight rows",
+                )?;
+                continue;
+            }
+            let x_hat = [radial[0] / radius, radial[1] / radius, radial[2] / radius];
+            let y_hat = [
+                axis.y * x_hat[2] - axis.z * x_hat[1],
+                axis.z * x_hat[0] - axis.x * x_hat[2],
+                axis.x * x_hat[1] - axis.y * x_hat[0],
+            ];
+            for k in 0..9u32 {
+                let angle = f64::from(k) * (FRAC_PI_2 / 2.0);
+                let (scale, weight) = if k % 2 == 1 {
+                    (radius * std::f64::consts::SQRT_2, pole_weight * half_sqrt2)
+                } else {
+                    (radius, pole_weight)
+                };
+                let (sin, cos) = angle.sin_cos();
+                let mut coordinates = [center.x, center.y, center.z];
+                for (coordinate, (x, y)) in coordinates.iter_mut().zip(x_hat.into_iter().zip(y_hat))
+                {
+                    let component = cos * x + sin * y;
+                    let offset = if scale.is_finite() {
+                        scale * component
+                    } else {
+                        let Some(value) = cadmpeg_ir::math::product_quotient(
+                            [radius, std::f64::consts::SQRT_2, component],
+                            [1.0],
+                        ) else {
+                            return Ok(None);
+                        };
+                        value.get()
+                    };
+                    *coordinate += offset;
+                }
+                ctx.push_vec(
+                    &mut control,
+                    Point3::new(coordinates[0], coordinates[1], coordinates[2]),
+                    "construct spun surface poles",
+                )?;
+                ctx.push_vec(&mut weights, weight, "construct spun surface weights")?;
             }
             ctx.push_vec(
                 &mut control_rows,
@@ -437,74 +502,28 @@ pub(super) fn spun_nurbs<'ctx>(
                 weights,
                 "construct spun surface weight rows",
             )?;
-            continue;
         }
-        let x_hat = [radial[0] / radius, radial[1] / radius, radial[2] / radius];
-        let y_hat = [
-            axis.y * x_hat[2] - axis.z * x_hat[1],
-            axis.z * x_hat[0] - axis.x * x_hat[2],
-            axis.x * x_hat[1] - axis.y * x_hat[0],
-        ];
-        for k in 0..9u32 {
-            let angle = f64::from(k) * (FRAC_PI_2 / 2.0);
-            let (scale, weight) = if k % 2 == 1 {
-                (radius * std::f64::consts::SQRT_2, pole_weight * half_sqrt2)
-            } else {
-                (radius, pole_weight)
-            };
-            let (sin, cos) = angle.sin_cos();
-            let mut coordinates = [center.x, center.y, center.z];
-            for (coordinate, (x, y)) in coordinates.iter_mut().zip(x_hat.into_iter().zip(y_hat)) {
-                let component = cos * x + sin * y;
-                let offset = if scale.is_finite() {
-                    scale * component
-                } else {
-                    let Some(value) = cadmpeg_ir::math::product_quotient(
-                        [radius, std::f64::consts::SQRT_2, component],
-                        [1.0],
-                    ) else {
-                        return Ok(None);
-                    };
-                    value.get()
-                };
-                *coordinate += offset;
-            }
-            ctx.push_vec(
-                &mut control,
-                Point3::new(coordinates[0], coordinates[1], coordinates[2]),
-                "construct spun surface poles",
-            )?;
-            ctx.push_vec(&mut weights, weight, "construct spun surface weights")?;
-        }
-        ctx.push_vec(
-            &mut control_rows,
-            control,
-            "construct spun surface pole rows",
-        )?;
-        ctx.push_vec(
-            &mut weight_rows,
-            weights,
-            "construct spun surface weight rows",
-        )?;
-    }
         Ok::<_, CodecError>(Some((control_rows, weight_rows)))
     })?;
-    let Some((control_rows, weight_rows)) = raw_grid else { return Ok(None); };
+    let Some((control_rows, weight_rows)) = raw_grid else {
+        return Ok(None);
+    };
     let mut surface_storage = ctx.reserve_scoped(0, "retain SLDPRT sweep surface candidate")?;
     let result = surface_storage.with_storage(|| {
-        let mut v_knots = ctx.collection_vec(FULL_RING_KNOTS.len(), "construct spun surface knots")?;
+        let mut v_knots =
+            ctx.collection_vec(FULL_RING_KNOTS.len(), "construct spun surface knots")?;
         v_knots.extend_from_slice(&FULL_RING_KNOTS);
-    let knots = ctx.copy_slice(profile.knots().as_slice(), "copy sweep profile knots")?;
+        let knots = ctx.copy_slice(profile.knots().as_slice(), "copy sweep profile knots")?;
         NurbsSurface::from_lanes(
-        ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            profile.degree(),
-            knots,
-            profile.periodic(),
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, true),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_rows, Some(weight_rows)),
-        false,
+            ctx,
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                profile.degree(),
+                knots,
+                profile.periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, true),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_rows, Some(weight_rows)),
+            false,
         )
     })?;
     drop(grid_storage);
@@ -527,7 +546,9 @@ mod tests {
 
     use cadmpeg_core::decode::index_from_u32;
 
-    use super::{profile_nurbs, spun_nurbs, swept_nurbs, ProfileNurbs, RefusalSink, SweepCarrier, SweepKind};
+    use super::{
+        profile_nurbs, spun_nurbs, swept_nurbs, ProfileNurbs, RefusalSink, SweepCarrier, SweepKind,
+    };
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::geometry::nurbs::NurbsSurface;
     use cadmpeg_ir::geometry::CurveGeometry;
@@ -696,7 +717,8 @@ mod tests {
                 &geometry,
                 &"test profile",
                 &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
-            ).and_then(|profile| profile.map(ProfileNurbs::into_retained).transpose())
+            )
+            .and_then(|profile| profile.map(ProfileNurbs::into_retained).transpose())
         })
         .expect("profile fits service policy")
         .expect("ellipse NURBS");
@@ -735,7 +757,8 @@ mod tests {
                 &geometry,
                 &"test profile",
                 &mut RefusalSink::Retained(&mut crate::lane_refusal::LaneRefusals::new()),
-            ).and_then(|profile| profile.map(ProfileNurbs::into_retained).transpose())
+            )
+            .and_then(|profile| profile.map(ProfileNurbs::into_retained).transpose())
         })
         .expect("profile fits service policy")
         .expect("circle NURBS");

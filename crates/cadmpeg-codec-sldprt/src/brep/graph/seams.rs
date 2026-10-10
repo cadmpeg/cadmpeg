@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Repair cylinder and sphere periodic seam topology.
 
+use super::admit_brep_entity;
+use super::pcurve_namespace;
+use super::Brep;
+use super::EPS_POINT_DISTANCE;
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::Exactness;
 use cadmpeg_ir::annotations::AnnotationBuilder;
+use cadmpeg_ir::geometry::pcurve::Pcurve;
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::geometry::pcurve::Pcurve;
-use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::ids::CoedgeId;
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::ids::EdgeId;
@@ -23,13 +26,9 @@ use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::topology::Vertex;
+use cadmpeg_ir::Exactness;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use super::Brep;
-use super::EPS_POINT_DISTANCE;
-use super::admit_brep_entity;
-use super::pcurve_namespace;
-
 
 /// The position of each identity in `ids`; a repeated identity keeps its first
 /// position.
@@ -828,4 +827,3 @@ pub(super) fn synthesize_sphere_seams(
     }
     Ok(())
 }
-

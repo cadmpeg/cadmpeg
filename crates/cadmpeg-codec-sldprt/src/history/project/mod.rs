@@ -1192,10 +1192,7 @@ pub(super) fn bind_offset_plane_references(
             )? {
                 None
             } else {
-                Some(reference.try_clone_for_decode(
-                    ctx,
-                    "copy SLDPRT offset plane dependency",
-                )?)
+                Some(reference.try_clone_for_decode(ctx, "copy SLDPRT offset plane dependency")?)
             };
             let mut bound = false;
             features[position].evaluation.edit(|definition, _| {
@@ -1495,8 +1492,10 @@ fn visit_dependency_references(
         let delimiter = ctx.find_map(
             &mut characters,
             |(offset, character)| {
-                Ok((character == ',' || character == ';' || character.is_whitespace())
-                    .then_some((offset, character.len_utf8())))
+                Ok(
+                    (character == ',' || character == ';' || character.is_whitespace())
+                        .then_some((offset, character.len_utf8())),
+                )
             },
             operation,
         )?;

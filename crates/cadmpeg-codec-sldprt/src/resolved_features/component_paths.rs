@@ -234,9 +234,9 @@ pub(super) fn component_path_input_identities<'a, 'ctx>(
             else {
                 continue;
             };
-            if seen_storage.with_storage(|| {
-                ctx.insert_hash_set(&mut seen, feature.id.as_str(), PRODUCERS)
-            })? {
+            if seen_storage
+                .with_storage(|| ctx.insert_hash_set(&mut seen, feature.id.as_str(), PRODUCERS))?
+            {
                 identity_storage.with_storage(|| {
                     ctx.push_vec(&mut producers, feature.id.as_str(), PRODUCERS)
                 })?;
@@ -250,7 +250,10 @@ pub(super) fn component_path_input_identities<'a, 'ctx>(
     )?
     else {
         ctx.clear_vec(&mut producers, OPERATION)?;
-        return Ok(ComponentInputIdentities { identities: producers, _storage: identity_storage });
+        return Ok(ComponentInputIdentities {
+            identities: producers,
+            _storage: identity_storage,
+        });
     };
     {
         let mut storage = ctx.reserve_scoped(0, OPERATION)?;
@@ -258,7 +261,9 @@ pub(super) fn component_path_input_identities<'a, 'ctx>(
         for feature in ctx.admit_iter(features, OPERATION)? {
             storage.with_storage(|| {
                 ctx.entry_hash_map(&mut first_by_id, feature.id.as_str(), OPERATION)
-                    .map(|slot| { slot.or_insert(feature); })
+                    .map(|slot| {
+                        slot.or_insert(feature);
+                    })
             })?;
         }
         ctx.retain_vec(
@@ -270,7 +275,10 @@ pub(super) fn component_path_input_identities<'a, 'ctx>(
             OPERATION,
         )?;
     }
-    Ok(ComponentInputIdentities { identities: producers, _storage: identity_storage })
+    Ok(ComponentInputIdentities {
+        identities: producers,
+        _storage: identity_storage,
+    })
 }
 
 pub(super) fn component_path_input_features(

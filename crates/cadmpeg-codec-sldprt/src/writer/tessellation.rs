@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! SLDPRT display-list tessellation emission.
 
-use std::borrow::Cow;
 use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::{index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::tessellation::TessellationMesh;
+use std::borrow::Cow;
 
 use crate::tessellation::mesh_rows::MeshRows;
 
@@ -34,9 +34,8 @@ pub(super) fn tessellation_payload(
                 TessellationMesh::Strips { strips } => strips.as_slice().len(),
                 TessellationMesh::ShadedStrips { strips } => strips.as_slice().len(),
                 _ => 0,
-            }).map_err(|_| {
-                CodecError::NotImplemented("tessellation strip count overflow".into())
-            })?,
+            })
+            .map_err(|_| CodecError::NotImplemented("tessellation strip count overflow".into()))?,
         ),
         None => (0, 0),
     };
@@ -44,33 +43,49 @@ pub(super) fn tessellation_payload(
     out.extend_from_slice(&strip_count.to_le_bytes());
     for mesh in &meshes {
         let strip_lengths: Vec<usize> = match mesh.mesh() {
-            TessellationMesh::Strips { strips } => strips.as_slice().iter()
-                .map(|strip| strip.vertices().len()).collect(),
-            TessellationMesh::ShadedStrips { strips } => strips.as_slice().iter()
-                .map(|strip| strip.vertices().len()).collect(),
+            TessellationMesh::Strips { strips } => strips
+                .as_slice()
+                .iter()
+                .map(|strip| strip.vertices().len())
+                .collect(),
+            TessellationMesh::ShadedStrips { strips } => strips
+                .as_slice()
+                .iter()
+                .map(|strip| strip.vertices().len())
+                .collect(),
             _ => Vec::new(),
         };
         let mut strips = Vec::with_capacity(strip_lengths.len() * 4);
         for run in &strip_lengths {
-            let run = u32::try_from(*run).map_err(|_| {
-                CodecError::Malformed("tessellation strip length overflow".into())
-            })?;
+            let run = u32::try_from(*run)
+                .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
             strips.extend_from_slice(&run.to_le_bytes());
         }
         descriptor(&mut out, 4, 8, 2, strip_lengths.len(), &strips)?;
         let mut positions = Vec::with_capacity(mesh.vertex_count() * 12);
-        append_triples(&mut positions, MeshRows::new(mesh.mesh()).map(|(point, _)| {
-            [point.x * length_scale, point.y * length_scale, point.z * length_scale]
-        }), "position")?;
+        append_triples(
+            &mut positions,
+            MeshRows::new(mesh.mesh()).map(|(point, _)| {
+                [
+                    point.x * length_scale,
+                    point.y * length_scale,
+                    point.z * length_scale,
+                ]
+            }),
+            "position",
+        )?;
         descriptor(&mut out, 12, 100, 2, mesh.vertex_count(), &positions)?;
         let normal_count = match mesh.mesh() {
             TessellationMesh::ShadedStrips { .. } => mesh.vertex_count(),
             _ => 0,
         };
         let mut normals = Vec::with_capacity(normal_count * 12);
-        append_triples(&mut normals, MeshRows::new(mesh.mesh()).filter_map(|(_, normal)| {
-            normal.map(|normal| [normal.x, normal.y, normal.z])
-        }), "normal")?;
+        append_triples(
+            &mut normals,
+            MeshRows::new(mesh.mesh())
+                .filter_map(|(_, normal)| normal.map(|normal| [normal.x, normal.y, normal.z])),
+            "normal",
+        )?;
         descriptor(&mut out, 12, 100, 2, normal_count, &normals)?;
         // `has_core_tessellation_channels` matches at least three channels, so
         // the remainder after the core three is the complete auxiliary run.
@@ -105,7 +120,9 @@ pub(super) fn tessellation_payload(
         let list_c = strip_lengths
             .iter()
             .map(|run| {
-                u32::try_from(*run).ok().and_then(|run| run.checked_mul(2))
+                u32::try_from(*run)
+                    .ok()
+                    .and_then(|run| run.checked_mul(2))
                     .and_then(|value| value.checked_sub(2))
                     .ok_or_else(|| {
                         CodecError::NotImplemented(
@@ -187,9 +204,13 @@ pub(super) fn sequential_tessellation(
     let normals = match &source {
         IndexedMesh::Positions { .. } => Vec::new(),
         IndexedMesh::Shaded { vertices, .. } => indices
-            .iter().map(|index| vertices[*index].normal).collect(),
+            .iter()
+            .map(|index| vertices[*index].normal)
+            .collect(),
         IndexedMesh::CornerShaded { triangles, .. } => triangles
-            .iter().flat_map(|triangle| triangle.normals).collect(),
+            .iter()
+            .flat_map(|triangle| triangle.normals)
+            .collect(),
     };
     let mut channels = Vec::new();
     for channel in mesh.channels() {
@@ -255,31 +276,56 @@ enum IndexedMesh<'m> {
     },
     Shaded {
         vertices: &'m [cadmpeg_ir::tessellation::ShadedVertex<
-            cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::features::FiniteVector3,
+            cadmpeg_ir::features::FinitePoint3,
+            cadmpeg_ir::features::FiniteVector3,
         >],
         triangles: &'m [[u32; 3]],
     },
     CornerShaded {
         vertices: &'m [cadmpeg_ir::features::FinitePoint3],
-        triangles: &'m [cadmpeg_ir::tessellation::ShadedTriangle<cadmpeg_ir::features::FiniteVector3>],
+        triangles:
+            &'m [cadmpeg_ir::tessellation::ShadedTriangle<cadmpeg_ir::features::FiniteVector3>],
     },
 }
 
 impl<'m> IndexedMesh<'m> {
-    fn new(mesh: &'m TessellationMesh<
-        cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::features::FiniteVector3,
-    >) -> Option<Self> {
+    fn new(
+        mesh: &'m TessellationMesh<
+            cadmpeg_ir::features::FinitePoint3,
+            cadmpeg_ir::features::FiniteVector3,
+        >,
+    ) -> Option<Self> {
         match mesh {
-            TessellationMesh::List { vertices, triangles } => Some(Self::Positions { vertices, triangles }),
-            TessellationMesh::ShadedList { vertices, triangles } => Some(Self::Shaded { vertices, triangles }),
-            TessellationMesh::CornerShadedList { vertices, triangles } => Some(Self::CornerShaded { vertices, triangles }),
+            TessellationMesh::List {
+                vertices,
+                triangles,
+            } => Some(Self::Positions {
+                vertices,
+                triangles,
+            }),
+            TessellationMesh::ShadedList {
+                vertices,
+                triangles,
+            } => Some(Self::Shaded {
+                vertices,
+                triangles,
+            }),
+            TessellationMesh::CornerShadedList {
+                vertices,
+                triangles,
+            } => Some(Self::CornerShaded {
+                vertices,
+                triangles,
+            }),
             TessellationMesh::Strips { .. } | TessellationMesh::ShadedStrips { .. } => None,
         }
     }
 
     fn vertex_count(&self) -> usize {
         match self {
-            Self::Positions { vertices, .. } | Self::CornerShaded { vertices, .. } => vertices.len(),
+            Self::Positions { vertices, .. } | Self::CornerShaded { vertices, .. } => {
+                vertices.len()
+            }
             Self::Shaded { vertices, .. } => vertices.len(),
         }
     }
@@ -300,7 +346,9 @@ impl<'m> IndexedMesh<'m> {
 
     fn position(&self, index: usize) -> cadmpeg_ir::features::FinitePoint3 {
         match self {
-            Self::Positions { vertices, .. } | Self::CornerShaded { vertices, .. } => vertices[index],
+            Self::Positions { vertices, .. } | Self::CornerShaded { vertices, .. } => {
+                vertices[index]
+            }
             Self::Shaded { vertices, .. } => vertices[index].position,
         }
     }

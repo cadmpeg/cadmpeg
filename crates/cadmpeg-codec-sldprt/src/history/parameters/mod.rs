@@ -971,8 +971,7 @@ fn evaluate_parameter_expressions(
     while !ready.is_empty() {
         let current_storage;
         let current = std::mem::take(&mut ready);
-        current_storage =
-            std::mem::replace(&mut ready_storage, ctx.reserve_scoped(0, OPERATION)?);
+        current_storage = std::mem::replace(&mut ready_storage, ctx.reserve_scoped(0, OPERATION)?);
         for index in ctx.admit_iter(current, "evaluate SLDPRT parameter expressions")? {
             let parameter = &parameters[index];
             if parameter.value.is_some() {
@@ -1184,9 +1183,12 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
         while let Some(configuration) =
             ctx.next_charged(&mut states, "check SLDPRT evaluated parameter coherence")?
         {
-            let Some(actual) = configuration_parameter_value(ctx, configuration, &parameter.id, || {
-                Ok(ctx.get_hash_map(&values, &parameter.id, "check SLDPRT parameter evaluation")?.copied())
-            })?
+            let Some(actual) =
+                configuration_parameter_value(ctx, configuration, &parameter.id, || {
+                    Ok(ctx
+                        .get_hash_map(&values, &parameter.id, "check SLDPRT parameter evaluation")?
+                        .copied())
+                })?
             else {
                 continue;
             };
@@ -1487,7 +1489,10 @@ pub(super) fn expression_identifier_tokens<'a, 'ctx>(
             }
             let Some(end) = closed else {
                 drop((identifiers, storage));
-                return Ok((None, ctx.reserve_scoped(0, "collect SLDPRT parameter identifiers")?));
+                return Ok((
+                    None,
+                    ctx.reserve_scoped(0, "collect SLDPRT parameter identifiers")?,
+                ));
             };
             if end == start + 2 {
                 continue;

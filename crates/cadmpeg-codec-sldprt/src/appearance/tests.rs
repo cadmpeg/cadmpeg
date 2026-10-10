@@ -325,9 +325,11 @@ fn display_feature_binding_refuses_retained_limit() {
             }
         },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
         if refusal.dimension == ResourceDimension::RetainedBytes
-            && refusal.operation == "retain SLDPRT DisplayFace source identity"));
+            && refusal.operation == "retain SLDPRT DisplayFace source identity")
+    );
 }
 
 #[test]
@@ -653,9 +655,11 @@ fn appearance_decoded_name_ends_before_source_name_copy() {
     for _ in 0..64 {
         let storage;
         let definition;
-        (definition, storage) = ctx.with_scoped_storage("appearance definition test", || {
-            super::definition_at(&ctx, section, super::VISUAL_PROPERTIES_CLASS.len(), 0)
-        }).unwrap();
+        (definition, storage) = ctx
+            .with_scoped_storage("appearance definition test", || {
+                super::definition_at(&ctx, section, super::VISUAL_PROPERTIES_CLASS.len(), 0)
+            })
+            .unwrap();
         let definition = definition.expect("Unicode appearance definition");
         assert_eq!(definition.name, "ࠀ");
         assert_eq!(definition.source_name.as_str(), "block@8");
@@ -663,7 +667,9 @@ fn appearance_decoded_name_ends_before_source_name_copy() {
         assert_eq!(definition.record_offset, 0);
         drop(definition);
         drop(storage);
-        let released = ctx.reserve_scoped(10, "released appearance definition").unwrap();
+        let released = ctx
+            .reserve_scoped(10, "released appearance definition")
+            .unwrap();
         drop(released);
     }
     assert_eq!(ctx.resource_refusal(), None);
@@ -689,21 +695,27 @@ fn appearance_name_phases_refuse_original_storage_limits() {
         policy.limits.max_collection_items = 0;
         policy.limits.max_materialized_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) = ctx.with_scoped_storage(
-            "appearance definition test", || {
+        let Err(CodecError::ResourceLimit(limit)) = ctx
+            .with_scoped_storage("appearance definition test", || {
                 super::definition_at(&ctx, section, super::VISUAL_PROPERTIES_CLASS.len(), 0)
-            },
-        ) else { panic!("appearance storage refusal"); };
+            })
+        else {
+            panic!("appearance storage refusal");
+        };
         assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(limit.operation, operation);
         assert_eq!(limit.limit, cap);
         assert_eq!(limit.used, used);
         assert_eq!(limit.additional, additional);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after appearance storage refusal"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
-            if sticky == limit));
+        assert!(
+            matches!(ctx.charge_work(0, "after appearance storage refusal"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
+            if sticky == limit)
+        );
     }
 }
 
@@ -763,14 +775,22 @@ fn feature_only_appearance_source() -> Vec<u8> {
     display.extend(1_u32.to_le_bytes());
     for index in 0..2 {
         display.extend(display_table(f32_from_f64(f64::from(index)).unwrap()));
-        display.extend(framed_surface_reference("moFromSktEntSurfIdRep_c", 36, index + 1));
+        display.extend(framed_surface_reference(
+            "moFromSktEntSurfIdRep_c",
+            36,
+            index + 1,
+        ));
     }
     let mut visual_states = Vec::new();
     display_class(&mut visual_states, "moCompFeature_c");
     visual_states.extend(feature_visual_record(36, 10, [236, 255, 0]));
     let mut source = outer_header();
     source.extend(make_block(0x41, "Contents/DisplayLists", &display));
-    source.extend(make_block(0x42, "ThirdPtyStore/VisualStates", &visual_states));
+    source.extend(make_block(
+        0x42,
+        "ThirdPtyStore/VisualStates",
+        &visual_states,
+    ));
     source
 }
 
@@ -782,8 +802,11 @@ fn feature_appearance_copies_final_faces_without_an_owned_template() {
     let source = feature_only_appearance_source();
     let scan = crate::test_support::container::scan(&source);
     let fixture_ctx = cadmpeg_test_support::service_decode_context();
-    let section = scan.sections(&fixture_ctx).unwrap()
-        .find(|section| section.name() == Some("Contents/DisplayLists")).unwrap();
+    let section = scan
+        .sections(&fixture_ctx)
+        .unwrap()
+        .find(|section| section.name() == Some("Contents/DisplayLists"))
+        .unwrap();
     let faces = crate::tessellation::section_display_faces(&fixture_ctx, section).unwrap();
     assert_eq!(faces.len(), 2);
     let arena = DecodeArena::new();
@@ -791,7 +814,9 @@ fn feature_appearance_copies_final_faces_without_an_owned_template() {
     policy.limits.max_retained_bytes = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = RefusalProbe::arm(
-        ResourceDimension::RetainedBytes, "retain SLDPRT feature appearance name", None,
+        ResourceDimension::RetainedBytes,
+        "retain SLDPRT feature appearance name",
+        None,
     );
     let result = super::resolve_display_appearances(&ctx, &scan, section, &faces).unwrap();
     drop(probe);
@@ -801,7 +826,10 @@ fn feature_appearance_copies_final_faces_without_an_owned_template() {
     for index in 0..2 {
         let definition = &result.by_face[&index];
         assert_eq!(definition.name, "SolidWorks feature appearance");
-        assert_eq!(definition.source_name.as_str(), "ThirdPtyStore/VisualStates");
+        assert_eq!(
+            definition.source_name.as_str(),
+            "ThirdPtyStore/VisualStates"
+        );
         assert_eq!(definition.color, super::packed_rgb(0x0000_ffec));
         assert_eq!(definition.record_offset, result.by_face[&0].record_offset);
     }
@@ -815,22 +843,32 @@ fn feature_appearance_final_name_refuses_its_exact_backing_and_stays_fused() {
     let source = feature_only_appearance_source();
     let scan = crate::test_support::container::scan(&source);
     let fixture_ctx = cadmpeg_test_support::service_decode_context();
-    let section = scan.sections(&fixture_ctx).unwrap()
-        .find(|section| section.name() == Some("Contents/DisplayLists")).unwrap();
+    let section = scan
+        .sections(&fixture_ctx)
+        .unwrap()
+        .find(|section| section.name() == Some("Contents/DisplayLists"))
+        .unwrap();
     let faces = crate::tessellation::section_display_faces(&fixture_ctx, section).unwrap();
     let arena = DecodeArena::new();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes, "copy SLDPRT appearance name", |cap| {
+        ResourceDimension::RetainedBytes,
+        "copy SLDPRT appearance name",
+        |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             let result = super::resolve_display_appearances(&ctx, &scan, section, &faces);
             if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(limit.additional, u64::try_from("SolidWorks feature appearance".len()).unwrap());
+                assert_eq!(
+                    limit.additional,
+                    u64::try_from("SolidWorks feature appearance".len()).unwrap()
+                );
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
                 assert!(matches!(ctx.charge_work(0, "after appearance refusal"),
                     Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *limit));
-                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                assert!(
+                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                );
             }
             result
         },
@@ -845,8 +883,11 @@ fn display_appearance_class_workspace_releases_each_roster() {
     let source = feature_only_appearance_source();
     let scan = crate::test_support::container::scan(&source);
     let fixture_ctx = cadmpeg_test_support::service_decode_context();
-    let section = scan.sections(&fixture_ctx).unwrap()
-        .find(|section| section.name() == Some("ThirdPtyStore/VisualStates")).unwrap();
+    let section = scan
+        .sections(&fixture_ctx)
+        .unwrap()
+        .find(|section| section.name() == Some("ThirdPtyStore/VisualStates"))
+        .unwrap();
     let class_size = std::mem::size_of::<crate::tessellation::ClassInterval<'_>>();
     assert!((2..=1024).contains(&class_size));
     // The first amortized push reserves four ClassInterval slots. Their names
@@ -858,8 +899,12 @@ fn display_appearance_class_workspace_releases_each_roster() {
     policy.limits.max_materialized_bytes = class_bytes;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..64 {
-        assert!(super::display_assignments(&ctx, section, &[]).unwrap().is_empty());
-        let storage = ctx.reserve_scoped(class_bytes, "verify released appearance classes").unwrap();
+        assert!(super::display_assignments(&ctx, section, &[])
+            .unwrap()
+            .is_empty());
+        let storage = ctx
+            .reserve_scoped(class_bytes, "verify released appearance classes")
+            .unwrap();
         drop(storage);
     }
     assert!(ctx.resource_refusal().is_none());
@@ -878,9 +923,8 @@ fn feature_appearance_class_workspace_keeps_only_assignment_output() {
     let class_bytes = u64::try_from(4 * class_size).unwrap();
     // One retained source-name copy and the first four-slot assignment backing
     // survive. The borrowed class roster does not survive the return.
-    let output_bytes = u64::try_from(
-        "ThirdPtyStore/VisualStates".len() + 4 * assignment_size,
-    ).unwrap();
+    let output_bytes =
+        u64::try_from("ThirdPtyStore/VisualStates".len() + 4 * assignment_size).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = output_bytes;
@@ -892,9 +936,14 @@ fn feature_appearance_class_workspace_keeps_only_assignment_output() {
     assert_eq!(assignments[0].feature_timestamp, 10);
     assert_eq!(assignments[0].packed_color, 0x0000_ffec);
     assert_eq!(assignments[0].color, super::packed_rgb(0x0000_ffec));
-    assert_eq!(assignments[0].source_name.as_str(), "ThirdPtyStore/VisualStates");
+    assert_eq!(
+        assignments[0].source_name.as_str(),
+        "ThirdPtyStore/VisualStates"
+    );
     assert_eq!(assignments[0].record_offset, 6 + "moCompFeature_c".len());
-    let storage = ctx.reserve_scoped(class_bytes, "verify released appearance classes").unwrap();
+    let storage = ctx
+        .reserve_scoped(class_bytes, "verify released appearance classes")
+        .unwrap();
     assert!(ctx.resource_refusal().is_none());
     drop(assignments);
     drop(storage);
@@ -908,8 +957,11 @@ fn appearance_class_workspace_refuses_first_growth_and_stays_fused() {
     let source = feature_only_appearance_source();
     let scan = crate::test_support::container::scan(&source);
     let fixture_ctx = cadmpeg_test_support::service_decode_context();
-    let section = scan.sections(&fixture_ctx).unwrap()
-        .find(|section| section.name() == Some("ThirdPtyStore/VisualStates")).unwrap();
+    let section = scan
+        .sections(&fixture_ctx)
+        .unwrap()
+        .find(|section| section.name() == Some("ThirdPtyStore/VisualStates"))
+        .unwrap();
     let class_size = std::mem::size_of::<crate::tessellation::ClassInterval<'_>>();
     assert!((2..=1024).contains(&class_size));
     let class_bytes = u64::try_from(4 * class_size).unwrap();
@@ -933,10 +985,14 @@ fn appearance_class_workspace_refuses_first_growth_and_stays_fused() {
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, class_bytes);
         assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-        assert!(matches!(ctx.charge_work(0, "after appearance class refusal"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
-            if sticky == limit));
+        assert!(
+            matches!(ctx.charge_work(0, "after appearance class refusal"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
+            if sticky == limit)
+        );
     }
 }
 
@@ -967,16 +1023,20 @@ fn feature_appearance_output_refuses_one_byte_below_assignment_backing() {
     assert_eq!(limit.used, source_bytes);
     assert_eq!(limit.additional, assignment_bytes);
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    assert!(matches!(ctx.charge_work(0, "after appearance output refusal"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
-        if sticky == limit));
+    assert!(
+        matches!(ctx.charge_work(0, "after appearance output refusal"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
+        if sticky == limit)
+    );
 }
 
 fn feature_appearance_resolution_storage() -> (u64, u64) {
-    use std::mem::{align_of, size_of};
     use super::{AppearanceDefinition, FeatureAppearanceAssignment};
     use crate::brep::feature_source::FeatureSourceId;
+    use std::mem::{align_of, size_of};
 
     // Core bounds a B-tree node by eleven key/value lanes, sixteen pointer
     // slots, and two maximum-alignment paddings. One node holds these inputs.
@@ -985,33 +1045,41 @@ fn feature_appearance_resolution_storage() -> (u64, u64) {
     };
     let pointer_alignment = align_of::<usize>();
     let appearance_node = tree_node(
-        size_of::<usize>(), size_of::<AppearanceDefinition>(),
+        size_of::<usize>(),
+        size_of::<AppearanceDefinition>(),
         pointer_alignment.max(align_of::<AppearanceDefinition>()),
     );
     let matched_node = tree_node(
-        size_of::<FeatureSourceId>(), 0,
+        size_of::<FeatureSourceId>(),
+        0,
         pointer_alignment.max(align_of::<FeatureSourceId>()),
     );
     let group_node = tree_node(
-        size_of::<FeatureSourceId>(), size_of::<Vec<usize>>(),
-        pointer_alignment.max(align_of::<Vec<usize>>()).max(align_of::<FeatureSourceId>()),
+        size_of::<FeatureSourceId>(),
+        size_of::<Vec<usize>>(),
+        pointer_alignment
+            .max(align_of::<Vec<usize>>())
+            .max(align_of::<FeatureSourceId>()),
     );
     type FeatureEntry<'a> = (FeatureSourceId, Option<&'a FeatureAppearanceAssignment>);
     // The first hash-table insertion uses four buckets. Core includes control
     // bytes, the trailing control group and maximum-alignment padding.
-    let hash_node = 4 * size_of::<FeatureEntry<'_>>()
-        + align_of::<FeatureEntry<'_>>().max(16) - 1 + 4 + 16;
+    let hash_node =
+        4 * size_of::<FeatureEntry<'_>>() + align_of::<FeatureEntry<'_>>().max(16) - 1 + 4 + 16;
     assert!((2..=1024).contains(&size_of::<FeatureAppearanceAssignment>()));
-    let records = 4 * size_of::<FeatureAppearanceAssignment>()
-        + "ThirdPtyStore/VisualStates".len();
+    let records = 4 * size_of::<FeatureAppearanceAssignment>() + "ThirdPtyStore/VisualStates".len();
     // The first group slot has exact capacity one. Its second push grows to
     // four slots while one old slot remains held as reallocation overlap.
     let materialized = records + hash_node + group_node + 5 * size_of::<usize>();
     let class_bytes = 4 * size_of::<crate::tessellation::ClassInterval<'_>>();
     assert!(materialized >= records + class_bytes);
-    let retained = appearance_node + matched_node
+    let retained = appearance_node
+        + matched_node
         + 2 * ("SolidWorks feature appearance".len() + "ThirdPtyStore/VisualStates".len());
-    (u64::try_from(retained).unwrap(), u64::try_from(materialized).unwrap())
+    (
+        u64::try_from(retained).unwrap(),
+        u64::try_from(materialized).unwrap(),
+    )
 }
 
 #[test]
@@ -1021,8 +1089,11 @@ fn feature_appearance_resolution_keeps_only_final_storage() {
     let source = feature_only_appearance_source();
     let scan = crate::test_support::container::scan(&source);
     let fixture_ctx = cadmpeg_test_support::service_decode_context();
-    let section = scan.sections(&fixture_ctx).unwrap()
-        .find(|section| section.name() == Some("Contents/DisplayLists")).unwrap();
+    let section = scan
+        .sections(&fixture_ctx)
+        .unwrap()
+        .find(|section| section.name() == Some("Contents/DisplayLists"))
+        .unwrap();
     let faces = crate::tessellation::section_display_faces(&fixture_ctx, section).unwrap();
     assert_eq!(faces.len(), 2);
     let (retained, materialized) = feature_appearance_resolution_storage();
@@ -1038,11 +1109,16 @@ fn feature_appearance_resolution_keeps_only_final_storage() {
     for index in 0..2 {
         let definition = &result.by_face[&index];
         assert_eq!(definition.name, "SolidWorks feature appearance");
-        assert_eq!(definition.source_name.as_str(), "ThirdPtyStore/VisualStates");
+        assert_eq!(
+            definition.source_name.as_str(),
+            "ThirdPtyStore/VisualStates"
+        );
         assert_eq!(definition.color, super::packed_rgb(0x0000_ffec));
         assert_eq!(definition.record_offset, 6 + "moCompFeature_c".len());
     }
-    let storage = ctx.reserve_scoped(materialized, "verify released appearance indexes").unwrap();
+    let storage = ctx
+        .reserve_scoped(materialized, "verify released appearance indexes")
+        .unwrap();
     assert!(ctx.resource_refusal().is_none());
     drop(result);
     drop(storage);
@@ -1056,8 +1132,11 @@ fn feature_appearance_resolution_refuses_group_reallocation_overlap() {
     let source = feature_only_appearance_source();
     let scan = crate::test_support::container::scan(&source);
     let fixture_ctx = cadmpeg_test_support::service_decode_context();
-    let section = scan.sections(&fixture_ctx).unwrap()
-        .find(|section| section.name() == Some("Contents/DisplayLists")).unwrap();
+    let section = scan
+        .sections(&fixture_ctx)
+        .unwrap()
+        .find(|section| section.name() == Some("Contents/DisplayLists"))
+        .unwrap();
     let faces = crate::tessellation::section_display_faces(&fixture_ctx, section).unwrap();
     let (retained, materialized) = feature_appearance_resolution_storage();
     let arena = DecodeArena::new();
@@ -1066,7 +1145,8 @@ fn feature_appearance_resolution_refuses_group_reallocation_overlap() {
     policy.limits.max_materialized_bytes = materialized - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let Err(CodecError::ResourceLimit(limit)) =
-        super::resolve_display_appearances(&ctx, &scan, section, &faces) else {
+        super::resolve_display_appearances(&ctx, &scan, section, &faces)
+    else {
         panic!("expected appearance group reallocation overlap refusal");
     };
     let overlap = u64::try_from(std::mem::size_of::<usize>()).unwrap();
@@ -1076,10 +1156,14 @@ fn feature_appearance_resolution_refuses_group_reallocation_overlap() {
     assert_eq!(limit.used, materialized - overlap);
     assert_eq!(limit.additional, overlap);
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    assert!(matches!(ctx.charge_work(0, "after appearance index refusal"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
-        if sticky == limit));
+    assert!(
+        matches!(ctx.charge_work(0, "after appearance index refusal"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
+        if sticky == limit)
+    );
 }
 
 #[test]
@@ -1090,8 +1174,11 @@ fn feature_appearance_resolution_refuses_final_source_copy() {
     let source = feature_only_appearance_source();
     let scan = crate::test_support::container::scan(&source);
     let fixture_ctx = cadmpeg_test_support::service_decode_context();
-    let section = scan.sections(&fixture_ctx).unwrap()
-        .find(|section| section.name() == Some("Contents/DisplayLists")).unwrap();
+    let section = scan
+        .sections(&fixture_ctx)
+        .unwrap()
+        .find(|section| section.name() == Some("Contents/DisplayLists"))
+        .unwrap();
     let faces = crate::tessellation::section_display_faces(&fixture_ctx, section).unwrap();
     let (retained, materialized) = feature_appearance_resolution_storage();
     let arena = DecodeArena::new();
@@ -1100,7 +1187,8 @@ fn feature_appearance_resolution_refuses_final_source_copy() {
     policy.limits.max_materialized_bytes = materialized;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let Err(CodecError::ResourceLimit(limit)) =
-        super::resolve_display_appearances(&ctx, &scan, section, &faces) else {
+        super::resolve_display_appearances(&ctx, &scan, section, &faces)
+    else {
         panic!("expected final appearance source-copy refusal");
     };
     let source_bytes = u64::try_from("ThirdPtyStore/VisualStates".len()).unwrap();
@@ -1110,10 +1198,14 @@ fn feature_appearance_resolution_refuses_final_source_copy() {
     assert_eq!(limit.used, retained - source_bytes);
     assert_eq!(limit.additional, source_bytes);
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    assert!(matches!(ctx.charge_work(0, "after appearance source refusal"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
-        if sticky == limit));
+    assert!(
+        matches!(ctx.charge_work(0, "after appearance source refusal"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
+        if sticky == limit)
+    );
 }
 
 #[test]
@@ -1127,12 +1219,14 @@ fn conflicting_feature_appearance_index_retains_no_output() {
     source.extend(make_block(0x42, "ThirdPtyStore/VisualStates", &conflicting));
     let scan = crate::test_support::container::scan(&source);
     let fixture_ctx = cadmpeg_test_support::service_decode_context();
-    let section = scan.sections(&fixture_ctx).unwrap()
-        .find(|section| section.name() == Some("Contents/DisplayLists")).unwrap();
+    let section = scan
+        .sections(&fixture_ctx)
+        .unwrap()
+        .find(|section| section.name() == Some("Contents/DisplayLists"))
+        .unwrap();
     let faces = crate::tessellation::section_display_faces(&fixture_ctx, section).unwrap();
     let (_, materialized) = feature_appearance_resolution_storage();
-    let materialized = materialized
-        + u64::try_from("ThirdPtyStore/VisualStates".len()).unwrap();
+    let materialized = materialized + u64::try_from("ThirdPtyStore/VisualStates".len()).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -1141,7 +1235,9 @@ fn conflicting_feature_appearance_index_retains_no_output() {
     let result = super::resolve_display_appearances(&ctx, &scan, section, &faces).unwrap();
     assert!(result.by_face.is_empty());
     assert!(result.matched_feature_sources.is_empty());
-    let storage = ctx.reserve_scoped(materialized, "verify released conflicting appearances").unwrap();
+    let storage = ctx
+        .reserve_scoped(materialized, "verify released conflicting appearances")
+        .unwrap();
     assert!(ctx.resource_refusal().is_none());
     drop(result);
     drop(storage);

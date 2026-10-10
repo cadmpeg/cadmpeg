@@ -1,5 +1,7 @@
 //! Native owner staging storage tests.
 
+mod validation;
+
 use crate::native::attach_to_owners;
 use crate::records::FeatureInputName;
 use cadmpeg_core::decode::{
@@ -20,7 +22,8 @@ fn native_owner_staging_releases_outer_shells_and_index() {
         Vec::<FeatureInputName>::new(),
         |name| name.parent.as_str(),
         |name| name.ordinal,
-    ).expect("empty owner slots are scratch");
+    )
+    .expect("empty owner slots are scratch");
     assert_eq!(owned.len(), 2);
     assert!(owned.iter().all(Vec::is_empty));
     drop((owned, storage));
@@ -29,8 +32,10 @@ fn native_owner_staging_releases_outer_shells_and_index() {
         "after SLDPRT owner staging",
         Some(1),
     );
-    let error = ctx.reserve_scoped(1, "after SLDPRT owner staging")
-        .err().expect("named scratch boundary refuses");
+    let error = ctx
+        .reserve_scoped(1, "after SLDPRT owner staging")
+        .err()
+        .expect("named scratch boundary refuses");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected scratch refusal");
     };
@@ -59,7 +64,9 @@ fn native_owner_staging_retains_output_member_storage() {
         vec![record],
         |name| name.parent.as_str(),
         |name| name.ordinal,
-    ).err().expect("output member slots need retained admission");
+    )
+    .err()
+    .expect("output member slots need retained admission");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected retained refusal");
     };

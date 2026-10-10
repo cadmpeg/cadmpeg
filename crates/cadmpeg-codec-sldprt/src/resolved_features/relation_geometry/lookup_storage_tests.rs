@@ -18,16 +18,22 @@ use std::collections::BTreeMap;
 
 // Core admits four buckets, four control bytes, sixteen trailing controls,
 // and max(element alignment, sixteen)-one padding for a first table.
-const SCALAR_TABLE_BYTES: u64 =
-    4 * std::mem::size_of::<(&str, &FeatureInputScalar)>() as u64
-        + 4 + 16 + ((if std::mem::align_of::<(&str, &FeatureInputScalar)>() > 16 {
-            std::mem::align_of::<(&str, &FeatureInputScalar)>()
-        } else { 16 }) - 1) as u64;
-const NAME_TABLE_BYTES: u64 =
-    4 * std::mem::size_of::<(&str, &str)>() as u64
-        + 4 + 16 + ((if std::mem::align_of::<(&str, &str)>() > 16 {
-            std::mem::align_of::<(&str, &str)>()
-        } else { 16 }) - 1) as u64;
+const SCALAR_TABLE_BYTES: u64 = 4 * std::mem::size_of::<(&str, &FeatureInputScalar)>() as u64
+    + 4
+    + 16
+    + ((if std::mem::align_of::<(&str, &FeatureInputScalar)>() > 16 {
+        std::mem::align_of::<(&str, &FeatureInputScalar)>()
+    } else {
+        16
+    }) - 1) as u64;
+const NAME_TABLE_BYTES: u64 = 4 * std::mem::size_of::<(&str, &str)>() as u64
+    + 4
+    + 16
+    + ((if std::mem::align_of::<(&str, &str)>() > 16 {
+        std::mem::align_of::<(&str, &str)>()
+    } else {
+        16
+    }) - 1) as u64;
 const DRIVING_BYTES: u64 = SCALAR_TABLE_BYTES + NAME_TABLE_BYTES;
 
 fn fixture(role: FeatureInputScalarRole) -> (Feature, DesignParameter, FeatureInputLane) {
@@ -42,7 +48,9 @@ fn fixture(role: FeatureInputScalarRole) -> (Feature, DesignParameter, FeatureIn
         source_text: None,
         source_content: FeatureContent::default(),
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
-            FeatureOperation::Sketch { sketch: SketchFeatureBinding::Planar(None) },
+            FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(None),
+            },
         )),
         native_ref: Some("feature".into()),
     };
@@ -63,22 +71,27 @@ fn fixture(role: FeatureInputScalarRole) -> (Feature, DesignParameter, FeatureIn
     let relation = &mut lane.relation_instances[0];
     relation.family = FeatureInputRelationFamily::PointPointDistance;
     relation.scalars = match role {
-        FeatureInputScalarRole::Driving =>
-            RelationScalars::from_refs(vec!["scalar".into()], Some("scalar".into()), None),
-        FeatureInputScalarRole::Display =>
-            RelationScalars::from_refs(vec!["scalar".into()], None, Some("scalar".into())),
+        FeatureInputScalarRole::Driving => {
+            RelationScalars::from_refs(vec!["scalar".into()], Some("scalar".into()), None)
+        }
+        FeatureInputScalarRole::Display => {
+            RelationScalars::from_refs(vec!["scalar".into()], None, Some("scalar".into()))
+        }
         _ => unreachable!("fixture uses driving or display scalars"),
-    }.unwrap();
-    lane.names = ["D0", "D1"].into_iter().enumerate().map(|(ordinal, value)| {
-        FeatureInputName {
+    }
+    .unwrap();
+    lane.names = ["D0", "D1"]
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, value)| FeatureInputName {
             id: "name".into(),
             parent: "lane".into(),
             ordinal: u32::try_from(ordinal).unwrap(),
             offset: u64::try_from(ordinal).unwrap(),
             object_id: None,
             value: value.into(),
-        }
-    }).collect();
+        })
+        .collect();
     let scalar = |role| FeatureInputScalar {
         id: "scalar".into(),
         parent: "lane".into(),
@@ -108,11 +121,17 @@ fn relation_lookup_storage_driving_reuses_tables_and_keeps_last_values() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..2 {
         let selected = relation_parameter_by_driving_name(
-            &ctx, &lane.relation_instances[0], &lane,
-            std::slice::from_ref(&feature), std::slice::from_ref(&parameter),
-        ).unwrap().unwrap();
+            &ctx,
+            &lane.relation_instances[0],
+            &lane,
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&parameter),
+        )
+        .unwrap()
+        .unwrap();
         assert!(std::ptr::eq(selected, &parameter));
-        ctx.reserve_scoped(DRIVING_BYTES, "reuse relation driving lookup storage").unwrap();
+        ctx.reserve_scoped(DRIVING_BYTES, "reuse relation driving lookup storage")
+            .unwrap();
     }
     assert!(ctx.resource_refusal().is_none());
 }
@@ -127,18 +146,30 @@ fn relation_lookup_storage_display_reuses_tables_and_preserves_value_gate() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..2 {
         let selected = relation_parameter_by_display_name(
-            &ctx, &lane.relation_instances[0], &lane,
-            std::slice::from_ref(&feature), std::slice::from_ref(&parameter),
-        ).unwrap().unwrap();
+            &ctx,
+            &lane.relation_instances[0],
+            &lane,
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&parameter),
+        )
+        .unwrap()
+        .unwrap();
         assert!(std::ptr::eq(selected, &parameter));
-        ctx.reserve_scoped(NAME_TABLE_BYTES, "reuse relation display lookup storage").unwrap();
+        ctx.reserve_scoped(NAME_TABLE_BYTES, "reuse relation display lookup storage")
+            .unwrap();
     }
     parameter.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
     assert!(relation_parameter_by_display_name(
-        &ctx, &lane.relation_instances[0], &lane,
-        std::slice::from_ref(&feature), std::slice::from_ref(&parameter),
-    ).unwrap().is_none());
-    ctx.reserve_scoped(NAME_TABLE_BYTES, "reuse rejected relation display lookup").unwrap();
+        &ctx,
+        &lane.relation_instances[0],
+        &lane,
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&parameter),
+    )
+    .unwrap()
+    .is_none());
+    ctx.reserve_scoped(NAME_TABLE_BYTES, "reuse rejected relation display lookup")
+        .unwrap();
     assert!(ctx.resource_refusal().is_none());
 }
 
@@ -150,10 +181,15 @@ fn relation_lookup_storage_driving_preserves_original_refusal() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = DRIVING_BYTES - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let run = || relation_parameter_by_driving_name(
-        &ctx, &lane.relation_instances[0], &lane,
-        std::slice::from_ref(&feature), std::slice::from_ref(&parameter),
-    );
+    let run = || {
+        relation_parameter_by_driving_name(
+            &ctx,
+            &lane.relation_instances[0],
+            &lane,
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&parameter),
+        )
+    };
     let CodecError::ResourceLimit(limit) = run().unwrap_err() else {
         panic!("expected driving lookup storage refusal");
     };
@@ -177,10 +213,15 @@ fn relation_lookup_storage_display_preserves_original_refusal() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = NAME_TABLE_BYTES - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let run = || relation_parameter_by_display_name(
-        &ctx, &lane.relation_instances[0], &lane,
-        std::slice::from_ref(&feature), std::slice::from_ref(&parameter),
-    );
+    let run = || {
+        relation_parameter_by_display_name(
+            &ctx,
+            &lane.relation_instances[0],
+            &lane,
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&parameter),
+        )
+    };
     let CodecError::ResourceLimit(limit) = run().unwrap_err() else {
         panic!("expected display lookup storage refusal");
     };

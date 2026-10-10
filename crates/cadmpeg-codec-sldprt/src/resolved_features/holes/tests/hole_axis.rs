@@ -86,7 +86,6 @@ fn generated_hole_axis_route_refuses_feature_index_work() {
             && limit.operation == INDEX));
 }
 
-
 #[test]
 fn generated_hole_axis_skips_indexes_without_model_targets() {
     const INDEX_OPERATIONS: [&str; 5] = [
@@ -139,7 +138,10 @@ fn generated_hole_axis_skips_indexes_without_model_targets() {
 fn generated_hole_axis_empty_geometry_skips_native_indexes() {
     let histories = [native_history()];
     let lanes = [lane()];
-    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::MaterializedBytes] {
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::MaterializedBytes,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
@@ -171,9 +173,7 @@ fn generated_hole_axis_empty_geometry_skips_native_indexes() {
         let operation = "index SLDPRT generated hole features";
         let error = match dimension {
             ResourceDimension::WorkUnits => ctx.charge_work(1, operation).unwrap_err(),
-            ResourceDimension::MaterializedBytes => {
-                ctx.reserve_scoped(1, operation).unwrap_err()
-            }
+            ResourceDimension::MaterializedBytes => ctx.reserve_scoped(1, operation).unwrap_err(),
             _ => unreachable!(),
         };
         assert!(matches!(
@@ -482,7 +482,6 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
         ])
     );
 }
-
 
 fn generated_hole_axis_geometry() -> (
     [Surface; 4],

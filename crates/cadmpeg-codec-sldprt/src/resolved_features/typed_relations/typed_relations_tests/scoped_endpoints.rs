@@ -28,7 +28,8 @@ fn centered_source() -> (Vec<u8>, [SketchInputEntity; 3]) {
         ("line", 0, SketchInputKind::LineOrCircle, [2.0, 3.0]),
         ("first", 143, SketchInputKind::Point, [1.0, 2.0]),
         ("second", 144, SketchInputKind::Point, [3.0, 4.0]),
-    ].map(|(id, offset, kind, coordinates)| {
+    ]
+    .map(|(id, offset, kind, coordinates)| {
         let mut marker = SketchInputEntity::new(id, "lane", 0, offset, kind);
         marker.feature_ref = Some("feature".into());
         marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates);
@@ -48,10 +49,12 @@ fn centered_fixed_endpoint_pair_releases_all_roster_storage() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..2 {
         let pair = coordinate_centered_line_endpoints(&ctx, &payload, &entities[0], &roster)
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         assert!(std::ptr::eq(pair[0], &entities[1]));
         assert!(std::ptr::eq(pair[1], &entities[2]));
-        ctx.reserve_scoped(ROSTER_BYTES, "reuse centered endpoint roster").unwrap();
+        ctx.reserve_scoped(ROSTER_BYTES, "reuse centered endpoint roster")
+            .unwrap();
     }
     assert!(ctx.resource_refusal().is_none());
 }
@@ -70,7 +73,10 @@ fn centered_fixed_endpoint_pair_refuses_the_first_roster_growth() {
         panic!("expected centered roster refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(limit.operation, "resolve SLDPRT coordinate centered line endpoints");
+    assert_eq!(
+        limit.operation,
+        "resolve SLDPRT coordinate centered line endpoints"
+    );
     assert_eq!(limit.limit, ROSTER_BYTES - 1);
     assert_eq!(limit.used, 0);
     assert_eq!(limit.additional, ROSTER_BYTES);

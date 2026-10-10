@@ -65,13 +65,8 @@ fn repeated_relation_markers_copy_each_entity_identity_once() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(expected_retained).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let entities = relation_marker_entities(
-        &ctx,
-        ["first", "second", "first"],
-        &markers,
-        &loci,
-    )
-    .unwrap();
+    let entities =
+        relation_marker_entities(&ctx, ["first", "second", "first"], &markers, &loci).unwrap();
     assert_eq!(entities, [second_id, third_id, first_id]);
 }
 

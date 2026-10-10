@@ -1,9 +1,9 @@
 //! Resource admission on the hole-axis projection route.
 
 use super::{
-    cylinder, lane_with_position_reference, model_hole, native_history,
-    native_history_with_second_feature, native_feature_index_node_bytes,
-    work_refusal_at_additional, SECOND_NATIVE_INDEX_FEATURE_ID,
+    cylinder, lane_with_position_reference, model_hole, native_feature_index_node_bytes,
+    native_history, native_history_with_second_feature, work_refusal_at_additional,
+    SECOND_NATIVE_INDEX_FEATURE_ID,
 };
 use crate::records::{FeatureSource, SketchInputEntity, SketchInputKind};
 use crate::resolved_features::holes::{project_hole_axes, HoleTopology};
@@ -135,10 +135,7 @@ fn hole_position_native_feature_index_refuses_second_key_work() {
     // One model target, one history, and two feature source steps precede
     // the first insertion's three node-work passes. The second key comparison
     // follows that admitted node work.
-    assert_eq!(
-        limit.used,
-        4 + 3 * native_feature_index_node_bytes()
-    );
+    assert_eq!(limit.used, 4 + 3 * native_feature_index_node_bytes());
     assert_eq!(
         limit.additional,
         u64::try_from(SECOND_NATIVE_INDEX_FEATURE_ID.len()).unwrap()
@@ -239,7 +236,6 @@ fn hole_position_axes_refuse_nesting_limit() {
         if limit.dimension == ResourceDimension::RecursionDepth
             && limit.operation == "search SLDPRT congruent bore subsets"));
 }
-
 
 fn axis_placed_hole() -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::holes::HolePlacement;

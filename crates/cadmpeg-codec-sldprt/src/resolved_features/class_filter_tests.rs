@@ -6,15 +6,30 @@ use cadmpeg_core::CodecError;
 
 fn lane(classes: &[(&str, u64)]) -> FeatureInputLane {
     FeatureInputLane {
-        id: "lane".into(), configuration: None, native_payload: Vec::new(),
-        classes: classes.iter().enumerate().map(|(ordinal, (name, offset))| FeatureInputClass {
-            id: format!("class#{ordinal}"), parent: "lane".into(),
-            ordinal: u32::try_from(ordinal).unwrap(), offset: *offset, name: (*name).into(),
-        }).collect(),
-        names: Vec::new(), scalars: Vec::new(), relation_bindings: Vec::new(),
-        relation_instances: Vec::new(), body_selections: Vec::new(), edge_selections: Vec::new(),
-        surface_selections: Vec::new(), generated_surface_identities: Vec::new(),
-        references: Vec::new(), sketch_entities: Vec::new(),
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: classes
+            .iter()
+            .enumerate()
+            .map(|(ordinal, (name, offset))| FeatureInputClass {
+                id: format!("class#{ordinal}"),
+                parent: "lane".into(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset: *offset,
+                name: (*name).into(),
+            })
+            .collect(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
     }
 }
 
@@ -33,16 +48,21 @@ fn unmatched_fixed_class_filter_pays_only_the_source_visits() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..REPEATS {
         let mut storage = ctx.reserve_scoped(0, OPERATION).unwrap();
-        assert!(super::sorted_classes(&ctx, &mut storage, &lane, "moLineRef_w", OPERATION)
-            .unwrap().is_empty());
+        assert!(
+            super::sorted_classes(&ctx, &mut storage, &lane, "moLineRef_w", OPERATION)
+                .unwrap()
+                .is_empty()
+        );
     }
     let arena = DecodeArena::new();
     policy.limits.max_work_units = VISITS - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut storage = ctx.reserve_scoped(0, OPERATION).unwrap();
-    let CodecError::ResourceLimit(limit) = super::sorted_classes(
-        &ctx, &mut storage, &lane, "moLineRef_w", OPERATION,
-    ).unwrap_err() else { panic!("work refusal"); };
+    let CodecError::ResourceLimit(limit) =
+        super::sorted_classes(&ctx, &mut storage, &lane, "moLineRef_w", OPERATION).unwrap_err()
+    else {
+        panic!("work refusal");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, OPERATION);
     assert_eq!(limit.used, 0);
@@ -52,12 +72,27 @@ fn unmatched_fixed_class_filter_pays_only_the_source_visits() {
 
 #[test]
 fn fixed_class_filter_keeps_stable_offset_order_and_exact_class_names() {
-    let lane = lane(&[("moLineRef_w", 20), ("moLineRef_x", 0),
-        ("moLineRef_w", 10), ("moLineRef_w", 10)]);
+    let lane = lane(&[
+        ("moLineRef_w", 20),
+        ("moLineRef_x", 0),
+        ("moLineRef_w", 10),
+        ("moLineRef_w", 10),
+    ]);
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut storage = ctx.reserve_scoped(0, "test sorted class names").unwrap();
     let classes = super::sorted_classes(
-        &ctx, &mut storage, &lane, "moLineRef_w", "test sorted class names",
-    ).unwrap();
-    assert_eq!(classes.iter().map(|class| class.ordinal).collect::<Vec<_>>(), [2, 3, 0]);
+        &ctx,
+        &mut storage,
+        &lane,
+        "moLineRef_w",
+        "test sorted class names",
+    )
+    .unwrap();
+    assert_eq!(
+        classes
+            .iter()
+            .map(|class| class.ordinal)
+            .collect::<Vec<_>>(),
+        [2, 3, 0]
+    );
 }

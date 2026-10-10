@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-pub(super) fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+pub(super) fn with_test_context<T>(
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let arena = DecodeArena::new();
@@ -60,4 +62,3 @@ pub(super) fn test_nurbs_surface(
     .expect("fixture constructor admission")
     .expect("valid test NURBS surface")
 }
-

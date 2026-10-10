@@ -388,12 +388,7 @@ fn split_object_without_source_does_not_search_split_classes() {
     assert!(classes.split_classes.get().is_none());
 }
 
-
-fn surface_terminal_path_storage_control(
-    count: u32,
-    expected: &str,
-    operation: &'static str,
-) {
+fn surface_terminal_path_storage_control(count: u32, expected: &str, operation: &'static str) {
     use crate::records::{Feature, FeatureInputComponentPathEntry, FeatureSource};
     use crate::resolved_features::component_paths::FeaturesBySource;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -440,7 +435,11 @@ fn surface_terminal_path_storage_control(
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let index = FeaturesBySource::new(&ctx, &features).unwrap();
         let result = super::super::surface_selection_terminal_feature_at(
-            &ctx, &payload, 12, &components, &index,
+            &ctx,
+            &payload,
+            12,
+            &components,
+            &index,
         );
         if retained == 1 {
             assert_eq!(result.unwrap().as_deref(), Some(expected));
@@ -456,8 +455,13 @@ fn surface_terminal_path_storage_control(
             assert_eq!(limit.additional, 1);
             let CodecError::ResourceLimit(repeated) =
                 super::super::surface_selection_terminal_feature_at(
-                    &ctx, &payload, 12, &components, &index,
-                ).unwrap_err()
+                    &ctx,
+                    &payload,
+                    12,
+                    &components,
+                    &index,
+                )
+                .unwrap_err()
             else {
                 panic!("original retained refusal");
             };

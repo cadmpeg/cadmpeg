@@ -25,7 +25,11 @@ fn scene_class_lookup_skips_histories_without_consumers() {
     payload.text = Some("retained feature payload".into());
     let mut histories = vec![
         history(Vec::new()),
-        history(vec![classified.clone(), payload.clone(), feature("unbound", None, 2)]),
+        history(vec![
+            classified.clone(),
+            payload.clone(),
+            feature("unbound", None, 2),
+        ]),
     ];
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())

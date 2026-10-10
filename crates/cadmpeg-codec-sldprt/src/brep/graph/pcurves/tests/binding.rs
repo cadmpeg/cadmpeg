@@ -67,14 +67,23 @@ fn singleton_pcurve_use_refuses_retention_before_allocation() {
     let mut policy = policy();
     policy.limits.max_retained_bytes -= 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (result, allocations) = crate::test_support::allocation::count_allocations(|| single_pcurve_use(&ctx, value, OPERATION));
-    let Err(CodecError::ResourceLimit(limit)) = result else { panic!("exact singleton backing"); };
+    let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+        single_pcurve_use(&ctx, value, OPERATION)
+    });
+    let Err(CodecError::ResourceLimit(limit)) = result else {
+        panic!("exact singleton backing");
+    };
     assert_eq!(limit.operation, OPERATION);
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!((limit.used, limit.additional, limit.limit), (0, use_bytes(), use_bytes() - 1));
+    assert_eq!(
+        (limit.used, limit.additional, limit.limit),
+        (0, use_bytes(), use_bytes() - 1)
+    );
     assert_eq!(allocations, 0);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+    );
 }
 
 #[test]
@@ -84,14 +93,20 @@ fn singleton_pcurve_use_refuses_its_collection_slot_before_allocation() {
     let mut policy = policy();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (result, allocations) = crate::test_support::allocation::count_allocations(|| single_pcurve_use(&ctx, value, OPERATION));
-    let Err(CodecError::ResourceLimit(limit)) = result else { panic!("singleton slot"); };
+    let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+        single_pcurve_use(&ctx, value, OPERATION)
+    });
+    let Err(CodecError::ResourceLimit(limit)) = result else {
+        panic!("singleton slot");
+    };
     assert_eq!(limit.operation, OPERATION);
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     assert_eq!((limit.used, limit.additional, limit.limit), (0, 1, 0));
     assert_eq!(allocations, 0);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+    );
 }
 
 #[test]
@@ -99,12 +114,20 @@ fn singleton_pcurve_use_preserves_prior_refusal_before_allocation() {
     let value = one_use();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy()).unwrap();
-    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_collection_items(2, "test original singleton refusal") else { panic!("original refusal"); };
-    let (result, allocations) = crate::test_support::allocation::count_allocations(|| single_pcurve_use(&ctx, value, OPERATION));
+    let Err(CodecError::ResourceLimit(limit)) =
+        ctx.charge_collection_items(2, "test original singleton refusal")
+    else {
+        panic!("original refusal");
+    };
+    let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+        single_pcurve_use(&ctx, value, OPERATION)
+    });
     assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == limit));
     assert_eq!(allocations, 0);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+    );
 }
 
 #[test]
@@ -114,8 +137,14 @@ fn derived_pcurve_binding_uses_the_same_exact_singleton_owner() {
     let expected = value.clone();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy()).unwrap();
-    PcurveSink { coedges: &mut out.coedges, pcurves: &mut out.pcurves, losses: &mut out.losses, stats: &mut out.stats }
-        .bind(&ctx, 0, value.pcurve, value.parameter_range).unwrap();
+    PcurveSink {
+        coedges: &mut out.coedges,
+        pcurves: &mut out.pcurves,
+        losses: &mut out.losses,
+        stats: &mut out.stats,
+    }
+    .bind(&ctx, 0, value.pcurve, value.parameter_range)
+    .unwrap();
     assert_eq!(out.coedges[0].pcurves, [expected]);
     assert_eq!(out.coedges[0].pcurves.capacity(), 1);
     ctx.finish_session().unwrap();
@@ -131,15 +160,27 @@ fn refused_derived_pcurve_binding_does_not_mutate_the_coedge() {
     policy.limits.max_retained_bytes -= 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
-        PcurveSink { coedges: &mut out.coedges, pcurves: &mut out.pcurves, losses: &mut out.losses, stats: &mut out.stats }
-            .bind(&ctx, 0, value.pcurve, value.parameter_range)
+        PcurveSink {
+            coedges: &mut out.coedges,
+            pcurves: &mut out.pcurves,
+            losses: &mut out.losses,
+            stats: &mut out.stats,
+        }
+        .bind(&ctx, 0, value.pcurve, value.parameter_range)
     });
-    let Err(CodecError::ResourceLimit(limit)) = result else { panic!("derived singleton backing"); };
+    let Err(CodecError::ResourceLimit(limit)) = result else {
+        panic!("derived singleton backing");
+    };
     assert_eq!(limit.operation, "bind derived Parasolid pcurve");
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!((limit.used, limit.additional, limit.limit), (0, use_bytes(), use_bytes() - 1));
+    assert_eq!(
+        (limit.used, limit.additional, limit.limit),
+        (0, use_bytes(), use_bytes() - 1)
+    );
     assert_eq!(out.coedges[0], original);
     assert_eq!(allocations, 0);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+    );
 }

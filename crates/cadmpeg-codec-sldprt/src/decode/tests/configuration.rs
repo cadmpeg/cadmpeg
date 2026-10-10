@@ -663,10 +663,17 @@ fn configuration_body_storage_promotes_only_the_selected_identity() {
     let mut ir = CadIr::empty();
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("test:model:configuration#stored").unwrap(),
-        ordinal: 0, active: false, source_index: Some(5), name: None,
-        material: None, properties: BTreeMap::new(), bodies: None,
-        parameter_values: BTreeMap::new(), parameter_overrides: BTreeMap::new(),
-        feature_states: BTreeMap::new(), native_ref: None,
+        ordinal: 0,
+        active: false,
+        source_index: Some(5),
+        name: None,
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -676,7 +683,10 @@ fn configuration_body_storage_promotes_only_the_selected_identity() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let identity = configuration_body(&ctx, &source);
     assign_configuration_bodies(&ctx, &mut ir, vec![(5, vec![identity])]).unwrap();
-    assert_eq!(ir.model.configurations[0].bodies.as_deref(), Some([source].as_slice()));
+    assert_eq!(
+        ir.model.configurations[0].bodies.as_deref(),
+        Some([source].as_slice())
+    );
     assert!(ctx.resource_refusal().is_none());
     ctx.finish_session().unwrap();
 }
@@ -692,17 +702,21 @@ fn configuration_body_storage_preserves_original_promotion_refusal() {
     policy.limits.max_retained_bytes = u64::try_from(source.as_str().len() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let identity = configuration_body(&ctx, &source);
-    let error = assign_configuration_bodies(&ctx, &mut ir, vec![(5, vec![identity])])
-        .unwrap_err();
+    let error = assign_configuration_bodies(&ctx, &mut ir, vec![(5, vec![identity])]).unwrap_err();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected configuration body promotion refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(limit.operation, "retain SLDPRT body ID");
     assert_eq!(limit.used, 0);
-    assert_eq!(limit.additional, u64::try_from(source.as_str().len()).unwrap());
+    assert_eq!(
+        limit.additional,
+        u64::try_from(source.as_str().len()).unwrap()
+    );
     assert_eq!(limit.limit, policy.limits.max_retained_bytes);
     assert!(ir.model.configurations.is_empty());
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
+    );
 }

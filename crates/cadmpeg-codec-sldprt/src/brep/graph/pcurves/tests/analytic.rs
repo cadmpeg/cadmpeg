@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::geometry::SolvedCurveGeometry;
-use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use crate::brep::graph::pcurves::sphere_latitude;
 use crate::brep::graph::test_support::test_nurbs_curve;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 const SPHERE_POLE_ROUNDING_OFFSET: f64 = 1.0e-9;
 
 #[test]
@@ -36,25 +36,29 @@ fn homogeneous_quadratic_identity_proves_constant_radius() {
     ];
     let weights = [1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0];
     let knots = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
-    assert!(crate::brep::graph::pcurves::quadratic_nurbs_has_constant_radius(
-        &cadmpeg_test_support::service_decode_context(),
-        &controls,
-        Some(&weights),
-        &knots,
-        checked_radius,
-    )
-    .unwrap());
+    assert!(
+        crate::brep::graph::pcurves::quadratic_nurbs_has_constant_radius(
+            &cadmpeg_test_support::service_decode_context(),
+            &controls,
+            Some(&weights),
+            &knots,
+            checked_radius,
+        )
+        .unwrap()
+    );
 
     let mut invalid = controls;
     invalid[1].u += 0.01;
-    assert!(!crate::brep::graph::pcurves::quadratic_nurbs_has_constant_radius(
-        &cadmpeg_test_support::service_decode_context(),
-        &invalid,
-        Some(&weights),
-        &knots,
-        checked_radius,
-    )
-    .unwrap());
+    assert!(
+        !crate::brep::graph::pcurves::quadratic_nurbs_has_constant_radius(
+            &cadmpeg_test_support::service_decode_context(),
+            &invalid,
+            Some(&weights),
+            &knots,
+            checked_radius,
+        )
+        .unwrap()
+    );
 }
 
 #[test]

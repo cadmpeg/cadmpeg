@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Initial container-report loss storage and fixed-work controls.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -26,9 +26,9 @@ fn empty_scan() -> ContainerScan<'static> {
 fn initial_loss_storage_refuses(dimension: ResourceDimension) {
     let scan = empty_scan();
     let fixture_arena = DecodeArena::new();
-    let (fixture_ctx, _) = DecodeContext::from_root_bytes(
-        &[], &fixture_arena, &DecodePolicy::service(),
-    ).expect("fixture context");
+    let (fixture_ctx, _) =
+        DecodeContext::from_root_bytes(&[], &fixture_arena, &DecodePolicy::service())
+            .expect("fixture context");
     let classification = crate::dialect::classify_layers(&fixture_ctx, &scan)
         .expect("classify empty source in its own session");
     let mut policy = DecodePolicy::service();
@@ -47,11 +47,10 @@ fn initial_loss_storage_refuses(dimension: ResourceDimension) {
         _ => panic!("unsupported loss-storage dimension"),
     };
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("report context");
-    let error = super::super::build_container_report(
-        &ctx, &scan, &classification, None, Vec::new(),
-    ).expect_err("the initial three-slot admission refuses");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("report context");
+    let error =
+        super::super::build_container_report(&ctx, &scan, &classification, None, Vec::new())
+            .expect_err("the initial three-slot admission refuses");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected initial loss-storage refusal");
     };
@@ -61,7 +60,9 @@ fn initial_loss_storage_refuses(dimension: ResourceDimension) {
     assert_eq!(limit.additional, additional);
     assert_eq!(limit.limit, additional - 1);
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
+    );
 }
 
 #[test]
@@ -78,35 +79,52 @@ fn container_report_initial_loss_slots_refuse_one_item_below_need() {
 fn container_report_initial_loss_slots_preserve_order_without_fixed_work() {
     let scan = empty_scan();
     let fixture_arena = DecodeArena::new();
-    let (fixture_ctx, _) = DecodeContext::from_root_bytes(
-        &[], &fixture_arena, &DecodePolicy::service(),
-    ).expect("fixture context");
+    let (fixture_ctx, _) =
+        DecodeContext::from_root_bytes(&[], &fixture_arena, &DecodePolicy::service())
+            .expect("fixture context");
     let classification = crate::dialect::classify_layers(&fixture_ctx, &scan)
         .expect("classify empty source in its own session");
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("report context");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("report context");
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, OPERATION, None);
-    let report = super::super::build_container_report(
-        &ctx, &scan, &classification, None, Vec::new(),
-    ).expect("fixed initial slots have no input-sized work");
+    let report =
+        super::super::build_container_report(&ctx, &scan, &classification, None, Vec::new())
+            .expect("fixed initial slots have no input-sized work");
     drop(probe);
-    assert_eq!(report.losses[0].code, SldprtLossCode::GeometryParasolidNotTransferred.kind());
-    assert_eq!(report.losses[1].code, SldprtLossCode::TopologyGraphNotTransferred.kind());
-    assert_eq!(report.losses[2].code, SldprtLossCode::MaterialMetadataNotTransferred.kind());
-    assert_eq!(report.losses[3].code, SldprtLossCode::ContainerNoParasolidStream.kind());
-    assert_eq!(report.losses[0].message,
+    assert_eq!(
+        report.losses[0].code,
+        SldprtLossCode::GeometryParasolidNotTransferred.kind()
+    );
+    assert_eq!(
+        report.losses[1].code,
+        SldprtLossCode::TopologyGraphNotTransferred.kind()
+    );
+    assert_eq!(
+        report.losses[2].code,
+        SldprtLossCode::MaterialMetadataNotTransferred.kind()
+    );
+    assert_eq!(
+        report.losses[3].code,
+        SldprtLossCode::ContainerNoParasolidStream.kind()
+    );
+    assert_eq!(
+        report.losses[0].message,
         "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved \
          into a topology graph. 0 payload source(s) were enumerated, \
-         0 carrying Parasolid streams.");
-    assert_eq!(report.losses[1].message,
+         0 carrying Parasolid streams."
+    );
+    assert_eq!(
+        report.losses[1].message,
         "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
-         for this file.");
-    assert_eq!(report.losses[2].message,
+         for this file."
+    );
+    assert_eq!(
+        report.losses[2].message,
         "Body-bound appearances and tessellation were not transferred because no body graph \
-         exists.");
+         exists."
+    );
     assert!(ctx.resource_refusal().is_none());
     ctx.finish_session().expect("unrefused report session");
 }

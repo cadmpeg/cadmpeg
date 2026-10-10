@@ -26,10 +26,17 @@ impl BorrowedProperties<'_, '_> {
     }
 
     pub(super) fn into_retained(self, ctx: &DecodeContext<'_>) -> Result<Properties, CodecError> {
-        let mut source = PropertyEntries { entries: self.entries.into_iter(), _shell: self.shell };
+        let mut source = PropertyEntries {
+            entries: self.entries.into_iter(),
+            _shell: self.shell,
+        };
         let mut output = BTreeMap::new();
         while source.entries.len() != 0 {
-            let Some((name, value)) = ctx.next_charged(&mut source.entries, "publish SLDPRT dimension properties")? else { break; };
+            let Some((name, value)) =
+                ctx.next_charged(&mut source.entries, "publish SLDPRT dimension properties")?
+            else {
+                break;
+            };
             retain_property(ctx, &mut output, name, value)?;
         }
         Ok(output)
@@ -44,23 +51,44 @@ enum PropertySink<'out, 'xml, 'ctx> {
 impl<'xml> PropertySink<'_, 'xml, '_> {
     fn contains(&self, ctx: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
         match self {
-            Self::Retained(output) => ctx.contains_key_btree_map(output, name, "test SLDPRT map key"),
-            Self::Borrowed(output) => ctx.contains_key_btree_map(&output.entries, name, "test SLDPRT map key"),
+            Self::Retained(output) => {
+                ctx.contains_key_btree_map(output, name, "test SLDPRT map key")
+            }
+            Self::Borrowed(output) => {
+                ctx.contains_key_btree_map(&output.entries, name, "test SLDPRT map key")
+            }
         }
     }
 
-    fn insert(&mut self, ctx: &DecodeContext<'_>, name: &'xml str, value: &'xml str) -> Result<(), CodecError> {
+    fn insert(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        name: &'xml str,
+        value: &'xml str,
+    ) -> Result<(), CodecError> {
         match self {
             Self::Retained(output) => retain_property(ctx, output, name, value),
             Self::Borrowed(output) => {
-                output.shell.with_storage(|| ctx.insert_btree_map(&mut output.entries, name, value, "index SLDPRT history properties"))?;
+                output.shell.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut output.entries,
+                        name,
+                        value,
+                        "index SLDPRT history properties",
+                    )
+                })?;
                 Ok(())
             }
         }
     }
 }
 
-fn retain_property(ctx: &DecodeContext<'_>, output: &mut Properties, name: &str, value: &str) -> Result<(), CodecError> {
+fn retain_property(
+    ctx: &DecodeContext<'_>,
+    output: &mut Properties,
+    name: &str,
+    value: &str,
+) -> Result<(), CodecError> {
     let name = ctx.copy_retained_text(name, "retain SLDPRT history property name")?;
     let value = ctx.copy_retained_text(value, "retain SLDPRT history property value")?;
     if let Some(name) = NonBlankString::for_decode(ctx, name, "validate nonblank text")? {
@@ -70,14 +98,26 @@ fn retain_property(ctx: &DecodeContext<'_>, output: &mut Properties, name: &str,
 }
 
 fn scan_attributes<'xml>(
-    ctx: &DecodeContext<'_>, losses: &mut Vec<LossNote>, record: &str,
-    node: roxmltree::Node<'xml, '_>, excluded: &[&str], output: &mut PropertySink<'_, 'xml, '_>,
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    record: &str,
+    node: roxmltree::Node<'xml, '_>,
+    excluded: &[&str],
+    output: &mut PropertySink<'_, 'xml, '_>,
 ) -> Result<(), CodecError> {
     let mut attributes = node.attributes();
-    while let Some(attribute) = ctx.next_charged(&mut attributes, "scan SLDPRT element attributes")? {
+    while let Some(attribute) =
+        ctx.next_charged(&mut attributes, "scan SLDPRT element attributes")?
+    {
         let (name, value) = (attribute.name(), attribute.value());
-        if excluded.contains(&name) { continue; }
-        if ctx.all_by(name.chars(), |character| Ok(character.is_whitespace()), "scan SLDPRT property name characters")? {
+        if excluded.contains(&name) {
+            continue;
+        }
+        if ctx.all_by(
+            name.chars(),
+            |character| Ok(character.is_whitespace()),
+            "scan SLDPRT property name characters",
+        )? {
             report_unkeyed_property(ctx, losses, record, None)?;
             continue;
         }
@@ -91,20 +131,43 @@ fn scan_attributes<'xml>(
 }
 
 pub(super) fn keyed_attributes(
-    ctx: &DecodeContext<'_>, losses: &mut Vec<LossNote>, record: &str,
-    node: roxmltree::Node<'_, '_>, excluded: &[&str],
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    record: &str,
+    node: roxmltree::Node<'_, '_>,
+    excluded: &[&str],
 ) -> Result<Properties, CodecError> {
     let mut output = BTreeMap::new();
-    scan_attributes(ctx, losses, record, node, excluded, &mut PropertySink::Retained(&mut output))?;
+    scan_attributes(
+        ctx,
+        losses,
+        record,
+        node,
+        excluded,
+        &mut PropertySink::Retained(&mut output),
+    )?;
     Ok(output)
 }
 
 pub(super) fn borrowed_attributes<'xml, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>, losses: &mut Vec<LossNote>, record: &str,
-    node: roxmltree::Node<'xml, '_>, excluded: &[&str],
+    ctx: &'ctx DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    record: &str,
+    node: roxmltree::Node<'xml, '_>,
+    excluded: &[&str],
 ) -> Result<BorrowedProperties<'xml, 'ctx>, CodecError> {
-    let mut output = BorrowedProperties { entries: BTreeMap::new(), shell: ctx.reserve_scoped(0, "hold SLDPRT dimension properties")? };
-    scan_attributes(ctx, losses, record, node, excluded, &mut PropertySink::Borrowed(&mut output))?;
+    let mut output = BorrowedProperties {
+        entries: BTreeMap::new(),
+        shell: ctx.reserve_scoped(0, "hold SLDPRT dimension properties")?,
+    };
+    scan_attributes(
+        ctx,
+        losses,
+        record,
+        node,
+        excluded,
+        &mut PropertySink::Borrowed(&mut output),
+    )?;
     Ok(output)
 }
 
@@ -131,4 +194,3 @@ fn report_unkeyed_property(
         "collect SLDPRT history property losses",
     )
 }
-

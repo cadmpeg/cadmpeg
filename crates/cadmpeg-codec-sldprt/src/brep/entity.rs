@@ -50,9 +50,7 @@ pub(crate) struct FactsSource<'ctx> {
 }
 
 impl<'ctx> FactsSource<'ctx> {
-    pub(crate) fn empty(
-        ctx: &'ctx DecodeContext<'_>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    pub(crate) fn empty(ctx: &'ctx DecodeContext<'_>) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
             facts: Facts::default(),
             storage: ctx.reserve_scoped(0, "hold Parasolid entity facts")?,
@@ -961,7 +959,8 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let storage;
         let colors;
-        (colors, storage) = linked_colors(&ctx, &bytes, &parents, &super::ColorRequests::new()).unwrap();
+        (colors, storage) =
+            linked_colors(&ctx, &bytes, &parents, &super::ColorRequests::new()).unwrap();
         assert!(colors.is_empty());
         drop((colors, storage));
         ctx.finish_session().unwrap();
@@ -1199,11 +1198,7 @@ mod tests {
         let mut probe = Vec::<RawFaceAtom<'_>>::new();
         probe_storage
             .with_storage(|| {
-                ctx.reserve_capacity(
-                    &mut probe,
-                    1,
-                    "probe released Parasolid fact slots",
-                )
+                ctx.reserve_capacity(&mut probe, 1, "probe released Parasolid fact slots")
             })
             .expect("one source vector shell was released");
 

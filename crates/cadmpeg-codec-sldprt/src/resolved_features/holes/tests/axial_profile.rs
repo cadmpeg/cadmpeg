@@ -483,9 +483,13 @@ fn closed_tapered_axial_profile_resolves_conical_hole() {
         "resolve SLDPRT axial hole profile",
         Some(4),
     );
-    assert!(profiled_hole_construction(&probe_ctx, &profile, &sketch, &entities)
-        .unwrap().is_some());
-    let error = probe_ctx.charge_work(4, "resolve SLDPRT axial hole profile")
+    assert!(
+        profiled_hole_construction(&probe_ctx, &profile, &sketch, &entities)
+            .unwrap()
+            .is_some()
+    );
+    let error = probe_ctx
+        .charge_work(4, "resolve SLDPRT axial hole profile")
         .expect_err("fixed edge passes leave the four-step probe armed");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
@@ -971,14 +975,20 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         "resolve SLDPRT direct hole position",
         Some(2),
     );
-    assert_eq!(direct_hole_position_feature(
-        &probe_ctx,
-        &histories[0].features[0],
-        &[HoleHistoryIndex::new(&probe_ctx, &histories[0]).unwrap()],
-        |id| Ok(model_sketches.get(id)),
-        &entities,
-    ).unwrap().map(|feature| feature.id.as_str()), Some("native-position"));
-    let error = probe_ctx.charge_work(2, "resolve SLDPRT direct hole position")
+    assert_eq!(
+        direct_hole_position_feature(
+            &probe_ctx,
+            &histories[0].features[0],
+            &[HoleHistoryIndex::new(&probe_ctx, &histories[0]).unwrap()],
+            |id| Ok(model_sketches.get(id)),
+            &entities,
+        )
+        .unwrap()
+        .map(|feature| feature.id.as_str()),
+        Some("native-position")
+    );
+    let error = probe_ctx
+        .charge_work(2, "resolve SLDPRT direct hole position")
         .expect_err("fixed duplicate slots leave the two-step probe armed");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits

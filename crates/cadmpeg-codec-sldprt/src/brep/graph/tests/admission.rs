@@ -2,7 +2,6 @@
 
 use crate::brep::index::scan_carriers;
 
-
 #[test]
 fn incomplete_brep_marker_does_not_consume_collection_slots() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -22,9 +21,12 @@ fn incomplete_brep_marker_does_not_consume_collection_slots() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-    let decoded =
-        crate::brep::graph::decode_body(&ctx, &body, &cadmpeg_ir::stream_name!("incomplete-marker"))
-            .unwrap();
+    let decoded = crate::brep::graph::decode_body(
+        &ctx,
+        &body,
+        &cadmpeg_ir::stream_name!("incomplete-marker"),
+    )
+    .unwrap();
     assert!(decoded.points.is_empty());
     assert!(decoded.loops.is_empty());
     ctx.finish_session().unwrap();

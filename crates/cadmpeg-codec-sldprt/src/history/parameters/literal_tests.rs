@@ -772,7 +772,8 @@ fn rejected_identifier_scan_releases_prefix_storage() {
         (tokens, storage) =
             super::expression_identifier_tokens(&ctx, "Width + \"unterminated").unwrap();
         assert!(tokens.is_none());
-        let probe = ctx.reserve_scoped(prefix_bytes, "reuse rejected identifier prefix storage")
+        let probe = ctx
+            .reserve_scoped(prefix_bytes, "reuse rejected identifier prefix storage")
             .expect("discarded prefix backing is released while the result guard remains alive");
         drop(probe);
         drop((tokens, storage));
@@ -788,10 +789,24 @@ fn identifier_prefix_preserves_initial_vector_refusal() {
     assert!((2..=1024).contains(&slot_bytes));
     let prefix_bytes = cadmpeg_core::decode::u64_from_index(4 * slot_bytes);
     for (dimension, cap, additional, operation) in [
-        (ResourceDimension::MaterializedBytes, prefix_bytes - 1, prefix_bytes,
-            "collect SLDPRT parameter identifiers"),
-        (ResourceDimension::CollectionItems, 0, 1, "collect SLDPRT parameter identifiers"),
-        (ResourceDimension::WorkUnits, 0, 1, "scan SLDPRT parameter identifiers"),
+        (
+            ResourceDimension::MaterializedBytes,
+            prefix_bytes - 1,
+            prefix_bytes,
+            "collect SLDPRT parameter identifiers",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            0,
+            1,
+            "collect SLDPRT parameter identifiers",
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            0,
+            1,
+            "scan SLDPRT parameter identifiers",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -805,14 +820,18 @@ fn identifier_prefix_preserves_initial_vector_refusal() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = super::expression_identifier_tokens(&ctx, "Width + \"unterminated");
         let limit = ctx.resource_refusal().expect("original prefix refusal");
-        assert!(matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == &limit));
+        assert!(
+            matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == &limit)
+        );
         assert_eq!(limit.dimension, dimension);
         assert_eq!(limit.operation, operation);
         assert_eq!(limit.limit, cap);
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, additional);
-        assert!(matches!(ctx.charge_work(0, "probe original identifier refusal"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == limit));
+        assert!(
+            matches!(ctx.charge_work(0, "probe original identifier refusal"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == limit)
+        );
         drop(result);
         assert!(matches!(ctx.finish_session(),
             Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == limit));

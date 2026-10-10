@@ -7,10 +7,10 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+use super::index::stream::StreamCurve;
+use super::index::view::CarrierView;
 #[cfg(test)]
 use super::index::CarrierIndex;
-use super::index::view::CarrierView;
-use super::index::stream::StreamCurve;
 use super::{CurveCarrier, LEN_TO_MM};
 
 const TAG: u8 = 0x85;
@@ -95,7 +95,12 @@ pub(super) fn scan(
     carriers: &CarrierIndex,
 ) -> Result<Vec<CurveCarrier>, CodecError> {
     let mut values = Vec::new();
-    scan_into(ctx, bytes, CarrierView::Retained(carriers), &mut SubsetSink::Retained(&mut values))?;
+    scan_into(
+        ctx,
+        bytes,
+        CarrierView::Retained(carriers),
+        &mut SubsetSink::Retained(&mut values),
+    )?;
     Ok(values)
 }
 
@@ -108,7 +113,10 @@ pub(in crate::brep) struct SubsetCandidates<'ctx> {
 
 impl<'ctx> SubsetCandidates<'ctx> {
     pub(in crate::brep) fn into_entries(self) -> SubsetEntries<'ctx> {
-        SubsetEntries { values: self.values.into_iter(), _shell: self.shell }
+        SubsetEntries {
+            values: self.values.into_iter(),
+            _shell: self.shell,
+        }
     }
 }
 
@@ -119,7 +127,9 @@ pub(in crate::brep) struct SubsetEntries<'ctx> {
 
 impl<'ctx> SubsetEntries<'ctx> {
     pub(in crate::brep) fn next(
-        &mut self, ctx: &DecodeContext<'_>, operation: &'static str,
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
     ) -> Result<Option<StreamCurve<'ctx>>, CodecError> {
         if let Some(limit) = ctx.resource_refusal() {
             return Err(CodecError::ResourceLimit(limit));
@@ -132,10 +142,13 @@ impl<'ctx> SubsetEntries<'ctx> {
 }
 
 pub(in crate::brep) fn scan_scoped<'ctx>(
-    ctx: &'ctx DecodeContext<'_>, bytes: &[u8], carriers: CarrierView<'_, 'ctx>,
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &[u8],
+    carriers: CarrierView<'_, 'ctx>,
 ) -> Result<SubsetCandidates<'ctx>, CodecError> {
     let mut output = SubsetCandidates {
-        values: Vec::new(), shell: ctx.reserve_scoped(0, "hold Parasolid subset candidates")?,
+        values: Vec::new(),
+        shell: ctx.reserve_scoped(0, "hold Parasolid subset candidates")?,
     };
     scan_into(ctx, bytes, carriers, &mut SubsetSink::Stream(&mut output))?;
     Ok(output)
@@ -149,8 +162,12 @@ enum SubsetSink<'out, 'ctx> {
 
 impl<'ctx> SubsetSink<'_, 'ctx> {
     fn publish(
-        &mut self, ctx: &'ctx DecodeContext<'_>, geometry: &CurveGeometry,
-        attr: u16, offset: usize, end: usize,
+        &mut self,
+        ctx: &'ctx DecodeContext<'_>,
+        geometry: &CurveGeometry,
+        attr: u16,
+        offset: usize,
+        end: usize,
         parameter_range: cadmpeg_ir::units::FiniteVector<2>,
     ) -> Result<(), CodecError> {
         const COPY: &str = "copy Parasolid subset curve lanes";
@@ -159,24 +176,43 @@ impl<'ctx> SubsetSink<'_, 'ctx> {
             #[cfg(test)]
             Self::Retained(output) => {
                 let geometry = geometry.try_clone_for_decode(ctx, COPY)?;
-                ctx.push_vec(output, CurveCarrier {
-                    attr, offset, end, geometry, parameter_range: Some(parameter_range),
-                }, COLLECT)
+                ctx.push_vec(
+                    output,
+                    CurveCarrier {
+                        attr,
+                        offset,
+                        end,
+                        geometry,
+                        parameter_range: Some(parameter_range),
+                    },
+                    COLLECT,
+                )
             }
             Self::Stream(output) => {
                 let mut storage = ctx.reserve_scoped(0, "hold Parasolid subset geometry")?;
                 let geometry = storage.with_storage(|| geometry.try_clone_for_decode(ctx, COPY))?;
-                let value = StreamCurve::exact(CurveCarrier {
-                    attr, offset, end, geometry, parameter_range: Some(parameter_range),
-                }, storage);
-                output.shell.with_storage(|| ctx.push_vec(&mut output.values, value, COLLECT))
+                let value = StreamCurve::exact(
+                    CurveCarrier {
+                        attr,
+                        offset,
+                        end,
+                        geometry,
+                        parameter_range: Some(parameter_range),
+                    },
+                    storage,
+                );
+                output
+                    .shell
+                    .with_storage(|| ctx.push_vec(&mut output.values, value, COLLECT))
             }
         }
     }
 }
 
 fn scan_into<'ctx>(
-    ctx: &'ctx DecodeContext<'_>, bytes: &[u8], carriers: CarrierView<'_, 'ctx>,
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &[u8],
+    carriers: CarrierView<'_, 'ctx>,
     output: &mut SubsetSink<'_, 'ctx>,
 ) -> Result<(), CodecError> {
     let starts = 0..bytes.len().checked_sub(2).map_or(0, |end| end);
@@ -234,8 +270,14 @@ fn scan_into<'ctx>(
         if !close(start, evaluated_start) || !close(end, evaluated_end) {
             continue;
         }
-        output.publish(ctx, geometry, attr, off, marker_at + 1 + PAYLOAD_LEN,
-            cadmpeg_ir::units::FiniteVector::from([values[6], values[7]]))?;
+        output.publish(
+            ctx,
+            geometry,
+            attr,
+            off,
+            marker_at + 1 + PAYLOAD_LEN,
+            cadmpeg_ir::units::FiniteVector::from([values[6], values[7]]),
+        )?;
     }
     Ok(())
 }

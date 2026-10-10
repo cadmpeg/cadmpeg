@@ -750,8 +750,7 @@ pub(crate) fn project_compact_sketch_profiles(
         model_features_by_native(ctx, features, &native_features, OPERATION)?;
     let mut sketch_positions_storage;
     let mut sketch_positions;
-    (sketch_positions, sketch_positions_storage) =
-        index_sketch_ids(ctx, sketches, OPERATION)?;
+    (sketch_positions, sketch_positions_storage) = index_sketch_ids(ctx, sketches, OPERATION)?;
     let mut lane_frames_storage = ctx.reserve_scoped(0, OPERATION)?;
     let lane_frames =
         lane_frames_storage.with_storage(|| LaneFrameIndex::new(ctx, features, histories))?;
@@ -1254,8 +1253,8 @@ pub(crate) fn project_compact_sketch_profiles(
                     let Ok(entity_id) = entity_id else {
                         continue;
                     };
-                    let entity_id = line_fields_storage
-                        .with_storage(|| id_storage.commit_value(entity_id))?;
+                    let entity_id =
+                        line_fields_storage.with_storage(|| id_storage.commit_value(entity_id))?;
                     lines_storage.with_storage(|| {
                         ctx.reserve_vec(&mut lines, 1, OPERATION)?;
                         lines.push((entity_id, curve, vertex, start, end));
@@ -1272,8 +1271,8 @@ pub(crate) fn project_compact_sketch_profiles(
                     let projected_fields_storage;
                     let projected;
                     let complete;
-                    ((projected, complete), projected_fields_storage) = ctx
-                        .with_scoped_storage(OPERATION, || {
+                    ((projected, complete), projected_fields_storage) =
+                        ctx.with_scoped_storage(OPERATION, || {
                             let mut projected = Vec::new();
                             let mut complete = true;
                             let mut visited = lines.into_iter();
@@ -3394,20 +3393,17 @@ pub(crate) fn project_sketch_block_profiles(
     }
     let _native_features_storage;
     let native_features;
-    (native_features, _native_features_storage) =
-        index_native_features(ctx, histories, OPERATION)?;
+    (native_features, _native_features_storage) = index_native_features(ctx, histories, OPERATION)?;
     let _features_by_native_storage;
     let features_by_native;
     (features_by_native, _features_by_native_storage) =
         model_features_by_native(ctx, features, &native_features, OPERATION)?;
     let mut sketch_positions_storage;
     let mut sketch_positions;
-    (sketch_positions, sketch_positions_storage) =
-        index_sketch_ids(ctx, sketches, OPERATION)?;
+    (sketch_positions, sketch_positions_storage) = index_sketch_ids(ctx, sketches, OPERATION)?;
     let mut entity_groups_storage;
     let mut entity_groups;
-    (entity_groups, entity_groups_storage) =
-        index_entity_groups(ctx, sketch_entities, OPERATION)?;
+    (entity_groups, entity_groups_storage) = index_entity_groups(ctx, sketch_entities, OPERATION)?;
     // Whether each history record is metadata, decided on first use.
     let mut metadata_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut metadata = Vec::new();

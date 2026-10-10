@@ -83,22 +83,33 @@ fn native_configuration_lookup_releases_scratch_and_preserves_order() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = SCRATCH_BYTES;
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     for _ in 0..64 {
         assign_native_configuration_indices(&ctx, &ir, &mut native)
             .expect("exact scratch peak fits");
         // Both model records target the first native record. The second
         // assignment clears its source index; a later native duplicate loses.
-        assert_eq!(native.feature_histories[0].configurations[0].source_index, None);
-        assert_eq!(native.feature_histories[0].configurations[1].source_index, Some(82));
-        assert_eq!(native.feature_histories[1].configurations[0].source_index, Some(91));
-        let probe = ctx.reserve_scoped(SCRATCH_BYTES, "reuse native configuration scratch")
+        assert_eq!(
+            native.feature_histories[0].configurations[0].source_index,
+            None
+        );
+        assert_eq!(
+            native.feature_histories[0].configurations[1].source_index,
+            Some(82)
+        );
+        assert_eq!(
+            native.feature_histories[1].configurations[0].source_index,
+            Some(91)
+        );
+        let probe = ctx
+            .reserve_scoped(SCRATCH_BYTES, "reuse native configuration scratch")
             .expect("all scratch reusable while native records remain alive");
         drop(probe);
     }
     assert!(ctx.resource_refusal().is_none());
-    ctx.finish_session().expect("zero retained storage and released scratch");
+    ctx.finish_session()
+        .expect("zero retained storage and released scratch");
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -117,8 +128,8 @@ fn native_configuration_lookup_refuses_before_assigning_and_keeps_first_refusal(
             ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
             _ => unreachable!("fixed test dimensions"),
         }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits policy");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
         let CodecError::ResourceLimit(limit) =
             assign_native_configuration_indices(&ctx, &ir, &mut native)
                 .expect_err("lookup and assignments must be admitted before mutation")
@@ -126,13 +137,25 @@ fn native_configuration_lookup_refuses_before_assigning_and_keeps_first_refusal(
             panic!("expected original resource refusal");
         };
         assert_eq!(limit.dimension, dimension);
-        assert_eq!(limit.operation, "assign SLDPRT native configuration indices");
+        assert_eq!(
+            limit.operation,
+            "assign SLDPRT native configuration indices"
+        );
         assert_eq!(limit.limit, cap);
         assert_eq!(limit.used, used);
         assert_eq!(limit.additional, additional);
-        assert_eq!(native.feature_histories[0].configurations[0].source_index, Some(81));
-        assert_eq!(native.feature_histories[0].configurations[1].source_index, Some(82));
-        assert_eq!(native.feature_histories[1].configurations[0].source_index, Some(91));
+        assert_eq!(
+            native.feature_histories[0].configurations[0].source_index,
+            Some(81)
+        );
+        assert_eq!(
+            native.feature_histories[0].configurations[1].source_index,
+            Some(82)
+        );
+        assert_eq!(
+            native.feature_histories[1].configurations[0].source_index,
+            Some(91)
+        );
         assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
         assert!(matches!(
             ctx.charge_work(0, "probe original native configuration refusal"),

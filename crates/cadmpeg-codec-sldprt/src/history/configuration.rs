@@ -344,9 +344,8 @@ pub(crate) fn project_configuration_design_states(
     }
     let mut lane_assignments_storage =
         ctx.reserve_scoped(0, "SLDPRT configuration lane assignments")?;
-    let lane_assignments = lane_assignments_storage.with_storage(|| {
-        configuration_lane_assignments(ctx, &ir.model.configurations, lanes)
-    })?;
+    let lane_assignments = lane_assignments_storage
+        .with_storage(|| configuration_lane_assignments(ctx, &ir.model.configurations, lanes))?;
     if lane_assignments.is_empty() {
         return Ok(());
     }
@@ -394,9 +393,8 @@ pub(crate) fn project_configuration_design_states(
             })?;
             let mut parameter_storage =
                 ctx.reserve_scoped(0, "SLDPRT configuration projected parameters")?;
-            let parameters = parameter_storage.with_storage(|| {
-                project_parameters(ctx, &projection)
-            })?;
+            let parameters =
+                parameter_storage.with_storage(|| project_parameters(ctx, &projection))?;
             let mut parameter_values = BTreeMap::new();
             for parameter in ctx.admit_iter(&parameters, "collect SLDPRT configuration values")? {
                 let Some(value) = &parameter.value else {
@@ -422,12 +420,11 @@ pub(crate) fn project_configuration_design_states(
                 let mut history_storage =
                     ctx.reserve_scoped(0, "SLDPRT configuration feature histories")?;
                 let projection = history_storage.with_storage(|| {
-                    let mut projection =
-                        crate::records::charged_clone::clone_histories_charged(
-                            ctx,
-                            histories,
-                            "clone SLDPRT configuration feature histories",
-                        )?;
+                    let mut projection = crate::records::charged_clone::clone_histories_charged(
+                        ctx,
+                        histories,
+                        "clone SLDPRT configuration feature histories",
+                    )?;
                     enrich_history_semantic(
                         ctx,
                         &mut projection,
@@ -539,14 +536,11 @@ pub(crate) fn project_configuration_design_states(
         if let Some(features) = projected {
             let mut feature_states = BTreeMap::new();
             for feature in ctx.admit_iter(&features, "collect SLDPRT configuration values")? {
-                let id = feature.id.try_clone_for_decode(
-                    ctx,
-                    "retain SLDPRT configuration feature identity",
-                )?;
-                let state = feature.configuration_state(
-                    ctx,
-                    "retain SLDPRT configuration feature state",
-                )?;
+                let id = feature
+                    .id
+                    .try_clone_for_decode(ctx, "retain SLDPRT configuration feature identity")?;
+                let state = feature
+                    .configuration_state(ctx, "retain SLDPRT configuration feature state")?;
                 ctx.insert_btree_map(
                     &mut feature_states,
                     id,
@@ -559,7 +553,9 @@ pub(crate) fn project_configuration_design_states(
             ir.model.configurations[configuration_index].feature_states = feature_states;
         } else {
             drop(feature_projection_storage);
-            ir.model.configurations[configuration_index].feature_states.clear();
+            ir.model.configurations[configuration_index]
+                .feature_states
+                .clear();
         }
     }
 
@@ -631,9 +627,8 @@ pub(crate) fn bind_configuration_topology_selections(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut lane_assignments_storage =
         ctx.reserve_scoped(0, "SLDPRT configuration lane assignments")?;
-    let lane_assignments = lane_assignments_storage.with_storage(|| {
-        configuration_lane_assignments(ctx, &ir.model.configurations, lanes)
-    })?;
+    let lane_assignments = lane_assignments_storage
+        .with_storage(|| configuration_lane_assignments(ctx, &ir.model.configurations, lanes))?;
     for (configuration_index, lane_index) in ctx
         .admit_iter(
             &lane_assignments,
@@ -729,9 +724,8 @@ pub(crate) fn project_configuration_sketch_states(
     let mut losses = Vec::new();
     let mut lane_assignments_storage =
         ctx.reserve_scoped(0, "SLDPRT configuration lane assignments")?;
-    let lane_assignments = lane_assignments_storage.with_storage(|| {
-        configuration_lane_assignments(ctx, &ir.model.configurations, lanes)
-    })?;
+    let lane_assignments = lane_assignments_storage
+        .with_storage(|| configuration_lane_assignments(ctx, &ir.model.configurations, lanes))?;
     for (configuration_index, lane_index) in ctx
         .admit_iter(
             &lane_assignments,
@@ -739,8 +733,7 @@ pub(crate) fn project_configuration_sketch_states(
         )?
         .copied()
     {
-        let mut surface_storage =
-            ctx.reserve_scoped(0, "SLDPRT configuration surface carriers")?;
+        let mut surface_storage = ctx.reserve_scoped(0, "SLDPRT configuration surface carriers")?;
         let surfaces = surface_storage.with_storage(|| {
             surfaces::configuration_surface_carriers(ctx, ir, configuration_index)
         })?;
@@ -1070,10 +1063,8 @@ pub(crate) fn project_configuration_sketch_states(
         result?;
     }
     let base = ConfigurationDefinitions::new(ctx, &ir.model.features)?;
-    let mut scoped_storage = ctx.reserve_scoped(
-        0,
-        "scan SLDPRT project_configuration_sketch_states values",
-    )?;
+    let mut scoped_storage =
+        ctx.reserve_scoped(0, "scan SLDPRT project_configuration_sketch_states values")?;
     let mut scoped = scoped_storage.with_storage(|| {
         ctx.alloc_filled(
             ir.model.configurations.len(),
@@ -1804,11 +1795,9 @@ pub(crate) fn unresolved_configuration_lanes(
     lanes: &[crate::records::FeatureInputLane],
 ) -> Result<usize, cadmpeg_core::CodecError> {
     const OPERATION: &str = "count unresolved SLDPRT configuration lanes";
-    let mut assigned_storage =
-        ctx.reserve_scoped(0, "SLDPRT configuration lane assignments")?;
-    let assigned_lanes = assigned_storage.with_storage(|| {
-        configuration_lane_assignments(ctx, configurations, lanes)
-    })?;
+    let mut assigned_storage = ctx.reserve_scoped(0, "SLDPRT configuration lane assignments")?;
+    let assigned_lanes = assigned_storage
+        .with_storage(|| configuration_lane_assignments(ctx, configurations, lanes))?;
     let mut scratch = ctx.reserve_scoped(0, "index SLDPRT configuration lane occurrences")?;
     let mut assigned = scratch.with_storage(|| ctx.alloc_filled(lanes.len(), false, OPERATION))?;
     for (_, lane_index) in ctx.admit_iter(&assigned_lanes, OPERATION)? {
@@ -1868,4 +1857,3 @@ fn configuration_state_lane(lane: &crate::records::FeatureInputLane) -> bool {
 
 #[cfg(test)]
 mod temporary_storage_tests;
-
