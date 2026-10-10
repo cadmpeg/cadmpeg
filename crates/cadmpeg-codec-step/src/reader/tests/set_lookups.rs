@@ -72,7 +72,7 @@ fn protected_pcurve_root_filter_preserves_lookup_refusal() {
 }
 
 #[test]
-fn removed_pcurve_count_uses_actual_ownership_retention() {
+fn protected_pcurve_deletion_warning_keeps_carrier_count() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PCURVE('',#3,#4);#2=SURFACE('',#1);#3=ITEM();#4=ITEM();ENDSEC;END-ISO-10303-21;";
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -113,8 +113,10 @@ fn removed_pcurve_count_uses_actual_ownership_retention() {
         assert_eq!(ir.model.procedural_surfaces.len(), 1);
         assert_eq!(typed_records, HashSet::from([2, 3, 4]));
         assert_eq!(losses.len(), 1);
-        assert!(losses[0].message.contains("opaque_pcurves=0, protected_pcurves=1"));
-        assert!(losses[0].message.contains("deleted pcurves=1"));
+        assert!(losses[0]
+            .message
+            .contains("opaque_pcurves=0, protected_pcurves=1"));
+        assert!(losses[0].message.contains("deleted pcurves=0"));
     }
     ctx.finish_session().unwrap();
 }

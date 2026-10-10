@@ -230,17 +230,52 @@ fn body_conflict_loss_text_refuses_retained_limit() {
 #[test]
 fn missing_shape_body_loss_text_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits retained policy");
-    assert!(matches!(
-        ctx.format_retained(format_args!("body omitted uncommitted shape body reference(s): {}", "body-one"), "step_missing_shape_body_loss_text"),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_missing_shape_body_loss_text"
-    ));
+    use cadmpeg_ir::ids::BodyId;
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PRODUCT('id','name','',$);#2=PRODUCT_DEFINITION_FORMATION('','',#1);#3=PRODUCT_DEFINITION('','',#2,$);#4=PRODUCT_DEFINITION_SHAPE('','',#3);#5=SHAPE_DEFINITION_REPRESENTATION(#4,#6);#6=SHAPE_REPRESENTATION('',(#7),$);#7=MANIFOLD_SOLID_BREP('',$);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
+    crate::test_support::with_service_context(source, |_, owner| {
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let geometry = crate::reader::geometry::decode(&exchange, &mut ir, owner).unwrap();
+        let index = crate::reader::index::CarrierIndex::from_ir(&ir, owner).unwrap();
+        let mut topology =
+            crate::reader::topology::decode(&exchange, &mut ir, &index, owner).unwrap();
+        topology
+            .value
+            .body_by_root
+            .insert(7, vec![BodyId::mint("step:data:body#7").unwrap()]);
+        let stage = super::super::decode(
+            &exchange,
+            &geometry.value,
+            &topology.value,
+            &mut ir.clone(),
+            owner,
+            &mut 0,
+        )
+        .unwrap();
+        assert!(stage.losses.iter().any(|loss| loss.message == "PRODUCT_DEFINITION #3 omitted uncommitted shape body reference(s): step:data:body#7"));
+        drop(stage);
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "step_missing_shape_body_loss_text",
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+                let result = super::super::decode(
+                    &exchange,
+                    &geometry.value,
+                    &topology.value,
+                    &mut ir.clone(),
+                    &ctx,
+                    &mut 0,
+                );
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal)) = result {
+                    assert_eq!(ctx.resource_refusal(), Some(*refusal));
+                }
+                result.map(|_| ())
+            },
+        );
+    });
 }

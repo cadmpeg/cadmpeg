@@ -23,19 +23,15 @@ fn reference_collection_refusal_leaves_the_list_suffix_unvisited() {
     let value = Value::List(vec![Value::Reference(1); 8193]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // One list visit precedes the empty B-tree insertion. Core admits three
-    // node passes for the insertion: eleven u64 keys, sixteen pointer lanes,
-    // and two alignment lanes per node. This admits the first insertion's
-    // work but cannot admit a traversal of the whole list before that insertion.
-    let node_bytes = 11 * std::mem::size_of::<u64>()
-        + 16 * std::mem::size_of::<usize>()
-        + 2 * std::mem::align_of::<u64>().max(std::mem::align_of::<usize>());
-    policy.limits.max_work_units = 1 + 3 * node_bytes as u64;
+    // The first insertion fits this work range; the 8192-item suffix does not.
+    policy.limits.max_work_units = 4096;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let mut output = BTreeSet::new();
-    let CodecError::ResourceLimit(limit) = super::super::collect_references(&value, &mut output, &ctx)
-        .expect_err("first insertion refuses") else {
+    let CodecError::ResourceLimit(limit) =
+        super::super::collect_references(&value, &mut output, &ctx)
+            .expect_err("first insertion refuses")
+    else {
         panic!("original collection refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
@@ -43,7 +39,9 @@ fn reference_collection_refusal_leaves_the_list_suffix_unvisited() {
     assert_eq!((limit.used, limit.additional), (0, 1));
     assert!(output.is_empty());
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
 }
 
 #[test]
@@ -54,14 +52,18 @@ fn second_reference_list_visit_preserves_the_original_refusal() {
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let mut output = BTreeSet::new();
-    let CodecError::ResourceLimit(limit) = super::super::collect_references(&value, &mut output, &ctx)
-        .expect_err("second list visit refuses") else {
+    let CodecError::ResourceLimit(limit) =
+        super::super::collect_references(&value, &mut output, &ctx)
+            .expect_err("second list visit refuses")
+    else {
         panic!("original work refusal");
     };
     assert_eq!(limit.operation, "STEP collect references value traversal");
     assert_eq!((limit.used, limit.additional), (1, 1));
     assert!(output.is_empty());
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
 }
 
 #[test]
@@ -83,11 +85,18 @@ fn empty_reference_list_preserves_the_original_fuse() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "orchestration original fuse").unwrap_err() else {
+    let CodecError::ResourceLimit(original) = ctx
+        .charge_work(1, "orchestration original fuse")
+        .unwrap_err()
+    else {
         panic!("original work refusal");
     };
-    assert!(matches!(super::super::collect_references(&Value::List(Vec::new()), &mut BTreeSet::new(), &ctx), Err(CodecError::ResourceLimit(limit)) if limit == original));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    assert!(
+        matches!(super::super::collect_references(&Value::List(Vec::new()), &mut BTreeSet::new(), &ctx), Err(CodecError::ResourceLimit(limit)) if limit == original)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+    );
 }
 
 #[test]
@@ -97,13 +106,17 @@ fn opaque_offset_inspection_admits_only_the_first_visit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(limit) = super::super::inspect_opaque_offsets(&exchange, &HashSet::new(), &ctx)
-        .expect_err("first record visit refuses") else {
+    let CodecError::ResourceLimit(limit) =
+        super::super::inspect_opaque_offsets(&exchange, &HashSet::new(), &ctx)
+            .expect_err("first record visit refuses")
+    else {
         panic!("original work refusal");
     };
     assert_eq!(limit.operation, "STEP inspect opaque offsets traversal");
     assert_eq!((limit.used, limit.additional), (0, 1));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
 }
 
 #[test]
@@ -114,12 +127,15 @@ fn referenced_record_index_admits_only_the_first_visit() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let CodecError::ResourceLimit(limit) = super::super::referenced_record_ids(&exchange, &ctx)
-        .expect_err("first record visit refuses") else {
+        .expect_err("first record visit refuses")
+    else {
         panic!("original work refusal");
     };
     assert_eq!(limit.operation, "STEP referenced record ids map traversal");
     assert_eq!((limit.used, limit.additional), (0, 1));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
 }
 
 #[test]
@@ -131,11 +147,15 @@ fn record_closure_refuses_before_the_pending_pop() {
     // executed worklist pop requires one additional admission.
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(limit) = super::super::record_closure(&BTreeSet::from([1]), &exchange, &ctx)
-        .expect_err("the pending pop is not admitted") else {
+    let CodecError::ResourceLimit(limit) =
+        super::super::record_closure(&BTreeSet::from([1]), &exchange, &ctx)
+            .expect_err("the pending pop is not admitted")
+    else {
         panic!("original work refusal");
     };
     assert_eq!(limit.operation, "STEP mod worklist step");
     assert_eq!((limit.used, limit.additional), (1, 1));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
 }

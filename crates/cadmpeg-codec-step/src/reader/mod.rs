@@ -54,30 +54,38 @@ enum DecodeMode {
 }
 
 impl Packaging {
-    fn add_source_attributes(self, attributes: &mut BTreeMap<NonBlankString, String>) {
+    fn add_source_attributes(
+        self,
+        attributes: &mut BTreeMap<NonBlankString, String>,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(), CodecError> {
         let Self::Zip {
             entry_count,
             root_data_offset,
         } = self
         else {
-            return;
+            return Ok(());
         };
         attributes.insert(
             cadmpeg_core::nonblank_literal!("container_kind"),
-            "iso-10303-21-zip".into(),
+            ctx.copy_retained_text("iso-10303-21-zip", "step_source_attribute_text")?,
         );
         attributes.insert(
             cadmpeg_core::nonblank_literal!("archive_root"),
-            crate::archive::ROOT_NAME.into(),
+            ctx.copy_retained_text(crate::archive::ROOT_NAME, "step_source_attribute_text")?,
         );
         attributes.insert(
             cadmpeg_core::nonblank_literal!("archive_entries"),
-            entry_count.to_string(),
+            ctx.format_retained(format_args!("{entry_count}"), "step_source_attribute_text")?,
         );
         attributes.insert(
             cadmpeg_core::nonblank_literal!("archive_root_data_offset"),
-            root_data_offset.to_string(),
+            ctx.format_retained(
+                format_args!("{root_data_offset}"),
+                "step_source_attribute_text",
+            )?,
         );
+        Ok(())
     }
 }
 
@@ -149,14 +157,20 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         );
         attributes.insert(
             cadmpeg_core::nonblank_literal!("data_sections"),
-            exchange.data().len().to_string(),
+            ctx.format_retained(
+                format_args!("{}", exchange.data().len()),
+                "step_source_attribute_text",
+            )?,
         );
         attributes.insert(
             cadmpeg_core::nonblank_literal!("entity_instances"),
-            exchange.records().len().to_string(),
+            ctx.format_retained(
+                format_args!("{}", exchange.records().len()),
+                "step_source_attribute_text",
+            )?,
         );
         if let DecodeMode::Decode(packaging) = mode {
-            packaging.add_source_attributes(&mut attributes);
+            packaging.add_source_attributes(&mut attributes, ctx)?;
         }
         let primary = StepDialect::classify(exchange, ctx)?;
         let dialect_loss = crate::dialect::dialect_loss(&primary, ctx)?;
@@ -167,28 +181,27 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         } else {
             cadmpeg_ir::report::decode::DecodeTransfer::full(false)
         });
-        {
-            let mut reference_entries = (exchange.references()).iter();
-            for _ in 0..reference_entries.len() {
-                let entry = ctx
-                    .next_charged(&mut reference_entries, "STEP new borrowed traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+        ctx.fold(
+            exchange.references(),
+            (),
+            |(), entry| {
                 ctx.reserve_vec(&mut body.notes, 1, "step_decode_reference_notes")?;
                 body.notes.push(ctx.format_retained(
                     format_args!("external reference {} -> {}", entry.name, entry.uri),
                     "step_decode_reference_note_text",
                 )?);
-            }
-        }
+
+                Ok(())
+            },
+            "STEP new borrowed traversal",
+        )?;
         if let Some(loss) = dialect_loss {
             ctx.push_vec(&mut body.losses, loss, "step_decode_loss_notes")?;
         }
-        {
-            let mut parse_diagnostics = (diagnostics).iter();
-            for _ in 0..parse_diagnostics.len() {
-                let diagnostic = ctx
-                    .next_charged(&mut parse_diagnostics, "STEP new traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+        ctx.fold(
+            diagnostics,
+            (),
+            |(), diagnostic| {
                 let (code, tag) = match diagnostic.kind {
                     crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
                         (StepLossCode::ParseNoncanonicalSyntax, "complex_entity")
@@ -217,8 +230,11 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                     .with_tag(tag),
                 );
                 ctx.push_vec(&mut body.losses, loss, "step_decode_loss_notes")?;
-            }
-        }
+
+                Ok(())
+            },
+            "STEP new traversal",
+        )?;
 
         Ok(Self {
             ir,
@@ -248,9 +264,12 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         {
             let mut stage_claims = (std::mem::take(&mut outcome.claims)).into_iter();
             for _ in 0..stage_claims.len() {
-                let id = self.ctx
+                let Some(id) = self
+                    .ctx
                     .next_charged(&mut stage_claims, "step_stage_claims")?
-                    .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+                else {
+                    break;
+                };
                 self.typed_storage.with_storage(|| {
                     self.ctx
                         .insert_hash_set(&mut self.typed_records, id, "step_stage_claims")
@@ -454,6 +473,7 @@ fn decode_exchange_mode(
         &topology.value,
         &mut session.ir,
         session.ctx,
+        &mut session.admitted_ir_entities,
     )?;
     session.charge_pending_ir_entities("step_pmi_decode")?;
     let mut pmi = pmi::decode(
@@ -494,6 +514,7 @@ fn decode_exchange_mode(
     drop(product_claim_storage);
     drop(product_report_storage);
     session.absorb(&mut tessellation)?;
+    drop(tessellation);
     session.absorb(&mut topology)?;
     topology.value.release_claim_storage();
     session.absorb(&mut geometry)?;
@@ -556,9 +577,13 @@ fn decode_exchange_mode(
         {
             let mut opaque_id_records = (exchange.records()).iter();
             for _ in 0..opaque_id_records.len() {
-                let (&id, record) = ctx
-                    .next_charged(&mut opaque_id_records, "STEP decode exchange mode traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+                let Some((&id, record)) = ctx.next_charged(
+                    &mut opaque_id_records,
+                    "STEP decode exchange mode traversal",
+                )?
+                else {
+                    break;
+                };
                 if ctx.contains_hash_set(
                     &session.typed_records,
                     &id,
@@ -582,9 +607,13 @@ fn decode_exchange_mode(
         {
             let mut opaque_source_records = (exchange.records()).iter();
             for _ in 0..opaque_source_records.len() {
-                let (&id, record) = ctx
-                    .next_charged(&mut opaque_source_records, "STEP decode exchange mode traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+                let Some((&id, record)) = ctx.next_charged(
+                    &mut opaque_source_records,
+                    "STEP decode exchange mode traversal",
+                )?
+                else {
+                    break;
+                };
                 if ctx.contains_hash_set(
                     &session.typed_records,
                     &id,
@@ -592,26 +621,30 @@ fn decode_exchange_mode(
                 )? {
                     continue;
                 }
-                opaque_storage.with_storage(|| count_unknown_kind(&mut counts, record, session.ctx))?;
+                opaque_storage
+                    .with_storage(|| count_unknown_kind(&mut counts, record, session.ctx))?;
                 let mut links = BTreeSet::new();
-                {
-                    let mut source_partials = ((record.partials)[..]).iter();
-                    for _ in 0..source_partials.len() {
-                        let partial = ctx
-                            .next_charged(&mut source_partials, "STEP decode exchange mode traversal")?
-                            .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
-                        {
-                            let mut partial_values = ((partial.parameters)[..]).iter();
-                            for _ in 0..partial_values.len() {
-                                let value = ctx
-                                    .next_charged(&mut partial_values, "STEP decode exchange mode traversal")?
-                                    .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
-                                opaque_storage
-                                    .with_storage(|| collect_references(value, &mut links, session.ctx))?;
-                            }
-                        }
-                    }
-                }
+                ctx.fold(
+                    &record.partials[..],
+                    (),
+                    |(), partial| {
+                        ctx.fold(
+                            &partial.parameters[..],
+                            (),
+                            |(), value| {
+                                opaque_storage.with_storage(|| {
+                                    collect_references(value, &mut links, session.ctx)
+                                })?;
+
+                                Ok(())
+                            },
+                            "STEP decode exchange mode traversal",
+                        )?;
+
+                        Ok(())
+                    },
+                    "STEP decode exchange mode traversal",
+                )?;
                 let unknown_id = ctx
                     .get_btree_map(&opaque_ids, &id, "STEP opaque source identity lookup")?
                     .ok_or_else(|| CodecError::malformed("STEP opaque source was not indexed"))?;
@@ -625,18 +658,20 @@ fn decode_exchange_mode(
             }
         }
         let mut target_ids = BTreeSet::new();
-        {
-            let mut opaque_target_sources = (opaque_sources[..]).iter();
-            for _ in 0..opaque_target_sources.len() {
-                let source = ctx
-                    .next_charged(&mut opaque_target_sources, "STEP decode exchange mode traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+        ctx.fold(
+            &opaque_sources[..],
+            (),
+            |(), source| {
                 {
                     let mut target_links = (source.links).iter();
                     for _ in 0..target_links.len() {
-                        let &id = ctx
-                            .next_charged(&mut target_links, "STEP opaque source target traversal")?
-                            .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+                        let Some(&id) = ctx.next_charged(
+                            &mut target_links,
+                            "STEP opaque source target traversal",
+                        )?
+                        else {
+                            break;
+                        };
                         opaque_storage.with_storage(|| {
                             session.ctx.insert_btree_set(
                                 &mut target_ids,
@@ -646,8 +681,11 @@ fn decode_exchange_mode(
                         })?;
                     }
                 }
-            }
-        }
+
+                Ok(())
+            },
+            "STEP decode exchange mode traversal",
+        )?;
         source_targets = opaque_storage.with_storage(|| {
             record_targets(
                 &session.ir,
@@ -661,9 +699,13 @@ fn decode_exchange_mode(
         {
             let mut opaque_count_records = (exchange.records()).iter();
             for _ in 0..opaque_count_records.len() {
-                let (&id, record) = ctx
-                    .next_charged(&mut opaque_count_records, "STEP decode exchange mode traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+                let Some((&id, record)) = ctx.next_charged(
+                    &mut opaque_count_records,
+                    "STEP decode exchange mode traversal",
+                )?
+                else {
+                    break;
+                };
                 if ctx.contains_hash_set(
                     &session.typed_records,
                     &id,
@@ -671,11 +713,12 @@ fn decode_exchange_mode(
                 )? {
                     continue;
                 }
-                opaque_storage.with_storage(|| count_unknown_kind(&mut counts, record, session.ctx))?;
+                opaque_storage
+                    .with_storage(|| count_unknown_kind(&mut counts, record, session.ctx))?;
             }
         }
     }
-    let accounting = { byte_accounting(input, exchange, &session.typed_records, session.ctx)? };
+    let accounting = byte_accounting(input, exchange, &session.typed_records, session.ctx)?;
     if matches!(mode, DecodeMode::Decode(_)) {
         let signature_spans = exchange.release_source_graph();
         // Records and signatures occupy disjoint source spans.
@@ -686,9 +729,13 @@ fn decode_exchange_mode(
         {
             let mut opaque_source_values = (opaque_sources).into_iter();
             for _ in 0..opaque_source_values.len() {
-                let source = ctx
-                    .next_charged(&mut opaque_source_values, "STEP mod opaque_sources traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+                let Some(source) = ctx.next_charged(
+                    &mut opaque_source_values,
+                    "STEP mod opaque_sources traversal",
+                )?
+                else {
+                    break;
+                };
                 let bytes = session
                     .ctx
                     .copy_retained(&input[source.span.clone()], "step_opaque_record")?;
@@ -696,9 +743,11 @@ fn decode_exchange_mode(
                 {
                     let mut source_links = (source.links).into_iter();
                     for _ in 0..source_links.len() {
-                        let id = ctx
-                            .next_charged(&mut source_links, "STEP mod source.links traversal")?
-                            .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+                        let Some(id) =
+                            ctx.next_charged(&mut source_links, "STEP mod source.links traversal")?
+                        else {
+                            break;
+                        };
                         if let Some(unknown_id) =
                             ctx.get_btree_map(&opaque_ids, &id, "STEP mod opaque_ids get")?
                         {
@@ -715,9 +764,13 @@ fn decode_exchange_mode(
                             {
                                 let mut target_identities = (targets).iter();
                                 for _ in 0..target_identities.len() {
-                                    let target = ctx
-                                        .next_charged(&mut target_identities, "STEP mod targets traversal")?
-                                        .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+                                    let Some(target) = ctx.next_charged(
+                                        &mut target_identities,
+                                        "STEP mod targets traversal",
+                                    )?
+                                    else {
+                                        break;
+                                    };
                                     (session.ctx).push_formatted_retained(
                                         &mut links,
                                         format_args!("{target}"),
@@ -740,13 +793,17 @@ fn decode_exchange_mode(
         {
             let mut signature_ranges = (signature_spans).into_iter().enumerate();
             for _ in 0..signature_ranges.len() {
-                let (index, signature) = ctx
-                    .next_charged(&mut signature_ranges, "STEP signature span traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+                let Some((index, signature)) =
+                    ctx.next_charged(&mut signature_ranges, "STEP signature span traversal")?
+                else {
+                    break;
+                };
                 let bytes = session
                     .ctx
                     .copy_retained(&input[signature.clone()], "step_signature_record")?;
-                let signature_kind = String::from("SIGNATURE");
+                let signature_kind = opaque_storage.with_storage(|| {
+                    ctx.copy_retained_text("SIGNATURE", "step_opaque_kind_text")
+                })?;
                 *opaque_storage
                     .with_storage(|| {
                         ctx.entry_btree_map(&mut counts, signature_kind, "step_opaque_kind_counts")
@@ -769,34 +826,52 @@ fn decode_exchange_mode(
     }
     session.source_attributes.insert(
         cadmpeg_core::nonblank_literal!("bytes_structural"),
-        accounting.structural.to_string(),
+        ctx.format_retained(
+            format_args!("{}", accounting.structural),
+            "step_byte_accounting_attribute_text",
+        )?,
     );
     session.source_attributes.insert(
         cadmpeg_core::nonblank_literal!("bytes_typed"),
-        accounting.typed.to_string(),
+        ctx.format_retained(
+            format_args!("{}", accounting.typed),
+            "step_byte_accounting_attribute_text",
+        )?,
     );
     session.source_attributes.insert(
         cadmpeg_core::nonblank_literal!("bytes_named_opaque"),
-        accounting.opaque.to_string(),
+        ctx.format_retained(
+            format_args!("{}", accounting.opaque),
+            "step_byte_accounting_attribute_text",
+        )?,
     );
     session.source_attributes.insert(
         cadmpeg_core::nonblank_literal!("bytes_unclassified"),
-        accounting.unclassified.to_string(),
+        ctx.format_retained(
+            format_args!("{}", accounting.unclassified),
+            "step_byte_accounting_attribute_text",
+        )?,
     );
     if accounting.unclassified > 0 {
         (session.ctx).push_vec(
             &mut session.body.losses,
-            StepLossCode::ByteAccountingUnclassified.note(format!(
-                "STEP byte accounting left {} byte(s) unclassified",
-                accounting.unclassified
-            )),
+            StepLossCode::ByteAccountingUnclassified.note(ctx.format_retained(
+                format_args!(
+                    "STEP byte accounting left {} byte(s) unclassified",
+                    accounting.unclassified
+                ),
+                "step_decode_loss_text",
+            )?),
             "step_decode_loss_notes",
         )?;
     }
-    let accounting_note = format!(
-        "byte accounting: {} structural, {} typed, {} named opaque, {} unclassified",
-        accounting.structural, accounting.typed, accounting.opaque, accounting.unclassified
-    );
+    let accounting_note = ctx.format_retained(
+        format_args!(
+            "byte accounting: {} structural, {} typed, {} named opaque, {} unclassified",
+            accounting.structural, accounting.typed, accounting.opaque, accounting.unclassified
+        ),
+        "step_byte_accounting_note_text",
+    )?;
     session
         .ctx
         .reserve_vec(&mut session.body.notes, 1, "step_byte_accounting_note")?;
@@ -804,9 +879,11 @@ fn decode_exchange_mode(
     {
         let mut opaque_kind_counts = (counts).into_iter();
         for _ in 0..opaque_kind_counts.len() {
-            let (name, count) = ctx
-                .next_charged(&mut opaque_kind_counts, "STEP mod counts traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+            let Some((name, count)) =
+                ctx.next_charged(&mut opaque_kind_counts, "STEP mod counts traversal")?
+            else {
+                break;
+            };
             let message = session.ctx.format_retained(
                 format_args!("preserved {count} {name} instance(s) as named opaque STEP records"),
                 "step_opaque_preservation_loss_text",
@@ -846,96 +923,110 @@ fn retain_unowned_carriers(
 ) -> Result<(), CodecError> {
     let mut scratch_storage = ctx.reserve_scoped(0, "STEP retain_unowned_carriers scratch")?;
     let mut owned = BTreeSet::new();
-    {
-        let mut coedges = ((ir.model.coedges)[..]).iter();
-        for _ in 0..coedges.len() {
-            let coedge = ctx
-                .next_charged(&mut coedges, "STEP retain unowned carriers traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
-            {
-                let mut curve_uses = ((coedge.pcurves)[..]).iter();
-                for _ in 0..curve_uses.len() {
-                    let use_ = ctx
-                        .next_charged(&mut curve_uses, "STEP retain unowned carriers traversal")?
-                        .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
-                    scratch_storage
-                        .with_storage(|| insert_retained_identity(&mut owned, use_.pcurve.as_str(), ctx))?;
-                }
-            }
-        }
-    }
-    {
-        let mut loops = ((ir.model.loops)[..]).iter();
-        for _ in 0..loops.len() {
-            let loop_ = ctx
-                .next_charged(&mut loops, "STEP retain unowned carriers traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+    ctx.fold(
+        &ir.model.coedges[..],
+        (),
+        |(), coedge| {
+            ctx.fold(
+                &coedge.pcurves[..],
+                (),
+                |(), use_| {
+                    scratch_storage.with_storage(|| {
+                        insert_retained_identity(&mut owned, use_.pcurve.as_str(), ctx)
+                    })?;
+
+                    Ok(())
+                },
+                "STEP retain unowned carriers traversal",
+            )?;
+
+            Ok(())
+        },
+        "STEP retain unowned carriers traversal",
+    )?;
+    ctx.fold(
+        &ir.model.loops[..],
+        (),
+        |(), loop_| {
             if let Some((_, pcurves)) = loop_.singular_vertex() {
-                {
-                    let mut singular_pcurves = (pcurves).iter();
-                    for _ in 0..singular_pcurves.len() {
-                        let pcurve = ctx
-                            .next_charged(&mut singular_pcurves, "STEP singular vertex pcurve traversal")?
-                            .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+                ctx.fold(
+                    pcurves,
+                    (),
+                    |(), pcurve| {
                         scratch_storage.with_storage(|| {
                             insert_retained_identity(&mut owned, pcurve.pcurve.as_str(), ctx)
                         })?;
-                    }
-                }
+
+                        Ok(())
+                    },
+                    "STEP singular vertex pcurve traversal",
+                )?;
             }
-            {
-                let mut anchored_uses = (loop_.anchored_vertex_uses()).iter();
-                for _ in 0..anchored_uses.len() {
-                    let use_ = ctx
-                        .next_charged(&mut anchored_uses, "STEP anchored vertex use traversal")?
-                        .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
-                    {
-                        let mut anchored_pcurves = (use_.pcurves.as_slice()).iter();
-                        for _ in 0..anchored_pcurves.len() {
-                            let pcurve = ctx
-                                .next_charged(&mut anchored_pcurves, "STEP anchored vertex pcurve traversal")?
-                                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+            ctx.fold(
+                loop_.anchored_vertex_uses(),
+                (),
+                |(), use_| {
+                    ctx.fold(
+                        use_.pcurves.as_slice(),
+                        (),
+                        |(), pcurve| {
                             scratch_storage.with_storage(|| {
                                 insert_retained_identity(&mut owned, pcurve.pcurve.as_str(), ctx)
                             })?;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    {
-        let mut procedural_surfaces = ((ir.model.procedural_surfaces)[..]).iter();
-        for _ in 0..procedural_surfaces.len() {
-            let surface = ctx
-                .next_charged(&mut procedural_surfaces, "STEP retain unowned carriers traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+
+                            Ok(())
+                        },
+                        "STEP anchored vertex pcurve traversal",
+                    )?;
+
+                    Ok(())
+                },
+                "STEP anchored vertex use traversal",
+            )?;
+
+            Ok(())
+        },
+        "STEP retain unowned carriers traversal",
+    )?;
+    ctx.fold(
+        &ir.model.procedural_surfaces[..],
+        (),
+        |(), surface| {
             let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
                 boundary_pcurves,
                 ..
             } = surface.definition()
             else {
-                continue;
+                return Ok(());
             };
-            {
-                let mut boundary_curves = (boundary_pcurves.as_slice()).iter();
-                for _ in 0..boundary_curves.len() {
-                    let pcurve = ctx
-                        .next_charged(&mut boundary_curves, "STEP retain unowned carriers view traversal")?
-                        .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
-                    scratch_storage
-                        .with_storage(|| insert_retained_identity(&mut owned, pcurve.as_str(), ctx))?;
-                }
-            }
-        }
-    }
+            ctx.fold(
+                boundary_pcurves.as_slice(),
+                (),
+                |(), pcurve| {
+                    scratch_storage.with_storage(|| {
+                        insert_retained_identity(&mut owned, pcurve.as_str(), ctx)
+                    })?;
+
+                    Ok(())
+                },
+                "STEP retain unowned carriers view traversal",
+            )?;
+
+            Ok(())
+        },
+        "STEP retain unowned carriers traversal",
+    )?;
     let mut unowned_pcurves = BTreeSet::new();
     {
         let mut pcurve_records = (exchange.records()).iter();
         for _ in 0..pcurve_records.len() {
-            let (&id, record) = ctx
-                .next_charged(&mut pcurve_records, "STEP retain unowned carriers traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+            let Some((&id, record)) = ctx.next_charged(
+                &mut pcurve_records,
+                "STEP retain unowned carriers traversal",
+            )?
+            else {
+                break;
+            };
             if record.partial(ctx, "PCURVE")?.is_some()
                 && !ctx.contains_btree_set(
                     &owned,
@@ -955,12 +1046,10 @@ fn retain_unowned_carriers(
         })?;
     let referenced = referenced_buffer;
     let mut unowned_direct_carriers = BTreeSet::new();
-    {
-        let mut points = ir.model.points.iter();
-        for _ in 0..points.len() {
-            let point = ctx
-                .next_charged(&mut points, "STEP retain unowned carriers chain traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP direct carrier source ended early"))?;
+    ctx.fold(
+        &ir.model.points[..],
+        (),
+        |(), point| {
             if point.source_object.is_none() {
                 insert_unowned_direct_carrier(
                     point.id.as_str(),
@@ -971,14 +1060,15 @@ fn retain_unowned_carriers(
                     ctx,
                 )?;
             }
-        }
-    }
-    {
-        let mut curves = ir.model.curves.iter();
-        for _ in 0..curves.len() {
-            let curve = ctx
-                .next_charged(&mut curves, "STEP retain unowned carriers chain traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP direct carrier source ended early"))?;
+
+            Ok(())
+        },
+        "STEP retain unowned carriers chain traversal",
+    )?;
+    ctx.fold(
+        &ir.model.curves[..],
+        (),
+        |(), curve| {
             if curve.source_object.is_none() {
                 insert_unowned_direct_carrier(
                     curve.id.as_str(),
@@ -989,14 +1079,15 @@ fn retain_unowned_carriers(
                     ctx,
                 )?;
             }
-        }
-    }
-    {
-        let mut surfaces = ir.model.surfaces.iter();
-        for _ in 0..surfaces.len() {
-            let surface = ctx
-                .next_charged(&mut surfaces, "STEP retain unowned carriers chain traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP direct carrier source ended early"))?;
+
+            Ok(())
+        },
+        "STEP retain unowned carriers chain traversal",
+    )?;
+    ctx.fold(
+        &ir.model.surfaces[..],
+        (),
+        |(), surface| {
             if surface.source_object.is_none() {
                 insert_unowned_direct_carrier(
                     surface.id.as_str(),
@@ -1007,166 +1098,190 @@ fn retain_unowned_carriers(
                     ctx,
                 )?;
             }
-        }
-    }
+
+            Ok(())
+        },
+        "STEP retain unowned carriers chain traversal",
+    )?;
     associate_unowned_direct_carriers(ir, &unowned_direct_carriers, ctx)?;
     if unowned_pcurves.is_empty() {
         return Ok(());
     }
     let mut roots = BTreeSet::new();
-    {
-        let mut vertices = ir.model.vertices.iter();
-        for _ in 0..vertices.len() {
-            let vertex = ctx
-                .next_charged(&mut vertices, "STEP retain unowned carriers traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP protected carrier source ended early"))?;
+    ctx.fold(
+        &ir.model.vertices[..],
+        (),
+        |(), vertex| {
             insert_protected_carrier_root(
                 vertex.point.as_str(),
                 &mut roots,
                 &mut scratch_storage,
                 ctx,
             )?;
-        }
-    }
-    {
-        let mut edges = ir.model.edges.iter();
-        for _ in 0..edges.len() {
-            let edge = ctx
-                .next_charged(&mut edges, "STEP retain unowned carriers chain traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP protected carrier source ended early"))?;
-            let Some(curve) = edge.curve() else { continue; };
-            insert_protected_carrier_root(
-                curve.as_str(),
-                &mut roots,
-                &mut scratch_storage,
-                ctx,
-            )?;
-        }
-    }
-    {
-        let mut faces = ir.model.faces.iter();
-        for _ in 0..faces.len() {
-            let face = ctx
-                .next_charged(&mut faces, "STEP retain unowned carriers chain traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP protected carrier source ended early"))?;
+
+            Ok(())
+        },
+        "STEP retain unowned carriers traversal",
+    )?;
+    ctx.fold(
+        &ir.model.edges[..],
+        (),
+        |(), edge| {
+            let Some(curve) = edge.curve() else {
+                return Ok(());
+            };
+            insert_protected_carrier_root(curve.as_str(), &mut roots, &mut scratch_storage, ctx)?;
+
+            Ok(())
+        },
+        "STEP retain unowned carriers chain traversal",
+    )?;
+    ctx.fold(
+        &ir.model.faces[..],
+        (),
+        |(), face| {
             insert_protected_carrier_root(
                 face.surface.as_str(),
                 &mut roots,
                 &mut scratch_storage,
                 ctx,
             )?;
-        }
-    }
-    {
-        let mut coedges = ir.model.coedges.iter();
-        for _ in 0..coedges.len() {
-            let coedge = ctx
-                .next_charged(&mut coedges, "STEP retain unowned carriers chain traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP protected carrier source ended early"))?;
-            let Some(use_curve) = coedge.use_curve.as_ref() else { continue; };
+
+            Ok(())
+        },
+        "STEP retain unowned carriers chain traversal",
+    )?;
+    ctx.fold(
+        &ir.model.coedges[..],
+        (),
+        |(), coedge| {
+            let Some(use_curve) = coedge.use_curve.as_ref() else {
+                return Ok(());
+            };
             insert_protected_carrier_root(
                 use_curve.curve.as_str(),
                 &mut roots,
                 &mut scratch_storage,
                 ctx,
             )?;
-        }
-    }
-    {
-        let mut pcurves = ir.model.pcurves.iter();
-        for _ in 0..pcurves.len() {
-            let pcurve = ctx
-                .next_charged(&mut pcurves, "STEP retain unowned carriers chain traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP protected carrier source ended early"))?;
-            if !ctx.contains_btree_set(&owned, pcurve.id.as_str(), "STEP protected pcurve root lookup")? { continue; }
+
+            Ok(())
+        },
+        "STEP retain unowned carriers chain traversal",
+    )?;
+    ctx.fold(
+        &ir.model.pcurves[..],
+        (),
+        |(), pcurve| {
+            if !ctx.contains_btree_set(
+                &owned,
+                pcurve.id.as_str(),
+                "STEP protected pcurve root lookup",
+            )? {
+                return Ok(());
+            }
             insert_protected_carrier_root(
                 pcurve.id.as_str(),
                 &mut roots,
                 &mut scratch_storage,
                 ctx,
             )?;
-        }
-    }
-    {
-        let mut points = ir.model.points.iter();
-        for _ in 0..points.len() {
-            let point = ctx
-                .next_charged(&mut points, "STEP retain unowned carriers chain traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP protected carrier source ended early"))?;
-            if point.source_object.is_none() { continue; }
+
+            Ok(())
+        },
+        "STEP retain unowned carriers chain traversal",
+    )?;
+    ctx.fold(
+        &ir.model.points[..],
+        (),
+        |(), point| {
+            if point.source_object.is_none() {
+                return Ok(());
+            }
             insert_protected_carrier_root(
                 point.id.as_str(),
                 &mut roots,
                 &mut scratch_storage,
                 ctx,
             )?;
-        }
-    }
-    {
-        let mut curves = ir.model.curves.iter();
-        for _ in 0..curves.len() {
-            let curve = ctx
-                .next_charged(&mut curves, "STEP retain unowned carriers chain traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP protected carrier source ended early"))?;
-            if curve.source_object.is_none() { continue; }
+
+            Ok(())
+        },
+        "STEP retain unowned carriers chain traversal",
+    )?;
+    ctx.fold(
+        &ir.model.curves[..],
+        (),
+        |(), curve| {
+            if curve.source_object.is_none() {
+                return Ok(());
+            }
             insert_protected_carrier_root(
                 curve.id.as_str(),
                 &mut roots,
                 &mut scratch_storage,
                 ctx,
             )?;
-        }
-    }
-    {
-        let mut surfaces = ir.model.surfaces.iter();
-        for _ in 0..surfaces.len() {
-            let surface = ctx
-                .next_charged(&mut surfaces, "STEP retain unowned carriers chain traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP protected carrier source ended early"))?;
-            if surface.source_object.is_none() { continue; }
+
+            Ok(())
+        },
+        "STEP retain unowned carriers chain traversal",
+    )?;
+    ctx.fold(
+        &ir.model.surfaces[..],
+        (),
+        |(), surface| {
+            if surface.source_object.is_none() {
+                return Ok(());
+            }
             insert_protected_carrier_root(
                 surface.id.as_str(),
                 &mut roots,
                 &mut scratch_storage,
                 ctx,
             )?;
-        }
-    }
-    {
-        let mut procedural_curves = ir.model.procedural_curves.iter();
-        for _ in 0..procedural_curves.len() {
-            let curve = ctx
-                .next_charged(&mut procedural_curves, "STEP retain unowned carriers chain traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP protected carrier source ended early"))?;
+
+            Ok(())
+        },
+        "STEP retain unowned carriers chain traversal",
+    )?;
+    ctx.fold(
+        &ir.model.procedural_curves[..],
+        (),
+        |(), curve| {
             insert_protected_carrier_root(
                 curve.id.as_str(),
                 &mut roots,
                 &mut scratch_storage,
                 ctx,
             )?;
-        }
-    }
-    {
-        let mut procedural_surfaces = ir.model.procedural_surfaces.iter();
-        for _ in 0..procedural_surfaces.len() {
-            let surface = ctx
-                .next_charged(&mut procedural_surfaces, "STEP retain unowned carriers chain traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP protected carrier source ended early"))?;
+
+            Ok(())
+        },
+        "STEP retain unowned carriers chain traversal",
+    )?;
+    ctx.fold(
+        &ir.model.procedural_surfaces[..],
+        (),
+        |(), surface| {
             insert_protected_carrier_root(
                 surface.id.as_str(),
                 &mut roots,
                 &mut scratch_storage,
                 ctx,
             )?;
-        }
-    }
+
+            Ok(())
+        },
+        "STEP retain unowned carriers chain traversal",
+    )?;
     let mut protected_roots = BTreeSet::new();
     {
         let mut root_ids = (roots).into_iter();
         for _ in 0..root_ids.len() {
-            let id = ctx
-                .next_charged(&mut root_ids, "STEP protected root traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+            let Some(id) = ctx.next_charged(&mut root_ids, "STEP protected root traversal")? else {
+                break;
+            };
             if ctx.contains_btree_set(&unowned_pcurves, &id, "STEP unowned pcurve root lookup")? {
                 continue;
             }
@@ -1185,7 +1300,20 @@ fn retain_unowned_carriers(
             record_closure(&unowned_pcurves, exchange, ctx)
         })?;
     let removed_closure = removed_closure_buffer;
-    let prior_pcurves = ir.model.pcurves.len();
+    let deleted_pcurves = ctx.fold(
+        &ir.model.pcurves,
+        0,
+        |count, pcurve| {
+            Ok(count
+                + usize::from(!retains_carrier(
+                    ctx,
+                    pcurve.id.as_str(),
+                    &removed_closure,
+                    &protected,
+                )?))
+        },
+        "STEP unowned pcurve deletion count",
+    )?;
     let prior_points = ir.model.points.len();
     let prior_curves = ir.model.curves.len();
     let prior_surfaces = ir.model.surfaces.len();
@@ -1227,7 +1355,6 @@ fn retain_unowned_carriers(
         |surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected),
         "STEP unowned procedural_surfaces retention",
     )?;
-    let deleted_pcurves = prior_pcurves - ir.model.pcurves.len();
     let deleted_points = prior_points - ir.model.points.len();
     let deleted_curves = prior_curves - ir.model.curves.len();
     let deleted_surfaces = prior_surfaces - ir.model.surfaces.len();
@@ -1237,18 +1364,22 @@ fn retain_unowned_carriers(
     {
         let mut unowned_ids = (unowned_pcurves).iter();
         for _ in 0..unowned_ids.len() {
-            let id = ctx
-                .next_charged(&mut unowned_ids, "STEP unowned pcurve claim release")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+            let Some(id) =
+                ctx.next_charged(&mut unowned_ids, "STEP unowned pcurve claim release")?
+            else {
+                break;
+            };
             ctx.remove_hash_set(typed_records, id, "STEP unowned pcurve claim release")?;
         }
     }
     {
         let mut removed_ids = (removed_closure).iter();
         for _ in 0..removed_ids.len() {
-            let id = ctx
-                .next_charged(&mut removed_ids, "STEP removed carrier claim release")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+            let Some(id) =
+                ctx.next_charged(&mut removed_ids, "STEP removed carrier claim release")?
+            else {
+                break;
+            };
             if !ctx.contains_btree_set(&protected, id, "STEP removed carrier protection lookup")? {
                 ctx.remove_hash_set(typed_records, id, "STEP removed carrier claim release")?;
             }
@@ -1258,9 +1389,10 @@ fn retain_unowned_carriers(
     {
         let mut unowned_ids = unowned_pcurves.iter();
         for _ in 0..unowned_ids.len() {
-            let id = ctx
-                .next_charged(&mut unowned_ids, "STEP protected pcurve traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP protected pcurve source ended early"))?;
+            let Some(id) = ctx.next_charged(&mut unowned_ids, "STEP protected pcurve traversal")?
+            else {
+                break;
+            };
             protected_pcurves += usize::from(ctx.contains_btree_set(
                 &protected,
                 id,
@@ -1269,9 +1401,9 @@ fn retain_unowned_carriers(
         }
     }
     let opaque_pcurves = unowned_pcurves.len() - protected_pcurves;
-    ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), losses, StepLossCode::DecodeWarning.note(format!(
+    ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), losses, StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
         "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
-    )), "step_decode_loss_notes")?;
+    ), "step_decode_loss_text")?), "step_decode_loss_notes")?;
     Ok(())
 }
 
@@ -1289,9 +1421,8 @@ fn insert_unowned_direct_carrier(
     if ctx.contains_key_btree_map(exchange.records(), &id, "STEP direct carrier record lookup")?
         && !ctx.contains_btree_set(referenced, &id, "STEP direct carrier reference lookup")?
     {
-        storage.with_storage(|| {
-            ctx.insert_btree_set(unowned, id, "step_unowned_direct_carriers")
-        })?;
+        storage
+            .with_storage(|| ctx.insert_btree_set(unowned, id, "step_unowned_direct_carriers"))?;
     }
     Ok(())
 }
@@ -1303,9 +1434,7 @@ fn insert_protected_carrier_root(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if let Some(id) = step_instance_id(ctx, identity)? {
-        storage.with_storage(|| {
-            ctx.insert_btree_set(roots, id, "step_unowned_protected_roots")
-        })?;
+        storage.with_storage(|| ctx.insert_btree_set(roots, id, "step_unowned_protected_roots"))?;
     }
     Ok(())
 }
@@ -1315,52 +1444,43 @@ fn associate_unowned_direct_carriers(
     ids: &BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    {
-        let mut points = (ir.model.points).iter_mut();
-        for _ in 0..points.len() {
-            let point = ctx
-                .next_charged(&mut points, "STEP direct carrier association traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
-            let Some(id) = step_instance_id(ctx, point.id.as_str())? else {
-                continue;
-            };
-            if ctx.contains_btree_set(ids, &id, "STEP mod ids contains")?
-                && point.source_object.is_none()
-            {
-                point.source_object = Some(step_source_association(ctx, id, None)?);
-            }
+    for point in ctx.admit_iter(
+        &mut ir.model.points,
+        "STEP direct carrier association traversal",
+    )? {
+        let Some(id) = step_instance_id(ctx, point.id.as_str())? else {
+            continue;
+        };
+        if ctx.contains_btree_set(ids, &id, "STEP mod ids contains")?
+            && point.source_object.is_none()
+        {
+            point.source_object = Some(step_source_association(ctx, id, None)?);
         }
     }
-    {
-        let mut curves = (ir.model.curves).iter_mut();
-        for _ in 0..curves.len() {
-            let curve = ctx
-                .next_charged(&mut curves, "STEP direct carrier association traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
-            let Some(id) = step_instance_id(ctx, curve.id.as_str())? else {
-                continue;
-            };
-            if ctx.contains_btree_set(ids, &id, "STEP mod ids contains")?
-                && curve.source_object.is_none()
-            {
-                curve.source_object = Some(step_source_association(ctx, id, None)?);
-            }
+    for curve in ctx.admit_iter(
+        &mut ir.model.curves,
+        "STEP direct carrier association traversal",
+    )? {
+        let Some(id) = step_instance_id(ctx, curve.id.as_str())? else {
+            continue;
+        };
+        if ctx.contains_btree_set(ids, &id, "STEP mod ids contains")?
+            && curve.source_object.is_none()
+        {
+            curve.source_object = Some(step_source_association(ctx, id, None)?);
         }
     }
-    {
-        let mut surfaces = (ir.model.surfaces).iter_mut();
-        for _ in 0..surfaces.len() {
-            let surface = ctx
-                .next_charged(&mut surfaces, "STEP direct carrier association traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
-            let Some(id) = step_instance_id(ctx, surface.id.as_str())? else {
-                continue;
-            };
-            if ctx.contains_btree_set(ids, &id, "STEP mod ids contains")?
-                && surface.source_object.is_none()
-            {
-                surface.source_object = Some(step_source_association(ctx, id, None)?);
-            }
+    for surface in ctx.admit_iter(
+        &mut ir.model.surfaces,
+        "STEP direct carrier association traversal",
+    )? {
+        let Some(id) = step_instance_id(ctx, surface.id.as_str())? else {
+            continue;
+        };
+        if ctx.contains_btree_set(ids, &id, "STEP mod ids contains")?
+            && surface.source_object.is_none()
+        {
+            surface.source_object = Some(step_source_association(ctx, id, None)?);
         }
     }
     Ok(())
@@ -1408,9 +1528,7 @@ fn retains_carrier(
 
 /// Extract the numeric STEP instance id from a canonical IR identity.
 fn step_instance_id(ctx: &DecodeContext<'_>, identity: &str) -> Result<Option<u64>, CodecError> {
-    let Some((_, number)) =
-        ctx.rsplit_once(identity, "#", "STEP instance identity reverse split")?
-    else {
+    let Some((_, number)) = identity.rsplit_once('#') else {
         return Ok(None);
     };
     Ok(ctx
@@ -1431,9 +1549,9 @@ fn record_closure(
     );
     while !pending.is_empty() {
         ctx.charge_work(1, "STEP mod worklist step")?;
-        let id = pending.pop().ok_or_else(|| {
-            CodecError::malformed("STEP closure pending source ended early")
-        })?;
+        let Some(id) = pending.pop() else {
+            break;
+        };
         if ctx.contains_btree_set(&closure, &id, "STEP mod closure contains")? {
             continue;
         }
@@ -1444,24 +1562,26 @@ fn record_closure(
         };
         let mut reference_storage = ctx.reserve_scoped(0, "STEP closure edge scratch")?;
         let mut references = BTreeSet::new();
-        {
-            let mut partials = (record.partials[..]).iter();
-            for _ in 0..partials.len() {
-                let partial = ctx
-                    .next_charged(&mut partials, "STEP record closure traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
-                {
-                    let mut parameter_values = (partial.parameters.as_slice()).iter();
-                    for _ in 0..parameter_values.len() {
-                        let value = ctx
-                            .next_charged(&mut parameter_values, "STEP record parameter traversal")?
-                            .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+        ctx.fold(
+            &record.partials[..],
+            (),
+            |(), partial| {
+                ctx.fold(
+                    partial.parameters.as_slice(),
+                    (),
+                    |(), value| {
                         reference_storage
                             .with_storage(|| collect_references(value, &mut references, ctx))?;
-                    }
-                }
-            }
-        }
+
+                        Ok(())
+                    },
+                    "STEP record parameter traversal",
+                )?;
+
+                Ok(())
+            },
+            "STEP record closure traversal",
+        )?;
         ctx.reserve_vec(
             &mut pending,
             references.len(),
@@ -1480,26 +1600,32 @@ fn referenced_record_ids(
     {
         let mut referenced_records = (exchange.records()).iter();
         for _ in 0..referenced_records.len() {
-            let (_, record) = ctx
-                .next_charged(&mut referenced_records, "STEP referenced record ids map traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
-            {
-                let mut reference_partials = ((record.partials)[..]).iter();
-                for _ in 0..reference_partials.len() {
-                    let partial = ctx
-                        .next_charged(&mut reference_partials, "STEP referenced record ids traversal")?
-                        .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
-                    {
-                        let mut reference_parameters = (partial.parameters.as_slice()).iter();
-                        for _ in 0..reference_parameters.len() {
-                            let parameter = ctx
-                                .next_charged(&mut reference_parameters, "STEP record parameter traversal")?
-                                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+            let Some((_, record)) = ctx.next_charged(
+                &mut referenced_records,
+                "STEP referenced record ids map traversal",
+            )?
+            else {
+                break;
+            };
+            ctx.fold(
+                &record.partials[..],
+                (),
+                |(), partial| {
+                    ctx.fold(
+                        partial.parameters.as_slice(),
+                        (),
+                        |(), parameter| {
                             collect_references(parameter, &mut references, ctx)?;
-                        }
-                    }
-                }
-            }
+
+                            Ok(())
+                        },
+                        "STEP record parameter traversal",
+                    )?;
+
+                    Ok(())
+                },
+                "STEP referenced record ids traversal",
+            )?;
         }
     }
     Ok(references)
@@ -1510,14 +1636,20 @@ fn record_type_text(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let (names_buffer, _storage) =
-        ctx.temporary_vec(record.partials.len(), "STEP record type fragments")?;
-    let mut names = names_buffer;
-    names.extend(
-        ctx.admit_iter(&record.partials[..], "STEP record type traversal")?
-            .map(|partial| partial.name.as_str()),
-    );
-    ctx.join_retained(&names, "+", operation)
+    let mut text = String::new();
+    ctx.fold(
+        &record.partials,
+        false,
+        |has_name, partial| {
+            if has_name {
+                ctx.append_retained(&mut text, "+", operation)?;
+            }
+            ctx.append_retained(&mut text, partial.name.as_str(), operation)?;
+            Ok(true)
+        },
+        "STEP record type traversal",
+    )?;
+    Ok(text)
 }
 
 fn count_unknown_kind(
@@ -1550,13 +1682,17 @@ fn opaque_record_id(
     {
         let mut partial_names = (record.partials[..]).iter().enumerate();
         for _ in 0..partial_names.len() {
-            let (index, partial) = ctx
-                .next_charged(&mut partial_names, "STEP opaque record id traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+            let Some((index, partial)) =
+                ctx.next_charged(&mut partial_names, "STEP opaque record id traversal")?
+            else {
+                break;
+            };
             if index > 0 {
                 kind.push('_');
             }
-            for byte in ctx.admit_iter(partial.name.as_bytes(), "STEP opaque record id traversal")? {
+            for byte in
+                ctx.admit_iter(partial.name.as_bytes(), "STEP opaque record id traversal")?
+            {
                 // The admitted byte iteration writes one ASCII byte into reserved capacity.
                 kind.push(char::from(byte.to_ascii_lowercase()));
             }
@@ -1602,14 +1738,10 @@ fn record_targets(
 }
 
 fn source_record_id(ctx: &DecodeContext<'_>, identity: &str) -> Result<Option<u64>, CodecError> {
-    let Some((_, suffix)) =
-        ctx.rsplit_once(identity, "#", "STEP source record identity reverse split")?
-    else {
+    let Some((_, suffix)) = identity.rsplit_once('#') else {
         return Ok(None);
     };
-    let number = ctx
-        .split_once(suffix, "-", "STEP source identity suffix split")?
-        .map_or(suffix, |(number, _)| number);
+    let number = suffix.split_once('-').map_or(suffix, |(number, _)| number);
     Ok(ctx
         .parse_text::<u64>(number, "STEP source record identity number parse")?
         .ok())
@@ -1644,9 +1776,11 @@ fn byte_accounting(
     {
         let mut accounted_records = (exchange.records()).iter();
         for _ in 0..accounted_records.len() {
-            let (&id, record) = ctx
-                .next_charged(&mut accounted_records, "STEP byte accounting traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+            let Some((&id, record)) =
+                ctx.next_charged(&mut accounted_records, "STEP byte accounting traversal")?
+            else {
+                break;
+            };
             let class =
                 if ctx.contains_hash_set(typed_records, &id, "STEP mod typed_records contains")? {
                     ByteClass::Typed
@@ -1662,12 +1796,10 @@ fn byte_accounting(
             )?;
         }
     }
-    {
-        let mut accounted_signatures = (exchange.signatures()).iter();
-        for _ in 0..accounted_signatures.len() {
-            let signature = ctx
-                .next_charged(&mut accounted_signatures, "STEP byte accounting borrowed traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+    ctx.fold(
+        exchange.signatures(),
+        (),
+        |(), signature| {
             claim_range(
                 ctx,
                 &mut classes,
@@ -1675,8 +1807,11 @@ fn byte_accounting(
                 ByteClass::Structural,
                 format_args!("file signature at byte {}", signature.start),
             )?;
-        }
-    }
+
+            Ok(())
+        },
+        "STEP byte accounting borrowed traversal",
+    )?;
     let mut lexer = crate::lex::Lexer::new(input, ctx);
     lexer.set_transient_literals();
     let mut cursor = 0;
@@ -1925,15 +2060,16 @@ fn collect_references(
             ctx.insert_btree_set(output, *id, "step_reference_walk_ids")?;
         }
         Value::List(values) => {
-            {
-                let mut list_values = (values.as_slice()).iter();
-                for _ in 0..list_values.len() {
-                    let value = ctx
-                        .next_charged(&mut list_values, "STEP collect references value traversal")?
-                        .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+            ctx.fold(
+                values.as_slice(),
+                (),
+                |(), value| {
                     collect_references(value, output, ctx)?;
-                }
-            }
+
+                    Ok(())
+                },
+                "STEP collect references value traversal",
+            )?;
         }
         Value::Typed(_, value) => {
             ctx.charge_work(1, "STEP typed reference descent")?;
@@ -2037,6 +2173,8 @@ impl ValueExt for Value {
     }
 }
 
+/// Reads a parameter of a fixed schema entity name. Name comparison is bounded
+/// by the schema name; the partial traversal is charged separately.
 fn named_parameter<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a RawRecord,
@@ -2047,10 +2185,7 @@ fn named_parameter<'a>(
         .find_map(
             &record.partials[..],
             |partial| -> Result<Option<_>, CodecError> {
-                Ok(
-                    (ctx.equal(partial.name.as_str(), name, "STEP named parameter equality")?)
-                        .then_some(partial),
-                )
+                Ok((partial.name == name).then_some(partial))
             },
             "STEP named attribute partial traversal",
         )?
@@ -2075,6 +2210,7 @@ fn find_record_value<T>(
     )
 }
 
+/// Extracts a numeric source id for a fixed schema kind.
 fn source_numeric_id(
     ctx: &DecodeContext<'_>,
     identity: &str,
@@ -2082,17 +2218,13 @@ fn source_numeric_id(
 ) -> Result<Option<u64>, CodecError> {
     let Some(suffix) = identity
         .strip_prefix("step:data:")
-        .map(|suffix| ctx.strip_prefix(suffix, kind, "STEP source numeric kind prefix"))
-        .transpose()?
-        .flatten()
+        .and_then(|suffix| suffix.strip_prefix(kind))
         .and_then(|suffix| suffix.strip_prefix('#'))
     else {
         return Ok(None);
     };
     let suffix = suffix.strip_prefix("poly-point-").unwrap_or(suffix);
-    let number = ctx
-        .split_once(suffix, "-", "STEP source identity suffix split")?
-        .map_or(suffix, |(number, _)| number);
+    let number = suffix.split_once('-').map_or(suffix, |(number, _)| number);
     Ok(ctx
         .parse_text::<u64>(number, "STEP source numeric identity parse")?
         .ok())
@@ -2107,11 +2239,17 @@ fn inspect_opaque_offsets(
     {
         let mut opaque_records = (exchange.records()).iter();
         for _ in 0..opaque_records.len() {
-            let (id, record) = ctx
-                .next_charged(&mut opaque_records, "STEP inspect opaque offsets traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP traversal source ended early"))?;
+            let Some((id, record)) =
+                ctx.next_charged(&mut opaque_records, "STEP inspect opaque offsets traversal")?
+            else {
+                break;
+            };
             if ctx.contains_hash_set(typed_records, id, "STEP mod typed_records contains")?
-                || ctx.contains_btree_set(&offsets, &record.span.start, "STEP mod offsets contains")?
+                || ctx.contains_btree_set(
+                    &offsets,
+                    &record.span.start,
+                    "STEP mod offsets contains",
+                )?
             {
                 continue;
             }

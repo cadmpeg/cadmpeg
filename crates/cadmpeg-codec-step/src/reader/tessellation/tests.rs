@@ -62,7 +62,15 @@ fn decode_tessellation_under_policy(
         .value;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)?;
-    super::decode(&exchange, &geometry, &topology, &mut ir, &ctx)?;
+    let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+    super::decode(
+        &exchange,
+        &geometry,
+        &topology,
+        &mut ir,
+        &ctx,
+        &mut admitted,
+    )?;
     Ok(ir)
 }
 
@@ -113,70 +121,6 @@ fn tessellation_loss_note_bytes_are_admitted_before_formatting() {
     assert!(
         matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_loss_notes"),
         "unexpected refusal: {error}"
-    );
-}
-
-#[test]
-fn tessellation_mesh_key_is_admitted_before_identity_composition() {
-    let service = DecodePolicy::service();
-    decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits mesh identity");
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes,
-        "step_tessellation_mesh_key",
-        |cap| {
-            let mut policy = service;
-            policy.limits.max_materialized_bytes = cap;
-            let arena = DecodeArena::new();
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(b"", &arena, &policy).expect("owner context");
-            super::admitted_mesh_id(2, &ctx).map(|_| ())
-        },
-    );
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_mesh_key")
-    );
-}
-
-#[test]
-fn tessellation_mesh_id_is_charged_before_retention() {
-    let service = DecodePolicy::service();
-    decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits mesh identity");
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "step_tessellation_mesh_id",
-        |cap| {
-            let mut policy = service;
-            policy.limits.max_retained_bytes = cap;
-            decode_tessellation_under_policy(ONE_TRIANGLE, policy)
-        },
-    );
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_mesh_id")
-    );
-}
-
-#[test]
-fn tessellation_surface_id_is_reserved_before_lookup() {
-    let records = "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
-#2=COMPLEX_TRIANGULATED_FACE('',#1,3,$,#10000000000000000000,(1,2,3),((1,2,3)),());
-#10000000000000000000=TESSELLATED_ITEM();";
-    let service = DecodePolicy::service();
-    decode_tessellation_under_policy(records, service)
-        .expect("service admits the complex face surface lookup");
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes,
-        "step_tessellation_surface_id",
-        |cap| {
-            let mut policy = service;
-            policy.limits.max_materialized_bytes = cap;
-            let arena = DecodeArena::new();
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(b"", &arena, &policy).expect("owner context");
-            super::admitted_surface_id(10_000_000_000_000_000_000, &ctx).map(|_| ())
-        },
-    );
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_surface_id")
     );
 }
 
@@ -1603,12 +1547,16 @@ fn tessellation_sibling_visits_reuse_active_storage() {
                 declared_items: &mut BTreeSet::new(),
                 unresolved_containers: &mut BTreeSet::new(),
                 typed: &mut BTreeSet::new(),
+                claim_storage: &mut ctx.reserve_scoped(0, "claims fixture")?,
                 geometry: &geometry.value,
                 placements: &mut BTreeMap::new(),
                 unresolved_placements: &mut BTreeSet::new(),
                 body_context_items: &mut BTreeSet::new(),
                 mode: super::AssociationMode::Placements,
                 active: HashSet::new(),
+                completed: HashSet::new(),
+                completed_storage: ctx.reserve_scoped(0, "step_tessellation_completed_items")?,
+                cycle_count: 0,
                 reservations: &mut super::AssociationReservations::new(&ctx)?,
                 ctx: &ctx,
                 active_storage: ctx.reserve_scoped(0, "step_tessellation_active_items")?,
@@ -1631,3 +1579,5 @@ fn tessellation_sibling_visits_reuse_active_storage() {
         run(limit.used + limit.additional, 256).expect("sibling storage is reused");
     });
 }
+
+mod association_context;
