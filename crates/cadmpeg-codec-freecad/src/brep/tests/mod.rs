@@ -311,7 +311,7 @@ fn shape_entry_index_refuses_on_collection_limit() {
 }
 
 #[test]
-fn shape_entry_name_refuses_on_retained_limit() {
+fn shape_entry_lookup_refuses_on_materialized_limit() {
     let property = PropertyRecord {
         id: crate::native::native_id("property", "Shape"),
         owner: crate::native::native_id("object", "Shape"),
@@ -334,12 +334,12 @@ fn shape_entry_name_refuses_on_retained_limit() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(matches!(super::direct_shape_entry(&ctx, &property),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD shape entry name"));
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    let error = super::direct_shape_entry(&ctx, &property).expect_err("lookup needs scratch storage");
+    let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal"); };
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
 
 #[test]
