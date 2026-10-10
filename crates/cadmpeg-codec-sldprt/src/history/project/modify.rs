@@ -33,6 +33,7 @@ fn variable_radius_points(
     const COLLECT: &str = "collect SLDPRT variable fillet radii";
     let mut scratch = ctx.reserve_scoped(0, COLLECT)?;
     // The first position parameter, in key order, naming each canonical index.
+    let mut positions_storage = ctx.reserve_scoped(0, COLLECT)?;
     let mut positions = BTreeMap::new();
     for (name, value) in
         ctx.admit_iter(&feature.parameters, "scan SLDPRT variable fillet positions")?
@@ -54,7 +55,9 @@ fn variable_radius_points(
             continue;
         };
         if !ctx.contains_key_btree_map(&positions, &index, COLLECT)? {
-            scratch.with_storage(|| ctx.insert_btree_map(&mut positions, index, value, COLLECT))?;
+            positions_storage.with_storage(|| {
+                ctx.insert_btree_map(&mut positions, index, value, COLLECT)
+            })?;
         }
     }
     let mut points = Vec::new();
@@ -89,6 +92,7 @@ fn variable_radius_points(
         };
         ctx.push_scoped_vec(&mut scratch, &mut points, (index, point), COLLECT)?;
     }
+    drop((positions, positions_storage));
     ctx.sort_unstable_by(
         &mut points,
         |value| &value.0,
