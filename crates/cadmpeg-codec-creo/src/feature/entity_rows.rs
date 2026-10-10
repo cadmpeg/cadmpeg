@@ -250,20 +250,7 @@ mod tests {
                 let original_rows = rows.clone();
                 let result = rows.relocate_offsets(&ctx, 17);
                 let completed = result.is_ok();
-                if !completed {
-                    let Err(CodecError::ResourceLimit(original)) = result else {
-                        panic!("two present rows need two visits");
-                    };
-                    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                    assert_eq!(original.operation, "creo record child relocation traversal");
-                    assert_eq!(original.used, 0);
-                    assert_eq!(original.additional, 2);
-                    assert_eq!(rows, original_rows);
-                    assert!(matches!(rows.relocate_offsets(&ctx, 17),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original));
-                    assert_eq!(rows, original_rows);
-                    assert_eq!(ctx.resource_refusal(), Some(original));
-                } else {
+                if completed {
                     result.expect("exact two-row traversal");
                     assert_eq!((rows[0].offset, rows[0].end_offset), (20, 22));
                     assert_eq!((rows[1].offset, rows[1].end_offset), (25, 28));
@@ -284,6 +271,19 @@ mod tests {
                     assert!(matches!(rows.relocate_offsets(&ctx, 17),
                     Err(CodecError::ResourceLimit(actual)) if actual == original));
                     assert_eq!((rows[0].offset, rows[0].end_offset), (20, 22));
+                } else {
+                    let Err(CodecError::ResourceLimit(original)) = result else {
+                        panic!("two present rows need two visits");
+                    };
+                    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(original.operation, "creo record child relocation traversal");
+                    assert_eq!(original.used, 0);
+                    assert_eq!(original.additional, 2);
+                    assert_eq!(rows, original_rows);
+                    assert!(matches!(rows.relocate_offsets(&ctx, 17),
+                    Err(CodecError::ResourceLimit(actual)) if actual == original));
+                    assert_eq!(rows, original_rows);
+                    assert_eq!(ctx.resource_refusal(), Some(original));
                 }
 
                 if completed {

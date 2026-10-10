@@ -909,11 +909,11 @@ mod tests {
     fn entry_candidates_charge_present_entries_and_terminators() {
         for count in 0..=3usize {
             let payload: Vec<_> = (0..count)
-                .flat_map(|index| [index as u8, 1, 0xe3])
+                .flat_map(|index| [u8::try_from(index).expect("fixture value fits u8"), 1, 0xe3])
                 .collect();
             // Each entry visits one counted slot and its first-byte terminator.
             // At most three entries fit the first four-slot Vec allocation.
-            let total = 2 * count as u64;
+            let total = 2 * u64::try_from(count).expect("fixture value fits u64");
             crate::test_support::assert_refusal_order(
                 ResourceDimension::WorkUnits,
                 &((0..total)
@@ -931,7 +931,12 @@ mod tests {
                     policy.limits.max_work_units = cap;
                     let (ctx, _) =
                         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                    let result = read_entries(&ctx, &payload, 0, count as u32);
+                    let result = read_entries(
+                        &ctx,
+                        &payload,
+                        0,
+                        u32::try_from(count).expect("fixture value fits u32"),
+                    );
                     let completed = result.is_ok();
                     if completed {
                         let entries = result.expect("exact entry work").expect("complete entries");
@@ -945,7 +950,13 @@ mod tests {
                                     entry.offset,
                                     entry.end_offset
                                 ),
-                                (index as u32, 1, false, 3 * index, 3 * index + 3)
+                                (
+                                    u32::try_from(index).expect("fixture value fits u32"),
+                                    1,
+                                    false,
+                                    3 * index,
+                                    3 * index + 3
+                                )
                             );
                         }
                         assert_eq!(ctx.resource_refusal(), None);
@@ -1056,7 +1067,7 @@ mod tests {
             let payload = vec![0xf8; count];
             // No row prefix or counted table exists. Each present byte is
             // visited by the row-boundary scan and the table-byte scan once.
-            let total = 2 * count as u64;
+            let total = 2 * u64::try_from(count).expect("fixture value fits u64");
             crate::test_support::assert_refusal_order(
                 ResourceDimension::WorkUnits,
                 &(if count == 0 {
@@ -1076,8 +1087,12 @@ mod tests {
                     policy.limits.max_collection_items = 0;
                     let (ctx, _) =
                         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                    let result =
-                        entity_tables(&ctx, &payload, &Default::default(), &Default::default());
+                    let result = entity_tables(
+                        &ctx,
+                        &payload,
+                        &std::collections::BTreeSet::default(),
+                        &std::collections::BTreeSet::default(),
+                    );
                     let completed = result.is_ok();
                     if completed {
                         assert!(result.expect("exact present-byte work").is_empty());
@@ -1095,7 +1110,8 @@ mod tests {
                         );
                         // Each admit_iter admits its entire exact-size byte range
                         // before execution, so the failing pass requests n at once.
-                        let before_table_scan = cap < count as u64;
+                        let before_table_scan =
+                            cap < u64::try_from(count).expect("fixture value fits u64");
                         assert_eq!(
                             (
                                 original.dimension,
@@ -1105,8 +1121,12 @@ mod tests {
                             ),
                             (
                                 ResourceDimension::WorkUnits,
-                                if before_table_scan { 0 } else { count as u64 },
-                                count as u64,
+                                if before_table_scan {
+                                    0
+                                } else {
+                                    u64::try_from(count).expect("fixture value fits u64")
+                                },
+                                u64::try_from(count).expect("fixture value fits u64"),
                                 if before_table_scan {
                                     "creo feature row boundary scan"
                                 } else {
@@ -1146,8 +1166,13 @@ mod tests {
                     .map(|entries| entries.is_some_and(|entries| entries.is_empty())),
                 read_entries(&ctx, &[], 1, 0).map(|entries| entries.is_none()),
                 read_entries(&ctx, &[], 0, 1).map(|entries| entries.is_none()),
-                entity_tables(&ctx, &[], &Default::default(), &Default::default())
-                    .map(|tables| tables.is_empty()),
+                entity_tables(
+                    &ctx,
+                    &[],
+                    &std::collections::BTreeSet::default(),
+                    &std::collections::BTreeSet::default(),
+                )
+                .map(|tables| tables.is_empty()),
             ];
             for result in results {
                 if refused {
@@ -1181,7 +1206,8 @@ mod tests {
             ([7, 1, 0, 0, 0xe3, 0xf7], 2, 3u64, true),
         ] {
             let total = 1 + terminator_visits + u64::from(second_present);
-            let backing = (4 * size_of::<super::FeatureEntityTableEntry>()) as u64;
+            let backing = u64::try_from(4 * size_of::<super::FeatureEntityTableEntry>())
+                .expect("fixture value fits u64");
             crate::test_support::assert_refusal_order(
                 ResourceDimension::WorkUnits,
                 &((0..total)

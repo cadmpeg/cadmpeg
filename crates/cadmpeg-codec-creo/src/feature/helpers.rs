@@ -31,7 +31,7 @@ pub(super) fn decode_exact_scalars(
     let mut values = Vec::new();
     let mut cursor = psb::Cursor::new(payload);
     let mut slots = 0..slot_count;
-    while slots.len() != 0
+    while !slots.is_empty()
         && cursor.pos() < payload.len()
         && ctx
             .next_charged(&mut slots, "creo exact scalar scan")?

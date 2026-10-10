@@ -390,6 +390,8 @@ pub(crate) fn reference_names(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<FeatureReferenceName>, CodecError> {
+    const NAME_WINDOW: usize = 256;
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
@@ -414,7 +416,6 @@ pub(crate) fn reference_names(
         let Some(tail) = payload.get(name_start..) else {
             continue;
         };
-        const NAME_WINDOW: usize = 256;
         let mut name_end = None;
         for (relative, byte) in tail.iter().take(NAME_WINDOW).enumerate() {
             if *byte == 0 {
@@ -462,6 +463,8 @@ fn recipe_bindings(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<(u32, FeatureRecipeBinding)>, CodecError> {
+    const DISPLAY_WINDOW: usize = 96;
+
     let mut bindings = Vec::new();
     for marker in ctx.admit_iter(0..payload.len(), "creo recipe binding scan")? {
         if payload.get(marker) != Some(&psb::token::ENTITY_REF) {
@@ -483,7 +486,6 @@ fn recipe_bindings(
         let Some(tail) = payload.get(display_start..) else {
             continue;
         };
-        const DISPLAY_WINDOW: usize = 96;
         let display_end = tail
             .iter()
             .take(DISPLAY_WINDOW)

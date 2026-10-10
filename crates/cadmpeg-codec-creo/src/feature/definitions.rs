@@ -2624,6 +2624,8 @@ fn unresolved_variable_guess_end(
     offset: usize,
     end: usize,
 ) -> Result<Option<usize>, CodecError> {
+    const SUFFIX_BYTES: usize = 6;
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
@@ -2646,16 +2648,15 @@ fn unresolved_variable_guess_end(
     let Some(delimiter) = delimiter else {
         return Ok(None);
     };
-    const SUFFIX_BYTES: usize = 6;
     let suffix_start = delimiter
         .checked_sub((delimiter - offset - 1).min(SUFFIX_BYTES))
         .ok_or_else(|| CodecError::malformed("Creo variable suffix position underflows"))?;
     let mut candidate = None;
     for start in suffix_start..delimiter {
-        if variable_row_trailing_fields(payload, start, delimiter).is_some() {
-            if candidate.replace(start).is_some() {
-                return Ok(None);
-            }
+        if variable_row_trailing_fields(payload, start, delimiter).is_some()
+            && candidate.replace(start).is_some()
+        {
+            return Ok(None);
         }
     }
     Ok(candidate)
@@ -6419,6 +6420,8 @@ fn positional_relation_rows(
     end: usize,
     row_count: RelationBodyRows,
 ) -> Result<Vec<FeatureRelation>, CodecError> {
+    const SUFFIX_BYTES: usize = 6;
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
@@ -6459,7 +6462,6 @@ fn positional_relation_rows(
             break;
         }
         let mut suffix = None;
-        const SUFFIX_BYTES: usize = 6;
         let suffix_begin = row_end
             .checked_sub((row_end - after_used).min(SUFFIX_BYTES))
             .ok_or_else(|| CodecError::malformed("Creo relation suffix position underflows"))?;
@@ -7061,10 +7063,11 @@ fn saved_positional_generated_entities(
     topology: Option<SavedEntityTopology<'_>>,
     entities: &mut Vec<FeatureSavedEntity>,
 ) -> Result<(), CodecError> {
+    const HEADER_WINDOW: usize = 24;
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    const HEADER_WINDOW: usize = 24;
     let Some(SavedEntityTopology {
         order_table,
         segments,
@@ -8562,10 +8565,11 @@ fn definition_starts(
 
 /// Parse the decimal section identity before the first NUL in a bounded name.
 fn depdb_section_name_id(ctx: &DecodeContext<'_>, name: &[u8]) -> Result<Option<u32>, CodecError> {
+    const NAME_WINDOW: usize = 128;
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    const NAME_WINDOW: usize = 128;
     let mut value = 0u32;
     let mut overflow = false;
     for (index, byte) in name.iter().take(NAME_WINDOW).enumerate() {
@@ -8769,6 +8773,7 @@ pub(crate) fn depdb_definitions(
 }
 
 fn s2d_replay_starts(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Vec<usize>, CodecError> {
+    const NAME_SUFFIX_BYTES: usize = 12;
     const PREFIX: &[u8] = b"\xe3S2D";
     let mut starts = Vec::new();
     for offset in ctx.admit_iter(
@@ -8778,7 +8783,6 @@ fn s2d_replay_starts(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Vec<usiz
         if &payload[offset..offset + PREFIX.len()] != PREFIX {
             continue;
         }
-        const NAME_SUFFIX_BYTES: usize = 12;
         let mut terminated = false;
         for (index, byte) in payload[offset + PREFIX.len()..]
             .iter()

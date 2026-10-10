@@ -13,7 +13,11 @@ fn inline_recipe_windows_charge_present_comparisons_and_stop_at_conflict() {
         let record = vec![0xff; length];
         // The four NUL-terminated names have lengths 12, 11, 12, 11.
         let total = 2 * record.windows(12).len() + 2 * record.windows(11).len();
-        check_windows(&record, total as u64, RecipeState::None);
+        check_windows(
+            &record,
+            u64::try_from(total).expect("fixture value fits u64"),
+            RecipeState::None,
+        );
     }
     // A 12-byte name gives window counts 1, 2, 1, 2 in stored family order.
     check_windows(

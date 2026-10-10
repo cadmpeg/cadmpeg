@@ -53,10 +53,15 @@ fn check_empty_result(
     parse: impl Fn(&DecodeContext<'_>, &[u8]) -> Result<bool, CodecError>,
     outer_operation: &'static str,
 ) {
-    check_result(outer as u64, false, &[outer_operation], |ctx| {
-        assert!(parse(ctx, payload)?);
-        Ok(())
-    });
+    check_result(
+        u64::try_from(outer).expect("fixture value fits u64"),
+        false,
+        &[outer_operation],
+        |ctx| {
+            assert!(parse(ctx, payload)?);
+            Ok(())
+        },
+    );
 }
 
 #[test]
@@ -121,7 +126,7 @@ fn reference_prefix_preserves_closed_native_identity_and_byte_copy_work() {
         payload.extend_from_slice(&name);
         payload.extend_from_slice(b"\0\x01\x01");
         // One file-sized source scan and one retained byte copy.
-        let total = (payload.len() - 2 + length) as u64;
+        let total = u64::try_from(payload.len() - 2 + length).expect("fixture value fits u64");
         check_result(
             total,
             true,
@@ -154,7 +159,7 @@ fn recipe_prefix_preserves_binding_identity_and_nonempty_display_grammar() {
         payload.extend(std::iter::repeat_n(1, length));
         payload.extend_from_slice(b"\0\xf6\0protextrude\0");
         check_result(
-            payload.len() as u64,
+            u64::try_from(payload.len()).expect("fixture value fits u64"),
             true,
             &["creo recipe binding scan"],
             |ctx| {
