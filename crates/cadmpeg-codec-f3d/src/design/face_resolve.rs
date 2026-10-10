@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolve face-selection operands and extrude start planes.
 
-use crate::design::dimensions::{planar_point, sketch_normal_sign};
 use crate::design::feature_project::design_angle_unit;
 use crate::ids::native_stream;
 use crate::records::{
@@ -10,7 +9,6 @@ use crate::records::{
         scope::DesignParameterScope,
     },
     parameters::DesignParameter,
-    sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity},
     sketch_placement::DesignSketchPlacement,
     topology::{
         body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
@@ -27,8 +25,6 @@ use std::collections::{HashMap, HashSet};
 use self::membership::{contains_face, contains_slot};
 
 mod membership;
-
-const EPS_FACE_RESOLVE_SKETCH_CURVE_IS_SPATIAL_E9: f64 = 1.0e-9;
 
 fn face_slot_id(ctx: &DecodeContext<'_>, slot: i64) -> Result<cadmpeg_ir::ids::FaceId, CodecError> {
     const PREFIX: &str = "f3d:brep:entity#";
@@ -2983,29 +2979,6 @@ pub(super) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
         | DesignSketchFrameForm::ScopeLegacy305(_)
         | DesignSketchFrameForm::ScopeLegacy325(_)
         | DesignSketchFrameForm::ScopeExplicit(_) => 1.0,
-    }
-}
-
-pub(super) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
-    match curve.geometry.as_ref() {
-        Some(SketchCurveGeometry::Line { start, end, .. }) => {
-            !(planar_point(start.as_raw()) && planar_point(end.as_raw()))
-        }
-        Some(SketchCurveGeometry::Arc {
-            center,
-            normal,
-            reference_direction,
-            ..
-        }) => {
-            !(planar_point(center.as_raw())
-                && reference_direction.as_raw().z.abs()
-                    <= EPS_FACE_RESOLVE_SKETCH_CURVE_IS_SPATIAL_E9
-                && sketch_normal_sign(normal.as_raw()).is_some())
-        }
-        Some(SketchCurveGeometry::Nurbs { geometry, .. }) => {
-            geometry.poles().points().any(|point| !planar_point(point))
-        }
-        None => false,
     }
 }
 

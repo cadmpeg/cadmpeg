@@ -2,7 +2,7 @@
 //! Project planar and spatial sketch geometry.
 
 use crate::design::dimensions::{planar_point, sketch_normal_sign};
-use crate::design::face_resolve::{placement_origin_scale, sketch_curve_is_spatial};
+use crate::design::face_resolve::placement_origin_scale;
 use crate::design::feature_project::closed_spatial_sketch_profiles;
 use crate::design::geometry::closed_sketch_profiles;
 use crate::ids::native_stream;
@@ -18,7 +18,10 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
-const EPS_SPATIAL_OWNER_DEPTH: f64 = 1.0e-9;
+use self::spatial_owners::spatial_geometry_owners;
+
+mod spatial_owners;
+
 const EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9: f64 = 1.0e-9;
@@ -63,40 +66,6 @@ fn distinct_return_member_indices(
         seen.insert(index);
     }
     Ok(true)
-}
-
-fn spatial_geometry_owners<'a>(
-    ctx: &DecodeContext<'_>,
-    points: &'a [SketchPoint],
-    curves: &'a [SketchCurveIdentity],
-) -> Result<HashSet<(&'a str, u32)>, CodecError> {
-    let mut owners = HashSet::new();
-    for curve in curves.iter().filter(|curve| sketch_curve_is_spatial(curve)) {
-        let (Some(scope), Some(owner)) = (native_stream(&curve.id), curve.owner_reference) else {
-            continue;
-        };
-        if !owners.contains(&(scope, owner)) {
-            {
-                ctx.reserve_set(&mut owners, 1, "f3d spatial geometry owner")?;
-            }
-            owners.insert((scope, owner));
-        }
-    }
-    for point in points
-        .iter()
-        .filter(|point| point.depth().abs() > EPS_SPATIAL_OWNER_DEPTH)
-    {
-        let (Some(scope), Some(owner)) = (native_stream(&point.id), point.owner_reference) else {
-            continue;
-        };
-        if !owners.contains(&(scope, owner)) {
-            {
-                ctx.reserve_set(&mut owners, 1, "f3d spatial geometry owner")?;
-            }
-            owners.insert((scope, owner));
-        }
-    }
-    Ok(owners)
 }
 
 fn sketch_text_horizontal_alignment(
@@ -429,8 +398,7 @@ pub(crate) fn project_sketch_design(
             }
             SketchCurveGeometry::Nurbs { geometry, .. }
                 if geometry.degree() != 0
-                    && geometry.poles().point_count() > index_from_u32(geometry.degree())
-                    && geometry.poles().points().all(planar_point) =>
+                    && geometry.poles().point_count() > index_from_u32(geometry.degree()) =>
             {
                 let poles = geometry.poles();
                 let planar_poles = ctx.collect_vec(

@@ -277,7 +277,7 @@ fn spatial_geometry_owner_refuses_collection_limit() {
 
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::sketch_project::spatial_geometry_owners(&ctx, &[], &[curve]),
+        crate::design::sketch_project::spatial_owners::spatial_geometry_owners(&ctx, &[], &[curve]),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d spatial geometry owner"
