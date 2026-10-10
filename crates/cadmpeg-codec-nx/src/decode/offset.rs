@@ -331,14 +331,13 @@ fn equal_knots(
     first: &[f64],
     second: &[f64],
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    const OPERATION: &str = "nx offset knot comparison";
+    ctx.charge_work_limit(0, OPERATION)?;
     if first.len() != second.len() {
         return Ok(false);
     }
-    ctx.charge_work_limit(
-        cadmpeg_core::decode::u64_from_index(first.len()),
-        "nx offset knot comparison",
-    )?;
-    Ok(first == second)
+    let mut second = second.iter();
+    ctx.all_by_limit(first, |first| Ok(Some(first) == second.next()), OPERATION)
 }
 
 /// Return one certified lower bound for a same-parameter offset candidate.
@@ -3158,6 +3157,26 @@ pub(super) fn normalize_pcurve_parameters(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn offset_knot_comparison_stops_before_an_unused_suffix() {
+        let first = vec![2.0; 4097];
+        let second = vec![3.0; 4097];
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 1,
+            |ctx| {
+                assert!(!super::equal_knots(ctx, &first, &second).unwrap());
+                assert!(!super::equal_knots(ctx, &first, &[]).unwrap());
+                assert!(ctx.resource_refusal().is_none());
+            },
+        );
+        crate::test_support::resource_refusal_at(
+            &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "nx offset knot comparison",
+            |ctx| Ok(super::equal_knots(ctx, &first, &first)?),
+        );
+    }
+
 
     use super::super::geometry_work::GeometryWorkBudget;
     use super::super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
