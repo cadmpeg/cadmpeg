@@ -2716,12 +2716,11 @@ mod tests {
                 .len(),
             4
         );
-        let error =
-            match super::StructuralRecords::<128>::new(&ctx, &bytes, 512, 2, Some((&first, &rest)))
-            {
-                Ok(_) => panic!("variable tail needs admission"),
-                Err(error) => error,
-            };
+        let Err(error) =
+            super::StructuralRecords::<128>::new(&ctx, &bytes, 512, 2, Some((&first, &rest)))
+        else {
+            panic!("variable tail needs admission")
+        };
         let CodecError::ResourceLimit(first) = error else {
             panic!("tail refusal")
         };

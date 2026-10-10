@@ -2558,7 +2558,10 @@ mod tests {
                 .entry(&ctx, name)
                 .expect("lookup")
                 .expect("entry exists");
-            assert!(std::ptr::eq(found, &snapshot.entries()[ordinal]));
+            assert!(std::ptr::eq(
+                found,
+                std::ptr::from_ref(&snapshot.entries()[ordinal])
+            ));
         }
         assert!(snapshot
             .entry(&ctx, "entry-32.bin")

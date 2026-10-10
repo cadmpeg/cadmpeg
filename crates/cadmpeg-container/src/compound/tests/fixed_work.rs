@@ -316,9 +316,8 @@ fn fragmented_stream_open_refuses_one_unit_below_derived_work_peak() {
     let mut one_less_policy = DecodePolicy::service();
     one_less_policy.limits.max_work_units = work_limit - 1;
     let (error, refusal) = with_context(&[], &one_less_policy, |ctx| {
-        let error = match snapshot.open(ctx, stream) {
-            Ok(_) => panic!("one fewer work unit cannot complete the final sector copy"),
-            Err(error) => error,
+        let Err(error) = snapshot.open(ctx, stream) else {
+            panic!("one fewer work unit cannot complete the final sector copy")
         };
         (error, ctx.resource_refusal())
     });

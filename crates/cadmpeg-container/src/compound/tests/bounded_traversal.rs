@@ -214,9 +214,8 @@ fn unavailable_first_fat_id_stops_before_unvisited_header_ids() {
             ));
             assert_eq!(ctx.resource_refusal(), None);
         } else {
-            let error = match result {
-                Ok(_) => panic!("directory visit must refuse"),
-                Err(error) => error,
+            let Err(error) = result else {
+                panic!("directory visit must refuse")
             };
             let CodecError::ResourceLimit(refusal) = error else {
                 panic!("resource refusal")
@@ -258,9 +257,8 @@ fn leading_fat_coverage_stops_at_the_first_unavailable_id() {
             drop((directory_chain, storage));
             assert_eq!(ctx.resource_refusal(), None);
         } else {
-            let error = match result {
-                Ok(_) => panic!("directory insertion must refuse"),
-                Err(error) => error,
+            let Err(error) = result else {
+                panic!("directory insertion must refuse")
             };
             let CodecError::ResourceLimit(refusal) = error else {
                 panic!("resource refusal")
@@ -484,15 +482,14 @@ fn structural_records_reject_a_partial_fixed_first_before_tail_work() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     with_context(&bytes[..3 * SECTOR_SIZE + 37], &policy, |ctx| {
-        let error = match crate::compound::StructuralRecords::<128>::new(
+        let Err(error) = crate::compound::StructuralRecords::<128>::new(
             ctx,
             &bytes[..3 * SECTOR_SIZE + 37],
             SECTOR_SIZE,
             3,
             Some((&first, &rest)),
-        ) {
-            Ok(_) => panic!("partial fixed first sector"),
-            Err(error) => error,
+        ) else {
+            panic!("partial fixed first sector")
         };
         assert!(matches!(error, CodecError::Malformed(message)
             if message == "CFB structural sector is truncated"));
@@ -521,9 +518,8 @@ fn structural_records_reject_a_partial_fixed_first_before_tail_work() {
                 assert_eq!(logical, vec![0xab; 3 * SECTOR_SIZE]);
                 assert_eq!(ctx.resource_refusal(), None);
             } else {
-                let error = match result {
-                    Ok(_) => panic!("last extent visit needs admission"),
-                    Err(error) => error,
+                let Err(error) = result else {
+                    panic!("last extent visit needs admission")
                 };
                 let CodecError::ResourceLimit(refusal) = error else {
                     panic!("resource refusal")
