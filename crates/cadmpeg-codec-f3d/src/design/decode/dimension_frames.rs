@@ -294,9 +294,15 @@ impl CompanionBoundaries {
         scopes: impl IntoIterator<Item = Result<&'r DesignParameterScope, CodecError>>,
         headers: impl IntoIterator<Item = Result<&'r DesignRecordHeader, CodecError>>,
     ) -> Result<Self, CodecError> {
+        ctx.charge_work(0, "F3D companion boundary iterator")?;
         let mut owner_scopes = HashMap::new();
         let mut offsets = Vec::new();
-        for owner in owners {
+        let mut owners = owners.into_iter();
+        loop {
+            ctx.charge_work(0, "F3D companion owner iterator")?;
+            let next = owners.next();
+            ctx.charge_work(0, "F3D companion owner iterator")?;
+            let Some(owner) = next else { break; };
             let owner = owner?;
             if let Entry::Vacant(slot) = ctx.entry_hash_map(
                 &mut owner_scopes,
@@ -311,7 +317,12 @@ impl CompanionBoundaries {
                 "f3d companion boundaries",
             )?;
         }
-        for parameter in parameters {
+        let mut parameters = parameters.into_iter();
+        loop {
+            ctx.charge_work(0, "F3D companion parameter iterator")?;
+            let next = parameters.next();
+            ctx.charge_work(0, "F3D companion parameter iterator")?;
+            let Some(parameter) = next else { break; };
             let parameter = parameter?;
             ctx.push_vec(
                 &mut offsets,
@@ -324,7 +335,12 @@ impl CompanionBoundaries {
         let mut reference_storage =
             ctx.reserve_scoped(0, "f3d companion foreign scope members")?;
         let mut referencing_scopes = HashMap::new();
-        for scope in scopes {
+        let mut scopes = scopes.into_iter();
+        loop {
+            ctx.charge_work(0, "F3D companion scope iterator")?;
+            let next = scopes.next();
+            ctx.charge_work(0, "F3D companion scope iterator")?;
+            let Some(scope) = next else { break; };
             let scope = scope?;
             ctx.push_vec(
                 &mut offsets,
@@ -354,7 +370,12 @@ impl CompanionBoundaries {
             }
         }
         let mut referenced_headers = Vec::new();
-        for header in headers {
+        let mut headers = headers.into_iter();
+        loop {
+            ctx.charge_work(0, "F3D companion header iterator")?;
+            let next = headers.next();
+            ctx.charge_work(0, "F3D companion header iterator")?;
+            let Some(header) = next else { break; };
             let header = header?;
             let Some(&(first_scope, other_scope)) = ctx.get_hash_map(
                 &referencing_scopes,
@@ -1549,12 +1570,18 @@ fn bind_recipe_reference_candidates_from<'t>(
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
+    ctx.charge_work(0, "F3D recipe reference tag iterator")?;
     // Releasing the earlier candidates is free.
     reference.candidate_faces.clear();
     reference.candidate_edges.clear();
     reference.alternate_selector_faces.clear();
     reference.alternate_selector_edges.clear();
-    for tag in tags {
+    let mut tags = tags.into_iter();
+    loop {
+        ctx.charge_work(0, "F3D recipe reference tag iterator")?;
+        let next = tags.next();
+        ctx.charge_work(0, "F3D recipe reference tag iterator")?;
+        let Some(tag) = next else { break; };
         let tag = tag?;
         if !(ctx.equal_bytes(
             tag.token.as_str().as_bytes(),
@@ -3281,8 +3308,14 @@ fn segment_types_by_entity<'t>(
     ctx: &DecodeContext<'_>,
     segment_types: impl IntoIterator<Item = Result<&'t SegmentType, CodecError>>,
 ) -> Result<HashMap<u64, (&'t str, u32)>, CodecError> {
+    ctx.charge_work(0, "F3D segment type iterator")?;
     let mut by_entity = HashMap::new();
-    for design_type in segment_types {
+    let mut segment_types = segment_types.into_iter();
+    loop {
+        ctx.charge_work(0, "F3D segment type iterator")?;
+        let next = segment_types.next();
+        ctx.charge_work(0, "F3D segment type iterator")?;
+        let Some(design_type) = next else { break; };
         let design_type = design_type?;
         for entity_id in
             admit_reference_values(ctx, &design_type.entities, "scan F3D segment type entities")?
