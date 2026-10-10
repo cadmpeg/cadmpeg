@@ -1485,9 +1485,6 @@ fn decode_plane_support_lane_variants(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Result<impl Iterator<Item = (FiniteVector<12>, PlaneSupportFrameLayout)>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     fn walk(
         body: &[u8],
         cache: &ScalarCache,
@@ -1627,6 +1624,9 @@ fn decode_plane_support_lane_variants(
         }
     }
 
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut values = [0.0; 12];
     let mut results = [None; MAX_PLANE_SUPPORT_LANE_VARIANTS];
     let mut count = 0;

@@ -8052,7 +8052,7 @@ fn parse_depdb_curve_segment(
     };
     let mut prefix_candidate: Option<(usize, TopologyPrefix)> = None;
     let mut starts = 0..suffix_start;
-    while starts.len() != 0 {
+    while !starts.is_empty() {
         let Some(start) = ctx.next_charged(&mut starts, "creo curve prefix scan")? else {
             break;
         };

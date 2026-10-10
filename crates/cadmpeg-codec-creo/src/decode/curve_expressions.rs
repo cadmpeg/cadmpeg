@@ -392,7 +392,7 @@ fn curve_expression_parameter_order(
         "creo curve-expression parameter ordinals",
     )?;
     let mut ordinal_steps = 0..dependencies.len();
-    while ordinal_steps.len() > 0 {
+    while !ordinal_steps.is_empty() {
         let Some(ordinal) = ctx.next_charged(
             &mut ordinal_steps,
             "creo curve-expression ordinal traversal",
