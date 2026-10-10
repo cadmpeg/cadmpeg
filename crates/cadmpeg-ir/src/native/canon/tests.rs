@@ -958,7 +958,10 @@ fn raw_replay_duplicate_does_not_admit_unread_object_or_array_members() {
     for tail in ["7".to_owned(), "[7]".repeat(1024).replace("][", "],[")] {
         for array in [false, true] {
             let (json, parent_work) = if array {
-                (format!(r#"[{{"a":7,"a":8}},[{tail}]]"#), r#"{"a":7,"a":8}"#.len() + 1 + 1)
+                (
+                    format!(r#"[{{"a":7,"a":8}},[{tail}]]"#),
+                    r#"{"a":7,"a":8}"#.len() + 1 + 1,
+                )
             } else {
                 (format!(r#"{{"a":7,"a":8,"tail":[{tail}]}}"#), 0)
             };
@@ -969,13 +972,16 @@ fn raw_replay_duplicate_does_not_admit_unread_object_or_array_members() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = work;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            ctx.charge_work(u64_from_index(json.len()), super::WORK).unwrap();
+            ctx.charge_work(u64_from_index(json.len()), super::WORK)
+                .unwrap();
             let error = super::super::replay::emit(
                 &json,
                 super::CanonValue::for_record(&ctx),
                 super::MAX_NATIVE_NESTING_DEPTH,
                 &ctx,
-            ).err().expect("duplicate key must refuse");
+            )
+            .err()
+            .expect("duplicate key must refuse");
             assert!(error.to_string().contains("duplicate key a"), "{error}");
             drop(error);
             ctx.finish_session().unwrap();

@@ -28,7 +28,9 @@ pub(super) fn emit<S: ser::Serializer>(
     depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<S::Ok, S::Error> {
-    let mut scratch = ctx.reserve_scoped(0, "serialize native record").map_err(ser::Error::custom)?;
+    let mut scratch = ctx
+        .reserve_scoped(0, "serialize native record")
+        .map_err(ser::Error::custom)?;
     let mut deserializer = serde_json::Deserializer::from_str(json);
     let emitted = de::Deserializer::deserialize_any(
         &mut deserializer,
@@ -138,7 +140,8 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<'_, '_, S> {
         let bytes = self.json.as_bytes();
         let mut offset = 0;
         while bytes.get(offset).is_some_and(u8::is_ascii_whitespace) {
-            self.ctx.charge_work(1, "construct canonical native value")
+            self.ctx
+                .charge_work(1, "construct canonical native value")
                 .map_err(de::Error::custom)?;
             offset += 1;
         }
@@ -146,14 +149,16 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<'_, '_, S> {
         let mut scratch_bytes = 0;
         loop {
             while bytes.get(offset).is_some_and(u8::is_ascii_whitespace) {
-                self.ctx.charge_work(1, "construct canonical native value")
+                self.ctx
+                    .charge_work(1, "construct canonical native value")
                     .map_err(de::Error::custom)?;
                 offset += 1;
             }
             if bytes.get(offset) == Some(&b',') {
                 offset += 1;
                 while bytes.get(offset).is_some_and(u8::is_ascii_whitespace) {
-                    self.ctx.charge_work(1, "construct canonical native value")
+                    self.ctx
+                        .charge_work(1, "construct canonical native value")
                         .map_err(de::Error::custom)?;
                     offset += 1;
                 }
@@ -162,13 +167,15 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<'_, '_, S> {
             // The container parser preserves key-error positions.
             if bytes.get(offset) == Some(&b'"') {
                 let start = offset;
-                self.ctx.charge_work(1, "construct canonical native value")
+                self.ctx
+                    .charge_work(1, "construct canonical native value")
                     .map_err(de::Error::custom)?;
                 offset += 1;
                 let mut escaped = false;
                 let mut has_escape = false;
                 while let Some(&byte) = bytes.get(offset) {
-                    self.ctx.charge_work(1, "construct canonical native value")
+                    self.ctx
+                        .charge_work(1, "construct canonical native value")
                         .map_err(de::Error::custom)?;
                     offset += 1;
                     if escaped {
@@ -183,12 +190,20 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<'_, '_, S> {
                 if has_escape {
                     // One raw-key length bounds the old allocation; two bound
                     // the growing allocation. Both can overlap during growth.
-                    let needed = u64_from_index(offset - start).checked_mul(3)
-                        .ok_or_else(|| de::Error::custom(self.ctx.refuse_codec_limit(
-                            "serialize native record", u64::MAX - 1, u64::MAX,
-                        )))?.max(8);
+                    let needed = u64_from_index(offset - start)
+                        .checked_mul(3)
+                        .ok_or_else(|| {
+                            de::Error::custom(self.ctx.refuse_codec_limit(
+                                "serialize native record",
+                                u64::MAX - 1,
+                                u64::MAX,
+                            ))
+                        })?
+                        .max(8);
                     if needed > scratch_bytes {
-                        self.scratch.grow(needed - scratch_bytes).map_err(de::Error::custom)?;
+                        self.scratch
+                            .grow(needed - scratch_bytes)
+                            .map_err(de::Error::custom)?;
                         scratch_bytes = needed;
                     }
                 }
@@ -199,12 +214,19 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<'_, '_, S> {
             let value = access.next_value::<&RawValue>()?;
             // RawValue borrows this parser's source, so the end of the read
             // member is the next key's delimiter and whitespace boundary.
-            offset = (value.get().as_ptr() as usize)
-                .checked_sub(self.json.as_ptr() as usize)
+            offset = value
+                .get()
+                .as_ptr()
+                .addr()
+                .checked_sub(self.json.as_ptr().addr())
                 .and_then(|offset| offset.checked_add(value.get().len()))
-                .ok_or_else(|| de::Error::custom(self.ctx.refuse_codec_limit(
-                    "construct canonical native value", u64::MAX - 1, u64::MAX,
-                )))?;
+                .ok_or_else(|| {
+                    de::Error::custom(self.ctx.refuse_codec_limit(
+                        "construct canonical native value",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    ))
+                })?;
             let child = Replay {
                 json: value.get(),
                 depth,
@@ -234,7 +256,11 @@ struct Replay<'a> {
 
 impl ser::Serialize for Replay<'_> {
     fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.ctx.charge_work(u64_from_index(self.json.len()), "construct canonical native value")
+        self.ctx
+            .charge_work(
+                u64_from_index(self.json.len()),
+                "construct canonical native value",
+            )
             .map_err(ser::Error::custom)?;
         emit(self.json, serializer, self.depth, self.ctx)
     }
@@ -253,7 +279,7 @@ impl<'de, M: ser::SerializeMap> de::DeserializeSeed<'de> for Key<'_, M> {
     }
 }
 
-impl<'de, M: ser::SerializeMap> de::Visitor<'de> for Key<'_, M> {
+impl<M: ser::SerializeMap> de::Visitor<'_> for Key<'_, M> {
     type Value = ();
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -389,8 +415,16 @@ mod tests {
             policy.limits.max_materialized_bytes = cap;
             policy.limits.max_retained_bytes = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            ctx.charge_work(super::u64_from_index(json.len()), "construct canonical native value")?;
-            let emitted = emit(json, serde_json::value::Serializer, MAX_NATIVE_NESTING_DEPTH, &ctx);
+            ctx.charge_work(
+                super::u64_from_index(json.len()),
+                "construct canonical native value",
+            )?;
+            let emitted = emit(
+                json,
+                serde_json::value::Serializer,
+                MAX_NATIVE_NESTING_DEPTH,
+                &ctx,
+            );
             ctx.charge_work(0, "construct canonical native value")?;
             let emitted = emitted.map_err(|error| CodecError::malformed(error.to_string()))?;
             assert_eq!(emitted, serde_json::json!({"ab":7,"c\td":8}));
@@ -420,9 +454,19 @@ mod tests {
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        ctx.charge_work(super::u64_from_index(json.len()), "construct canonical native value").unwrap();
+        ctx.charge_work(
+            super::u64_from_index(json.len()),
+            "construct canonical native value",
+        )
+        .unwrap();
         assert_eq!(
-            emit(json, serde_json::value::Serializer, MAX_NATIVE_NESTING_DEPTH, &ctx).unwrap(),
+            emit(
+                json,
+                serde_json::value::Serializer,
+                MAX_NATIVE_NESTING_DEPTH,
+                &ctx
+            )
+            .unwrap(),
             serde_json::json!({"é key":7,"":8})
         );
         ctx.finish_session().unwrap();
@@ -446,8 +490,16 @@ mod tests {
             policy.limits.max_materialized_bytes = cap;
             policy.limits.max_retained_bytes = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            ctx.charge_work(super::u64_from_index(json.len()), "construct canonical native value")?;
-            let value = emit(&json, serde_json::value::Serializer, MAX_NATIVE_NESTING_DEPTH, &ctx);
+            ctx.charge_work(
+                super::u64_from_index(json.len()),
+                "construct canonical native value",
+            )?;
+            let value = emit(
+                &json,
+                serde_json::value::Serializer,
+                MAX_NATIVE_NESTING_DEPTH,
+                &ctx,
+            );
             ctx.charge_work(0, "construct canonical native value")?;
             let value = value.map_err(|error| CodecError::malformed(error.to_string()))?;
             assert_eq!(value.get(&key), Some(&Value::from(7)));
@@ -476,7 +528,11 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 1 + 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let child = super::Replay { json: "7", depth: MAX_NATIVE_NESTING_DEPTH, ctx: &ctx };
+        let child = super::Replay {
+            json: "7",
+            depth: MAX_NATIVE_NESTING_DEPTH,
+            ctx: &ctx,
+        };
         assert_eq!(serde_json::to_value(&child).unwrap(), Value::from(7));
         assert_eq!(serde_json::to_value(&child).unwrap(), Value::from(7));
         assert!(serde_json::to_value(&child).is_err());

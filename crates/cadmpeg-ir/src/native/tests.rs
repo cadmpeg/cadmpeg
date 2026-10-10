@@ -1612,11 +1612,13 @@ fn canonical_record_identity_removal_admits_the_search_path() {
 
 #[test]
 fn canonical_record_identity_removal_admits_node_mutation_before_removal() {
+    use crate::native::NativeConvertError;
     use cadmpeg_core::decode::refusal_probe::RefusalProbe;
-    use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{
+        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
     use cadmpeg_core::CodecError;
     use serde_json::{Map, Value};
-    use crate::native::NativeConvertError;
 
     let node_bytes = 11 * (std::mem::size_of::<String>() + std::mem::size_of::<Value>())
         + 16 * std::mem::size_of::<usize>()
@@ -1624,10 +1626,19 @@ fn canonical_record_identity_removal_admits_node_mutation_before_removal() {
             .max(std::mem::align_of::<Value>())
             .max(std::mem::align_of::<usize>());
     // Minimum entries for h levels: 2 * 6^(h-1) - 1.
-    for (len, passes) in [(1, 1), (10, 1), (11, 4 * 2 + 3), (71, 4 * 3 + 3), (1000, 4 * 4 + 3)] {
-        let entries = std::iter::once(("id".to_owned(), Value::String("test:native:record#0".into())))
-            .chain((1..len).map(|i| (format!("field-{i:04}"), Value::Null)))
-            .collect::<Map<_, _>>();
+    for (len, passes) in [
+        (1, 1),
+        (10, 1),
+        (11, 4 * 2 + 3),
+        (71, 4 * 3 + 3),
+        (1000, 4 * 4 + 3),
+    ] {
+        let entries = std::iter::once((
+            "id".to_owned(),
+            Value::String("test:native:record#0".into()),
+        ))
+        .chain((1..len).map(|i| (format!("field-{i:04}"), Value::Null)))
+        .collect::<Map<_, _>>();
         let run = |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
