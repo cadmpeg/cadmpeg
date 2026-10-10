@@ -3591,10 +3591,11 @@ fn project_draft(
 
     let construction = or_none!(scope.draft_operation());
     let faces = or_none!(single_operand_group(
+        ctx,
         groups,
         scope,
         DesignOperandRole::ROLE_0X10
-    ));
+    )?);
     let mut role_groups = Vec::new();
     for group in groups.iter().filter(|group| {
         native_stream(&group.id) == native_stream(&scope.id)
@@ -4077,18 +4078,28 @@ fn resolved_split_face_path(
 /// Return the unique non-empty construction operand group in `scope` carrying
 /// `role`. Yields `None` unless exactly one such group exists.
 fn single_operand_group<'a>(
+    ctx: &DecodeContext<'_>,
     groups: &'a [DesignConstructionOperandGroup],
     scope: &DesignParameterScope,
     role: DesignOperandRole,
-) -> Option<&'a DesignConstructionOperandGroup> {
-    let mut matching = groups.iter().filter(|group| {
-        native_stream(&group.id) == native_stream(&scope.id)
-            && group.scope_record_index == scope.record_index
+) -> Result<Option<&'a DesignConstructionOperandGroup>, CodecError> {
+    ctx.charge_work(0, "find F3D single operand group")?;
+    if groups.is_empty() {
+        return Ok(None);
+    }
+    let stream = ids::native_stream_charged(
+        ctx, &scope.id, "resolve F3D single operand group scope stream",
+    )?;
+    unique_feature_match_for_decode(
+        ctx,
+        groups,
+        |group| Ok(feature_stream_matches(
+            ctx, &group.id, stream, "match F3D single operand group stream",
+        )? && group.scope_record_index == scope.record_index
             && group.role() == role
-            && !group.members().is_empty()
-    });
-    let group = matching.next()?;
-    matching.next().is_none().then_some(group)
+            && !group.members().is_empty()),
+        "find F3D single operand group",
+    )
 }
 
 pub(super) fn project_offset_faces(
@@ -4132,10 +4143,11 @@ pub(super) fn project_offset_faces(
         faces
     } else {
         let group = or_none!(single_operand_group(
+            ctx,
             groups,
             scope,
             DesignOperandRole::ROLE_0X10
-        ));
+        )?);
         cadmpeg_ir::features::FaceSelection::Native(
             ctx.copy_retained_text(&group.id, "f3d OffsetFaces native group id")?,
         )
@@ -4218,7 +4230,7 @@ pub(super) fn project_shell(
     else {
         return Ok(None);
     };
-    let bodies = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)
+    let bodies = single_operand_group(ctx, groups, scope, DesignOperandRole::BODIES_A)?
         .map(|group| {
             ctx.copy_retained_text(&group.id, "f3d Shell native body group id")
                 .map(BodySelection::Native)
@@ -4226,7 +4238,7 @@ pub(super) fn project_shell(
         .transpose()?;
     let removed_faces = if let Some(faces) = direct_face_selection(ctx, scope, operands)? {
         faces
-    } else if let Some(group) = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10) {
+    } else if let Some(group) = single_operand_group(ctx, groups, scope, DesignOperandRole::ROLE_0X10)? {
         FaceSelection::Native(ctx.copy_retained_text(&group.id, "f3d Shell native face group id")?)
     } else if bodies.is_some() {
         FaceSelection::Faces(Vec::new())
@@ -4258,10 +4270,11 @@ fn project_move(
 
     let operation = or_none!(scope.move_operation());
     let group = or_none!(single_operand_group(
+        ctx,
         groups,
         scope,
         DesignOperandRole::BODIES_A
-    ));
+    )?);
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::MoveBody {
             bodies: BodySelection::Native(
@@ -4288,10 +4301,11 @@ pub(super) fn project_remove_body(
     };
 
     let group = or_none!(single_operand_group(
+        ctx,
         groups,
         scope,
         DesignOperandRole::BODIES_A
-    ));
+    )?);
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::DeleteBody {
             bodies: BodySelection::Native(
