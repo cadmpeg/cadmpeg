@@ -578,6 +578,9 @@ fn admitted_display_strips<V>(
     if remaining.len() != 0 {
         return Ok(None);
     }
+    // Each strip consumes vertices from one owned lane. The sum cannot
+    // overflow u64, so the constructor visits every strip before its u32 check.
+    let _span_admission = ctx.admit_iter(&strips, "creo display strip span validation")?;
     Ok(Strips::new(strips))
 }
 
@@ -725,6 +728,21 @@ fn transfer_display_tessellations(
                 TessellationMesh::Strips { strips }
             }
         };
+        match &mesh {
+            TessellationMesh::Strips { strips } => {
+                let _count_admission = ctx.admit_iter(
+                    strips.as_slice(),
+                    "creo display triangle counting",
+                )?;
+            }
+            TessellationMesh::ShadedStrips { strips } => {
+                let _count_admission = ctx.admit_iter(
+                    strips.as_slice(),
+                    "creo display triangle counting",
+                )?;
+            }
+            _ => {}
+        }
         let tessellation = match Tessellation::from_parts(id, mesh, Vec::new()) {
             Ok(tessellation) => tessellation,
             Err(error) => return Err(display_strip_error(ctx, strip.offset, error)?),
