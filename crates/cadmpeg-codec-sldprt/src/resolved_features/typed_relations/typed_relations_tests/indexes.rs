@@ -1,6 +1,9 @@
 //! Lane curve joins preserve source occurrences and scoped storage.
 
-use super::super::{marker_curve_endpoint_markers, marker_curve_endpoint_markers_in, CurveMarkers};
+use super::super::{
+    marker_curve_endpoint_markers, marker_curve_endpoint_markers_in, CurveEndpointGeometry,
+    CurveMarkers,
+};
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink, SketchInputLinks};
 use crate::resolved_features::endpoints::geometry_index::{MarkerGeometryIndex, MarkerPrefixIndex};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -48,8 +51,15 @@ fn curve_marker_index_preserves_reverse_links_and_feature_separation() {
     let geometry =
         MarkerGeometryIndex::new(&ctx, &roster, MarkerPrefixIndex::new(&ctx, &[]).unwrap())
             .unwrap();
-    let indexed =
-        marker_curve_endpoint_markers_in(&ctx, &[], &curve, &by_id, &index, &geometry).unwrap();
+    let indexed = marker_curve_endpoint_markers_in(
+        &ctx,
+        &[],
+        &curve,
+        &by_id,
+        &index,
+        CurveEndpointGeometry::Borrowed(&geometry),
+    )
+    .unwrap();
     let plain =
         marker_curve_endpoint_markers(&ctx, &[], &curve, &by_id, &roster, &geometry).unwrap();
     assert_eq!(
@@ -103,8 +113,15 @@ fn linked_curve_endpoints_skip_the_feature_join() {
         "index SLDPRT curve feature markers",
         None,
     );
-    let endpoints =
-        marker_curve_endpoint_markers_in(&ctx, &[], &curve, &by_id, &index, &geometry).unwrap();
+    let endpoints = marker_curve_endpoint_markers_in(
+        &ctx,
+        &[],
+        &curve,
+        &by_id,
+        &index,
+        CurveEndpointGeometry::Borrowed(&geometry),
+    )
+    .unwrap();
     assert_eq!(
         endpoints
             .iter()
@@ -195,7 +212,15 @@ fn unlinked_curve_endpoint_route_still_queries_feature_markers() {
     let error = crate::test_support::work_refusal_at("index SLDPRT curve feature markers", |ctx| {
         let index = CurveMarkers::new(ctx, &roster)?;
         let geometry = MarkerGeometryIndex::new(ctx, &roster, MarkerPrefixIndex::new(ctx, &[])?)?;
-        marker_curve_endpoint_markers_in(ctx, &[], &curve, &by_id, &index, &geometry).map(|_| ())
+        marker_curve_endpoint_markers_in(
+            ctx,
+            &[],
+            &curve,
+            &by_id,
+            &index,
+            CurveEndpointGeometry::Borrowed(&geometry),
+        )
+        .map(|_| ())
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -275,14 +300,26 @@ fn curve_object_index_preserves_zero_identity_and_duplicate_ambiguity() {
             MarkerPrefixIndex::new(&ctx, &payload).unwrap(),
         )
         .unwrap();
-        let indexed =
-            marker_curve_endpoint_markers_in(&ctx, &payload, &curve, &by_id, &index, &geometry)
-                .unwrap();
+        let mut cache = None;
+        let indexed = marker_curve_endpoint_markers_in(
+            &ctx,
+            &payload,
+            &curve,
+            &by_id,
+            &index,
+            CurveEndpointGeometry::Cached {
+                ctx: &ctx,
+                payload: &payload,
+                cache: &mut cache,
+            },
+        )
+        .unwrap();
         let plain =
             marker_curve_endpoint_markers(&ctx, &payload, &curve, &by_id, &roster, &geometry)
                 .unwrap();
         assert_eq!(indexed, plain);
         if roster.len() == 4 {
+            assert!(cache.is_none());
             assert_eq!(
                 indexed.iter().map(|marker| marker.id()).collect::<Vec<_>>(),
                 ["implicit", "explicit"]
@@ -294,4 +331,60 @@ fn curve_object_index_preserves_zero_identity_and_duplicate_ambiguity() {
             assert!(index.reverse_incidence.get().is_none());
         }
     }
+}
+
+#[test]
+fn linked_and_unrecognized_endpoint_queries_leave_geometry_unbuilt() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut curve = SketchInputEntity::new("curve", "lane", 0, 0, SketchInputKind::LineOrCircle);
+    curve.feature_ref = Some("feature".into());
+    let mut first = point("first", 1, Some("feature"));
+    let mut second = point("second", 2, Some("feature"));
+    links(&mut first, &["curve"]);
+    links(&mut second, &["curve"]);
+    let unrelated: Vec<_> = (3..67)
+        .map(|offset| point(&format!("extra-{offset}"), offset, Some("other")))
+        .collect();
+    let mut roster = vec![&curve, &first, &second];
+    roster.extend(unrelated.iter());
+    let by_id = roster.iter().map(|marker| (marker.id(), *marker)).collect();
+    let index = CurveMarkers::new(&ctx, &roster).unwrap();
+    let mut cache = None;
+    let endpoints = marker_curve_endpoint_markers_in(
+        &ctx,
+        &[],
+        &curve,
+        &by_id,
+        &index,
+        CurveEndpointGeometry::Cached {
+            ctx: &ctx,
+            payload: &[],
+            cache: &mut cache,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        endpoints
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+    assert!(cache.is_none());
+    let unknown = point("unknown", 100, Some("unknown-feature"));
+    let endpoints = marker_curve_endpoint_markers_in(
+        &ctx,
+        &[],
+        &unknown,
+        &by_id,
+        &index,
+        CurveEndpointGeometry::Cached {
+            ctx: &ctx,
+            payload: &[],
+            cache: &mut cache,
+        },
+    )
+    .unwrap();
+    assert!(endpoints.is_empty());
+    assert!(cache.is_none());
 }

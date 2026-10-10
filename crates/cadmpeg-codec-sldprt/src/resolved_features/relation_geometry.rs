@@ -26,7 +26,8 @@ use super::transforms::{
 };
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers_in,
-    marker_relation_definition, marker_relation_is_inactive_in, CurveMarkers, RelationMarkers,
+    marker_relation_definition, marker_relation_is_inactive_in, CurveEndpointGeometry,
+    CurveMarkers, RelationMarkers,
 };
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
@@ -71,14 +72,19 @@ pub(super) fn is_reference_relation_parameter_in(
     ctx: &DecodeContext<'_>,
     parameter: &cadmpeg_ir::features::DesignParameter,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(ctx
-        .get_btree_map(
-            &parameter.properties,
-            RELATION_PARAMETER_ROLE_PROPERTY,
-            "resolve SLDPRT relation parameter role",
-        )?
-        .map(String::as_str)
-        == Some(RELATION_PARAMETER_ROLE_REFERENCE))
+    let Some(role) = ctx.get_btree_map(
+        &parameter.properties,
+        RELATION_PARAMETER_ROLE_PROPERTY,
+        "resolve SLDPRT relation parameter role",
+    )?
+    else {
+        return Ok(false);
+    };
+    ctx.equal(
+        role.as_str(),
+        RELATION_PARAMETER_ROLE_REFERENCE,
+        "match SLDPRT relation parameter role",
+    )
 }
 
 fn relation_native_kind(family: FeatureInputRelationFamily) -> cadmpeg_core::text::NonBlankString {
@@ -1305,19 +1311,6 @@ pub(crate) fn project_relation_point_geometry(
                     curve_markers.get_or_init(|| built)
                 }
             };
-            let geometry = match &mut geometry {
-                Some(geometry) => geometry,
-                slot @ None => slot.insert(
-                    crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
-                        ctx,
-                        &marker_roster,
-                        crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
-                            ctx,
-                            &lane.native_payload,
-                        )?,
-                    )?,
-                ),
-            };
             let mut endpoints_storage;
             let mut endpoints;
             (endpoints, endpoints_storage) =
@@ -1328,7 +1321,11 @@ pub(crate) fn project_relation_point_geometry(
                         marker,
                         &markers_by_id,
                         curve_index,
-                        geometry,
+                        CurveEndpointGeometry::Cached {
+                            ctx,
+                            payload: &lane.native_payload,
+                            cache: &mut geometry,
+                        },
                     )
                 })?;
             if endpoints.len() != 2 && linked_curve_handle {
@@ -1866,19 +1863,6 @@ pub(crate) fn project_relation_solved_line_geometry(
                         curve_markers.get_or_init(|| built)
                     }
                 };
-                let geometry = match &mut geometry {
-                    Some(geometry) => geometry,
-                    slot @ None => slot.insert(
-                        crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
-                            ctx,
-                            &marker_roster,
-                            crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
-                                ctx,
-                                &lane.native_payload,
-                            )?,
-                        )?,
-                    ),
-                };
                 let _endpoint_storage;
                 let endpoints;
                 (endpoints, _endpoint_storage) =
@@ -1889,7 +1873,11 @@ pub(crate) fn project_relation_solved_line_geometry(
                             marker,
                             markers_by_id,
                             curve_index,
-                            geometry,
+                            CurveEndpointGeometry::Cached {
+                                ctx,
+                                payload: &lane.native_payload,
+                                cache: &mut geometry,
+                            },
                         )
                     })?;
                 let [first, second] = endpoints.as_slice() else {
@@ -2210,6 +2198,8 @@ pub(crate) fn project_relation_solved_line_geometry(
                     Point2::new(end_u * QUANTUM, end_v * QUANTUM),
                 )))
             };
+            // Each of the two operands can keep one completed fallback, including failure.
+            let fallback_lines = [std::cell::OnceCell::new(), std::cell::OnceCell::new()];
             let mut build_lines = |prefer_marker_endpoints: bool| -> Result<
                 (Vec<_>, ScopedReservation<'_>, bool),
                 cadmpeg_core::CodecError,
@@ -2221,38 +2211,46 @@ pub(crate) fn project_relation_solved_line_geometry(
                 for &(operand_index, operand) in
                     ctx.admit_iter(line_operands, "build SLDPRT relation operand lines")?
                 {
-                    let markers = if prefer_marker_endpoints {
-                        match endpoint_line_markers(operand_index)? {
-                            Some(markers) => {
-                                used_marker_endpoints = true;
-                                Some(markers)
-                            }
-                            None => fallback_line_markers(
-                                operand.entity_index,
-                                "resolve SLDPRT solved-line point markers",
-                            )?,
-                        }
+                    let explicit = if prefer_marker_endpoints {
+                        endpoint_line_markers(operand_index)?
                     } else {
-                        fallback_line_markers(
-                            operand.entity_index,
-                            "reuse SLDPRT solved-line point markers",
-                        )?
+                        None
                     };
-                    let Some(markers) = markers else {
-                        return Ok((
-                            Vec::new(),
-                            ctx.reserve_scoped(0, operation)?,
-                            used_marker_endpoints,
-                        ));
+                    let selected = if let Some(markers) = explicit {
+                        used_marker_endpoints = true;
+                        transformed_line(markers)?
+                            .and_then(|(start, end)| candidate(start, end))
+                            .map(|line| (markers, line))
+                    } else {
+                        let cell = &fallback_lines[operand_index];
+                        let cached = match cell.get() {
+                            Some(cached) => cached,
+                            None => {
+                                let resolved = (|| -> Result<_, cadmpeg_core::CodecError> {
+                                    let Some(markers) = fallback_line_markers(
+                                        operand.entity_index,
+                                        if prefer_marker_endpoints {
+                                            "resolve SLDPRT solved-line point markers"
+                                        } else {
+                                            "reuse SLDPRT solved-line point markers"
+                                        },
+                                    )?
+                                    else {
+                                        return Ok(None);
+                                    };
+                                    Ok(transformed_line(markers)?
+                                        .and_then(|(start, end)| candidate(start, end))
+                                        .map(|line| (markers, line)))
+                                })()?;
+                                cell.get_or_init(|| resolved)
+                            }
+                        };
+                        // Cached geometry is a Line with fixed fields and no child storage.
+                        cached
+                            .as_ref()
+                            .map(|(markers, line)| (*markers, line.clone()))
                     };
-                    let Some((start, end)) = transformed_line(markers)? else {
-                        return Ok((
-                            Vec::new(),
-                            ctx.reserve_scoped(0, operation)?,
-                            used_marker_endpoints,
-                        ));
-                    };
-                    let Some(line) = candidate(start, end) else {
+                    let Some((markers, line)) = selected else {
                         return Ok((
                             Vec::new(),
                             ctx.reserve_scoped(0, operation)?,
@@ -2387,7 +2385,9 @@ pub(crate) fn project_relation_solved_line_geometry(
                             )?
                             .zip(selected)
                         {
-                            let geometry_ref = ctx.format_retained(
+                            let reference_storage;
+                            let geometry_ref;
+                            (geometry_ref, reference_storage) = ctx.format_scoped(
                                 format_args!(
                                     "{}:solver-line:{}",
                                     relation.feature_ref, operand.entity_index
@@ -2472,7 +2472,9 @@ pub(crate) fn project_relation_solved_line_geometry(
                                     )?,
                                 )
                                 .with_construction(true)
-                                .with_geometry_ref(Some(geometry_ref))
+                                .with_geometry_ref(Some(
+                                    reference_storage.commit_value(geometry_ref)?,
+                                ))
                                 .with_endpoint_refs(endpoint_refs),
                             );
                         }
@@ -2491,7 +2493,9 @@ pub(crate) fn project_relation_solved_line_geometry(
             for (operand, markers, line) in
                 ctx.admit_iter(&lines.0, "append SLDPRT solved relation lines")?
             {
-                let geometry_ref = ctx.format_retained(
+                let reference_storage;
+                let geometry_ref;
+                (geometry_ref, reference_storage) = ctx.format_scoped(
                     format_args!(
                         "{}:solver-line:{}",
                         relation.feature_ref, operand.entity_index
@@ -2554,7 +2558,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                         line.try_clone_for_decode(ctx, "copy SLDPRT relation line geometry")?,
                     )
                     .with_construction(true)
-                    .with_geometry_ref(Some(geometry_ref))
+                    .with_geometry_ref(Some(reference_storage.commit_value(geometry_ref)?))
                     .with_endpoint_refs(endpoint_refs),
                 );
             }
@@ -3465,7 +3469,11 @@ pub(super) fn declared_entity_handle_owner<'a>(
             let Some(class) = selected_class else {
                 return Ok(false);
             };
-            if class.name != "sgEntHandle" {
+            if !ctx.equal(
+                class.name.as_str(),
+                "sgEntHandle",
+                "match SLDPRT entity-handle class",
+            )? {
                 return Ok(false);
             }
             if owner.is_some() {
@@ -3560,17 +3568,27 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         |class| ctx.equal(class.id.as_str(), class_ref, DIMENSIONED_HANDLE_OPERATION),
         "find SLDPRT declared slot-handle class",
     )?;
-    let Some(entity_class) = entity_class.filter(|class| class.name == "sgEntHandle") else {
+    let Some(entity_class) = entity_class else {
         return Ok(None);
     };
+    if !ctx.equal(
+        entity_class.name.as_str(),
+        "sgEntHandle",
+        "match SLDPRT slot entity-handle class",
+    )? {
+        return Ok(None);
+    }
     let bounds = (|| -> Result<_, cadmpeg_core::CodecError> {
         let mut classes = lane.classes.iter();
         let mut next_slot = || {
             ctx.find_by(
                 &mut classes,
                 |class| {
-                    Ok(class.name == "sgSlotHandle"
-                        && class.offset > entity_class.offset
+                    Ok(ctx.equal(
+                        class.name.as_str(),
+                        "sgSlotHandle",
+                        "match SLDPRT slot-handle class",
+                    )? && class.offset > entity_class.offset
                         && class.offset < marker.offset())
                 },
                 DIMENSIONED_HANDLE_OPERATION,
@@ -4532,17 +4550,17 @@ pub(crate) fn project_relation_bindings(
                 }
                 _ => relation_definition(ctx, relation, parameter, sketch, index, None)?,
             };
+            let mut typed_inactive = None;
             let typed_definition = match typed_definition {
-                Some(definition)
-                    if reference_parameter
-                        && relation_constraint_is_inactive_in(
-                            ctx,
-                            parameter,
-                            &definition,
-                            &profile,
-                        )? =>
-                {
-                    None
+                Some(definition) if reference_parameter => {
+                    let inactive =
+                        relation_constraint_is_inactive_in(ctx, parameter, &definition, &profile)?;
+                    if inactive {
+                        None
+                    } else {
+                        typed_inactive = Some(false);
+                        Some(definition)
+                    }
                 }
                 definition => definition,
             };
@@ -4597,8 +4615,11 @@ pub(crate) fn project_relation_bindings(
                     operands,
                 }
             };
-            let active = relation_constraint_is_inactive_in(ctx, parameter, &definition, &profile)?
-                .then_some(false);
+            let inactive = match typed_inactive {
+                Some(inactive) => inactive,
+                None => relation_constraint_is_inactive_in(ctx, parameter, &definition, &profile)?,
+            };
+            let active = inactive.then_some(false);
             let has_display_scalar =
                 relation_display_scalar_for_parameter(ctx, relation, lane)?.is_some();
             let Ok(definition) =
@@ -6367,3 +6388,6 @@ mod endpoint_reference_storage_tests;
 
 #[cfg(test)]
 mod dynamic_line_selection_tests;
+
+#[cfg(test)]
+mod name_admission_tests;

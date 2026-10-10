@@ -2658,7 +2658,7 @@ fn bind_resolved_curve_vertices(
                     curve,
                     &markers_by_id,
                     &curve_markers,
-                    geometry,
+                    super::typed_relations::CurveEndpointGeometry::Borrowed(geometry),
                 )
             })?;
             for marker in ctx.admit_iter(endpoints, SELECTED)? {
@@ -2711,7 +2711,7 @@ fn bind_resolved_curve_vertices(
                         curve,
                         &markers_by_id,
                         &curve_markers,
-                        geometry,
+                        super::typed_relations::CurveEndpointGeometry::Borrowed(geometry),
                     )
                 })?;
                 if endpoints.len() == 2 {
