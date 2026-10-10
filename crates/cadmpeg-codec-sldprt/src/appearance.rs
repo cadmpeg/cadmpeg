@@ -123,6 +123,8 @@ fn definition_at(
         return Ok(None);
     }
     let name = ctx.copy_retained_text(trimmed, "retain SLDPRT appearance name")?;
+    drop(decoded);
+    drop(_name_reservation);
     let source_name = clone_stream_name(ctx, section.source_stream())?;
     Ok(Some(AppearanceDefinition {
         name,

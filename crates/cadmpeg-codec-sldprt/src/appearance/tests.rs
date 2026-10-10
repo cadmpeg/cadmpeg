@@ -634,6 +634,80 @@ fn unicode_appearance_source() -> (Vec<u8>, usize) {
 }
 
 #[test]
+fn appearance_decoded_name_ends_before_source_name_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let (source, _) = unicode_appearance_source();
+    let scan = crate::test_support::container::scan(&source);
+    let fixture_ctx = cadmpeg_test_support::service_decode_context();
+    let section = scan.sections(&fixture_ctx).unwrap().next().unwrap();
+    assert_eq!(section.source_stream().as_str(), "block@8");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    // U+0800 decodes to three bytes. The copy briefly coexists with them;
+    // afterward only the copied name and seven-byte source name remain.
+    policy.limits.max_materialized_bytes = 10;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        let storage;
+        let definition;
+        (definition, storage) = ctx.with_scoped_storage("appearance definition test", || {
+            super::definition_at(&ctx, section, super::VISUAL_PROPERTIES_CLASS.len(), 0)
+        }).unwrap();
+        let definition = definition.expect("Unicode appearance definition");
+        assert_eq!(definition.name, "ࠀ");
+        assert_eq!(definition.source_name.as_str(), "block@8");
+        assert_eq!(definition.color, super::packed_rgb(0x0080_4020));
+        assert_eq!(definition.record_offset, 0);
+        drop(definition);
+        drop(storage);
+        let released = ctx.reserve_scoped(10, "released appearance definition").unwrap();
+        drop(released);
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn appearance_name_phases_refuse_original_storage_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (source, _) = unicode_appearance_source();
+    let scan = crate::test_support::container::scan(&source);
+    let fixture_ctx = cadmpeg_test_support::service_decode_context();
+    let section = scan.sections(&fixture_ctx).unwrap().next().unwrap();
+    for (cap, used, additional, operation) in [
+        (2, 0, 3, "decode SLDPRT appearance name"),
+        (5, 3, 3, "retain SLDPRT appearance name"),
+        (9, 3, 7, "copy SLDPRT appearance stream name"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = ctx.with_scoped_storage(
+            "appearance definition test", || {
+                super::definition_at(&ctx, section, super::VISUAL_PROPERTIES_CLASS.len(), 0)
+            },
+        ) else { panic!("appearance storage refusal"); };
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(limit.operation, operation);
+        assert_eq!(limit.limit, cap);
+        assert_eq!(limit.used, used);
+        assert_eq!(limit.additional, additional);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.charge_work(0, "after appearance storage refusal"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
+            if sticky == limit));
+    }
+}
+
+#[test]
 fn appearance_utf16_refuses_exact_retained_budget() {
     let (source, _) = unicode_appearance_source();
     let scan = crate::test_support::container::scan(&source);
