@@ -965,7 +965,10 @@ pub(super) fn transfer_section_entities(
                 )
             })?
         };
-        let Some(entity_id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
+        let mut entity_storage = ctx.reserve_scoped(0, "creo saved entity candidate identity")?;
+        let Some(entity_id) =
+            entity_storage.with_storage(|| sketch_entity_id_admitted(ctx, sketch_id, &suffix))?
+        else {
             return Ok(ControlFlow::Continue(()));
         };
         let already_present = ctx.contains_hash_set(
@@ -992,10 +995,6 @@ pub(super) fn transfer_section_entities(
             }
         } else {
             false
-        };
-        let Some(curve_id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)?
-        else {
-            return Ok(ControlFlow::Continue(()));
         };
         annotate(
             ctx,
@@ -1027,7 +1026,7 @@ pub(super) fn transfer_section_entities(
             "creo saved entity native reference",
         )?;
         let entity = SketchEntity::new(
-            entity_id,
+            entity_storage.commit_value(entity_id)?,
             sketch_id.try_clone_for_decode(ctx, "creo saved entity sketch identity")?,
             geometry.try_clone_for_decode(ctx, "creo saved entity geometry copy")?,
         )
@@ -1051,7 +1050,14 @@ pub(super) fn transfer_section_entities(
                 "creo saved section geometry rows",
             )
         })?;
-        saved_section_geometries.push((internal_id, external_id, geometry, offset, curve_id));
+        saved_section_geometries.push((
+            internal_id,
+            external_id,
+            geometry,
+            offset,
+            suffix,
+            suffix_storage,
+        ));
         Ok(ControlFlow::Continue(()))
     })?;
     let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
@@ -1061,7 +1067,8 @@ pub(super) fn transfer_section_entities(
             return Ok(ControlFlow::Continue(()));
         };
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let geometry = geometry_storage
+        let mut spline_storage = ctx.reserve_scoped(0, "creo saved spline candidate geometry")?;
+        let geometry = spline_storage
             .with_storage(|| saved_spline_sketch_geometry(ctx, spline, &mut refusal))?;
         let refused = refusal.take_records_checked()?;
         let Some(geometry) = geometry.filter(|_| refused.is_empty()) else {
@@ -1131,39 +1138,28 @@ pub(super) fn transfer_section_entities(
         } else {
             false
         };
-        let entity_id = if let Some(external_id) = external_id {
-            sketch_entity_id_admitted(ctx, sketch_id, external_id)?
-        } else {
-            let namespace = &crate::identity::FEATDEFS_SAVED_SPLINE;
-            let text = ctx.format_retained(
-                format_args!(
-                    "{}:{}:{}#{}:{suffix}",
-                    namespace.format(),
-                    namespace.scope(),
-                    namespace.kind(),
-                    sketch_identity_scope(sketch_id)
-                ),
-                "creo saved spline entity identity",
-            )?;
-            SketchEntityId::try_from(text).ok()
-        };
+        let mut entity_storage = ctx.reserve_scoped(0, "creo saved spline candidate identity")?;
+        let entity_id = entity_storage.with_storage(|| {
+            Ok::<_, cadmpeg_core::CodecError>(if let Some(external_id) = external_id {
+                sketch_entity_id_admitted(ctx, sketch_id, external_id)?
+            } else {
+                let namespace = &crate::identity::FEATDEFS_SAVED_SPLINE;
+                let text = ctx.format_retained(
+                    format_args!(
+                        "{}:{}:{}#{}:{suffix}",
+                        namespace.format(),
+                        namespace.scope(),
+                        namespace.kind(),
+                        sketch_identity_scope(sketch_id)
+                    ),
+                    "creo saved spline entity identity",
+                )?;
+                SketchEntityId::try_from(text).ok()
+            })
+        })?;
         let Some(entity_id) = entity_id else {
             return Ok(ControlFlow::Continue(()));
         };
-        let namespace = &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE;
-        let curve_text = ctx.format_retained(
-            format_args!(
-                "{}:{}:{}#{}:{suffix}",
-                namespace.format(),
-                namespace.scope(),
-                namespace.kind(),
-                sketch_identity_scope(sketch_id)
-            ),
-            "creo saved spline curve identity",
-        )?;
-        let curve_id = CurveId::try_from(curve_text).map_err(|_| {
-            cadmpeg_core::CodecError::malformed("saved spline curve identity is invalid")
-        })?;
         let already_present = ctx.contains_hash_set(
             &entity_ids,
             entity_id.as_str(),
@@ -1188,13 +1184,27 @@ pub(super) fn transfer_section_entities(
             ),
             "creo saved spline native reference",
         )?;
-        let geometry_ref = transform
-            .map(|_| {
-                ctx.copy_retained_text(curve_id.as_str(), "creo saved spline geometry reference")
-            })
-            .transpose()?;
+        let geometry_ref = if transform.is_some() {
+            let namespace = &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE;
+            let curve_text = ctx.format_retained(
+                format_args!(
+                    "{}:{}:{}#{}:{suffix}",
+                    namespace.format(),
+                    namespace.scope(),
+                    namespace.kind(),
+                    sketch_identity_scope(sketch_id)
+                ),
+                "creo saved spline curve identity",
+            )?;
+            let curve_id = CurveId::try_from(curve_text).map_err(|_| {
+                cadmpeg_core::CodecError::malformed("saved spline curve identity is invalid")
+            })?;
+            Some(cadmpeg_ir::ids::Identity::from(curve_id).into_string())
+        } else {
+            None
+        };
         let entity = SketchEntity::new(
-            entity_id,
+            entity_storage.commit_value(entity_id)?,
             sketch_id.try_clone_for_decode(ctx, "creo saved spline sketch identity")?,
             geometry.try_clone_for_decode(ctx, "creo saved spline geometry copy")?,
         )
@@ -1217,6 +1227,7 @@ pub(super) fn transfer_section_entities(
                     "creo generated saved geometry rows",
                 )
             })?;
+            geometry_storage.absorb(&mut spline_storage)?;
             generated_saved_geometries.push((external_id, geometry));
         }
         Ok(ControlFlow::Continue(()))
@@ -1224,14 +1235,18 @@ pub(super) fn transfer_section_entities(
     let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
         std::convert::Infallible,
     >(ctx, definition, |saved| {
-        let Some((entity, offset)) = unresolved_saved_section_entity(
-            ctx,
-            definition,
-            sketch_id,
-            saved,
-            unique_saved_ids,
-            ambiguous_segment_ids,
-        )?
+        let mut candidate_storage =
+            ctx.reserve_scoped(0, "creo unresolved saved candidate storage")?;
+        let Some((entity, offset)) = candidate_storage.with_storage(|| {
+            unresolved_saved_section_entity(
+                ctx,
+                definition,
+                sketch_id,
+                saved,
+                unique_saved_ids,
+                ambiguous_segment_ids,
+            )
+        })?
         else {
             return Ok(ControlFlow::Continue(()));
         };
@@ -1259,7 +1274,7 @@ pub(super) fn transfer_section_entities(
                 "creo saved identity index nodes",
             )
         })?;
-        push_section_entity(ctx, &mut entities, entity)?;
+        push_section_entity(ctx, &mut entities, candidate_storage.commit_value(entity)?)?;
         Ok(ControlFlow::Continue(()))
     })?;
     let saved_profiles = saved_profile_chains(ctx, sketch_id, &generated_saved_geometries)?;
@@ -1316,7 +1331,11 @@ pub(super) fn transfer_section_entities(
             let suffix = suffix_storage.with_storage(|| {
                 section_segment_identity_suffix_admitted(ctx, unique_segment_ids, segment)
             })?;
-            let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
+            let mut curve_storage =
+                ctx.reserve_scoped(0, "creo placed curve candidate identity")?;
+            let Some(id) = curve_storage
+                .with_storage(|| typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix))?
+            else {
                 continue;
             };
             let already_present = ctx.contains_hash_set(
@@ -1348,7 +1367,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
-                    id,
+                    id: curve_storage.commit_value(id)?,
                     geometry,
                     source_object: Some(placed_source_object(
                         ctx,
@@ -1387,7 +1406,11 @@ pub(super) fn transfer_section_entities(
                     segment.offset,
                 )
             })?;
-            let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
+            let mut curve_storage =
+                ctx.reserve_scoped(0, "creo placed curve candidate identity")?;
+            let Some(id) = curve_storage
+                .with_storage(|| typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix))?
+            else {
                 continue;
             };
             let already_present = ctx.contains_hash_set(
@@ -1419,7 +1442,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
-                    id,
+                    id: curve_storage.commit_value(id)?,
                     geometry,
                     source_object: Some(placed_source_object(
                         ctx,
@@ -1462,7 +1485,11 @@ pub(super) fn transfer_section_entities(
                     segment.offset,
                 )
             })?;
-            let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
+            let mut curve_storage =
+                ctx.reserve_scoped(0, "creo placed curve candidate identity")?;
+            let Some(id) = curve_storage
+                .with_storage(|| typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix))?
+            else {
                 continue;
             };
             let already_present = ctx.contains_hash_set(
@@ -1494,7 +1521,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
-                    id,
+                    id: curve_storage.commit_value(id)?,
                     geometry,
                     source_object: Some(placed_source_object(
                         ctx,
@@ -1507,9 +1534,18 @@ pub(super) fn transfer_section_entities(
             )?;
         }
 
-        for (internal_id, external_id, section_geometry, offset, id) in
+        for (internal_id, external_id, section_geometry, offset, suffix, _suffix_storage) in
             ctx.admit_iter(saved_section_geometries, "creo placed saved geometry rows")?
         {
+            let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry) else {
+                continue;
+            };
+            let mut curve_storage = ctx.reserve_scoped(0, "creo saved curve candidate identity")?;
+            let Some(id) = curve_storage
+                .with_storage(|| typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix))?
+            else {
+                continue;
+            };
             let already_present = ctx.contains_hash_set(
                 &curve_ids,
                 id.as_str(),
@@ -1518,9 +1554,6 @@ pub(super) fn transfer_section_entities(
             if already_present {
                 continue;
             }
-            let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry) else {
-                continue;
-            };
             annotate(
                 ctx,
                 annotations,
@@ -1542,7 +1575,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
-                    id,
+                    id: curve_storage.commit_value(id)?,
                     geometry,
                     source_object: Some(match external_id {
                         Some(external_id) => placed_source_object(
@@ -1566,6 +1599,8 @@ pub(super) fn transfer_section_entities(
 
 #[cfg(test)]
 mod tests {
+    mod placed_storage;
+    mod saved_storage;
     mod set_owner_tests;
     use super::{
         admitted_endpoint_refs, copied_or_native_geometry, native_section_geometry,

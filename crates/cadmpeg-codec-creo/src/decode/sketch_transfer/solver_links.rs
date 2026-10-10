@@ -12,28 +12,6 @@ use std::collections::HashMap;
 
 type UniqueRows<'rows, T> = HashMap<u32, Option<&'rows T>>;
 
-/// A second row invalidates an ID even when both rows have equal values.
-fn unique_rows<'rows, T>(
-    ctx: &DecodeContext<'_>,
-    rows: &'rows [T],
-    key: impl Fn(&T) -> Option<u32>,
-    storage: &mut ScopedReservation<'_>,
-    operation: &'static str,
-) -> Result<UniqueRows<'rows, T>, CodecError> {
-    storage.with_storage(|| {
-        let mut unique = HashMap::new();
-        for row in ctx.admit_iter(rows, operation)? {
-            let Some(id) = key(row) else {
-                continue;
-            };
-            ctx.entry_hash_map(&mut unique, id, operation)?
-                .and_modify(|value| *value = None)
-                .or_insert(Some(row));
-        }
-        Ok(unique)
-    })
-}
-
 struct IncidenceJoins<'definition, 'ctx> {
     triples: UniqueRows<'definition, FeatureRelationTriple>,
     incidences: UniqueRows<'definition, FeatureSkamp>,
@@ -62,14 +40,30 @@ impl<'definition, 'ctx> IncidenceJoins<'definition, 'ctx> {
                 && !relations.triples().is_empty()
                 && !relations.skamps().is_empty()
             {
-                triples = unique_rows(ctx, relations.triples(), key, &mut storage, operation)?;
-                incidences = unique_rows(
-                    ctx,
-                    relations.skamps(),
-                    |row| Some(row.id),
-                    &mut storage,
-                    "creo solver incidence identity rows",
+                let (index, mut index_storage) = ctx.unique_index(
+                    ctx.admit_iter(relations.triples(), operation)?
+                        .filter_map(|row| key(row).map(|id| (id, row))),
+                    operation,
                 )?;
+                storage.absorb(&mut index_storage)?;
+                triples = index;
+                let has_join = !triples.is_empty()
+                    && ctx.any_by(
+                        relations.triples(),
+                        |row| {
+                            Ok(key(row)
+                                .is_some_and(|id| triples.get(&id).is_some_and(Option::is_some)))
+                        },
+                        "creo solver usable join rows",
+                    )?;
+                if has_join {
+                    let (index, mut index_storage) = ctx.unique_index(
+                        relations.skamps().iter().map(|row| (row.id, row)),
+                        "creo solver incidence identity rows",
+                    )?;
+                    storage.absorb(&mut index_storage)?;
+                    incidences = index;
+                }
             }
         }
         Ok(Self {
@@ -99,6 +93,58 @@ pub(in super::super) struct RelationIncidences<'definition, 'ctx> {
 }
 
 impl<'definition, 'ctx> RelationIncidences<'definition, 'ctx> {
+    /// Build dimension joins only for unique relation rows.
+    pub(super) fn for_dimension_rows(
+        ctx: &'ctx DecodeContext<'_>,
+        definition: &'definition FeatureDefinition,
+    ) -> Result<Option<Self>, CodecError> {
+        let Some(table) = definition
+            .relations
+            .as_ref()
+            .filter(|table| !table.rows.is_empty())
+        else {
+            return Ok(None);
+        };
+        let mut storage = ctx.reserve_scoped(0, "creo dimension relation index storage")?;
+        let relations = if feature_relation_table_complete(table) {
+            let (index, mut index_storage) = ctx.unique_index(
+                table.rows.iter().map(|row| (row.relation_id, row)),
+                "creo solver relation identity rows",
+            )?;
+            storage.absorb(&mut index_storage)?;
+            index
+        } else {
+            HashMap::new()
+        };
+        let has_unique_relation = !relations.is_empty()
+            && ctx.any_by(
+                &table.rows,
+                |row| Ok(relations.get(&row.relation_id).is_some_and(Option::is_some)),
+                "creo dimension relation join consumers",
+            )?;
+        let joins = if has_unique_relation {
+            let mut joins = IncidenceJoins::new(
+                ctx,
+                definition,
+                |triple| triple.skamp_id.and(triple.relation_id),
+                "creo solver relation join rows",
+            )?;
+            joins.storage.absorb(&mut storage)?;
+            joins
+        } else {
+            IncidenceJoins {
+                triples: HashMap::new(),
+                incidences: HashMap::new(),
+                storage,
+            }
+        };
+        Ok(Some(Self {
+            definition,
+            relations,
+            joins,
+        }))
+    }
+
     pub(in super::super) fn new(
         ctx: &'ctx DecodeContext<'_>,
         definition: &'definition FeatureDefinition,
@@ -114,14 +160,15 @@ impl<'definition, 'ctx> RelationIncidences<'definition, 'ctx> {
             .as_ref()
             .filter(|table| feature_relation_table_complete(table))
         {
-            Some(table) => unique_rows(
-                ctx,
-                &table.rows,
-                |row| Some(row.relation_id),
-                &mut joins.storage,
-                "creo solver relation identity rows",
-            )?,
-            None => HashMap::new(),
+            Some(table) if !table.rows.is_empty() => {
+                let (index, mut storage) = ctx.unique_index(
+                    table.rows.iter().map(|row| (row.relation_id, row)),
+                    "creo solver relation identity rows",
+                )?;
+                joins.storage.absorb(&mut storage)?;
+                index
+            }
+            _ => HashMap::new(),
         };
         Ok(Self {
             definition,
@@ -192,26 +239,33 @@ impl<'definition, 'ctx> SkampEquations<'definition, 'ctx> {
                 .as_ref()
                 .is_none_or(SolverSubtable::is_complete)
             {
-                incidences = unique_rows(
-                    ctx,
-                    relations.skamps(),
-                    |row| Some(row.id),
-                    &mut storage,
+                let (index, mut index_storage) = ctx.unique_index(
+                    relations.skamps().iter().map(|row| (row.id, row)),
                     "creo solver incidence identity rows",
                 )?;
+                storage.absorb(&mut index_storage)?;
+                incidences = index;
                 if !incidences.is_empty()
                     && relations
                         .triples
                         .as_ref()
                         .is_none_or(SolverSubtable::is_complete)
                 {
-                    triples = unique_rows(
-                        ctx,
-                        relations.triples(),
-                        |triple| triple.equation_id.and(triple.skamp_id),
-                        &mut storage,
+                    let (index, mut index_storage) = ctx.unique_index(
+                        ctx.admit_iter(
+                            relations.triples(),
+                            "creo solver SKAMP equation join rows",
+                        )?
+                        .filter_map(|triple| {
+                            triple
+                                .equation_id
+                                .and(triple.skamp_id)
+                                .map(|id| (id, triple))
+                        }),
                         "creo solver SKAMP equation join rows",
                     )?;
+                    storage.absorb(&mut index_storage)?;
+                    triples = index;
                 }
             }
         }
@@ -235,47 +289,4 @@ impl<'definition, 'ctx> SkampEquations<'definition, 'ctx> {
 }
 
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn duplicate_numeric_join_keys_are_ambiguous() {
-        crate::test_support::assert_work_boundaries(&["creo test solver identity rows"], |ctx| {
-            let mut storage = ctx.reserve_scoped(0, "creo test solver index storage")?;
-            let rows = [(7, 1), (9, 2), (7, 1), (11, 3)];
-            let index = super::unique_rows(
-                ctx,
-                &rows,
-                |row| Some(row.0),
-                &mut storage,
-                "creo test solver identity rows",
-            )?;
-            assert_eq!(index.get(&7), Some(&None));
-            assert_eq!(index.get(&9).copied().flatten(), Some(&rows[1]));
-            assert_eq!(index.get(&11).copied().flatten(), Some(&rows[3]));
-            assert!(!index.contains_key(&12));
-            Ok(())
-        });
-    }
-    #[test]
-    fn numeric_join_index_does_not_retain_storage() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        for _ in 0..2 {
-            let mut storage = ctx
-                .reserve_scoped(0, "creo test solver index storage")
-                .expect("scope");
-            let rows = [(7, 1), (9, 2)];
-            let index = super::unique_rows(
-                &ctx,
-                &rows,
-                |row| Some(row.0),
-                &mut storage,
-                "creo test solver identity rows",
-            )
-            .expect("index uses temporary storage");
-            assert_eq!(index.get(&7).copied().flatten(), Some(&rows[0]));
-        }
-    }
-}
+mod tests;
