@@ -6,6 +6,7 @@ use super::cacheless_constant_rolling_ball_first_order;
 use super::cacheless_constant_rolling_ball_point;
 use super::cacheless_law_sweep_point;
 use super::cacheless_law_sweep_first_order;
+use super::cacheless_ruled_variable_blend_first_order;
 use super::cacheless_variable_blend_point;
 use super::model_axis_revolution_point;
 use super::model_axis_revolution_jet;
@@ -510,6 +511,21 @@ pub(super) fn model_surface_point_by_id_inner(
             Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) => {
                 let construction = definition_payload.construction();
 
+                if normal && matches!(construction.cross_section,
+                    Some(crate::geometry::VariableBlendCrossSection::RoundedChamfer { .. })) {
+                    return match cacheless_ruled_variable_blend_first_order(
+                        admission, index, definition_payload, u, v,
+                    ) {
+                        Ok(order) => first_evaluation(Ok(order), false),
+                        Err(EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)),
+                        Err(failure) => cache_fallback(
+                            failure,
+                            variable_blend_has_current_cache(construction)
+                                .then(|| cache_evaluation(admission, &surface.geometry, u, v, true))
+                                .flatten(),
+                        ),
+                    };
+                }
                 match cacheless_variable_blend_point(admission, index, definition_payload, u, v) {
                     Err(EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)),
                     Ok(point) => Some(SurfaceEvaluation {
