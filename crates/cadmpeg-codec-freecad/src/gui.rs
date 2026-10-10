@@ -238,12 +238,14 @@ fn provider_identity_key(ctx: &DecodeContext<'_>, name: &str) -> Result<Identity
     crate::native::encoded_segment_charged(ctx, name, "FCStd GUI provider key")
 }
 
+const OBJECT_APPEARANCE_ID_PREFIX: &str = "fcstd:appearance:object#";
+
 fn object_appearance_id(
     ctx: &DecodeContext<'_>,
     provider: &IdentityKey,
 ) -> Result<AppearanceId, CodecError> {
     AppearanceId::mint(ctx.format_retained(
-        format_args!("fcstd:appearance:object#{provider}"),
+        format_args!("{OBJECT_APPEARANCE_ID_PREFIX}{provider}"),
         "FCStd GUI object appearance identity",
     )?)
     .map_err(CodecError::malformed)
@@ -1038,24 +1040,7 @@ fn transfer_schema_one<'ctx>(
                 None => Ok(None),
             }
         };
-        let has_body_channel =
-            ctx.contains_key_hash_map(&values, "Visibility", "FCStd GUI source channel lookup")?
-                || ctx.contains_key_hash_map(
-                    &values,
-                    "ShapeColor",
-                    "FCStd GUI source channel lookup",
-                )?;
-        let has_primitive_channel =
-            ctx.contains_key_hash_map(&values, "LineColor", "FCStd GUI source channel lookup")?
-                || ctx.contains_key_hash_map(
-                    &values,
-                    "PointColor",
-                    "FCStd GUI source channel lookup",
-                )?;
-        if (has_body_channel || has_primitive_channel)
-            && !payloads.is_empty()
-            && payloads_by_owner.is_none()
-        {
+        if !payloads.is_empty() && payloads_by_owner.is_none() {
             let (property_id_storage, properties_by_id) = ctx
                 .collect_scoped_btree_map(
                     properties
@@ -1145,7 +1130,7 @@ fn transfer_schema_one<'ctx>(
             .map(|(node, _)| node);
         let (_body_storage, body_ids) = ctx
             .with_scoped_storage("FCStd GUI displayed bodies", || {
-                if (visibility.is_some() || packed_color.is_some()) && !owned_payloads.is_empty() {
+                if !owned_payloads.is_empty() {
                     let topology_index = match &mut topology_index {
                         Some(index) => index,
                         slot @ None => slot.insert(TopologyIndex::new(ir)),
@@ -1328,11 +1313,7 @@ fn transfer_schema_one<'ctx>(
             drop(_body_storage);
             continue;
         };
-        let (_id_storage, appearance_id) = ctx
-            .with_scoped_storage("FCStd GUI appearance identity storage", || {
-                object_appearance_id(ctx, &provider_key)
-            })
-            .map(|(id, storage)| (storage, id))?;
+        let appearance_id = object_appearance_id(ctx, &provider_key)?;
         let mut material_properties = BTreeMap::new();
         if let Some(material) = material {
             for (source, target) in [
@@ -1364,8 +1345,8 @@ fn transfer_schema_one<'ctx>(
         plan.appearance_storage.with_storage(|| {
             ctx.reserve_vec(&mut plan.appearances, 1, "FCStd GUI planned appearances")
         })?;
-        plan.appearances.push(Appearance {
-            id: appearance_id.try_clone_for_decode(ctx, "FCStd GUI appearance identity copy")?,
+        let appearance = Appearance {
+            id: appearance_id,
             name: Some(ctx.format_retained(
                 format_args!("{name} shape appearance"),
                 "FCStd GUI appearance name",
@@ -1379,7 +1360,7 @@ fn transfer_schema_one<'ctx>(
             base_color: Some(decode_color(packed_color, transparency)?),
             textures: Vec::new(),
             properties: material_properties,
-        });
+        };
         let mut body_bindings = body_ids.into_iter().enumerate();
         while body_bindings.len() != 0 {
             let Some((index, body)) =
@@ -1398,7 +1379,7 @@ fn transfer_schema_one<'ctx>(
                 target: AppearanceTarget::Body(
                     body.try_clone_for_decode(ctx, "FCStd GUI binding body identity")?,
                 ),
-                appearance: appearance_id
+                appearance: appearance.id
                     .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
                 source_entity_id: Some(
                     ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?,
@@ -1409,6 +1390,7 @@ fn transfer_schema_one<'ctx>(
             });
         }
         drop(body_bindings);
+        plan.appearances.push(appearance);
         drop(_body_storage);
     }
     drop(providers);
@@ -7337,6 +7319,45 @@ mod shape_association_tests {
             visible: None,
         });
         ir
+    }
+
+    #[test]
+    fn absent_body_channels_clear_selected_visibility_and_color() {
+        let mut ir = shape_ir();
+        ir.model.bodies[0].visible = Some(true);
+        ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color::from_rgba8(1, 2, 3, 255));
+        let object = crate::native::ObjectRecord {
+            identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#P".into(), "P".into()).expect("object identity"),
+            type_name: "Part::Feature".into(),
+            persistent_id: None,
+            view_type: None,
+            attributes: std::collections::BTreeMap::new(),
+            dependencies: Vec::new(),
+            dependency_allow_partial: None,
+            order: 0,
+            data: None,
+        };
+        let mut property = shape_property("property");
+        property.owner = "fcstd:native:object#P".into();
+        let properties = [property];
+        let payloads = [shape_payload("payload", "property")];
+        let entries = std::collections::BTreeMap::new();
+        let sources = super::GuiSources {
+            entries: &entries,
+            objects: std::slice::from_ref(&object),
+            properties: &properties,
+            payloads: &payloads,
+            element_maps: &[],
+            requires_alpha_conversion: false,
+        };
+        let text = r#"<Document><Camera settings=""/><ViewProviderData Count="1"><ViewProvider name="P"><Properties Count="0"/></ViewProvider></ViewProviderData></Document>"#;
+        let xml = roxmltree::Document::parse(text).expect("GUI XML");
+        crate::test_support::with_service_context(text.as_bytes(), |ctx| {
+            let (_, plan) = super::transfer_schema_one(ctx, &ir, text, &xml, None, None, &sources).expect("GUI transfer");
+            plan.apply(ctx, &mut ir).expect("body assignments");
+            assert_eq!(ir.model.bodies[0].visible, None);
+            assert_eq!(ir.model.bodies[0].color, None);
+        });
     }
 
     #[test]
