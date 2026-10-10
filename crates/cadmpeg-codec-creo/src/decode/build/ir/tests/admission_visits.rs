@@ -62,7 +62,10 @@ fn composite_pattern_coverage_visits_present_stages_until_first_unresolved() {
         let pattern: PatternKind = PatternKind::new(PatternTransform::Composite {
             stages: CompositePattern::new(stages).expect("nonempty composable stages"),
         }).expect("composite pattern");
-        for cap in 0..=visits {
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::WorkUnits,
+            &vec!["creo pattern composite stage traversal"; usize::try_from(visits).expect("fixture visit count")],
+            |cap| {
             let arena = DecodeArena::new();
             let policy = fixed_work_policy(cap);
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -84,7 +87,8 @@ fn composite_pattern_coverage_visits_present_stages_until_first_unresolved() {
             assert!(matches!(pattern_kind_has_unresolved_operands(&ctx, &pattern),
                 Err(CodecError::ResourceLimit(actual)) if actual == original));
             assert_eq!(ctx.resource_refusal(), Some(original));
-        }
+            if cap == visits { Ok(()) } else { Err(original.into()) }
+        });
     }
 }
 
@@ -115,7 +119,10 @@ fn empty_display_transfer_and_span_queries_are_free_and_preserve_refusal() {
 fn unavailable_display_span_stops_before_unneeded_tail() {
     let mut spans = vec![u32::MAX];
     spans.extend(std::iter::repeat_n(3, 128));
-    for cap in 0..=1 {
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::WorkUnits,
+        &["creo display strip span traversal"],
+        |cap| {
         let arena = DecodeArena::new();
         let policy = fixed_work_policy(cap);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -136,14 +143,15 @@ fn unavailable_display_span_stops_before_unneeded_tail() {
         assert!(matches!(admitted_display_strips(&ctx, vec![0u8, 1], &spans),
             Err(CodecError::ResourceLimit(actual)) if actual == original));
         assert_eq!(ctx.resource_refusal(), Some(original));
-    }
+        if cap == 1 { Ok(()) } else { Err(original.into()) }
+    });
 }
 
 
 fn check_display_staging_peak(shaded: bool) {
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::math::Point3;
-    use cadmpeg_ir::tessellation::{ShadedVertex, Strip, Strips, Tessellation, TessellationMesh};
+    use cadmpeg_ir::tessellation::{Strip, Strips, Tessellation, TessellationMesh};
     let mut scan = super::inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
     if shaded {
         scan.primitives.triangle_strips[0] = crate::decode::with_test_decode_ctx(|ctx| {
@@ -155,14 +163,7 @@ fn check_display_staging_peak(shaded: bool) {
             )
         }).expect("fixture service").expect("legal shaded strip");
     }
-    // First growth reserves four staging rows. A full four-row model vector
-    // grows after those buffers have been consumed; the peaks do not overlap.
-    let staging_bytes = 4 * std::mem::size_of::<FinitePoint3>()
-        + if shaded { 4 * std::mem::size_of::<ShadedVertex>() } else { 0 };
-    let model_bytes = 4 * std::mem::size_of::<Tessellation>();
-    assert!(model_bytes > staging_bytes);
-    let peak = u64::try_from(model_bytes).expect("fixed model peak");
-    for cap in [peak - 1, peak] {
+    let initial_ir = || {
         let mut ir = CadIr::empty();
         ir.model.tessellations = Vec::with_capacity(4);
         for offset in 100..104 {
@@ -180,6 +181,23 @@ fn check_display_staging_peak(shaded: bool) {
             ir.model.tessellations.push(Tessellation::from_parts(id, mesh, Vec::new()).expect("fixture mesh"));
         }
         assert_eq!(ir.model.tessellations.capacity(), 4);
+        ir
+    };
+    let below = crate::test_support::allocation_limit_at(
+        ResourceDimension::MaterializedBytes,
+        Some("creo model tessellations"),
+        |cap| {
+            let mut ir = initial_ir();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            transfer_display_tessellations(&ctx, &scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new())
+        },
+    );
+    let peak = below.checked_add(1).expect("model growth boundary");
+    for cap in [below, peak] {
+        let mut ir = initial_ir();
         let previous = ir.model.tessellations.clone();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

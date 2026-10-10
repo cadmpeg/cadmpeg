@@ -77,7 +77,10 @@ fn source_section_search_admits_only_present_sections_and_keeps_first_match() {
             (48, fallback, None, 5),
             (usize::MAX, fallback, None, 5),
         ] {
-            for cap in 0..=visits {
+            crate::test_support::assert_refusal_order(
+                ResourceDimension::WorkUnits,
+                &vec!["creo source section search"; usize::try_from(visits).expect("fixture visits")],
+                |cap| {
                 let arena = DecodeArena::new();
                 let policy = policy(cap);
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -101,8 +104,10 @@ fn source_section_search_admits_only_present_sections_and_keeps_first_match() {
                     assert!(matches!(source_section_ref(&ctx, &scan, offset),
                         Err(CodecError::ResourceLimit(actual)) if actual == original));
                     assert_eq!(ctx.resource_refusal(), Some(original));
+                    return Err(original.into());
                 }
-            }
+                Ok(())
+            });
         }
     }
 }

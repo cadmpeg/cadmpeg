@@ -1112,7 +1112,6 @@ fn charge_pattern_scaling_work<C: cadmpeg_ir::features::patterns::CompositeStage
     pattern: &cadmpeg_ir::features::patterns::PatternKind<C>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::patterns::PatternTransform;
-    ctx.charge_work(1, "creo pattern scaling work")?;
     match pattern.definition() {
         PatternTransform::LinearOffsets { offsets, .. } => {
             for _offset in offsets {
@@ -1336,12 +1335,16 @@ pub(in crate::decode) fn curve_parameter_scale(
     geometry: &SolvedCurveGeometry,
     length_scale_mm: PositiveReal,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    ctx.charge_work(1, "creo curve parameter scale work")?;
     Ok(match geometry {
         SolvedCurveGeometry::Line(_) => Some(length_scale_mm),
         SolvedCurveGeometry::Transformed(placed) => {
             let _depth = ctx.enter_nested("creo curve parameter scale nesting")?;
-            curve_parameter_scale(ctx, placed.basis(), length_scale_mm)?
+            ctx.fold(
+                std::slice::from_ref(placed.basis()),
+                None,
+                |_, basis| curve_parameter_scale(ctx, basis, length_scale_mm),
+                "creo curve parameter scale work",
+            )?
         }
         SolvedCurveGeometry::Circle(_)
         | SolvedCurveGeometry::Ellipse(_)
@@ -1360,7 +1363,6 @@ pub(in crate::decode) fn surface_parameter_scales(
     geometry: &SolvedSurfaceGeometry,
     length_scale_mm: f64,
 ) -> Result<[f64; 2], CodecError> {
-    ctx.charge_work(1, "creo surface parameter scale work")?;
     Ok(match geometry {
         SolvedSurfaceGeometry::Plane(_) => [length_scale_mm, length_scale_mm],
         SolvedSurfaceGeometry::Cylinder(_) => [1.0, length_scale_mm],
@@ -1369,7 +1371,12 @@ pub(in crate::decode) fn surface_parameter_scales(
         SolvedSurfaceGeometry::Torus(_) => [1.0, 1.0],
         SolvedSurfaceGeometry::Transformed(placed) => {
             let _depth = ctx.enter_nested("creo surface parameter scale nesting")?;
-            surface_parameter_scales(ctx, placed.basis(), length_scale_mm)?
+            ctx.fold(
+                std::slice::from_ref(placed.basis()),
+                [1.0, 1.0],
+                |_, basis| surface_parameter_scales(ctx, basis, length_scale_mm),
+                "creo surface parameter scale work",
+            )?
         }
         SolvedSurfaceGeometry::Nurbs { .. }
         | SolvedSurfaceGeometry::Polygonal(_)
@@ -2494,7 +2501,7 @@ mod tests {
         );
         crate::test_support::assert_refusal_order(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            &["creo pattern scaling work"; 2],
+            &["creo pattern scaling stage traversal"],
             |cap| {
                 let arena = cadmpeg_core::decode::DecodeArena::new();
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -2584,6 +2591,42 @@ mod tests {
             standard, designation: Some(designation), fit: Some(fit), depth: HoleThreadDepth::Blind { depth }, clearance: Some(clearance), ..
         } if standard.as_str() == "test-standard" && designation == "test-size" && fit == "test-fit" && depth.get() == 6.0 && clearance.get() == 2.0)
         );
+    }
+
+    #[test]
+    fn fixed_pattern_scaling_is_free() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut unresolved: PatternKind = PatternKind::UNRESOLVED;
+        scale_pattern_kind(&ctx, &mut unresolved, positive(2.0)).expect("constant unresolved pattern");
+        assert_eq!(unresolved, PatternKind::UNRESOLVED);
+        let mut linear: PatternKind = PatternKind::new(PatternTransform::Linear {
+            direction: None, spacing: positive_length(3.0), count: 1, second: None,
+        }).expect("linear pattern");
+        scale_pattern_kind(&ctx, &mut linear, positive(2.0)).expect("constant scalar fields");
+        assert_eq!(linear, PatternKind::new(PatternTransform::Linear {
+            direction: None, spacing: positive_length(6.0), count: 1, second: None,
+        }).expect("scaled linear pattern"));
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+
+    #[test]
+    fn analytic_parameter_scales_are_free() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let curve = SolvedCurveGeometry::Line(cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0),
+        ).expect("line"));
+        let surface = SolvedSurfaceGeometry::Plane(cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0),
+        ).expect("plane"));
+        assert_eq!(super::curve_parameter_scale(&ctx, &curve, positive(2.0)).expect("constant line"), Some(positive(2.0)));
+        assert_eq!(super::surface_parameter_scales(&ctx, &surface, 2.0).expect("constant plane"), [2.0, 2.0]);
+        assert_eq!(ctx.resource_refusal(), None);
     }
 
     #[test]
@@ -2685,7 +2728,10 @@ mod tests {
             matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo unit scaling member work")
         );
         // Each caller supplies one actual member with only fixed scalar fields.
-        for allowed in [0, 1] {
+        crate::test_support::assert_refusal_order(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &["creo unit scaling member work"],
+            |allowed| {
             let mut trial = definition.clone();
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -2700,6 +2746,7 @@ mod tests {
                 assert_eq!(r.operation, "creo unit scaling member work");
                 assert_eq!((r.used, r.additional), (0, 1));
                 assert_eq!(trial, definition, "refusal precedes the first member");
+                return Err(r.into());
             } else {
                 result.expect("one member and no terminal visit");
                 let original = ctx.charge_work_limit(1, "after scaled member").expect_err("exact cap");
@@ -2709,7 +2756,8 @@ mod tests {
                     Err(CodecError::ResourceLimit(r)) if r == original));
                 assert_eq!(trial, before, "sticky refusal precedes fixed field mutation");
             }
-        }
+            Ok(())
+        });
         crate::decode::with_test_decode_ctx(|ctx| {
             scale_feature_definition(ctx, &mut definition, positive(2.0))
         })
@@ -2954,7 +3002,10 @@ mod tests {
     fn flange_width_scaling_admits_only_present_pairs_and_keeps_original_refusal() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_ir::features::{SheetMetalFlangeEdgeWidths, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth};
-        for allowed in [0, 1, 2] {
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::WorkUnits,
+            &["creo unit scaling member work"; 2],
+            |allowed| {
             let mut width = SheetMetalFlangeWidth::TwoSidesPerEdge {
                 widths: SheetMetalFlangeEdgeWidths::new(vec![
                     SheetMetalFlangeTwoSidedWidth { first: positive_length(1.0), second: positive_length(2.0) },
@@ -2995,7 +3046,8 @@ mod tests {
                 if allowed == 0 { (1.0, 2.0) } else { (2.0, 4.0) });
             assert_eq!((rows[1].first.get(), rows[1].second.get()),
                 if allowed < 2 { (3.0, 4.0) } else { (6.0, 8.0) });
-        }
+            if allowed < 2 { Err(original.into()) } else { Ok(()) }
+        });
     }
 
     #[test]

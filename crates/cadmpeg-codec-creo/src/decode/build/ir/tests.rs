@@ -1175,6 +1175,7 @@ fn display_strip_vertex_range_refuses_after_collection_and_admits_at_service() {
     };
     assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
     assert_eq!(resource.operation, "creo display strip vertex traversal");
+    assert_eq!(resource.used, 1);
     assert_eq!(resource.additional, 3);
     for operation in [
         "creo display tessellation strip rows",
@@ -1248,3 +1249,18 @@ fn display_vertex_staging_refuses_materialized_storage() {
 }
 
 mod admission_visits;
+
+#[test]
+fn display_construction_admits_span_validation_and_triangle_counting() {
+    let scan = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
+    let ir = crate::test_support::assert_work_boundaries(
+        &["creo display strip span validation", "creo display triangle counting"],
+        |ctx| {
+            let mut ir = CadIr::empty();
+            transfer_display_tessellations(ctx, &scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new())?;
+            Ok(ir)
+        },
+    );
+    assert_eq!(ir.model.tessellations.len(), 1);
+    assert_eq!(ir.model.tessellations[0].triangle_count(), 1);
+}
