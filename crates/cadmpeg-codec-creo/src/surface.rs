@@ -1441,6 +1441,9 @@ impl SurfaceParameterRecord {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<bool, CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let kind = self.kind();
         if !matches!(
             kind,
@@ -1449,11 +1452,10 @@ impl SurfaceParameterRecord {
             return Ok(false);
         }
         let cache = scalar::ScalarCache::default();
-        let local_starts =
-            std::iter::once(0).chain(self.body.iter().enumerate().filter_map(|(offset, byte)| {
-                (*byte == psb::token::COMPOUND_CLOSE).then_some(offset + 1)
-            }));
-        for local in local_starts.filter_map(|local_start| self.body.get(local_start..)) {
+        for local_start in inline_local_starts(ctx, &self.body) {
+            let Some(local) = self.body.get(local_start?..) else {
+                continue;
+            };
             for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, &cache)? {
                 for frame in inline_resolved_frames(ctx, local, prefix, &cache)? {
                     if decode_inline_surface_suffix_at(kind, local, frame.cursor, &cache)
@@ -4633,12 +4635,56 @@ const EPS_INLINE_WITNESS: f64 = 1.0e-9;
 const EPS_INLINE_FRAME: f64 = 1.0e-8;
 const MAX_INLINE_FRAME_CANDIDATES: usize = 24;
 
+/// Try the initial local frame before scanning later compound boundaries.
+/// Each subsequent start owns only the body bytes visited to reach it.
+fn inline_local_starts<'a, 'ctx>(
+    ctx: &'a DecodeContext<'ctx>,
+    body: &'a [u8],
+) -> impl Iterator<Item = Result<usize, CodecError>> + use<'a, 'ctx> {
+    let mut initial = true;
+    let mut positions = body.iter().enumerate();
+    let mut finished = false;
+    std::iter::from_fn(move || {
+        if finished {
+            return None;
+        }
+        let start = (|| -> Result<Option<usize>, CodecError> {
+            if let Some(refusal) = ctx.resource_refusal() {
+                return Err(refusal.into());
+            }
+            if initial {
+                initial = false;
+                return Ok(Some(0));
+            }
+            while positions.len() != 0 {
+                let Some((offset, byte)) = ctx.next_charged(
+                    &mut positions,
+                    "creo inline local-system boundary visits",
+                )? else {
+                    break;
+                };
+                if *byte == psb::token::COMPOUND_CLOSE {
+                    return Ok(Some(offset + 1));
+                }
+            }
+            Ok(None)
+        })();
+        if !matches!(start, Ok(Some(_))) {
+            finished = true;
+        }
+        start.transpose()
+    })
+}
+
 fn inline_surface_body(
     ctx: &DecodeContext<'_>,
     kind: SurfaceKind,
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<InlineSurfaceBody>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let standard_envelope = decode_inline_surface_envelope(kind, body, cache);
     let four_bound_envelope = decode_inline_four_bound_cylinder_envelope(kind, body, cache);
     let referenced_envelope = decode_inline_referenced_cylinder_envelope(kind, body, cache);
@@ -4654,7 +4700,14 @@ fn inline_surface_body(
         return Ok(None);
     };
     let mut sole_layout = None;
-    for terminal_close in local_start..body.len() {
+    let mut terminal_closes = local_start..body.len();
+    while !terminal_closes.is_empty() {
+        let Some(terminal_close) = ctx.next_charged(
+            &mut terminal_closes,
+            "creo inline terminal-close candidate visits",
+        )? else {
+            break;
+        };
         if body.get(terminal_close) != Some(&psb::token::COMPOUND_CLOSE) {
             continue;
         }
@@ -4727,12 +4780,12 @@ fn inline_surface_suffix_body(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<InlineSurfaceBody>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut sole_layout = None;
-    let local_starts =
-        std::iter::once(0).chain(body.iter().enumerate().filter_map(|(offset, byte)| {
-            (*byte == psb::token::COMPOUND_CLOSE).then_some(offset + 1)
-        }));
-    for local_start in local_starts {
+    for local_start in inline_local_starts(ctx, body) {
+        let local_start = local_start?;
         let Some(local) = body.get(local_start..) else {
             return Ok(None);
         };
