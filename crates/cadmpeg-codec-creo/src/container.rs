@@ -1988,12 +1988,9 @@ fn surface_prototype_records(
         |bytes| surface::named_prototype_records(ctx, bytes, refusals),
         |record, base| {
             record.offset += base;
-            for parameter in ctx.admit_iter(
-                &mut record.parameters,
-                "creo record child relocation traversal",
-            )? {
-                parameter.offset += base;
-                parameter.value_offset += base;
+            for (offset, value_offset) in record.parameter_offsets_mut() {
+                *offset += base;
+                *value_offset += base;
             }
             Ok(())
         },

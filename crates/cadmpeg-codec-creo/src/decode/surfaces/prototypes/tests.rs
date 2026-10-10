@@ -169,17 +169,17 @@ fn prototype_vector_triples_refuse_before_vec_growth() {
     array
         .fill_values(vec![Some(1.0), Some(2.0), Some(3.0)])
         .expect("complete triple");
-    let record = crate::surface::SurfacePrototypeRecord {
-        family: crate::surface::SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf),
-        parameters: vec![crate::surface::SurfaceNamedParameter {
+    let record = crate::surface::SurfacePrototypeRecord::new_for_test(
+crate::surface::SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf),
+vec![crate::surface::SurfaceNamedParameter {
             name: "i_points".into(),
             value: crate::surface::SurfaceNamedValue::ScalarArray(array),
             body: Vec::new(),
             offset: 0,
             value_offset: 0,
         }],
-        offset: 0,
-    };
+0,
+);
     let data = [0u8];
     let run = |limit| {
         let arena = DecodeArena::new();
@@ -218,17 +218,17 @@ fn prototype_parameter_values_refuse_before_vec_growth() {
     array
         .fill_values(vec![Some(0.0), Some(1.0)])
         .expect("complete parameters");
-    let record = crate::surface::SurfacePrototypeRecord {
-        family: crate::surface::SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf),
-        parameters: vec![crate::surface::SurfaceNamedParameter {
+    let record = crate::surface::SurfacePrototypeRecord::new_for_test(
+crate::surface::SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf),
+vec![crate::surface::SurfaceNamedParameter {
             name: "u_params".into(),
             value: crate::surface::SurfaceNamedValue::CountedScalarArray(array),
             body: Vec::new(),
             offset: 0,
             value_offset: 0,
         }],
-        offset: 0,
-    };
+0,
+);
     let data = [0u8];
     let run = |limit| {
         let arena = DecodeArena::new();
@@ -484,9 +484,9 @@ fn first_instance_torus_radii_are_in_millimeters_at_ir_admission() {
 
 #[test]
 fn prototype_local_frame_rejects_nonfinite_origin() {
-    let record = crate::surface::SurfacePrototypeRecord {
-        family: crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
-        parameters: vec![crate::surface::SurfaceNamedParameter {
+    let record = crate::surface::SurfacePrototypeRecord::new_for_test(
+crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
+vec![crate::surface::SurfaceNamedParameter {
             name: "local_sys".to_string(),
             value: crate::surface::SurfaceNamedValue::ScalarArray({
                 let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
@@ -519,8 +519,8 @@ fn prototype_local_frame_rejects_nonfinite_origin() {
             offset: 0,
             value_offset: 0,
         }],
-        offset: 0,
-    };
+0,
+);
 
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| super::prototype_local_frame(ctx, &record))
@@ -531,9 +531,9 @@ fn prototype_local_frame_rejects_nonfinite_origin() {
 
 #[test]
 fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
-    let record = crate::surface::SurfacePrototypeRecord {
-        family: crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
-        parameters: vec![crate::surface::SurfaceNamedParameter {
+    let record = crate::surface::SurfacePrototypeRecord::new_for_test(
+crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
+vec![crate::surface::SurfaceNamedParameter {
             name: "local_sys".to_string(),
             value: crate::surface::SurfaceNamedValue::ScalarArray({
                 let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
@@ -566,8 +566,8 @@ fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
             offset: 0,
             value_offset: 0,
         }],
-        offset: 0,
-    };
+0,
+);
 
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| super::prototype_local_frame(ctx, &record))

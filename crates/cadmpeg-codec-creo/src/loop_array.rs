@@ -205,7 +205,7 @@ fn named_prototype_end(
     Ok(Some(close_end))
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Prefix {
     lo_id: u32,
     lo_type: u32,
@@ -215,6 +215,13 @@ struct Prefix {
     direction: u32,
     next_lo_ptr: u32,
     body_offset: usize,
+}
+
+#[derive(Debug, PartialEq)]
+struct PendingLoopRow {
+    prefix: Prefix,
+    offset: usize,
+    close: usize,
 }
 
 fn row_prefix(data: &[u8], offset: usize, end: usize) -> Option<Prefix> {
@@ -269,10 +276,11 @@ fn row_end(
 
 fn parse_frame(
     ctx: &DecodeContext<'_>,
+    record_scope: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     data: &[u8],
     offset: usize,
     section_end: usize,
-) -> Result<Option<(LoopArrayFrame, Vec<LoopArrayRecord>)>, CodecError> {
+) -> Result<Option<(LoopArrayFrame, Vec<PendingLoopRow>)>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
@@ -309,7 +317,14 @@ fn parse_frame(
     let mut end = section_end;
     for label in ARRAY_BOUNDARY_LABELS {
         if let Some(offset) = ctx
-            .find_bytes_from(data, label, header_end, "creo loop frame boundaries")?
+            .find_map(
+                data.get(header_end..)
+                    .unwrap_or_default()
+                    .windows(label.len())
+                    .enumerate(),
+                |(offset, bytes)| Ok((bytes == label).then_some(header_end + offset)),
+                "creo loop frame boundaries",
+            )?
             .filter(|offset| *offset < section_end)
         {
             end = end.min(offset);
@@ -338,30 +353,24 @@ fn parse_frame(
     };
     let mut cursor = prototype_end;
     let mut records = Vec::new();
-    while cursor < end && records.len() < max_records {
+    let mut rows = 0..max_records;
+    while cursor < end
+        && ctx
+            .next_charged(&mut rows, "creo loop row traversal")?
+            .is_some()
+    {
         let Some(prefix) = row_prefix(data, cursor, end) else {
             break;
         };
         let Some(close) = row_end(ctx, data, prefix.body_offset, end)? else {
             break;
         };
-        ctx.reserve_vec(&mut records, 1, "creo loop array frame records")?;
-        let body = ctx.copy_retained(
-            &data[prefix.body_offset..=close],
-            "creo loop array record body",
-        )?;
-        records.push(LoopArrayRecord {
-            frame_offset: offset,
-            lo_id: prefix.lo_id,
-            lo_type: prefix.lo_type,
-            lo_subtype: prefix.lo_subtype,
-            feature_id: prefix.feature_id,
-            attributes: prefix.attributes,
-            direction: prefix.direction,
-            next_lo_ptr: prefix.next_lo_ptr,
-            body,
+        record_scope
+            .with_storage(|| ctx.reserve_vec(&mut records, 1, "creo loop array frame records"))?;
+        records.push(PendingLoopRow {
+            prefix,
             offset: cursor,
-            body_offset: prefix.body_offset,
+            close,
         });
         cursor = close + 1;
     }
@@ -391,44 +400,69 @@ pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan
     let mut result = LoopArrayScan::default();
     let mut search = 0;
     while data.len().saturating_sub(search) >= LO_ARRAY_LABEL.len() {
-        let Some(offset) =
-            ctx.find_bytes_from(data, LO_ARRAY_LABEL, search, "creo loop array discovery")?
-        else {
-            break;
-        };
+        let Some(offset) = ctx.find_map(
+        data.get(search..)
+            .unwrap_or_default()
+            .windows(LO_ARRAY_LABEL.len())
+            .enumerate(),
+        |(offset, bytes)| Ok((bytes == LO_ARRAY_LABEL).then_some(search + offset)),
+        "creo loop array discovery",
+    )? else { break; };
         let Some(next_search) = offset.checked_add(LO_ARRAY_LABEL.len()) else {
             break;
         };
         search = next_search;
-        let Some((frame, records)) = parse_frame(ctx, data, offset, data.len())? else {
+        let mut record_scope = ctx.reserve_scoped(0, "creo loop frame record scratch")?;
+        let Some((frame, records)) = parse_frame(ctx, &mut record_scope, data, offset, data.len())?
+        else {
             continue;
         };
         ctx.reserve_vec(&mut result.frames, 1, "creo loop array frames")?;
+        let frame_offset = frame.offset;
         result.frames.push(frame);
         ctx.reserve_vec(
             &mut result.records,
             records.len(),
             "creo loop array section records",
         )?;
-        result.records.extend(records);
+        for PendingLoopRow {
+            prefix,
+            offset,
+            close,
+        } in ctx.admit_iter(records, "creo loop retained row projection")?
+        {
+            let body = ctx.copy_retained(
+                &data[prefix.body_offset..=close],
+                "creo loop array record body",
+            )?;
+            result.records.push(LoopArrayRecord {
+                frame_offset,
+                lo_id: prefix.lo_id,
+                lo_type: prefix.lo_type,
+                lo_subtype: prefix.lo_subtype,
+                feature_id: prefix.feature_id,
+                attributes: prefix.attributes,
+                direction: prefix.direction,
+                next_lo_ptr: prefix.next_lo_ptr,
+                body,
+                offset,
+                body_offset: prefix.body_offset,
+            });
+        }
         search = search.max(result.frames.last().map_or(search, |frame| frame.end));
     }
-    if result.frames.len() > 1 {
-        ctx.stable_sort_by(
-            result.frames.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
-            "creo scan result frames ordering",
-        )?;
-    }
-    if result.records.len() > 1 {
-        ctx.stable_sort_by(
-            result.records.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
-            "creo scan result records ordering",
-        )?;
-    }
+    ctx.stable_sort_by(
+        result.frames.as_mut_slice(),
+        |value| &value.offset,
+        Ord::cmp,
+        "creo scan result frames ordering",
+    )?;
+    ctx.stable_sort_by(
+        result.records.as_mut_slice(),
+        |value| &value.offset,
+        Ord::cmp,
+        "creo scan result records ordering",
+    )?;
     Ok(result)
 }
 

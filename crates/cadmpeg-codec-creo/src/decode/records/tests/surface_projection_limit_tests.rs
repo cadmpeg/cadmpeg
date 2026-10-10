@@ -44,9 +44,9 @@ fn scan() -> crate::container::ContainerScan<'static> {
     ];
     scan.surfaces
         .prototype_records
-        .push(SurfacePrototypeRecord {
-            family: SurfacePrototypeFamily::Plane,
-            parameters: values
+        .push(SurfacePrototypeRecord::new_for_test(
+SurfacePrototypeFamily::Plane,
+values
                 .into_iter()
                 .enumerate()
                 .map(|(offset, value)| SurfaceNamedParameter {
@@ -57,8 +57,8 @@ fn scan() -> crate::container::ContainerScan<'static> {
                     value_offset: offset + 1,
                 })
                 .collect(),
-            offset: 11,
-        });
+11,
+));
     scan
 }
 

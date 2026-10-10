@@ -4,6 +4,7 @@ mod contours;
 mod cost;
 mod dump;
 mod envelope_admission;
+mod early_search;
 mod inline;
 mod inline_visits;
 mod named_value_visits;

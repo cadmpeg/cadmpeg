@@ -5,48 +5,14 @@ use super::super::{
     child_index, curve_pcurve, geometry_array_elements, integer_pair, local_system_slots,
     object_id_index, real_array_values, real_scalar_array, real_vector_array, unique_primitive,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use super::super::{geometry_field, UniqueRecord};
 use crate::surface::{self, SurfaceKind, SurfaceRow};
 
-/// Each step states the admitted operation before the corresponding source work.
-fn work_boundaries<T: std::fmt::Debug>(
-    steps: &[(&'static str, u64)],
-    collection_items: u64,
-    call: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
-    check: impl Fn(T),
+fn work_boundaries<T>(
+    operations: &[&str], call: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>, check: impl Fn(T),
 ) {
-    let required: u64 = steps.iter().map(|(_, cost)| cost).sum();
-    for allowed in 0..=required {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = allowed;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_collection_items = collection_items;
-        if collection_items == 0 { policy.limits.max_retained_bytes = 0; }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = call(&ctx);
-        let original = if allowed < required {
-            let mut used = 0;
-            let (operation, additional) = steps.iter().find_map(|(operation, cost)| {
-                if used + cost > allowed { Some((*operation, *cost)) }
-                else { used += cost; None }
-            }).expect("next admitted step exceeds cap");
-            let CodecError::ResourceLimit(original) = result.expect_err("present work exceeds cap")
-                else { panic!("resource refusal"); };
-            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(original.operation, operation);
-            assert_eq!((original.used, original.additional), (used, additional));
-            original
-        } else {
-            check(result.expect("exact present work"));
-            let original = ctx.charge_work_limit(1, "after exact legacy input work")
-                .expect_err("work cap consumed");
-            assert_eq!((original.used, original.additional), (required, 1));
-            original
-        };
-        assert!(matches!(call(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    }
+    check(crate::test_support::assert_work_boundaries(operations, call));
 }
 
 fn real_runs(dimensions: Vec<u32>, runs: &[(u32, f64)]) -> RealRecord {
@@ -65,7 +31,7 @@ fn local_system_visits_zero_run_prefix_and_stops_at_twelve_slots() {
     let record = real_runs(vec![4, 3], &[(0, 9.0), (0, 8.0), (5, 1.0), (0, 7.0),
         (7, 2.0), (0, 6.0), (0, 5.0)]);
     // Two zero prefixes, five slots, one zero separator, seven slots. No suffix visit.
-    work_boundaries(&[("creo legacy local system run traversal", 1); 5], 0,
+    work_boundaries(&["creo legacy local system runs"],
         |ctx| local_system_slots(ctx, &record),
         |result| assert_eq!(result, Some([1.0, 1.0, 1.0, 1.0, 1.0,
             2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0])));
@@ -80,15 +46,8 @@ fn integer_pair_admits_typed_lookup_and_only_needed_source_runs() {
     let name = "crv_pnt_dir";
     let record = integer("curve_10", name, payload, 310);
     let parent = fixture_offset("curve_10");
-    let records = BTreeMap::from([((parent, name), vec![&record])]);
-    // A one-key tree compares at most one (usize, str) query.
-    let lookup = u64::try_from(std::mem::size_of::<usize>() + name.len()).expect("key cost");
-    let steps = [("creo legacy integer field lookup", lookup),
-        ("creo legacy integer pair run traversal", 1),
-        ("creo legacy integer pair run traversal", 1),
-        ("creo legacy integer pair run traversal", 1),
-        ("creo legacy integer pair run traversal", 1)];
-    work_boundaries(&steps, 0, |ctx| integer_pair(ctx, &records, parent, name),
+    let records = HashMap::from([((parent, geometry_field(name).expect("known field")), UniqueRecord::One(&record))]);
+    work_boundaries(&["creo legacy integer pair runs"], |ctx| integer_pair(ctx, &records, parent, name),
         |result| assert_eq!(result, Some([1, -1])));
 }
 
@@ -103,11 +62,8 @@ fn pcurve_endpoints_visit_compressed_runs_without_expanding_middle_samples() {
         next_edges: [11, 11], offset: 10,
     };
     let name = "crv_pnt_arr";
-    let records = BTreeMap::from([((object.offset, name), vec![&record])]);
-    let lookup = u64::try_from(std::mem::size_of::<usize>() + name.len()).expect("key cost");
-    let mut steps = vec![("creo legacy real field lookup", lookup)];
-    steps.extend([("creo legacy pcurve run traversal", 1); 6]);
-    work_boundaries(&steps, 0, |ctx| curve_pcurve(ctx, &object, &topology, &records),
+    let records = HashMap::from([((object.offset, geometry_field(name).expect("known field")), UniqueRecord::One(&record))]);
+    work_boundaries(&["creo legacy pcurve first endpoint runs", "creo legacy pcurve last endpoint runs"], |ctx| curve_pcurve(ctx, &object, &topology, &records),
         |result| assert_eq!(result, Some(crate::curve::PcurveEndpoints {
             curve_id: 10, faces: topology.faces,
             face_0_endpoints: [[1.0, 1.0], [2.0, 2.0]],
@@ -121,7 +77,7 @@ fn legacy_root_uniqueness_stops_at_second_witness() {
         object("root", "Sld_VisGeom", None, ObjectPayload::Arrow),
         object("root2", "Sld_VisGeom", None, ObjectPayload::Arrow),
         object("tail", "Sld_VisGeom", None, ObjectPayload::Arrow)];
-    work_boundaries(&[("creo legacy geometry root selection", 1); 3], 0,
+    work_boundaries(&["creo legacy geometry root search"],
         |ctx| geometry_array_elements(ctx, &objects, &BTreeMap::new(),
             "Sld_VisGeom", "active_geom", "srf_array"), |result| assert!(result.is_none()));
 }
@@ -133,9 +89,7 @@ fn legacy_branch_uniqueness_visits_root_pass_and_stops_at_second_branch() {
         object("branch", "active_geom", Some("root"), ObjectPayload::Arrow),
         object("branch2", "active_geom", Some("root"), ObjectPayload::Arrow),
         object("tail", "active_geom", Some("root"), ObjectPayload::Arrow)];
-    let mut steps = vec![("creo legacy geometry root selection", 1); objects.len()];
-    steps.extend([("creo legacy geometry branch selection", 1); 4]);
-    work_boundaries(&steps, 0, |ctx| geometry_array_elements(ctx, &objects, &BTreeMap::new(),
+    work_boundaries(&["creo legacy geometry root search", "creo legacy geometry branch search"], |ctx| geometry_array_elements(ctx, &objects, &BTreeMap::new(),
         "Sld_VisGeom", "active_geom", "srf_array"), |result| assert!(result.is_none()));
 }
 
@@ -147,13 +101,7 @@ fn legacy_array_uniqueness_stops_after_second_complete_extent() {
         object("array", "srf_array", Some("branch"), empty_array()),
         object("array2", "srf_array", Some("branch"), empty_array()),
         object("tail", "srf_array", Some("branch"), empty_array())];
-    let mut steps = vec![("creo legacy geometry root selection", 1); objects.len()];
-    steps.extend(vec![("creo legacy geometry branch selection", 1); objects.len()]);
-    steps.extend([("creo legacy geometry complete array selection", 1); 3]);
-    steps.push(("creo object array extent traversal", 1));
-    steps.push(("creo legacy geometry complete array selection", 1));
-    steps.push(("creo object array extent traversal", 1));
-    work_boundaries(&steps, 0, |ctx| geometry_array_elements(ctx, &objects, &BTreeMap::new(),
+    work_boundaries(&["creo legacy geometry root search", "creo legacy geometry branch search", "creo legacy geometry array search"], |ctx| geometry_array_elements(ctx, &objects, &BTreeMap::new(),
         "Sld_VisGeom", "active_geom", "srf_array"), |result| assert!(result.is_none()));
 }
 
@@ -164,14 +112,8 @@ fn legacy_primitive_lookup_stops_at_second_matching_child() {
         object("second", "srf_prim_ptr(cylinder)", Some("row"), ObjectPayload::Arrow),
         object("tail", "srf_prim_ptr(cone)", Some("row"), ObjectPayload::Arrow)];
     let row = fixture_offset("row");
-    let children = BTreeMap::from([(row, objects.iter().collect::<Vec<_>>())]);
-    let steps = [("creo legacy primitive child lookup",
-        u64::try_from(std::mem::size_of::<usize>()).expect("fixed key cost")),
-        ("creo legacy primitive child traversal", 1),
-        ("creo legacy primitive child traversal", 1),
-        ("creo legacy primitive child traversal", 1)];
-    work_boundaries(&steps, 0, |ctx| unique_primitive(ctx, &children, row),
-        |result| assert!(result.is_none()));
+    let children = crate::decode::with_test_decode_ctx(|ctx| child_index(ctx, &objects)).expect("child index");
+    assert!(unique_primitive(&children, row).is_none());
 }
 
 #[test]
@@ -183,18 +125,7 @@ fn legacy_array_element_admits_missing_key_lookup_after_present_element_visit() 
             dimensions: vec![1], elements: vec![id.to_string()], complete: true,
         })];
     let object_ids = BTreeMap::from([("other".to_string(), &objects[0])]);
-    let mut steps = vec![("creo legacy geometry root selection", 1); objects.len()];
-    steps.extend(vec![("creo legacy geometry branch selection", 1); objects.len()]);
-    steps.extend([("creo legacy geometry complete array selection", 1); 3]);
-    steps.push(("creo object array extent traversal", 1));
-    steps.push(("creo legacy array element traversal", 1));
-    // The object fixture converts element labels to their native node IDs.
-    let ObjectPayload::Array { elements, .. } = &objects[2].payload else {
-        panic!("array fixture");
-    };
-    steps.push(("creo legacy array element lookup",
-        u64::try_from(elements[0].len()).expect("native query key bytes")));
-    work_boundaries(&steps, 1, |ctx| geometry_array_elements(ctx, &objects, &object_ids,
+    work_boundaries(&["creo legacy geometry root search", "creo legacy geometry branch search", "creo legacy geometry array search", "creo legacy geometry element search", "creo legacy object ID lookup"], |ctx| geometry_array_elements(ctx, &objects, &object_ids,
         "Sld_VisGeom", "active_geom", "srf_array"), |result| assert!(result.is_none()));
 }
 
@@ -203,29 +134,18 @@ fn child_index_visits_present_parentless_objects_without_allocating() {
     let objects = [object("first", "other", None, ObjectPayload::Arrow),
         object("second", "other", None, ObjectPayload::Arrow),
         object("third", "other", None, ObjectPayload::Arrow)];
-    work_boundaries(&[("creo legacy child index traversal", 1); 3], 0,
+    work_boundaries(&["creo legacy primitive index rows"],
         |ctx| child_index(ctx, &objects), |result| assert!(result.is_empty()));
 }
 
 #[test]
 fn object_index_refuses_visit_before_id_copy_and_keeps_original_retained_refusal() {
     let objects = [object("first", "other", None, ObjectPayload::Arrow)];
-    for allowed in [0, 1] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = allowed;
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let CodecError::ResourceLimit(original) = object_id_index(&ctx, &objects)
-            .expect_err("visit or ID retained storage exceeds cap") else { panic!("resource refusal"); };
-        assert_eq!(original.operation, if allowed == 0 { "creo legacy object index traversal" }
-            else { "creo legacy object index IDs" });
-        assert_eq!(original.dimension, if allowed == 0 { ResourceDimension::WorkUnits }
-            else { ResourceDimension::RetainedBytes });
-        assert_eq!(original.used, 0);
-        if allowed == 0 { assert_eq!(original.additional, 1); }
-        assert!(matches!(object_id_index(&ctx, &[]), Err(CodecError::ResourceLimit(actual)) if actual == original));
-    }
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::RetainedBytes,
+        "creo legacy object index IDs", |ctx| object_id_index(ctx, &objects));
+    assert!(matches!(error, CodecError::ResourceLimit(ref refusal) if refusal.operation == "creo legacy object index IDs"));
+    crate::test_support::assert_work_boundaries(&["creo legacy object index rows"], |ctx| object_id_index(ctx, &objects));
+
 }
 
 #[test]
@@ -234,17 +154,8 @@ fn real_vector_expansion_has_one_output_buffer_and_visits_all_actual_runs_and_va
     record.name = "i_points".to_string();
     let parent = fixture_offset("curve_10");
     let name = record.name.as_str();
-    let records = BTreeMap::from([((parent, name), vec![&record])]);
-    let lookup = u64::try_from(std::mem::size_of::<usize>() + name.len()).expect("key bytes");
-    let mut steps = vec![("creo legacy real field lookup", lookup),
-        ("creo legacy real vector run traversal", 1),
-        ("creo legacy real vector run traversal", 1)];
-    steps.extend([("creo legacy real vector element expansion", 1); 2]);
-    steps.extend([("creo legacy real vector run traversal", 1); 2]);
-    steps.extend([("creo legacy real vector element expansion", 1); 7]);
-    steps.push(("creo legacy real vector run traversal", 1));
-    // Three output vectors; no nine-element intermediate scalar allocation.
-    work_boundaries(&steps, 3, |ctx| real_vector_array(ctx, &records, parent, name),
+    let records = HashMap::from([((parent, geometry_field(name).expect("known field")), UniqueRecord::One(&record))]);
+    work_boundaries(&["creo legacy real vector run traversal", "creo legacy real vector element expansion"], |ctx| real_vector_array(ctx, &records, parent, name),
         |result| assert_eq!(result, Some(vec![[1.0, 1.0, 2.0], [2.0; 3], [2.0; 3]])));
 }
 
@@ -254,26 +165,20 @@ fn real_scalar_expansion_visits_zero_runs_and_each_produced_value() {
     record.name = "u_params".to_string();
     let parent = fixture_offset("curve_10");
     let name = record.name.as_str();
-    let records = BTreeMap::from([((parent, name), vec![&record])]);
-    let lookup = u64::try_from(std::mem::size_of::<usize>() + name.len()).expect("key bytes");
-    let steps = [("creo legacy real field lookup", lookup),
-        ("creo legacy real array run traversal", 1), ("creo legacy real array run traversal", 1),
-        ("creo legacy real array element expansion", 1),
-        ("creo legacy real array run traversal", 1), ("creo legacy real array run traversal", 1),
-        ("creo legacy real array element expansion", 1), ("creo legacy real array element expansion", 1),
-        ("creo legacy real array run traversal", 1)];
-    work_boundaries(&steps, 3, |ctx| real_scalar_array(ctx, &records, parent, name),
+    let records = HashMap::from([((parent, geometry_field(name).expect("known field")), UniqueRecord::One(&record))]);
+    work_boundaries(&["creo legacy real array runs", "creo legacy real array elements"], |ctx| real_scalar_array(ctx, &records, parent, name),
         |result| assert_eq!(result, Some(vec![1.0, 2.0, 2.0])));
 }
 
 #[test]
 fn empty_and_fixed_legacy_helper_returns_are_free_and_preserve_seed_refusal() {
-    let integer_records = BTreeMap::new();
-    let real_records = BTreeMap::new();
-    let children = BTreeMap::new();
+    let integer_records = HashMap::new();
+    let real_records = HashMap::new();
+    let children = HashMap::new();
     let objects = BTreeMap::new();
     let scalar = real_scalar("curve_10", "scalar", 1.0, 1);
     let row = object("row", "other", None, ObjectPayload::Arrow);
+
     let topology = crate::curve::CurveTopologyRow {
         id: 10, type_byte: 0, feature_id: 7, directions: [0x01, 0xf6], faces: [None; 2],
         next_edges: [0; 2], offset: 10,
@@ -287,28 +192,32 @@ fn empty_and_fixed_legacy_helper_returns_are_free_and_preserve_seed_refusal() {
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     for refused in [false, true] {
+        if !refused {
+            assert!(integer_pair(&ctx, &integer_records, 0, "crv_pnt_dir").expect("missing field").is_none());
+            assert!(curve_pcurve(&ctx, &row, &topology, &real_records).expect("missing field").is_none());
+            assert!(real_vector_array(&ctx, &real_records, 0, "i_points").expect("missing field").is_none());
+            assert!(real_scalar_array(&ctx, &real_records, 0, "u_params").expect("missing field").is_none());
+        }
         if refused { ctx.charge_work_limit(1, "empty legacy helpers seed").expect_err("zero work"); }
+        assert!(super::super::integer_record(&integer_records, 0, "crv_id").is_none());
+        assert!(super::super::integer_field(&integer_records, 0, "crv_id").is_none());
+        assert!(super::super::real_record(&real_records, 0, "local_sys").is_none());
+        assert!(super::super::real_scalar(&real_records, 0, "radius").is_none());
+        assert!(super::super::surface_row(&row, &integer_records).is_none());
+        assert!(super::super::curve_topology_row(&row, &integer_records, [1, -1]).is_none());
+        assert!(unique_primitive(&children, 0).is_none());
+        assert!(super::super::surface_carrier(&row, &SurfaceRow {
+            id: 1, kind: SurfaceKind::Plane, feature_id: 7, reversed: false,
+            boundary_type: surface::BoundaryType::Code00, next_surface: 0, offset: 0,
+        }, [0.0; 12], &real_records, LegacySurfaceNamespace::Visible).is_none());
         let results = [
             object_id_index(&ctx, &[]).map(|r| r.is_empty()),
             child_index(&ctx, &[]).map(|r| r.is_empty()),
             geometry_array_elements(&ctx, &[], &objects, "Sld_VisGeom", "active_geom", "srf_array").map(|r| r.is_none()),
-            super::super::integer_record(&ctx, &integer_records, 0, "crv_id").map(|r| r.is_none()),
-            super::super::integer_field(&ctx, &integer_records, 0, "crv_id").map(|r| r.is_none()),
-            integer_pair(&ctx, &integer_records, 0, "crv_pnt_dir").map(|r| r.is_none()),
-            super::super::real_record(&ctx, &real_records, 0, "local_sys").map(|r| r.is_none()),
-            super::super::real_scalar(&ctx, &real_records, 0, "radius").map(|r| r.is_none()),
-            super::super::curve_topology_row(&ctx, &row, &integer_records).map(|r| r.is_none()),
-            super::super::surface_row(&ctx, &row, &integer_records).map(|r| r.is_none()),
-            curve_pcurve(&ctx, &row, &topology, &real_records).map(|r| r.is_none()),
-            unique_primitive(&ctx, &children, 0).map(|r| r.is_none()),
-            super::super::surface_carrier(&ctx, &row, &SurfaceRow {
-                id: 1, kind: SurfaceKind::Plane, feature_id: 7, reversed: false,
-                boundary_type: surface::BoundaryType::Code00, next_surface: 0, offset: 0,
-            }, &children, &real_records, LegacySurfaceNamespace::Visible).map(|r| r.is_none()),
+
             local_system_slots(&ctx, &scalar).map(|r| r.is_none()),
             real_array_values(&ctx, &scalar).map(|r| r.is_none()),
-            real_vector_array(&ctx, &real_records, 0, "i_points").map(|r| r.is_none()),
-            real_scalar_array(&ctx, &real_records, 0, "u_params").map(|r| r.is_none()),
+
         ];
         for result in results {
             if refused { let original = ctx.resource_refusal().expect("seed refusal");

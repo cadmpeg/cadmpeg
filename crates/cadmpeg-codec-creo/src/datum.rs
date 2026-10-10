@@ -427,7 +427,16 @@ pub(crate) fn named_plane(
     payload: &[u8],
 ) -> Result<Option<DatumPlaneRecord>, CodecError> {
     let marker = b"outline\0\xf9\x02\x03";
-    let Some(outline) = ctx.find_bytes_from(payload, marker, 0, "find Creo datum outline")? else {
+    let Some(outline) = ctx.find_map(
+        payload
+            .get(0..)
+            .unwrap_or_default()
+            .windows(marker.len())
+            .enumerate(),
+        |(offset, bytes)| Ok((bytes == marker).then_some(offset)),
+        "find Creo datum outline",
+    )?
+    else {
         return Ok(None);
     };
     let prefix = &payload[..outline];
@@ -486,10 +495,10 @@ pub(crate) fn named_plane(
     let scratch = ctx.with_scoped_storage("creo named datum scratch", || {
         let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
         let slots = named_outline_slots(ctx, payload, outline + marker.len(), &cache)?;
-        Ok::<_, CodecError>((cache, slots))
+        Ok::<_, CodecError>(slots)
     })?;
     let _scratch_storage = scratch.1;
-    let (_cache, Some(slots)) = scratch.0 else {
+    let Some(slots) = scratch.0 else {
         return Ok(None);
     };
     let standalone_zero = |slot: &DatumSlot<'_>| matches!(slot.token, [0x18 | 0x0f]);
@@ -511,22 +520,27 @@ pub(crate) fn named_plane(
         }
         _ => return Ok(None),
     };
-    let candidate = (|| {
-        let offset = slots[axis.index()].value?;
-        let [u, v] = axis.complement().map(Axis::index);
-        DatumPlaneRecord::new(
-            id,
-            feature_id,
-            DatumPlane::new(axis, offset)?,
-            slots[axis.index() + 3].value?,
-            [
-                [slots[u].value, slots[v].value],
-                [slots[u + 3].value, slots[v + 3].value],
-            ],
-            outline,
-        )
-    })();
-    Ok(candidate)
+    let Some(plane_offset) = slots[axis.index()].value else {
+        return Ok(None);
+    };
+    let Some(plane) = DatumPlane::new(axis, plane_offset) else {
+        return Ok(None);
+    };
+    let Some(opposite) = slots[axis.index() + 3].value else {
+        return Ok(None);
+    };
+    let [u, v] = axis.complement().map(Axis::index);
+    Ok(DatumPlaneRecord::new(
+        id,
+        feature_id,
+        plane,
+        opposite,
+        [
+            [slots[u].value, slots[v].value],
+            [slots[u + 3].value, slots[v + 3].value],
+        ],
+        outline,
+    ))
 }
 
 /// Decode one named-outline slot token at `offset`, given the number of slots
