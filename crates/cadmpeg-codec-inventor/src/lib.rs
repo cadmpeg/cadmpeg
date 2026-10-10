@@ -91,7 +91,10 @@ impl CodecBackend for InventorCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        container::InventorContainer::open(ctx, root)?.summary(ctx)
+        let mut container_storage = ctx.reserve_scoped(0, "hold parsed Inventor container")?;
+        let container = container_storage
+            .with_storage(|| container::InventorContainer::open(ctx, root))?;
+        container.summary(ctx)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
