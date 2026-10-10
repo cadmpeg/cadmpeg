@@ -2913,49 +2913,81 @@ fn project_full_round_fillet(
 fn design_body_selection(
     ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
-    entity_suffixes: impl ExactSizeIterator<Item = u64>,
+    mut entity_suffixes: impl ExactSizeIterator<Item = u64>,
     body_bindings: &[DesignBodyBinding],
 ) -> Result<cadmpeg_ir::features::BodySelection, CodecError> {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::{BodySelection, DistinctMembers, FeatureCollectionError};
 
-    let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+    let stream = ids::native_stream_charged(ctx, &scope.id, "resolve F3D body selection stream")?
+        .unwrap_or(ids::DEFAULT_STREAM);
     let expected_count = entity_suffixes.len();
+    let mut candidate_storage = ctx.provisional_retained("hold F3D body selection candidate")?;
     let mut bodies = Vec::new();
-    for suffix in entity_suffixes {
-        let mut matches = body_bindings
-            .iter()
-            .filter(|binding| {
-                native_stream(binding.id()) == Some(stream) && binding.entity_suffix == suffix
-            })
-            .filter_map(|binding| binding.body.as_ref());
-        let Some(body) = matches.next() else {
-            return Ok(BodySelection::Native(
-                ctx.copy_retained_text(&scope.id, "f3d body selection native id")?,
-            ));
+    let mut complete = true;
+    while entity_suffixes.len() != 0 {
+        let Some(suffix) = ctx.next_charged(&mut entity_suffixes, "visit F3D body selection suffix")? else {
+            break;
         };
-        if matches.any(|candidate| candidate != body) {
-            return Ok(BodySelection::Native(
-                ctx.copy_retained_text(&scope.id, "f3d body selection native id")?,
-            ));
+        let mut bindings = body_bindings.iter();
+        let body = ctx.find_map(
+            &mut bindings,
+            |binding| {
+                let Some(binding_stream) = ids::native_stream_charged(
+                    ctx, binding.id(), "resolve F3D body binding stream",
+                )? else { return Ok(None); };
+                if !ctx.equal_bytes(binding_stream.as_bytes(), stream.as_bytes(), "compare F3D body binding stream")?
+                    || binding.entity_suffix != suffix
+                {
+                    return Ok(None);
+                }
+                Ok(binding.body.as_ref())
+            },
+            "visit F3D body selection binding",
+        )?;
+        let Some(body) = body else {
+            complete = false;
+            break;
+        };
+        if !ctx.all_by(
+            bindings,
+            |binding| {
+                let Some(binding_stream) = ids::native_stream_charged(
+                    ctx, binding.id(), "resolve F3D body binding stream",
+                )? else { return Ok(true); };
+                if !ctx.equal_bytes(binding_stream.as_bytes(), stream.as_bytes(), "compare F3D body binding stream")?
+                    || binding.entity_suffix != suffix
+                {
+                    return Ok(true);
+                }
+                let Some(candidate) = binding.body.as_ref() else { return Ok(true); };
+                ctx.equal_bytes(candidate.as_str().as_bytes(), body.as_str().as_bytes(), "compare F3D body selection identity")
+            },
+            "visit F3D body selection binding",
+        )? {
+            complete = false;
+            break;
         }
-        let body = (body).try_clone_for_decode(ctx, "f3d body selection body id")?;
-        ctx.push_vec(&mut bodies, body, "f3d body selection body")?;
+        let body = candidate_storage.with_storage(|| body.try_clone_for_decode(ctx, "f3d body selection body id"))?;
+        candidate_storage.with_storage(|| ctx.push_vec(&mut bodies, body, "f3d body selection body"))?;
     }
-    if bodies.len() == expected_count {
-        match cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx) {
+    if complete && bodies.len() == expected_count {
+        let distinct = candidate_storage.with_storage(|| {
+            Ok::<_, CodecError>(DistinctMembers::try_from(bodies, ctx))
+        })?;
+        match distinct {
             Ok(bodies) => {
-                return Ok(BodySelection::Resolved {
-                    bodies,
-                    native: ctx
-                        .copy_retained_text(&scope.id, "f3d body selection resolved native id")?,
-                })
+                let native = candidate_storage.with_storage(|| {
+                    ctx.copy_retained_text(&scope.id, "f3d body selection resolved native id")
+                })?;
+                return candidate_storage.commit_value(BodySelection::Resolved { bodies, native });
             }
-            Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => {}
-            Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
-                return Err(limit.into())
-            }
+            Err(FeatureCollectionError::Invalid(_)) => {}
+            Err(FeatureCollectionError::Resource(limit)) => return Err(limit.into()),
         }
+    } else {
+        drop(bodies);
     }
+    drop(candidate_storage);
     Ok(BodySelection::Native(ctx.copy_retained_text(
         &scope.id,
         "f3d body selection native id",
