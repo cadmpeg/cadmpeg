@@ -188,7 +188,9 @@ pub(super) fn project_equation_curve(
     let start = require!(ctx.parse_text::<f64>(start, super::FEATURE_LITERAL)?.ok());
     let end = require!(trimmed("End")?);
     let end = require!(ctx.parse_text::<f64>(end, super::FEATURE_LITERAL)?.ok());
-    require!(cadmpeg_ir::topology::IncreasingParameterInterval::new([start, end]));
+    require!(cadmpeg_ir::topology::IncreasingParameterInterval::new([
+        start, end
+    ]));
     let parameter = require!(trimmed("Parameter")?);
     let x_expression = require!(trimmed("XEquation")?);
     let y_expression = require!(trimmed("YEquation")?);

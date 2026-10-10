@@ -36,8 +36,6 @@ macro_rules! require {
 }
 
 #[cfg(test)]
-mod lazy_admission_tests;
-#[cfg(test)]
 mod budget_tests;
 #[cfg(test)]
 mod content_tests;
@@ -48,6 +46,8 @@ pub(super) mod datum;
 mod dimension_projection_tests;
 #[cfg(test)]
 mod feature_projection_tests;
+#[cfg(test)]
+mod lazy_admission_tests;
 pub(crate) mod modify;
 pub(crate) mod pattern;
 #[cfg(test)]

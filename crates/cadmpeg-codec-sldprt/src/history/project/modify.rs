@@ -146,7 +146,13 @@ pub(super) fn project_fillet(
                 drop(storage);
                 if ctx.any_by(
                     &feature.parameters,
-                    |(name, _)| crate::history::classify::indexed_name_for_decode(ctx, name.as_str(), "Radius"),
+                    |(name, _)| {
+                        crate::history::classify::indexed_name_for_decode(
+                            ctx,
+                            name.as_str(),
+                            "Radius",
+                        )
+                    },
                     "scan SLDPRT project_fillet map keys",
                 )? {
                     RadiusSpec::Unresolved {

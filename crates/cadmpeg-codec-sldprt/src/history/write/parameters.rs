@@ -492,7 +492,9 @@ pub(in crate::history) fn unquoted_expression_identifier(
     }
     ctx.all_by(
         characters,
-        |character| Ok(character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.')),
+        |character| {
+            Ok(character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.'))
+        },
         OPERATION,
     )
 }

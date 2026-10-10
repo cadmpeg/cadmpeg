@@ -265,7 +265,10 @@ fn numeric_literals_do_not_bind_numeric_parameter_names() {
         by_name["Reference"].value,
         Some(ParameterValue::Length(Length::new(6.0).unwrap()))
     );
-    assert!(!unquoted_expression_identifier(&cadmpeg_test_support::service_decode_context(), "4").unwrap());
+    assert!(
+        !unquoted_expression_identifier(&cadmpeg_test_support::service_decode_context(), "4")
+            .unwrap()
+    );
     assert_eq!(
         rewrite_parameter_expression(
             &cadmpeg_test_support::service_decode_context(),
@@ -1106,39 +1109,73 @@ fn expression_rewrite_skips_output_storage_without_replacements() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(rewrite_parameter_expression(&ctx, &"A+".repeat(4096), &HashMap::new()).unwrap(), None);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        rewrite_parameter_expression(&ctx, &"A+".repeat(4096), &HashMap::new()).unwrap(),
+        None
+    );
     ctx.finish_session().unwrap();
 
     policy.limits.max_materialized_bytes = u64::MAX;
     policy.limits.max_work_units = u64::MAX;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(rewrite_parameter_expression(&ctx, "A + A", &HashMap::from([("B".into(), "C".into())])).unwrap(), None);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        rewrite_parameter_expression(&ctx, "A + A", &HashMap::from([("B".into(), "C".into())]))
+            .unwrap(),
+        None
+    );
     ctx.finish_session().unwrap();
 }
 
 #[test]
 fn expression_rewrite_preserves_unicode_quotes_and_repeated_token_offsets() {
-    let aliases = HashMap::from([("A".into(), "quoted\"owner".into()), ("β".into(), "δ".into())]);
-    assert_eq!(rewrite_parameter_expression(&cadmpeg_test_support::service_decode_context(), "A + A + \"β\"", &aliases).unwrap().as_deref(), Some("\"quoted\"\"owner\" + \"quoted\"\"owner\" + \"δ\""));
+    let aliases = HashMap::from([
+        ("A".into(), "quoted\"owner".into()),
+        ("β".into(), "δ".into()),
+    ]);
+    assert_eq!(
+        rewrite_parameter_expression(
+            &cadmpeg_test_support::service_decode_context(),
+            "A + A + \"β\"",
+            &aliases
+        )
+        .unwrap()
+        .as_deref(),
+        Some("\"quoted\"\"owner\" + \"quoted\"\"owner\" + \"δ\"")
+    );
 }
 
 #[test]
 fn expression_rewrite_refuses_admitted_output_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::WorkUnits] {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, "rewrite SLDPRT parameter expression", |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-                _ => unreachable!(),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            rewrite_parameter_expression(&ctx, "A + A", &HashMap::from([("A".into(), "B".into())]))?;
-            ctx.finish_session()
-        });
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+    for dimension in [
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::WorkUnits,
+    ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            dimension,
+            "rewrite SLDPRT parameter expression",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                    _ => unreachable!(),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                rewrite_parameter_expression(
+                    &ctx,
+                    "A + A",
+                    &HashMap::from([("A".into(), "B".into())]),
+                )?;
+                ctx.finish_session()
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension)
+        );
     }
 }

@@ -139,10 +139,17 @@ fn feature_graph_validation_preserves_the_original_sticky_refusal() {
 
 #[test]
 fn parentless_graph_does_not_allocate_ancestry_marks() {
-    let features = [feature("test:feature#first", 1, None), feature("test:feature#second", 2, None)];
+    let features = [
+        feature("test:feature#first", 1, None),
+        feature("test:feature#second", 2, None),
+    ];
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy()).unwrap();
-    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::MaterializedBytes, "walk SLDPRT feature graph", None);
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::MaterializedBytes,
+        "walk SLDPRT feature graph",
+        None,
+    );
     validate_feature_graph(&ctx, &features).unwrap();
     ctx.finish_session().unwrap();
 }
