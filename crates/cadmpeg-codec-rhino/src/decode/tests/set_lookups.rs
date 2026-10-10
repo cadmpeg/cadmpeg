@@ -43,23 +43,35 @@ fn fallback_emitted_identity_lookup_preserves_work_refusal() {
 
 #[test]
 fn fallback_self_link_equality_preserves_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let mut links = Vec::new();
-    let error = super::source_links::append_link_to_record(
-        &ctx,
-        "test:link#1",
-        &mut links,
-        "test:link#1",
-    )
-    .unwrap_err();
+    let scan = super::scan_with_objects(&[super::object_record(
+        super::ArchiveVersion::V5,
+        1,
+        super::POINT_CLASS,
+    )]);
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, root) = DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+        let mut transaction =
+            super::DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
+        let id = transaction.unknown(0).unwrap().id().to_string();
+        let result = transaction.append_link(0, &id);
+        assert!(transaction.unknown(0).unwrap().links().is_empty());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result {
+            assert_eq!(ctx.resource_refusal(), Some(*refusal));
+        }
+        result
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "Rhino source link equality",
+        run,
+    );
     let CodecError::ResourceLimit(refusal) = error else {
         panic!("self-link comparison must preserve its resource refusal");
     };
     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
     assert_eq!(refusal.operation, "Rhino source link equality");
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
-    assert!(links.is_empty());
+    assert!(!run(u64::MAX).unwrap());
 }

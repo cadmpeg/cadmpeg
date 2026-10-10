@@ -257,11 +257,7 @@ fn candidate_source_link_grammar_failure_preserves_admission_classification() {
         assert!(!message.contains(&later_error.to_string()));
         assert_eq!(
             context.unknown(0).unwrap().links(),
-            [
-                "rhino:test:curve#generated",
-                "z-invalid",
-                "zz-invalid"
-            ]
+            ["rhino:test:curve#generated", "z-invalid", "zz-invalid"]
         );
         assert_eq!(context.session.document(), &before);
     });
@@ -269,24 +265,46 @@ fn candidate_source_link_grammar_failure_preserves_admission_classification() {
 
 #[test]
 fn source_link_insertion_preserves_work_refusal_before_mutation() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut links = vec!["test:model:point#later".to_owned()];
-    let before = links.clone();
-    let Err(CodecError::ResourceLimit(limit)) = super::source_links::append_link_to_record(
-        &ctx,
-        "test:source:unknown#owner",
-        &mut links,
-        "test:model:point#earlier",
-    ) else {
-        panic!("comparison work must refuse");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(links, before);
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    let scan = scan_with_objects(&[super::object_record(
+        super::ArchiveVersion::V5,
+        1,
+        super::POINT_CLASS,
+    )]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "Rhino source link equality",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+            let mut transaction =
+                DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
+            transaction
+                .session
+                .unknown_links_mut(0)
+                .unwrap()
+                .1
+                .push("test:model:point#later".to_owned());
+            let before = transaction.unknown(0).unwrap().links().to_vec();
+            let result = transaction.append_link(0, "test:model:point#earlier");
+            assert_eq!(transaction.unknown(0).unwrap().links(), before);
+            let first = ctx.resource_refusal();
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(first, Some(*refusal));
+            }
+            drop(transaction);
+            if let Some(refusal) = first {
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal)
+                );
+            }
+            result
+        },
+    );
     assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::WorkUnits)
     );
 }
