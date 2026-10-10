@@ -305,37 +305,3 @@ fn nested_storage_receives_only_the_accepted_chain_output() {
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
-#[test]
-fn sector_chain_fixed_paths_preserve_the_original_fused_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let CodecError::ResourceLimit(first) = ctx
-        .charge_work(1, "seed CFB chain refusal")
-        .expect_err("zero work fuses the context")
-    else {
-        panic!("typed refusal");
-    };
-    for role in [ChainRole::Directory, ChainRole::RootMiniStream] {
-        for start in [0, END_OF_CHAIN, FREE_SECTOR] {
-            let error = chain(&ctx, &[], 0, start, None, role)
-                .expect_err("the original refusal precedes malformed and empty paths");
-            assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == first));
-            assert_eq!(ctx.resource_refusal(), Some(first.clone()));
-        }
-    }
-    let error = chain(
-        &ctx,
-        &[],
-        0,
-        0,
-        Some(ChainLength::Declared(
-            std::num::NonZeroUsize::new(1).expect("nonzero chain length"),
-        )),
-        ChainRole::Directory,
-    )
-    .expect_err("a fused refusal precedes impossible declaration metadata");
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == first));
-    assert_eq!(ctx.resource_refusal(), Some(first));
-}

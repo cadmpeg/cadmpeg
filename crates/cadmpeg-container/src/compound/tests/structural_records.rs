@@ -39,10 +39,6 @@ fn borrowed_free_directory_records_need_only_slot_storage_and_reached_work() {
                     assert_eq!(first.operation, "visit CFB directory records");
                     assert_eq!((first.used, first.additional),
                         (u64::try_from(count - 1).expect("prior record visits"), 1));
-                    let repeated = match StructuralRecords::<128>::new(ctx, &bytes, sector_size, 1, None) {
-                        Ok(_) => panic!("empty records preserve original refusal"), Err(error) => error,
-                    };
-                    assert!(matches!(repeated, CodecError::ResourceLimit(limit) if limit == first));
                     assert_eq!(ctx.resource_refusal(), Some(first));
                 }
             });

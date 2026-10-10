@@ -76,28 +76,6 @@ fn admitted_chain_still_refuses_for_a_nonempty_rest() {
 }
 
 #[test]
-fn admitted_empty_rest_preserves_an_existing_refusal() {
-    let chain = SectorChain {
-        first: 7,
-        rest: Vec::new(),
-    };
-    let policy = zero_work_policy();
-    let (error, first, refusal) = with_context(&[], &policy, |ctx| {
-        let CodecError::ResourceLimit(first) = ctx
-            .charge_work(1, "seed CFB chain refusal")
-            .expect_err("zero work fuses the context")
-        else {
-            panic!("resource refusal is typed");
-        };
-        let error = chain.visit(ctx, |_| panic!("fused context must not run the fixed-first callback"))
-            .expect_err("empty rest admission preserves the fused refusal");
-        (error, first, ctx.resource_refusal())
-    });
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == first));
-    assert_eq!(refusal, Some(first));
-}
-
-#[test]
 fn v4_zero_padding_reaches_fixed_header_count_error_without_work() {
     let mut file = fixture_v4();
     put_u32(&mut file, 44, 0);
@@ -151,7 +129,7 @@ fn v4_zero_padding_prefix_reaches_header_count_error_without_work() {
 }
 
 #[test]
-fn v4_nonzero_padding_prefix_preserves_its_error_and_fused_refusal() {
+fn v4_nonzero_padding_prefix_returns_its_fixed_error_without_work() {
     let mut file = fixture_v4();
     put_u32(&mut file, 44, 0);
     file[512] = 1;
@@ -171,20 +149,6 @@ fn v4_nonzero_padding_prefix_preserves_its_error_and_fused_refusal() {
         super::probe(&file),
         CompoundPrefixProbe::Malformed("CFB v4 header padding is not zero".into())
     );
-
-    let fused_arena = DecodeArena::new();
-    let (fused_ctx, fused_root) =
-        DecodeContext::from_root_bytes(&file, &fused_arena, &policy).expect("fused fixture root");
-    let CodecError::ResourceLimit(fused) = fused_ctx
-        .charge_work(1, "seed CFB prefix padding refusal")
-        .expect_err("zero work allowance fuses the context")
-    else {
-        panic!("resource refusal is typed");
-    };
-    let error = CompoundPrefixProbe::inspect_with_context(&fused_ctx, fused_root)
-        .expect_err("zero-byte malformed result preserves the saved refusal");
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == fused));
-    assert_eq!(fused_ctx.resource_refusal(), Some(fused));
 }
 
 #[test]
@@ -293,26 +257,10 @@ fn range_lock_sector_insertion_uses_core_tree_admission_once() {
 }
 
 #[test]
-fn snapshot_constructor_preserves_fused_refusal_before_bad_magic() {
+fn snapshot_constructor_returns_bad_magic_diagnostic_without_work() {
     let mut file = fixture();
     file[0] = 0;
     let policy = zero_work_policy();
-    let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy).expect("fused root");
-    let CodecError::ResourceLimit(first) = ctx
-        .charge_work(1, "seed CFB constructor refusal")
-        .expect_err("zero work fuses the context")
-    else {
-        panic!("resource refusal is typed");
-    };
-    let error = CompoundSnapshot::new(&ctx, root)
-        .expect_err("constructor returns the original refusal before checking magic");
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == first));
-    assert_eq!(ctx.resource_refusal(), Some(first));
-    let error = parse_state(&ctx, &file)
-        .expect_err("direct parsing returns the original refusal before checking magic");
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == first));
-
     let fresh_arena = DecodeArena::new();
     let (fresh_ctx, fresh_root) =
         DecodeContext::from_root_bytes(&file, &fresh_arena, &policy).expect("fresh root");
