@@ -582,6 +582,8 @@ pub(super) fn pcurve_geometry(
     else {
         return Ok(None);
     };
+    drop(curve_id);
+    drop(identity_storage);
     let source_map = match index {
         Some(index) => procedural_source_parameter_map(index, support, ctx)?,
         None => match support.geometry {
