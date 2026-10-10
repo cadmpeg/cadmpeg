@@ -44,7 +44,8 @@ fn mesh_bytes(vertices: &[[f32; 3]], triangles: &[[u32; 3]], bounds: [f32; 6]) -
 
 fn assert_malformed_mesh(bytes: &[u8], property: &PropertyRecord, expected: &str) {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).expect("context");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).expect("context");
     let error = parse_mesh(&ctx, property, bytes).expect_err("invalid mesh");
     assert!(matches!(error, CodecError::Malformed(message) if message == expected));
     assert_eq!(ctx.resource_refusal(), None);
@@ -106,7 +107,6 @@ fn rejected_mesh_identity_keeps_diagnostic() {
     };
     assert_eq!(message, "identity is invalid: \"invalid identity:mesh\"");
     assert_eq!(ctx.resource_refusal(), None);
-
 }
 
 #[test]
@@ -131,7 +131,6 @@ fn accepted_mesh_keeps_population_identity_and_source() {
     let source = mesh.source_object.as_ref().expect("source");
     assert_eq!(source.object_id.as_str(), property.owner);
     assert_eq!(source.name.as_deref(), Some("Geometry"));
-
 }
 
 #[test]
@@ -139,7 +138,9 @@ fn mesh_source_refusal_preserves_original_limit() {
     let bytes = mesh_bytes(&[[0.0; 3]], &[[0, 0, 0]], [0.0; 6]);
     let property = resource_test_property();
     let error = crate::test_support::refusal_at(
-        ResourceDimension::RetainedBytes, &bytes, "FreeCAD geometry object identity",
+        ResourceDimension::RetainedBytes,
+        &bytes,
+        "FreeCAD geometry object identity",
         |ctx| {
             let result = parse_mesh(ctx, &property, &bytes);
             if let Err(CodecError::ResourceLimit(original)) = &result {
@@ -167,7 +168,6 @@ fn mesh_trailing_payload_keeps_diagnostic() {
     };
     assert_eq!(message, "mesh payload has 1 trailing bytes");
     assert_eq!(ctx.resource_refusal(), None);
-
 }
 
 #[test]
@@ -190,7 +190,12 @@ fn mesh_population_retained_limit_refuses_large_population() {
         policy.limits.max_retained_bytes = 1024;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let result = parse_mesh(&ctx, &resource_test_property(), &bytes);
-        if count == 1 { assert!(result.is_ok()); }
-        else { assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)); }
+        if count == 1 {
+            assert!(result.is_ok());
+        } else {
+            assert!(
+                matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+            );
+        }
     }
 }

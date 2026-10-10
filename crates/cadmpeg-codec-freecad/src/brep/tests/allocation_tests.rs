@@ -625,7 +625,6 @@ surface_identity_test!(
     "FreeCAD surface construction identity"
 );
 
-
 #[test]
 fn shape_lookup_names_use_scratch_storage() {
     let property = shape_property("<Property><Part file=\"scratch.brp\"/></Property>");
@@ -634,7 +633,9 @@ fn shape_lookup_names_use_scratch_storage() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..128 {
-        let name = super::super::direct_shape_entry(&ctx, &property).unwrap().unwrap();
+        let name = super::super::direct_shape_entry(&ctx, &property)
+            .unwrap()
+            .unwrap();
         let _storage = name.1;
         let name = name.0;
         assert_eq!(name, "scratch.brp");

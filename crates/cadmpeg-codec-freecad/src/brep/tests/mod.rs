@@ -7,8 +7,8 @@ mod nesting;
 mod numeric_text;
 mod parser_recursion;
 mod reference_diagnostics;
-mod source_transfer;
 mod shape_check;
+mod source_transfer;
 mod storage_lanes;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -62,7 +62,9 @@ fn bezier_knot_vector_refuses_at_caller_limit() {
 
 #[test]
 fn surface_grid_rows_refuse_at_caller_limit() {
-    let result = with_collection_limit(&[], 3, |ctx| super::grid_rows(ctx, (vec![1_u8, 2, 3, 4], None), 2));
+    let result = with_collection_limit(&[], 3, |ctx| {
+        super::grid_rows(ctx, (vec![1_u8, 2, 3, 4], None), 2)
+    });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD B-rep surface row values"));
 }
@@ -304,11 +306,13 @@ fn shape_entry_index_refuses_on_collection_limit() {
         vec![property.id.clone()],
         Vec::new(),
     );
-    crate::test_support::assert_collection_refusal_at(
-        &[],
-        "FreeCAD shape entry index",
-        |ctx| parse_payloads(ctx, std::slice::from_ref(&property), std::slice::from_ref(&entry)),
-    );
+    crate::test_support::assert_collection_refusal_at(&[], "FreeCAD shape entry index", |ctx| {
+        parse_payloads(
+            ctx,
+            std::slice::from_ref(&property),
+            std::slice::from_ref(&entry),
+        )
+    });
 }
 
 #[test]
@@ -336,10 +340,17 @@ fn shape_entry_lookup_refuses_on_materialized_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    let error = super::direct_shape_entry(&ctx, &property).expect_err("lookup needs scratch storage");
-    let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal"); };
-    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    let error =
+        super::direct_shape_entry(&ctx, &property).expect_err("lookup needs scratch storage");
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("resource refusal");
+    };
+    assert_eq!(
+        refusal.dimension,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+    );
     assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
 
@@ -792,21 +803,41 @@ fn face_table_references_preserve_wire_absence_and_reject_zero_triangulation() {
 #[test]
 fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
     in_decode_context(|ctx| {
-        let normalized = normalize_periodic_surface(ctx, [3, 1], [(vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0]
-                    .into_iter()
-                    .map(|value| FiniteReal::new(value).unwrap())
-                    .collect(), None), (vec![0.0, 0.0, 1.0, 1.0]
-                    .into_iter()
-                    .map(|value| FiniteReal::new(value).unwrap())
-                    .collect(), None)], [6, 2], ((0..6)
-                .flat_map(|u| {
-                    [
-                        Point3::new(f64::from(u), 0.0, 0.0),
-                        Point3::new(f64::from(u), 1.0, 0.0),
-                    ]
-                })
-                .map(|point| FinitePoint3::new(point).unwrap())
-                .collect(), None), None, [true, false])
+        let normalized = normalize_periodic_surface(
+            ctx,
+            [3, 1],
+            [
+                (
+                    vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0]
+                        .into_iter()
+                        .map(|value| FiniteReal::new(value).unwrap())
+                        .collect(),
+                    None,
+                ),
+                (
+                    vec![0.0, 0.0, 1.0, 1.0]
+                        .into_iter()
+                        .map(|value| FiniteReal::new(value).unwrap())
+                        .collect(),
+                    None,
+                ),
+            ],
+            [6, 2],
+            (
+                (0..6)
+                    .flat_map(|u| {
+                        [
+                            Point3::new(f64::from(u), 0.0, 0.0),
+                            Point3::new(f64::from(u), 1.0, 0.0),
+                        ]
+                    })
+                    .map(|point| FinitePoint3::new(point).unwrap())
+                    .collect(),
+                None,
+            ),
+            None,
+            [true, false],
+        )
         .expect("valid periodic surface");
 
         assert_eq!(normalized.u_count(), 7);
@@ -1918,18 +1949,34 @@ fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
 #[test]
 fn numerical_seventh_periodic_knots_keep_finite_exterior_knots() {
     in_decode_context(|ctx| {
-        let (knots, padding) = super::normalize_periodic_knots(ctx, (vec![-1e308, -9e307, 9e307, 1e308]
-                .into_iter()
-                .map(|value| FiniteReal::new(value).unwrap())
-                .collect(), None), 1, true)
+        let (knots, padding) = super::normalize_periodic_knots(
+            ctx,
+            (
+                vec![-1e308, -9e307, 9e307, 1e308]
+                    .into_iter()
+                    .map(|value| FiniteReal::new(value).unwrap())
+                    .collect(),
+                None,
+            ),
+            1,
+            true,
+        )
         .unwrap();
         assert_eq!(padding, 1);
         assert!((knots[0].get() / 1e308 + 1.1).abs() <= 4.0 * f64::EPSILON);
         assert!((knots[5].get() / 1e308 - 1.1).abs() <= 4.0 * f64::EPSILON);
-        assert!(super::normalize_periodic_knots(ctx, (vec![-1e308, 0.0, 1e308]
-                .into_iter()
-                .map(|value| FiniteReal::new(value).unwrap())
-                .collect(), None), 1, true)
+        assert!(super::normalize_periodic_knots(
+            ctx,
+            (
+                vec![-1e308, 0.0, 1e308]
+                    .into_iter()
+                    .map(|value| FiniteReal::new(value).unwrap())
+                    .collect(),
+                None
+            ),
+            1,
+            true
+        )
         .is_err());
     });
 }

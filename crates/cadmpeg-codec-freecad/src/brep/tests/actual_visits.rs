@@ -13,7 +13,8 @@ fn grid_row_allocation_refuses_before_unmoved_values() {
         policy.limits.max_collection_items = collection_limit;
         policy.limits.max_work_units = work_limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(original)) = grid_rows(&ctx, (vec![1, 2, 3, 4], None), 2) else {
+        let Err(CodecError::ResourceLimit(original)) = grid_rows(&ctx, (vec![1, 2, 3, 4], None), 2)
+        else {
             panic!("row storage must refuse before its values move")
         };
         assert_eq!(original.dimension, ResourceDimension::CollectionItems);
@@ -46,7 +47,9 @@ fn empty_and_invalid_grid_dimensions_need_no_work_and_keep_original_refusal() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(grid_rows::<u8>(&ctx, (Vec::new(), None), 2).unwrap().is_empty());
+    assert!(grid_rows::<u8>(&ctx, (Vec::new(), None), 2)
+        .unwrap()
+        .is_empty());
     assert!(
         matches!(grid_rows(&ctx, (vec![1_u8], None), 2), Err(CodecError::Malformed(message))
         if message == "surface grid dimensions do not match pole count")
@@ -81,10 +84,8 @@ fn invalid_reference_prefix_does_not_scan_or_copy_suffix() {
 
 #[test]
 fn reference_prefix_keeps_utf8_suffix_and_digit_only_exhaustion() {
-    for (token, maximum, expected) in [
-        ("1α", 1, (1, Some("α".to_owned()))),
-        ("12", 12, (12, None)),
-    ] {
+    for (token, maximum, expected) in [("1α", 1, (1, Some("α".to_owned()))), ("12", 12, (12, None))]
+    {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 64;
@@ -190,7 +191,8 @@ fn periodic_knot_extension_charges_actual_visits_and_keeps_values() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 64;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (knots, padding) = super::super::normalize_periodic_knots(&ctx, (knots, None), 1, true).unwrap();
+    let (knots, padding) =
+        super::super::normalize_periodic_knots(&ctx, (knots, None), 1, true).unwrap();
     assert_eq!(padding, 1);
     assert_eq!(
         knots.iter().map(|value| value.get()).collect::<Vec<_>>(),
@@ -277,7 +279,8 @@ fn nonperiodic_knots_and_zero_padding_move_no_storage_and_preserve_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let knots = vec![FiniteReal::ONE];
     let pointer = knots.as_ptr();
-    let (knots, padding) = super::super::normalize_periodic_knots(&ctx, (knots, None), 1, false).unwrap();
+    let (knots, padding) =
+        super::super::normalize_periodic_knots(&ctx, (knots, None), 1, false).unwrap();
     assert_eq!(knots, [FiniteReal::ONE]);
     assert_eq!(knots.as_ptr(), pointer);
     assert_eq!(padding, 0);
