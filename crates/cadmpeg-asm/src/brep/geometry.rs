@@ -992,7 +992,9 @@ pub(super) fn rational_four_arc_circle(
     }
     let mut source_values = IntoIterator::into_iter(points);
     while source_values.len() != 0 {
-        let Some(pole) = propagate_resource!(ctx.next_charged(&mut source_values, "ASM rational homogeneous pole pass")) else {
+        let Some(pole) = propagate_resource!(
+            ctx.next_charged(&mut source_values, "ASM rational homogeneous pole pass")
+        ) else {
             break;
         };
         let point = pole.point;
@@ -1121,8 +1123,10 @@ fn reduce_homogeneous_bezier_to_quadratic(
                 return Err(refusal.into());
             }
             let mut source_values = IntoIterator::into_iter(1..degree);
-            while source_values.len() != 0 {
-                let Some(index) = ctx.next_charged(&mut source_values, "ASM rational reduction poles")? else {
+            while !source_values.is_empty() {
+                let Some(index) =
+                    ctx.next_charged(&mut source_values, "ASM rational reduction poles")?
+                else {
                     break;
                 };
                 let (Some(index_value), Some(degree_value)) = (
@@ -1198,13 +1202,22 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &curve.geometry else {
             continue;
         };
-        let Some(first) = usize::try_from(nurbs.degree()).ok().and_then(|degree| nurbs.knots().get(degree)) else {
+        let Some(first) = usize::try_from(nurbs.degree())
+            .ok()
+            .and_then(|degree| nurbs.knots().get(degree))
+        else {
             continue;
         };
-        let Some(last) = nurbs.knots().get(nurbs.pole_count()) else { continue; };
+        let Some(last) = nurbs.knots().get(nurbs.pole_count()) else {
+            continue;
+        };
         storage.with_storage(|| {
-            ctx.insert_hash_map(&mut domains, curve.id.as_str(), [*first, *last],
-                "ASM edge carrier domains")
+            ctx.insert_hash_map(
+                &mut domains,
+                curve.id.as_str(),
+                [*first, *last],
+                "ASM edge carrier domains",
+            )
         })?;
     }
     if let Some(refusal) = ctx.resource_refusal() {
@@ -1231,9 +1244,9 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
         if end > *last && end - *last <= tolerance {
             end = *last;
         }
-        *interval = cadmpeg_ir::topology::ParameterInterval::new([start, end])
-            .map_err(|_| cadmpeg_core::CodecError::malformed(
-                "edge param_range must be finite and ordered"))?;
+        *interval = cadmpeg_ir::topology::ParameterInterval::new([start, end]).map_err(|_| {
+            cadmpeg_core::CodecError::malformed("edge param_range must be finite and ordered")
+        })?;
     }
     Ok(())
 }
@@ -1249,7 +1262,9 @@ pub(super) fn classify_body_kinds(
     }
     let mut source_values = IntoIterator::into_iter(&out.regions);
     while source_values.len() != 0 {
-        let Some(region) = ctx.next_charged(&mut source_values, "ASM body classification regions")? else {
+        let Some(region) =
+            ctx.next_charged(&mut source_values, "ASM body classification regions")?
+        else {
             break;
         };
         if let Some(refusal) = ctx.resource_refusal() {
@@ -1273,7 +1288,8 @@ pub(super) fn classify_body_kinds(
     }
     let mut source_values = IntoIterator::into_iter(&out.shells);
     while source_values.len() != 0 {
-        let Some(shell) = ctx.next_charged(&mut source_values, "ASM body classification shells")? else {
+        let Some(shell) = ctx.next_charged(&mut source_values, "ASM body classification shells")?
+        else {
             break;
         };
         let Some(body) = ctx
@@ -1311,7 +1327,8 @@ pub(super) fn classify_body_kinds(
     }
     let mut source_values = IntoIterator::into_iter(&out.faces);
     while source_values.len() != 0 {
-        let Some(face) = ctx.next_charged(&mut source_values, "ASM body classification faces")? else {
+        let Some(face) = ctx.next_charged(&mut source_values, "ASM body classification faces")?
+        else {
             break;
         };
         let Some(body) = ctx
@@ -1348,7 +1365,8 @@ pub(super) fn classify_body_kinds(
     }
     let mut source_values = IntoIterator::into_iter(&out.loops);
     while source_values.len() != 0 {
-        let Some(loop_) = ctx.next_charged(&mut source_values, "ASM body classification loops")? else {
+        let Some(loop_) = ctx.next_charged(&mut source_values, "ASM body classification loops")?
+        else {
             break;
         };
         let Some(body) = ctx
@@ -1376,7 +1394,9 @@ pub(super) fn classify_body_kinds(
     }
     let mut source_values = IntoIterator::into_iter(&out.coedges);
     while source_values.len() != 0 {
-        let Some(coedge) = ctx.next_charged(&mut source_values, "ASM body classification coedges")? else {
+        let Some(coedge) =
+            ctx.next_charged(&mut source_values, "ASM body classification coedges")?
+        else {
             break;
         };
         if let Some(body) = ctx
@@ -1398,7 +1418,8 @@ pub(super) fn classify_body_kinds(
     }
     let mut source_values = IntoIterator::into_iter(&mut out.bodies);
     while source_values.len() != 0 {
-        let Some(body) = ctx.next_charged(&mut source_values, "ASM body classification bodies")? else {
+        let Some(body) = ctx.next_charged(&mut source_values, "ASM body classification bodies")?
+        else {
             break;
         };
         if !ctx.contains_hash_set(&body_has_faces, &&body.id, "ASM body face membership")? {
@@ -1469,13 +1490,7 @@ mod analytic_surface_tests {
     }
 
     fn surface_record(head: &str, tokens: Vec<Token>) -> Record {
-        crate::test_support::sab::record(
-1,
-format!("{head}-surface"),
-Arc::from(tokens),
-0,
-0
-)
+        crate::test_support::sab::record(1, format!("{head}-surface"), Arc::from(tokens), 0, 0)
     }
 
     #[test]
@@ -1543,9 +1558,9 @@ mod sense_tests {
             (Token::False, Token::True, true),
         ] {
             let record = crate::test_support::sab::record(
-0,
-"intcurve".into(),
-vec![
+                0,
+                "intcurve".into(),
+                vec![
                     Token::Ref(-1),
                     Token::Long(-1),
                     Token::Ref(-1),
@@ -1555,9 +1570,9 @@ vec![
                     Token::SubtypeClose,
                 ]
                 .into(),
-0,
-0
-);
+                0,
+                0,
+            );
             assert_eq!(
                 record_reversed(&cadmpeg_test_support::service_decode_context(), &record).unwrap(),
                 expected
@@ -1569,11 +1584,11 @@ vec![
 #[cfg(test)]
 mod tests {
     mod budget;
-    mod entry_refusal;
-    mod source_visits;
-    mod quadratic_storage;
-    mod numerical_ranges;
     mod edge_clamping;
+    mod entry_refusal;
+    mod numerical_ranges;
+    mod quadratic_storage;
+    mod source_visits;
     use super::Point3;
     const SMALL_CURVED_SPINE_EXTENT: f64 = 1.0e-10;
 

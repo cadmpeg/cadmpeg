@@ -633,10 +633,9 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
     )
     .map_err(StreamFailure::from_operation)?;
     // Record name field, then payload fields until the terminator.
-    'stream: loop {
-        let Some((rec_start, name, _)) = reader.next_field(ctx, Some("frame SAT record"))? else {
-            break;
-        };
+    'stream: while let Some((rec_start, name, _)) =
+        reader.next_field(ctx, Some("frame SAT record"))?
+    {
         let mut scratch = ctx
             .reserve_scoped(0, "frame SAT record")
             .map_err(StreamFailure::from_operation)?;

@@ -91,34 +91,62 @@ impl RewriteIdentities for FaceSidedness {
 
 #[cfg(test)]
 mod tests {
-    use super::{EndpointSlot, EvaluatedToleranceSlot, FaceContainment, TolerantCoedgeExtension, WireSide};
+    use super::{
+        EndpointSlot, EvaluatedToleranceSlot, FaceContainment, TolerantCoedgeExtension, WireSide,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 
     macro_rules! scalar_cases {
         ($check:ident) => {
-            for value in [EndpointSlot::Start, EndpointSlot::End] { $check(value); }
-            for value in [FaceContainment::In, FaceContainment::Out] { $check(value); }
-            for value in [WireSide::In, WireSide::Out] { $check(value); }
+            for value in [EndpointSlot::Start, EndpointSlot::End] {
+                $check(&value);
+            }
+            for value in [FaceContainment::In, FaceContainment::Out] {
+                $check(&value);
+            }
+            for value in [WireSide::In, WireSide::Out] {
+                $check(&value);
+            }
             for value in [
                 EvaluatedToleranceSlot::Absent {},
                 EvaluatedToleranceSlot::Unset { trailing: None },
-                EvaluatedToleranceSlot::Unset { trailing: Some(i64::MAX) },
+                EvaluatedToleranceSlot::Unset {
+                    trailing: Some(i64::MAX),
+                },
                 EvaluatedToleranceSlot::Evaluated { trailing: None },
-                EvaluatedToleranceSlot::Evaluated { trailing: Some(i64::MAX) },
-            ] { $check(value); }
+                EvaluatedToleranceSlot::Evaluated {
+                    trailing: Some(i64::MAX),
+                },
+            ] {
+                $check(&value);
+            }
             for value in [
                 TolerantCoedgeExtension::None {},
                 TolerantCoedgeExtension::Reference { target: None },
-                TolerantCoedgeExtension::Reference { target: Some(i64::MAX) },
+                TolerantCoedgeExtension::Reference {
+                    target: Some(i64::MAX),
+                },
                 TolerantCoedgeExtension::Empty { target: None },
-                TolerantCoedgeExtension::Empty { target: Some(i64::MAX) },
-                TolerantCoedgeExtension::EmbeddedCurve { target: None, curve_reversed: false,
-                    payload_token_count: 0, parameter_range: None },
-                TolerantCoedgeExtension::EmbeddedCurve { target: Some(i64::MAX), curve_reversed: true,
-                    payload_token_count: u32::MAX, parameter_range: None },
-            ] { $check(value); }
+                TolerantCoedgeExtension::Empty {
+                    target: Some(i64::MAX),
+                },
+                TolerantCoedgeExtension::EmbeddedCurve {
+                    target: None,
+                    curve_reversed: false,
+                    payload_token_count: 0,
+                    parameter_range: None,
+                },
+                TolerantCoedgeExtension::EmbeddedCurve {
+                    target: Some(i64::MAX),
+                    curve_reversed: true,
+                    payload_token_count: u32::MAX,
+                    parameter_range: None,
+                },
+            ] {
+                $check(&value);
+            }
         };
     }
 
@@ -133,19 +161,22 @@ mod tests {
         policy
     }
 
-    fn check_free_scalar<T: RewriteIdentities + Clone + serde::Serialize>(value: T) {
-        let wire = serde_json::to_value(&value).unwrap();
+    fn check_free_scalar<T: RewriteIdentities + Clone + serde::Serialize>(value: &T) {
+        let wire = serde_json::to_value(value).unwrap();
         for count in [1, 64] {
             let arena = DecodeArena::new();
             let policy = zero_policy();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut map = IdentityMap::new(&ctx, "test unused ASM scalar map", |_source: &str| {
                 panic!("a fixed scalar must not map an identity");
-            }).unwrap();
+            })
+            .unwrap();
             for _ in 0..count {
-                value.visit_identity_references(&ctx, &mut |_source| {
-                    panic!("a fixed scalar must not visit an identity");
-                }).unwrap();
+                value
+                    .visit_identity_references(&ctx, &mut |_source| {
+                        panic!("a fixed scalar must not visit an identity");
+                    })
+                    .unwrap();
                 let rewritten = value.clone().rewrite_identities(&ctx, &mut map).unwrap();
                 assert_eq!(serde_json::to_value(rewritten).unwrap(), wire);
             }
@@ -159,38 +190,62 @@ mod tests {
         scalar_cases!(check_free_scalar);
     }
 
-    fn check_fused_scalar<T: RewriteIdentities + Clone + serde::Serialize>(value: T) {
-        let wire = serde_json::to_value(&value).unwrap();
-        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::CollectionItems,
-            ResourceDimension::MaterializedBytes, ResourceDimension::RetainedBytes,
-            ResourceDimension::Entities, ResourceDimension::RecursionDepth] {
+    fn check_fused_scalar<T: RewriteIdentities + Clone + serde::Serialize>(value: &T) {
+        let wire = serde_json::to_value(value).unwrap();
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::CollectionItems,
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::RetainedBytes,
+            ResourceDimension::Entities,
+            ResourceDimension::RecursionDepth,
+        ] {
             let arena = DecodeArena::new();
             let policy = zero_policy();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut map = IdentityMap::new(&ctx, "test unused ASM scalar map", |_source: &str| {
                 panic!("a refused scalar must not map an identity");
-            }).unwrap();
+            })
+            .unwrap();
             let refused = match dimension {
-                ResourceDimension::WorkUnits => ctx.charge_work(1, "test original ASM scalar refusal"),
-                ResourceDimension::CollectionItems => ctx.charge_collection_items(1, "test original ASM scalar refusal"),
-                ResourceDimension::MaterializedBytes => ctx.reserve_scoped(1, "test original ASM scalar refusal").map(|_| ()),
-                ResourceDimension::RetainedBytes => ctx.charge_retained(1, "test original ASM scalar refusal"),
-                ResourceDimension::Entities => ctx.charge_entities(1, "test original ASM scalar refusal"),
-                ResourceDimension::RecursionDepth => ctx.enter_nested("test original ASM scalar refusal").map(|_| ()),
+                ResourceDimension::WorkUnits => {
+                    ctx.charge_work(1, "test original ASM scalar refusal")
+                }
+                ResourceDimension::CollectionItems => {
+                    ctx.charge_collection_items(1, "test original ASM scalar refusal")
+                }
+                ResourceDimension::MaterializedBytes => ctx
+                    .reserve_scoped(1, "test original ASM scalar refusal")
+                    .map(|_| ()),
+                ResourceDimension::RetainedBytes => {
+                    ctx.charge_retained(1, "test original ASM scalar refusal")
+                }
+                ResourceDimension::Entities => {
+                    ctx.charge_entities(1, "test original ASM scalar refusal")
+                }
+                ResourceDimension::RecursionDepth => ctx
+                    .enter_nested("test original ASM scalar refusal")
+                    .map(|_| ()),
                 _ => panic!("scalar refusal dimension"),
             };
-            let Err(CodecError::ResourceLimit(first)) = refused else { panic!("expected original refusal"); };
+            let Err(CodecError::ResourceLimit(first)) = refused else {
+                panic!("expected original refusal");
+            };
             assert_eq!(first.dimension, dimension);
             for _ in 0..64 {
-                assert!(matches!(value.visit_identity_references(&ctx, &mut |_source| {
+                assert!(
+                    matches!(value.visit_identity_references(&ctx, &mut |_source| {
                     panic!("a refused scalar must not visit an identity");
-                }), Err(CodecError::ResourceLimit(last)) if last == first));
+                }), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
                 assert!(matches!(value.clone().rewrite_identities(&ctx, &mut map),
                     Err(CodecError::ResourceLimit(last)) if last == first));
-                assert_eq!(serde_json::to_value(&value).unwrap(), wire);
+                assert_eq!(serde_json::to_value(value).unwrap(), wire);
             }
             drop(map);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         }
     }
 
