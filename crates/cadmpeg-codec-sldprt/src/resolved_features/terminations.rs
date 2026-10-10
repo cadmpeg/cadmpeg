@@ -449,10 +449,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
             match vote {
                 TerminationVote::ToVertex { reference } => {
                     if !ctx.contains_key_btree_map(&feature.properties, "Vertex", OPERATION)? {
-                        let reference = ctx.copy_retained_text(
-                            reference,
-                            "agree SLDPRT extrusion terminations",
-                        )?;
+                        let reference = ctx
+                            .copy_retained_text(reference, "agree SLDPRT extrusion terminations")?;
                         insert_termination_field(
                             ctx,
                             &mut feature.properties,
@@ -467,10 +465,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         continue;
                     };
                     if !ctx.contains_key_btree_map(&feature.properties, "Face", OPERATION)? {
-                        let reference = ctx.copy_retained_text(
-                            reference,
-                            "agree SLDPRT extrusion terminations",
-                        )?;
+                        let reference = ctx
+                            .copy_retained_text(reference, "agree SLDPRT extrusion terminations")?;
                         insert_termination_field(
                             ctx,
                             &mut feature.properties,

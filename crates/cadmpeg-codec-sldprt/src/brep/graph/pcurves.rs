@@ -1,31 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolve support charts and derive coedge pcurves.
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::Exactness;
-use cadmpeg_ir::annotations::AnnotationBuilder;
-use cadmpeg_ir::eval::analytic_surface_parameters;
-use cadmpeg_ir::eval::nurbs_curve_parameter_domain;
-use cadmpeg_ir::geometry::Curve;
-use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::SolvedCurveGeometry;
-use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
-use cadmpeg_ir::geometry::Surface;
-use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis;
-use cadmpeg_ir::geometry::pcurve::Pcurve;
-use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
-use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
-use cadmpeg_ir::ids::PcurveId;
-use cadmpeg_ir::ids::VertexId;
-use cadmpeg_ir::topology::Coedge;
-use cadmpeg_ir::topology::Edge;
-use crate::brep::LEN_TO_MM;
-use crate::brep::evaluation::nurbs_surface_parameter_segment_chord_bound;
-use crate::brep::evaluation::nurbs_surface_parameter_within_tolerance;
-use crate::brep::graph::cylindrical_radial::CylindricalRadialControls;
-use std::collections::HashMap;
+use super::admit_brep_entity;
+use super::inverse::inverse_coordinate_tolerance;
+use super::inverse::nurbs_parameter_at_point;
+use super::inverse::ruled_surface_line_pcurve;
+use super::inverse::InverseResolution;
+use super::nurbs_pcurves::derive_nurbs_edge_pcurve;
+use super::nurbs_pcurves::nurbs_edge_parameter_range;
+use super::nurbs_pcurves::resolve_axis_candidates;
+use super::nurbs_pcurves::NurbsPcurveFailure;
+use super::nurbs_pcurves::NurbsPcurveResolution;
+use super::pcurve_namespace;
 use super::Brep;
+use super::Stats;
 use super::EPS_AXIS_ALIGNMENT;
 use super::EPS_CIRCLE_RADIUS_MATCH;
 use super::EPS_GEOMETRY_RESIDUAL;
@@ -33,18 +21,30 @@ use super::EPS_NORMAL_NONZERO;
 use super::EPS_PLANAR_DISTANCE;
 use super::EPS_RADIUS_ABSOLUTE;
 use super::EPS_RADIUS_RELATIVE;
-use super::inverse::InverseResolution;
-use super::nurbs_pcurves::NurbsPcurveFailure;
-use super::nurbs_pcurves::NurbsPcurveResolution;
-use super::Stats;
-use super::admit_brep_entity;
-use super::nurbs_pcurves::derive_nurbs_edge_pcurve;
-use super::inverse::inverse_coordinate_tolerance;
-use super::nurbs_pcurves::nurbs_edge_parameter_range;
-use super::inverse::nurbs_parameter_at_point;
-use super::pcurve_namespace;
-use super::nurbs_pcurves::resolve_axis_candidates;
-use super::inverse::ruled_surface_line_pcurve;
+use crate::brep::evaluation::nurbs_surface_parameter_segment_chord_bound;
+use crate::brep::evaluation::nurbs_surface_parameter_within_tolerance;
+use crate::brep::graph::cylindrical_radial::CylindricalRadialControls;
+use crate::brep::LEN_TO_MM;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::annotations::AnnotationBuilder;
+use cadmpeg_ir::eval::analytic_surface_parameters;
+use cadmpeg_ir::eval::nurbs_curve_parameter_domain;
+use cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis;
+use cadmpeg_ir::geometry::pcurve::Pcurve;
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::Surface;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::ids::PcurveId;
+use cadmpeg_ir::ids::VertexId;
+use cadmpeg_ir::topology::Coedge;
+use cadmpeg_ir::topology::Edge;
+use cadmpeg_ir::Exactness;
+use std::collections::HashMap;
 
 /// The support surface, edge and edge curve of one coedge.
 struct CoedgeSupport<'a> {
@@ -82,9 +82,17 @@ impl<'a, 'ctx> PcurveSupports<'a, 'ctx> {
         coedges: &[Coedge],
     ) -> Result<Self, cadmpeg_core::CodecError> {
         const LOOK_UP: &str = "look up Parasolid pcurve supports";
-        let PcurveArenas { loops, faces, surfaces, edges, curves, vertices, points } = arenas;
-        let (supports, workspace) = ctx.with_scoped_storage(
-            "index Parasolid pcurve supports", || {
+        let PcurveArenas {
+            loops,
+            faces,
+            surfaces,
+            edges,
+            curves,
+            vertices,
+            points,
+        } = arenas;
+        let (supports, workspace) =
+            ctx.with_scoped_storage("index Parasolid pcurve supports", || {
                 let surfaces = ctx.collect_hash_map(
                     surfaces.iter().map(|surface| (&surface.id, surface)),
                     "index Parasolid pcurve surfaces",
@@ -98,7 +106,8 @@ impl<'a, 'ctx> PcurveSupports<'a, 'ctx> {
                     let Some(face) = ctx.get_hash_map(&faces, &lp.face, LOOK_UP)? else {
                         continue;
                     };
-                    let Some(&surface) = ctx.get_hash_map(&surfaces, &face.surface, LOOK_UP)? else {
+                    let Some(&surface) = ctx.get_hash_map(&surfaces, &face.surface, LOOK_UP)?
+                    else {
                         continue;
                     };
                     ctx.insert_hash_map(
@@ -116,31 +125,36 @@ impl<'a, 'ctx> PcurveSupports<'a, 'ctx> {
                     curves.iter().map(|curve| (&curve.id, curve)),
                     "index Parasolid pcurve curves",
                 )?;
-                let (coedge_supports, storage) = ctx.with_scoped_storage(
-                    "hold Parasolid pcurve supports", || ctx.try_collect_vec(
-                    coedges.iter().map(|coedge| {
-                        let Some(&surface) =
-                            ctx.get_hash_map(&loop_surfaces, &coedge.owner_loop, LOOK_UP)?
-                        else {
-                            return Ok(None);
-                        };
-                        let Some(&edge) = ctx.get_hash_map(&edges, &coedge.edge, LOOK_UP)? else {
-                            return Ok(None);
-                        };
-                        let Some(curve_id) = edge.curve() else {
-                            return Ok(None);
-                        };
-                        let Some(&curve) = ctx.get_hash_map(&curves, curve_id, LOOK_UP)? else {
-                            return Ok(None);
-                        };
-                        Ok::<_, cadmpeg_core::CodecError>(Some(CoedgeSupport {
-                            surface,
-                            edge,
-                            curve,
-                        }))
-                    }),
-                    "resolve Parasolid pcurve supports",
-                ))?;
+                let (coedge_supports, storage) =
+                    ctx.with_scoped_storage("hold Parasolid pcurve supports", || {
+                        ctx.try_collect_vec(
+                            coedges.iter().map(|coedge| {
+                                let Some(&surface) =
+                                    ctx.get_hash_map(&loop_surfaces, &coedge.owner_loop, LOOK_UP)?
+                                else {
+                                    return Ok(None);
+                                };
+                                let Some(&edge) =
+                                    ctx.get_hash_map(&edges, &coedge.edge, LOOK_UP)?
+                                else {
+                                    return Ok(None);
+                                };
+                                let Some(curve_id) = edge.curve() else {
+                                    return Ok(None);
+                                };
+                                let Some(&curve) = ctx.get_hash_map(&curves, curve_id, LOOK_UP)?
+                                else {
+                                    return Ok(None);
+                                };
+                                Ok::<_, cadmpeg_core::CodecError>(Some(CoedgeSupport {
+                                    surface,
+                                    edge,
+                                    curve,
+                                }))
+                            }),
+                            "resolve Parasolid pcurve supports",
+                        )
+                    })?;
                 let mut supports = Self {
                     coedges: coedge_supports,
                     vertex_positions: HashMap::new(),
@@ -154,17 +168,18 @@ impl<'a, 'ctx> PcurveSupports<'a, 'ctx> {
                 )?;
                 for vertex in ctx.admit_iter(vertices, "index Parasolid pcurve vertex points")? {
                     if let Some(&position) = ctx.get_hash_map(&points, &vertex.point, LOOK_UP)? {
-                        supports._storage.with_storage(|| ctx.insert_hash_map(
-                            &mut supports.vertex_positions,
-                            &vertex.id,
-                            position,
-                            "index Parasolid pcurve vertex points",
-                        ))?;
+                        supports._storage.with_storage(|| {
+                            ctx.insert_hash_map(
+                                &mut supports.vertex_positions,
+                                &vertex.id,
+                                position,
+                                "index Parasolid pcurve vertex points",
+                            )
+                        })?;
                     }
                 }
                 Ok::<_, cadmpeg_core::CodecError>(supports)
-            },
-        )?;
+            })?;
         drop(workspace);
         Ok(supports)
     }
@@ -257,7 +272,15 @@ pub(super) fn derive_pcurves(
     );
     let supports = PcurveSupports::new(
         ctx,
-        PcurveArenas { loops, faces, surfaces, edges, curves, vertices, points },
+        PcurveArenas {
+            loops,
+            faces,
+            surfaces,
+            edges,
+            curves,
+            vertices,
+            points,
+        },
         coedges,
     )?;
     let mut sink = PcurveSink {
@@ -660,14 +683,18 @@ fn derive_cylindrical_pcurves(
                     }
                 };
                 let polar = match radial_control_points.into_polar(
-                    |point| dot(
-                        [point.x - origin.x, point.y - origin.y, point.z - origin.z],
-                        *axis,
-                    ),
-                    |error| crate::loss::spline_lane_refusal(
-                        ctx,
-                        format_args!("cylindrical pcurve for edge {}: {error}", edge.id),
-                    ),
+                    |point| {
+                        dot(
+                            [point.x - origin.x, point.y - origin.y, point.z - origin.z],
+                            *axis,
+                        )
+                    },
+                    |error| {
+                        crate::loss::spline_lane_refusal(
+                            ctx,
+                            format_args!("cylindrical pcurve for edge {}: {error}", edge.id),
+                        )
+                    },
                 )? {
                     Ok(polar) => polar,
                     Err(note) => {
@@ -1209,11 +1236,15 @@ fn derive_nurbs_isoparametric_pcurves(
                     match derive_nurbs_edge_pcurve(ctx, surface, curve, parameter_range) {
                         Ok(resolution) => resolution,
                         Err(NurbsPcurveFailure::Carrier(error)) => {
-                            crate::lane_refusal::scoped::RefusalSink::Scoped(&mut lane_refusals).note(
-                                ctx,
-                                format_args!("isoparametric pcurve for edge {}", edge.id.as_str()),
-                                &error,
-                            )?;
+                            crate::lane_refusal::scoped::RefusalSink::Scoped(&mut lane_refusals)
+                                .note(
+                                    ctx,
+                                    format_args!(
+                                        "isoparametric pcurve for edge {}",
+                                        edge.id.as_str()
+                                    ),
+                                    &error,
+                                )?;
                             continue;
                         }
                         Err(NurbsPcurveFailure::Resource(limit)) => return Err(limit),

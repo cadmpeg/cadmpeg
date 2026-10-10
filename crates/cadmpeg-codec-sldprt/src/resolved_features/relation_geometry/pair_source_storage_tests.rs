@@ -14,9 +14,8 @@ const QUERY_BYTES: u64 = PAIR_BYTES + ROSTER_BYTES + PAIR_BYTES;
 
 fn fixture() -> FeatureInputLane {
     let marker = |id: &str, offset, kind, object_index, local_id| {
-        let mut value = SketchInputEntity::new(
-            id, "lane", u32::try_from(offset).unwrap(), offset, kind,
-        );
+        let mut value =
+            SketchInputEntity::new(id, "lane", u32::try_from(offset).unwrap(), offset, kind);
         value.feature_ref = Some("feature".into());
         value.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
         value.with_test_identity(Some(object_index), Some(local_id))
@@ -29,8 +28,11 @@ fn fixture() -> FeatureInputLane {
         marker("indexed", 30, SketchInputKind::Point, 2, 3),
     ];
     lane.classes = vec![FeatureInputClass {
-        id: "arc-class".into(), parent: "lane".into(), ordinal: 0,
-        offset: 20, name: "sgArcHandle".into(),
+        id: "arc-class".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 20,
+        name: "sgArcHandle".into(),
     }];
     lane
 }
@@ -46,9 +48,11 @@ fn relation_pair_sources_reuse_storage_and_preserve_ordered_borrowed_pairs() {
     for _ in 0..2 {
         let storage;
         let pairs;
-        (pairs, storage) = ctx.with_scoped_storage("relation pair query output", || {
-            declared_entity_handle_pairs(&ctx, &lane, "feature")
-        }).unwrap();
+        (pairs, storage) = ctx
+            .with_scoped_storage("relation pair query output", || {
+                declared_entity_handle_pairs(&ctx, &lane, "feature")
+            })
+            .unwrap();
         assert_eq!(pairs.len(), 2);
         for (pair, indices) in pairs.iter().zip([[0, 1], [1, 2]]) {
             assert!(std::ptr::eq(pair[0], &lane.sketch_entities[indices[0]]));
@@ -56,8 +60,11 @@ fn relation_pair_sources_reuse_storage_and_preserve_ordered_borrowed_pairs() {
         }
         // Only the actual result shell remains. Consumed input shells and
         // construction rosters must have released their reservations.
-        ctx.reserve_scoped(QUERY_BYTES - PAIR_BYTES, "reuse consumed relation pair sources")
-            .unwrap();
+        ctx.reserve_scoped(
+            QUERY_BYTES - PAIR_BYTES,
+            "reuse consumed relation pair sources",
+        )
+        .unwrap();
         drop(pairs);
         drop(storage);
         ctx.reserve_scoped(QUERY_BYTES, "reuse complete relation pair query")
@@ -77,9 +84,11 @@ fn relation_pair_sources_preserve_feature_filter_without_storage() {
     for _ in 0..2 {
         let storage;
         let pairs;
-        (pairs, storage) = ctx.with_scoped_storage("filtered relation pair query", || {
-            declared_entity_handle_pairs(&ctx, &lane, "other-feature")
-        }).unwrap();
+        (pairs, storage) = ctx
+            .with_scoped_storage("filtered relation pair query", || {
+                declared_entity_handle_pairs(&ctx, &lane, "other-feature")
+            })
+            .unwrap();
         assert!(pairs.is_empty());
         assert_eq!(pairs.capacity(), 0);
         drop(pairs);
@@ -96,9 +105,11 @@ fn relation_pair_sources_preserve_original_refusal() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = QUERY_BYTES - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let run = || ctx.with_scoped_storage("relation pair query output", || {
-        declared_entity_handle_pairs(&ctx, &lane, "feature")
-    });
+    let run = || {
+        ctx.with_scoped_storage("relation pair query output", || {
+            declared_entity_handle_pairs(&ctx, &lane, "feature")
+        })
+    };
     let error = match run() {
         Err(error) => error,
         Ok(_) => panic!("expected indexed pair source storage refusal"),

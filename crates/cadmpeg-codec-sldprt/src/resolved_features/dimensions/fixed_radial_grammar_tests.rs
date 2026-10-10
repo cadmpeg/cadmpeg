@@ -25,12 +25,22 @@ fn malformed_radial_record_does_not_execute_a_fallible_fixed_comparison() {
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, OLD_COMPARISON, None,
+        ResourceDimension::WorkUnits,
+        OLD_COMPARISON,
+        None,
     );
-    assert_eq!(super::radial_circle_records(&ctx, &payload).unwrap().count(), 0);
-    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, OLD_COMPARISON)
+    assert_eq!(
+        super::radial_circle_records(&ctx, &payload)
+            .unwrap()
+            .count(),
+        0
+    );
+    let CodecError::ResourceLimit(limit) = ctx
+        .charge_work(1, OLD_COMPARISON)
         .expect_err("the fixed grammar left the comparison probe armed")
-    else { panic!("work refusal"); };
+    else {
+        panic!("work refusal");
+    };
     assert_eq!(limit.operation, OLD_COMPARISON);
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(ctx.resource_refusal(), Some(limit));
@@ -55,7 +65,12 @@ fn radial_scan_admits_only_complete_marker_starts() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     for _ in 0..REPEATS {
-        assert_eq!(super::radial_circle_records(&ctx, &payload).unwrap().count(), 0);
+        assert_eq!(
+            super::radial_circle_records(&ctx, &payload)
+                .unwrap()
+                .count(),
+            0
+        );
     }
     let arena = DecodeArena::new();
     policy.limits.max_work_units = STARTS - 1;
@@ -63,7 +78,9 @@ fn radial_scan_admits_only_complete_marker_starts() {
     let CodecError::ResourceLimit(limit) = (match super::radial_circle_records(&ctx, &payload) {
         Ok(_) => panic!("the source-start admission must refuse before iteration"),
         Err(error) => error,
-    }) else { panic!("work refusal"); };
+    }) else {
+        panic!("work refusal");
+    };
     assert_eq!(limit.operation, OPERATION);
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.used, 0);
@@ -72,5 +89,10 @@ fn radial_scan_admits_only_complete_marker_starts() {
     let arena = DecodeArena::new();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&payload[..4], &arena, &policy).unwrap();
-    assert_eq!(super::radial_circle_records(&ctx, &payload[..4]).unwrap().count(), 0);
+    assert_eq!(
+        super::radial_circle_records(&ctx, &payload[..4])
+            .unwrap()
+            .count(),
+        0
+    );
 }

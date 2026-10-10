@@ -21,19 +21,34 @@ fn profile_line() -> FeatureInputLane {
     payload[284..].copy_from_slice(SKETCH_MARKER);
     let marker = |id: &str, offset, index, coordinates: Option<[f64; 2]>| {
         let mut marker = SketchInputEntity::new(
-            id.to_owned(), "lane".to_owned(), 0, offset,
-            if coordinates.is_some() { SketchInputKind::Point } else { SketchInputKind::LineOrCircle },
-        ).with_test_identity(index, None);
+            id.to_owned(),
+            "lane".to_owned(),
+            0,
+            offset,
+            if coordinates.is_some() {
+                SketchInputKind::Point
+            } else {
+                SketchInputKind::LineOrCircle
+            },
+        )
+        .with_test_identity(index, None);
         marker.feature_ref = Some("profile".to_owned());
         marker.coordinates_m = coordinates.and_then(cadmpeg_ir::units::FiniteVector::new);
         marker
     };
     FeatureInputLane {
-        id: "lane".to_owned(), configuration: None, native_payload: payload,
-        classes: Vec::new(), names: Vec::new(), scalars: Vec::new(),
-        relation_bindings: Vec::new(), relation_instances: Vec::new(),
-        body_selections: Vec::new(), edge_selections: Vec::new(),
-        surface_selections: Vec::new(), generated_surface_identities: Vec::new(),
+        id: "lane".to_owned(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
         references: Vec::new(),
         sketch_entities: vec![
             marker("start", 0, Some(1), Some([0.0, 0.0])),
@@ -51,7 +66,8 @@ fn implicit_profile_axis_keeps_endpoint_identity_and_original_index_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
     let roster = super::LaneMarkerIndex::new(&ctx, lane.sketch_entities.iter()).unwrap();
     let endpoints = super::profile_roster_implicit_axis_endpoints(&ctx, &lane, "profile", &roster)
-        .unwrap().expect("one bounded line resolves the axis");
+        .unwrap()
+        .expect("one bounded line resolves the axis");
     assert_eq!(endpoints.map(SketchInputEntity::id), ["start", "end"]);
     crate::test_support::work_refusal_at("index SLDPRT marker geometry", |ctx| {
         let roster = super::LaneMarkerIndex::new(ctx, lane.sketch_entities.iter())?;
@@ -71,29 +87,53 @@ fn endpoint_id_pass_leaves_geometry_available_for_the_axis_fallback() {
     let mut geometry = None;
     let curves = super::super::typed_relations::CurveMarkers::new(&ctx, &markers).unwrap();
     let mut ids_storage = ctx.reserve_scoped(0, "hold test endpoint IDs").unwrap();
-    let ids = super::profile_curve_endpoint_ids_with(
-        &ctx, &mut ids_storage, &markers, false,
-        |curve| super::roster_curve_endpoint_markers_lazy(
-            &ctx, &lane.native_payload, curve, &markers, &mut geometry, Some(&curves),
-        ),
-    ).unwrap();
+    let ids =
+        super::profile_curve_endpoint_ids_with(&ctx, &mut ids_storage, &markers, false, |curve| {
+            super::roster_curve_endpoint_markers_lazy(
+                &ctx,
+                &lane.native_payload,
+                curve,
+                &markers,
+                &mut geometry,
+                Some(&curves),
+            )
+        })
+        .unwrap();
     assert_eq!(ids.into_iter().collect::<Vec<_>>(), vec!["end", "start"]);
     drop(ids_storage);
     assert!(geometry.is_some());
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, OPERATION, None,
+        ResourceDimension::WorkUnits,
+        OPERATION,
+        None,
     );
     let (endpoint_storage, endpoints);
-    (endpoints, endpoint_storage) = ctx.with_scoped_storage("hold test fallback endpoints", || {
-        super::roster_curve_endpoint_markers_lazy(
-            &ctx, &lane.native_payload, &lane.sketch_entities[2], &markers, &mut geometry, Some(&curves),
-        )
-    }).unwrap();
-    assert_eq!(endpoints.iter().map(|marker| marker.id()).collect::<Vec<_>>(), vec!["start", "end"]);
+    (endpoints, endpoint_storage) = ctx
+        .with_scoped_storage("hold test fallback endpoints", || {
+            super::roster_curve_endpoint_markers_lazy(
+                &ctx,
+                &lane.native_payload,
+                &lane.sketch_entities[2],
+                &markers,
+                &mut geometry,
+                Some(&curves),
+            )
+        })
+        .unwrap();
+    assert_eq!(
+        endpoints
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
+        vec!["start", "end"]
+    );
     drop((endpoints, endpoint_storage));
-    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, OPERATION)
+    let CodecError::ResourceLimit(limit) = ctx
+        .charge_work(1, OPERATION)
         .expect_err("the cached fallback leaves the index-construction probe armed")
-    else { panic!("work refusal"); };
+    else {
+        panic!("work refusal");
+    };
     assert_eq!(limit.operation, OPERATION);
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(ctx.resource_refusal(), Some(limit));

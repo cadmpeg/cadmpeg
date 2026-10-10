@@ -880,6 +880,21 @@ impl SldprtNative {
                 }
             }
         }
+        drop((
+            history_ids,
+            _history_ids_reservation,
+            feature_ids,
+            _feature_ids_reservation,
+            lane_ids,
+            _lane_ids_reservation,
+            lane_payloads,
+            _lane_payloads_reservation,
+            lookup,
+            references_by_id,
+            _references_by_id_reservation,
+            classes_by_id,
+            _classes_by_id_reservation,
+        ));
         // Lane records are validated against a context of all history
         // features, so lanes are filled before the features move into their
         // histories.
@@ -1137,7 +1152,12 @@ impl SldprtNative {
                 ));
             }
         }
-        drop((history_configurations, history_configurations_storage, history_features, history_features_storage));
+        drop((
+            history_configurations,
+            history_configurations_storage,
+            history_features,
+            history_features_storage,
+        ));
         lanes::admit(&native, ctx)?;
         Ok(native)
     }
@@ -1443,6 +1463,8 @@ impl SldprtNative {
                     ));
                 }
             }
+            drop(features_by_source);
+            drop((lane_features, _lane_features_reservation));
             if let Some(record) = ctx.find_by(
                 &lane.scalars,
                 |record| {
@@ -1620,6 +1642,7 @@ impl SldprtNative {
                     )?,
                 ));
             }
+            drop((lookup, classes_by_id, _classes_by_id_reservation));
             let _sketch_entities_reservation;
             let sketch_entities;
             (sketch_entities, _sketch_entities_reservation) = ctx.collect_scoped_string_map(
@@ -1749,6 +1772,12 @@ impl SldprtNative {
                     }
                 }
             }
+            drop((
+                references_by_id,
+                _references_by_id_reservation,
+                entities_by_feature,
+                entity_groups_storage,
+            ));
             if let Some(record) = ctx.find_by(
                 &lane.sketch_entities,
                 |record| {
@@ -1825,10 +1854,11 @@ impl SldprtNative {
                 }
             }
         }
+        drop((feature_ids, feature_ids_reservation));
         let mut expected_histories_reservation;
         let mut expected_histories;
-        (expected_histories, expected_histories_reservation) = ctx
-            .with_scoped_storage("validate SLDPRT expected histories", || {
+        (expected_histories, expected_histories_reservation) =
+            ctx.with_scoped_storage("validate SLDPRT expected histories", || {
                 ctx.try_collect_retained_with(
                     self.feature_histories.iter(),
                     "validate SLDPRT expected histories",
@@ -1873,6 +1903,12 @@ impl SldprtNative {
                 "history feature classes do not match the feature-input index".into(),
             ));
         }
+        drop((
+            expected_histories,
+            expected_histories_reservation,
+            history_lanes,
+            _history_lanes_reservation,
+        ));
         SLDPRT_CATALOGUE.emit_all(ctx, self, namespace)?;
         Ok(())
     }
@@ -2053,7 +2089,8 @@ fn attach_to_owners<'ctx, T: CloneCharged>(
     records: Vec<T>,
     owner: impl Fn(&T) -> &str,
     ordinal: impl Fn(&T) -> u32,
-) -> Result<(Vec<Vec<T>>, cadmpeg_core::decode::ScopedReservation<'ctx>), cadmpeg_core::CodecError> {
+) -> Result<(Vec<Vec<T>>, cadmpeg_core::decode::ScopedReservation<'ctx>), cadmpeg_core::CodecError>
+{
     const OPERATION: &str = "attach SLDPRT native records to owners";
     let mut workspace = ctx.reserve_scoped(0, OPERATION)?;
     let mut positions = std::collections::HashMap::<&str, Vec<usize>>::new();
@@ -2176,6 +2213,7 @@ fn validate_lane_selections(
             return Err(disagrees(&record.id, "edge")?);
         }
     }
+    drop((features_by_id, _features_by_id_reservation));
     let features_by_source = crate::resolved_features::component_paths::FeaturesBySource::new(
         ctx,
         // Only surface selections read producers by source.

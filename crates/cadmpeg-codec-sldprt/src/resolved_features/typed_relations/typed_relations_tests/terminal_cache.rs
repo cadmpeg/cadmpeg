@@ -24,7 +24,8 @@ fn terminal_fixture() -> (Vec<u8>, SketchInputEntity, SketchInputEntity) {
         payload[offset + 60..offset + 64].copy_from_slice(&1u32.to_le_bytes());
         payload[offset + 64..offset + 72].copy_from_slice(&(-1.0f64).to_le_bytes());
     }
-    let mut sibling = SketchInputEntity::new("sibling", "lane", 0, 0, SketchInputKind::LineOrCircle);
+    let mut sibling =
+        SketchInputEntity::new("sibling", "lane", 0, 0, SketchInputKind::LineOrCircle);
     sibling.feature_ref = Some("sketch".into());
     let mut terminal = SketchInputEntity::new("terminal", "lane", 1, 84, SketchInputKind::Arc);
     terminal.feature_ref = Some("sketch".into());
@@ -44,7 +45,10 @@ fn terminal_cache_unqualified_marker_skips_index_and_lookup() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let cache = OnceCell::new();
     for _ in 0..64 {
-        assert!(!legacy_terminal_indexed_profile_line_cached(&ctx, &payload, &sibling, &roster, &cache).unwrap());
+        assert!(!legacy_terminal_indexed_profile_line_cached(
+            &ctx, &payload, &sibling, &roster, &cache
+        )
+        .unwrap());
     }
     assert!(cache.get().is_none());
     assert_eq!(ctx.resource_refusal(), None);
@@ -53,20 +57,32 @@ fn terminal_cache_unqualified_marker_skips_index_and_lookup() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let cache = OnceCell::new();
-        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-        assert!(!legacy_terminal_indexed_profile_line_cached(&ctx, &payload, &sibling, &roster, &cache).unwrap());
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            operation,
+            None,
+        );
+        assert!(!legacy_terminal_indexed_profile_line_cached(
+            &ctx, &payload, &sibling, &roster, &cache
+        )
+        .unwrap());
         assert!(cache.get().is_none());
         assert_eq!(ctx.resource_refusal(), None);
-        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, operation)
-        else { panic!("unqualified terminal input must leave its probe armed"); };
+        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, operation) else {
+            panic!("unqualified terminal input must leave its probe armed");
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, operation);
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after unused terminal operation"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.charge_work(0, "after unused terminal operation"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
         drop(cache);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
         drop(probe);
     }
 }
@@ -76,7 +92,11 @@ fn terminal_cache_reuses_positive_and_negative_indexes() {
     assert_eq!(std::mem::size_of::<(Option<&str>, u64)>(), 24);
     let (payload, sibling, terminal) = terminal_fixture();
     for positive in [false, true] {
-        let roster = if positive { vec![&sibling, &terminal] } else { vec![&terminal] };
+        let roster = if positive {
+            vec![&sibling, &terminal]
+        } else {
+            vec![&terminal]
+        };
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         // The positive index has four 24-byte buckets plus alignment and control bytes.
@@ -87,24 +107,45 @@ fn terminal_cache_reuses_positive_and_negative_indexes() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let cache = OnceCell::new();
-        assert_eq!(legacy_terminal_indexed_profile_line_cached(&ctx, &payload, &terminal, &roster, &cache).unwrap(), positive);
+        assert_eq!(
+            legacy_terminal_indexed_profile_line_cached(&ctx, &payload, &terminal, &roster, &cache)
+                .unwrap(),
+            positive
+        );
         assert!(cache.get().is_some());
-        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, INDEX, None);
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            INDEX,
+            None,
+        );
         for _ in 0..64 {
-            assert_eq!(legacy_terminal_indexed_profile_line_cached(&ctx, &payload, &terminal, &roster, &cache).unwrap(), positive);
+            assert_eq!(
+                legacy_terminal_indexed_profile_line_cached(
+                    &ctx, &payload, &terminal, &roster, &cache
+                )
+                .unwrap(),
+                positive
+            );
         }
         assert_eq!(ctx.resource_refusal(), None);
         drop(cache);
-        let released = ctx.reserve_scoped(materialized, "released terminal index backing").unwrap();
+        let released = ctx
+            .reserve_scoped(materialized, "released terminal index backing")
+            .unwrap();
         drop(released);
-        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, INDEX)
-        else { panic!("cached hit and miss must leave the index probe armed"); };
+        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, INDEX) else {
+            panic!("cached hit and miss must leave the index probe armed");
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, INDEX);
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after cached terminal index"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.charge_work(0, "after cached terminal index"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
         drop(probe);
     }
 }
@@ -132,8 +173,11 @@ fn terminal_cache_refusal_leaves_index_unpublished() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let cache = OnceCell::new();
-        let Err(CodecError::ResourceLimit(limit)) = legacy_terminal_indexed_profile_line_cached(&ctx, &payload, &terminal, &roster, &cache)
-        else { panic!("terminal index must admit its source and backing"); };
+        let Err(CodecError::ResourceLimit(limit)) =
+            legacy_terminal_indexed_profile_line_cached(&ctx, &payload, &terminal, &roster, &cache)
+        else {
+            panic!("terminal index must admit its source and backing");
+        };
         assert!(cache.get().is_none());
         assert_eq!(limit.dimension, dimension);
         assert_eq!(limit.operation, INDEX);
@@ -141,8 +185,12 @@ fn terminal_cache_refusal_leaves_index_unpublished() {
         assert_eq!(limit.used, used);
         assert_eq!(limit.additional, additional);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after terminal index refusal"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.charge_work(0, "after terminal index refusal"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
         drop(cache);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 }

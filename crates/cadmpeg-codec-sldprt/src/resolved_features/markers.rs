@@ -990,12 +990,10 @@ pub(super) fn spatial_relation_marker_coordinates(payload: &[u8], offset: usize)
     {
         return None;
     }
-    let mut tagged_offsets = [56usize, 64]
-        .into_iter()
-        .filter_map(|relative| {
-            let tag = offset.checked_add(relative)?;
-            (payload.get(tag..tag + 2) == Some(&[0x0e, 0x00])).then_some(tag.checked_add(2)?)
-        });
+    let mut tagged_offsets = [56usize, 64].into_iter().filter_map(|relative| {
+        let tag = offset.checked_add(relative)?;
+        (payload.get(tag..tag + 2) == Some(&[0x0e, 0x00])).then_some(tag.checked_add(2)?)
+    });
     let coordinate_offset = tagged_offsets.next()?;
     if tagged_offsets.next().is_some() {
         return None;
@@ -1017,10 +1015,10 @@ pub(super) fn spatial_vertex_coordinates_charged(
 ) -> Result<Vec<FinitePoint3>, CodecError> {
     let _offsets_storage;
     let offsets;
-    (offsets, _offsets_storage) = ctx.with_scoped_storage(
-        "SLDPRT spatial vertex offset workspace",
-        || spatial_vertex_offsets_charged(ctx, payload),
-    )?;
+    (offsets, _offsets_storage) = ctx
+        .with_scoped_storage("SLDPRT spatial vertex offset workspace", || {
+            spatial_vertex_offsets_charged(ctx, payload)
+        })?;
     spatial_vertices_at(ctx, payload, &offsets)
 }
 

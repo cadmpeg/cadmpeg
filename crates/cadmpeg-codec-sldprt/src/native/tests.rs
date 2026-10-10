@@ -1938,13 +1938,10 @@ fn native_identity_vectors_drop_before_lane_validation() {
     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
         panic!("lane validation boundary");
     };
-    // The history and lane identity sets and the lane-payload map remain live.
-    let identity_set = 4 * std::mem::size_of::<&str>() + 15 + 4 + 16;
-    let payload_map = 4 * std::mem::size_of::<(&str, &[u8])>() + 15 + 4 + 16;
-    assert_eq!(
-        limit.used,
-        u64::try_from(2 * identity_set + payload_map).unwrap()
-    );
+    // Both validation identity sets and the payload map now retire before
+    // attachment. The attachment vectors also die before lane validation,
+    // so no preceding workspace remains at this required allocation.
+    assert_eq!(limit.used, 0);
     assert_eq!(
         limit.additional,
         u64::try_from(4 * std::mem::size_of::<crate::records::FeatureInputLane>()).unwrap()

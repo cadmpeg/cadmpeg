@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-use crate::records::{Feature, FeatureSource, TreeParent};
 use super::validate_feature_graph;
+use crate::records::{Feature, FeatureSource, TreeParent};
 
 const SCRATCH_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -57,7 +57,10 @@ fn feature_graph_workspace_is_released_after_success() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy()).expect("root context");
     validate_feature_graph(&ctx, &features).expect("valid source and tree ancestry");
     // Every admitted allocation was local to validation. The output is unit.
-    drop(ctx.reserve_scoped(SCRATCH_BYTES, "test released feature graph workspace").expect("full scratch capacity"));
+    drop(
+        ctx.reserve_scoped(SCRATCH_BYTES, "test released feature graph workspace")
+            .expect("full scratch capacity"),
+    );
     validate_feature_graph(&ctx, &features).expect("same valid ancestry remains usable");
     ctx.finish_session().expect("no refused resource");
 }
@@ -73,8 +76,12 @@ fn feature_graph_workspace_is_released_after_structural_rejection() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy()).expect("root context");
     assert!(matches!(validate_feature_graph(&ctx, &features),
         Err(CodecError::Malformed(message)) if message == "feature parent cycle"));
-    drop(ctx.reserve_scoped(SCRATCH_BYTES, "test rejected feature graph workspace").expect("full scratch capacity"));
-    ctx.finish_session().expect("structural recovery does not refuse resources");
+    drop(
+        ctx.reserve_scoped(SCRATCH_BYTES, "test rejected feature graph workspace")
+            .expect("full scratch capacity"),
+    );
+    ctx.finish_session()
+        .expect("structural recovery does not refuse resources");
 }
 
 #[test]
@@ -84,9 +91,12 @@ fn feature_graph_workspace_refuses_before_backing_allocation() {
     let mut policy = policy();
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root context");
-    let (result, allocations) = crate::test_support::allocation::count_allocations(||
-        validate_feature_graph(&ctx, &features));
-    let Err(CodecError::ResourceLimit(limit)) = result else { panic!("graph workspace limit"); };
+    let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+        validate_feature_graph(&ctx, &features)
+    });
+    let Err(CodecError::ResourceLimit(limit)) = result else {
+        panic!("graph workspace limit");
+    };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(limit.operation, "index SLDPRT feature graph");
     assert_eq!(limit.used, 0);
@@ -94,12 +104,17 @@ fn feature_graph_workspace_refuses_before_backing_allocation() {
     // capacity: core hash_storage_bytes bounds four buckets, alignment
     // padding, four control bytes and the sixteen trailing control bytes.
     type Entry = (FeatureSource, usize);
-    let first_growth = 4 * std::mem::size_of::<Entry>()
-        + std::mem::align_of::<Entry>().max(16) - 1 + 4 + 16;
-    assert_eq!(limit.additional, u64::try_from(first_growth).expect("hash backing bound"));
+    let first_growth =
+        4 * std::mem::size_of::<Entry>() + std::mem::align_of::<Entry>().max(16) - 1 + 4 + 16;
+    assert_eq!(
+        limit.additional,
+        u64::try_from(first_growth).expect("hash backing bound")
+    );
     assert_eq!(allocations, 0);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+    );
 }
 
 #[test]
@@ -109,10 +124,15 @@ fn feature_graph_validation_preserves_the_original_sticky_refusal() {
     let mut policy = policy();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root context");
-    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "test original graph refusal") else {
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "test original graph refusal")
+    else {
         panic!("original work limit");
     };
-    assert!(matches!(validate_feature_graph(&ctx, &features), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    assert!(
+        matches!(validate_feature_graph(&ctx, &features), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+    );
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+    );
 }

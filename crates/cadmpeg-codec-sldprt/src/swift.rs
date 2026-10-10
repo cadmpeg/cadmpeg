@@ -205,16 +205,16 @@ impl<'ctx> TopologyIdentityIndex<'ctx> {
             if !face_bridge_sequences.is_empty() {
                 let faces_storage;
                 let faces_by_attribute;
-                (faces_by_attribute, faces_storage) = ctx.with_scoped_storage(
-                    "SWIFT faces attribute index workspace",
-                    || attribute_identities(
-                        ctx,
-                        ctx.admit_iter(faces, "index SWIFT face attribute identities")?
-                            .map(|face| &face.id),
-                        "sldprt:brep:face#",
-                        FaceId::as_str,
-                    ),
-                )?;
+                (faces_by_attribute, faces_storage) =
+                    ctx.with_scoped_storage("SWIFT faces attribute index workspace", || {
+                        attribute_identities(
+                            ctx,
+                            ctx.admit_iter(faces, "index SWIFT face attribute identities")?
+                                .map(|face| &face.id),
+                            "sldprt:brep:face#",
+                            FaceId::as_str,
+                        )
+                    })?;
                 for &(sequence, attr) in
                     ctx.admit_iter(face_bridge_sequences, "index SWIFT face sequence")?
                 {
@@ -231,17 +231,19 @@ impl<'ctx> TopologyIdentityIndex<'ctx> {
             if !edge_use_sequences.is_empty() {
                 let edges_storage;
                 let edges_by_attribute;
-                (edges_by_attribute, edges_storage) = ctx.with_scoped_storage(
-                    "SWIFT edges attribute index workspace",
-                    || attribute_identities(
-                        ctx,
-                        ctx.admit_iter(edges, "index SWIFT edge attribute identities")?
-                            .map(|edge| &edge.id),
-                        "sldprt:brep:edge#",
-                        EdgeId::as_str,
-                    ),
-                )?;
-                for &(sequence, attr) in ctx.admit_iter(edge_use_sequences, "index SWIFT edge sequence")? {
+                (edges_by_attribute, edges_storage) =
+                    ctx.with_scoped_storage("SWIFT edges attribute index workspace", || {
+                        attribute_identities(
+                            ctx,
+                            ctx.admit_iter(edges, "index SWIFT edge attribute identities")?
+                                .map(|edge| &edge.id),
+                            "sldprt:brep:edge#",
+                            EdgeId::as_str,
+                        )
+                    })?;
+                for &(sequence, attr) in
+                    ctx.admit_iter(edge_use_sequences, "index SWIFT edge sequence")?
+                {
                     let target = attribute_identity(ctx, &edges_by_attribute, attr)?
                         .map(|edge| {
                             edge.try_clone_for_decode(ctx, "copy SWIFT topology identity")
@@ -255,16 +257,16 @@ impl<'ctx> TopologyIdentityIndex<'ctx> {
             if !vertex_use_sequences.is_empty() {
                 let vertices_storage;
                 let vertices_by_attribute;
-                (vertices_by_attribute, vertices_storage) = ctx.with_scoped_storage(
-                    "SWIFT vertices attribute index workspace",
-                    || attribute_identities(
-                        ctx,
-                        ctx.admit_iter(vertices, "index SWIFT vertex attribute identities")?
-                            .map(|vertex| &vertex.id),
-                        "sldprt:brep:vertex#",
-                        VertexId::as_str,
-                    ),
-                )?;
+                (vertices_by_attribute, vertices_storage) =
+                    ctx.with_scoped_storage("SWIFT vertices attribute index workspace", || {
+                        attribute_identities(
+                            ctx,
+                            ctx.admit_iter(vertices, "index SWIFT vertex attribute identities")?
+                                .map(|vertex| &vertex.id),
+                            "sldprt:brep:vertex#",
+                            VertexId::as_str,
+                        )
+                    })?;
                 for &(sequence, attr) in
                     ctx.admit_iter(vertex_use_sequences, "index SWIFT vertex sequence")?
                 {
@@ -1442,11 +1444,9 @@ fn record_projection(
         }
         AnnotationDisposition::Unsupported => {
             let class = short_class(ctx, &entity.class)?;
-            if let Some(count) = ctx.get_mut_btree_map(
-                unsupported,
-                class,
-                "count SLDPRT unsupported SWIFT classes",
-            )? {
+            if let Some(count) =
+                ctx.get_mut_btree_map(unsupported, class, "count SLDPRT unsupported SWIFT classes")?
+            {
                 *count = count.checked_add(1).ok_or_else(|| {
                     ctx.refuse_codec_limit(
                         "count SLDPRT unsupported SWIFT classes",
@@ -1490,8 +1490,10 @@ fn project_with_topology<'ctx>(
     }
     let _feature_storage;
     let feature_index;
-    (feature_index, _feature_storage) =
-        ctx.with_scoped_storage("SWIFT feature index workspace", || self::feature_index(ctx, root))?;
+    (feature_index, _feature_storage) = ctx
+        .with_scoped_storage("SWIFT feature index workspace", || {
+            self::feature_index(ctx, root)
+        })?;
     let mut datum_storage = ctx.reserve_scoped(0, "SWIFT datum identity workspace")?;
     let mut datum_ids = BTreeMap::new();
     for (reference, entity) in ctx
@@ -1614,20 +1616,19 @@ fn project_with_topology<'ctx>(
             let bucket = {
                 let _key_storage;
                 let key;
-                (key, _key_storage) =
-                    ctx.with_scoped_storage("SWIFT datum system key", || {
-                        ctx.collect_vec(
-                            tolerance.references.as_slice().iter().map(|reference| {
-                                (
-                                    reference.datum.as_str(),
-                                    reference.precedence.get(),
-                                    reference.common_group,
-                                    reference.modifiers.as_slice(),
-                                )
-                            }),
-                            SYSTEMS,
-                        )
-                    })?;
+                (key, _key_storage) = ctx.with_scoped_storage("SWIFT datum system key", || {
+                    ctx.collect_vec(
+                        tolerance.references.as_slice().iter().map(|reference| {
+                            (
+                                reference.datum.as_str(),
+                                reference.precedence.get(),
+                                reference.common_group,
+                                reference.modifiers.as_slice(),
+                            )
+                        }),
+                        SYSTEMS,
+                    )
+                })?;
                 ctx.hash_value(&key, SYSTEMS)?
             };
             let existing_system = match ctx.get_btree_map(&datum_systems, &bucket, SYSTEMS)? {
@@ -2978,10 +2979,9 @@ impl<'r, 'ctx> Counterbores<'r, 'ctx> {
         };
         let _key_storage;
         let key;
-        (key, _key_storage) = ctx
-            .with_scoped_storage("SWIFT counterbore context query", || {
-                ctx.collect_vec(context.iter().copied(), Self::OPERATION)
-            })?;
+        (key, _key_storage) = ctx.with_scoped_storage("SWIFT counterbore context query", || {
+            ctx.collect_vec(context.iter().copied(), Self::OPERATION)
+        })?;
         let bucket = ctx.hash_value(&key, Self::OPERATION)?;
         let Some(candidates) = ctx.get_btree_map(groups, &bucket, Self::OPERATION)? else {
             return Ok(Vec::new());

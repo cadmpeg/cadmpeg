@@ -360,15 +360,15 @@ pub(super) fn homogeneous_poles(
         NurbsPoles3::Polynomial { points } => {
             let mut points = points.iter();
             while !points.as_slice().is_empty() {
-                let Some(point) = ctx.next_charged(
-                    &mut points,
-                    "form Parasolid homogeneous patch pole",
-                )? else {
+                let Some(point) =
+                    ctx.next_charged(&mut points, "form Parasolid homogeneous patch pole")?
+                else {
                     break;
                 };
-                if storage.with_storage(|| {
-                    append_homogeneous_pole(ctx, &mut out, *point, None, scale)
-                })?.is_none() {
+                if storage
+                    .with_storage(|| append_homogeneous_pole(ctx, &mut out, *point, None, scale))?
+                    .is_none()
+                {
                     return Ok(None);
                 }
             }
@@ -376,20 +376,22 @@ pub(super) fn homogeneous_poles(
         NurbsPoles3::Rational { points } => {
             let mut points = points.iter();
             while !points.as_slice().is_empty() {
-                let Some(pole) = ctx.next_charged(
-                    &mut points,
-                    "form Parasolid homogeneous patch pole",
-                )? else {
+                let Some(pole) =
+                    ctx.next_charged(&mut points, "form Parasolid homogeneous patch pole")?
+                else {
                     break;
                 };
-                if storage.with_storage(|| append_homogeneous_pole(
-                    ctx,
-                    &mut out,
-                    pole.point,
-                    Some(pole.weight.get()),
-                    scale,
-                ))?
-                .is_none()
+                if storage
+                    .with_storage(|| {
+                        append_homogeneous_pole(
+                            ctx,
+                            &mut out,
+                            pole.point,
+                            Some(pole.weight.get()),
+                            scale,
+                        )
+                    })?
+                    .is_none()
                 {
                     return Ok(None);
                 }
@@ -410,23 +412,24 @@ pub(super) fn homogeneous_grid_poles(
         NurbsPoleGrid::Polynomial { rows } => {
             let mut rows = rows.iter();
             while !rows.as_slice().is_empty() {
-                let Some(row) = ctx.next_charged(
-                    &mut rows,
-                    "visit Parasolid homogeneous patch row",
-                )? else {
+                let Some(row) =
+                    ctx.next_charged(&mut rows, "visit Parasolid homogeneous patch row")?
+                else {
                     break;
                 };
                 let mut points = row.iter();
                 while !points.as_slice().is_empty() {
-                    let Some(point) = ctx.next_charged(
-                        &mut points,
-                        "form Parasolid homogeneous patch pole",
-                    )? else {
+                    let Some(point) =
+                        ctx.next_charged(&mut points, "form Parasolid homogeneous patch pole")?
+                    else {
                         break;
                     };
-                    if storage.with_storage(|| {
-                        append_homogeneous_pole(ctx, &mut out, *point, None, scale)
-                    })?.is_none() {
+                    if storage
+                        .with_storage(|| {
+                            append_homogeneous_pole(ctx, &mut out, *point, None, scale)
+                        })?
+                        .is_none()
+                    {
                         return Ok(None);
                     }
                 }
@@ -435,28 +438,29 @@ pub(super) fn homogeneous_grid_poles(
         NurbsPoleGrid::Rational { rows } => {
             let mut rows = rows.iter();
             while !rows.as_slice().is_empty() {
-                let Some(row) = ctx.next_charged(
-                    &mut rows,
-                    "visit Parasolid homogeneous patch row",
-                )? else {
+                let Some(row) =
+                    ctx.next_charged(&mut rows, "visit Parasolid homogeneous patch row")?
+                else {
                     break;
                 };
                 let mut points = row.iter();
                 while !points.as_slice().is_empty() {
-                    let Some(pole) = ctx.next_charged(
-                        &mut points,
-                        "form Parasolid homogeneous patch pole",
-                    )? else {
+                    let Some(pole) =
+                        ctx.next_charged(&mut points, "form Parasolid homogeneous patch pole")?
+                    else {
                         break;
                     };
-                    if storage.with_storage(|| append_homogeneous_pole(
-                        ctx,
-                        &mut out,
-                        pole.point,
-                        Some(pole.weight.get()),
-                        scale,
-                    ))?
-                    .is_none()
+                    if storage
+                        .with_storage(|| {
+                            append_homogeneous_pole(
+                                ctx,
+                                &mut out,
+                                pole.point,
+                                Some(pole.weight.get()),
+                                scale,
+                            )
+                        })?
+                        .is_none()
                     {
                         return Ok(None);
                     }
@@ -478,7 +482,8 @@ pub(crate) fn patch_nurbs_curve(
 ) -> Result<Option<()>, cadmpeg_core::CodecError> {
     if old.degree() != new.degree()
         || old.pole_count() != new.pole_count()
-        || matches!(old.pole_rows(), NurbsPoles3::Rational { .. }) != matches!(new.pole_rows(), NurbsPoles3::Rational { .. })
+        || matches!(old.pole_rows(), NurbsPoles3::Rational { .. })
+            != matches!(new.pole_rows(), NurbsPoles3::Rational { .. })
         || old.periodic() != new.periodic()
     {
         return Ok(None);
@@ -500,7 +505,12 @@ pub(crate) fn patch_nurbs_curve(
     };
     if descriptor.degree != old.degree()
         || descriptor.control_count != old.pole_count()
-        || descriptor.dimension != if matches!(old.pole_rows(), NurbsPoles3::Rational { .. }) { 4 } else { 3 }
+        || descriptor.dimension
+            != if matches!(old.pole_rows(), NurbsPoles3::Rational { .. }) {
+                4
+            } else {
+                3
+            }
     {
         return Ok(None);
     }
@@ -526,7 +536,8 @@ pub(crate) fn patch_nurbs_surface(
         || old.v_degree() != new.v_degree()
         || old.u_count() != new.u_count()
         || old.v_count() != new.v_count()
-        || matches!(old.pole_grid(), NurbsPoleGrid::Rational { .. }) != matches!(new.pole_grid(), NurbsPoleGrid::Rational { .. })
+        || matches!(old.pole_grid(), NurbsPoleGrid::Rational { .. })
+            != matches!(new.pole_grid(), NurbsPoleGrid::Rational { .. })
         || old.u_periodic() != new.u_periodic()
         || old.v_periodic() != new.v_periodic()
     {
@@ -565,7 +576,11 @@ pub(crate) fn patch_nurbs_surface(
         return Ok(None);
     };
     let [control_attr, _, _, u_knot_attr, v_knot_attr] = descriptor.refs;
-    let dimension = if matches!(old.pole_grid(), NurbsPoleGrid::Rational { .. }) { 4 } else { 3 };
+    let dimension = if matches!(old.pole_grid(), NurbsPoleGrid::Rational { .. }) {
+        4
+    } else {
+        3
+    };
     if descriptor.u_degree != old.u_degree()
         || descriptor.v_degree != old.v_degree()
         || descriptor.u_count != old.u_count()
@@ -618,7 +633,6 @@ pub(crate) fn patch_nurbs_surface(
     }
     patch_f64_span(ctx, bytes, v_knot_span, &new_v)
 }
-
 
 #[cfg(test)]
 mod tests;

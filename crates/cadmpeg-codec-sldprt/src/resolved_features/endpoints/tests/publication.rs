@@ -33,10 +33,13 @@ fn centered_entities() -> [SketchInputEntity; 3] {
     let mut line = SketchInputEntity::new("line", "lane", 0, 0, SketchInputKind::LineOrCircle);
     line.feature_ref = Some("feature".into());
     line.coordinates_m = cadmpeg_ir::units::FiniteVector::new([2.0, 3.0]);
-    line.links = SketchInputLinks::new(0, vec![SketchInputLink {
-        local_id: 1,
-        entity_ref: "first".into(),
-    }]);
+    line.links = SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 1,
+            entity_ref: "first".into(),
+        }],
+    );
     let mut first = SketchInputEntity::new("first", "lane", 1, 143, SketchInputKind::Point);
     first.feature_ref = Some("feature".into());
     first.coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0, 2.0]);
@@ -51,17 +54,23 @@ fn centered_endpoint_fallback_retains_only_the_selected_vector() {
     let payload = centered_payload();
     let entities = centered_entities();
     let roster = [&entities[0], &entities[1], &entities[2]];
-    let by_id = roster.into_iter().map(|marker| (marker.id(), marker)).collect::<HashMap<_, _>>();
+    let by_id = roster
+        .into_iter()
+        .map(|marker| (marker.id(), marker))
+        .collect::<HashMap<_, _>>();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = ENDPOINT_BYTES;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let geometry = MarkerGeometryIndex::new(
-        &ctx, &roster, MarkerPrefixIndex::new(&ctx, &payload).unwrap(),
-    ).unwrap();
-    let endpoints = output_curve_endpoint_markers(
-        &ctx, &payload, &entities[0], &by_id, &roster, &geometry,
-    ).unwrap();
+        &ctx,
+        &roster,
+        MarkerPrefixIndex::new(&ctx, &payload).unwrap(),
+    )
+    .unwrap();
+    let endpoints =
+        output_curve_endpoint_markers(&ctx, &payload, &entities[0], &by_id, &roster, &geometry)
+            .unwrap();
     assert_eq!(endpoints.len(), 2);
     assert!(std::ptr::eq(endpoints[0], &entities[1]));
     assert!(std::ptr::eq(endpoints[1], &entities[2]));
@@ -75,17 +84,22 @@ fn centered_endpoint_fallback_preserves_the_output_refusal() {
     let payload = centered_payload();
     let entities = centered_entities();
     let roster = [&entities[0], &entities[1], &entities[2]];
-    let by_id = roster.into_iter().map(|marker| (marker.id(), marker)).collect::<HashMap<_, _>>();
+    let by_id = roster
+        .into_iter()
+        .map(|marker| (marker.id(), marker))
+        .collect::<HashMap<_, _>>();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = ENDPOINT_BYTES - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let geometry = MarkerGeometryIndex::new(
-        &ctx, &roster, MarkerPrefixIndex::new(&ctx, &payload).unwrap(),
-    ).unwrap();
-    let resolve = || output_curve_endpoint_markers(
-        &ctx, &payload, &entities[0], &by_id, &roster, &geometry,
-    );
+        &ctx,
+        &roster,
+        MarkerPrefixIndex::new(&ctx, &payload).unwrap(),
+    )
+    .unwrap();
+    let resolve =
+        || output_curve_endpoint_markers(&ctx, &payload, &entities[0], &by_id, &roster, &geometry);
     let CodecError::ResourceLimit(limit) = resolve().unwrap_err() else {
         panic!("expected endpoint publication refusal");
     };

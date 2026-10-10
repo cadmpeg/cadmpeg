@@ -91,12 +91,17 @@ pub(super) fn scan(
     body: &[u8],
 ) -> Result<BTreeMap<u16, OffsetCarrier>, cadmpeg_core::CodecError> {
     let mut values = BTreeMap::new();
-    scan_into(ctx, body, &mut super::index::publication::FixedSink::Retained(&mut values))?;
+    scan_into(
+        ctx,
+        body,
+        &mut super::index::publication::FixedSink::Retained(&mut values),
+    )?;
     Ok(values)
 }
 
 pub(in crate::brep) fn scan_into(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>, body: &[u8],
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    body: &[u8],
     out: &mut super::index::publication::FixedSink<'_, '_, OffsetCarrier>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let starts = 0..body.len().checked_sub(1).map_or(0, |end| end);

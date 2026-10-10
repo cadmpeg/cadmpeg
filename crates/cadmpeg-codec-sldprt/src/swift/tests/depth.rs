@@ -387,8 +387,14 @@ fn list_traversals_cache_empty_diamond_results_per_query() {
                     "track SWIFT rotational path",
                     "collect SWIFT rotational projections",
                     |_| {
-                        let visits = rotational_visits.get().checked_add(1).expect("bounded visits");
-                        assert!(visits <= UNIQUE_FEATURES, "a completed feature result was evaluated twice");
+                        let visits = rotational_visits
+                            .get()
+                            .checked_add(1)
+                            .expect("bounded visits");
+                        assert!(
+                            visits <= UNIQUE_FEATURES,
+                            "a completed feature result was evaluated twice"
+                        );
                         rotational_visits.set(visits);
                         Ok(None)
                     },
@@ -416,8 +422,14 @@ fn list_traversals_cache_empty_diamond_results_per_query() {
                     "track SWIFT diameter path",
                     "collect SWIFT diameter contributors",
                     |_| {
-                        let visits = diameter_visits.get().checked_add(1).expect("bounded visits");
-                        assert!(visits <= UNIQUE_FEATURES, "a completed feature result was evaluated twice");
+                        let visits = diameter_visits
+                            .get()
+                            .checked_add(1)
+                            .expect("bounded visits");
+                        assert!(
+                            visits <= UNIQUE_FEATURES,
+                            "a completed feature result was evaluated twice"
+                        );
                         diameter_visits.set(visits);
                         Ok(None)
                     },
@@ -435,8 +447,14 @@ fn list_traversals_cache_empty_diamond_results_per_query() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let measurement_visits = std::cell::Cell::new(0_usize);
     let mut traversal = crate::swift::FeatureMeasurementTraversal::new(&ctx, &index, |_| {
-        let visits = measurement_visits.get().checked_add(1).expect("bounded visits");
-        assert!(visits <= UNIQUE_FEATURES, "a completed feature result was evaluated twice");
+        let visits = measurement_visits
+            .get()
+            .checked_add(1)
+            .expect("bounded visits");
+        assert!(
+            visits <= UNIQUE_FEATURES,
+            "a completed feature result was evaluated twice"
+        );
         measurement_visits.set(visits);
         Ok(None)
     })
@@ -662,12 +680,15 @@ fn cached_list_depth_does_not_bypass_policy_nesting() {
         },
     )
     .unwrap();
-    let refusal = traversal.collect("root", 0, &mut Vec::new())
+    let refusal = traversal
+        .collect("root", 0, &mut Vec::new())
         .expect_err("the deeper contributor path must hit the live nesting limit");
     assert!(matches!(&refusal, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth));
     drop(traversal);
-    let repeated = ctx.finish_session().expect_err("the depth refusal remains fused");
+    let repeated = ctx
+        .finish_session()
+        .expect_err("the depth refusal remains fused");
     assert!(matches!((refusal, repeated),
         (CodecError::ResourceLimit(first), CodecError::ResourceLimit(repeated))
             if first == repeated));

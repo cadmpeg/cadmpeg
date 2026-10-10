@@ -216,10 +216,7 @@ impl<'history, 'lane, 'ctx> ParameterEnrichment<'history, 'lane, 'ctx> {
         Ok(())
     }
 
-    pub(crate) fn apply(
-        self,
-        replace_existing: bool,
-    ) -> Result<(), CodecError> {
+    pub(crate) fn apply(self, replace_existing: bool) -> Result<(), CodecError> {
         let ctx = self.ctx;
         let histories = self.histories;
         for (&(history_index, feature_index, name), values) in
@@ -253,9 +250,11 @@ impl<'history, 'lane, 'ctx> ParameterEnrichment<'history, 'lane, 'ctx> {
                     let source_dimension = ctx.any_by(
                         &feature.content,
                         |content| match content {
-                            crate::records::FeatureContent::Dimension(dimension) => {
-                                ctx.equal(dimension.as_str(), name, "compare SLDPRT source dimension")
-                            }
+                            crate::records::FeatureContent::Dimension(dimension) => ctx.equal(
+                                dimension.as_str(),
+                                name,
+                                "compare SLDPRT source dimension",
+                            ),
                             _ => Ok(false),
                         },
                         "check SLDPRT source dimensions",
@@ -291,29 +290,42 @@ impl<'history, 'lane, 'ctx> ParameterEnrichment<'history, 'lane, 'ctx> {
                         )?
                     } else {
                         cadmpeg_ir::scalar::Length::new(first * 1000.0)
-                            .map(|value| ctx.format_retained(
-                                format_args!("{}", crate::history::literals::ParameterLiteral(
-                                    &cadmpeg_ir::features::ParameterValue::Length(value),
-                                )),
-                                "format SLDPRT native scalar",
-                            ))
+                            .map(|value| {
+                                ctx.format_retained(
+                                    format_args!(
+                                        "{}",
+                                        crate::history::literals::ParameterLiteral(
+                                            &cadmpeg_ir::features::ParameterValue::Length(value),
+                                        )
+                                    ),
+                                    "format SLDPRT native scalar",
+                                )
+                            })
                             .transpose()?
                     }
                 }
                 ScalarUnit::Angle => cadmpeg_ir::scalar::Angle::new(first)
-                    .map(|value| ctx.format_retained(
-                        format_args!("{}", crate::history::literals::ParameterLiteral(
-                            &cadmpeg_ir::features::ParameterValue::Angle(value),
-                        )),
-                        "format SLDPRT native scalar",
-                    ))
+                    .map(|value| {
+                        ctx.format_retained(
+                            format_args!(
+                                "{}",
+                                crate::history::literals::ParameterLiteral(
+                                    &cadmpeg_ir::features::ParameterValue::Angle(value),
+                                )
+                            ),
+                            "format SLDPRT native scalar",
+                        )
+                    })
                     .transpose()?,
             };
             let Some(expression) = expression else {
                 continue;
             };
-            let Some(name) =
-                cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")?
+            let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                name,
+                "validate nonblank text",
+            )?
             else {
                 continue;
             };
@@ -741,10 +753,7 @@ pub(crate) fn sync_changed_feature_scalars(
                 };
                 let candidates = ctx
                     .admit_iter(owned, OPERATION)?
-                    .chain(ctx.admit_iter(
-                        unowned.get(first..last).unwrap_or_default(),
-                        OPERATION,
-                    )?)
+                    .chain(ctx.admit_iter(unowned.get(first..last).unwrap_or_default(), OPERATION)?)
                     .map(|&scalar_index| (lane.scalars[scalar_index].role, scalar_index));
                 let Some(scalar_index) = single_scalar_candidate(candidates) else {
                     continue;

@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolve NURBS isocurves, projection caches and fit bounds.
 
+use super::clamp::clamp_nurbs_curve_to_domain;
+use super::inverse::inverse_coordinate_tolerance;
+use super::inverse::looser_tolerance;
+use super::inverse::nurbs_parameter_at_point;
+use super::inverse::surface_poles;
+use super::inverse::InverseResolution;
+use super::inverse::INVERSE_PARAMETER_TOLERANCE;
+use super::EPS_NURBS_WEIGHT;
 use cadmpeg_core::convert::f64_from_index;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::index_from_u32;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::eval::nurbs_curve_parameter_domain;
 use cadmpeg_ir::eval::nurbs_pcurve_uv;
 use cadmpeg_ir::eval::nurbs_surface_isocurve;
@@ -13,14 +21,6 @@ use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Edge;
-use super::EPS_NURBS_WEIGHT;
-use super::inverse::INVERSE_PARAMETER_TOLERANCE;
-use super::inverse::InverseResolution;
-use super::clamp::clamp_nurbs_curve_to_domain;
-use super::inverse::inverse_coordinate_tolerance;
-use super::inverse::looser_tolerance;
-use super::inverse::nurbs_parameter_at_point;
-use super::inverse::surface_poles;
 
 const NURBS_ENDPOINT_TOLERANCE_MM: f64 = 1.0e-6;
 const NURBS_CACHE_SAMPLES_PER_SPAN: usize = 8;
@@ -108,10 +108,7 @@ fn nurbs_boundary_pcurve(
     let tolerance = inverse_coordinate_tolerance(
         ctx,
         surface_poles(ctx, surface)?
-            .chain(
-                (0..curve.pole_count())
-                    .filter_map(|index| curve.pole_rows().point_at(index)),
-            )
+            .chain((0..curve.pole_count()).filter_map(|index| curve.pole_rows().point_at(index)))
             .map(FinitePoint3::get),
     )?;
     let same_curve = |candidate: &cadmpeg_ir::geometry::nurbs::NurbsCurve| -> Result<bool, cadmpeg_core::CodecError> {
@@ -150,12 +147,14 @@ fn nurbs_boundary_pcurve(
         .into_iter()
         .filter(|parameter| parameter.is_finite())
     {
-        let (matches, storage) = ctx.with_scoped_storage(
-            "hold Parasolid boundary isocurve comparison", || {
+        let (matches, storage) =
+            ctx.with_scoped_storage("hold Parasolid boundary isocurve comparison", || {
                 nurbs_surface_isocurve(ctx, surface, fixed_axis, parameter)?
-                    .as_ref().map(same_curve).transpose().map(|value| value.unwrap_or(false))
-            },
-        )?;
+                    .as_ref()
+                    .map(same_curve)
+                    .transpose()
+                    .map(|value| value.unwrap_or(false))
+            })?;
         drop(storage);
         if matches {
             if fixed.is_some() {
@@ -303,8 +302,7 @@ pub(super) fn nurbs_strict_isocurve_pcurve(
             ctx,
             surface_poles(ctx, surface)?
                 .chain(
-                    (0..curve.pole_count())
-                        .filter_map(|index| curve.pole_rows().point_at(index)),
+                    (0..curve.pole_count()).filter_map(|index| curve.pole_rows().point_at(index)),
                 )
                 .map(FinitePoint3::get),
         )?;
@@ -603,13 +601,13 @@ fn extended_nurbs_isocurve_axis_candidate(
     };
     let mut matched = None;
     for &fixed in unique_fixed_values {
-        let (matches, storage) = ctx.with_scoped_storage(
-            "hold Parasolid extended isocurve comparison", || {
+        let (matches, storage) =
+            ctx.with_scoped_storage("hold Parasolid extended isocurve comparison", || {
                 nurbs_surface_isocurve(ctx, surface, fixed_axis, fixed)?
                     .map(|expected| nurbs_representation_matches(ctx, &expected, &clamped))
-                    .transpose().map(|value| value.unwrap_or(false))
-            },
-        )?;
+                    .transpose()
+                    .map(|value| value.unwrap_or(false))
+            })?;
         drop(storage);
         if matches {
             if matched.is_some() {
@@ -703,9 +701,8 @@ pub(super) fn nurbs_curve_sample_parameters<'ctx>(
         return Ok(None);
     }
     let mut storage = ctx.reserve_scoped(0, "hold NURBS sample parameters")?;
-    let mut parameters = storage.with_storage(|| {
-        ctx.collection_vec(2, "collect NURBS sample endpoints")
-    })?;
+    let mut parameters =
+        storage.with_storage(|| ctx.collection_vec(2, "collect NURBS sample endpoints"))?;
     parameters.extend_from_slice(&range);
     for span in ctx
         .admit_iter(
@@ -853,13 +850,17 @@ pub(super) struct NurbsCacheControls<'ctx, 'arena> {
 
 impl NurbsCacheControls<'_, '_> {
     #[cfg(test)]
-    pub(super) fn values(&self) -> &[cadmpeg_ir::math::Point2] { &self.values }
+    pub(super) fn values(&self) -> &[cadmpeg_ir::math::Point2] {
+        &self.values
+    }
 
     fn into_pcurve(
         self,
         source_knots: &cadmpeg_ir::geometry::nurbs::KnotVector,
     ) -> Result<PcurveNurbs, NurbsPcurveFailure> {
-        let knots = self.context.copy_slice(source_knots, "copy NURBS cache pcurve knots")?;
+        let knots = self
+            .context
+            .copy_slice(source_knots, "copy NURBS cache pcurve knots")?;
         let result = PcurveNurbs::from_lanes(self.context, 1, knots, self.values, None, false);
         // The constructor consumed the raw controls on every result route.
         drop(self.storage);
@@ -881,11 +882,13 @@ pub(super) fn nurbs_degree_one_cache_lanes<'ctx, 'arena>(
     }
     let mut storage = ctx.reserve_scoped(0, "hold NURBS cache pcurve controls")?;
     let mut control_points = Vec::new();
-    storage.with_storage(|| ctx.reserve_capacity(
-        &mut control_points,
-        curve.pole_count(),
-        "collect NURBS cache pcurve controls",
-    ))?;
+    storage.with_storage(|| {
+        ctx.reserve_capacity(
+            &mut control_points,
+            curve.pole_count(),
+            "collect NURBS cache pcurve controls",
+        )
+    })?;
     let mut seed = None;
     for index in ctx.admit_iter(0..curve.pole_count(), "collect NURBS cache pcurve controls")? {
         let Some(point) = curve.pole_rows().point_at(index) else {
@@ -903,27 +906,30 @@ pub(super) fn nurbs_degree_one_cache_lanes<'ctx, 'arena>(
         };
         let parameters = match projected {
             Some(parameters) => Some(parameters),
-            None => {
-                crate::brep::evaluation::nurbs_surface_parameter_near_point(ctx, surface, point, None)?
-            }
+            None => crate::brep::evaluation::nurbs_surface_parameter_near_point(
+                ctx, surface, point, None,
+            )?,
         };
         let Some(parameters) = parameters else {
             return Ok(None);
         };
         let parameters = parameters.get();
         seed = Some(parameters);
-        storage.with_storage(|| ctx.push_vec(
-            &mut control_points,
-            parameters,
-            "collect NURBS cache pcurve controls",
-        ))?;
+        storage.with_storage(|| {
+            ctx.push_vec(
+                &mut control_points,
+                parameters,
+                "collect NURBS cache pcurve controls",
+            )
+        })?;
     }
     let Some(parameters) = nurbs_curve_sample_parameters(ctx, curve, range)? else {
         return Ok(None);
     };
     let mut fit_tolerance = 0.0_f64;
     for &parameter in ctx.admit_iter(&parameters.values, "measure NURBS cache pcurve fit")? {
-        let Some(model_point) = crate::brep::evaluation::nurbs_curve_point(ctx, curve, parameter)? else {
+        let Some(model_point) = crate::brep::evaluation::nurbs_curve_point(ctx, curve, parameter)?
+        else {
             return Ok(None);
         };
         let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(nurbs_pcurve_uv(
@@ -937,7 +943,8 @@ pub(super) fn nurbs_degree_one_cache_lanes<'ctx, 'arena>(
         else {
             return Ok(None);
         };
-        let Some(mapped_point) = crate::brep::evaluation::nurbs_surface_point(ctx, surface, uv.u, uv.v)?
+        let Some(mapped_point) =
+            crate::brep::evaluation::nurbs_surface_point(ctx, surface, uv.u, uv.v)?
         else {
             return Ok(None);
         };
@@ -946,7 +953,14 @@ pub(super) fn nurbs_degree_one_cache_lanes<'ctx, 'arena>(
     if !fit_tolerance.is_finite() {
         return Ok(None);
     }
-    Ok(Some((NurbsCacheControls { context: ctx, values: control_points, storage }, fit_tolerance)))
+    Ok(Some((
+        NurbsCacheControls {
+            context: ctx,
+            values: control_points,
+            storage,
+        },
+        fit_tolerance,
+    )))
 }
 
 fn nurbs_degree_one_cache_pcurve(

@@ -1,9 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolve procedural surface supports and swept patches.
 
-use cadmpeg_core::decode::DecodeContext;
+use super::admit_brep_entity;
+use super::emission::annotate_surface_frame;
+use super::id_surf;
+use super::inverse::looser_tolerance;
+use super::Brep;
+use super::WalkedFace;
+use super::EPS_SWEEP_EXTENT_ABSOLUTE_MM;
+use super::EPS_SWEEP_EXTENT_RELATIVE;
+use crate::brep::index::view::CarrierView;
+use crate::brep::index::IndexedCurve;
+use crate::brep::offset::OffsetCarrier;
+use crate::brep::sweep;
+use crate::brep::sweep::SweepKind;
+use crate::brep::topology;
+use crate::brep::LEN_TO_MM;
+use crate::lane_refusal::scoped::RefusalSink;
 use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_ir::Exactness;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::geometry::ProceduralSurface;
 use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
@@ -12,24 +27,9 @@ use cadmpeg_ir::geometry::Surface;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::ProceduralSurfaceId;
 use cadmpeg_ir::ids::SurfaceId;
-use crate::brep::LEN_TO_MM;
-use crate::brep::index::IndexedCurve;
-use crate::brep::index::view::CarrierView;
-use crate::brep::offset::OffsetCarrier;
-use crate::brep::sweep;
-use crate::brep::sweep::SweepKind;
-use crate::lane_refusal::scoped::RefusalSink;
-use crate::brep::topology;
+use cadmpeg_ir::Exactness;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use super::Brep;
-use super::EPS_SWEEP_EXTENT_ABSOLUTE_MM;
-use super::EPS_SWEEP_EXTENT_RELATIVE;
-use super::WalkedFace;
-use super::admit_brep_entity;
-use super::emission::annotate_surface_frame;
-use super::id_surf;
-use super::inverse::looser_tolerance;
 
 /// Resolve a face whose `refs[4]` carrier is a swept/spun construction to a
 /// solved NURBS patch. Returns `(geometry, record offset, annotation tag,
@@ -56,7 +56,15 @@ pub(super) fn resolve_sweep_surface<'ctx>(
     let Some(profile) = carriers.curve(ctx, construction.profile_attr)? else {
         return Ok(None);
     };
-    let Some(profile_curve) = sweep::profile_nurbs(ctx, &profile.carrier().geometry, &format_args!("sldprt sweep construction at byte {} for surface attr {}", construction.offset, face.surface_attr), refusal)?
+    let Some(profile_curve) = sweep::profile_nurbs(
+        ctx,
+        &profile.carrier().geometry,
+        &format_args!(
+            "sldprt sweep construction at byte {} for surface attr {}",
+            construction.offset, face.surface_attr
+        ),
+        refusal,
+    )?
     else {
         return Ok(None);
     };
@@ -64,7 +72,15 @@ pub(super) fn resolve_sweep_surface<'ctx>(
     let profile_derived = matches!(profile, IndexedCurve::Derived(_));
     match &construction.kind {
         SweepKind::Spun { base, axis } => Ok(sweep::spun_nurbs(
-            ctx, curve, *base, *axis, &format_args!("sldprt sweep construction at byte {} for surface attr {}", construction.offset, face.surface_attr), refusal,
+            ctx,
+            curve,
+            *base,
+            *axis,
+            &format_args!(
+                "sldprt sweep construction at byte {} for surface attr {}",
+                construction.offset, face.surface_attr
+            ),
+            refusal,
         )?
         .map(|surface| SweepSurfaceResolution {
             geometry: SolvedSurfaceGeometry::Nurbs(surface),
@@ -152,7 +168,10 @@ pub(super) fn resolve_sweep_surface<'ctx>(
                 unit_direction,
                 v_start - pad,
                 v_end + pad,
-                &format_args!("sldprt sweep construction at byte {} for surface attr {}", construction.offset, face.surface_attr),
+                &format_args!(
+                    "sldprt sweep construction at byte {} for surface attr {}",
+                    construction.offset, face.surface_attr
+                ),
                 refusal,
             )?
             .map(|surface| SweepSurfaceResolution {

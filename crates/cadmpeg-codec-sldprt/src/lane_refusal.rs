@@ -56,7 +56,10 @@ fn format_refusal_message(
     record: impl std::fmt::Display,
     error: &cadmpeg_ir::geometry::nurbs::NurbsError,
 ) -> Result<String, CodecError> {
-    ctx.format_retained(format_args!("{record}: {error}"), "record SLDPRT lane refusal")
+    ctx.format_retained(
+        format_args!("{record}: {error}"),
+        "record SLDPRT lane refusal",
+    )
 }
 
 #[cfg(test)]

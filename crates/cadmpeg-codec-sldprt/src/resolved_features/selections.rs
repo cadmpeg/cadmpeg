@@ -5,8 +5,7 @@ use diameter_index::CosmeticDiameterIndex;
 
 use super::component_paths::{
     component_path_input_features, component_path_input_identities, feature_precedes_consumer,
-    surface_selection_producer_features,
-    FeaturesBySource,
+    surface_selection_producer_features, FeaturesBySource,
 };
 use super::endpoints::{
     legacy_wide_profile_roster_curve, marker_profile_curve_role,
@@ -3316,24 +3315,22 @@ pub(crate) fn compact_edge_selection_at(
     }
     let _paths_storage;
     let paths;
-    (paths, _paths_storage) =
-        compact_edge_component_path_candidates(ctx, payload, marker, count)?;
+    (paths, _paths_storage) = compact_edge_component_path_candidates(ctx, payload, marker, count)?;
     for owned_path in ctx.admit_iter(paths, OPERATION)? {
         let _components_storage;
         let components;
         (ComponentPathReference(components, _), _components_storage) = owned_path;
         let ids_storage;
         let ids;
-        (ids, ids_storage) =
-            ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
-                let mut ids = Vec::new();
-                for component in ctx.admit_iter(components, OPERATION)? {
-                    if let Some(id) = component.local_id {
-                        ctx.push_vec(&mut ids, id, OPERATION)?;
-                    }
+        (ids, ids_storage) = ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
+            let mut ids = Vec::new();
+            for component in ctx.admit_iter(components, OPERATION)? {
+                if let Some(id) = component.local_id {
+                    ctx.push_vec(&mut ids, id, OPERATION)?;
                 }
-                Ok(ids)
-            })?;
+            }
+            Ok(ids)
+        })?;
         if !ids.is_empty() && !consider(ids, ids_storage)? {
             return Ok(None);
         }
@@ -3991,7 +3988,11 @@ pub(crate) fn compact_edge_producer_features_at(
     if let Some(owner) =
         compact_edge_owner_identity_at(ctx, payload, marker, components, features, consumer_ref)?
     {
-        if !ctx.any_by(&producers, |producer| ctx.equal(producer.as_str(), owner, OPERATION), OPERATION)? {
+        if !ctx.any_by(
+            &producers,
+            |producer| ctx.equal(producer.as_str(), owner, OPERATION),
+            OPERATION,
+        )? {
             let owner = ctx.copy_retained_text(owner, "resolve SLDPRT compact edge owner")?;
             ctx.push_vec(&mut producers, owner, OPERATION)?;
         }

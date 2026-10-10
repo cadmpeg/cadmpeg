@@ -941,7 +941,9 @@ fn decode_bound_pmi_report_refuses_collection_limit() {
         &pmi_semantic_payload(),
     ));
     let limit = pmi_decode_refusal(
-        &source, false, ResourceDimension::CollectionItems,
+        &source,
+        false,
+        ResourceDimension::CollectionItems,
         "collect SLDPRT bound PMI dimensions",
     );
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);

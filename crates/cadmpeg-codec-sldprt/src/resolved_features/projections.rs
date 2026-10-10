@@ -410,10 +410,10 @@ pub(crate) fn bind_parameter_scalars(
     }
     let _identity_lane_storage;
     let identity_lanes;
-    (identity_lanes, _identity_lane_storage) = ctx.with_scoped_storage(
-        "SLDPRT parameter identity lane workspace",
-        || parameter_identity_lanes(ctx, lanes),
-    )?;
+    (identity_lanes, _identity_lane_storage) = ctx
+        .with_scoped_storage("SLDPRT parameter identity lane workspace", || {
+            parameter_identity_lanes(ctx, lanes)
+        })?;
     if identity_lanes.is_empty() {
         return Ok(());
     }
@@ -686,10 +686,9 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
     }
     let _owned_storage;
     let owned;
-    (owned, _owned_storage) = ctx
-        .with_scoped_storage("SLDPRT relation ownership index", || {
-            owned_relation_parameters(ctx, features, parameters, &lane_refs)
-        })?;
+    (owned, _owned_storage) = ctx.with_scoped_storage("SLDPRT relation ownership index", || {
+        owned_relation_parameters(ctx, features, parameters, &lane_refs)
+    })?;
     let mut features_by_native_ref = HashMap::new();
     for feature in ctx.admit_iter(features, OPERATION)? {
         let Some(native_ref) = feature.native_ref.as_deref() else {

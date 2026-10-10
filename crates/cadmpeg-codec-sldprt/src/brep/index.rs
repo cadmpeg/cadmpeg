@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{intersection, CurveCarrier};
 #[cfg(test)]
 use super::{blend, offset, spline, subset, sweep, Carrier, SurfaceCarrier};
+use super::{intersection, CurveCarrier};
 #[cfg(test)]
 use cadmpeg_core::decode::DecodeContext;
 #[cfg(test)]

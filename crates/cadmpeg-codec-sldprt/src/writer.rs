@@ -774,13 +774,7 @@ fn configuration_partitions(
         .model
         .configurations
         .iter()
-        .flat_map(|configuration| {
-            configuration
-                .bodies
-                .as_deref()
-                .unwrap_or_default()
-                .iter()
-        })
+        .flat_map(|configuration| configuration.bodies.as_deref().unwrap_or_default().iter())
         .collect::<HashSet<_>>();
     if let Some(body) = ir
         .model
@@ -971,7 +965,9 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .pcurves
         .retain(|pcurve| pcurves.contains(&pcurve.id));
-    drop((regions, shells, faces, loops, coedges, edges, vertices, points, surfaces, curves, pcurves));
+    drop((
+        regions, shells, faces, loops, coedges, edges, vertices, points, surfaces, curves, pcurves,
+    ));
     let ordering_arena = cadmpeg_core::decode::DecodeArena::new();
     let (ordering_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -1016,7 +1012,8 @@ fn opaque_blocks(
                     Ok(remapped) => remapped.flatten(),
                     Err(error) => return Some(Err(error)),
                 };
-                if remapped.is_some_and(|remapped| generated_partitions.contains(remapped.as_str())) {
+                if remapped.is_some_and(|remapped| generated_partitions.contains(remapped.as_str()))
+                {
                     return None;
                 }
             }
@@ -1114,10 +1111,7 @@ fn patch_retained_swobjects_metadata(
                         attribute.id
                     ))
                 })?;
-            Ok((
-                (provenance.stream(), Reverse(provenance.offset)),
-                attribute,
-            ))
+            Ok(((provenance.stream(), Reverse(provenance.offset)), attribute))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
     ctx.stable_sort_by(
@@ -2978,10 +2972,7 @@ fn face_colors(ir: &CadIr) -> Result<HashMap<&cadmpeg_ir::ids::FaceId, Color>, C
         let color = appearance.base_color.ok_or_else(|| {
             CodecError::NotImplemented("SLDPRT face appearance has no base color".into())
         })?;
-        if colors
-            .insert(face, color)
-            .is_some_and(|old| old != color)
-        {
+        if colors.insert(face, color).is_some_and(|old| old != color) {
             return Err(CodecError::Malformed(
                 "face has conflicting appearance colors".into(),
             ));
@@ -3239,7 +3230,14 @@ fn write_nurbs_curve(
     be16(out, descriptor);
     be16(out, degree);
     be32(out, control_count);
-    be16(out, if matches!(nurbs.pole_rows(), NurbsPoles3::Rational { .. }) { 4 } else { 3 });
+    be16(
+        out,
+        if matches!(nurbs.pole_rows(), NurbsPoles3::Rational { .. }) {
+            4
+        } else {
+            3
+        },
+    );
     be32(out, 2);
     out.push(0);
     be32(out, 0);

@@ -99,12 +99,9 @@ fn diameter_interval_index_reuses_lane_work_and_keeps_absent_source_lazy() {
     let fresh_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut fresh_policy = cadmpeg_core::decode::DecodePolicy::service();
     fresh_policy.limits.max_work_units = u64::MAX;
-    let (fresh_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &fresh_arena,
-        &fresh_policy,
-    )
-    .unwrap();
+    let (fresh_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &fresh_arena, &fresh_policy)
+            .unwrap();
     let fresh_index = CosmeticDiameterIndex::new(&fresh_ctx, &lane).unwrap();
     let positive_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,

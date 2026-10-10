@@ -339,12 +339,9 @@ fn object_sources_include_unlocated_records_and_all_owners_once() {
     let fresh_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut fresh_policy = cadmpeg_core::decode::DecodePolicy::service();
     fresh_policy.limits.max_work_units = u64::MAX;
-    let (fresh_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &fresh_arena,
-        &fresh_policy,
-    )
-    .unwrap();
+    let (fresh_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &fresh_arena, &fresh_policy)
+            .unwrap();
     let fresh_geometry = MarkerGeometryIndex::new(
         &fresh_ctx,
         &[&unlocated, &other_owner, &located, &unowned, &other_index],
@@ -425,12 +422,9 @@ fn owner_point_rosters_are_lazy_and_sorted_for_the_selected_owner() {
         INDEX,
         Some(SELECTED_LOCATED_MARKERS),
     );
-    let geometry = MarkerGeometryIndex::new(
-        &ctx,
-        &roster,
-        MarkerPrefixIndex::new(&ctx, &[]).unwrap(),
-    )
-    .unwrap();
+    let geometry =
+        MarkerGeometryIndex::new(&ctx, &roster, MarkerPrefixIndex::new(&ctx, &[]).unwrap())
+            .unwrap();
     assert!(geometry
         .owners
         .get(&Some("selected-owner"))
@@ -557,12 +551,9 @@ fn point_position_index_keeps_owner_and_point_kind_and_reuses_storage() {
     let fresh_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut fresh_policy = cadmpeg_core::decode::DecodePolicy::service();
     fresh_policy.limits.max_work_units = u64::MAX;
-    let (fresh_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &fresh_arena,
-        &fresh_policy,
-    )
-    .unwrap();
+    let (fresh_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &fresh_arena, &fresh_policy)
+            .unwrap();
     let fresh_geometry = MarkerGeometryIndex::new(
         &fresh_ctx,
         &[&arc, &other, &constrained, &point],

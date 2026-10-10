@@ -33,8 +33,12 @@ fn spatial_vertex_workspace_retains_only_finite_coordinate_output() {
     policy.limits.max_materialized_bytes = OFFSET_BYTES;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let vertices = spatial_vertex_coordinates_charged(&ctx, &payload).unwrap();
-    assert_eq!(vertices.as_slice(), &[FinitePoint3::new(Point3::new(1.25, -2.5, 3.75)).unwrap()]);
-    ctx.reserve_scoped(OFFSET_BYTES, "reuse spatial offset workspace").unwrap();
+    assert_eq!(
+        vertices.as_slice(),
+        &[FinitePoint3::new(Point3::new(1.25, -2.5, 3.75)).unwrap()]
+    );
+    ctx.reserve_scoped(OFFSET_BYTES, "reuse spatial offset workspace")
+        .unwrap();
     assert!(ctx.resource_refusal().is_none());
 }
 
@@ -47,8 +51,11 @@ fn spatial_vertex_workspace_discards_nonfinite_vertex_without_retention() {
     policy.limits.max_materialized_bytes = OFFSET_BYTES;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..2 {
-        assert!(spatial_vertex_coordinates_charged(&ctx, &payload).unwrap().is_empty());
-        ctx.reserve_scoped(OFFSET_BYTES, "reuse invalid vertex offset workspace").unwrap();
+        assert!(spatial_vertex_coordinates_charged(&ctx, &payload)
+            .unwrap()
+            .is_empty());
+        ctx.reserve_scoped(OFFSET_BYTES, "reuse invalid vertex offset workspace")
+            .unwrap();
     }
     assert!(ctx.resource_refusal().is_none());
 }
@@ -119,7 +126,10 @@ fn relation_point(tag: usize) -> Vec<u8> {
 fn spatial_relation_fixed_tag_roster_accepts_each_unique_position() {
     for tag in [56, 64] {
         let payload = relation_point(tag);
-        assert_eq!(spatial_relation_marker_coordinates(&payload, 0), Some(Point3::new(125.0, -250.0, 375.0)));
+        assert_eq!(
+            spatial_relation_marker_coordinates(&payload, 0),
+            Some(Point3::new(125.0, -250.0, 375.0))
+        );
     }
 }
 

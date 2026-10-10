@@ -1282,7 +1282,9 @@ mod tests {
     fn empty_target_bridge_merge_recharges_destination_after_source_drop() {
         let body = topology_bridge(10, 20);
         let node_bytes = btree_node_storage_bound::<u16, Bridge>();
-        let cap = node_bytes.checked_mul(2).expect("source and destination maps");
+        let cap = node_bytes
+            .checked_mul(2)
+            .expect("source and destination maps");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;

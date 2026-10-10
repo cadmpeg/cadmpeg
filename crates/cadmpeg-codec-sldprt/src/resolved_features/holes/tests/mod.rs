@@ -118,7 +118,8 @@ fn native_feature_index_node_bytes() -> u64 {
     let alignment = std::mem::align_of::<&str>()
         .max(std::mem::align_of::<&crate::records::Feature>())
         .max(std::mem::align_of::<usize>());
-    let bytes = 11 * (std::mem::size_of::<&str>() + std::mem::size_of::<&crate::records::Feature>())
+    let bytes = 11
+        * (std::mem::size_of::<&str>() + std::mem::size_of::<&crate::records::Feature>())
         + 16 * std::mem::size_of::<usize>()
         + 2 * alignment;
     u64::try_from(bytes).unwrap()
@@ -142,19 +143,24 @@ fn work_refusal_at_additional(
     assert_eq!(limit.operation, operation);
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.additional, additional);
-    let need = limit.used.checked_add(limit.additional).expect("work need fits");
+    let need = limit
+        .used
+        .checked_add(limit.additional)
+        .expect("work need fits");
     let replay = run(need - 1)
         .err()
         .expect("one unit below the same boundary refuses");
-    assert!(matches!(
-        &replay,
-        CodecError::ResourceLimit(replay_limit)
-            if replay_limit.operation == operation
-                && replay_limit.dimension == ResourceDimension::WorkUnits
-                && replay_limit.used.checked_add(replay_limit.additional) == Some(need)
-                && replay_limit.additional == additional
-    ),
-    "{operation}: replay refused at another boundary: {replay:?}");
+    assert!(
+        matches!(
+            &replay,
+            CodecError::ResourceLimit(replay_limit)
+                if replay_limit.operation == operation
+                    && replay_limit.dimension == ResourceDimension::WorkUnits
+                    && replay_limit.used.checked_add(replay_limit.additional) == Some(need)
+                    && replay_limit.additional == additional
+        ),
+        "{operation}: replay refused at another boundary: {replay:?}"
+    );
     replay
 }
 

@@ -6,7 +6,8 @@ fn line_angles_retain_shallow_and_near_opposite_angles() {
     let first = [[0.0, 0.0], [1.0, 0.0]];
     let second = [[0.0, 0.0], [ANGLE.cos(), ANGLE.sin()]];
     assert!(
-        (super::super::line_line_angle(first, second).unwrap() - ANGLE).abs() <= f64::EPSILON * ANGLE
+        (super::super::line_line_angle(first, second).unwrap() - ANGLE).abs()
+            <= f64::EPSILON * ANGLE
     );
     let opposite = [[0.0, 0.0], [-ANGLE.cos(), ANGLE.sin()]];
     assert!(
@@ -47,9 +48,7 @@ fn dynamic_point_markers() -> Vec<crate::records::SketchInputEntity> {
             "relation",
             0,
             1,
-            crate::records::SketchInputKind::Relation(
-                crate::records::SketchRelationKind::Distance,
-            ),
+            crate::records::SketchInputKind::Relation(crate::records::SketchRelationKind::Distance),
             None,
         ),
         sketch_marker(
@@ -154,9 +153,7 @@ fn dynamic_point_relation_falls_back_to_unique_geometry_after_address_miss() {
             "relation",
             0,
             1,
-            crate::records::SketchInputKind::Relation(
-                crate::records::SketchRelationKind::Distance,
-            ),
+            crate::records::SketchInputKind::Relation(crate::records::SketchRelationKind::Distance),
             None,
         ),
         sketch_marker(
@@ -323,9 +320,7 @@ fn dynamic_point_line_relation_resolves_solver_line_by_exact_distance() {
             "relation",
             0,
             1,
-            crate::records::SketchInputKind::Relation(
-                crate::records::SketchRelationKind::Distance,
-            ),
+            crate::records::SketchInputKind::Relation(crate::records::SketchRelationKind::Distance),
             None,
         ),
         sketch_marker(
@@ -487,19 +482,38 @@ fn explicit_point_relation() -> (
     crate::records::FeatureInputRelationInstance,
 ) {
     let points = [
-        sketch_marker("a", 0, 0, crate::records::SketchInputKind::Point, Some([0.0, 0.0])),
-        sketch_marker("b", 1, 1, crate::records::SketchInputKind::Point, Some([1.0, 0.0])),
+        sketch_marker(
+            "a",
+            0,
+            0,
+            crate::records::SketchInputKind::Point,
+            Some([0.0, 0.0]),
+        ),
+        sketch_marker(
+            "b",
+            1,
+            1,
+            crate::records::SketchInputKind::Point,
+            Some([1.0, 0.0]),
+        ),
     ];
     let mut source = dynamic_scalar(2, FeatureInputOperandKind::D6, &[0, 1], 1.0);
     source.operands[0].entity_ref = Some("a".into());
     source.operands[1].entity_ref = Some("b".into());
     let relation = crate::records::FeatureInputRelationInstance {
-        id: "relation".into(), parent: "lane".into(), ordinal: 0, offset: 0,
+        id: "relation".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 0,
         family: FeatureInputRelationFamily::PointPointDistance,
-        class_ref: "class".into(), feature_ref: "sketch".into(),
+        class_ref: "class".into(),
+        feature_ref: "sketch".into(),
         scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-            vec![source.id], None, None,
-        ).unwrap(),
+            vec![source.id],
+            None,
+            None,
+        )
+        .unwrap(),
         operands: source.operands,
     };
     (points, relation)
@@ -522,7 +536,9 @@ fn strict_point_match_does_not_materialize_coordinate_fallback() {
         let mut relation = expected.clone();
         super::super::bind_dynamic_point_relation(&ctx, &mut relation, &roster, 1.0, None).unwrap();
         assert_eq!(relation, expected);
-        let released = ctx.reserve_scoped(192, "released strict point workspaces").unwrap();
+        let released = ctx
+            .reserve_scoped(192, "released strict point workspaces")
+            .unwrap();
         drop(released);
     }
     assert_eq!(ctx.resource_refusal(), None);
@@ -543,21 +559,29 @@ fn strict_point_match_leaves_coordinate_probe_armed() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, "collect SLDPRT relation coordinate points", None,
+        ResourceDimension::WorkUnits,
+        "collect SLDPRT relation coordinate points",
+        None,
     );
     super::super::bind_dynamic_point_relation(&ctx, &mut relation, &roster, 1.0, None).unwrap();
     assert_eq!(relation, expected);
     assert_eq!(ctx.resource_refusal(), None);
     let Err(CodecError::ResourceLimit(limit)) =
         ctx.charge_work(1, "collect SLDPRT relation coordinate points")
-    else { panic!("strict match must leave coordinate probe armed"); };
+    else {
+        panic!("strict match must leave coordinate probe armed");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "collect SLDPRT relation coordinate points");
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.charge_work(0, "after unused coordinate probe"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(
+        matches!(ctx.charge_work(0, "after unused coordinate probe"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
     drop(probe);
 }
 
@@ -568,9 +592,27 @@ fn strict_point_match_refuses_exact_storage_boundaries() {
     let (points, expected) = explicit_point_relation();
     let roster = [&points[0], &points[1]];
     for (dimension, cap, used, additional, operation) in [
-        (ResourceDimension::MaterializedBytes, 191, 64, 128, "collect SLDPRT dynamic point matches"),
-        (ResourceDimension::RetainedBytes, 1, 1, 1, "retain SLDPRT relation record identity"),
-        (ResourceDimension::CollectionItems, 2, 2, 1, "collect SLDPRT dynamic point matches"),
+        (
+            ResourceDimension::MaterializedBytes,
+            191,
+            64,
+            128,
+            "collect SLDPRT dynamic point matches",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            1,
+            1,
+            1,
+            "retain SLDPRT relation record identity",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            2,
+            2,
+            1,
+            "collect SLDPRT dynamic point matches",
+        ),
     ] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 192;
@@ -587,7 +629,9 @@ fn strict_point_match_refuses_exact_storage_boundaries() {
         let mut relation = expected.clone();
         let Err(CodecError::ResourceLimit(limit)) =
             super::super::bind_dynamic_point_relation(&ctx, &mut relation, &roster, 1.0, None)
-        else { panic!("strict point boundary must refuse"); };
+        else {
+            panic!("strict point boundary must refuse");
+        };
         assert_eq!(relation, expected);
         assert_eq!(limit.dimension, dimension);
         assert_eq!(limit.operation, operation);
@@ -595,9 +639,13 @@ fn strict_point_match_refuses_exact_storage_boundaries() {
         assert_eq!(limit.used, used);
         assert_eq!(limit.additional, additional);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after strict point storage refusal"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.charge_work(0, "after strict point storage refusal"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 }
 
@@ -612,7 +660,11 @@ fn equal_line_indices_skip_solver_scans_and_keep_native_references() {
     }
     let roster = [&points[0], &points[1]];
     for angle in [false, true] {
-        expected.family = if angle { FeatureInputRelationFamily::Angle } else { FeatureInputRelationFamily::LineLineDistance };
+        expected.family = if angle {
+            FeatureInputRelationFamily::Angle
+        } else {
+            FeatureInputRelationFamily::LineLineDistance
+        };
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 2 * 64;
         policy.limits.max_materialized_bytes = 0;
@@ -622,15 +674,26 @@ fn equal_line_indices_skip_solver_scans_and_keep_native_references() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         for _ in 0..64 {
             let mut relation = expected.clone();
-            super::super::bind_dynamic_line_relation(&ctx, &mut relation, &roster, 1.0, angle).unwrap();
+            super::super::bind_dynamic_line_relation(&ctx, &mut relation, &roster, 1.0, angle)
+                .unwrap();
             assert_eq!(relation, expected);
         }
         assert_eq!(ctx.resource_refusal(), None);
     }
-    let native = sketch_marker("a", 0, 0, crate::records::SketchInputKind::LineOrCircle, None);
+    let native = sketch_marker(
+        "a",
+        0,
+        0,
+        crate::records::SketchInputKind::LineOrCircle,
+        None,
+    );
     expected.operands[0].entity_ref = Some("a".into());
     for angle in [false, true] {
-        expected.family = if angle { FeatureInputRelationFamily::Angle } else { FeatureInputRelationFamily::LineLineDistance };
+        expected.family = if angle {
+            FeatureInputRelationFamily::Angle
+        } else {
+            FeatureInputRelationFamily::LineLineDistance
+        };
         let mut policy = DecodePolicy::service();
         // One visited native marker and both one-byte reference operands.
         policy.limits.max_work_units = 3;
@@ -640,7 +703,8 @@ fn equal_line_indices_skip_solver_scans_and_keep_native_references() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut relation = expected.clone();
-        super::super::bind_dynamic_line_relation(&ctx, &mut relation, &[&native], 1.0, angle).unwrap();
+        super::super::bind_dynamic_line_relation(&ctx, &mut relation, &[&native], 1.0, angle)
+            .unwrap();
         assert_eq!(relation, expected);
         assert_eq!(ctx.resource_refusal(), None);
     }
@@ -666,22 +730,31 @@ fn equal_line_indices_leave_solver_probe_armed() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, "select SLDPRT relation line points", None,
+        ResourceDimension::WorkUnits,
+        "select SLDPRT relation line points",
+        None,
     );
     let mut relation = expected.clone();
     super::super::bind_dynamic_line_relation(&ctx, &mut relation, &roster, 1.0, false).unwrap();
     assert_eq!(relation, expected);
     assert_eq!(ctx.resource_refusal(), None);
-    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "select SLDPRT relation line points")
-    else { panic!("equal line indices must leave solver probe armed"); };
+    let Err(CodecError::ResourceLimit(limit)) =
+        ctx.charge_work(1, "select SLDPRT relation line points")
+    else {
+        panic!("equal line indices must leave solver probe armed");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "select SLDPRT relation line points");
     assert_eq!(limit.used, 2);
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.charge_work(0, "after unused line solver probe"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(
+        matches!(ctx.charge_work(0, "after unused line solver probe"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
     drop(probe);
 }
 
@@ -696,7 +769,11 @@ fn equal_line_index_clear_refusal_stays_fused() {
         operand.entity_ref = None;
     }
     for angle in [false, true] {
-        expected.family = if angle { FeatureInputRelationFamily::Angle } else { FeatureInputRelationFamily::LineLineDistance };
+        expected.family = if angle {
+            FeatureInputRelationFamily::Angle
+        } else {
+            FeatureInputRelationFamily::LineLineDistance
+        };
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 1;
         policy.limits.max_materialized_bytes = 0;
@@ -706,8 +783,14 @@ fn equal_line_index_clear_refusal_stays_fused() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut relation = expected.clone();
         let Err(CodecError::ResourceLimit(limit)) = super::super::bind_dynamic_line_relation(
-            &ctx, &mut relation, &[&points[0], &points[1]], 1.0, angle,
-        ) else { panic!("equal line index clearing must refuse at one unit"); };
+            &ctx,
+            &mut relation,
+            &[&points[0], &points[1]],
+            1.0,
+            angle,
+        ) else {
+            panic!("equal line index clearing must refuse at one unit");
+        };
         assert_eq!(relation, expected);
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "clear SLDPRT relation operands");
@@ -715,9 +798,13 @@ fn equal_line_index_clear_refusal_stays_fused() {
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, 2);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after equal line index refusal"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.charge_work(0, "after equal line index refusal"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 }
 
@@ -726,7 +813,10 @@ fn explicit_point_reference_work_requires_finite_point_kind() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     for (kind, coordinates) in [
-        (crate::records::SketchInputKind::LineOrCircle, Some([0.0, 0.0])),
+        (
+            crate::records::SketchInputKind::LineOrCircle,
+            Some([0.0, 0.0]),
+        ),
         (crate::records::SketchInputKind::Point, None),
     ] {
         let marker = sketch_marker("a", 0, 0, kind, coordinates);
@@ -740,36 +830,56 @@ fn explicit_point_reference_work_requires_finite_point_kind() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         for _ in 0..64 {
-            assert!(super::super::dynamic_point_candidates(&ctx, &[&marker], operand, true).unwrap().is_empty());
+            assert!(
+                super::super::dynamic_point_candidates(&ctx, &[&marker], operand, true)
+                    .unwrap()
+                    .is_empty()
+            );
         }
         assert_eq!(ctx.resource_refusal(), None);
         policy.limits.max_work_units = u64::MAX;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            ResourceDimension::WorkUnits, "compare SLDPRT explicit point references", None,
+            ResourceDimension::WorkUnits,
+            "compare SLDPRT explicit point references",
+            None,
         );
-        assert!(super::super::dynamic_point_candidates(&ctx, &[&marker], operand, true).unwrap().is_empty());
-        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "compare SLDPRT explicit point references")
-        else { panic!("ineligible point must leave reference probe armed"); };
+        assert!(
+            super::super::dynamic_point_candidates(&ctx, &[&marker], operand, true)
+                .unwrap()
+                .is_empty()
+        );
+        let Err(CodecError::ResourceLimit(limit)) =
+            ctx.charge_work(1, "compare SLDPRT explicit point references")
+        else {
+            panic!("ineligible point must leave reference probe armed");
+        };
         assert_eq!(limit.operation, "compare SLDPRT explicit point references");
         assert_eq!(limit.used, 1);
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
         drop(probe);
         policy.limits.max_work_units = 0;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) = super::super::dynamic_point_candidates(&ctx, &[&marker], operand, true)
-        else { panic!("point roster visit must remain admitted"); };
+        let Err(CodecError::ResourceLimit(limit)) =
+            super::super::dynamic_point_candidates(&ctx, &[&marker], operand, true)
+        else {
+            panic!("point roster visit must remain admitted");
+        };
         assert_eq!(limit.operation, "find SLDPRT explicit point references");
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert!(matches!(ctx.charge_work(0, "after point roster refusal"),
             Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 }
 
@@ -777,7 +887,10 @@ fn explicit_point_reference_work_requires_finite_point_kind() {
 fn curve_reference_work_requires_curve_kind() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    for kind in [crate::records::SketchInputKind::Point, crate::records::SketchInputKind::ConstrainedPoint] {
+    for kind in [
+        crate::records::SketchInputKind::Point,
+        crate::records::SketchInputKind::ConstrainedPoint,
+    ] {
         let marker = sketch_marker("a", 0, 0, kind, Some([0.0, 0.0]));
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
@@ -787,19 +900,28 @@ fn curve_reference_work_requires_curve_kind() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            ResourceDimension::WorkUnits, "compare SLDPRT relation curve references", None,
+            ResourceDimension::WorkUnits,
+            "compare SLDPRT relation curve references",
+            None,
         );
-        assert!(!super::super::dynamic_curve_reference_is_valid(&ctx, &[&marker], Some("a")).unwrap());
+        assert!(
+            !super::super::dynamic_curve_reference_is_valid(&ctx, &[&marker], Some("a")).unwrap()
+        );
         assert_eq!(ctx.resource_refusal(), None);
-        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "compare SLDPRT relation curve references")
-        else { panic!("ineligible native curve must leave reference probe armed"); };
+        let Err(CodecError::ResourceLimit(limit)) =
+            ctx.charge_work(1, "compare SLDPRT relation curve references")
+        else {
+            panic!("ineligible native curve must leave reference probe armed");
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "compare SLDPRT relation curve references");
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert!(matches!(ctx.charge_work(0, "after unused curve reference"),
             Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
         drop(probe);
     }
 }

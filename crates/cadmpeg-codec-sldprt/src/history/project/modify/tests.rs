@@ -90,10 +90,14 @@ fn two_variable_radii() -> crate::records::Feature {
     let mut source = feature("fillet", None, 0);
     source.kind = "VarFillet".into();
     for (name, value) in [
-        ("Position0", "0"), ("Position1", "1"),
-        ("Radius0", "2mm"), ("Radius1", "3mm"),
+        ("Position0", "0"),
+        ("Position1", "1"),
+        ("Radius0", "2mm"),
+        ("Radius1", "3mm"),
     ] {
-        source.parameters.insert(name.try_into().unwrap(), value.into());
+        source
+            .parameters
+            .insert(name.try_into().unwrap(), value.into());
     }
     source
 }
@@ -103,10 +107,10 @@ fn variable_radius_storage() -> (u64, u64, u64) {
     use cadmpeg_ir::scalar::{Fraction, NonNegativeLength};
     // Two distinct positions admit one B-tree node: eleven key/value slots,
     // sixteen metadata/child pointers and two alignment paddings.
-    let alignment = std::mem::align_of::<usize>()
-        .max(std::mem::align_of::<&String>());
+    let alignment = std::mem::align_of::<usize>().max(std::mem::align_of::<&String>());
     let positions = 11 * (std::mem::size_of::<usize>() + std::mem::size_of::<&String>())
-        + 16 * std::mem::size_of::<usize>() + 2 * alignment;
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * alignment;
     type Radius = VariableRadius<Fraction, NonNegativeLength>;
     // Both vectors have the first four-slot amortized growth; input tuples
     // remain live through their consuming iterator, after the table retires.
@@ -133,18 +137,26 @@ fn variable_fillet_retires_position_table_before_output_controls() {
     for _ in 0..64 {
         let storage;
         let radii;
-        (radii, storage) = ctx.with_scoped_storage("hold test variable radii", || {
-            Ok::<_, cadmpeg_core::CodecError>(super::variable_radius_points(&ctx, &source)?.unwrap())
-        }).unwrap();
+        (radii, storage) = ctx
+            .with_scoped_storage("hold test variable radii", || {
+                Ok::<_, cadmpeg_core::CodecError>(
+                    super::variable_radius_points(&ctx, &source)?.unwrap(),
+                )
+            })
+            .unwrap();
         assert_eq!(radii.len(), 2);
         assert_eq!(radii[0].parameter.get(), 0.0);
         assert_eq!(radii[1].parameter.get(), 1.0);
         assert_eq!(radii[0].radius.get(), 2.0);
         assert_eq!(radii[1].radius.get(), 3.0);
-        let reuse = ctx.reserve_scoped(need - output, "reuse retired fillet table").unwrap();
+        let reuse = ctx
+            .reserve_scoped(need - output, "reuse retired fillet table")
+            .unwrap();
         drop(reuse);
         drop((radii, storage));
-        let reuse = ctx.reserve_scoped(need, "reuse all fillet controls storage").unwrap();
+        let reuse = ctx
+            .reserve_scoped(need, "reuse all fillet controls storage")
+            .unwrap();
         drop(reuse);
     }
 }
@@ -169,7 +181,9 @@ fn variable_fillet_control_growth_preserves_exact_original_refusal() {
     assert_eq!(first.used, positions);
     assert_eq!(first.additional, points);
     assert_eq!(ctx.resource_refusal(), Some(first.clone()));
-    let CodecError::ResourceLimit(next) = ctx.reserve_scoped(0, "sticky fillet refusal").unwrap_err() else {
+    let CodecError::ResourceLimit(next) =
+        ctx.reserve_scoped(0, "sticky fillet refusal").unwrap_err()
+    else {
         panic!("expected original variable control refusal");
     };
     assert_eq!(next, first);

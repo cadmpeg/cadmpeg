@@ -340,11 +340,14 @@ impl<'lane, 'ctx> ObjectNames<'lane, 'ctx> {
                     let Some(source) = name.object_id.and_then(ObjectId::value) else {
                         continue;
                     };
-                    if let Some(previous) = self.ctx.get_mut_hash_map(&mut index, &source, OPERATION)? {
+                    if let Some(previous) =
+                        self.ctx.get_mut_hash_map(&mut index, &source, OPERATION)?
+                    {
                         *previous = None;
                     } else {
                         index_storage.with_storage(|| {
-                            self.ctx.insert_hash_map(&mut index, source, Some(name), OPERATION)
+                            self.ctx
+                                .insert_hash_map(&mut index, source, Some(name), OPERATION)
                         })?;
                     }
                 }
@@ -352,7 +355,9 @@ impl<'lane, 'ctx> ObjectNames<'lane, 'ctx> {
                 source_names.index = Some(index);
             }
             if let Some(index) = &source_names.index {
-                if let Some(name) = ctx.get_hash_map(index, &source_id, "find SLDPRT object name by id")? {
+                if let Some(name) =
+                    ctx.get_hash_map(index, &source_id, "find SLDPRT object name by id")?
+                {
                     return Ok(NameLookup::from_unique(*name));
                 }
             }
@@ -362,16 +367,28 @@ impl<'lane, 'ctx> ObjectNames<'lane, 'ctx> {
             Some(names) => names,
             None => {
                 let (index, storage) = self.ctx.unique_index(
-                    self.lane.names.iter().map(|name| (name.value.as_str(), name)),
+                    self.lane
+                        .names
+                        .iter()
+                        .map(|name| (name.value.as_str(), name)),
                     "index SLDPRT object names by text",
                 )?;
-                text_names.insert(TextNames { index, _storage: storage })
+                text_names.insert(TextNames {
+                    index,
+                    _storage: storage,
+                })
             }
         };
-        Ok(match ctx.get_hash_map(&names.index, feature.name.as_str(), "find SLDPRT object name by text")? {
-            Some(name) => NameLookup::from_unique(*name),
-            None => NameLookup::Absent,
-        })
+        Ok(
+            match ctx.get_hash_map(
+                &names.index,
+                feature.name.as_str(),
+                "find SLDPRT object name by text",
+            )? {
+                Some(name) => NameLookup::from_unique(*name),
+                None => NameLookup::Absent,
+            },
+        )
     }
 }
 

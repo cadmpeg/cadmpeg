@@ -61,7 +61,8 @@ fn zero_offset_roots_refuse_at_the_exact_workspace_peak_and_keep_original_refusa
     assert_eq!(first.used, 2 * array);
     assert_eq!(first.additional, output);
     assert_eq!(ctx.resource_refusal(), Some(first.clone()));
-    let CodecError::ResourceLimit(next) = ctx.reserve_scoped(0, "sticky refusal").unwrap_err() else {
+    let CodecError::ResourceLimit(next) = ctx.reserve_scoped(0, "sticky refusal").unwrap_err()
+    else {
         panic!("expected original sticky refusal");
     };
     assert_eq!(next, first);
@@ -93,9 +94,10 @@ fn binding_storage_bounds() -> (u64, u64) {
     // The one position HashMap uses core's first four buckets plus alignment,
     // control and tail bytes. It dies in plane_facts before frame construction.
     let hash = u64_from_index(
-        4 * std::mem::size_of::<(&str, usize)>()
-            + std::mem::align_of::<(&str, usize)>().max(16) - 1
-            + 4 + 16,
+        4 * std::mem::size_of::<(&str, usize)>() + std::mem::align_of::<(&str, usize)>().max(16)
+            - 1
+            + 4
+            + 16,
     );
     let facts = u64_from_index(4 * std::mem::size_of::<super::PlaneFacts>());
     let references = u64_from_index(4 * std::mem::size_of::<Option<usize>>());
@@ -105,8 +107,11 @@ fn binding_storage_bounds() -> (u64, u64) {
     let peak = before_frames + frames;
     // One parent: two exact root/index slots and four path slots coexist
     // with the four-slot parent vector, before the parent vector retires.
-    let chain = facts + references + references
-        + u64_from_index(2 * std::mem::size_of::<Option<usize>>()) + roots;
+    let chain = facts
+        + references
+        + references
+        + u64_from_index(2 * std::mem::size_of::<Option<usize>>())
+        + roots;
     assert!(facts + references + hash < peak);
     assert!(chain < peak);
     (before_frames, frames)
@@ -126,7 +131,9 @@ fn offset_binding_retires_parent_vector_before_frame_construction() {
         let mut features = [source.clone()];
         super::bind_offset_plane_references(&ctx, &mut features).unwrap();
         assert_eq!(features, [source.clone()]);
-        let full = ctx.reserve_scoped(peak, "reuse offset binding workspace").unwrap();
+        let full = ctx
+            .reserve_scoped(peak, "reuse offset binding workspace")
+            .unwrap();
         drop(full);
     }
 }
@@ -149,7 +156,9 @@ fn offset_binding_frame_growth_refuses_at_exact_peak_and_keeps_original_refusal(
     assert_eq!(first.used, before_frames);
     assert_eq!(first.additional, frames);
     assert_eq!(ctx.resource_refusal(), Some(first.clone()));
-    let CodecError::ResourceLimit(next) = ctx.reserve_scoped(0, "sticky frame refusal").unwrap_err() else {
+    let CodecError::ResourceLimit(next) =
+        ctx.reserve_scoped(0, "sticky frame refusal").unwrap_err()
+    else {
         panic!("expected original frame refusal");
     };
     assert_eq!(next, first);

@@ -1779,7 +1779,8 @@ pub(crate) fn project_relation_solved_line_geometry(
                 };
             let operand_slots = [(0, first_operand), (1, second_operand)];
             let line_operands = match relation.family {
-                FeatureInputRelationFamily::LineLineDistance | FeatureInputRelationFamily::Angle
+                FeatureInputRelationFamily::LineLineDistance
+                | FeatureInputRelationFamily::Angle
                     if relation_uses_solver_line_operand(relation, 0)
                         && relation_uses_solver_line_operand(relation, 1)
                         && first_operand.entity_index != second_operand.entity_index =>
@@ -1896,21 +1897,23 @@ pub(crate) fn project_relation_solved_line_geometry(
                 };
                 Ok(Some([*first, *second]))
             };
-            let fallback_line_markers =
-                |index: u16,
-                 lookup_operation: &'static str|
-                 -> Result<Option<[&SketchInputEntity; 2]>, cadmpeg_core::CodecError> {
-                    let mut rosters = point_rosters.borrow_mut();
-                    let points = rosters.roster(ctx, lane, &relation.feature_ref, lookup_operation)?;
-                    let Some(pair) = usize::from(index).checked_mul(2) else {
-                        return Ok(None);
-                    };
-                    Ok(points
-                        .get(pair)
-                        .copied()
-                        .zip(points.get(pair + 1).copied())
-                        .map(|(first, second)| [first, second]))
+            let fallback_line_markers = |index: u16,
+                                         lookup_operation: &'static str|
+             -> Result<
+                Option<[&SketchInputEntity; 2]>,
+                cadmpeg_core::CodecError,
+            > {
+                let mut rosters = point_rosters.borrow_mut();
+                let points = rosters.roster(ctx, lane, &relation.feature_ref, lookup_operation)?;
+                let Some(pair) = usize::from(index).checked_mul(2) else {
+                    return Ok(None);
                 };
+                Ok(points
+                    .get(pair)
+                    .copied()
+                    .zip(points.get(pair + 1).copied())
+                    .map(|(first, second)| [first, second]))
+            };
             let point_marker = if relation.family == FeatureInputRelationFamily::PointLineDistance {
                 let explicit = if let Some(id) = first_operand.entity_ref.as_deref() {
                     ctx.get_hash_map(
@@ -2236,13 +2239,25 @@ pub(crate) fn project_relation_solved_line_geometry(
                         )?
                     };
                     let Some(markers) = markers else {
-                        return Ok((Vec::new(), ctx.reserve_scoped(0, operation)?, used_marker_endpoints));
+                        return Ok((
+                            Vec::new(),
+                            ctx.reserve_scoped(0, operation)?,
+                            used_marker_endpoints,
+                        ));
                     };
                     let Some((start, end)) = transformed_line(markers)? else {
-                        return Ok((Vec::new(), ctx.reserve_scoped(0, operation)?, used_marker_endpoints));
+                        return Ok((
+                            Vec::new(),
+                            ctx.reserve_scoped(0, operation)?,
+                            used_marker_endpoints,
+                        ));
                     };
                     let Some(line) = candidate(start, end) else {
-                        return Ok((Vec::new(), ctx.reserve_scoped(0, operation)?, used_marker_endpoints));
+                        return Ok((
+                            Vec::new(),
+                            ctx.reserve_scoped(0, operation)?,
+                            used_marker_endpoints,
+                        ));
                     };
                     storage.with_storage(|| {
                         ctx.push_vec(&mut lines, (operand, markers, line), operation)
@@ -2250,38 +2265,38 @@ pub(crate) fn project_relation_solved_line_geometry(
                 }
                 Ok((lines, storage, used_marker_endpoints))
             };
-            let relation_lines_valid =
-                |lines: &[(&FeatureInputOperand, [&SketchInputEntity; 2], SketchGeometry)]| {
-                    match relation.family {
-                        FeatureInputRelationFamily::LineLineDistance => match lines {
-                            [(_, _, first), (_, _, second)] => line_line_distance(first, second)
-                                .is_some_and(|measured| same_dimension_length(measured, expected)),
-                            _ => false,
-                        },
-                        FeatureInputRelationFamily::PointLineDistance => match lines {
-                            [(_, _, line)] => point_position.is_some_and(|point| {
-                                point_line_distance_value(point, line).is_some_and(|measured| {
-                                    same_dimension_length(measured, expected)
-                                })
-                            }),
-                            _ => false,
-                        },
-                        FeatureInputRelationFamily::Angle => match lines {
-                            [(_, _, first), (_, _, second)] => {
-                                let angle = if relation_uses_dynamic_operands(relation) {
-                                    unoriented_line_line_angle(first, second)
-                                } else {
-                                    line_line_angle(first, second)
-                                };
-                                angle.is_some_and(|measured| {
-                                    same_dimension_angle(measured, expected)
-                                })
-                            }
-                            _ => false,
-                        },
+            let relation_lines_valid = |lines: &[(
+                &FeatureInputOperand,
+                [&SketchInputEntity; 2],
+                SketchGeometry,
+            )]| {
+                match relation.family {
+                    FeatureInputRelationFamily::LineLineDistance => match lines {
+                        [(_, _, first), (_, _, second)] => line_line_distance(first, second)
+                            .is_some_and(|measured| same_dimension_length(measured, expected)),
                         _ => false,
-                    }
-                };
+                    },
+                    FeatureInputRelationFamily::PointLineDistance => match lines {
+                        [(_, _, line)] => point_position.is_some_and(|point| {
+                            point_line_distance_value(point, line)
+                                .is_some_and(|measured| same_dimension_length(measured, expected))
+                        }),
+                        _ => false,
+                    },
+                    FeatureInputRelationFamily::Angle => match lines {
+                        [(_, _, first), (_, _, second)] => {
+                            let angle = if relation_uses_dynamic_operands(relation) {
+                                unoriented_line_line_angle(first, second)
+                            } else {
+                                line_line_angle(first, second)
+                            };
+                            angle.is_some_and(|measured| same_dimension_angle(measured, expected))
+                        }
+                        _ => false,
+                    },
+                    _ => false,
+                }
+            };
             let mut lines = build_lines(true)?;
             let mut valid = relation_lines_valid(&lines.0);
             if !valid && lines.2 {
@@ -2415,12 +2430,17 @@ pub(crate) fn project_relation_solved_line_geometry(
                             let Ok(id) = SketchEntityId::mint(id_text) else {
                                 continue;
                             };
-                            let (geometry, source_sketch, source_endpoints) = if line < generated_storage.0.len() {
-                                (generated_storage.0[line], sketch, &[][..])
-                            } else {
-                                let entity = &entities[line - generated_storage.0.len()];
-                                (&entity.geometry, &entity.sketch, entity.endpoint_refs.as_slice())
-                            };
+                            let (geometry, source_sketch, source_endpoints) =
+                                if line < generated_storage.0.len() {
+                                    (generated_storage.0[line], sketch, &[][..])
+                                } else {
+                                    let entity = &entities[line - generated_storage.0.len()];
+                                    (
+                                        &entity.geometry,
+                                        &entity.sketch,
+                                        entity.endpoint_refs.as_slice(),
+                                    )
+                                };
                             let sketch_id = copy_planar_sketch_id(ctx, source_sketch)?;
                             let mut endpoint_refs = Vec::new();
                             for reference in ctx.admit_iter(
@@ -2588,8 +2608,10 @@ fn unique_dynamic_line_pair(
         .admit_iter(generated, "scan SLDPRT dynamic line candidates")?
         .copied()
         .map(|geometry| (sketch, geometry))
-        .chain(ctx.admit_iter(entities, "scan SLDPRT dynamic line candidates")?
-            .map(|entity| (&entity.sketch, &entity.geometry)))
+        .chain(
+            ctx.admit_iter(entities, "scan SLDPRT dynamic line candidates")?
+                .map(|entity| (&entity.sketch, &entity.geometry)),
+        )
         .enumerate()
     {
         if !ctx.equal(source_sketch, sketch, "match SLDPRT dynamic line sketch")?
@@ -5201,8 +5223,7 @@ fn relation_parameter_by_driving_name<'a>(
         return Ok(None);
     };
     let owner = &owner.id;
-    let mut scalars_storage =
-        ctx.reserve_scoped(0, "SLDPRT relation driving scalar workspace")?;
+    let mut scalars_storage = ctx.reserve_scoped(0, "SLDPRT relation driving scalar workspace")?;
     let mut scalars = HashMap::new();
     for scalar in ctx.admit_iter(&lane.scalars, "index SLDPRT relation driving scalars")? {
         let operation = "index SLDPRT relation driving scalars";
@@ -5210,8 +5231,7 @@ fn relation_parameter_by_driving_name<'a>(
             ctx.insert_hash_map(&mut scalars, scalar.id.as_str(), scalar, operation)
         })?;
     }
-    let mut names_storage =
-        ctx.reserve_scoped(0, "SLDPRT relation driving name workspace")?;
+    let mut names_storage = ctx.reserve_scoped(0, "SLDPRT relation driving name workspace")?;
     let mut names = HashMap::new();
     for name in ctx.admit_iter(&lane.names, "index SLDPRT relation driving names")? {
         let operation = "index SLDPRT relation driving names";
@@ -5350,8 +5370,7 @@ pub(super) fn relation_parameter_by_display_name<'a>(
         return Ok(None);
     };
     let owner = &owner.id;
-    let mut names_storage =
-        ctx.reserve_scoped(0, "SLDPRT relation display name workspace")?;
+    let mut names_storage = ctx.reserve_scoped(0, "SLDPRT relation display name workspace")?;
     let mut names = HashMap::new();
     for name in ctx.admit_iter(&lane.names, "index SLDPRT relation display names")? {
         let operation = "index SLDPRT relation display names";

@@ -202,7 +202,12 @@ fn solved_line_fallback_rosters_only_collect_queried_features() {
     assert!(index.by_feature.is_empty());
     assert_eq!(
         index
-            .roster(&ctx, &lane, "queried", "index SLDPRT solved-line point markers")
+            .roster(
+                &ctx,
+                &lane,
+                "queried",
+                "index SLDPRT solved-line point markers"
+            )
             .unwrap()
             .iter()
             .map(|marker| marker.id())
@@ -216,6 +221,17 @@ fn solved_line_fallback_rosters_only_collect_queried_features() {
             "index SLDPRT solved-line point markers",
             Some(3),
         );
-        assert_eq!(index.roster(&ctx, &lane, "queried", "index SLDPRT solved-line point markers").unwrap().len(), 2);
+        assert_eq!(
+            index
+                .roster(
+                    &ctx,
+                    &lane,
+                    "queried",
+                    "index SLDPRT solved-line point markers"
+                )
+                .unwrap()
+                .len(),
+            2
+        );
     }
 }

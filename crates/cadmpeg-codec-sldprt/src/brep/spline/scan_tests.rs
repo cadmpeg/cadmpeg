@@ -43,4 +43,3 @@ fn curve_descriptor_scan_admits_work_before_empty_pass() {
 fn surface_descriptor_scan_admits_work_before_empty_pass() {
     assert_empty_scan_work_refusal("scan Parasolid surface descriptors");
 }
-

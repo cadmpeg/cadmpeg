@@ -558,7 +558,6 @@ fn scalar_synchronization_keeps_named_owners_and_strict_offset_ranges() {
     });
 }
 
-
 #[test]
 fn scalar_update_rejects_max_addressable_offset_with_original_message() {
     let (mut histories, mut lane) = parameter_limit_fixture();

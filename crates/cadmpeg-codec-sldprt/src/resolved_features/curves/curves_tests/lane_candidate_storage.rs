@@ -1,17 +1,30 @@
 use super::super::{LaneFrameIndex, SketchPlaneFrame};
-use crate::records::{Feature, FeatureHistory, FeatureInputLane, FeatureInputName, FeatureSource, ObjectId};
+use crate::records::{
+    Feature, FeatureHistory, FeatureInputLane, FeatureInputName, FeatureSource, ObjectId,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane};
 use std::collections::BTreeMap;
 
-fn fixture(second: PrincipalPlane, claimed: bool) -> (Vec<cadmpeg_ir::features::Feature>, [FeatureHistory; 1], FeatureInputLane) {
+fn fixture(
+    second: PrincipalPlane,
+    claimed: bool,
+) -> (
+    Vec<cadmpeg_ir::features::Feature>,
+    [FeatureHistory; 1],
+    FeatureInputLane,
+) {
     let native = |id: &str| Feature {
         id: id.into(),
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: if claimed { FeatureSource::from_value(3) } else { None },
+        source_id: if claimed {
+            FeatureSource::from_value(3)
+        } else {
+            None
+        },
         ordinal: 0,
         name: "Top".into(),
         kind: "Plane".into(),
@@ -97,7 +110,12 @@ fn duplicate_lane_plane_candidates_retain_only_the_selected_frame() {
     let names = crate::resolved_features::scalars::ObjectNames::new(&ctx, &lane).unwrap();
     let frames = index.lane_frames(&ctx, &histories, &names).unwrap();
     assert_eq!(frames.len(), 1);
-    assert_eq!(frames.get(&3).unwrap().as_tuple(), crate::resolved_features::compact_reference_planes::principal_sketch_frame(PrincipalPlane::Top));
+    assert_eq!(
+        frames.get(&3).unwrap().as_tuple(),
+        crate::resolved_features::compact_reference_planes::principal_sketch_frame(
+            PrincipalPlane::Top
+        )
+    );
 }
 
 #[test]
@@ -111,7 +129,10 @@ fn ambiguous_lane_plane_candidates_retain_no_output() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let names = crate::resolved_features::scalars::ObjectNames::new(&ctx, &lane).unwrap();
-    assert!(index.lane_frames(&ctx, &histories, &names).unwrap().is_empty());
+    assert!(index
+        .lane_frames(&ctx, &histories, &names)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -127,7 +148,12 @@ fn claimed_lane_plane_keeps_existing_frame_without_retaining_candidates() {
     let names = crate::resolved_features::scalars::ObjectNames::new(&ctx, &lane).unwrap();
     let frames = index.lane_frames(&ctx, &histories, &names).unwrap();
     assert_eq!(frames.len(), 1);
-    assert_eq!(frames.get(&3).unwrap().as_tuple(), crate::resolved_features::compact_reference_planes::principal_sketch_frame(PrincipalPlane::Top));
+    assert_eq!(
+        frames.get(&3).unwrap().as_tuple(),
+        crate::resolved_features::compact_reference_planes::principal_sketch_frame(
+            PrincipalPlane::Top
+        )
+    );
 }
 
 #[test]
@@ -146,12 +172,16 @@ fn lane_plane_candidate_storage_refusal_preserves_original_fuse() {
         None,
     );
     let error = index.lane_frames(&ctx, &histories, &names).unwrap_err();
-    let CodecError::ResourceLimit(limit) = error else { panic!("candidate storage refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("candidate storage refusal");
+    };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(limit.operation, "index SLDPRT lane sketch plane candidates");
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
     drop(probe);
     let replay = index.lane_frames(&ctx, &histories, &names).unwrap_err();
-    let CodecError::ResourceLimit(replayed) = replay else { panic!("sticky candidate storage refusal"); };
+    let CodecError::ResourceLimit(replayed) = replay else {
+        panic!("sticky candidate storage refusal");
+    };
     assert_eq!(replayed, limit);
 }

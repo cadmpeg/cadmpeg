@@ -7,8 +7,8 @@ mod dimensions;
 pub(crate) mod bind;
 pub(crate) mod classify;
 pub(crate) mod configuration;
-pub(crate) mod feature_graph;
 mod encode;
+pub(crate) mod feature_graph;
 pub(crate) mod hash;
 pub(crate) mod literals;
 pub(crate) mod parameters;
@@ -358,9 +358,7 @@ fn feature(
             let record_id = ctx.copy_retained_text(record_id, "retain SLDPRT ancestor identity")?;
             let source_id = ctx
                 .xml_attribute(ancestor, "id", HISTORY_OPERATION)?
-                .map(|value| {
-                    FeatureSource::parse_for_decode(ctx, value, HISTORY_OPERATION)
-                })
+                .map(|value| FeatureSource::parse_for_decode(ctx, value, HISTORY_OPERATION))
                 .transpose()?
                 .flatten();
             Ok(Some(crate::records::TreeParent::Record {
@@ -381,9 +379,7 @@ fn feature(
         tree_parent,
         source_id: ctx
             .xml_attribute(node, "id", HISTORY_OPERATION)?
-            .map(|value| {
-                FeatureSource::parse_for_decode(ctx, value, HISTORY_OPERATION)
-            })
+            .map(|value| FeatureSource::parse_for_decode(ctx, value, HISTORY_OPERATION))
             .transpose()?
             .flatten(),
         ordinal: u32::try_from(ordinal).map_err(|_| {

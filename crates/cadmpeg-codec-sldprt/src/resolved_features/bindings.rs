@@ -87,20 +87,12 @@ fn push_distinct_candidate<'ctx, T: PartialEq + cadmpeg_core::decode::cost::Deco
             |(existing, _)| ctx.equal(existing, &candidate.0, PATTERN_INPUTS),
             PATTERN_INPUTS,
         )? {
-            storage.with_storage(|| {
-                ctx.push_vec(group, candidate, PATTERN_INPUTS)
-            })?;
+            storage.with_storage(|| ctx.push_vec(group, candidate, PATTERN_INPUTS))?;
         }
         return Ok(());
     }
     storage.with_storage(|| {
-        ctx.push_btree_group(
-            groups,
-            index,
-            candidate,
-            PATTERN_INPUTS,
-            PATTERN_INPUTS,
-        )
+        ctx.push_btree_group(groups, index, candidate, PATTERN_INPUTS, PATTERN_INPUTS)
     })
 }
 
@@ -595,10 +587,9 @@ pub(crate) fn bind_pattern_inputs(
                     } {
                         let seed_storage;
                         let seed;
-                        (seed, seed_storage) = ctx
-                            .with_scoped_storage(PATTERN_INPUTS, || {
-                                copy_feature_binding_id(ctx, &model_features[seed_index].id)
-                            })?;
+                        (seed, seed_storage) = ctx.with_scoped_storage(PATTERN_INPUTS, || {
+                            copy_feature_binding_id(ctx, &model_features[seed_index].id)
+                        })?;
                         push_distinct_candidate(
                             ctx,
                             &mut storage,
@@ -625,15 +616,14 @@ pub(crate) fn bind_pattern_inputs(
                 for class in ctx.admit_iter(declarations, DIRECTIONS)? {
                     let _declared_storage;
                     let declared;
-                    (declared, _declared_storage) =
-                        ctx.with_scoped_storage(DIRECTIONS, || {
-                            declared_line_reference_directions(
-                                ctx,
-                                &lane.native_payload,
-                                class.offset,
-                                end,
-                            )
-                        })?;
+                    (declared, _declared_storage) = ctx.with_scoped_storage(DIRECTIONS, || {
+                        declared_line_reference_directions(
+                            ctx,
+                            &lane.native_payload,
+                            class.offset,
+                            end,
+                        )
+                    })?;
                     direction_storage.with_storage(|| {
                         ctx.extend_vec(
                             &mut directions,
@@ -689,17 +679,16 @@ pub(crate) fn bind_pattern_inputs(
                     };
                     let _display_storage;
                     let display;
-                    (display, _display_storage) =
-                        ctx.with_scoped_storage(DIRECTIONS, || {
-                            linear_pattern_display_directions(
-                                ctx,
-                                &lane.native_payload,
-                                start,
-                                end,
-                                &lane.names,
-                                [spacing_m("D3")?, spacing_m("D4")?],
-                            )
-                        })?;
+                    (display, _display_storage) = ctx.with_scoped_storage(DIRECTIONS, || {
+                        linear_pattern_display_directions(
+                            ctx,
+                            &lane.native_payload,
+                            start,
+                            end,
+                            &lane.names,
+                            [spacing_m("D3")?, spacing_m("D4")?],
+                        )
+                    })?;
                     direction_storage.with_storage(|| {
                         ctx.extend_vec(
                             &mut directions,
@@ -768,10 +757,9 @@ pub(crate) fn bind_pattern_inputs(
                     if let Some(seed_index) = model_of(seed.id.as_str())? {
                         let seed_storage;
                         let seed;
-                        (seed, seed_storage) = ctx
-                            .with_scoped_storage(PATTERN_INPUTS, || {
-                                copy_feature_binding_id(ctx, &model_features[seed_index].id)
-                            })?;
+                        (seed, seed_storage) = ctx.with_scoped_storage(PATTERN_INPUTS, || {
+                            copy_feature_binding_id(ctx, &model_features[seed_index].id)
+                        })?;
                         storage.with_storage(|| {
                             ctx.push_vec(
                                 &mut curve_seeds,
@@ -802,13 +790,12 @@ pub(crate) fn bind_pattern_inputs(
             };
             let path_storage;
             let scoped_path;
-            (scoped_path, path_storage) =
-                ctx.with_scoped_storage(PATTERN_INPUTS, || {
-                    Ok::<_, cadmpeg_core::CodecError>((
-                        copy_feature_binding_id(ctx, &model_features[target_index].id)?,
-                        copy_feature_binding_sketch_id(ctx, sketch)?,
-                    ))
-                })?;
+            (scoped_path, path_storage) = ctx.with_scoped_storage(PATTERN_INPUTS, || {
+                Ok::<_, cadmpeg_core::CodecError>((
+                    copy_feature_binding_id(ctx, &model_features[target_index].id)?,
+                    copy_feature_binding_sketch_id(ctx, sketch)?,
+                ))
+            })?;
             let (dependency, sketch) = scoped_path;
             push_distinct_candidate(
                 ctx,
@@ -2302,8 +2289,8 @@ fn bind_detached_spatial_relation_objects(
     const MATCH: &str = "match SLDPRT spatial sketch names";
     let _ranges_storage;
     let ranges;
-    (ranges, _ranges_storage) =
-        ctx.with_scoped_storage("SLDPRT detached spatial range workspace", || {
+    (ranges, _ranges_storage) = ctx
+        .with_scoped_storage("SLDPRT detached spatial range workspace", || {
             spatial_relation_manager_ranges_charged(ctx, lane)
         })?;
     if ranges.is_empty() {

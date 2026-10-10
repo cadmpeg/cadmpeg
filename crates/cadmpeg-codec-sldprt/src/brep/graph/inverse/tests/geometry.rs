@@ -35,8 +35,12 @@ fn interior_ruled_surface_line_has_affine_isoparametric_inverse() {
     .expect("ruling evaluation")
     {
         crate::brep::graph::inverse::InverseResolution::Unique(geometry) => geometry,
-        crate::brep::graph::inverse::InverseResolution::NoMatch => panic!("interior ruling did not match"),
-        crate::brep::graph::inverse::InverseResolution::Ambiguous => panic!("interior ruling was ambiguous"),
+        crate::brep::graph::inverse::InverseResolution::NoMatch => {
+            panic!("interior ruling did not match")
+        }
+        crate::brep::graph::inverse::InverseResolution::Ambiguous => {
+            panic!("interior ruling was ambiguous")
+        }
     };
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected affine line pcurve");
@@ -80,8 +84,12 @@ fn v_linear_surface_line_has_axis_symmetric_inverse() {
     .expect("ruling evaluation")
     {
         crate::brep::graph::inverse::InverseResolution::Unique(geometry) => geometry,
-        crate::brep::graph::inverse::InverseResolution::NoMatch => panic!("transposed ruling did not match"),
-        crate::brep::graph::inverse::InverseResolution::Ambiguous => panic!("transposed ruling was ambiguous"),
+        crate::brep::graph::inverse::InverseResolution::NoMatch => {
+            panic!("transposed ruling did not match")
+        }
+        crate::brep::graph::inverse::InverseResolution::Ambiguous => {
+            panic!("transposed ruling was ambiguous")
+        }
     };
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected affine line pcurve");
@@ -114,13 +122,15 @@ fn repeated_ruled_surface_line_candidates_are_ambiguous() {
         None,
     );
     assert!(matches!(
-        with_test_context(|ctx| crate::brep::graph::inverse::ruled_surface_line_pcurve(
-            ctx,
-            &surface,
-            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        ))
+        with_test_context(
+            |ctx| crate::brep::graph::inverse::ruled_surface_line_pcurve(
+                ctx,
+                &surface,
+                cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            )
+        )
         .expect("ruling evaluation"),
         crate::brep::graph::inverse::InverseResolution::Ambiguous
     ));
@@ -148,4 +158,3 @@ fn repeated_nurbs_endpoint_candidates_are_ambiguous() {
         crate::brep::graph::inverse::InverseResolution::Ambiguous
     ));
 }
-

@@ -25,10 +25,15 @@ impl<'ctx> GeneratedHolePlacements<'ctx> {
         let placements = storage.with_storage(|| ctx.collect_vec(axes.into_values(), COLLECT))?;
         // The consumed map's iterator and backing have died inside collect_vec.
         drop(source_storage);
-        Ok(Self { placements, storage })
+        Ok(Self {
+            placements,
+            storage,
+        })
     }
 
-    pub(super) fn placements(&self) -> &[HolePlacement] { &self.placements }
+    pub(super) fn placements(&self) -> &[HolePlacement] {
+        &self.placements
+    }
 
     pub(super) fn into_output(self) -> Result<Vec<HolePlacement>, CodecError> {
         self.storage.commit_value(self.placements)

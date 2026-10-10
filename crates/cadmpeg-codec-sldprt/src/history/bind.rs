@@ -258,7 +258,12 @@ pub(crate) fn bind_unique_sketch_feature(
         let _bound_storage;
         let mut bound_indices;
         (bound_indices, _bound_storage) = bound?;
-        ctx.sort_unstable_by(&mut bound_indices, |position| position, Ord::cmp, BIND_OPERATION)?;
+        ctx.sort_unstable_by(
+            &mut bound_indices,
+            |position| position,
+            Ord::cmp,
+            BIND_OPERATION,
+        )?;
         ctx.dedup_vec(&mut bound_indices, BIND_OPERATION)?;
         for &position in ctx.admit_iter(&bound_indices, BIND_OPERATION)? {
             let dependency = &bindings[position].feature_id;
@@ -1009,15 +1014,16 @@ pub(crate) fn derive_feature_outputs(
     let mut seen_storage = ctx.reserve_scoped(0, "SLDPRT produced body membership")?;
     let mut seen = std::collections::HashSet::new();
     for (face, source_id) in ctx.admit_iter(face_producers, "collect SLDPRT produced bodies")? {
-        let Some(&body) = ctx.get_hash_map(&owners, *face, "look up SLDPRT hash key")?
-        else {
+        let Some(&body) = ctx.get_hash_map(&owners, *face, "look up SLDPRT hash key")? else {
             continue;
         };
-        if !seen_storage.with_storage(|| ctx.insert_hash_set(
-            &mut seen,
-            (*source_id, body),
-            "collect SLDPRT produced bodies",
-        ))? {
+        if !seen_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut seen,
+                (*source_id, body),
+                "collect SLDPRT produced bodies",
+            )
+        })? {
             continue;
         }
         scratch.with_storage(|| {
@@ -1384,21 +1390,26 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = PEAK_BYTES;
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits");
         for _ in 0..64 {
             let storage;
             let owners;
-            (owners, storage) = super::face_owner_bodies(
-                &ctx, &model.faces, &model.shells, &model.regions,
-            ).expect("two simultaneous one-entry tables fit");
+            (owners, storage) =
+                super::face_owner_bodies(&ctx, &model.faces, &model.shells, &model.regions)
+                    .expect("two simultaneous one-entry tables fit");
             assert_eq!(owners.len(), 1);
-            assert_eq!(owners.get(model.faces[0].id.as_str()).copied(), Some(&model.bodies[0].id));
-            let probe = ctx.reserve_scoped(TABLE_BYTES, "reuse retired face-owner tables")
+            assert_eq!(
+                owners.get(model.faces[0].id.as_str()).copied(),
+                Some(&model.bodies[0].id)
+            );
+            let probe = ctx
+                .reserve_scoped(TABLE_BYTES, "reuse retired face-owner tables")
                 .expect("only returned face lookup backing remains charged");
             drop(probe);
             drop((owners, storage));
-            let probe = ctx.reserve_scoped(PEAK_BYTES, "reuse all face-owner scratch")
+            let probe = ctx
+                .reserve_scoped(PEAK_BYTES, "reuse all face-owner scratch")
                 .expect("all lookup backing released while source topology remains alive");
             drop(probe);
         }
@@ -1423,24 +1434,26 @@ mod tests {
                 ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
                 _ => unreachable!("fixed test dimensions"),
             }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root fits");
-            let result = super::face_owner_bodies(
-                &ctx, &model.faces, &model.shells, &model.regions,
-            );
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits");
+            let result =
+                super::face_owner_bodies(&ctx, &model.faces, &model.shells, &model.regions);
             let limit = ctx.resource_refusal().expect("original resource refusal");
-            assert!(matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == &limit));
+            assert!(
+                matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == &limit)
+            );
             assert_eq!(limit.dimension, dimension);
             assert_eq!(limit.operation, "index SLDPRT face owner shells");
             assert_eq!(limit.limit, cap);
             assert_eq!(limit.used, used);
             assert_eq!(limit.additional, additional);
-            assert!(matches!(ctx.charge_work(0, "probe original face-owner refusal"),
-                Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == limit));
+            assert!(
+                matches!(ctx.charge_work(0, "probe original face-owner refusal"),
+                Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == limit)
+            );
             drop(result);
             assert!(matches!(ctx.finish_session(),
                 Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == limit));
         }
     }
-
 }

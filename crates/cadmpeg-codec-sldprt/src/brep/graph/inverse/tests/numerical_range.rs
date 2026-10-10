@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::brep::graph::inverse::nurbs_parameter_at_point;
+use crate::brep::graph::inverse::unique_inverse_parameter;
 use crate::brep::graph::inverse::InverseResolution;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::math::Point3;
-use crate::brep::graph::inverse::nurbs_parameter_at_point;
-use crate::brep::graph::inverse::unique_inverse_parameter;
 const INVERSE_FIT_TOLERANCE: f64 = 1e-6;
 
 #[test]

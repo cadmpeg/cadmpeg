@@ -12,18 +12,23 @@ use crate::tessellation::mesh_rows::MeshRows;
 use super::{append_triples, tessellation_payload};
 
 fn strip_document(shaded: bool) -> CadIr {
-    let positions = (0..7).map(|index| {
-        let value = f64::from(index);
-        Point3::new(value, 2.0 * value, -value)
-    }).collect();
+    let positions = (0..7)
+        .map(|index| {
+            let value = f64::from(index);
+            Point3::new(value, 2.0 * value, -value)
+        })
+        .collect();
     let normals = shaded.then(|| (0..7).map(|_| Vector3::new(0.0, 0.0, 1.0)).collect());
     let mesh = TessellationMesh::from_strip_lanes(positions, normals, &[3, 4]).unwrap();
     let mut document = CadIr::empty();
-    document.model.tessellations.push(Tessellation::new(
-        TessellationId::mint("synthetic:test:tessellation#borrowed-emission").unwrap(),
-        mesh,
-        Vec::new(),
-    ).unwrap());
+    document.model.tessellations.push(
+        Tessellation::new(
+            TessellationId::mint("synthetic:test:tessellation#borrowed-emission").unwrap(),
+            mesh,
+            Vec::new(),
+        )
+        .unwrap(),
+    );
     document
 }
 
@@ -63,7 +68,11 @@ fn borrowed_strip_emission_preserves_complete_channel_bytes() {
                 }
             }
         }
-        expected_channel(&mut expected, [12, 100, 2, if shaded { 7 } else { 0 }], &normals);
+        expected_channel(
+            &mut expected,
+            [12, 100, 2, if shaded { 7 } else { 0 }],
+            &normals,
+        );
         expected_channel(&mut expected, [4, 8, 2, 0], &[]);
         // Each run states twice its vertex count less two endpoints.
         expected_channel(&mut expected, [4, 8, 2, 2], &[4, 0, 0, 0, 6, 0, 0, 0]);
@@ -80,18 +89,23 @@ fn borrowed_triple_emission_needs_only_the_existing_output_backing() {
         // Seven triples of three four-byte components; allocate outside observation.
         let mut positions = Vec::with_capacity(7 * 3 * 4);
         let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
-            append_triples(&mut positions, MeshRows::new(mesh).map(|(point, _)| {
-                [point.x, point.y, point.z]
-            }), "position")
+            append_triples(
+                &mut positions,
+                MeshRows::new(mesh).map(|(point, _)| [point.x, point.y, point.z]),
+                "position",
+            )
         });
         result.unwrap();
         assert_eq!(allocations, 0);
         assert_eq!(positions.len(), 7 * 3 * 4);
         let mut normals = Vec::with_capacity(if shaded { 7 * 3 * 4 } else { 0 });
         let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
-            append_triples(&mut normals, MeshRows::new(mesh).filter_map(|(_, normal)| {
-                normal.map(|normal| [normal.x, normal.y, normal.z])
-            }), "normal")
+            append_triples(
+                &mut normals,
+                MeshRows::new(mesh)
+                    .filter_map(|(_, normal)| normal.map(|normal| [normal.x, normal.y, normal.z])),
+                "normal",
+            )
         });
         result.unwrap();
         assert_eq!(allocations, 0);
@@ -103,13 +117,17 @@ fn borrowed_triple_emission_needs_only_the_existing_output_backing() {
 fn triple_overflow_refuses_before_visiting_the_next_row() {
     for role in ["position", "normal"] {
         let visited = Cell::new(0);
-        let triples = [[1.0, f64::MAX, 3.0], [4.0, 5.0, 6.0]].into_iter()
+        let triples = [[1.0, f64::MAX, 3.0], [4.0, 5.0, 6.0]]
+            .into_iter()
             .inspect(|_| visited.set(visited.get() + 1));
         let mut out = Vec::with_capacity(24);
         let error = append_triples(&mut out, triples, role).unwrap_err();
         assert_eq!(visited.get(), 1);
         assert_eq!(out, 1.0_f32.to_le_bytes());
-        assert_eq!(error.to_string(), format!("malformed container: SLDPRT tessellation {role} exceeds f32 range"));
+        assert_eq!(
+            error.to_string(),
+            format!("malformed container: SLDPRT tessellation {role} exceeds f32 range")
+        );
     }
 }
 
@@ -121,77 +139,136 @@ fn empty_display_emission_keeps_the_zero_mesh_header() {
     expected.extend_from_slice(&[0; 8]);
     expected.extend_from_slice(b"uoTempFaceTessData_c");
     expected.extend_from_slice(&[0; 8]);
-    assert_eq!(tessellation_payload(&ctx, &document, 0.5).unwrap(), expected);
+    assert_eq!(
+        tessellation_payload(&ctx, &document, 0.5).unwrap(),
+        expected
+    );
 }
 
 fn indexed_document(shading: u8) -> CadIr {
     use cadmpeg_ir::tessellation::{ChannelAddressing, TessellationChannel};
     let positions = vec![
-        Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0),
-        Point3::new(1.0, 1.0, 0.0), Point3::new(0.0, 1.0, 0.0),
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(1.0, 1.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
     ];
     let triangles = vec![[2, 0, 1], [2, 1, 3]];
     let geometry = match shading {
         0 => TessellationMesh::from_list_lanes(positions, triangles, None),
-        1 => TessellationMesh::from_list_lanes(positions, triangles, Some(vec![
-            Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0), Vector3::new(-1.0, 0.0, 0.0),
-        ])),
-        _ => TessellationMesh::from_corner_lanes(positions, triangles, Some(vec![
-            Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0), Vector3::new(-1.0, 0.0, 0.0),
-            Vector3::new(0.0, -1.0, 0.0), Vector3::new(0.0, 0.0, -1.0),
-        ])),
-    }.unwrap();
+        1 => TessellationMesh::from_list_lanes(
+            positions,
+            triangles,
+            Some(vec![
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(-1.0, 0.0, 0.0),
+            ]),
+        ),
+        _ => TessellationMesh::from_corner_lanes(
+            positions,
+            triangles,
+            Some(vec![
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(-1.0, 0.0, 0.0),
+                Vector3::new(0.0, -1.0, 0.0),
+                Vector3::new(0.0, 0.0, -1.0),
+            ]),
+        ),
+    }
+    .unwrap();
     let mut mesh = Tessellation::new(
-        TessellationId::mint("synthetic:test:tessellation#indexed-borrow").unwrap(), geometry,
-        vec![TessellationChannel::new(ChannelAddressing::Vertex {}, 1, 7, 2, vec![10, 11, 12, 13]).unwrap()],
-    ).unwrap();
+        TessellationId::mint("synthetic:test:tessellation#indexed-borrow").unwrap(),
+        geometry,
+        vec![
+            TessellationChannel::new(ChannelAddressing::Vertex {}, 1, 7, 2, vec![10, 11, 12, 13])
+                .unwrap(),
+        ],
+    )
+    .unwrap();
     mesh.body = Some(cadmpeg_ir::ids::BodyId::mint("synthetic:test:body#indexed-borrow").unwrap());
-    mesh.faces.push(cadmpeg_ir::ids::FaceId::mint("synthetic:test:face#indexed-borrow").unwrap());
+    mesh.faces
+        .push(cadmpeg_ir::ids::FaceId::mint("synthetic:test:face#indexed-borrow").unwrap());
     let mut document = CadIr::empty();
     document.model.tessellations.push(mesh);
     document
 }
 
 fn assert_indexed_expansion(shading: u8) {
-        let document = indexed_document(shading);
-        let mesh = &document.model.tessellations[0];
-        let (facts, allocations) = crate::test_support::allocation::count_allocations(|| {
-            let source = super::IndexedMesh::new(mesh.mesh()).unwrap();
-            (source.vertex_count(), source.triangle_count(), source.triangle(0), source.triangle(1),
-                source.position(0), source.position(2))
-        });
-        assert_eq!(allocations, 0);
-        assert_eq!(facts.0, 4);
-        assert_eq!(facts.1, 2);
-        assert_eq!(facts.2, [2, 0, 1]);
-        assert_eq!(facts.3, [2, 1, 3]);
-        assert_eq!(facts.4.get(), Point3::new(0.0, 0.0, 0.0));
-        assert_eq!(facts.5.get(), Point3::new(1.0, 1.0, 0.0));
-        let expanded = super::sequential_tessellation(mesh).unwrap();
-        assert!(matches!(expanded, std::borrow::Cow::Owned(_)));
-        assert_eq!(expanded.id, mesh.id);
-        assert_eq!(expanded.body, mesh.body);
-        assert_eq!(expanded.faces, mesh.faces);
-        assert_eq!(expanded.vertices().iter().map(|p| p.get()).collect::<Vec<_>>(), vec![
-            Point3::new(1.0, 1.0, 0.0), Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0),
-        ]);
-        assert_eq!(expanded.triangles(), [[0, 1, 2], [3, 4, 5]]);
-        assert_eq!(expanded.strip_lengths(), [3, 3]);
-        assert_eq!(expanded.channels()[0].data(), [12, 10, 11, 12, 11, 13]);
-        let expected_normals = match shading {
-            0 => Vec::new(),
-            1 => vec![Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(0.0, 1.0, 0.0), Vector3::new(-1.0, 0.0, 0.0)],
-            _ => vec![Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0), Vector3::new(-1.0, 0.0, 0.0),
-                Vector3::new(0.0, -1.0, 0.0), Vector3::new(0.0, 0.0, -1.0)],
-        };
-        assert_eq!(expanded.vertex_normals().iter().map(|n| n.get()).collect::<Vec<_>>(), expected_normals);
-        assert!(expanded.per_corner_normals().is_empty());
+    let document = indexed_document(shading);
+    let mesh = &document.model.tessellations[0];
+    let (facts, allocations) = crate::test_support::allocation::count_allocations(|| {
+        let source = super::IndexedMesh::new(mesh.mesh()).unwrap();
+        (
+            source.vertex_count(),
+            source.triangle_count(),
+            source.triangle(0),
+            source.triangle(1),
+            source.position(0),
+            source.position(2),
+        )
+    });
+    assert_eq!(allocations, 0);
+    assert_eq!(facts.0, 4);
+    assert_eq!(facts.1, 2);
+    assert_eq!(facts.2, [2, 0, 1]);
+    assert_eq!(facts.3, [2, 1, 3]);
+    assert_eq!(facts.4.get(), Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(facts.5.get(), Point3::new(1.0, 1.0, 0.0));
+    let expanded = super::sequential_tessellation(mesh).unwrap();
+    assert!(matches!(expanded, std::borrow::Cow::Owned(_)));
+    assert_eq!(expanded.id, mesh.id);
+    assert_eq!(expanded.body, mesh.body);
+    assert_eq!(expanded.faces, mesh.faces);
+    assert_eq!(
+        expanded
+            .vertices()
+            .iter()
+            .map(|p| p.get())
+            .collect::<Vec<_>>(),
+        vec![
+            Point3::new(1.0, 1.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ]
+    );
+    assert_eq!(expanded.triangles(), [[0, 1, 2], [3, 4, 5]]);
+    assert_eq!(expanded.strip_lengths(), [3, 3]);
+    assert_eq!(expanded.channels()[0].data(), [12, 10, 11, 12, 11, 13]);
+    let expected_normals = match shading {
+        0 => Vec::new(),
+        1 => vec![
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(-1.0, 0.0, 0.0),
+        ],
+        _ => vec![
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(-1.0, 0.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+        ],
+    };
+    assert_eq!(
+        expanded
+            .vertex_normals()
+            .iter()
+            .map(|n| n.get())
+            .collect::<Vec<_>>(),
+        expected_normals
+    );
+    assert!(expanded.per_corner_normals().is_empty());
 }
 
 #[test]
@@ -216,10 +293,14 @@ fn empty_indexed_forms_emit_no_rows_or_normals() {
             0 => TessellationMesh::from_list_lanes(Vec::new(), Vec::new(), None),
             1 => TessellationMesh::from_list_lanes(Vec::new(), Vec::new(), Some(Vec::new())),
             _ => TessellationMesh::from_corner_lanes(Vec::new(), Vec::new(), Some(Vec::new())),
-        }.unwrap();
+        }
+        .unwrap();
         let mesh = Tessellation::new(
-            TessellationId::mint("synthetic:test:tessellation#empty-indexed").unwrap(), geometry, Vec::new(),
-        ).unwrap();
+            TessellationId::mint("synthetic:test:tessellation#empty-indexed").unwrap(),
+            geometry,
+            Vec::new(),
+        )
+        .unwrap();
         let expanded = super::sequential_tessellation(&mesh).unwrap();
         assert_eq!(expanded.vertex_count(), 0);
         assert_eq!(expanded.triangle_count(), 0);

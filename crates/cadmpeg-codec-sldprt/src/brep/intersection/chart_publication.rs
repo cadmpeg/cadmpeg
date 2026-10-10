@@ -37,11 +37,17 @@ pub(super) struct ScopedCharts<'ctx> {
 
 impl<'ctx> ScopedCharts<'ctx> {
     pub(super) fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
-        Ok(Self { values: Vec::new(), shell: ctx.reserve_scoped(0, "hold Parasolid chart candidates")? })
+        Ok(Self {
+            values: Vec::new(),
+            shell: ctx.reserve_scoped(0, "hold Parasolid chart candidates")?,
+        })
     }
 
     pub(super) fn into_entries(self) -> ChartEntries<'ctx> {
-        ChartEntries { values: self.values.into_iter(), _shell: self.shell }
+        ChartEntries {
+            values: self.values.into_iter(),
+            _shell: self.shell,
+        }
     }
 }
 
@@ -52,12 +58,16 @@ pub(super) struct ChartEntries<'ctx> {
 
 impl<'ctx> ChartEntries<'ctx> {
     pub(super) fn next(
-        &mut self, ctx: &DecodeContext<'_>, operation: &'static str,
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
     ) -> Result<Option<ScopedChart<'ctx>>, CodecError> {
         if let Some(limit) = ctx.resource_refusal() {
             return Err(CodecError::ResourceLimit(limit));
         }
-        if self.values.len() == 0 { return Ok(None); }
+        if self.values.len() == 0 {
+            return Ok(None);
+        }
         ctx.next_charged(&mut self.values, operation)
     }
 }
@@ -69,7 +79,11 @@ pub(super) enum ChartSink<'out, 'ctx> {
 }
 
 fn interior_points(
-    ctx: &DecodeContext<'_>, bytes: &[u8], block: usize, count: usize, stride: usize,
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    block: usize,
+    count: usize,
+    stride: usize,
 ) -> Result<Vec<[f64; 3]>, CodecError> {
     let mut values = ctx.vector_storage(count - 2, "decode Parasolid chart interior points")?;
     for index in ctx.admit_iter(1..count - 1, "decode Parasolid chart interior points")? {
@@ -82,8 +96,13 @@ fn interior_points(
 
 impl<'ctx> ChartSink<'_, 'ctx> {
     pub(super) fn publish(
-        &mut self, ctx: &'ctx DecodeContext<'_>, bytes: &[u8],
-        block: usize, count: usize, stride: usize, header: ChartHeader,
+        &mut self,
+        ctx: &'ctx DecodeContext<'_>,
+        bytes: &[u8],
+        block: usize,
+        count: usize,
+        stride: usize,
+        header: ChartHeader,
     ) -> Result<(), CodecError> {
         match self {
             #[cfg(test)]
@@ -93,9 +112,19 @@ impl<'ctx> ChartSink<'_, 'ctx> {
             }
             Self::Scoped(out) => {
                 let mut storage = ctx.reserve_scoped(0, "hold Parasolid chart interior points")?;
-                let points = storage.with_storage(|| interior_points(ctx, bytes, block, count, stride))?;
-                let value = ScopedChart { value: header.with_points(points), _points: storage };
-                out.shell.with_storage(|| ctx.push_vec(&mut out.values, value, "collect Parasolid chart stride candidates"))
+                let points =
+                    storage.with_storage(|| interior_points(ctx, bytes, block, count, stride))?;
+                let value = ScopedChart {
+                    value: header.with_points(points),
+                    _points: storage,
+                };
+                out.shell.with_storage(|| {
+                    ctx.push_vec(
+                        &mut out.values,
+                        value,
+                        "collect Parasolid chart stride candidates",
+                    )
+                })
             }
         }
     }

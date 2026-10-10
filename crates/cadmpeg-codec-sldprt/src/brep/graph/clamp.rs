@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Insert homogeneous knots and clamp NURBS curve lanes.
 
+use super::nurbs_pcurves::NurbsPcurveFailure;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::eval::nurbs_curve_parameter_domain;
 use cadmpeg_ir::geometry::nurbs::knots_nondecreasing;
-use super::nurbs_pcurves::NurbsPcurveFailure;
 
 fn nurbs_homogeneous_controls(
     ctx: &DecodeContext<'_>,
@@ -46,7 +46,9 @@ pub(super) fn insert_nurbs_homogeneous_knot<'ctx>(
     controls: &[[f64; 4]],
     value: f64,
 ) -> Result<Option<HomogeneousCurveLanes<'ctx>>, cadmpeg_core::CodecError> {
-    if let Some(limit) = ctx.resource_refusal() { return Err(limit.into()); }
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(limit.into());
+    }
     let Some(expected_knots) = controls
         .len()
         .checked_add(degree)
@@ -95,66 +97,71 @@ pub(super) fn insert_nurbs_homogeneous_knot<'ctx>(
     if multiplicity > degree {
         return Ok(None);
     }
-    let (generation, storage) = ctx.with_scoped_storage("hold inserted homogeneous NURBS lanes", || {
-    let mut inserted_knots = Vec::new();
-    ctx.extend_from_slice(
-        &mut inserted_knots,
-        &knots[..=span],
-        "insert homogeneous NURBS knot lane",
-    )?;
-    ctx.push_vec(
-        &mut inserted_knots,
-        value,
-        "insert homogeneous NURBS knot lane",
-    )?;
-    ctx.extend_from_slice(
-        &mut inserted_knots,
-        &knots[span + 1..],
-        "insert homogeneous NURBS knot lane",
-    )?;
+    let (generation, storage) =
+        ctx.with_scoped_storage("hold inserted homogeneous NURBS lanes", || {
+            let mut inserted_knots = Vec::new();
+            ctx.extend_from_slice(
+                &mut inserted_knots,
+                &knots[..=span],
+                "insert homogeneous NURBS knot lane",
+            )?;
+            ctx.push_vec(
+                &mut inserted_knots,
+                value,
+                "insert homogeneous NURBS knot lane",
+            )?;
+            ctx.extend_from_slice(
+                &mut inserted_knots,
+                &knots[span + 1..],
+                "insert homogeneous NURBS knot lane",
+            )?;
 
-    // Controls before `prefix_end` and from `suffix_start` keep their values
-    // (the suffix shifts by one); the controls between are blended. The knot
-    // span never precedes the multiplicity of the inserted value: a refused
-    // subtraction states that, where a saturating one would alias an
-    // impossible span with span 0 and copy the wrong control run.
-    let (Some(prefix_end), Some(suffix_start)) = (
-        (span + 1).checked_sub(degree),
-        span.checked_sub(multiplicity),
-    ) else {
-        return Ok(None);
-    };
-    let mut inserted_controls = Vec::new();
-    ctx.extend_from_slice(
-        &mut inserted_controls,
-        &controls[..prefix_end],
-        "insert homogeneous NURBS control lane",
-    )?;
-    for index in ctx.admit_iter(
-        prefix_end..=suffix_start,
-        "blend homogeneous NURBS controls",
-    )? {
-        let denominator = knots[index + degree] - knots[index];
-        if !denominator.is_finite() || denominator <= 0.0 {
-            return Ok(None);
-        }
-        let alpha = (value - knots[index]) / denominator;
-        ctx.push_vec(
-            &mut inserted_controls,
-            std::array::from_fn(|axis| {
-                alpha * controls[index][axis] + (1.0 - alpha) * controls[index - 1][axis]
-            }),
-            "insert homogeneous NURBS control lane",
-        )?;
-    }
-    ctx.extend_from_slice(
-        &mut inserted_controls,
-        &controls[suffix_start..],
-        "insert homogeneous NURBS control lane",
-    )?;
-    Ok::<_, cadmpeg_core::CodecError>(Some((inserted_knots, inserted_controls)))
-    })?;
-    Ok(generation.map(|(knots, controls)| HomogeneousCurveLanes { knots, controls, _storage: storage }))
+            // Controls before `prefix_end` and from `suffix_start` keep their values
+            // (the suffix shifts by one); the controls between are blended. The knot
+            // span never precedes the multiplicity of the inserted value: a refused
+            // subtraction states that, where a saturating one would alias an
+            // impossible span with span 0 and copy the wrong control run.
+            let (Some(prefix_end), Some(suffix_start)) = (
+                (span + 1).checked_sub(degree),
+                span.checked_sub(multiplicity),
+            ) else {
+                return Ok(None);
+            };
+            let mut inserted_controls = Vec::new();
+            ctx.extend_from_slice(
+                &mut inserted_controls,
+                &controls[..prefix_end],
+                "insert homogeneous NURBS control lane",
+            )?;
+            for index in ctx.admit_iter(
+                prefix_end..=suffix_start,
+                "blend homogeneous NURBS controls",
+            )? {
+                let denominator = knots[index + degree] - knots[index];
+                if !denominator.is_finite() || denominator <= 0.0 {
+                    return Ok(None);
+                }
+                let alpha = (value - knots[index]) / denominator;
+                ctx.push_vec(
+                    &mut inserted_controls,
+                    std::array::from_fn(|axis| {
+                        alpha * controls[index][axis] + (1.0 - alpha) * controls[index - 1][axis]
+                    }),
+                    "insert homogeneous NURBS control lane",
+                )?;
+            }
+            ctx.extend_from_slice(
+                &mut inserted_controls,
+                &controls[suffix_start..],
+                "insert homogeneous NURBS control lane",
+            )?;
+            Ok::<_, cadmpeg_core::CodecError>(Some((inserted_knots, inserted_controls)))
+        })?;
+    Ok(generation.map(|(knots, controls)| HomogeneousCurveLanes {
+        knots,
+        controls,
+        _storage: storage,
+    }))
 }
 
 /// The knots, control points and weights of one clamped NURBS segment, before
@@ -169,7 +176,9 @@ fn clamped_segment_with<T>(
     domain: [f64; 2],
     publish: impl FnOnce(Vec<f64>, &[[f64; 4]], bool) -> Result<Option<T>, cadmpeg_core::CodecError>,
 ) -> Result<Option<T>, cadmpeg_core::CodecError> {
-    if let Some(limit) = ctx.resource_refusal() { return Err(limit.into()); }
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(limit.into());
+    }
     if curve.periodic()
         || !domain[0].is_finite()
         || !domain[1].is_finite()
@@ -187,13 +196,22 @@ fn clamped_segment_with<T>(
     if domain[0] < original_domain[0] || domain[1] > original_domain[1] {
         return Ok(None);
     }
-    let (generation, storage) = ctx.with_scoped_storage("hold initial homogeneous NURBS lanes", || {
-        let knots = ctx.copy_slice(curve.knots(), "copy NURBS knots for clamping")?;
-        let Some(controls) = nurbs_homogeneous_controls(ctx, curve)? else { return Ok(None); };
-        Ok::<_, cadmpeg_core::CodecError>(Some((knots, controls)))
-    })?;
-    let Some((knots, controls)) = generation else { return Ok(None); };
-    let mut current = HomogeneousCurveLanes { knots, controls, _storage: storage };
+    let (generation, storage) =
+        ctx.with_scoped_storage("hold initial homogeneous NURBS lanes", || {
+            let knots = ctx.copy_slice(curve.knots(), "copy NURBS knots for clamping")?;
+            let Some(controls) = nurbs_homogeneous_controls(ctx, curve)? else {
+                return Ok(None);
+            };
+            Ok::<_, cadmpeg_core::CodecError>(Some((knots, controls)))
+        })?;
+    let Some((knots, controls)) = generation else {
+        return Ok(None);
+    };
+    let mut current = HomogeneousCurveLanes {
+        knots,
+        controls,
+        _storage: storage,
+    };
     let Some(full_multiplicity) = degree.checked_add(1) else {
         return Ok(None);
     };
@@ -209,8 +227,13 @@ fn clamped_segment_with<T>(
             multiplicity..full_multiplicity,
             "insert clamped NURBS knots",
         )? {
-            let Some(inserted) =
-                insert_nurbs_homogeneous_knot(ctx, degree, &current.knots, &current.controls, value)?
+            let Some(inserted) = insert_nurbs_homogeneous_knot(
+                ctx,
+                degree,
+                &current.knots,
+                &current.controls,
+                value,
+            )?
             else {
                 return Ok(None);
             };
@@ -239,9 +262,10 @@ fn clamped_segment_with<T>(
     if end <= start || end_last < end || end - start == 0 {
         return Ok(None);
     }
-    let (Some(control_slice), Some(knot_slice)) =
-        (current.controls.get(start..end), current.knots.get(start..=end_last))
-    else {
+    let (Some(control_slice), Some(knot_slice)) = (
+        current.controls.get(start..end),
+        current.knots.get(start..=end_last),
+    ) else {
         return Ok(None);
     };
     let Some(expected_knots) = control_slice
@@ -315,10 +339,24 @@ impl ClampedConversionLanes<'_, '_> {
     fn into_curve(
         self,
         degree: u32,
-    ) -> Result<Result<cadmpeg_ir::geometry::nurbs::NurbsCurve, cadmpeg_ir::geometry::nurbs::NurbsError>, cadmpeg_core::CodecError> {
-        let Self { context, segment_knots, control_points, weights, pole_storage } = self;
+    ) -> Result<
+        Result<cadmpeg_ir::geometry::nurbs::NurbsCurve, cadmpeg_ir::geometry::nurbs::NurbsError>,
+        cadmpeg_core::CodecError,
+    > {
+        let Self {
+            context,
+            segment_knots,
+            control_points,
+            weights,
+            pole_storage,
+        } = self;
         let result = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            context, degree, segment_knots, control_points, weights, false,
+            context,
+            degree,
+            segment_knots,
+            control_points,
+            weights,
+            false,
         );
         // The constructor consumes both raw lanes before returning its result.
         drop(pole_storage);
@@ -337,9 +375,15 @@ fn clamped_conversion_lanes<'ctx, 'arena>(
         (poles, pole_storage) = ctx.with_scoped_storage("hold clamped NURBS raw poles", || {
             clamped_raw_poles(ctx, controls, rational)
         })?;
-        Ok(poles.map(|(control_points, weights)| ClampedConversionLanes {
-            context: ctx, segment_knots, control_points, weights, pole_storage,
-        }))
+        Ok(
+            poles.map(|(control_points, weights)| ClampedConversionLanes {
+                context: ctx,
+                segment_knots,
+                control_points,
+                weights,
+                pole_storage,
+            }),
+        )
     })
 }
 

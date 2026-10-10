@@ -1,8 +1,8 @@
 //! Hole position-sketch and spatial-locus tests.
 
 use super::{
-    cylinder, lane, lane_with_position_reference, model_hole, native_history,
-    native_feature_index_node_bytes, work_refusal_at_additional,
+    cylinder, lane, lane_with_position_reference, model_hole, native_feature_index_node_bytes,
+    native_history, work_refusal_at_additional,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -36,7 +36,6 @@ use crate::resolved_features::holes::project_spatial_hole_position_sketches;
 use crate::resolved_features::holes::HoleTopology;
 use crate::resolved_features::holes::{HoleLaneNames, PositionSketches};
 use crate::resolved_features::parameters::enrich_history_parameters;
-
 
 fn spatial_hole_axis_consumer() -> (
     [cadmpeg_ir::features::Feature; 2],
@@ -182,8 +181,7 @@ fn spatial_hole_axis_consumer() -> (
 
 #[test]
 fn spatial_hole_position_route_refuses_collection_growth() {
-    let (input_features, sketch, entities, surface, history, lane) =
-        spatial_hole_axis_consumer();
+    let (input_features, sketch, entities, surface, history, lane) = spatial_hole_axis_consumer();
     let sketches = [sketch];
     let surfaces = [surface];
     let histories = [history];
@@ -215,8 +213,7 @@ fn spatial_hole_position_route_refuses_collection_growth() {
 
 #[test]
 fn spatial_hole_position_route_refuses_lookup_work() {
-    let (input_features, sketch, entities, surface, history, lane) =
-        spatial_hole_axis_consumer();
+    let (input_features, sketch, entities, surface, history, lane) = spatial_hole_axis_consumer();
     let sketches = [sketch];
     let surfaces = [surface];
     let histories = [history];
@@ -286,10 +283,7 @@ fn spatial_hole_native_feature_index_refuses_second_key_work() {
     // One hole target, two positions checked by the new spatial-consumer gate,
     // one history, and two source records precede the first insertion's three
     // node-work passes. The second key comparison follows that admitted work.
-    assert_eq!(
-        limit.used,
-        6 + 3 * native_feature_index_node_bytes()
-    );
+    assert_eq!(limit.used, 6 + 3 * native_feature_index_node_bytes());
     assert_eq!(
         limit.additional,
         u64::try_from(super::SECOND_NATIVE_INDEX_FEATURE_ID.len()).unwrap()
@@ -1039,8 +1033,7 @@ fn unique_unindexed_point_locus_is_projected() {
 
 #[test]
 fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
-    let (mut features, sketch, entities, surface, history, lane) =
-        spatial_hole_axis_consumer();
+    let (mut features, sketch, entities, surface, history, lane) = spatial_hole_axis_consumer();
     let sketches = [sketch];
     let surfaces = [surface];
     let histories = [history];
@@ -1764,15 +1757,8 @@ fn planar_hole_projection_skips_lane_indexes_without_a_model_sketch() {
         "index SLDPRT hole lane names",
         None,
     );
-    project_hole_position_sketches(
-        &ctx,
-        &mut [model_hole()],
-        &[],
-        &[],
-        &histories,
-        &lanes,
-    )
-    .unwrap();
+    project_hole_position_sketches(&ctx, &mut [model_hole()], &[], &[], &histories, &lanes)
+        .unwrap();
     let limit = ctx
         .charge_work(1, "index SLDPRT hole lane names")
         .expect_err("missing planar sketches leave the lane-index probe armed");

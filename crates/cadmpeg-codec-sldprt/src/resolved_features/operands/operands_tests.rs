@@ -1249,12 +1249,9 @@ fn line_handle_without_endpoints_skips_id_index() {
     let fresh_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut fresh_policy = cadmpeg_core::decode::DecodePolicy::service();
     fresh_policy.limits.max_work_units = u64::MAX;
-    let (fresh_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &fresh_arena,
-        &fresh_policy,
-    )
-    .unwrap();
+    let (fresh_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &fresh_arena, &fresh_policy)
+            .unwrap();
     let positive_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "index SLDPRT scalar operand links",

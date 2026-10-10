@@ -591,16 +591,19 @@ pub(super) struct SlotReferences<'payload, 'ctx> {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for SlotReferences<'_, '_> {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(
-        std::mem::size_of::<Self>(),
-    ));
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
 
     fn decode_cost(
         &self,
         _ctx: &DecodeContext<'_>,
         _operation: &'static str,
     ) -> Result<u64, CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -1204,7 +1207,8 @@ pub(super) fn resolve_connected_marker_arcs(
             let mut phase_storage = ctx.reserve_scoped(0, OPERATION)?;
             let mut sketch_points = BTreeMap::<&SketchId, Vec<(Option<&str>, Point2)>>::new();
             for entity in ctx.admit_iter(&entities[..], OPERATION)? {
-                let SketchGeometryDefinition::Point { position } = *entity.geometry.definition() else {
+                let SketchGeometryDefinition::Point { position } = *entity.geometry.definition()
+                else {
                     continue;
                 };
                 let Some(native_ref) = entity.native_ref.as_deref() else {
@@ -1267,7 +1271,8 @@ pub(super) fn resolve_connected_marker_arcs(
                         ctx.insert_hash_map(&mut center_indexes, &entity.sketch, index, OPERATION)
                     })?;
                 }
-                let Some(candidates) = ctx.get_hash_map(&center_indexes, &entity.sketch, OPERATION)?
+                let Some(candidates) =
+                    ctx.get_hash_map(&center_indexes, &entity.sketch, OPERATION)?
                 else {
                     continue;
                 };
@@ -1308,7 +1313,9 @@ pub(super) fn resolve_connected_marker_arcs(
             let mut lines_by_endpoint = HashMap::<&str, Vec<&SketchEntity>>::new();
             for (index, entity) in ctx.admit_iter(&entities[..], OPERATION)?.enumerate() {
                 match *entity.geometry.definition() {
-                    SketchGeometryDefinition::Arc { center, radius, .. } if !entity.construction => {
+                    SketchGeometryDefinition::Arc { center, radius, .. }
+                        if !entity.construction =>
+                    {
                         let [start, end] = entity.endpoint_refs.as_slice() else {
                             continue;
                         };
@@ -1497,7 +1504,8 @@ pub(super) fn resolve_connected_marker_arcs(
                 if missing_point {
                     continue;
                 }
-                let Some((center, _)) = fitted_marker_circle(ctx, &component_points, tolerance)? else {
+                let Some((center, _)) = fitted_marker_circle(ctx, &component_points, tolerance)?
+                else {
                     continue;
                 };
                 let mut component_replacements = Vec::new();
@@ -1906,9 +1914,8 @@ pub(super) fn sketch_plane_frames(
     histories: &[crate::records::FeatureHistory],
 ) -> Result<HashMap<u32, SketchPlaneFrame>, CodecError> {
     let mut entry_storage = ctx.reserve_scoped(0, "hold SLDPRT plane entries")?;
-    let entries = entry_storage.with_storage(|| {
-        sketch_plane_frame_entries(ctx, features, histories)
-    })?;
+    let entries =
+        entry_storage.with_storage(|| sketch_plane_frame_entries(ctx, features, histories))?;
     frames_from_entries(ctx, &entries)
 }
 
@@ -2084,9 +2091,8 @@ impl<'h> LaneFrameIndex<'h> {
     ) -> Result<Self, CodecError> {
         const OPERATION: &str = "index SLDPRT lane sketch plane candidates";
         let mut native_storage = ctx.reserve_scoped(0, OPERATION)?;
-        let by_native = native_storage.with_storage(|| {
-            first_model_feature_by_native(ctx, features, OPERATION)
-        })?;
+        let by_native = native_storage
+            .with_storage(|| first_model_feature_by_native(ctx, features, OPERATION))?;
         let mut stated_by_native = HashMap::new();
         for history in ctx.admit_iter(histories, OPERATION)? {
             for native in ctx.admit_iter(&history.features, OPERATION)? {
@@ -2177,9 +2183,7 @@ pub(super) fn lane_sketch_plane_frames(
     lane: &FeatureInputLane,
 ) -> Result<HashMap<u32, SketchPlaneFrame>, CodecError> {
     let mut index_storage = ctx.reserve_scoped(0, "hold SLDPRT lane plane index")?;
-    let index = index_storage.with_storage(|| {
-        LaneFrameIndex::new(ctx, features, histories)
-    })?;
+    let index = index_storage.with_storage(|| LaneFrameIndex::new(ctx, features, histories))?;
     index.lane_frames(ctx, histories, &ObjectNames::new(ctx, lane)?)
 }
 
@@ -3205,7 +3209,8 @@ pub(super) fn compact_line_region_addresses(
         return Ok(None);
     }
     let mut addresses_storage = ctx.reserve_scoped(0, COLLECT)?;
-    let mut addresses = addresses_storage.with_storage(|| ctx.alloc_filled(count, 0u16, COLLECT))?;
+    let mut addresses =
+        addresses_storage.with_storage(|| ctx.alloc_filled(count, 0u16, COLLECT))?;
     let mut entry_token = None;
     if !ctx.all_by(
         addresses.iter_mut().enumerate(),

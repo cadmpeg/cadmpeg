@@ -1,7 +1,9 @@
 //! Admission and geometry controls for multiple circle-transform candidates.
 
 use crate::resolved_features::grid::{GridCoordinate, GridPoint};
-use crate::resolved_features::transforms::{dimensioned_circle_surface_transforms, MarkerTransform};
+use crate::resolved_features::transforms::{
+    dimensioned_circle_surface_transforms, MarkerTransform,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
@@ -72,9 +74,8 @@ fn materialized_peak() -> (u64, u64) {
     // amortized vector from 32 to 64 rows, holding its two tree-node bound
     // while core linear_growth reserves the old 32 rows as copy overlap.
     let before_growth = lookups + 2 * tree_node::<(i64, i64), usize>();
-    let overlap = cadmpeg_core::decode::u64_from_index(
-        32 * std::mem::size_of::<(MarkerTransform, usize)>(),
-    );
+    let overlap =
+        cadmpeg_core::decode::u64_from_index(32 * std::mem::size_of::<(MarkerTransform, usize)>());
     (before_growth, overlap)
 }
 
@@ -87,8 +88,8 @@ fn circle_candidates_preserve_all_matching_frames_at_source_derived_peak() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = need;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let candidates = dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &CIRCLES, 1.0)
-        .unwrap();
+    let candidates =
+        dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &CIRCLES, 1.0).unwrap();
     // The positive-u/negative-v axes have two translations. Negative-u
     // axes have two translations for each v sign. No translation is zero.
     assert_eq!(candidates.len(), 6);
@@ -115,7 +116,9 @@ fn circle_candidates_preserve_all_matching_frames_at_source_derived_peak() {
     );
     // Returned candidate backing is retained; all materialized query storage
     // must be reusable while the returned values remain live.
-    let reuse = ctx.reserve_scoped(need, "reuse circle candidate query storage").unwrap();
+    let reuse = ctx
+        .reserve_scoped(need, "reuse circle candidate query storage")
+        .unwrap();
     drop((candidates, reuse));
 }
 
@@ -128,8 +131,8 @@ fn circle_candidates_refuse_exact_scored_copy_overlap_and_stay_sticky() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = need - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &CIRCLES, 1.0)
-        .unwrap_err();
+    let error =
+        dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &CIRCLES, 1.0).unwrap_err();
     assert!(matches!(
         &error,
         CodecError::ResourceLimit(limit)

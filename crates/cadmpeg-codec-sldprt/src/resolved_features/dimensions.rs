@@ -1,7 +1,7 @@
 //! Dimensioned sketch geometry and radial circle records.
 
-use super::grid::GridCoordinate;
 use super::curves::{slot_curve_and_center_indices, SlotReferences};
+use super::grid::GridCoordinate;
 
 use super::endpoints::{
     compact_indexed_curve_record_end, marker_profile_curve_role, minor_arc_angles,
@@ -141,9 +141,8 @@ impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
                 )
             })?;
             let mut ordered_storage = ctx.reserve_scoped(0, OPERATION)?;
-            let mut ordered = ordered_storage.with_storage(|| {
-                ctx.collect_vec(&lane.sketch_entities, OPERATION)
-            })?;
+            let mut ordered = ordered_storage
+                .with_storage(|| ctx.collect_vec(&lane.sketch_entities, OPERATION))?;
             for marker in ctx.admit_iter(&ordered, OPERATION)? {
                 storage.with_storage(|| {
                     ctx.push_hash_group(
@@ -768,13 +767,10 @@ fn dimensioned_relation_carrier<'a>(
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
         )
     });
-    if let Some((marker, center)) = declared_slot_handle_dimension_center(
-        ctx,
-        lanes,
-        feature,
-        operand,
-        |lane, offset| index.slot_center_indices(ctx, lane, offset),
-    )?
+    if let Some((marker, center)) =
+        declared_slot_handle_dimension_center(ctx, lanes, feature, operand, |lane, offset| {
+            index.slot_center_indices(ctx, lane, offset)
+        })?
     {
         let Some(center) = center
             .coordinates_m
@@ -1055,8 +1051,8 @@ fn transformed_dimensioned_arc(
             "collect SLDPRT dimensioned arc endpoints",
         )?;
         for index in order {
-            let text = ctx
-                .copy_retained_text(endpoints[index], "retain SLDPRT dimensioned arc endpoint")?;
+            let text =
+                ctx.copy_retained_text(endpoints[index], "retain SLDPRT dimensioned arc endpoint")?;
             endpoint_refs.push(text);
         }
     }
@@ -1188,9 +1184,8 @@ pub(crate) fn project_dimensioned_sketch_geometry(
         return Ok(());
     }
     let mut ownership_storage = ctx.reserve_scoped(0, "SLDPRT relation ownership index")?;
-    let ownership = ownership_storage.with_storage(|| {
-        owned_relation_parameters(ctx, features, parameters, lanes)
-    })?;
+    let ownership = ownership_storage
+        .with_storage(|| owned_relation_parameters(ctx, features, parameters, lanes))?;
     let mut parameters_by_id = HashMap::<&cadmpeg_ir::features::ParameterId, _>::new();
     for parameter in ctx.admit_iter(parameters, "scan SLDPRT dimension geometry")? {
         temporary_storage.with_storage(|| {
@@ -1529,9 +1524,8 @@ pub(crate) fn project_relation_point_dimensioned_circles(
         return Ok(());
     }
     let mut ownership_storage = ctx.reserve_scoped(0, "SLDPRT relation ownership index")?;
-    let ownership = ownership_storage.with_storage(|| {
-        owned_relation_parameters(ctx, features, parameters, lanes)
-    })?;
+    let ownership = ownership_storage
+        .with_storage(|| owned_relation_parameters(ctx, features, parameters, lanes))?;
     let mut parameters_by_id = HashMap::<&cadmpeg_ir::features::ParameterId, _>::new();
     for parameter in ctx.admit_iter(parameters, "scan SLDPRT dimension geometry")? {
         temporary_storage.with_storage(|| {
@@ -1813,12 +1807,8 @@ struct RadialCircleRecord {
 fn radial_circle_records<'a, 'arena>(
     ctx: &'a DecodeContext<'arena>,
     payload: &'a [u8],
-) -> Result<
-    impl Iterator<Item = RadialCircleRecord>
-        + 'a
-        + use<'a, 'arena>,
-    cadmpeg_core::CodecError,
-> {
+) -> Result<impl Iterator<Item = RadialCircleRecord> + 'a + use<'a, 'arena>, cadmpeg_core::CodecError>
+{
     let starts = payload
         .len()
         .checked_sub(LEGACY_SKETCH_MARKER.len())
@@ -2652,9 +2642,8 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .rsplit_once(&lane.id, "#", "resolve SLDPRT dimensions keys")?
                     .map_or(lane.id.as_str(), |(_, key)| key);
                 let mut carrier_ref_storage = ctx.reserve_scoped(0, OPERATION)?;
-                let carrier_ref = carrier_ref_storage.with_storage(|| {
-                    marker_circle_carrier_reference(ctx, lane_key, *offset)
-                })?;
+                let carrier_ref = carrier_ref_storage
+                    .with_storage(|| marker_circle_carrier_reference(ctx, lane_key, *offset))?;
                 let mut pair_radial_object_indices = HashSet::new();
                 for (_, radial) in ctx.admit_iter(pairs, "scan SLDPRT dimension geometry")? {
                     if let Some(index) = radial.object_index() {

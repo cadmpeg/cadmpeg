@@ -31,21 +31,33 @@ fn resolved_position_name_retains_a_planar_sketch_in_both_decode_routes() {
             )
             .expect("native profile declarations are supported in both routes");
         let ir = decoded.ir();
-        let feature = ir.model.features.iter()
+        let feature = ir
+            .model
+            .features
+            .iter()
             .find(|feature| feature.name.as_deref() == Some("Position"))
             .expect("the keyword Position retains its model feature");
         let FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: SketchFeatureBinding::Planar(Some(id)),
-        }) = feature.evaluation.definition() else {
+        }) = feature.evaluation.definition()
+        else {
             panic!("the native Position object must bind to its planar sketch");
         };
         assert!(feature.native_ref.is_some());
-        let sketch = ir.model.sketches.iter().find(|sketch| &sketch.id == id)
+        let sketch = ir
+            .model
+            .sketches
+            .iter()
+            .find(|sketch| &sketch.id == id)
             .expect("the planar binding names a retained sketch");
         assert_eq!(sketch.name.as_deref(), Some("Position"));
         assert!(sketch.native_ref.is_some());
         assert!(sketch.resolved_placement().is_none());
-        assert!(!ir.model.sketch_entities.iter().any(|entity| &entity.sketch == id));
+        assert!(!ir
+            .model
+            .sketch_entities
+            .iter()
+            .any(|entity| &entity.sketch == id));
     }
 }
 
@@ -63,10 +75,14 @@ fn keyword_only_position_preserves_the_missing_sketch_route() {
             .expect("a keyword-only Position remains recoverable");
         let ir = decoded.ir();
         assert!(ir.model.sketches.is_empty());
-        let feature = ir.model.features.iter()
+        let feature = ir
+            .model
+            .features
+            .iter()
             .find(|feature| feature.name.as_deref() == Some("Position"))
             .expect("the keyword Position retains its model feature");
-        assert!(matches!(feature.evaluation.definition(),
+        assert!(matches!(
+            feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: SketchFeatureBinding::Planar(None),
             })

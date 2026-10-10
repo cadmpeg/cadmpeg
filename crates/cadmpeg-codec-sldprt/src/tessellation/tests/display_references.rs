@@ -204,16 +204,28 @@ fn display_reference_rejected_tail_releases_before_result_reallocation() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("root context");
-    let references = persistent_surface_references(&ctx, &payload,
-        ByteRange::new(0, payload.len()).expect("ordered range"))
-        .expect("discarded numeric tail and text do not overlap result growth");
-    assert_eq!(references, vec![PersistentSurfaceReference::SourceOnly {
-        feature_source_id: 7_u32.try_into().expect("source id"),
-        local_surface_id: 3,
-    }; 5]);
-    drop(ctx.reserve_scoped(scratch, "test released display parsing workspace")
-        .expect("full scratch capacity while references survive"));
-    ctx.finish_session().expect("source-only recovery is accepted");
+    let references = persistent_surface_references(
+        &ctx,
+        &payload,
+        ByteRange::new(0, payload.len()).expect("ordered range"),
+    )
+    .expect("discarded numeric tail and text do not overlap result growth");
+    assert_eq!(
+        references,
+        vec![
+            PersistentSurfaceReference::SourceOnly {
+                feature_source_id: 7_u32.try_into().expect("source id"),
+                local_surface_id: 3,
+            };
+            5
+        ]
+    );
+    drop(
+        ctx.reserve_scoped(scratch, "test released display parsing workspace")
+            .expect("full scratch capacity while references survive"),
+    );
+    ctx.finish_session()
+        .expect("source-only recovery is accepted");
 }
 
 #[test]
@@ -222,23 +234,34 @@ fn display_reference_reallocation_refuses_the_exact_old_output_backing() {
     let old_output = reference_output_slots();
     let parse_peak = u64::try_from(OPAQUE_AFTER_NUMBER.len() + 4 * std::mem::size_of::<u32>())
         .expect("ASCII text and four tail slots");
-    assert!(parse_peak < old_output, "the fixture reaches the larger output overlap");
+    assert!(
+        parse_peak < old_output,
+        "the fixture reaches the larger output overlap"
+    );
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_materialized_bytes = old_output - 1;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("root context");
     let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = persistent_surface_references(
-        &ctx, &payload, ByteRange::new(0, payload.len()).expect("ordered range")) else {
+        &ctx,
+        &payload,
+        ByteRange::new(0, payload.len()).expect("ordered range"),
+    ) else {
         panic!("old result backing exceeds scratch by one byte");
     };
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+    );
     assert_eq!(limit.operation, "collect display-list references");
     assert_eq!(limit.used, 0);
     assert_eq!(limit.additional, old_output);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(actual))
-        if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(actual))
+        if actual == limit)
+    );
 }
 
 #[test]
@@ -253,23 +276,40 @@ fn display_reference_complete_tail_retains_only_the_identity_backing() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("root context");
-    let references = persistent_surface_references(&ctx, &payload,
-        ByteRange::new(0, payload.len()).expect("ordered range"))
-        .expect("only live output and numeric tail are retained");
-    assert_eq!(references, vec![PersistentSurfaceReference::Complete(
-        persistent_identity(7, 3, &[u32::MAX, 0]))]);
-    drop(ctx.reserve_scoped(scratch, "test released complete reference text")
-        .expect("full scratch capacity while the identity survives"));
+    let references = persistent_surface_references(
+        &ctx,
+        &payload,
+        ByteRange::new(0, payload.len()).expect("ordered range"),
+    )
+    .expect("only live output and numeric tail are retained");
+    assert_eq!(
+        references,
+        vec![PersistentSurfaceReference::Complete(persistent_identity(
+            7,
+            3,
+            &[u32::MAX, 0]
+        ))]
+    );
+    drop(
+        ctx.reserve_scoped(scratch, "test released complete reference text")
+            .expect("full scratch capacity while the identity survives"),
+    );
     let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-        ctx.charge_retained(1, "test exact reference retained boundary") else {
+        ctx.charge_retained(1, "test exact reference retained boundary")
+    else {
         panic!("output retained bound is exact");
     };
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    );
     assert_eq!(limit.used, retained);
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(actual))
-        if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(actual))
+        if actual == limit)
+    );
 }
 
 #[test]
@@ -283,14 +323,22 @@ fn display_reference_tail_publication_preserves_the_original_retained_refusal() 
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("root context");
     let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = persistent_surface_references(
-        &ctx, &payload, ByteRange::new(0, payload.len()).expect("ordered range")) else {
+        &ctx,
+        &payload,
+        ByteRange::new(0, payload.len()).expect("ordered range"),
+    ) else {
         panic!("actual tail publication exceeds retained bound by one byte");
     };
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    );
     assert_eq!(limit.operation, "decode display-list reference fields");
     assert_eq!(limit.used, output_bytes);
     assert_eq!(limit.additional, tail_bytes);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(actual))
-        if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(actual))
+        if actual == limit)
+    );
 }

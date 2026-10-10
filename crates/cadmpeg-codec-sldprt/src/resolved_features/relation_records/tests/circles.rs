@@ -35,16 +35,27 @@ fn circle_handle_literal_does_not_add_comparison_work() {
     display.id = "s".into();
     display.feature_ref = None;
     let input = lane(
-        vec![class(1, "sgEntHandlf"), class(2, "sgEntHandlg"), class(3, "sgEntHandlh")],
+        vec![
+            class(1, "sgEntHandlf"),
+            class(2, "sgEntHandlg"),
+            class(3, "sgEntHandlh"),
+        ],
         vec![display],
     );
     let relation = crate::records::FeatureInputRelationInstance {
-        id: "relation".into(), parent: "lane".into(), ordinal: 0, offset: 0,
+        id: "relation".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 0,
         family: FeatureInputRelationFamily::CircleDiameter,
-        class_ref: "class".into(), feature_ref: "sketch".into(),
+        class_ref: "class".into(),
+        feature_ref: "sketch".into(),
         scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-            vec!["s".into()], None, Some("s".into()),
-        ).unwrap(),
+            vec!["s".into()],
+            None,
+            Some("s".into()),
+        )
+        .unwrap(),
         operands: Vec::new(),
     };
     // Current shared singleton-sort charge: 1 + 1 + (8 + 2*8)*2*8.
@@ -60,7 +71,9 @@ fn circle_handle_literal_does_not_add_comparison_work() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..64 {
-        assert!(circle_dimension_handle_driver(&ctx, &relation, &input).unwrap().is_none());
+        assert!(circle_dimension_handle_driver(&ctx, &relation, &input)
+            .unwrap()
+            .is_none());
     }
     assert_eq!(ctx.resource_refusal(), None);
 
@@ -71,13 +84,22 @@ fn circle_handle_literal_does_not_add_comparison_work() {
     let probe_arena = DecodeArena::new();
     let (probe_ctx, _) = DecodeContext::from_root_bytes(&[], &probe_arena, &probe_policy).unwrap();
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, "match SLDPRT circle handle class", None,
+        ResourceDimension::WorkUnits,
+        "match SLDPRT circle handle class",
+        None,
     );
-    assert!(circle_dimension_handle_driver(&probe_ctx, &relation, &input).unwrap().is_none());
+    assert!(
+        circle_dimension_handle_driver(&probe_ctx, &relation, &input)
+            .unwrap()
+            .is_none()
+    );
     assert_eq!(probe_ctx.resource_refusal(), None);
     let CodecError::ResourceLimit(limit) = probe_ctx
-        .charge_work(1, "match SLDPRT circle handle class").unwrap_err()
-    else { panic!("fixed comparison must leave its probe armed"); };
+        .charge_work(1, "match SLDPRT circle handle class")
+        .unwrap_err()
+    else {
+        panic!("fixed comparison must leave its probe armed");
+    };
     assert_eq!(limit.operation, "match SLDPRT circle handle class");
     assert_eq!(limit.used, WORK);
     assert_eq!(limit.additional, 1);
@@ -92,7 +114,9 @@ fn circle_handle_literal_does_not_add_comparison_work() {
         Err(error) => error,
         Ok(_) => panic!("one below executed source work must refuse"),
     };
-    let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("resource refusal");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "match SLDPRT circle handle driver");
     assert_eq!(limit.used, WORK - 1);
@@ -181,20 +205,25 @@ fn empty_relation_bindings_do_not_build_lane_indexes() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, "index SLDPRT relation records", None,
+        ResourceDimension::WorkUnits,
+        "index SLDPRT relation records",
+        None,
     );
     super::super::bind_circle_dimension_centers(&ctx, &mut [], &input).unwrap();
     super::super::bind_detached_relation_drivers(&ctx, &mut [], &input).unwrap();
     assert_eq!(ctx.resource_refusal(), None);
-    let Err(CodecError::ResourceLimit(limit)) =
-        ctx.charge_work(1, "index SLDPRT relation records")
-    else { panic!("unused indexes must leave their probe armed"); };
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "index SLDPRT relation records")
+    else {
+        panic!("unused indexes must leave their probe armed");
+    };
     assert_eq!(limit.used, 0);
     assert_eq!(limit.additional, 1);
     assert_eq!(limit.operation, "index SLDPRT relation records");
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
     drop(probe);
 }
 
@@ -205,8 +234,10 @@ fn ineligible_relation_bindings_visit_only_relations() {
     let (input, mut relation) = detached_driver_with_duplicate_index_key(false);
     relation.scalars = crate::records::relation_scalars::RelationScalars::from_refs(
         vec!["scalar-20".into(), "scalar-40".into()],
-        Some("scalar-40".into()), Some("scalar-20".into()),
-    ).unwrap();
+        Some("scalar-40".into()),
+        Some("scalar-20".into()),
+    )
+    .unwrap();
     let before = relation.clone();
     let mut relations = [relation];
     let mut policy = DecodePolicy::service();
@@ -229,7 +260,9 @@ fn ineligible_relation_bindings_visit_only_relations() {
     super::super::bind_circle_dimension_centers(&ctx, &mut relations, &input).unwrap();
     let Err(CodecError::ResourceLimit(limit)) =
         super::super::bind_detached_relation_drivers(&ctx, &mut relations, &input)
-    else { panic!("second actual relation visit must refuse"); };
+    else {
+        panic!("second actual relation visit must refuse");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "match SLDPRT detached relation candidates");
     assert_eq!(limit.limit, 1);
@@ -237,7 +270,9 @@ fn ineligible_relation_bindings_visit_only_relations() {
     assert_eq!(limit.additional, 1);
     assert_eq!(relations[0], before);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
 }
 
 #[test]
@@ -247,8 +282,11 @@ fn circle_center_missing_display_keeps_name_index_unbuilt() {
     let (input, mut relation) = detached_driver_with_duplicate_index_key(false);
     relation.operands.push(input.scalars[0].operands[0].clone());
     relation.scalars = crate::records::relation_scalars::RelationScalars::from_refs(
-        vec!["absent".into()], None, Some("absent".into()),
-    ).unwrap();
+        vec!["absent".into()],
+        None,
+        Some("absent".into()),
+    )
+    .unwrap();
     let before = relation.clone();
     let mut relations = [relation];
     let mut policy = DecodePolicy::service();
@@ -261,7 +299,9 @@ fn circle_center_missing_display_keeps_name_index_unbuilt() {
     for _ in 0..64 {
         super::super::bind_circle_dimension_centers(&ctx, &mut relations, &input).unwrap();
         assert_eq!(relations[0], before);
-        let released = ctx.reserve_scoped(131, "released missing-display lookup").unwrap();
+        let released = ctx
+            .reserve_scoped(131, "released missing-display lookup")
+            .unwrap();
         drop(released);
     }
     assert_eq!(ctx.resource_refusal(), None);
@@ -270,14 +310,18 @@ fn circle_center_missing_display_keeps_name_index_unbuilt() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let Err(CodecError::ResourceLimit(limit)) =
         super::super::bind_circle_dimension_centers(&ctx, &mut relations, &input)
-    else { panic!("scalar table backing must be admitted before growth"); };
+    else {
+        panic!("scalar table backing must be admitted before growth");
+    };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(limit.operation, "index SLDPRT relation records");
     assert_eq!(limit.limit, 130);
     assert_eq!(limit.used, 0);
     assert_eq!(limit.additional, 131);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
 }
 
 #[test]
@@ -294,19 +338,25 @@ fn ambiguous_detached_candidates_keep_driver_index_probe_armed() {
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, "match SLDPRT detached relation drivers", None,
+        ResourceDimension::WorkUnits,
+        "match SLDPRT detached relation drivers",
+        None,
     );
     super::super::bind_detached_relation_drivers(&ctx, &mut relations, &input).unwrap();
     assert_eq!(relations, before);
     assert_eq!(ctx.resource_refusal(), None);
     let Err(CodecError::ResourceLimit(limit)) =
         ctx.charge_work(1, "match SLDPRT detached relation drivers")
-    else { panic!("ambiguous candidates must leave the driver probe armed"); };
+    else {
+        panic!("ambiguous candidates must leave the driver probe armed");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "match SLDPRT detached relation drivers");
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
     drop(probe);
 }
 
@@ -339,8 +389,7 @@ fn detached_relation_uses_last_duplicate_name_index_entry() {
 #[test]
 fn circle_dimension_binds_driver_inside_declared_entity_handle() {
     let first = circle_scalar(20, "name-first", FeatureInputScalarRole::Display, None);
-    let nested_display =
-        circle_scalar(40, "name-nested", FeatureInputScalarRole::Display, None);
+    let nested_display = circle_scalar(40, "name-nested", FeatureInputScalarRole::Display, None);
     let nested_driver = circle_scalar(50, "name-nested", FeatureInputScalarRole::Driving, None);
     let mut lane = lane(
         vec![class(10, "sgCircleDim"), class(31, "sgEntHandle")],
@@ -441,8 +490,7 @@ fn circle_dimension_groups_repeated_display_scalars_by_name_and_entity() {
     second.operands[0].entity_index = 1;
     let mut third = circle_scalar(40, "name-d1", FeatureInputScalarRole::Display, None);
     third.operands[0].entity_index = 2;
-    let mut different_name =
-        circle_scalar(50, "name-d2", FeatureInputScalarRole::Display, None);
+    let mut different_name = circle_scalar(50, "name-d2", FeatureInputScalarRole::Display, None);
     different_name.operands[0].entity_index = 3;
     let mut lane = lane(
         vec![class(10, "sgCircleDim")],
@@ -503,23 +551,37 @@ fn center_source_fixture() -> (
     first.operands.push(center("first-center-reference"));
     second.operands.push(center("second-center-reference"));
     let before = crate::records::FeatureInputRelationInstance {
-        id: "relation".into(), parent: "lane".into(), ordinal: 0, offset: 20,
+        id: "relation".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 20,
         family: FeatureInputRelationFamily::CircleDiameter,
-        class_ref: "class".into(), feature_ref: "sketch".into(),
+        class_ref: "class".into(),
+        feature_ref: "sketch".into(),
         scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-            vec![display.id.clone()], None, Some(display.id.clone()),
-        ).unwrap(),
+            vec![display.id.clone()],
+            None,
+            Some(display.id.clone()),
+        )
+        .unwrap(),
         operands: display.operands.clone(),
     };
     let mut expected = before.clone();
     expected.operands = first.operands.clone();
     expected.scalars = crate::records::relation_scalars::RelationScalars::from_refs(
-        vec![display.id.clone(), first.id.clone(), second.id.clone()], None, Some(display.id.clone()),
-    ).unwrap();
+        vec![display.id.clone(), first.id.clone(), second.id.clone()],
+        None,
+        Some(display.id.clone()),
+    )
+    .unwrap();
     let mut input = lane(Vec::new(), vec![display, first, second]);
     input.names.push(FeatureInputName {
-        id: "name".into(), parent: "lane".into(), ordinal: 0, offset: 0,
-        object_id: None, value: "D1".into(),
+        id: "name".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 0,
+        object_id: None,
+        value: "D1".into(),
     });
     (input, before, expected)
 }
@@ -534,21 +596,30 @@ fn circle_center_reuses_first_consensus_source_and_leaves_search_probe_armed() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, "find SLDPRT circle center source", None,
+        ResourceDimension::WorkUnits,
+        "find SLDPRT circle center source",
+        None,
     );
     let mut relations = [before];
     super::super::bind_circle_dimension_centers(&ctx, &mut relations, &input).unwrap();
     assert_eq!(relations[0], expected);
     assert_eq!(ctx.resource_refusal(), None);
-    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "find SLDPRT circle center source")
-    else { panic!("validated center source must leave obsolete search probe armed"); };
+    let Err(CodecError::ResourceLimit(limit)) =
+        ctx.charge_work(1, "find SLDPRT circle center source")
+    else {
+        panic!("validated center source must leave obsolete search probe armed");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "find SLDPRT circle center source");
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.charge_work(0, "after unused center source search"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(
+        matches!(ctx.charge_work(0, "after unused center source search"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
     drop(probe);
 }
 
@@ -573,20 +644,28 @@ fn circle_center_consensus_refusal_precedes_source_publication() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, "compare SLDPRT circle center references", None,
+        ResourceDimension::WorkUnits,
+        "compare SLDPRT circle center references",
+        None,
     );
     let mut relations = [before.clone()];
     let Err(CodecError::ResourceLimit(limit)) =
         super::super::bind_circle_dimension_centers(&ctx, &mut relations, &input)
-    else { panic!("center reference consensus must admit comparison before publication"); };
+    else {
+        panic!("center reference consensus must admit comparison before publication");
+    };
     assert_eq!(relations[0], before);
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "compare SLDPRT circle center references");
     assert_eq!(limit.additional, 6);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.charge_work(0, "after center consensus refusal"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(
+        matches!(ctx.charge_work(0, "after center consensus refusal"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
     drop(probe);
 }
 
@@ -597,8 +676,11 @@ fn scalar_reference_work_requires_matching_kind_and_index() {
     let left = circle_scalar(20, "name", FeatureInputScalarRole::Display, Some("a"));
     for wrong_kind in [false, true] {
         let mut right = left.clone();
-        if wrong_kind { right.operands[0].kind = FeatureInputOperandKind::E1; }
-        else { right.operands[0].entity_index = 1; }
+        if wrong_kind {
+            right.operands[0].kind = FeatureInputOperandKind::E1;
+        } else {
+            right.operands[0].entity_index = 1;
+        }
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = 0;
@@ -614,29 +696,41 @@ fn scalar_reference_work_requires_matching_kind_and_index() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            ResourceDimension::WorkUnits, "compare SLDPRT relation scalar references", None,
+            ResourceDimension::WorkUnits,
+            "compare SLDPRT relation scalar references",
+            None,
         );
         assert!(!super::super::same_scalar_operands(&ctx, &left, &right).unwrap());
-        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "compare SLDPRT relation scalar references")
-        else { panic!("fixed operand mismatch must leave reference probe armed"); };
+        let Err(CodecError::ResourceLimit(limit)) =
+            ctx.charge_work(1, "compare SLDPRT relation scalar references")
+        else {
+            panic!("fixed operand mismatch must leave reference probe armed");
+        };
         assert_eq!(limit.operation, "compare SLDPRT relation scalar references");
         assert_eq!(limit.used, 1);
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
         drop(probe);
         policy.limits.max_work_units = 0;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) = super::super::same_scalar_operands(&ctx, &left, &right)
-        else { panic!("operand visit must still be admitted"); };
+        let Err(CodecError::ResourceLimit(limit)) =
+            super::super::same_scalar_operands(&ctx, &left, &right)
+        else {
+            panic!("operand visit must still be admitted");
+        };
         assert_eq!(limit.operation, "compare SLDPRT relation scalar operands");
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert!(matches!(ctx.charge_work(0, "after fixed operand refusal"),
             Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 }
 
@@ -646,7 +740,12 @@ fn matching_scalar_references_keep_required_comparison_refusal() {
     use cadmpeg_core::CodecError;
     let left = circle_scalar(20, "name", FeatureInputScalarRole::Display, Some("same"));
     let right = left.clone();
-    assert!(super::super::same_scalar_operands(&cadmpeg_test_support::service_decode_context(), &left, &right).unwrap());
+    assert!(super::super::same_scalar_operands(
+        &cadmpeg_test_support::service_decode_context(),
+        &left,
+        &right
+    )
+    .unwrap());
     let mut policy = DecodePolicy::service();
     // Visit one operand, then admit the first four-byte reference key.
     policy.limits.max_work_units = 4;
@@ -655,17 +754,24 @@ fn matching_scalar_references_keep_required_comparison_refusal() {
     policy.limits.max_collection_items = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(limit)) = super::super::same_scalar_operands(&ctx, &left, &right)
-    else { panic!("qualified reference comparison must refuse before execution"); };
+    let Err(CodecError::ResourceLimit(limit)) =
+        super::super::same_scalar_operands(&ctx, &left, &right)
+    else {
+        panic!("qualified reference comparison must refuse before execution");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "compare SLDPRT relation scalar references");
     assert_eq!(limit.limit, 4);
     assert_eq!(limit.used, 1);
     assert_eq!(limit.additional, 4);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.charge_work(0, "after required scalar comparison"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(
+        matches!(ctx.charge_work(0, "after required scalar comparison"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
 }
 
 #[test]
@@ -674,28 +780,40 @@ fn circle_center_fixed_mismatch_leaves_reference_probe_armed() {
     use cadmpeg_core::CodecError;
     for wrong_kind in [false, true] {
         let (mut input, before, _) = center_source_fixture();
-        if wrong_kind { input.scalars[2].operands[1].kind = FeatureInputOperandKind::E1; }
-        else { input.scalars[2].operands[1].entity_index = 8; }
+        if wrong_kind {
+            input.scalars[2].operands[1].kind = FeatureInputOperandKind::E1;
+        } else {
+            input.scalars[2].operands[1].entity_index = 8;
+        }
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            ResourceDimension::WorkUnits, "compare SLDPRT circle center references", None,
+            ResourceDimension::WorkUnits,
+            "compare SLDPRT circle center references",
+            None,
         );
         let mut relations = [before.clone()];
         super::super::bind_circle_dimension_centers(&ctx, &mut relations, &input).unwrap();
         assert_eq!(relations[0], before);
         assert_eq!(ctx.resource_refusal(), None);
-        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "compare SLDPRT circle center references")
-        else { panic!("fixed center mismatch must leave reference probe armed"); };
+        let Err(CodecError::ResourceLimit(limit)) =
+            ctx.charge_work(1, "compare SLDPRT circle center references")
+        else {
+            panic!("fixed center mismatch must leave reference probe armed");
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "compare SLDPRT circle center references");
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after unused center reference"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.charge_work(0, "after unused center reference"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
         drop(probe);
     }
 }
@@ -716,57 +834,96 @@ fn circle_handle_fixed_qualification_skips_variable_matches() {
             _ => unreachable!(),
         }
         let relation = crate::records::FeatureInputRelationInstance {
-            id: "relation".into(), parent: "lane".into(), ordinal: 0, offset: 20,
+            id: "relation".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 20,
             family: FeatureInputRelationFamily::CircleDiameter,
-            class_ref: "class".into(), feature_ref: "sketch".into(),
+            class_ref: "class".into(),
+            feature_ref: "sketch".into(),
             scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-                vec![first.id.clone()], None, Some(first.id.clone()),
-            ).unwrap(),
+                vec![first.id.clone()],
+                None,
+                Some(first.id.clone()),
+            )
+            .unwrap(),
             operands: first.operands.clone(),
         };
         let input = lane(classes, vec![first, display, driving]);
-        for operation in ["compare SLDPRT circle features", "compare SLDPRT relation scalar references", "index SLDPRT relation records"] {
+        for operation in [
+            "compare SLDPRT circle features",
+            "compare SLDPRT relation scalar references",
+            "index SLDPRT relation records",
+        ] {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = u64::MAX;
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-            assert!(circle_dimension_handle_driver(&ctx, &relation, &input).unwrap().is_none());
+            let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                operation,
+                None,
+            );
+            assert!(circle_dimension_handle_driver(&ctx, &relation, &input)
+                .unwrap()
+                .is_none());
             assert_eq!(ctx.resource_refusal(), None);
-            let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, operation)
-            else { panic!("ineligible circle handle pair must leave variable probe armed"); };
+            let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, operation) else {
+                panic!("ineligible circle handle pair must leave variable probe armed");
+            };
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
             assert_eq!(limit.operation, operation);
             assert_eq!(limit.additional, 1);
             assert_eq!(ctx.resource_refusal(), Some(limit));
             assert!(matches!(ctx.charge_work(0, "after unused handle match"),
                 Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
             drop(probe);
         }
     }
 }
 
-fn unordered_handle_fixture() -> (FeatureInputLane, crate::records::FeatureInputRelationInstance) {
+fn unordered_handle_fixture() -> (
+    FeatureInputLane,
+    crate::records::FeatureInputRelationInstance,
+) {
     let first = circle_scalar(20, "name", FeatureInputScalarRole::Display, None);
     let display = circle_scalar(40, "name", FeatureInputScalarRole::Display, None);
     let driving = circle_scalar(50, "name", FeatureInputScalarRole::Driving, None);
     let relation = crate::records::FeatureInputRelationInstance {
-        id: "relation".into(), parent: "lane".into(), ordinal: 0, offset: 20,
+        id: "relation".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 20,
         family: FeatureInputRelationFamily::CircleDiameter,
-        class_ref: "class".into(), feature_ref: "sketch".into(),
+        class_ref: "class".into(),
+        feature_ref: "sketch".into(),
         scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-            vec![first.id.clone()], None, Some(first.id.clone()),
-        ).unwrap(),
+            vec![first.id.clone()],
+            None,
+            Some(first.id.clone()),
+        )
+        .unwrap(),
         operands: first.operands.clone(),
     };
     let mut input = lane(
-        vec![class(10, "sgCircleDim"), class(45, "sgEntHandle"), class(31, "sgEntHandle"), class(55, "sgEntHandle")],
+        vec![
+            class(10, "sgCircleDim"),
+            class(45, "sgEntHandle"),
+            class(31, "sgEntHandle"),
+            class(55, "sgEntHandle"),
+        ],
         vec![first, display, driving],
     );
     input.names.push(FeatureInputName {
-        id: "name".into(), parent: "lane".into(), ordinal: 0, offset: 0,
-        object_id: None, value: "D1".into(),
+        id: "name".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 0,
+        object_id: None,
+        value: "D1".into(),
     });
     (input, relation)
 }
@@ -787,10 +944,14 @@ fn circle_handle_minimum_needs_no_offset_vector() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..64 {
-        let driver = circle_dimension_handle_driver(&ctx, &relation, &input).unwrap().unwrap();
+        let driver = circle_dimension_handle_driver(&ctx, &relation, &input)
+            .unwrap()
+            .unwrap();
         assert!(std::ptr::eq(driver, &input.scalars[2]));
         assert_eq!(driver.id, "scalar-50");
-        let released = ctx.reserve_scoped(MATERIALIZED, "released circle handle workspace").unwrap();
+        let released = ctx
+            .reserve_scoped(MATERIALIZED, "released circle handle workspace")
+            .unwrap();
         drop(released);
     }
     assert_eq!(ctx.resource_refusal(), None);
@@ -801,7 +962,10 @@ fn circle_handle_minimum_leaves_offset_operations_unexecuted() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let (input, relation) = unordered_handle_fixture();
-    for operation in ["collect SLDPRT circle handle classes", "sort SLDPRT circle handle classes"] {
+    for operation in [
+        "collect SLDPRT circle handle classes",
+        "sort SLDPRT circle handle classes",
+    ] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
         policy.limits.max_materialized_bytes = 195;
@@ -809,19 +973,30 @@ fn circle_handle_minimum_leaves_offset_operations_unexecuted() {
         policy.limits.max_collection_items = 4;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-        let driver = circle_dimension_handle_driver(&ctx, &relation, &input).unwrap().unwrap();
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            operation,
+            None,
+        );
+        let driver = circle_dimension_handle_driver(&ctx, &relation, &input)
+            .unwrap()
+            .unwrap();
         assert!(std::ptr::eq(driver, &input.scalars[2]));
         assert_eq!(ctx.resource_refusal(), None);
-        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, operation)
-        else { panic!("minimum fold must leave obsolete offset operation probe armed"); };
+        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, operation) else {
+            panic!("minimum fold must leave obsolete offset operation probe armed");
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, operation);
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after unused handle offset operation"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.charge_work(0, "after unused handle offset operation"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
         drop(probe);
     }
 }
@@ -846,16 +1021,23 @@ fn circle_handle_minimum_refuses_required_name_workspace() {
         }
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) = circle_dimension_handle_driver(&ctx, &relation, &input)
-        else { panic!("required name workspace must be admitted before allocation"); };
+        let Err(CodecError::ResourceLimit(limit)) =
+            circle_dimension_handle_driver(&ctx, &relation, &input)
+        else {
+            panic!("required name workspace must be admitted before allocation");
+        };
         assert_eq!(limit.dimension, dimension);
         assert_eq!(limit.operation, "index SLDPRT relation records");
         assert_eq!(limit.limit, cap);
         assert_eq!(limit.used, used);
         assert_eq!(limit.additional, additional);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after handle name workspace refusal"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.charge_work(0, "after handle name workspace refusal"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 }

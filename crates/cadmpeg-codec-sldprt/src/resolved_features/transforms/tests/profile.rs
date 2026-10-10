@@ -1090,10 +1090,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         .with_native_ref(Some("second".into())),
     ];
     assert_eq!(
-        crate::resolved_features::dimensions::extended_radial_circle_index(
-            &lane.native_payload,
-            0,
-        ),
+        crate::resolved_features::dimensions::extended_radial_circle_index(&lane.native_payload, 0,),
         Some(1)
     );
 

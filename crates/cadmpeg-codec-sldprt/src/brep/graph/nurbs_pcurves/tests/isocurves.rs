@@ -41,10 +41,16 @@ fn interior_linear_axis_rational_nurbs_isocurve_has_exact_pcurve() {
         Some(vec![1.0, 2.0, 1.0]),
     );
     let geometry =
-        match crate::brep::graph::nurbs_pcurves::nurbs_isocurve_pcurve(&ctx, &surface, &curve).expect("isocurve lanes pair") {
+        match crate::brep::graph::nurbs_pcurves::nurbs_isocurve_pcurve(&ctx, &surface, &curve)
+            .expect("isocurve lanes pair")
+        {
             crate::brep::graph::inverse::InverseResolution::Unique(geometry) => geometry,
-            crate::brep::graph::inverse::InverseResolution::NoMatch => panic!("interior isocurve did not match"),
-            crate::brep::graph::inverse::InverseResolution::Ambiguous => panic!("interior isocurve was ambiguous"),
+            crate::brep::graph::inverse::InverseResolution::NoMatch => {
+                panic!("interior isocurve did not match")
+            }
+            crate::brep::graph::inverse::InverseResolution::Ambiguous => {
+                panic!("interior isocurve was ambiguous")
+            }
         };
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected isoparametric line pcurve");
@@ -90,11 +96,16 @@ fn extended_nurbs_isocurve_clamps_the_carrier_before_matching() {
         ],
         None,
     );
-    let resolution = crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.2, 0.8])
-        .expect("isocurve lanes pair");
-    let crate::brep::graph::nurbs_pcurves::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
-        line_pcurve,
-    )) = resolution
+    let resolution = crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(
+        &ctx,
+        &surface,
+        &curve,
+        [0.2, 0.8],
+    )
+    .expect("isocurve lanes pair");
+    let crate::brep::graph::nurbs_pcurves::NurbsPcurveResolution::Exact(
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve),
+    ) = resolution
     else {
         panic!("extended isocurve was not certified");
     };
@@ -115,7 +126,10 @@ fn extended_nurbs_isocurve_clamps_the_carrier_before_matching() {
     )
     .expect("resource allocation did not fail")
     .expect("surface isocurve");
-    assert!(crate::brep::graph::nurbs_pcurves::nurbs_representation_matches(&ctx, &expected, &clamped).unwrap());
+    assert!(
+        crate::brep::graph::nurbs_pcurves::nurbs_representation_matches(&ctx, &expected, &clamped)
+            .unwrap()
+    );
 }
 
 #[test]
@@ -154,8 +168,13 @@ fn extended_quadratic_isocurve_preserves_the_inserted_homogeneous_segment() {
         ],
         None,
     );
-    let resolution = crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.1, 0.9])
-        .expect("isocurve lanes pair");
+    let resolution = crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(
+        &ctx,
+        &surface,
+        &curve,
+        [0.1, 0.9],
+    )
+    .expect("isocurve lanes pair");
     assert!(
         matches!(resolution, crate::brep::graph::nurbs_pcurves::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
                         line_pcurve,
@@ -179,7 +198,10 @@ fn extended_quadratic_isocurve_preserves_the_inserted_homogeneous_segment() {
     )
     .expect("resource allocation did not fail")
     .expect("quadratic surface isocurve");
-    assert!(crate::brep::graph::nurbs_pcurves::nurbs_representation_matches(&ctx, &expected, &clamped).unwrap());
+    assert!(
+        crate::brep::graph::nurbs_pcurves::nurbs_representation_matches(&ctx, &expected, &clamped)
+            .unwrap()
+    );
 }
 
 #[test]
@@ -215,8 +237,13 @@ fn extended_rational_isocurve_compares_weights_after_homogeneous_clamping() {
         ],
         Some(vec![0.8, 1.4]),
     );
-    let resolution = crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.2, 0.8])
-        .expect("isocurve lanes pair");
+    let resolution = crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(
+        &ctx,
+        &surface,
+        &curve,
+        [0.2, 0.8],
+    )
+    .expect("isocurve lanes pair");
     assert!(
         matches!(resolution, crate::brep::graph::nurbs_pcurves::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
                         line_pcurve,
@@ -240,7 +267,10 @@ fn extended_rational_isocurve_compares_weights_after_homogeneous_clamping() {
     )
     .expect("resource allocation did not fail")
     .expect("rational surface isocurve");
-    assert!(crate::brep::graph::nurbs_pcurves::nurbs_representation_matches(&ctx, &expected, &clamped).unwrap());
+    assert!(
+        crate::brep::graph::nurbs_pcurves::nurbs_representation_matches(&ctx, &expected, &clamped)
+            .unwrap()
+    );
 }
 
 #[test]
@@ -278,8 +308,13 @@ fn degree_one_nurbs_cache_pcurve_keeps_measured_chordal_error() {
         ],
         None,
     );
-    let resolution = crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.0, 1.0])
-        .expect("isocurve lanes pair");
+    let resolution = crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(
+        &ctx,
+        &surface,
+        &curve,
+        [0.0, 1.0],
+    )
+    .expect("isocurve lanes pair");
     let crate::brep::graph::nurbs_pcurves::NurbsPcurveResolution::Cache {
         geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs },
         fit_tolerance,
@@ -330,9 +365,13 @@ fn off_surface_nurbs_edge_is_classified_before_cache_inversion() {
         None,
     );
     assert!(matches!(
-        crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.0, 1.0])
-            .expect("isocurve lanes pair"),
+        crate::brep::graph::nurbs_pcurves::derive_nurbs_edge_pcurve(
+            &ctx,
+            &surface,
+            &curve,
+            [0.0, 1.0]
+        )
+        .expect("isocurve lanes pair"),
         crate::brep::graph::nurbs_pcurves::NurbsPcurveResolution::OffSurface
     ));
 }
-

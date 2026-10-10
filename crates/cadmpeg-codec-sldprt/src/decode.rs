@@ -578,18 +578,20 @@ fn append_design_losses_with(
     }
     let _configuration_source_counts_storage;
     let configuration_source_counts;
-    (configuration_source_counts, _configuration_source_counts_storage) = ctx
-        .with_scoped_storage("SLDPRT configuration_source_counts workspace", || {
-            count_keys(
-                ctx,
-                ctx.admit_iter(
-                    &ir.model.configurations,
-                    "count SLDPRT configuration source indices",
-                )?
-                .filter_map(|configuration| configuration.source_index),
+    (
+        configuration_source_counts,
+        _configuration_source_counts_storage,
+    ) = ctx.with_scoped_storage("SLDPRT configuration_source_counts workspace", || {
+        count_keys(
+            ctx,
+            ctx.admit_iter(
+                &ir.model.configurations,
                 "count SLDPRT configuration source indices",
-            )
-        })?;
+            )?
+            .filter_map(|configuration| configuration.source_index),
+            "count SLDPRT configuration source indices",
+        )
+    })?;
     let ambiguous_configuration_sources = ctx
         .admit_iter(
             &configuration_source_counts,
@@ -613,30 +615,34 @@ fn append_design_losses_with(
         .count();
     let _configuration_ordinal_counts_storage;
     let configuration_ordinal_counts;
-    (configuration_ordinal_counts, _configuration_ordinal_counts_storage) = ctx
-        .with_scoped_storage("SLDPRT configuration_ordinal_counts workspace", || {
-            count_keys(
-                ctx,
-                ctx.admit_iter(
-                    &ir.model.configurations,
-                    "count SLDPRT configuration ordinals",
-                )?
-                .map(|configuration| configuration.ordinal),
+    (
+        configuration_ordinal_counts,
+        _configuration_ordinal_counts_storage,
+    ) = ctx.with_scoped_storage("SLDPRT configuration_ordinal_counts workspace", || {
+        count_keys(
+            ctx,
+            ctx.admit_iter(
+                &ir.model.configurations,
                 "count SLDPRT configuration ordinals",
-            )
-        })?;
+            )?
+            .map(|configuration| configuration.ordinal),
+            "count SLDPRT configuration ordinals",
+        )
+    })?;
     let _configuration_name_counts_storage;
     let configuration_name_counts;
-    (configuration_name_counts, _configuration_name_counts_storage) =
-        ctx.with_scoped_storage("SLDPRT configuration_name_counts workspace", || {
-            count_keys(
-                ctx,
-                ctx.admit_iter(&ir.model.configurations, "count SLDPRT configuration names")?
-                    .filter_map(|configuration| configuration.name.as_deref())
-                    .filter(|name| !name.is_empty()),
-                "count SLDPRT configuration names",
-            )
-        })?;
+    (
+        configuration_name_counts,
+        _configuration_name_counts_storage,
+    ) = ctx.with_scoped_storage("SLDPRT configuration_name_counts workspace", || {
+        count_keys(
+            ctx,
+            ctx.admit_iter(&ir.model.configurations, "count SLDPRT configuration names")?
+                .filter_map(|configuration| configuration.name.as_deref())
+                .filter(|name| !name.is_empty()),
+            "count SLDPRT configuration names",
+        )
+    })?;
     let ambiguous_configuration_names = ctx
         .admit_iter(
             &configuration_name_counts,
@@ -3565,10 +3571,7 @@ fn build_geometry_ir(
         face_producers_storage.with_storage(|| {
             ctx.push_vec(
                 &mut (face_producers),
-                (
-                    target.as_str(),
-                    identity.feature_source_id.value(),
-                ),
+                (target.as_str(), identity.feature_source_id.value()),
                 "collect SLDPRT face producers",
             )
         })?;
@@ -3964,15 +3967,17 @@ fn build_geometry_ir(
     }
     let _feature_appearance_sources_storage;
     let feature_appearance_sources;
-    (feature_appearance_sources, _feature_appearance_sources_storage) = ctx
-        .with_scoped_storage("SLDPRT feature_appearance_sources workspace", || {
-            ctx.collect_btree_set(
-                crate::appearance::feature_assignments(ctx, scan)?
-                    .into_iter()
-                    .map(|assignment| assignment.feature_source_id),
-                "index SLDPRT feature appearance sources",
-            )
-        })?;
+    (
+        feature_appearance_sources,
+        _feature_appearance_sources_storage,
+    ) = ctx.with_scoped_storage("SLDPRT feature_appearance_sources workspace", || {
+        ctx.collect_btree_set(
+            crate::appearance::feature_assignments(ctx, scan)?
+                .into_iter()
+                .map(|assignment| assignment.feature_source_id),
+            "index SLDPRT feature appearance sources",
+        )
+    })?;
     let mut matched_storage =
         ctx.reserve_scoped(0, "SLDPRT matched appearance source workspace")?;
     let mut conflict_storage = ctx.reserve_scoped(0, "SLDPRT display conflict workspace")?;
@@ -4351,9 +4356,7 @@ fn assign_native_configuration_indices(
             }
         }
     }
-    for ((history_index, record_index), source_index) in
-        ctx.admit_iter(assignments, OPERATION)?
-    {
+    for ((history_index, record_index), source_index) in ctx.admit_iter(assignments, OPERATION)? {
         if let Some(record) = native
             .feature_histories
             .get_mut(history_index)

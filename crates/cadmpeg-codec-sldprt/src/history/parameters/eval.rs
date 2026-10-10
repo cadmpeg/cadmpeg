@@ -313,20 +313,23 @@ impl<'a, 'aliases, 'ctx, 'arena> ParameterExpressionParser<'a, 'aliases, 'ctx, '
                     self.ctx
                         .get_hash_map(values, id, "look up SLDPRT hash key")?
                 }
-                ParameterValues::Validation {
-                    excluded,
-                    ..
-                }
+                ParameterValues::Validation { excluded, .. }
                 | ParameterValues::LazyValidation { excluded, .. }
                     if self
                         .ctx
-                        .equal(id, *excluded, "check SLDPRT parameter evaluation")? => None,
+                        .equal(id, *excluded, "check SLDPRT parameter evaluation")? =>
+                {
+                    None
+                }
                 ParameterValues::Validation {
                     values,
                     configuration,
                     ..
                 } => super::configuration_parameter_value(self.ctx, *configuration, id, || {
-                    Ok(self.ctx.get_hash_map(values, &id, "check SLDPRT parameter evaluation")?.copied())
+                    Ok(self
+                        .ctx
+                        .get_hash_map(values, &id, "check SLDPRT parameter evaluation")?
+                        .copied())
                 })?,
                 ParameterValues::LazyValidation {
                     parameters,
@@ -338,10 +341,15 @@ impl<'a, 'aliases, 'ctx, 'arena> ParameterExpressionParser<'a, 'aliases, 'ctx, '
                     if values.is_none() {
                         *values = Some(super::parameter_value_index(self.ctx, parameters)?);
                     }
-                    Ok(values.as_ref().map(|(values, _storage)| {
-                        self.ctx.get_hash_map(values, &id, "check SLDPRT parameter evaluation")
-                            .map(|value| value.copied())
-                    }).transpose()?.flatten())
+                    Ok(values
+                        .as_ref()
+                        .map(|(values, _storage)| {
+                            self.ctx
+                                .get_hash_map(values, &id, "check SLDPRT parameter evaluation")
+                                .map(|value| value.copied())
+                        })
+                        .transpose()?
+                        .flatten())
                 })?,
                 ParameterValues::Indexed {
                     parameters,

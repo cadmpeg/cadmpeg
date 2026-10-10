@@ -19,7 +19,10 @@ fn profile_scratch_bytes() -> u64 {
     // Closed-curve indexes: four curve/frontier slots, one four-bucket
     // incidence table, two four-slot incidence groups, and exact usage arrays.
     let incidence = 4 * std::mem::size_of::<(&str, Vec<usize>)>()
-        + std::mem::align_of::<(&str, Vec<usize>)>().max(16) - 1 + 4 + 16;
+        + std::mem::align_of::<(&str, Vec<usize>)>().max(16)
+        - 1
+        + 4
+        + 16;
     let indexes = 4 * std::mem::size_of::<usize>()
         + incidence
         + 2 * 4 * std::mem::size_of::<usize>()
@@ -53,7 +56,10 @@ fn closed_profile_publication_retains_only_the_intact_profile() {
     // The full scratch allowance is available while the returned profile
     // remains live. Its vector slots and identity bytes stay retained.
     let scratch = ctx
-        .reserve_scoped(policy.limits.max_materialized_bytes, "reuse closed profile scratch")
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "reuse closed profile scratch",
+        )
         .unwrap();
     drop(scratch);
     let error = ctx
@@ -89,7 +95,9 @@ fn closed_profile_publication_preserves_original_sticky_retained_refusal() {
     assert_eq!(limit.used, shell);
     assert_eq!(limit.additional, retained - shell);
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    let replay = ctx.charge_work(0, "probe refused profile session").unwrap_err();
+    let replay = ctx
+        .charge_work(0, "probe refused profile session")
+        .unwrap_err();
     let CodecError::ResourceLimit(replay) = replay else {
         panic!("refused session must replay its original refusal")
     };
@@ -116,7 +124,9 @@ fn closed_profile_publication_preserves_original_sticky_scratch_refusal() {
     assert_eq!(limit.used, scratch - copied_identity);
     assert_eq!(limit.additional, copied_identity);
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    let replay = ctx.charge_work(0, "probe refused scratch session").unwrap_err();
+    let replay = ctx
+        .charge_work(0, "probe refused scratch session")
+        .unwrap_err();
     let CodecError::ResourceLimit(replay) = replay else {
         panic!("refused session must replay its original refusal")
     };

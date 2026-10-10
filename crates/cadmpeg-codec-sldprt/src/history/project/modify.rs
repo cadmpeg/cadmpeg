@@ -55,9 +55,8 @@ fn variable_radius_points(
             continue;
         };
         if !ctx.contains_key_btree_map(&positions, &index, COLLECT)? {
-            positions_storage.with_storage(|| {
-                ctx.insert_btree_map(&mut positions, index, value, COLLECT)
-            })?;
+            positions_storage
+                .with_storage(|| ctx.insert_btree_map(&mut positions, index, value, COLLECT))?;
         }
     }
     let mut points = Vec::new();
@@ -179,9 +178,9 @@ pub(super) fn project_fillet(
                     RadiusSpec::Unresolved { form: None }
                 }
             }
-            Some(points) => {
-                RadiusSpec::Variable { points: storage.commit_value(points)? }
-            }
+            Some(points) => RadiusSpec::Variable {
+                points: storage.commit_value(points)?,
+            },
         }
     };
     Ok(FeatureDefinition::Operation(FeatureOperation::Fillet {

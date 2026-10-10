@@ -66,7 +66,8 @@ fn preserved_parameter_does_not_allocate_an_unused_scalar_expression() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
         enrich_history_parameters(&ctx, &mut histories, std::slice::from_ref(&lane), false)
             .expect("preserving an existing parameter creates no retained expression or key");
         assert_eq!(histories, expected);

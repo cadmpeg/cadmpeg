@@ -20,15 +20,30 @@ impl<'parameters, 'ctx> ConfigurationParameterOverlay<'parameters, 'ctx> {
     ) -> Result<Self, CodecError> {
         const OPERATION: &str = "overlay SLDPRT configuration parameter values";
         let storage = ctx.reserve_scoped(0, OPERATION)?;
-        let mut overlay = Self { parameters, saved_values: Vec::new(), storage };
-        for (index, parameter) in ctx.admit_iter(&mut *overlay.parameters, OPERATION)?.enumerate() {
-            let Some(value) = ctx.get_btree_map(values, &parameter.id, "look up SLDPRT ordered key")? else {
+        let mut overlay = Self {
+            parameters,
+            saved_values: Vec::new(),
+            storage,
+        };
+        for (index, parameter) in ctx
+            .admit_iter(&mut *overlay.parameters, OPERATION)?
+            .enumerate()
+        {
+            let Some(value) =
+                ctx.get_btree_map(values, &parameter.id, "look up SLDPRT ordered key")?
+            else {
                 continue;
             };
-            let copied = overlay.storage.with_storage(|| value.try_clone_for_decode(ctx, OPERATION))?;
-            overlay.storage.with_storage(|| ctx.reserve_vec(&mut overlay.saved_values, 1, OPERATION))?;
+            let copied = overlay
+                .storage
+                .with_storage(|| value.try_clone_for_decode(ctx, OPERATION))?;
+            overlay
+                .storage
+                .with_storage(|| ctx.reserve_vec(&mut overlay.saved_values, 1, OPERATION))?;
             ctx.charge_work(1, "restore SLDPRT configuration parameter values")?;
-            overlay.saved_values.push((index, parameter.value.replace(copied)));
+            overlay
+                .saved_values
+                .push((index, parameter.value.replace(copied)));
         }
         Ok(overlay)
     }

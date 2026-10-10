@@ -343,11 +343,16 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
             operation,
             None,
         );
-        let no_sequences = TopologyIdentityIndex::from_model(
-            &probe_ctx, topology, &[], &[], &[],
-        ).expect("primary identities do not need attribute joins");
-        assert!(no_sequences.resolve(&probe_ctx, "schema:22").unwrap().is_none());
-        assert!(no_sequences.resolve(&probe_ctx, "schema:11").unwrap().is_some());
+        let no_sequences = TopologyIdentityIndex::from_model(&probe_ctx, topology, &[], &[], &[])
+            .expect("primary identities do not need attribute joins");
+        assert!(no_sequences
+            .resolve(&probe_ctx, "schema:22")
+            .unwrap()
+            .is_none());
+        assert!(no_sequences
+            .resolve(&probe_ctx, "schema:11")
+            .unwrap()
+            .is_some());
         drop((no_sequences, skipped_probe));
         assert!(probe_ctx.resource_refusal().is_none());
 
@@ -357,7 +362,11 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
             None,
         );
         let result = TopologyIdentityIndex::from_model(
-            &probe_ctx, topology, &[(222, 22)], &[(333, 33)], &[(444, 44)],
+            &probe_ctx,
+            topology,
+            &[(222, 22)],
+            &[(333, 33)],
+            &[(444, 44)],
         );
         drop(selected_probe);
         assert!(matches!(result, Err(CodecError::ResourceLimit(ref limit))

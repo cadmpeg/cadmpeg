@@ -420,15 +420,14 @@ pub(super) fn project_hole(
     features_by_source: &BTreeMap<crate::records::FeatureSource, &Feature>,
     records: &RecordsById<'_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some((shape, profile)) = hole_shape_and_profile(ctx, feature, |key| {
-        match key {
-            HoleProfileKey::Source(source) => Ok(ctx
-                .get_btree_map(features_by_source, &source, "look up SLDPRT feature source")?
-                .copied()),
-            HoleProfileKey::Record(id) => Ok(ctx
-                .get_hash_map(records, id, "look up SLDPRT hole profile record")?
-                .copied().flatten()),
-        }
+    let Some((shape, profile)) = hole_shape_and_profile(ctx, feature, |key| match key {
+        HoleProfileKey::Source(source) => Ok(ctx
+            .get_btree_map(features_by_source, &source, "look up SLDPRT feature source")?
+            .copied()),
+        HoleProfileKey::Record(id) => Ok(ctx
+            .get_hash_map(records, id, "look up SLDPRT hole profile record")?
+            .copied()
+            .flatten()),
     })?
     else {
         return Ok(None);
@@ -607,8 +606,7 @@ pub(crate) fn threaded_hole_major_diameter<'f>(
     if classify(feature) != Some(FeatureClass::Hole) {
         return Ok(None);
     }
-    let Some((shape, _)) = hole_shape_and_profile(ctx, feature, lookup)?
-    else {
+    let Some((shape, _)) = hole_shape_and_profile(ctx, feature, lookup)? else {
         return Ok(None);
     };
     let HoleConstruction::NativeThread { major_diameter, .. } = shape.construction() else {

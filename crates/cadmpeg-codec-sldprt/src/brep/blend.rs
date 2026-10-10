@@ -162,12 +162,18 @@ pub(super) fn scan(
     use super::index::publication::FixedSink;
     let mut blends = BTreeMap::new();
     let mut pairs = BTreeMap::new();
-    scan_into(ctx, bytes, &mut FixedSink::Retained(&mut blends), &mut FixedSink::Retained(&mut pairs))?;
+    scan_into(
+        ctx,
+        bytes,
+        &mut FixedSink::Retained(&mut blends),
+        &mut FixedSink::Retained(&mut pairs),
+    )?;
     Ok(BlendCarriers { blends, pairs })
 }
 
 pub(in crate::brep) fn scan_into(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8],
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
     blends: &mut super::index::publication::FixedSink<'_, '_, BlendCarrier>,
     pairs: &mut super::index::publication::FixedSink<'_, '_, SupportPairCarrier>,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -183,10 +189,15 @@ pub(in crate::brep) fn scan_into(
             && raw.values[0].abs() <= f64::EPSILON
             && raw.values[1].abs() <= f64::EPSILON
         {
-            pairs.keep_first(ctx, raw.attr, SupportPairCarrier {
-                supports: [raw.references[0], raw.references[1]],
-                intersection: raw.references[2],
-            }, "index SLDPRT blend support pairs")?;
+            pairs.keep_first(
+                ctx,
+                raw.attr,
+                SupportPairCarrier {
+                    supports: [raw.references[0], raw.references[1]],
+                    intersection: raw.references[2],
+                },
+                "index SLDPRT blend support pairs",
+            )?;
         }
     }
     Ok(())

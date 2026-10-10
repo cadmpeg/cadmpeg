@@ -1,36 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::annotations::AnnotationBuilder;
+use crate::brep::graph::pcurves::derive_pcurves;
 use crate::brep::graph::Brep;
+use cadmpeg_ir::annotations::AnnotationBuilder;
+use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::geometry::analytic::CircleCurve;
-use cadmpeg_ir::topology::Coedge;
-use cadmpeg_ir::ids::CoedgeId;
+use cadmpeg_ir::geometry::analytic::SphereSurface;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::Surface;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::ids::CoedgeId;
 use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::ids::EdgeId;
+use cadmpeg_ir::ids::FaceId;
+use cadmpeg_ir::ids::LoopId;
+use cadmpeg_ir::ids::ShellId;
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::ids::VertexId;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::topology::Coedge;
 use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::topology::EdgeCarrier;
-use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::topology::Face;
-use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::topology::FaceLoops;
 use cadmpeg_ir::topology::Loop;
 use cadmpeg_ir::topology::LoopBoundary;
-use cadmpeg_ir::ids::LoopId;
 use cadmpeg_ir::topology::LoopRing;
-use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Sense;
-use cadmpeg_ir::ids::ShellId;
-use cadmpeg_ir::geometry::SolvedCurveGeometry;
-use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
-use cadmpeg_ir::geometry::analytic::SphereSurface;
-use cadmpeg_ir::annotations::StreamHandle;
-use cadmpeg_ir::geometry::Surface;
-use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::ids::SurfaceId;
-use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::ids::VertexId;
-use crate::brep::graph::pcurves::derive_pcurves;
 
 fn sphere_fixture(center: Point3, axis: Vector3, reference: Vector3) -> Brep {
     let mut out = Brep::default();

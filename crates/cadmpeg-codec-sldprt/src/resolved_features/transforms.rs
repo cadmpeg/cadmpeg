@@ -358,25 +358,29 @@ pub(super) fn dimensioned_circle_surface_transforms(
     let candidates = compatible_marker_transform_candidates(ctx, &compatible)?;
     let mut result = Vec::new();
     for transform in ctx.admit_iter(candidates, OPERATION)? {
-        let complete = ctx.with_scoped_storage(OPERATION, || {
-            let mut used = HashSet::new();
-            ctx.all_by(
-                circles,
-                |(center, radius)| {
-                    let Some(center) = transform.apply(*center) else {
-                        return Ok(false);
-                    };
-                    let hit = match ctx.get_btree_map(&targets_by_radius, radius, OPERATION)? {
-                        Some(targets) => {
-                            ctx.contains_btree_set(targets, &GridPoint::from(center), OPERATION)?
-                        }
-                        None => false,
-                    };
-                    Ok(hit && ctx.insert_hash_set(&mut used, (*radius, center), OPERATION)?)
-                },
-                OPERATION,
-            )
-        })?.0;
+        let complete = ctx
+            .with_scoped_storage(OPERATION, || {
+                let mut used = HashSet::new();
+                ctx.all_by(
+                    circles,
+                    |(center, radius)| {
+                        let Some(center) = transform.apply(*center) else {
+                            return Ok(false);
+                        };
+                        let hit = match ctx.get_btree_map(&targets_by_radius, radius, OPERATION)? {
+                            Some(targets) => ctx.contains_btree_set(
+                                targets,
+                                &GridPoint::from(center),
+                                OPERATION,
+                            )?,
+                            None => false,
+                        };
+                        Ok(hit && ctx.insert_hash_set(&mut used, (*radius, center), OPERATION)?)
+                    },
+                    OPERATION,
+                )
+            })?
+            .0;
         if complete {
             ctx.push_vec(&mut result, transform, OPERATION)?;
         }
@@ -1024,7 +1028,8 @@ pub(super) fn relation_marker_entities<'a, 'loci>(
     }
     let mut result = Vec::new();
     for (_, identity) in ctx.admit_iter(entities, OPERATION)? {
-        let identity = copy_sketch_entity_identity(ctx, identity, "resolve SLDPRT marker entities")?;
+        let identity =
+            copy_sketch_entity_identity(ctx, identity, "resolve SLDPRT marker entities")?;
         ctx.push_vec(&mut result, identity, OPERATION)?;
     }
     Ok(result)

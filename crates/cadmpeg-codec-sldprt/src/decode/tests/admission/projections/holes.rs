@@ -110,10 +110,7 @@ fn bore_backed_position_source() -> Vec<u8> {
     // The Position object has a horizontal relation and no geometry markers.
     // Marker projection leaves it unbound; bore projection supplies its frame
     // and point from the matched cylinder and plane.
-    resolved.extend(crate::test_support::history::resolved_features_payload_with_names(
-        &[4],
-        &[],
-    ));
+    resolved.extend(crate::test_support::history::resolved_features_payload_with_names(&[4], &[]));
 
     source.extend(make_block(
         0x45,
@@ -611,7 +608,10 @@ fn geometry_bore_backed_position_projection_binds_axis_and_sketch_point() {
     let entity = entities
         .next()
         .expect("the Hole axis projects to one Position point entity");
-    assert_eq!(entity.id().as_str(), format!("{}:entity:0", sketch_id.as_str()));
+    assert_eq!(
+        entity.id().as_str(),
+        format!("{}:entity:0", sketch_id.as_str())
+    );
     assert!(entities.next().is_none());
     let SketchGeometryDefinition::Point { position } = entity.geometry.definition() else {
         panic!("the projected hole location is a planar point");
