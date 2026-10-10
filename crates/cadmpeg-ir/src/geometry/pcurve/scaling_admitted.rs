@@ -54,7 +54,6 @@ fn scale_in_place(
     geometry: &mut PcurveGeometry,
     scales: [f64; 2],
 ) -> Result<(), ScalingError> {
-    ctx.charge_work(0, "IR pcurve coordinate scaling work")?;
     let [u_scale, v_scale] = scales;
     let scale = |point: Point2| Point2::new(point.u * u_scale, point.v * v_scale);
     let isotropic = u_scale == v_scale;

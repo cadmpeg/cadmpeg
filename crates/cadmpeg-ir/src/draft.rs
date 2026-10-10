@@ -121,7 +121,6 @@ impl ModelCheckpoint {
 
     /// Compare captured state after admitting the parent-table comparisons.
     pub fn same_state(&self, other: &Self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
-        ctx.charge_work(0, "compare model checkpoint lengths")?;
         if self.lengths != other.lengths {
             return Ok(false);
         }
@@ -827,7 +826,6 @@ fn committed_identity_contains(
     identity: &str,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    ctx.charge_work(0, "committed identity lookup")?;
     if identities.is_empty() {
         return Ok(false);
     }

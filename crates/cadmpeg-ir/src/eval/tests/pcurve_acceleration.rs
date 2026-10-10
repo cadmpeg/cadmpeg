@@ -81,7 +81,7 @@ fn nested_offset_admits_only_actual_carrier_frames_and_preserves_refusal() {
                 assert_eq!(first.dimension, ResourceDimension::RecursionDepth);
                 assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
                 assert_eq!(first.operation, "geometry evaluation nesting");
-                assert_eq!(pcurve_tangent(&ctx, &curve, f64::NAN), Err(EvaluationFailure::ResourceLimit(first)));
+
                 assert_eq!(ctx.resource_refusal(), Some(first));
                 assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
             }

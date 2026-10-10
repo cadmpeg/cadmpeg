@@ -60,7 +60,6 @@ pub(super) fn geometry_equal(
     left: &SketchGeometry,
     right: &SketchGeometry,
 ) -> Result<bool, CodecError> {
-    ctx.charge_work(0, "compare sketch geometry")?;
     match (left.definition(), right.definition()) {
         (
             SketchGeometryDefinition::Nurbs { curve: left },

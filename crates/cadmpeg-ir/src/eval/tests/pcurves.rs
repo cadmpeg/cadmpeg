@@ -592,10 +592,6 @@ fn pcurve_tangent_preserves_each_session_refusal() {
             assert_eq!((original.limit, original.used), (0, 0));
             assert!(original.additional > 0);
             assert_eq!(ctx.resource_refusal(), Some(original));
-            assert_eq!(
-                pcurve_tangent(ctx, &pcurve, f64::NAN),
-                Err(EvaluationFailure::ResourceLimit(original))
-            );
         });
     }
     let mut policy = DecodePolicy::service();

@@ -47,8 +47,6 @@ impl<'ctx, 'arena, T: Ord> PriorityQueue<'ctx, 'arena, T> {
 
     pub(super) fn pop(&mut self) -> Result<Option<T>, ResourceLimit> {
         if self.values.is_empty() {
-            self.context
-                .charge_work_limit(0, "IR priority queue empty")?;
             return Ok(None);
         }
         self.context
@@ -71,8 +69,9 @@ impl<'ctx, 'arena, T: Ord> PriorityQueue<'ctx, 'arena, T> {
     }
 
     pub(super) fn peek(&self) -> Result<Option<&T>, ResourceLimit> {
-        self.context
-            .charge_work_limit(u64::from(!self.values.is_empty()), "IR priority queue peek")?;
+        if !self.values.is_empty() {
+            self.context.charge_work_limit(1, "IR priority queue peek")?;
+        }
         Ok(self.values.first())
     }
 

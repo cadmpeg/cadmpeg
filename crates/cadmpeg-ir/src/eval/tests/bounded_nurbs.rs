@@ -140,10 +140,9 @@ fn parameter_interval_scan_admits_only_visited_pairs() {
 }
 
 #[test]
-fn boundary_scans_stop_at_invalid_witness_and_preserve_fused_empty_refusals() {
+fn boundary_scans_stop_at_invalid_witness() {
     use crate::scalar::FiniteReal;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
     use std::cell::Cell;
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
@@ -165,27 +164,7 @@ fn boundary_scans_stop_at_invalid_witness_and_preserve_fused_empty_refusals() {
         super::super::BoundaryWitness::Invalid
     );
     assert_eq!(calls.get(), 1);
-    let original = ctx
-        .charge_work_limit(1, "original empty boundary refusal")
-        .unwrap_err();
-    assert_eq!(
-        super::super::nearest_boundary_witness(
-            &ctx,
-            &[],
-            FiniteReal::ZERO,
-            0.0,
-            |_| -> Result<Option<f64>, _> { panic!("empty boundary has no evaluation") }
-        )
-        .unwrap_err(),
-        original
-    );
-    assert_eq!(
-        super::super::parameter_interval_containing(&ctx, &[], FiniteReal::ZERO).unwrap_err(),
-        original
-    );
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-    );
+    ctx.finish_session().unwrap();
 }
 
 #[test]
@@ -506,8 +485,8 @@ fn pcurve_containment_admits_only_the_point_basis() {
                 assert_eq!(limit.dimension, dimension);
                 assert_eq!(limit.operation, "IR B-spline basis");
                 assert_eq!(
-                    ctx.charge_work_limit(0, "observe containment refusal"),
-                    Err(limit)
+                    ctx.resource_refusal(),
+                    Some(limit)
                 );
                 assert!(
                     matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)

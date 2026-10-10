@@ -428,7 +428,6 @@ impl LossKind {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        ctx.charge_work(0, operation)?;
         match self {
             Self::Shared { kind } => Ok(Self::Shared { kind: *kind }),
             Self::Namespaced(kind) => Ok(Self::Namespaced(NamespacedLossKind {
@@ -583,7 +582,6 @@ impl LossNote {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        ctx.charge_work(0, operation)?;
         let message = ctx.copy_retained_text(&self.message, operation)?;
         Ok(Self {
             code: self.code.try_clone_for_decode(ctx, operation)?,

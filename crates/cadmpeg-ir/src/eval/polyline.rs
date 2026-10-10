@@ -238,7 +238,7 @@ mod tests {
             };
             assert_eq!(first.dimension, ResourceDimension::WorkUnits);
             assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
-            assert_eq!(ctx.charge_work_limit(0, "test scan completion"), Err(first));
+            assert_eq!(ctx.resource_refusal(), Some(first));
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
             );

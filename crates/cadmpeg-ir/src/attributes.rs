@@ -39,7 +39,6 @@ impl AttributeTarget {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        ctx.charge_work(0, operation)?;
         Ok(match self {
             Self::Document => Self::Document,
             Self::Body(id) => Self::Body(id.try_clone_for_decode(ctx, operation)?),

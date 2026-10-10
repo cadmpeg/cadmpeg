@@ -308,7 +308,9 @@ fn rational_surface_patches_with_budget<'ctx>(
     budget: &WorkBudget<'_>,
 ) -> Result<Option<SurfacePatches<'ctx>>, ResourceLimit> {
     if !budget.charge() {
-        ctx.charge_work_limit(0, "IR surface extraction completion")?;
+        if let Some(limit) = ctx.resource_refusal() {
+            return Err(limit);
+        }
         return Ok(None);
     }
     let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
@@ -493,7 +495,9 @@ fn rational_surface_residual_patches<'ctx>(
     };
     for patch in &mut patches.rows {
         if !budget.charge() {
-            ctx.charge_work_limit(0, "IR surface residual completion")?;
+            if let Some(limit) = ctx.resource_refusal() {
+                return Err(limit);
+            }
             return Ok(None);
         }
         for control in ctx.admit_iter(&mut patch.controls, "IR surface residual control")? {
@@ -796,7 +800,6 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
         }
         Ok(Some(bound))
     })();
-    ctx.charge_work(0, "IR surface segment completion")?;
     if budget.exhausted() {
         let limit = u64_from_index(budget.consumed());
         let requested = limit.checked_add(1).ok_or_else(|| {
@@ -813,7 +816,9 @@ fn rational_patch_distance_bounds_with_budget(
     budget: &WorkBudget<'_>,
 ) -> Result<Option<(f64, f64)>, ResourceLimit> {
     if !budget.charge() {
-        ctx.charge_work_limit(0, "IR surface distance bounds completion")?;
+        if let Some(limit) = ctx.resource_refusal() {
+            return Err(limit);
+        }
         return Ok(None);
     }
     let mut minimum = [f64::INFINITY; 3];
@@ -867,7 +872,9 @@ fn split_rational_surface_patch<'ctx>(
         (patch.v_degree, patch.u_degree + 1)
     };
     if !budget.charge() {
-        ctx.charge_work_limit(0, "IR surface split completion")?;
+        if let Some(limit) = ctx.resource_refusal() {
+            return Err(limit);
+        }
         return Ok(None);
     }
     let (_first_line_storage, mut first_lines) = {
@@ -1258,8 +1265,13 @@ fn complete_nurbs_surface_starts<'ctx>(
     let mut examined = 0usize;
     while let Some(entry) = queue.pop()? {
         examined += 1;
-        if examined > MAX_PATCHES || !budget.charge() {
-            ctx.charge_work_limit(0, "IR surface search completion")?;
+        if examined > MAX_PATCHES {
+            return Ok(None);
+        }
+        if !budget.charge() {
+            if let Some(limit) = ctx.resource_refusal() {
+                return Err(limit);
+            }
             return Ok(None);
         }
         let SurfacePatchQueueEntry {
@@ -1552,7 +1564,6 @@ pub fn nurbs_surface_closest_parameter_with_budget(
     budget: &WorkBudget<'_>,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
     let result = solve_nurbs_surface_parameter(ctx, surface, point, seed, None, budget)?;
-    ctx.charge_work_limit(0, "IR surface closest parameter completion")?;
     Ok(result.map(|(parameters, _)| parameters))
 }
 
@@ -1574,8 +1585,6 @@ pub fn nurbs_surface_parameter_near_point<'ctx, 'arena: 'ctx>(
     const MAX_ITERATIONS: usize = 24;
     const MAX_LINE_SEARCH_STEPS: usize = 12;
     let admission = admission.into();
-    admission.work(0, "IR surface inverse boundary")?;
-
     if !point.is_finite() {
         return Ok(None);
     }
@@ -1750,7 +1759,6 @@ pub fn nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
     let tolerance = tolerance.get();
     let result = solve_nurbs_surface_parameter(ctx, surface, point, seed, Some(tolerance), budget)?;
-    ctx.charge_work_limit(0, "IR surface tolerance parameter completion")?;
     let Some((parameters, distance)) = result else {
         return Ok(None);
     };
@@ -2412,7 +2420,6 @@ fn nearest_boundary_witness<F>(
 where
     F: FnMut(FiniteReal) -> Result<Option<f64>, ResourceLimit>,
 {
-    ctx.charge_work_limit(0, "IR curve inversion boundary witness scan")?;
     let mut previous_boundary = None;
     let mut nearest = None;
     let mut nearest_seed_distance = f64::INFINITY;
@@ -2448,7 +2455,6 @@ fn parameter_interval_containing(
     boundaries: &[FiniteReal],
     parameter: FiniteReal,
 ) -> Result<Option<ParameterInterval>, ResourceLimit> {
-    ctx.charge_work_limit(0, "IR curve inversion Newton interval scan")?;
     for pair in boundaries.windows(2) {
         ctx.charge_work_limit(1, "IR curve inversion Newton interval scan")?;
         if let Some(interval) = IncreasingParameterInterval::between(pair[0], pair[1])
@@ -2501,7 +2507,6 @@ pub fn nurbs_pcurve_uv(
     weights: Option<&[f64]>,
     t: f64,
 ) -> Result<FinitePoint2, EvaluationFailure<Point2>> {
-    ctx.charge_work_limit(0, "IR raw NURBS pcurve evaluation")?;
     let scratch = decode::Scratch::new(ctx);
     let result = FiniteReal::new(t)
         .ok_or(EvaluationFailure::NoValue)
@@ -2626,7 +2631,6 @@ fn nurbs_pcurve_differential(
     weights: Option<&[f64]>,
     t: f64,
 ) -> Result<PcurveDifferential, EvaluationFailure<Point2>> {
-    ctx.charge_work_limit(0, "IR raw NURBS pcurve evaluation")?;
     let scratch = decode::Scratch::new(ctx);
     let result = FiniteReal::new(t)
         .ok_or(EvaluationFailure::NoValue)
@@ -3314,9 +3318,6 @@ pub fn nurbs_surface_isocurve<'ctx, 'arena: 'ctx>(
 ) -> Result<Option<NurbsCurve>, ResourceLimit> {
     let scratch = decode::Scratch::new(admission);
     let result = (|| {
-        if scratch.work(0, "IR surface isoline evaluation").is_none() {
-            return Ok(None);
-        }
         let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
             return Ok(None);
         };
@@ -5995,7 +5996,6 @@ fn rolling_ball_jet_point_admitted(
     t: f64,
     s: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    admission.work(0, "rolling-ball jet boundary")?;
     let no_value = EvaluationFailure::NoValue;
     let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
     let ProceduralSurfaceDefinition::RollingBallJet(jet) = definition else {

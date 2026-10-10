@@ -45,10 +45,9 @@ macro_rules! clone_copy_for_decode {
         impl crate::features::decode_clone::CloneForDecode for $type {
             fn try_clone_for_decode(
                 &self,
-                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                operation: &'static str,
+                _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                _operation: &'static str,
             ) -> Result<Self, cadmpeg_core::CodecError> {
-                ctx.charge_work(0, operation)?;
                 Ok(*self)
             }
         }
@@ -98,7 +97,6 @@ macro_rules! clone_enum_for_decode {
                 ctx: &cadmpeg_core::decode::DecodeContext<'_>,
                 clone_operation: &'static str,
             ) -> Result<Self, cadmpeg_core::CodecError> {
-                ctx.charge_work(0, clone_operation)?;
                 match self {
                     $(Self::$variant $(($($tuple),*))? $({$($field),*})? => Ok(Self::$variant
                         $(($(crate::features::decode_clone::CloneForDecode::try_clone_for_decode($tuple, ctx, clone_operation)?),*))?
@@ -2003,7 +2001,6 @@ impl FeatureResultMembers {
         self,
         admission: &S,
     ) -> Result<Result<Self, FeatureResultMemberError>, S::Error> {
-        admission.work(0)?;
         if self.bodies.is_empty()
             && self.faces.is_empty()
             && self.edges.is_empty()
@@ -2573,7 +2570,6 @@ macro_rules! selection_operands {
                 $first: $selection,
                 $second: $selection,
             ) -> Result<Result<Self, &'static str>, S::Error> {
-                admission.work(0)?;
                 if !($arity)(&$first)
                     || selection_overlap::$overlap(admission, &$first, &$second)?
                 {
@@ -2738,7 +2734,6 @@ impl TreeChildren {
         children: Vec<FeatureId>,
         active_child: Option<FeatureId>,
     ) -> Result<Result<Self, &'static str>, S::Error> {
-        active_admission.work(0)?;
         if let Some(active) = &active_child {
             let mut present = false;
             for child in &children {
@@ -6434,7 +6429,6 @@ impl EdgeSelection {
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        ctx.charge_work_limit(0, "validate persistent selection reference")?;
         let edges = match edges.try_into() {
             Ok(members) => members,
             Err(error) => return Ok(Err(error)),
@@ -6512,7 +6506,6 @@ impl FaceSelection {
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        ctx.charge_work_limit(0, "validate persistent selection reference")?;
         let faces = match faces.try_into() {
             Ok(members) => members,
             Err(error) => return Ok(Err(error)),
@@ -6578,7 +6571,6 @@ impl SelectionReference {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
         const OPERATION: &str = "validate persistent selection reference";
-        ctx.charge_work_limit(0, OPERATION)?;
         Ok(NonBlankString::for_decode(ctx, value, OPERATION)?
             .map(Self)
             .ok_or(BodySelectionError::BlankNativeMember))
@@ -6811,7 +6803,6 @@ impl<T: Eq + std::hash::Hash> SelectionMembers<T> {
         admission: &S,
         value: Vec<T>,
     ) -> Result<Result<Self, BodySelectionError>, S::Error> {
-        admission.work(0)?;
         if value.is_empty() {
             return Ok(Err(BodySelectionError::Empty));
         }
@@ -6887,7 +6878,6 @@ impl NativeSelections {
         admission: &S,
         value: Vec<String>,
     ) -> Result<Result<Self, BodySelectionError>, S::Error> {
-        admission.work(0)?;
         if value.is_empty() {
             return Ok(Err(BodySelectionError::Empty));
         }
@@ -7073,7 +7063,6 @@ impl<B> BodyMembers<B> {
     where
         B: Eq + std::hash::Hash,
     {
-        admission.work(0)?;
         if rows.is_empty() {
             return Ok(Err(BodySelectionError::Empty));
         }
@@ -9182,7 +9171,6 @@ impl PlanarProfileRef {
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        ctx.charge_work_limit(0, "validate persistent selection reference")?;
         let curves = match curves.try_into() {
             Ok(members) => members,
             Err(error) => return Ok(Err(error)),
@@ -9325,7 +9313,6 @@ impl ThreePointSelection {
         admission: &S,
         points: Box<[VertexSelection; 3]>,
     ) -> Result<Result<Self, &'static str>, S::Error> {
-        admission.work(0)?;
         for (first, second) in [(0, 1), (0, 2), (1, 2)] {
             if selection_overlap::vertex_targets_equal(admission, &points[first], &points[second])?
             {
