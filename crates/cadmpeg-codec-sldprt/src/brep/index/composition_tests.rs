@@ -127,16 +127,16 @@ fn selected_curve(charts: Vec<Vec<u8>>, uv: bool) {
     assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 2.0, 2.0]);
     assert_eq!(curve.pole_count(), 2);
     assert_eq!(carrier.support_data.support_uv.is_some(), uv);
-    if let Some(lanes) = &carrier.support_data.support_uv {
+    if let Some([first, second]) = &carrier.support_data.support_uv {
         assert_eq!(
-            lanes[0],
+            *first,
             [
                 cadmpeg_ir::math::Point2::new(0.0, 1.0),
                 cadmpeg_ir::math::Point2::new(4.0, 5.0)
             ]
         );
         assert_eq!(
-            lanes[1],
+            *second,
             [
                 cadmpeg_ir::math::Point2::new(2.0, 3.0),
                 cadmpeg_ir::math::Point2::new(6.0, 7.0)

@@ -801,6 +801,15 @@ pub(super) enum SketchLocusRole {
 }
 
 impl SketchLocusRole {
+    pub(super) const fn ordinal(self) -> u8 {
+        match self {
+            Self::Entity => 0,
+            Self::Start => 1,
+            Self::End => 2,
+            Self::Center => 3,
+        }
+    }
+
     pub(super) const fn of_locus(locus: &SketchLocus) -> Self {
         match locus {
             SketchLocus::Entity(_) => Self::Entity,

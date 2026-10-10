@@ -166,7 +166,7 @@ fn curve_marker_offset_index_sorts_only_the_queried_group() {
         .collect();
     let roster: Vec<_> = unrelated.iter().collect();
     let index = CurveMarkers::new(&ctx, &roster).unwrap();
-    let _unrelated_sort_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+    let unrelated_sort_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         SORT,
         None,
@@ -187,7 +187,7 @@ fn curve_marker_offset_index_sorts_only_the_queried_group() {
     );
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    drop(_unrelated_sort_probe);
+    drop(unrelated_sort_probe);
 
     let curve = point("curve", 0, Some("feature"));
     let first = point("first", 8, Some("feature"));

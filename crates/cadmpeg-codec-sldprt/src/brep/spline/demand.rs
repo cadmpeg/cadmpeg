@@ -89,7 +89,7 @@ impl<'input, 'ctx, 'arena> Sources<'input, 'ctx, 'arena> {
         }
         let mut found = None;
         let mut starts = 0..bytes.len().checked_sub(29).map_or(0, |end| end);
-        while starts.len() != 0 {
+        while !starts.is_empty() {
             let Some(off) = ctx.next_charged(&mut starts, "scan Parasolid curve descriptors")?
             else {
                 break;
@@ -152,7 +152,7 @@ impl<'input, 'ctx, 'arena> Sources<'input, 'ctx, 'arena> {
         }
         let mut found = None;
         let mut starts = 0..bytes.len().checked_sub(1).map_or(0, |end| end);
-        while starts.len() != 0 {
+        while !starts.is_empty() {
             let Some(off) = ctx.next_charged(&mut starts, "scan Parasolid surface descriptors")?
             else {
                 break;
@@ -189,7 +189,7 @@ impl<'input, 'ctx, 'arena> Sources<'input, 'ctx, 'arena> {
             return Ok(());
         }
         let mut starts = 0..bytes.len().checked_sub(9).map_or(0, |end| end);
-        while starts.len() != 0 {
+        while !starts.is_empty() {
             let Some(off) = ctx.next_charged(&mut starts, "scan Parasolid spline arrays")? else {
                 break;
             };
@@ -273,8 +273,8 @@ impl<'input, 'ctx, 'arena> Sources<'input, 'ctx, 'arena> {
         let selected = exact_f64_array(ctx, self.bytes, &self.arrays, attr, count)?;
         let result = match selected {
             Some(ArrayCandidate::Borrowed(_)) => ControlValues::Framed,
-            Some(ArrayCandidate::Owned { values, _storage }) => {
-                ControlValues::Compact { values, _storage }
+            Some(ArrayCandidate::Owned { values, _storage: storage }) => {
+                ControlValues::Compact { values, _storage: storage }
             }
             None => ControlValues::Absent,
         };

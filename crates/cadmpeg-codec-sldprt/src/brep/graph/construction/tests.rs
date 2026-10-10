@@ -15,7 +15,7 @@ fn support_walk_releases_membership_without_retained_output() {
         assert!(super::support_is_acyclic(
             &ctx,
             42,
-            &crate::brep::index::view::CarrierView::Retained(&carriers)
+            crate::brep::index::view::CarrierView::Retained(&carriers)
         )
         .unwrap());
         drop(

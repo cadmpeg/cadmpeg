@@ -140,9 +140,9 @@ fn pcurve_supports_keep_only_the_output_vector_and_vertex_map_live() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &support_policy()).unwrap();
     let mut supports = PcurveSupports::new(&ctx, arenas(&out), &out.coedges).unwrap();
     let support = supports.coedges[0].as_ref().unwrap();
-    assert!(std::ptr::eq(support.surface, &out.surfaces[0]));
-    assert!(std::ptr::eq(support.edge, &out.edges[0]));
-    assert!(std::ptr::eq(support.curve, &out.curves[0]));
+    assert!(std::ptr::eq(support.surface, &raw const out.surfaces[0]));
+    assert!(std::ptr::eq(support.edge, &raw const out.edges[0]));
+    assert!(std::ptr::eq(support.curve, &raw const out.curves[0]));
     assert_eq!(
         supports
             .vertex_positions
@@ -335,8 +335,8 @@ fn planar_support_resolution_needs_no_vertex_map_storage() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let supports = PcurveSupports::new(&ctx, arenas(&out), &out.coedges).unwrap();
     let support = supports.coedges[0].as_ref().unwrap();
-    assert!(std::ptr::eq(support.surface, &out.surfaces[0]));
-    assert!(std::ptr::eq(support.curve, &out.curves[0]));
+    assert!(std::ptr::eq(support.surface, &raw const out.surfaces[0]));
+    assert!(std::ptr::eq(support.curve, &raw const out.curves[0]));
     drop(supports);
     drop(
         ctx.reserve_scoped(

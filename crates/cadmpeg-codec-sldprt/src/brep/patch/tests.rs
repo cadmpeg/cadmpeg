@@ -70,13 +70,14 @@ fn nonanalytic_selection_copies_no_geometry_and_releases_its_source_index() {
     let mut body = crate::test_support::parasolid::nurbs_curve_carrier(10, 11);
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy()).unwrap();
-    let patch = CompactCurvePatch::new(&ctx, &mut body, 10).unwrap();
-    assert!(matches!(patch.family(), Some(CompactCurveFamily::Other)));
-    drop(
-        ctx.reserve_scoped(SCRATCH_BYTES, "test expired NURBS patch source index")
-            .unwrap(),
-    );
-    drop(patch);
+    {
+        let patch = CompactCurvePatch::new(&ctx, &mut body, 10).unwrap();
+        assert!(matches!(patch.family(), Some(CompactCurveFamily::Other)));
+        drop(
+            ctx.reserve_scoped(SCRATCH_BYTES, "test expired NURBS patch source index")
+                .unwrap(),
+        );
+    }
     ctx.finish_session().unwrap();
 }
 

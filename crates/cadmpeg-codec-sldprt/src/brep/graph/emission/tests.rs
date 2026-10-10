@@ -31,7 +31,7 @@ fn ambiguous_face_owner_stats_survive_when_all_uses_are_withheld() {
     entity_facts.entity_count = 1;
     let decoded = crate::brep::graph::emission::decode_graph(
         &ctx,
-        &crate::brep::index::view::CarrierView::Retained(
+        crate::brep::index::view::CarrierView::Retained(
             &crate::brep::index::CarrierIndex::default(),
         ),
         &tables,

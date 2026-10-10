@@ -53,7 +53,7 @@ impl CarrierView<'_, '_> {
     }
 
     pub(in crate::brep) fn curve_attrs(
-        &self,
+        self,
         ctx: &DecodeContext<'_>,
     ) -> Result<BTreeSet<u16>, CodecError> {
         match self {
@@ -129,7 +129,7 @@ impl CarrierView<'_, '_> {
     /// All output slots and copied messages survive together; source messages
     /// retain their own live owners until the carrier index is destroyed.
     pub(in crate::brep) fn clone_lane_refusals(
-        &self,
+        self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
         const OPERATION: &str = "retain Parasolid carrier losses";

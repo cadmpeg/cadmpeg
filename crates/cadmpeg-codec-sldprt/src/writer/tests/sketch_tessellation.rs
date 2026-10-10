@@ -1009,7 +1009,7 @@ fn semantic_writer_borrows_sequential_tessellation_without_copy() {
             panic!("sequential mesh was copied");
         };
         assert_eq!(allocations, 0);
-        assert!(std::ptr::eq(borrowed, &mesh));
+        assert!(std::ptr::eq(borrowed, &raw const mesh));
         assert_eq!(borrowed.body, mesh.body);
         assert_eq!(borrowed.faces, mesh.faces);
         assert_eq!(borrowed.channels()[0].data(), [10, 11, 12]);

@@ -969,9 +969,10 @@ fn evaluate_parameter_expressions(
         }
     }
     while !ready.is_empty() {
-        let current_storage;
-        let current = std::mem::take(&mut ready);
-        current_storage = std::mem::replace(&mut ready_storage, ctx.reserve_scoped(0, OPERATION)?);
+        let (current, current_storage) = (
+            std::mem::take(&mut ready),
+            std::mem::replace(&mut ready_storage, ctx.reserve_scoped(0, OPERATION)?),
+        );
         for index in ctx.admit_iter(current, "evaluate SLDPRT parameter expressions")? {
             let parameter = &parameters[index];
             if parameter.value.is_some() {

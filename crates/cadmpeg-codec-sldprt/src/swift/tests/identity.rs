@@ -232,10 +232,10 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
     .expect("empty topology index carries its storage admission");
     let TopologyIdentityIndex {
         sequence_targets,
-        _storage,
+        _storage: storage,
         ..
     } = &mut index;
-    _storage
+    storage
         .with_storage(|| {
             TopologyIdentityIndex::insert_sequence_target(
                 &ctx,
@@ -667,7 +667,7 @@ fn swift_topology_index_refuses_materialized_limit() {
         "collect SWIFT primary topology targets",
         |cap| {
             Err::<(), _>(topology_index_limit_error(|limits| {
-                limits.max_materialized_bytes = cap
+                limits.max_materialized_bytes = cap;
             }))
         },
     ) else {
@@ -744,7 +744,7 @@ fn pattern_hole_ambiguity_skips_unvisited_dependents() {
     use cadmpeg_core::decode::refusal_probe::RefusalProbe;
     for tail in [1, 128] {
         let mut features = pattern_hole_features();
-        let hole = features[2].clone();
+        let hole = features.get(2).expect("hole fixture").clone();
         for ordinal in 4..=4 + tail {
             let mut additional = hole.clone();
             additional.id =
@@ -759,7 +759,7 @@ fn pattern_hole_ambiguity_skips_unvisited_dependents() {
         let _probe = RefusalProbe::arm(
             ResourceDimension::WorkUnits,
             "swift pattern hole search",
-            Some(u64::from(tail + 2)),
+            Some(tail + 2),
         );
         assert!(pattern_hole_nominal_context(&ctx, &features)
             .unwrap()
@@ -792,7 +792,7 @@ fn swift_topology_index_never_copies_rejected_or_duplicate_identities() {
     use cadmpeg_ir::topology::Body;
     let body = Body {
         id: BodyId::mint("sldprt:brep:body#11").unwrap(),
-        kind: Default::default(),
+        kind: cadmpeg_ir::topology::BodyKind::default(),
         regions: Vec::new(),
         transform: None,
         name: None,

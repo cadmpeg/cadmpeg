@@ -29,6 +29,7 @@ fn circle_scalar(
 
 #[test]
 fn circle_handle_admits_class_names_and_skips_singleton_sort() {
+    const WORK: u64 = 74;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let mut display = circle_scalar(0, "", FeatureInputScalarRole::Display, None);
@@ -75,7 +76,6 @@ fn circle_handle_admits_class_names_and_skips_singleton_sort() {
 
     // One scalar visit, one lookup visit, two ID bytes, three class visits,
     // three comparisons of two eleven-byte names, and one driver visit.
-    const WORK: u64 = 74;
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 32;
@@ -937,13 +937,13 @@ fn unordered_handle_fixture() -> (
 
 #[test]
 fn circle_handle_minimum_needs_no_offset_vector() {
+    const MATERIALIZED: u64 = 4 * 8 + 4 * 32 + 15 + 4 + 16;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     assert_eq!(std::mem::size_of::<&FeatureInputScalar>(), 8);
     assert_eq!(std::mem::size_of::<(&str, &str)>(), 32);
     let (input, relation) = unordered_handle_fixture();
     let mut policy = DecodePolicy::service();
     // Four scalar-pointer slots and four name-pair buckets plus alignment/control bytes.
-    const MATERIALIZED: u64 = 4 * 8 + 4 * 32 + 15 + 4 + 16;
     policy.limits.max_materialized_bytes = MATERIALIZED;
     policy.limits.max_retained_bytes = 0;
     // Three borrowed scalar slots and one name-map entry, repeated sixty-four times.
@@ -954,7 +954,7 @@ fn circle_handle_minimum_needs_no_offset_vector() {
         let driver = circle_dimension_handle_driver(&ctx, &relation, &input)
             .unwrap()
             .unwrap();
-        assert!(std::ptr::eq(driver, &input.scalars[2]));
+        assert!(std::ptr::eq(driver, &raw const input.scalars[2]));
         assert_eq!(driver.id, "scalar-50");
         let released = ctx
             .reserve_scoped(MATERIALIZED, "released circle handle workspace")
@@ -988,7 +988,7 @@ fn circle_handle_minimum_leaves_offset_operations_unexecuted() {
         let driver = circle_dimension_handle_driver(&ctx, &relation, &input)
             .unwrap()
             .unwrap();
-        assert!(std::ptr::eq(driver, &input.scalars[2]));
+        assert!(std::ptr::eq(driver, &raw const input.scalars[2]));
         assert_eq!(ctx.resource_refusal(), None);
         let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, operation) else {
             panic!("minimum fold must leave obsolete offset operation probe armed");

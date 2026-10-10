@@ -103,6 +103,7 @@ fn two_variable_radii() -> crate::records::Feature {
 }
 
 fn variable_radius_storage() -> (u64, u64, u64) {
+    type Radius = VariableRadius<Fraction, NonNegativeLength>;
     use cadmpeg_ir::features::edge_treatments::VariableRadius;
     use cadmpeg_ir::scalar::{Fraction, NonNegativeLength};
     // Two distinct positions admit one B-tree node: eleven key/value slots,
@@ -111,7 +112,6 @@ fn variable_radius_storage() -> (u64, u64, u64) {
     let positions = 11 * (std::mem::size_of::<usize>() + std::mem::size_of::<&String>())
         + 16 * std::mem::size_of::<usize>()
         + 2 * alignment;
-    type Radius = VariableRadius<Fraction, NonNegativeLength>;
     // Both vectors have the first four-slot amortized growth; input tuples
     // remain live through their consuming iterator, after the table retires.
     let points = 4 * std::mem::size_of::<(usize, Radius)>();
@@ -180,7 +180,7 @@ fn variable_fillet_control_growth_preserves_exact_original_refusal() {
     assert_eq!(first.operation, "collect SLDPRT variable fillet radii");
     assert_eq!(first.used, positions);
     assert_eq!(first.additional, points);
-    assert_eq!(ctx.resource_refusal(), Some(first.clone()));
+    assert_eq!(ctx.resource_refusal(), Some(first));
     let CodecError::ResourceLimit(next) =
         ctx.reserve_scoped(0, "sticky fillet refusal").unwrap_err()
     else {

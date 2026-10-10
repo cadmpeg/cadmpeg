@@ -96,10 +96,7 @@ fn configuration_parameter_overlay_restores_partial_construction_on_refusal() {
     let mut policy = policy();
     policy.limits.max_materialized_bytes = overlay_peak() - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let limit = match ConfigurationParameterOverlay::new(&ctx, &mut parameters, &values) {
-        Err(CodecError::ResourceLimit(limit)) => limit,
-        _ => panic!("expected original overlay storage refusal"),
-    };
+    let Err(CodecError::ResourceLimit(limit)) = ConfigurationParameterOverlay::new(&ctx, &mut parameters, &values) else { panic!("expected original overlay storage refusal") };
     assert_eq!(parameters, expected);
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(
@@ -108,10 +105,7 @@ fn configuration_parameter_overlay_restores_partial_construction_on_refusal() {
     );
     assert_eq!(limit.limit, overlay_peak() - 1);
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    let replayed = match ConfigurationParameterOverlay::new(&ctx, &mut parameters, &values) {
-        Err(CodecError::ResourceLimit(limit)) => limit,
-        _ => panic!("expected original sticky overlay refusal"),
-    };
+    let Err(CodecError::ResourceLimit(replayed)) = ConfigurationParameterOverlay::new(&ctx, &mut parameters, &values) else { panic!("expected original sticky overlay refusal") };
     assert_eq!(replayed, limit);
     assert_eq!(parameters, expected);
 }

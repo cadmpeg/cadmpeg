@@ -2524,8 +2524,8 @@ mod point_candidate_tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let candidates = super::dynamic_point_candidates(&ctx, &roster, &operand, true).unwrap();
         assert_eq!(candidates.len(), 2);
-        assert!(std::ptr::eq(candidates[0], &markers[0]));
-        assert!(std::ptr::eq(candidates[1], &markers[1]));
+        assert!(std::ptr::eq(candidates[0], &raw const markers[0]));
+        assert!(std::ptr::eq(candidates[1], &raw const markers[1]));
         let released = ctx
             .reserve_scoped(99, "released point identity table")
             .unwrap();
@@ -2553,8 +2553,8 @@ mod point_candidate_tests {
                 })
                 .unwrap();
             assert_eq!(candidates.len(), 2);
-            assert!(std::ptr::eq(candidates[0], &markers[0]));
-            assert!(std::ptr::eq(candidates[1], &markers[1]));
+            assert!(std::ptr::eq(candidates[0], &raw const markers[0]));
+            assert!(std::ptr::eq(candidates[1], &raw const markers[1]));
             let released = ctx
                 .reserve_scoped(99, "released point identity table")
                 .unwrap();

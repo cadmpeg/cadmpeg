@@ -116,9 +116,9 @@ fn definition_at(
     else {
         return Ok(None);
     };
-    let _name_reservation;
+    let name_reservation;
     let decoded;
-    (decoded, _name_reservation) =
+    (decoded, name_reservation) =
         match ctx.utf16le_scoped_text(raw_name, count, false, "decode SLDPRT appearance name") {
             Ok(text) => text,
             Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
@@ -130,7 +130,7 @@ fn definition_at(
     }
     let name = ctx.copy_retained_text(trimmed, "retain SLDPRT appearance name")?;
     drop(decoded);
-    drop(_name_reservation);
+    drop(name_reservation);
     let source_name = clone_stream_name(ctx, section.source_stream())?;
     Ok(Some(AppearanceDefinition {
         name,

@@ -292,6 +292,7 @@ fn polar_conversion_preserves_exact_workspace_and_output_refusals() {
 
 #[test]
 fn polar_nonfinite_projection_retains_only_original_final_loss() {
+    const EXPECTED: &str = "cylindrical pcurve for edge test:model:entity#edge: poles contain a non-finite value; the carrier is not emitted and the entities that reference it fall back to an untyped support.";
     let source = curve(true);
     // Subtracting two finite axial coordinates can overflow. The original
     // dot products then yield NaN in radial terms multiplied by zero.
@@ -310,7 +311,6 @@ fn polar_nonfinite_projection_retains_only_original_final_loss() {
     )
     .unwrap()
     .unwrap();
-    const EXPECTED: &str = "cylindrical pcurve for edge test:model:entity#edge: poles contain a non-finite value; the carrier is not emitted and the entities that reference it fall back to an untyped support.";
     let arena = DecodeArena::new();
     let mut policy = policy();
     policy.limits.max_retained_bytes = u64::try_from(EXPECTED.len()).unwrap();

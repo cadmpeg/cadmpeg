@@ -1035,6 +1035,7 @@ fn feature_appearance_output_refuses_one_byte_below_assignment_backing() {
 }
 
 fn feature_appearance_resolution_storage() -> (u64, u64) {
+    type FeatureEntry<'a> = (FeatureSourceId, Option<&'a FeatureAppearanceAssignment>);
     use super::{AppearanceDefinition, FeatureAppearanceAssignment};
     use crate::brep::feature_source::FeatureSourceId;
     use std::mem::{align_of, size_of};
@@ -1060,7 +1061,6 @@ fn feature_appearance_resolution_storage() -> (u64, u64) {
         size_of::<super::AppearanceSource<'_>>(),
         pointer_alignment,
     );
-    type FeatureEntry<'a> = (FeatureSourceId, Option<&'a FeatureAppearanceAssignment>);
     // The first hash-table insertion uses four buckets. Core includes control
     // bytes, the trailing control group and maximum-alignment padding.
     let hash_node =

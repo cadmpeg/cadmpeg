@@ -387,7 +387,7 @@ fn clamp_raw_conversion_refuses_each_backing_before_allocation() {
                 super::clamped_raw_poles(&ctx, &CONTROLS, true)
             })
         });
-        let CodecError::ResourceLimit(limit) = result.err().expect("raw backing refusal") else {
+        let CodecError::ResourceLimit(limit) = result.expect_err("raw backing refusal") else {
             panic!("resource refusal");
         };
         assert_eq!(allocations, expected_allocations);
@@ -412,7 +412,7 @@ fn clamp_raw_conversion_refuses_first_slot_before_push() {
             super::clamped_raw_poles(&ctx, &CONTROLS, false)
         })
     });
-    let CodecError::ResourceLimit(limit) = result.err().expect("first raw slot refusal") else {
+    let CodecError::ResourceLimit(limit) = result.expect_err("first raw slot refusal") else {
         panic!("resource refusal");
     };
     assert_eq!(allocations, 1);

@@ -158,10 +158,10 @@ pub(super) enum ProfileNurbs<'source, 'ctx> {
 /// Private fields keep the curve and its mandatory lease inseparable.
 pub(super) struct GeneratedProfile<'ctx> {
     curve: NurbsCurve,
-    storage: ScopedReservation<'ctx>,
+    _storage: ScopedReservation<'ctx>,
 }
 
-impl<'source, 'ctx> ProfileNurbs<'source, 'ctx> {
+impl ProfileNurbs<'_, '_> {
     pub(super) fn curve(&self) -> &NurbsCurve {
         match self {
             Self::Borrowed(curve) => curve,
@@ -169,12 +169,15 @@ impl<'source, 'ctx> ProfileNurbs<'source, 'ctx> {
         }
     }
 
-    #[cfg(test)]
+}
+
+#[cfg(test)]
+impl<'source> ProfileNurbs<'source, '_> {
     fn into_retained(self) -> Result<Cow<'source, NurbsCurve>, CodecError> {
         match self {
             Self::Borrowed(curve) => Ok(Cow::Borrowed(curve)),
-            Self::Generated(profile) => {
-                Ok(Cow::Owned(profile.storage.commit_value(profile.curve)?))
+            Self::Generated(GeneratedProfile { curve, _storage: storage }) => {
+                Ok(Cow::Owned(storage.commit_value(curve)?))
             }
         }
     }
@@ -274,7 +277,7 @@ pub(super) fn profile_nurbs<'a, 'ctx>(
     match result {
         Ok(curve) => Ok(Some(ProfileNurbs::Generated(GeneratedProfile {
             curve,
-            storage: curve_storage,
+            _storage: curve_storage,
         }))),
         Err(error) => {
             refusal.note(

@@ -15,7 +15,7 @@ fn sketch_history_does_not_build_solid_or_construction_indexes() {
     let history = crate::records::FeatureHistory {
         id: "history".into(),
         part_name: None,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![first, second],

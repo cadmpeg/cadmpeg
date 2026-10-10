@@ -735,7 +735,7 @@ mod tests {
             let mut ir = cadmpeg_ir::CadIr::empty();
             ir.model.bodies.push(Body {
                 id: body.clone(),
-                kind: Default::default(),
+                kind: cadmpeg_ir::topology::BodyKind::default(),
                 regions: Vec::new(),
                 transform: Some(rotation),
                 name: None,

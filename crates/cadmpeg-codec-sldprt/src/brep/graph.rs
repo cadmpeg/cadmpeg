@@ -978,16 +978,16 @@ pub(crate) fn decode_bodies(
     bodies: &[(&[u8], &StreamHeader)],
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
+    enum ScannedTables<'ctx> {
+        Primary(topology::Tables),
+        MergeSource(topology::MergeSource<'ctx>),
+    }
     let mut index_storage = ctx.reserve_scoped(0, "hold Parasolid source indexes")?;
     let mut carriers = StreamCarrierIndex::empty(ctx)?;
     let mut tables = topology::Tables::default();
     let mut facts = entity::FactsSource::empty(ctx)?;
     let mut typed_facts = typed::Facts::default();
     let mut initialized = false;
-    enum ScannedTables<'ctx> {
-        Primary(topology::Tables),
-        MergeSource(topology::MergeSource<'ctx>),
-    }
     let mut ordered_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
     let mut ordered = Vec::new();
     ordered_storage.with_storage(|| {
@@ -1127,7 +1127,7 @@ pub(crate) fn decode_bodies(
     ));
     decode_graph(
         ctx,
-        &CarrierView::Stream(&carriers),
+        CarrierView::Stream(&carriers),
         &tables,
         facts,
         &typed_facts,
@@ -1156,7 +1156,7 @@ fn decode_body(
     let entity_facts = entity::scan_metadata(ctx, body, false)?;
     decode_graph(
         ctx,
-        &CarrierView::Stream(&carriers),
+        CarrierView::Stream(&carriers),
         &t,
         entity_facts,
         &typed_facts,

@@ -86,6 +86,7 @@ fn feature_graph_workspace_is_released_after_structural_rejection() {
 
 #[test]
 fn feature_graph_workspace_refuses_before_backing_allocation() {
+    type Entry = (FeatureSource, usize);
     let features = features();
     let arena = DecodeArena::new();
     let mut policy = policy();
@@ -103,7 +104,6 @@ fn feature_graph_workspace_refuses_before_backing_allocation() {
     // The first empty source-id HashMap grows to the minimum three-entry
     // capacity: core hash_storage_bytes bounds four buckets, alignment
     // padding, four control bytes and the sixteen trailing control bytes.
-    type Entry = (FeatureSource, usize);
     let first_growth =
         4 * std::mem::size_of::<Entry>() + std::mem::align_of::<Entry>().max(16) - 1 + 4 + 16;
     assert_eq!(

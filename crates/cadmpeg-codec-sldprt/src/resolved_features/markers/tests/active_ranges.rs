@@ -10,8 +10,8 @@ use cadmpeg_ir::math::Point3;
 use std::collections::HashMap;
 
 // Core amortized Vec growth uses four slots for each of these element types.
-const RANGE_BYTES: u64 = 4 * std::mem::size_of::<(u64, u64)>() as u64;
-const POINT_BYTES: u64 = 4 * std::mem::size_of::<(&str, Point3, usize)>() as u64;
+const RANGE_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u64, u64)>());
+const POINT_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, Point3, usize)>());
 const FEATURE: &str = "sldprt:history:feature#active-range";
 const MARKER_OFFSET: usize = 10;
 
@@ -61,7 +61,7 @@ fn index(lane: &FeatureInputLane, range: (u64, u64)) -> SpatialLaneIndex<'_, '_>
         lane,
         names: None,
         relation_ranges: vec![range],
-        scalar_offsets: HashMap::from([(FEATURE, vec![(range.0 + range.1) / 2])]),
+        scalar_offsets: HashMap::from([(FEATURE, vec![u64::midpoint(range.0, range.1)])]),
         markers: HashMap::from([(FEATURE, vec![&lane.sketch_entities[0]])]),
         feature_offsets: None,
     }

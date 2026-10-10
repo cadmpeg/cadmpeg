@@ -85,8 +85,8 @@ fn selected_declaration_candidates_release_discarded_workspace() {
         super::super::unique_relation_declaration_candidates_charged(&ctx, &classes, &scalars, &[])
             .unwrap();
     assert_eq!(selected.len(), 1);
-    assert!(std::ptr::eq(selected[0].0, &classes[0]));
-    assert!(std::ptr::eq(selected[0].1, &scalars[0]));
+    assert!(std::ptr::eq(selected[0].0, &raw const classes[0]));
+    assert!(std::ptr::eq(selected[0].1, &raw const scalars[0]));
     assert_eq!(
         selected[0].2,
         FeatureInputRelationFamily::PointPointHorizontalDistance
@@ -117,8 +117,8 @@ fn selected_declaration_candidates_release_discarded_workspace() {
             })
             .unwrap();
         assert_eq!(selected.len(), 1);
-        assert!(std::ptr::eq(selected[0].0, &classes[0]));
-        assert!(std::ptr::eq(selected[0].1, &scalars[0]));
+        assert!(std::ptr::eq(selected[0].0, &raw const classes[0]));
+        assert!(std::ptr::eq(selected[0].1, &raw const scalars[0]));
         assert_eq!(
             selected[0].2,
             FeatureInputRelationFamily::PointPointHorizontalDistance
@@ -232,6 +232,8 @@ fn selected_declaration_candidates_refuse_exact_storage_boundaries() {
 
 #[test]
 fn declaration_class_workspace_ends_before_scalar_sort_scratch() {
+    const ITEMS: u64 = 1 + 1 + 1 + 21 + 2 * 21;
+    const MATERIALIZED: u64 = 195 + 8 + 32 * 8 + 2 * 21 * 8;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -245,8 +247,6 @@ fn declaration_class_workspace_ends_before_scalar_sort_scratch() {
     // + four control bytes + 16 trailing bytes, then one 8-byte offset.
     // Scalar Vec: 32 reference slots. Stable sort: two 21-usize arrays.
     // The consumed four-slot (u64, &str) class Vec is no longer live.
-    const MATERIALIZED: u64 = 195 + 8 + 32 * 8 + 2 * 21 * 8;
-    const ITEMS: u64 = 1 + 1 + 1 + 21 + 2 * 21;
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = MATERIALIZED;
@@ -269,7 +269,7 @@ fn declaration_class_workspace_ends_before_scalar_sort_scratch() {
                 .collect::<Vec<_>>(),
             (1..=21).collect::<Vec<_>>()
         );
-        assert!(std::ptr::eq(index.scalars[0], &scalars[20]));
+        assert!(std::ptr::eq(index.scalars[0], &raw const scalars[20]));
         assert_eq!(index.relation_class_offsets.get("sketch").unwrap(), &[0]);
         drop(index);
         drop(storage);
@@ -282,11 +282,10 @@ fn declaration_class_workspace_ends_before_scalar_sort_scratch() {
     policy.limits.max_collection_items = ITEMS;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = match ctx.with_scoped_storage("index SLDPRT relation declarations", || {
+    let Err(error) = ctx.with_scoped_storage("index SLDPRT relation declarations", || {
         super::super::DeclarationIndex::new(&ctx, &classes, &scalars, &intervals)
-    }) {
-        Err(error) => error,
-        Ok(_) => panic!("one below the live index and sort scratch must refuse"),
+    }) else {
+        panic!("one below the live index and sort scratch must refuse");
     };
     let CodecError::ResourceLimit(limit) = error else {
         panic!("resource refusal");
@@ -1234,8 +1233,8 @@ fn open_interval_still_demands_the_declaration_index_at_high_offsets() {
     )
     .unwrap();
     assert_eq!(selected.len(), 1);
-    assert!(std::ptr::eq(selected[0].0, &classes[0]));
-    assert!(std::ptr::eq(selected[0].1, &scalars[0]));
+    assert!(std::ptr::eq(selected[0].0, &raw const classes[0]));
+    assert!(std::ptr::eq(selected[0].1, &raw const scalars[0]));
     assert_eq!(
         selected[0].2,
         FeatureInputRelationFamily::PointPointHorizontalDistance
@@ -1289,8 +1288,8 @@ fn rejected_unknown_span_does_not_suppress_a_later_valid_declaration() {
         super::super::unique_relation_declaration_candidates_charged(&ctx, &classes, &scalars, &[])
             .unwrap();
     assert_eq!(selected.len(), 1);
-    assert!(std::ptr::eq(selected[0].0, &classes[1]));
-    assert!(std::ptr::eq(selected[0].1, &scalars[1]));
+    assert!(std::ptr::eq(selected[0].0, &raw const classes[1]));
+    assert!(std::ptr::eq(selected[0].1, &raw const scalars[1]));
     assert_eq!(
         selected[0].2,
         FeatureInputRelationFamily::PointPointHorizontalDistance
@@ -1327,6 +1326,7 @@ fn singleton_group_fixture() -> (
 
 #[test]
 fn relation_group_phases_release_indexes_before_output_and_bindings() {
+    const MATERIALIZED: u64 = 99 + 32 + 131 + 227 + 4 * 80 + 16;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     assert_eq!(std::mem::size_of::<super::super::RelationGroup<'_>>(), 80);
     assert_eq!(
@@ -1339,7 +1339,6 @@ fn relation_group_phases_release_indexes_before_output_and_bindings() {
     let mut policy = DecodePolicy::service();
     // Sketch set99, class offsets32, counts131, declarations227,
     // four80-byte group slots and one exact16-byte scalar slot.
-    const MATERIALIZED: u64 = 99 + 32 + 131 + 227 + 4 * 80 + 16;
     policy.limits.max_materialized_bytes = MATERIALIZED;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();

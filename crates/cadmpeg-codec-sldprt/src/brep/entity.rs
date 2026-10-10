@@ -104,7 +104,7 @@ impl<'ctx> std::ops::Deref for FactsSource<'ctx> {
     }
 }
 
-impl<'ctx> std::ops::DerefMut for FactsSource<'ctx> {
+impl std::ops::DerefMut for FactsSource<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.facts
     }
@@ -715,6 +715,7 @@ mod tests {
 
     #[test]
     fn long_color_suffix_holds_one_reduction_and_releases_its_backing() {
+        type Record = (u16, Color, usize);
         use super::Color;
         use std::collections::{BTreeMap, BTreeSet};
         let mut bytes = Vec::new();
@@ -741,7 +742,6 @@ mod tests {
             end: 0,
         }];
         let requested = BTreeMap::from([(700, BTreeSet::from([800]))]);
-        type Record = (u16, Color, usize);
         // Core insertion bounds a tree by (n - 1) / 5 + 1 nodes. Source
         // parents, one reduction and the output index fit in the extra 4 KiB.
         let node = 11 * (std::mem::size_of::<usize>() + std::mem::size_of::<Record>())

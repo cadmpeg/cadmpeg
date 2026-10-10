@@ -6,7 +6,7 @@ use crate::resolved_features::SKETCH_MARKER;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-const ROSTER_BYTES: u64 = 4 * std::mem::size_of::<&SketchInputEntity>() as u64;
+const ROSTER_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&SketchInputEntity>());
 
 fn centered_source() -> (Vec<u8>, [SketchInputEntity; 3]) {
     let mut payload = [0; 142 + SKETCH_MARKER.len()].to_vec();
@@ -51,8 +51,8 @@ fn centered_fixed_endpoint_pair_releases_all_roster_storage() {
         let pair = coordinate_centered_line_endpoints(&ctx, &payload, &entities[0], &roster)
             .unwrap()
             .unwrap();
-        assert!(std::ptr::eq(pair[0], &entities[1]));
-        assert!(std::ptr::eq(pair[1], &entities[2]));
+        assert!(std::ptr::eq(pair[0], &raw const entities[1]));
+        assert!(std::ptr::eq(pair[1], &raw const entities[2]));
         ctx.reserve_scoped(ROSTER_BYTES, "reuse centered endpoint roster")
             .unwrap();
     }

@@ -556,9 +556,9 @@ fn planar_arc_sample_refuses_first_backing_before_allocation() {
 
 #[test]
 fn off_plane_arc_releases_its_sample_prefix_before_return() {
+    const SAMPLE_TILT: f64 = 1.0e-5;
     let (_, surface, frame) = boundary_sample_inputs();
     let mut arc = boundary_test_arc();
-    const SAMPLE_TILT: f64 = 1.0e-5;
     arc.second_direction = Vector3::new(0., SAMPLE_TILT.cos(), SAMPLE_TILT.sin());
     let arena = DecodeArena::new();
     let mut policy = boundary_sample_policy(4 * point2_bytes());

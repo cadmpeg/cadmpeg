@@ -28,6 +28,11 @@ struct ParameterEntries<'xml, 'ctx> {
     _shell: ScopedReservation<'ctx>,
 }
 
+type RetainedDimensions = (
+    BTreeMap<String, Properties>,
+    BTreeMap<NonBlankString, String>,
+);
+
 impl<'xml, 'ctx, 'arena> DimensionCandidates<'xml, 'ctx, 'arena> {
     pub(super) fn new(ctx: &'ctx DecodeContext<'arena>) -> Result<Self, CodecError> {
         Ok(Self {
@@ -76,15 +81,7 @@ impl<'xml, 'ctx, 'arena> DimensionCandidates<'xml, 'ctx, 'arena> {
         Ok(())
     }
 
-    pub(super) fn into_retained(
-        self,
-    ) -> Result<
-        (
-            BTreeMap<String, Properties>,
-            BTreeMap<NonBlankString, String>,
-        ),
-        CodecError,
-    > {
+    pub(super) fn into_retained(self) -> Result<RetainedDimensions, CodecError> {
         let ctx = self.context;
         let mut source_properties = DimensionPropertyEntries {
             entries: self.properties.into_iter(),
