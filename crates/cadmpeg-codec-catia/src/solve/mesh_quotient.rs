@@ -881,14 +881,6 @@ impl<'storage> MeshQuotient<'storage> {
         self.domains.len()
     }
 
-    pub(crate) fn find(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        node: usize,
-    ) -> Result<usize, CodecError> {
-        self.union.find(ctx, node)
-    }
-
     pub(crate) fn root(&self, ctx: &DecodeContext<'_>, node: usize) -> Result<usize, CodecError> {
         self.union.find(ctx, node)
     }

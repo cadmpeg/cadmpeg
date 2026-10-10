@@ -818,15 +818,15 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
     .expect("forced deferred quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
             .expect("service forest traversal")
     );
 }
@@ -867,9 +867,9 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
     .expect("unknown exact direction is deferred");
 
     assert_ne!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
             .expect("service forest traversal")
     );
 }
@@ -911,27 +911,27 @@ fn deferred_gap_search_propagates_quotient_forced_edge_order() {
     .expect("deferred gap quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 4))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 5))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 6))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 6))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 7))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 7))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal")
     );
 }
@@ -978,9 +978,9 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     .expect("structural quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
             .expect("service forest traversal")
     );
 }
@@ -1026,15 +1026,15 @@ fn ordered_cycle_support_propagates_domain_forced_directions() {
     .expect("supported cycle quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
             .expect("service forest traversal")
     );
 }
@@ -1073,15 +1073,15 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
     .expect("ordered component quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
             .expect("service forest traversal")
     );
 }
@@ -1108,21 +1108,21 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
     .expect("unordered component quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 4))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 5))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal")
     );
 }
@@ -1343,27 +1343,27 @@ fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
     .expect("deferred component quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 4))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 5))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 6))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 6))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 7))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 7))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal")
     );
 }

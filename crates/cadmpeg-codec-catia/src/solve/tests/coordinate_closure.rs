@@ -236,9 +236,9 @@ fn quotient_merges_roots_forced_to_one_coordinate_identity() {
         3
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
             .expect("service forest traversal")
     );
 }
@@ -284,28 +284,28 @@ fn quotient_closes_coordinate_roots_forced_by_joint_edge_pairs() {
         3
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 5))
             .expect("service forest traversal")
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal")],
         0
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
             .expect("service forest traversal")],
         1
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
             .expect("service forest traversal")],
         2
     );
     for node in 0..6 {
-        let root = crate::test_support::with_service_context(|ctx| quotient.find(ctx, node))
+        let root = crate::test_support::with_service_context(|ctx| quotient.root(ctx, node))
             .expect("service forest traversal");
         assert_eq!(quotient.domains()[root].len(), 1);
         assert_eq!(
@@ -438,12 +438,12 @@ fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
         2
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal")],
         0
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 4))
             .expect("service forest traversal")],
         1
     );
@@ -472,17 +472,17 @@ fn quotient_coordinate_closure_forces_the_only_root_supporting_a_point() {
         3
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal")],
         1
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
             .expect("service forest traversal")],
         0
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
             .expect("service forest traversal")],
         2
     );
@@ -814,9 +814,9 @@ fn quotient_closes_independent_coordinate_components_with_local_budgets() {
     for component in 0..COMPONENT_COUNT {
         let node = component * 6;
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| quotient.find(ctx, node))
+            crate::test_support::with_service_context(|ctx| quotient.root(ctx, node))
                 .expect("service forest traversal"),
-            crate::test_support::with_service_context(|ctx| quotient.find(ctx, node + 5))
+            crate::test_support::with_service_context(|ctx| quotient.root(ctx, node + 5))
                 .expect("service forest traversal")
         );
     }
