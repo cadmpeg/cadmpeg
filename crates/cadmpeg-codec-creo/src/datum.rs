@@ -182,9 +182,10 @@ pub(crate) fn cylinders(
 ) -> Result<Vec<DatumCylinder>, CodecError> {
     let scratch = ctx.with_scoped_storage("creo datum cylinder scratch", || {
         let rows = crate::surface::rows(ctx, payload)?;
+        let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
         let parameters = crate::surface::SurfaceParameters::new(
             ctx,
-            crate::surface::parameter_records(ctx, payload)?,
+            crate::surface::parameter_records_for_rows(ctx, payload, &rows, &cache)?,
             "creo datum cylinder parameter index",
         )?;
         Ok::<_, CodecError>((rows, parameters))

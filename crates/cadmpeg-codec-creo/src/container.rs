@@ -1988,11 +1988,7 @@ fn surface_prototype_records(
         |bytes| surface::named_prototype_records(ctx, bytes, refusals),
         |record, base| {
             record.offset += base;
-            for (offset, value_offset) in record.parameter_offsets_mut() {
-                *offset += base;
-                *value_offset += base;
-            }
-            Ok(())
+            record.relocate_parameters(ctx, base)
         },
         |record| record.offset,
     )

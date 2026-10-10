@@ -132,8 +132,9 @@ impl Loop {
         }
         let mut ids = half_edges.iter();
         let mut index = 0;
-        while let Some(id) = ctx.next_charged(&mut ids, "creo closed ring validation work")? {
-            if ctx.any_by(
+        while ids.len() != 0 {
+            let Some(id) = ctx.next_charged(&mut ids, "creo closed ring validation work")? else { break; };
+            if index != 0 && ctx.any_by(
                 &half_edges[..index],
                 |previous| Ok(previous == id),
                 "creo closed ring validation work",
@@ -193,16 +194,16 @@ impl FaceComponent {
         }
         if face_ids.is_empty()
             || face_ids[0] == 0
-            || ctx.any_by(
+            || (face_ids.len() > 1 && ctx.any_by(
                 face_ids.windows(2),
                 |pair| Ok(pair[0] >= pair[1]),
                 "creo face component validation work",
-            )?
-            || ctx.any_by(
+            )?)
+            || (curve_ids.len() > 1 && ctx.any_by(
                 curve_ids.windows(2),
                 |pair| Ok(pair[0] >= pair[1]),
                 "creo face component validation work",
-            )?
+            )?)
         {
             return Ok(None);
         }
@@ -250,11 +251,11 @@ impl TopologicalVertex {
             return Ok(None);
         };
         if half_edges.is_empty()
-            || ctx.any_by(
+            || (half_edges.len() > 1 && ctx.any_by(
                 half_edges.windows(2),
                 |pair| Ok(pair[0] >= pair[1]),
                 "creo vertex orbit validation work",
-            )?
+            )?)
         {
             return Ok(None);
         }
@@ -538,10 +539,8 @@ pub(crate) fn vertex_orbits(
         orbit_scope
             .with_storage(|| ctx.reserve_vec(&mut pending, 1, "creo vertex orbit pending edges"))?;
         pending.push(start);
-        while let Some(half_edge) = ctx.next_charged(
-            &mut std::iter::from_fn(|| pending.pop()),
-            "creo vertex graph traversal",
-        )? {
+        while !pending.is_empty() {
+            let Some(half_edge) = ctx.next_charged(&mut std::iter::from_fn(|| pending.pop()), "creo vertex graph traversal")? else { break; };
             if ctx.contains_btree_set(&visited, &half_edge, "creo vertex visited edges")? {
                 continue;
             }
@@ -696,10 +695,8 @@ pub(crate) fn face_components(
         pending.push(start);
         let mut faces = BTreeSet::new();
         let mut curves = BTreeSet::new();
-        while let Some(face) = ctx.next_charged(
-            &mut std::iter::from_fn(|| pending.pop()),
-            "creo face graph traversal",
-        )? {
+        while !pending.is_empty() {
+            let Some(face) = ctx.next_charged(&mut std::iter::from_fn(|| pending.pop()), "creo face graph traversal")? else { break; };
             component_scope.with_storage(|| {
                 ctx.insert_btree_set(&mut faces, face, "creo component face nodes")
             })?;
@@ -850,6 +847,7 @@ pub(crate) fn build(
         {
             continue;
         }
+        let mut ring_scope = ctx.reserve_scoped(0, "creo topology ring candidate")?;
         let mut ring = Vec::new();
         let mut seen_scope = ctx.reserve_scoped(0, "creo topology ring scratch")?;
         let mut seen = BTreeSet::new();
@@ -872,10 +870,7 @@ pub(crate) fn build(
                         })?;
                     }
                     ctx.reserve_vec(&mut loops, 1, "creo topology loops")?;
-                    let half_edges = ctx.collect_retained_vec(
-                        ring.iter().copied(),
-                        "creo topology closed ring projection",
-                    )?;
+                    let half_edges = ring_scope.commit_value(std::mem::take(&mut ring))?;
                     loops.push(Loop {
                         face_id: edge.face_id,
                         half_edges,
@@ -886,7 +881,7 @@ pub(crate) fn build(
             seen_scope.with_storage(|| {
                 ctx.insert_btree_set(&mut seen, current, "creo topology ring visit nodes")
             })?;
-            seen_scope
+            ring_scope
                 .with_storage(|| ctx.reserve_vec(&mut ring, 1, "creo topology ring half-edges"))?;
             ring.push(current);
             let Some(next) = by_id(current)?.and_then(|entry| entry.next) else {

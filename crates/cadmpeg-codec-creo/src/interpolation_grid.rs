@@ -77,10 +77,7 @@ impl InterpolationGrid {
                 &v_derivatives,
                 "creo interpolation grid vector validation",
             )?
-            && mixed_derivatives.iter().flatten().all(|value| value.is_finite())
-            && Some(points.len()) == u_count.checked_mul(v_count)
-            && Some(u_derivatives.len()) == v_count.checked_mul(2)
-            && Some(v_derivatives.len()) == u_count.checked_mul(2))
+            && mixed_derivatives.iter().flatten().all(|value| value.is_finite()))
         {
             return Ok(None);
         }
@@ -166,36 +163,6 @@ impl InterpolationGrid {
             v_derivatives,
             mixed_derivatives,
         }))
-    }
-
-    /// Copy a checked scratch grid into retained decode storage.
-    pub(crate) fn copy_retained(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(Self {
-            points: ctx.collect_retained_vec(
-                self.points.iter().copied(),
-                "creo interpolation retained points",
-            )?,
-            u_parameters: ctx.collect_retained_vec(
-                self.u_parameters.iter().copied(),
-                "creo interpolation retained u parameters",
-            )?,
-            v_parameters: ctx.collect_retained_vec(
-                self.v_parameters.iter().copied(),
-                "creo interpolation retained v parameters",
-            )?,
-            u_derivatives: ctx.collect_retained_vec(
-                self.u_derivatives.iter().copied(),
-                "creo interpolation retained u derivatives",
-            )?,
-            v_derivatives: ctx.collect_retained_vec(
-                self.v_derivatives.iter().copied(),
-                "creo interpolation retained v derivatives",
-            )?,
-            mixed_derivatives: self.mixed_derivatives,
-        })
     }
 
     /// Interpolation points in u-major order.
@@ -530,5 +497,46 @@ mod tests {
             },
         );
         assert!(grid.is_some());
+    }
+
+    fn work_output<T>(
+        run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+    ) -> T {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let capped = |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_entities = 0;
+            policy.limits.max_recursion_depth = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = run(&ctx);
+            if let Err(CodecError::ResourceLimit(original)) = &result {
+                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
+                assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if &actual == original));
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if &actual == original));
+            }
+            result
+        };
+        let work = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, capped);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_entities = 0;
+            policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let value = run(&ctx).expect("walker admits the unchanged fixture");
+        let original = ctx.charge_work_limit(1, "after owner work route").expect_err("exact work cap");
+        assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        value
     }
 }

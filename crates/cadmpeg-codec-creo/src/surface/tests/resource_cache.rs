@@ -11,7 +11,7 @@ fn named_prototype_records_build_one_scalar_cache_and_preserve_original_refusal(
     // scalar entry. No prototype marker creates a frame or output record.
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
+    policy.limits.max_collection_items = cache_collection_limit(|ctx| super::super::named_prototype_records(ctx, SCALAR_IMAGE, &mut crate::lane_refusal::LaneRefusals::new()));
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_entities = 0;
     policy.limits.max_recursion_depth = 0;
@@ -36,7 +36,7 @@ fn plane_local_systems_build_one_scalar_cache_and_preserve_original_refusal() {
     // scalar entry. No surface row creates a parameter or local-system record.
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
+    policy.limits.max_collection_items = cache_collection_limit(|ctx| super::super::plane_local_systems_for_rows(ctx, SCALAR_IMAGE, &[]));
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_entities = 0;
     policy.limits.max_recursion_depth = 0;
@@ -93,8 +93,9 @@ fn named_records_with_limits(
 #[test]
 fn named_prototype_record_refuses_before_vec_growth() {
     let payload = b"srf_prim_ptr(plane)\0";
+    let collection = record_collection_limit(payload);
     assert_eq!(
-        named_records_with_limits(payload, u64::MAX, u64::MAX)
+        named_records_with_limits(payload, collection, DecodePolicy::service().limits.max_retained_bytes)
             .expect("one record admitted")
             .len(),
         1
@@ -104,9 +105,9 @@ fn named_prototype_record_refuses_before_vec_growth() {
         crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             Some("creo named prototype records"),
-            |cap| named_records_with_limits(payload, cap, u64::MAX),
+            |cap| named_records_with_limits(payload, cap, DecodePolicy::service().limits.max_retained_bytes),
         ),
-        u64::MAX,
+        DecodePolicy::service().limits.max_retained_bytes,
     )
     .expect_err("record needs one Vec item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -117,8 +118,9 @@ fn named_prototype_record_refuses_before_vec_growth() {
 #[test]
 fn named_prototype_parameter_refuses_before_vec_growth() {
     let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius2\0\x2e\x05\x33\xf1\xf7\x0e\xe3";
+    let collection = record_collection_limit(payload);
     assert_eq!(
-        named_records_with_limits(payload, u64::MAX, u64::MAX).expect("one parameter admitted")[0]
+        named_records_with_limits(payload, collection, DecodePolicy::service().limits.max_retained_bytes).expect("one parameter admitted")[0]
             .parameters
             .len(),
         1
@@ -128,9 +130,9 @@ fn named_prototype_parameter_refuses_before_vec_growth() {
         crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             Some("creo named prototype parameters"),
-            |cap| named_records_with_limits(payload, cap, u64::MAX),
+            |cap| named_records_with_limits(payload, cap, DecodePolicy::service().limits.max_retained_bytes),
         ),
-        u64::MAX,
+        DecodePolicy::service().limits.max_retained_bytes,
     )
     .expect_err("parameter needs one Vec item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -141,19 +143,20 @@ fn named_prototype_parameter_refuses_before_vec_growth() {
 #[test]
 fn named_prototype_body_refuses_before_retained_copy() {
     let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius2\0\x2e\x05\x33\xf1\xf7\x0e\xe3";
+    let collection = record_collection_limit(payload);
     assert_eq!(
-        named_records_with_limits(payload, u64::MAX, u64::MAX).expect("body admitted")[0]
+        named_records_with_limits(payload, collection, DecodePolicy::service().limits.max_retained_bytes).expect("body admitted")[0]
             .parameters[0]
             .body,
         [0x2e, 0x05, 0x33, 0xf1, 0xf7, 0x0e]
     );
     let error = named_records_with_limits(
         payload,
-        u64::MAX,
+        collection,
         crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             Some("creo named prototype parameter body"),
-            |cap| named_records_with_limits(payload, u64::MAX, cap),
+            |cap| named_records_with_limits(payload, collection, cap),
         ),
     )
     .expect_err("body needs retained bytes");
@@ -164,8 +167,9 @@ fn named_prototype_body_refuses_before_retained_copy() {
 
 #[test]
 fn named_prototype_scalar_cache_refuses_before_hashset_growth() {
+    let collection = cache_collection_limit(|ctx| super::super::named_prototype_records(ctx, SCALAR_IMAGE, &mut crate::lane_refusal::LaneRefusals::new()));
     assert!(
-        run_with_collection_limit(u64::MAX, |ctx| super::super::named_prototype_records(
+        run_with_collection_limit(collection, |ctx| super::super::named_prototype_records(
             ctx,
             SCALAR_IMAGE,
             &mut crate::lane_refusal::LaneRefusals::new()
@@ -202,7 +206,8 @@ fn named_prototype_scalar_cache_refuses_before_hashset_growth() {
 
 #[test]
 fn positional_parameter_scalar_cache_refuses_before_hashset_growth() {
-    assert!(run_with_collection_limit(3, |ctx| {
+    let collection = cache_collection_limit(|ctx| super::parameters_with_checked_cache(ctx, SCALAR_IMAGE, &[]));
+    assert!(run_with_collection_limit(collection, |ctx| {
         super::parameters_with_checked_cache(ctx, SCALAR_IMAGE, &[])
     })
     .expect("service collection budget admits scalar cache")
@@ -217,7 +222,8 @@ fn positional_parameter_scalar_cache_refuses_before_hashset_growth() {
 
 #[test]
 fn contour_scalar_cache_refuses_before_hashset_growth() {
-    assert!(run_with_collection_limit(u64::MAX, |ctx| {
+    let collection = cache_collection_limit(|ctx| super::super::contour_records_for_rows(ctx, SCALAR_IMAGE, &[]));
+    assert!(run_with_collection_limit(collection, |ctx| {
         super::super::contour_records_for_rows(ctx, SCALAR_IMAGE, &[])
     })
     .expect("service collection budget admits scalar cache")
@@ -241,7 +247,8 @@ fn contour_scalar_cache_refuses_before_hashset_growth() {
 
 #[test]
 fn plane_local_system_scalar_cache_refuses_before_hashset_growth() {
-    assert!(run_with_collection_limit(u64::MAX, |ctx| {
+    let collection = cache_collection_limit(|ctx| super::super::plane_local_systems_for_rows(ctx, SCALAR_IMAGE, &[]));
+    assert!(run_with_collection_limit(collection, |ctx| {
         super::super::plane_local_systems_for_rows(ctx, SCALAR_IMAGE, &[])
     })
     .expect("service collection budget admits both scalar caches")
@@ -417,4 +424,14 @@ fn boundary_surface_row_retain_refuses_work() {
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && resource.operation == "creo boundary surface row retain")
     );
+}
+
+fn record_collection_limit(payload: &[u8]) -> u64 {
+    crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None,
+        |cap| named_records_with_limits(payload, cap, DecodePolicy::service().limits.max_retained_bytes))
+}
+
+fn cache_collection_limit<T>(run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>) -> u64 {
+    crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None,
+        |cap| run_with_collection_limit(cap, |ctx| run(ctx)))
 }

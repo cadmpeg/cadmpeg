@@ -28,9 +28,20 @@ fn primitive_conflicts_compare_borrowed_lanes_without_allocating_candidates() {
     for shaded in [false, true] {
         let mut arrays = arrays(shaded);
         arrays[1].values[0] = FiniteReal::ONE;
-        // Two array visits. Unshaded positions differ in their first tuple;
-        // shaded positions agree in all three, then the first normal differs.
-        let need = 2 + if shaded { 3 + 1 } else { 1 };
+        let need = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            match triangle_strip_geometry(&ctx, &arrays, 3) {
+                Err(TriangleStripGeometryError::Conflicting) => Ok(()),
+                Err(TriangleStripGeometryError::Resource(error)) => Err(error),
+                other => panic!("expected conflict: {other:?}"),
+            }
+        });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = need;

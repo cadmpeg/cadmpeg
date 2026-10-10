@@ -102,18 +102,12 @@ pub(in crate::decode) fn canonicalized_pcurve_endpoints(
             "creo legacy cone pcurve carrier search",
         )? {
             endpoints[side] = crate::legacy_geometry::canonicalize_legacy_cone_pcurve_endpoints(
-                ctx,
-                std::slice::from_ref(carrier),
-                face.get(),
-                endpoints[side],
-            )?;
+                Some(carrier), endpoints[side],
+            );
         } else {
             endpoints[side] = crate::legacy_geometry::canonicalize_legacy_cone_pcurve_endpoints(
-                ctx,
-                &[],
-                face.get(),
-                endpoints[side],
-            )?;
+                None, endpoints[side],
+            );
         }
     }
     Ok(endpoints)

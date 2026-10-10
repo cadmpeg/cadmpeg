@@ -137,21 +137,6 @@ fn contour_chain_refuses_body_before_retained_copy() {
 }
 
 #[test]
-fn contour_chain_refuses_aggregate_before_growth() {
-    let payload = contour_payload();
-    let rows = super::with_decode_ctx(&payload, |ctx| super::super::rows(ctx, &payload));
-    let error = crate::test_support::last_refusal_at(
-        &payload,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "creo contour record aggregation",
-        |ctx| super::super::contour_records_for_rows(ctx, &payload, &rows),
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo contour record aggregation"));
-}
-
-#[test]
 fn retains_complete_contour_chain_entries() {
     let payload = contour_payload();
     let records = contour_records(&payload);

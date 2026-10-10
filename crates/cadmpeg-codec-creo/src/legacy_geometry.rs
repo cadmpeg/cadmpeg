@@ -370,9 +370,8 @@ fn geometry_array_elements<'a>(
         "creo legacy geometry array elements",
     )?;
     let mut ids = elements.iter();
-    while let Some(element_id) =
-        ctx.next_charged(&mut ids, "creo legacy geometry element search")?
-    {
+    while ids.len() != 0 {
+        let Some(element_id) = ctx.next_charged(&mut ids, "creo legacy geometry element search")? else { break; };
         let Some(element) = ctx
             .get_btree_map(
                 object_ids,
@@ -653,8 +652,13 @@ fn spline_surface_carrier(
             &mixed_derivatives,
         )
     })?;
-    let spline = spline.map(|grid| grid.copy_retained(ctx)).transpose()?;
-    Ok(spline.map(|spline| LegacySurfaceCarrier {
+    drop(mixed_derivatives);
+    drop(v_tangents);
+    drop(u_tangents);
+    drop(derivative_scope);
+    let Some(spline) = spline else { return Ok(None); };
+    let spline = grid_scope.commit_value(spline)?;
+    Ok(Some(LegacySurfaceCarrier {
         namespace,
         surface_id: row.id,
         geometry: LegacySurfaceGeometry::Spline(spline),
@@ -809,28 +813,13 @@ fn surface_carrier(
 /// Map legacy pcurve `v` coordinates into the positive-angle frame emitted by
 /// [`LegacySurfaceGeometry::Cone`].
 pub(crate) fn canonicalize_legacy_cone_pcurve_endpoints(
-    ctx: &DecodeContext<'_>,
-    carriers: &[LegacySurfaceCarrier],
-    face_id: u32,
-    endpoints: [[f64; 2]; 2],
-) -> Result<[[f64; 2]; 2], CodecError> {
-    let sign = ctx
-        .find_map(
-            carriers,
-            |carrier| {
-                Ok(
-                    (carrier.surface_id == face_id).then_some(match carrier.geometry {
-                        LegacySurfaceGeometry::Cone {
-                            parameter_v_sign, ..
-                        } => parameter_v_sign,
-                        _ => 1.0,
-                    }),
-                )
-            },
-            "creo legacy cone chart lookup",
-        )?
-        .unwrap_or(1.0);
-    Ok(endpoints.map(|[u, v]| [u, v * sign]))
+    carrier: Option<&LegacySurfaceCarrier>, endpoints: [[f64; 2]; 2],
+) -> [[f64; 2]; 2] {
+    let sign = match carrier.map(|carrier| &carrier.geometry) {
+        Some(LegacySurfaceGeometry::Cone { parameter_v_sign, .. }) => *parameter_v_sign,
+        _ => 1.0,
+    };
+    endpoints.map(|[u, v]| [u, v * sign])
 }
 
 fn real_vector_array(
@@ -1066,7 +1055,7 @@ mod tests {
     mod admission_ordering;
     mod admission_work;
     use super::{
-        canonicalize_legacy_cone_pcurve_endpoints as checked_canonicalize_legacy_cone_pcurve_endpoints,
+        canonicalize_legacy_cone_pcurve_endpoints as canonicalize_for_carrier,
         scan as scan_checked, LegacySurfaceCarrier, LegacySurfaceGeometry, LegacySurfaceNamespace,
     };
     use crate::legacy::{
@@ -1082,10 +1071,7 @@ mod tests {
         face_id: u32,
         endpoints: [[f64; 2]; 2],
     ) -> [[f64; 2]; 2] {
-        crate::decode::with_test_decode_ctx(|ctx| {
-            checked_canonicalize_legacy_cone_pcurve_endpoints(ctx, carriers, face_id, endpoints)
-        })
-        .expect("legacy cone fixture admission")
+        canonicalize_for_carrier(carriers.iter().find(|carrier| carrier.surface_id == face_id), endpoints)
     }
 
     fn scan(persistence: &Persistence) -> super::LegacyGeometryScan {

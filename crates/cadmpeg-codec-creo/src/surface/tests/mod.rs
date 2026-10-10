@@ -16,6 +16,7 @@ mod positional_mixed;
 mod resource_cache;
 mod round_envelopes;
 mod rows;
+mod row_scan;
 mod scalar_dispatch;
 mod scalar_spans;
 mod scan;
@@ -135,3 +136,38 @@ fn positional_spline_replay_body_end(
         )
     })
 }
+
+fn work_output<T>(
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> T {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let capped = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = run(&ctx);
+        if let Err(CodecError::ResourceLimit(original)) = &result {
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
+            assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if &actual == original));
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if &actual == original));
+        }
+        result
+    };
+    let work = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, capped);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let value = run(&ctx).expect("walker admits the unchanged fixture");
+    let original = ctx.charge_work_limit(1, "after owner work route").expect_err("exact work cap");
+    assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+    value
+}
+
+mod tabulated_visits;
+
+mod storage_custody;
