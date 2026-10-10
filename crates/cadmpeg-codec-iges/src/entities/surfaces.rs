@@ -2198,6 +2198,11 @@ pub(super) fn project<'ctx>(
                 continue;
             }
         };
+        drop(first);
+        drop(second);
+        drop(first_id);
+        drop(second_id);
+        drop(rail_storage);
         let surface_id =
             crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
@@ -2784,7 +2789,10 @@ pub(super) fn project<'ctx>(
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_directrix)),
                 source_object: Some(source_object(entry, ctx)?),
             });
+        } else {
+            drop(placed_directrix);
         }
+        drop(carrier_storage);
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         ctx.reserve_vec(
             &mut ir.model.surfaces,
@@ -2956,6 +2964,8 @@ pub(super) fn project<'ctx>(
             continue;
         };
         let admitted_axis = (line_curve.origin(), line_curve.direction());
+        drop(axis_id);
+        drop(axis_storage);
         let axis_origin = admitted_axis.0.get();
         let axis_direction = *admitted_axis.1.as_raw();
         let Some(generatrix_id) = curve_carrier_id(generatrix_sequence, &entries, &records, ctx)?
@@ -3326,6 +3336,14 @@ pub(super) fn project<'ctx>(
                 continue;
             }
         };
+        // Only a transformed carrier can become a neutral curve below.
+        let generatrix = if entry.transform == 0 {
+            drop(generatrix);
+            None
+        } else {
+            Some(generatrix)
+        };
+        drop(carrier_storage);
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         ctx.reserve_vec(
             &mut ir.model.surfaces,
@@ -3343,10 +3361,9 @@ pub(super) fn project<'ctx>(
                 crate::ids::curve_admitted(&crate::ids::Stem::directory(generatrix_sequence), ctx)?,
                 admitted_axis,
             ))
-        } else if let Some(orientation) = similarity_orientation(transform) {
-            // This arm is the transformed route, so the generatrix is placed
-            // here rather than carried past the untransformed one.
-            let mut placed_generatrix = generatrix;
+        } else if let (Some(orientation), Some(mut placed_generatrix)) =
+            (similarity_orientation(transform), generatrix)
+        {
             let Ok(()) = placed_generatrix.try_map_control_points(
                 |_, point| transform.apply_point(point.get()).ok_or(()),
                 ctx,
