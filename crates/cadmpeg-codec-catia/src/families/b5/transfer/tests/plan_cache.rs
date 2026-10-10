@@ -41,13 +41,14 @@ fn repeated_pcurve_plan_avoids_duplicate_lane_storage() {
     let minimum = |graph: &B5Graph| {
         let succeeds = |cap| {
             crate::test_support::with_collection_limit(cap, |ctx| {
+                let mut curve_storage = std::collections::BTreeMap::new();
                 let mut storage = ctx.reserve_scoped(0, "test_plan_cache")?;
                 let plan = super::super::build_plan(
                     ctx,
                     graph,
                     &payload,
                     &mut crate::nurbs::LaneRefusals::new(),
-                    &mut storage,
+                    (&mut storage, &mut curve_storage),
                 );
                 if let Err(CodecError::ResourceLimit(refusal)) = &plan {
                     assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
@@ -98,13 +99,14 @@ fn cached_pcurve_plan_still_rejects_another_loop_surface() {
     let payload = UnknownId::mint("catia:test:unknown#cache-other-surface".to_owned())
         .expect("identity grammar");
     crate::test_support::with_service_context(|ctx| {
+        let mut curve_storage = std::collections::BTreeMap::new();
         let mut storage = ctx.reserve_scoped(0, "test_plan_cache")?;
         assert!(super::super::build_plan(
             ctx,
             &graph,
             &payload,
             &mut crate::nurbs::LaneRefusals::new(),
-            &mut storage,
+            (&mut storage, &mut curve_storage),
         )?
         .is_none());
         assert!(ctx.resource_refusal().is_none());

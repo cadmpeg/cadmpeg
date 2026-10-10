@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 mod closure;
 mod decode;
 mod pcurves;
@@ -283,15 +285,18 @@ fn b5_pcurve_occurrence_groups_refuse_collection_limit_before_growth() {
     .expect("service resource budget")
     .expect("complete B5 plan");
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut scratch = ctx.reserve_scoped(0, "test_emitter_scratch")?;
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         let mut ir = cadmpeg_ir::CadIr::empty();
-        super::pcurves::emit_pcurves(
+        let uses = super::pcurves::emit_pcurves(
             &mut ir,
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             &graph,
             &plan,
             &mut admission,
-        )
+            &mut scratch,
+        )?;
+        scratch.commit_value(uses)
     };
     let refused = crate::test_support::with_collection_limit(0, run);
     assert!(
@@ -393,15 +398,17 @@ fn b5_edge_id_map_refuses_collection_limit_before_growth() {
         let mut limited_plan = make_plan();
         match crate::test_support::with_collection_limit(cap, |ctx| {
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-            super::edges::emit_edges(
+            let mut scratch = ctx.reserve_scoped(0, "test_emitter_scratch")?;
+            let ids = super::edges::emit_edges(
                 &mut cadmpeg_ir::CadIr::empty(),
                 &mut cadmpeg_ir::AnnotationBuilder::new(),
                 &graph,
                 &payload,
                 &mut limited_plan,
                 &surfaces,
-                &mut admission,
-            )
+                (&mut admission, &mut scratch, &mut BTreeMap::new()),
+            )?;
+            scratch.commit_value(ids)
         }) {
             Err(cadmpeg_core::CodecError::ResourceLimit(error))
                 if error.operation == "catia_b5_emitted_edge_ids" =>
@@ -422,15 +429,17 @@ fn b5_edge_id_map_refuses_collection_limit_before_growth() {
     let mut service_plan = make_plan();
     let emitted = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        super::edges::emit_edges(
+        let mut scratch = ctx.reserve_scoped(0, "test_emitter_scratch")?;
+        let ids = super::edges::emit_edges(
             &mut cadmpeg_ir::CadIr::empty(),
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             &graph,
             &payload,
             &mut service_plan,
             &surfaces,
-            &mut admission,
-        )
+            (&mut admission, &mut scratch, &mut BTreeMap::new()),
+        )?;
+        scratch.commit_value(ids)
     })
     .expect("service resource budget");
     assert!(!emitted.is_empty());
@@ -741,9 +750,19 @@ fn build_plan(
     payload: &cadmpeg_ir::ids::UnknownId,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<super::TransferPlan>, cadmpeg_core::CodecError> {
+    let mut curve_storage = BTreeMap::new();
     let mut storage = ctx.reserve_scoped(0, "test_b5_plan_storage")?;
-    let plan = super::build_plan(ctx, graph, payload, refusal, &mut storage)?;
+    let plan = super::build_plan(
+        ctx,
+        graph,
+        payload,
+        refusal,
+        (&mut storage, &mut curve_storage),
+    )?;
     if plan.is_some() {
+        for (_, lease) in ctx.admit_iter(curve_storage, "test_curve_storage_commit")? {
+            lease.commit()?;
+        }
         storage.commit()?;
     }
     Ok(plan)

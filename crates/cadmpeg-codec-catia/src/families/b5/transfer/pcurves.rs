@@ -199,13 +199,8 @@ pub(super) fn oriented_circle_plan(
     let Some(parameter_range) = crate::nurbs::canonical_periodic_range(oriented_angles) else {
         return Ok(None);
     };
-    edge_fitted_plan(
-        ctx,
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
-        parameter_range,
-        edge_start,
-        edge_end,
-    )
+    let mut geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve));
+    edge_fitted_plan(ctx, &mut geometry, parameter_range, edge_start, edge_end)
 }
 
 /// The plan for `geometry` over `parameter_range` when its ends meet the edge
@@ -213,7 +208,7 @@ pub(super) fn oriented_circle_plan(
 /// residual.
 fn edge_fitted_plan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    geometry: CurveGeometry,
+    geometry: &mut CurveGeometry,
     parameter_range: [f64; 2],
     edge_start: [f64; 3],
     edge_end: [f64; 3],
@@ -221,7 +216,7 @@ fn edge_fitted_plan(
     let point = |parameter| -> Result<_, cadmpeg_core::CodecError> {
         Ok(cadmpeg_ir::eval::finite_or_refusal(
             cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
-                ctx, &geometry, parameter,
+                ctx, geometry, parameter,
             ))?,
         )?)
     };
@@ -246,7 +241,10 @@ fn edge_fitted_plan(
         None
     };
     Ok(Some(CurvePlan {
-        geometry,
+        geometry: std::mem::replace(
+            geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        ),
         parameter_range: Some(parameter_range),
         edge_tolerance,
         cache_fit_tolerance: None,
@@ -287,9 +285,11 @@ fn isoparametric_angle_coordinate(
     Ok(result)
 }
 
+/// Move an accepted owned carrier into its edge plan. A rejected fit leaves
+/// the carrier unchanged; descending ranges keep only a temporary knot backup.
 pub(super) fn oriented_nurbs_range(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    geometry: &CurveGeometry,
+    geometry: &mut CurveGeometry,
     endpoint_parameters: [f64; 2],
     edge_start: [f64; 3],
     edge_end: [f64; 3],
@@ -310,24 +310,13 @@ pub(super) fn oriented_nurbs_range(
     ) else {
         return Ok(None);
     };
-    let mut curve = curve.try_clone_for_decode(ctx, "catia_b5_oriented_nurbs_curve")?;
-    let mut range = endpoint_parameters;
-    if range[0] > range[1] {
-        let sum = domain_start + domain_end;
-        curve.reverse_parameterization(ctx)?;
-        // The knot edit charges one step per knot.
-        if curve
-            .edit_knots(ctx, |knots| {
-                for knot in knots {
-                    *knot += sum;
-                }
-            })?
-            .is_err()
-        {
-            return Ok(None);
-        }
-        range = [sum - range[0], sum - range[1]];
-    }
+    let descending = endpoint_parameters[0] > endpoint_parameters[1];
+    let sum = domain_start + domain_end;
+    let range = if descending {
+        [sum - endpoint_parameters[0], sum - endpoint_parameters[1]]
+    } else {
+        endpoint_parameters
+    };
     if !range[0].is_finite()
         || !range[1].is_finite()
         || range[0] >= range[1]
@@ -336,13 +325,80 @@ pub(super) fn oriented_nurbs_range(
     {
         return Ok(None);
     }
-    edge_fitted_plan(
-        ctx,
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-        range,
-        edge_start,
-        edge_end,
-    )
+    let mut original_storage = ctx.reserve_scoped(0, "catia_b5_orientation_knots_scratch")?;
+    let original_knots = if descending {
+        if !ctx.all_by(
+            curve.knots().as_slice(),
+            |knot| Ok((-*knot + sum).is_finite()),
+            "catia_b5_orientation_reflected_knots",
+        )? {
+            return Ok(None);
+        }
+        Some(original_storage.with_storage(|| {
+            ctx.copy_slice(curve.knots(), "catia_b5_orientation_original_knots")
+        })?)
+    } else {
+        None
+    };
+    if descending {
+        let owned = std::mem::replace(
+            geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        );
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = owned else {
+            return Ok(None);
+        };
+        let (degree, knots, mut poles, periodic) = curve.into_parts();
+        let mut knots = knots.into_values();
+        ctx.reverse(&mut knots, "catia_b5_orientation_knot_order")?;
+        for knot in ctx.admit_iter(&mut knots, "catia_b5_orientation_knot_reflection")? {
+            *knot = -*knot + sum;
+        }
+        match &mut poles {
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+                ctx.reverse(points, "catia_b5_orientation_pole_order")?
+            }
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                ctx.reverse(points, "catia_b5_orientation_pole_order")?
+            }
+        }
+        let curve =
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(ctx, degree, knots, poles, periodic)?
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+        *geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
+    }
+    let plan = edge_fitted_plan(ctx, geometry, range, edge_start, edge_end)?;
+    if plan.is_none() {
+        if let Some(original_knots) = &original_knots {
+            let owned = std::mem::replace(
+                geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            );
+            let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = owned else {
+                return Ok(None);
+            };
+            let (degree, knots, mut poles, periodic) = curve.into_parts();
+            let mut knots = knots.into_values();
+            ctx.copy_into(
+                &mut knots,
+                original_knots,
+                "catia_b5_orientation_restore_knots",
+            )?;
+            match &mut poles {
+                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+                    ctx.reverse(points, "catia_b5_orientation_restore_poles")?
+                }
+                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                    ctx.reverse(points, "catia_b5_orientation_restore_poles")?
+                }
+            }
+            let curve =
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::new(ctx, degree, knots, poles, periodic)?
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+            *geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
+        }
+    }
+    Ok(plan)
 }
 
 pub(super) fn isocurve_endpoint_parameters(
@@ -432,27 +488,32 @@ pub(super) fn lifted_curve_geometry(
         ..
     } = surface
     {
-        let Some(knots) = pcurve_nurbs_knots(ctx, pcurve)? else {
+        let mut input_storage = ctx.reserve_scoped(0, "catia_b5_plane_lift_inputs")?;
+        let Some(knots) = input_storage.with_storage(|| pcurve_nurbs_knots(ctx, pcurve))? else {
             return Ok(None);
         };
         let (origin, direction_u) = (coordinates(*origin), components(frame.reference()));
-        let points = ctx.collect_vec(
-            pcurve.control_points.iter().map(|uv| {
-                point3(add(
-                    origin,
-                    add(scale(direction_u, uv[0]), scale(direction_v.get(), uv[1])),
-                ))
-            }),
-            "catia_b5_lifted_plane_points",
-        )?;
+        let points = input_storage.with_storage(|| {
+            ctx.collect_vec(
+                pcurve.control_points.iter().map(|uv| {
+                    point3(add(
+                        origin,
+                        add(scale(direction_u, uv[0]), scale(direction_v.get(), uv[1])),
+                    ))
+                }),
+                "catia_b5_lifted_plane_points",
+            )
+        })?;
         let weights = pcurve
             .weights
             .as_ref()
             .map(|weights| {
-                ctx.collect_vec(
-                    weights.iter().copied().map(PositiveReal::get),
-                    "catia_b5_lifted_plane_weights",
-                )
+                input_storage.with_storage(|| {
+                    ctx.collect_vec(
+                        weights.iter().copied().map(PositiveReal::get),
+                        "catia_b5_lifted_plane_weights",
+                    )
+                })
             })
             .transpose()?;
         return Ok(cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -815,62 +876,69 @@ pub(super) fn emit_pcurves(
     graph: &B5Graph,
     plan: &TransferPlan,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
+    scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<PcurveUses, cadmpeg_core::CodecError> {
     const LOOKUP: &str = "catia_b5_emit_pcurve_plan_lookup";
     let pcurve_plan = &plan.pcurve_plan;
+    let mut occurrence_storage = admission
+        .context()
+        .reserve_scoped(0, "catia_b5_pcurve_occurrence_scratch")?;
     let mut occurrence_groups =
         BTreeMap::<u32, BTreeMap<[u64; 2], ([FiniteReal; 2], Vec<(u32, usize)>)>>::new();
-    for loop_ in admission
-        .context()
-        .admit_iter(&graph.loops, "catia_b5_pcurve_occurrence_loop_scan")?
-        .map(|(_, loop_)| loop_)
-    {
-        for (index, member) in admission
+    occurrence_storage.with_storage(|| {
+        for loop_ in admission
             .context()
-            .admit_iter(&loop_.members, "catia_b5_pcurve_occurrence_member_scan")?
-            .enumerate()
+            .admit_iter(&graph.loops, "catia_b5_pcurve_occurrence_loop_scan")?
+            .map(|(_, loop_)| loop_)
         {
-            let object_id = member.pcurve;
-            let edge_id = member.edge;
-            let Some((_, _, native_range)) =
-                admission
+            for (index, member) in admission
+                .context()
+                .admit_iter(&loop_.members, "catia_b5_pcurve_occurrence_member_scan")?
+                .enumerate()
+            {
+                let object_id = member.pcurve;
+                let edge_id = member.edge;
+                let Some((_, _, native_range)) =
+                    admission
+                        .context()
+                        .get_btree_map(pcurve_plan, &object_id, LOOKUP)?
+                else {
+                    continue;
+                };
+                let parameter_range =
+                    edge_pcurve_parameters(admission.context(), graph, edge_id, object_id)?
+                        .and_then(|parameters| ordered_subrange(parameters, *native_range))
+                        .unwrap_or(*native_range)
+                        .map(|parameter| {
+                            if parameter.get() == 0.0 {
+                                FiniteReal::ZERO
+                            } else {
+                                parameter
+                            }
+                        });
+                let ranges = admission
                     .context()
-                    .get_btree_map(pcurve_plan, &object_id, LOOKUP)?
-            else {
-                continue;
-            };
-            let parameter_range =
-                edge_pcurve_parameters(admission.context(), graph, edge_id, object_id)?
-                    .and_then(|parameters| ordered_subrange(parameters, *native_range))
-                    .unwrap_or(*native_range)
-                    .map(|parameter| {
-                        if parameter.get() == 0.0 {
-                            FiniteReal::ZERO
-                        } else {
-                            parameter
-                        }
-                    });
-            let ranges = admission
-                .context()
-                .entry_btree_map(
-                    &mut occurrence_groups,
-                    object_id,
-                    "catia_b5_pcurve_occurrence_objects",
-                )?
-                .or_default();
-            let key = parameter_range.map(|parameter| parameter.get().to_bits());
-            let occurrences = &mut admission
-                .context()
-                .entry_btree_map(ranges, key, "catia_b5_pcurve_occurrence_ranges")?
-                .or_insert_with(|| (parameter_range, Vec::new()))
-                .1;
-            admission.context().push_vec(
-                occurrences,
-                (loop_.object_id, index),
-                "catia_b5_pcurve_occurrences",
-            )?;
+                    .entry_btree_map(
+                        &mut occurrence_groups,
+                        object_id,
+                        "catia_b5_pcurve_occurrence_objects",
+                    )?
+                    .or_default();
+                let key = parameter_range.map(|parameter| parameter.get().to_bits());
+                let occurrences = &mut admission
+                    .context()
+                    .entry_btree_map(ranges, key, "catia_b5_pcurve_occurrence_ranges")?
+                    .or_insert_with(|| (parameter_range, Vec::new()))
+                    .1;
+                admission.context().push_vec(
+                    occurrences,
+                    (loop_.object_id, index),
+                    "catia_b5_pcurve_occurrences",
+                )?;
+            }
         }
-    }
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })?;
     let mut pcurve_uses = HashMap::new();
     for (object_id, ranges) in admission
         .context()
@@ -933,14 +1001,19 @@ pub(super) fn emit_pcurves(
                 .context()
                 .admit_iter(occurrences, "catia_b5_pcurve_emission_occurrence_scan")?
             {
-                let use_id =
-                    id.try_clone_for_decode(admission.context(), "catia_b5_pcurve_use_id")?;
-                admission.context().insert_hash_map(
-                    &mut pcurve_uses,
-                    occurrence,
-                    (use_id, parameter_range),
-                    "catia_b5_pcurve_uses",
-                )?;
+                scratch.with_storage(|| {
+                    let use_id =
+                        id.try_clone_for_decode(admission.context(), "catia_b5_pcurve_use_id")?;
+                    admission
+                        .context()
+                        .insert_hash_map(
+                            &mut pcurve_uses,
+                            occurrence,
+                            (use_id, parameter_range),
+                            "catia_b5_pcurve_uses",
+                        )
+                        .map(|_| ())
+                })?;
             }
             let geometry = geometry
                 .try_clone_for_decode(admission.context(), "catia_b5_emitted_pcurve_geometry")?;

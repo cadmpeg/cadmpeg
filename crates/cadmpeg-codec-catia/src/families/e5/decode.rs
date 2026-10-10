@@ -317,7 +317,7 @@ pub(in crate::families) fn try_decode_e5(
         crate::resource::derived_annotation(ctx, &mut annotations, &surface_id, "geometry")?;
         admission.reserve_entity(&mut ir.model.surfaces, "catia_e5_model_surfaces")?;
         ir.model.surfaces.push(Surface {
-            id: surface_id.try_clone_for_decode(ctx, "catia_e5_jet_surface_record_id")?,
+            id: surface_id,
             geometry: SurfaceGeometry::Procedural {
                 construction: procedural_id
                     .try_clone_for_decode(ctx, "catia_e5_jet_construction_id")?,
@@ -1623,9 +1623,9 @@ fn transfer_e5_topology(
 /// Lowers every face loop to boundary curves, pcurves, and intersection contexts,
 /// or returns `None` when any binding fails admission.
 ///
-/// The plan's collections and the copies made for it live in `scratch`. The
-/// evaluated geometry is built by readers that also record retained refusal
-/// notes, so it is charged where it is built.
+/// Selected geometry and plan collections live in `scratch` through emission.
+/// Per-occurrence geometry is temporary until selection. Refusal notes retain
+/// their own storage.
 fn plan_e5_boundary<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scratch: &mut ScopedReservation<'_>,
@@ -1661,6 +1661,7 @@ fn plan_e5_boundary<'a>(
     let mut pcurve_use_reversed = BTreeMap::<(u32, usize), bool>::new();
     let mut edge_curves = BTreeMap::<u32, (CurveGeometry, [f64; 2])>::new();
     let mut surface_curves = BTreeMap::<u32, (SurfaceId, PcurveGeometry, [f64; 2])>::new();
+    let mut occurrence_storage = ctx.reserve_scoped(0, "catia_e5_occurrence_side_scratch")?;
     let mut occurrence_intersection_sides =
         BTreeMap::<u32, Vec<E5OccurrenceIntersectionSide>>::new();
     let mut steps = topology.faces.iter();
@@ -1704,8 +1705,10 @@ fn plan_e5_boundary<'a>(
                 else {
                     return Ok(None);
                 };
-                let Some((geometry, range, endpoints)) =
-                    e5_pcurve_on_surface(ctx, pcurve, decoded_surface, refusal)?
+                let mut geometry_storage =
+                    ctx.reserve_scoped(0, "catia_e5_normalized_pcurve_scratch")?;
+                let Some((geometry, range, endpoints)) = geometry_storage
+                    .with_storage(|| e5_pcurve_on_surface(ctx, pcurve, decoded_surface, refusal))?
                 else {
                     return Ok(None);
                 };
@@ -1746,35 +1749,19 @@ fn plan_e5_boundary<'a>(
                 {
                     return Ok(None);
                 }
-                let oriented_pcurve = if reversed {
-                    let record = ctx.format_scoped(
-                        format_args!(
-                            "e5 boundary pcurve of loop record {} member {member_index}",
-                            loop_.record_id
-                        ),
-                        "catia_e5_reverse_pcurve_label",
-                    )?;
-                    let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(
-                        ctx, &geometry, range, refusal, &record.0,
-                    )?
-                    else {
-                        return Ok(None);
-                    };
-                    reversed
-                } else {
-                    scratch.with_storage(|| {
-                        geometry.try_clone_for_decode(ctx, "catia_e5_oriented_pcurve_copy")
-                    })?
-                };
-                let lifted_curve = if let Some((mut curve, mut curve_range)) = e5_boundary_curve(
-                    ctx,
-                    &decoded_surface.geometry,
-                    pcurve,
-                    &geometry,
-                    (range, endpoints),
-                    decoded_surface.uv_scale,
-                    refusal,
-                )? {
+                let mut curve_storage = ctx.reserve_scoped(0, "catia_e5_lifted_curve_scratch")?;
+                let lifted_curve = if let Some((mut curve, mut curve_range)) = curve_storage
+                    .with_storage(|| {
+                        e5_boundary_curve(
+                            ctx,
+                            &decoded_surface.geometry,
+                            pcurve,
+                            &geometry,
+                            (range, endpoints),
+                            decoded_surface.uv_scale,
+                            refusal,
+                        )
+                    })? {
                     if reversed {
                         let record = ctx.format_scoped(
                             format_args!(
@@ -1783,32 +1770,84 @@ fn plan_e5_boundary<'a>(
                             ),
                             "catia_e5_reverse_curve_label",
                         )?;
-                        let Some(reversed_curve) = crate::nurbs::reverse_curve_geometry(
-                            ctx,
-                            &curve,
-                            curve_range,
-                            refusal,
-                            &record.0,
-                        )?
+                        let mut reversed_storage =
+                            ctx.reserve_scoped(0, "catia_e5_reversed_curve_scratch")?;
+                        let Some(reversed_curve) = reversed_storage.with_storage(|| {
+                            crate::nurbs::reverse_curve_geometry(
+                                ctx,
+                                &curve,
+                                curve_range,
+                                refusal,
+                                &record.0,
+                            )
+                        })?
                         else {
                             return Ok(None);
                         };
+                        drop(curve);
+                        drop(curve_storage);
+                        curve_storage = reversed_storage;
                         (curve, curve_range) = reversed_curve;
                     }
                     Some((curve, curve_range))
                 } else {
                     None
                 };
-                if support.is_intersection() {
-                    scratch.with_storage(|| {
-                        push_occurrence_intersection_side(
-                            ctx,
-                            &mut occurrence_intersection_sides,
-                            edge_ref,
-                            (face_surface_id, &oriented_pcurve, range),
-                            lifted_curve.as_ref(),
-                        )
-                    })?;
+                let needs_surface_curve = !support.is_intersection()
+                    && lifted_curve.is_none()
+                    && !ctx.contains_key_btree_map(
+                        &surface_curves,
+                        &edge_ref,
+                        "catia_e5_surface_curve_plan",
+                    )?;
+                if support.is_intersection() || needs_surface_curve {
+                    let mut oriented_storage =
+                        ctx.reserve_scoped(0, "catia_e5_oriented_pcurve_scratch")?;
+                    let oriented_pcurve = if reversed {
+                        let record = ctx.format_scoped(
+                            format_args!(
+                                "e5 boundary pcurve of loop record {} member {member_index}",
+                                loop_.record_id
+                            ),
+                            "catia_e5_reverse_pcurve_label",
+                        )?;
+                        let Some(reversed) = oriented_storage.with_storage(|| {
+                            crate::nurbs::reverse_pcurve_geometry(
+                                ctx, &geometry, range, refusal, &record.0,
+                            )
+                        })?
+                        else {
+                            return Ok(None);
+                        };
+                        reversed
+                    } else {
+                        oriented_storage.with_storage(|| {
+                            geometry.try_clone_for_decode(ctx, "catia_e5_oriented_pcurve_copy")
+                        })?
+                    };
+                    if support.is_intersection() {
+                        occurrence_storage.with_storage(|| {
+                            push_occurrence_intersection_side(
+                                ctx,
+                                &mut occurrence_intersection_sides,
+                                edge_ref,
+                                (face_surface_id, &oriented_pcurve, range),
+                                lifted_curve.as_ref(),
+                            )
+                        })?;
+                    } else {
+                        scratch.with_storage(|| {
+                            let surface_id = face_surface_id
+                                .try_clone_for_decode(ctx, "catia_e5_surface_curve_surface_id")?;
+                            ctx.insert_btree_map(
+                                &mut surface_curves,
+                                edge_ref,
+                                (surface_id, oriented_pcurve, range),
+                                "catia_e5_surface_curve_plan",
+                            )
+                        })?;
+                        scratch.absorb(&mut oriented_storage)?;
+                    }
                 }
                 if let Some((curve, curve_range)) = lifted_curve {
                     if !support.is_intersection() {
@@ -1829,25 +1868,9 @@ fn plan_e5_boundary<'a>(
                                     "catia_e5_edge_curve_plan",
                                 )
                             })?;
+                            scratch.absorb(&mut curve_storage)?;
                         }
                     }
-                } else if !support.is_intersection()
-                    && !ctx.contains_key_btree_map(
-                        &surface_curves,
-                        &edge_ref,
-                        "catia_e5_surface_curve_plan",
-                    )?
-                {
-                    scratch.with_storage(|| {
-                        let surface_id = face_surface_id
-                            .try_clone_for_decode(ctx, "catia_e5_surface_curve_surface_id")?;
-                        ctx.insert_btree_map(
-                            &mut surface_curves,
-                            edge_ref,
-                            (surface_id, oriented_pcurve, range),
-                            "catia_e5_surface_curve_plan",
-                        )
-                    })?;
                 }
                 if let Some((existing, existing_range)) =
                     ctx.get_btree_map(&pcurves, &pcurve_ref, "catia_e5_pcurve_plan")?
@@ -1866,10 +1889,12 @@ fn plan_e5_boundary<'a>(
                             "catia_e5_pcurve_plan",
                         )
                     })?;
+                    scratch.absorb(&mut geometry_storage)?;
                 }
             }
         }
     }
+    let mut intersection_storage = ctx.reserve_scoped(0, "catia_e5_intersection_side_scratch")?;
     let mut intersection_sides = BTreeMap::<u32, BTreeMap<u32, E5IntersectionSidePlan>>::new();
     let mut steps = topology.edges.iter();
     while let Some((&edge_ref, edge)) =
@@ -1910,8 +1935,10 @@ fn plan_e5_boundary<'a>(
             else {
                 continue;
             };
-            let Some((geometry, range, endpoints)) =
-                e5_pcurve_on_surface(ctx, pcurve, decoded_surface, refusal)?
+            let mut geometry_storage =
+                ctx.reserve_scoped(0, "catia_e5_normalized_pcurve_scratch")?;
+            let Some((geometry, range, endpoints)) = geometry_storage
+                .with_storage(|| e5_pcurve_on_surface(ctx, pcurve, decoded_surface, refusal))?
             else {
                 // A known intersection pcurve that cannot be normalized must
                 // reject the topology route; omitting one side would claim a
@@ -1935,15 +1962,18 @@ fn plan_e5_boundary<'a>(
             if if reversed { reverse_error } else { forward } > E5_ENDPOINT_MATCH_TOLERANCE {
                 continue;
             }
-            let Some((mut curve, mut curve_range)) = e5_boundary_curve(
-                ctx,
-                &decoded_surface.geometry,
-                pcurve,
-                &geometry,
-                (range, endpoints),
-                decoded_surface.uv_scale,
-                refusal,
-            )?
+            let mut curve_storage = ctx.reserve_scoped(0, "catia_e5_lifted_curve_scratch")?;
+            let Some((mut curve, mut curve_range)) = curve_storage.with_storage(|| {
+                e5_boundary_curve(
+                    ctx,
+                    &decoded_surface.geometry,
+                    pcurve,
+                    &geometry,
+                    (range, endpoints),
+                    decoded_surface.uv_scale,
+                    refusal,
+                )
+            })?
             else {
                 continue;
             };
@@ -1952,16 +1982,23 @@ fn plan_e5_boundary<'a>(
                     format_args!("e5 boundary curve of edge {edge_ref} pcurve {pcurve_ref}"),
                     "catia_e5_intersection_reverse_curve_label",
                 )?;
-                let Some(reversed_curve) = crate::nurbs::reverse_curve_geometry(
-                    ctx,
-                    &curve,
-                    curve_range,
-                    refusal,
-                    &record.0,
-                )?
+                let mut reversed_storage =
+                    ctx.reserve_scoped(0, "catia_e5_reversed_curve_scratch")?;
+                let Some(reversed_curve) = reversed_storage.with_storage(|| {
+                    crate::nurbs::reverse_curve_geometry(
+                        ctx,
+                        &curve,
+                        curve_range,
+                        refusal,
+                        &record.0,
+                    )
+                })?
                 else {
                     continue;
                 };
+                drop(curve);
+                drop(curve_storage);
+                curve_storage = reversed_storage;
                 (curve, curve_range) = reversed_curve;
             }
             let pcurve = if reversed {
@@ -1969,17 +2006,22 @@ fn plan_e5_boundary<'a>(
                     format_args!("e5 boundary pcurve of edge {edge_ref} pcurve {pcurve_ref}"),
                     "catia_e5_intersection_reverse_pcurve_label",
                 )?;
-                let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(
-                    ctx, &geometry, range, refusal, &record.0,
-                )?
+                let mut reversed_storage =
+                    ctx.reserve_scoped(0, "catia_e5_reversed_pcurve_scratch")?;
+                let Some(reversed) = reversed_storage.with_storage(|| {
+                    crate::nurbs::reverse_pcurve_geometry(ctx, &geometry, range, refusal, &record.0)
+                })?
                 else {
                     continue;
                 };
+                drop(geometry);
+                drop(geometry_storage);
+                geometry_storage = reversed_storage;
                 reversed
             } else {
                 geometry
             };
-            scratch.with_storage(|| {
+            intersection_storage.with_storage(|| {
                 let side = E5IntersectionSidePlan {
                     surface: surface_id
                         .try_clone_for_decode(ctx, "catia_e5_intersection_surface_id")?,
@@ -2016,6 +2058,8 @@ fn plan_e5_boundary<'a>(
                 }
                 Ok::<(), cadmpeg_core::CodecError>(())
             })?;
+            intersection_storage.absorb(&mut geometry_storage)?;
+            intersection_storage.absorb(&mut curve_storage)?;
         }
     }
 
@@ -2202,6 +2246,10 @@ fn plan_e5_boundary<'a>(
                 })
         })?;
     }
+    drop(intersection_sides);
+    drop(intersection_storage);
+    drop(occurrence_intersection_sides);
+    drop(occurrence_storage);
     Ok(Some(E5BoundaryPlan {
         faces,
         pcurves,
@@ -2472,7 +2520,9 @@ fn emit_e5_curves_and_edges(
     for (&record_id, context) in
         ctx.admit_iter(intersections, "catia_e5_emitted_intersection_scan")?
     {
-        let curve = e5_edge_curve_id(ctx, record_id, "catia_e5_intersection_curve_id")?;
+        let mut identity_storage = ctx.reserve_scoped(0, "catia_e5_intersection_owner_scratch")?;
+        let curve = identity_storage
+            .with_storage(|| e5_edge_curve_id(ctx, record_id, "catia_e5_intersection_curve_id"))?;
         let id = crate::resource::compose_u32_id(
             ctx,
             &cadmpeg_ir::identity_namespace!("catia", "e5", "intersection"),
@@ -2515,7 +2565,9 @@ fn emit_e5_curves_and_edges(
         if ctx.contains_key_btree_map(intersections, &record_id, "catia_e5_intersection_plan")? {
             continue;
         }
-        let curve = e5_edge_curve_id(ctx, record_id, "catia_e5_surface_curve_id")?;
+        let mut identity_storage = ctx.reserve_scoped(0, "catia_e5_surface_curve_owner_scratch")?;
+        let curve = identity_storage
+            .with_storage(|| e5_edge_curve_id(ctx, record_id, "catia_e5_surface_curve_id"))?;
         let id = crate::resource::compose_u32_id(
             ctx,
             &cadmpeg_ir::identity_namespace!("catia", "e5", "surface-curve"),
@@ -2679,20 +2731,21 @@ fn emit_e5_bodies(
         .admit_iter(bodies, "catia_e5_emitted_body_plan_scan")?
         .enumerate()
     {
-        let body_id = BodyId::mint(match plan.record_id {
-            Some(record_id) => ctx.format_retained(
-                format_args!("catia:e5:body#{record_id}"),
-                "catia_e5_body_id",
-            )?,
-            None => ctx.format_retained(
-                format_args!("catia:e5:body#inferred-{body_index}"),
-                "catia_e5_body_id",
-            )?,
-        })
-        .map_err(cadmpeg_core::CodecError::malformed)?;
-        // The region ids are minted once as scratch; the body and each
-        // region keep copies.
+        // Identity seeds are scratch; emitted bodies and regions keep copies.
         let mut region_storage = ctx.reserve_scoped(0, "catia_e5_region_ids")?;
+        let body_id = region_storage.with_storage(|| {
+            BodyId::mint(match plan.record_id {
+                Some(record_id) => ctx.format_retained(
+                    format_args!("catia:e5:body#{record_id}"),
+                    "catia_e5_body_id",
+                )?,
+                None => ctx.format_retained(
+                    format_args!("catia:e5:body#inferred-{body_index}"),
+                    "catia_e5_body_id",
+                )?,
+            })
+            .map_err(cadmpeg_core::CodecError::malformed)
+        })?;
         let region_ids = region_storage.with_storage(|| {
             ctx.try_collect_vec(
                 (0..plan.components.len()).map(|component| {
@@ -3097,11 +3150,13 @@ fn emit_e5_faces_loops_coedges(
                     "catia_e5_coedge_pcurve_uses",
                 )?;
                 admission.reserve_entity(&mut ir.model.coedges, "catia_e5_model_coedges")?;
+                let radial_placeholder = scratch
+                    .with_storage(|| id.try_clone_for_decode(ctx, "catia_e5_coedge_record_id"))?;
                 ir.model.coedges.push(Coedge {
-                    id: id.try_clone_for_decode(ctx, "catia_e5_coedge_record_id")?,
+                    id,
                     owner_loop: loop_id.try_clone_for_decode(ctx, "catia_e5_coedge_loop_id")?,
                     edge: e5_edge_id(ctx, edge_ref, "catia_e5_coedge_edge_id")?,
-                    radial_next: id,
+                    radial_next: radial_placeholder,
                     sense: if member.orientation.reversed {
                         Sense::Reversed
                     } else {
@@ -3368,13 +3423,16 @@ fn e5_pcurve_on_surface(
             if !scale.into_iter().all(|value| value != 0.0) {
                 return Ok(None);
             }
-            let Some(scaled_points) = ctx.collect_options(
-                control_points.iter().map(|[u, v]| {
-                    let point = Point2::new(u.get() * scale[0], v.get() * scale[1]);
-                    point.is_finite().then_some(point)
-                }),
-                "catia E5 NURBS pcurve points",
-            )?
+            let mut input_storage = ctx.reserve_scoped(0, "catia_e5_nurbs_pcurve_inputs")?;
+            let Some(scaled_points) = input_storage.with_storage(|| {
+                ctx.collect_options(
+                    control_points.iter().map(|[u, v]| {
+                        let point = Point2::new(u.get() * scale[0], v.get() * scale[1]);
+                        point.is_finite().then_some(point)
+                    }),
+                    "catia E5 NURBS pcurve points",
+                )
+            })?
             else {
                 return Ok(None);
             };
@@ -3394,6 +3452,7 @@ fn e5_pcurve_on_surface(
             else {
                 return Ok(None);
             };
+            drop(input_storage);
             let geometry = PcurveGeometry::Nurbs { nurbs };
             {
                 let range = range.map(FiniteReal::get);
