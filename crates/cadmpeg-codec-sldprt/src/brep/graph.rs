@@ -196,7 +196,9 @@ impl Brep {
     ) -> Result<(), cadmpeg_core::CodecError> {
         // The site qualifier is admitted once, here, as a key tail. The tail
         // grammar scan reads every byte of the formatted text.
-        let (tail_text, _tail_reservation) =
+        let _tail_reservation;
+        let tail_text;
+        (tail_text, _tail_reservation) =
             ctx.format_scoped(format_args!("@{site}"), "qualify SLDPRT site")?;
         ctx.charge_work(
             u64_from_index(tail_text.len()),
@@ -1149,7 +1151,9 @@ fn unique_body_modifiers(
     ctx: &DecodeContext<'_>,
     modifiers: Vec<attrib::BodyModifier>,
 ) -> Result<Vec<attrib::BodyModifier>, cadmpeg_core::CodecError> {
-    let (by_attr, _by_attr_storage) =
+    let _by_attr_storage;
+    let by_attr;
+    (by_attr, _by_attr_storage) =
         ctx.with_scoped_storage("index Parasolid body modifiers", || {
             let mut by_attr = BTreeMap::<u16, Option<attrib::BodyModifier>>::new();
             for modifier in ctx.admit_iter(modifiers, "select Parasolid body modifiers")? {
@@ -1285,7 +1289,9 @@ fn typed_body_records(
     facts: &typed::Facts,
     tables: &topology::Tables,
 ) -> Result<Option<Vec<BodyRecord>>, cadmpeg_core::CodecError> {
-    let (bridge_attrs, _bridge_attrs_storage) =
+    let _bridge_attrs_storage;
+    let bridge_attrs;
+    (bridge_attrs, _bridge_attrs_storage) =
         ctx.with_scoped_storage("index Parasolid body bridges", || {
             ctx.collect_btree_set(
                 tables.bridges().keys().copied(),
