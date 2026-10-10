@@ -1122,3 +1122,5 @@ fn every_standard_unit_reads_its_scale_from_the_admitted_table() {
     }
     assert_eq!(settings::MillimeterScale::IDENTITY.value(), 1.0);
 }
+
+mod bounded_diagnostics;
