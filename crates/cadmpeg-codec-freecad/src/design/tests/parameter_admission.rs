@@ -102,7 +102,7 @@ fn design_qualified_parameter_name_refuses_at_materialized_limit() {
         ),
         ordinal: 0,
         name: "Length".into(),
-        expression: "1".into(),
+        expression: "Feature.Length".into(),
         display: None,
         value: None,
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -176,7 +176,8 @@ fn parameter_dependency_fixture(
 
 #[test]
 fn design_parameter_dependency_stages_refuse_at_collection_limits() {
-    let (object, parameters) = parameter_dependency_fixture(false);
+    let (object, mut parameters) = parameter_dependency_fixture(false);
+    parameters[0].expression = "Feature.Width".into();
     for operation in [
         "fcstd unique local candidates",
         "fcstd unique qualified candidates",
@@ -353,4 +354,62 @@ fn design_cycle_objects_use_scoped_storage_across_repeated_fallbacks() {
         assert!(ordering.cycle_affected.contains(object.id().as_str()));
     }
     assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn parameter_cycle_consumers_skip_all_candidate_indexes() {
+    let (object, mut parameters) = parameter_dependency_fixture(false);
+    parameters.truncate(1);
+    let owner = parameters[0].owner.clone().expect("owned parameter");
+    let objects = (0..4097).map(|index| {
+        let mut object = object.clone();
+        let name = format!("Unused{index}");
+        object.identity = crate::native::object_identity::ObjectIdentity::try_new(
+            format!("fcstd:native:object#{name}"), name,
+        ).expect("object identity");
+        object
+    }).collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 64;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let (_cycles, _storage) = super::super::ordering::bind_parameter_dependencies(
+        &ctx, &mut parameters, &objects, &std::collections::BTreeSet::from([owner]),
+    ).expect("cycle expressions do not consume candidate indexes");
+    assert!(parameters[0].dependencies.is_empty());
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn constant_parameter_expressions_skip_qualified_object_names() {
+    let (object, mut parameters) = parameter_dependency_fixture(false);
+    for parameter in &mut parameters { parameter.expression = "1".into(); }
+    let objects = vec![object; 4097];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 64;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let (_cycles, _storage) = super::super::ordering::bind_parameter_dependencies(
+        &ctx, &mut parameters, &objects, &std::collections::BTreeSet::new(),
+    ).expect("constant expressions do not consume qualified names");
+    assert!(parameters.iter().all(|parameter| parameter.dependencies.is_empty()));
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn eligible_parameter_keeps_cycle_owned_candidates() {
+    let (object, mut parameters) = parameter_dependency_fixture(false);
+    let target = parameters[0].id.clone();
+    let cyclic_owner = parameters[0].owner.clone().expect("candidate owner");
+    parameters[1].owner = None;
+    parameters[1].expression = "Feature.Length".into();
+    let consumer = parameters[1].id.clone();
+    crate::test_support::with_service_context(&[], |ctx| {
+        let (_cycles, _storage) = super::super::ordering::bind_parameter_dependencies(
+            ctx, &mut parameters, &[object], &std::collections::BTreeSet::from([cyclic_owner]),
+        ).expect("eligible consumer resolves cycle-owned source");
+        let parameter = parameters.iter().find(|parameter| parameter.id == consumer).expect("consumer");
+        assert!(parameter.dependencies.contains(&target));
+        assert_eq!(parameter.dependencies.len(), 1);
+    });
 }
