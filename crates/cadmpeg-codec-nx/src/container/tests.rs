@@ -1057,26 +1057,6 @@ fn nine_push_growth_copy_work<T>() -> u64 {
     cadmpeg_core::decode::u64_from_index(moved_bytes)
 }
 
-fn external_reference_handle_parse_work(record_count: usize, tokens_per_record: usize) -> u64 {
-    // parse_extref_records visits each encoded token once before allocation
-    // and once while extracting it. Handle ordering compares every neighbor.
-    let token_visits = record_count
-        .checked_mul(tokens_per_record)
-        .and_then(|count| count.checked_mul(2))
-        .expect("handle token visit work fits usize");
-    let comparisons = record_count
-        .checked_mul(tokens_per_record.saturating_sub(1))
-        .expect("handle ordering comparisons fit usize");
-    let comparison_work = comparisons
-        .checked_mul(1 + 2 * std::mem::size_of::<u32>())
-        .expect("handle ordering work fits usize");
-    cadmpeg_core::decode::u64_from_index(
-        token_visits
-            .checked_add(comparison_work)
-            .expect("handle parse work fits usize"),
-    )
-}
-
 #[test]
 fn external_reference_record_parser_charges_only_visited_index_records() {
     const RECORD_COUNT: usize = 9;
@@ -1101,7 +1081,6 @@ fn external_reference_record_parser_charges_only_visited_index_records() {
     let exact_work = limit
         .used
         .checked_add(cadmpeg_core::decode::u64_from_index(RECORD_COUNT))
-        .and_then(|work| work.checked_add(external_reference_handle_parse_work(RECORD_COUNT, 1)))
         .and_then(|work| work.checked_add(nine_push_growth_copy_work::<container::ExtrefRecord>()))
         .expect("parser visit and vector growth work fits u64");
 
@@ -1121,71 +1100,34 @@ fn external_reference_record_parser_charges_only_visited_index_records() {
 }
 
 #[test]
-fn external_reference_handle_parser_charges_each_token_pass() {
-    const RECORD_COUNT: usize = 9;
-    let payload = crate::test_support::test_streams::external_reference_handle_sets(RECORD_COUNT);
-    for operation in [
-        "validate NX external reference handle tokens",
-        "extract NX external reference handles",
-    ] {
-        let error = crate::test_support::resource_refusal_at(
-            &[],
-            ResourceDimension::WorkUnits,
-            operation,
-            |ctx| {
-                let (records, storage, handles_storage) =
-                    container::parse_extref_records(ctx, &payload)?;
-                drop(records);
-                drop(storage);
-                drop(handles_storage);
-                Ok(())
-            },
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.operation == operation && limit.additional == 1));
-    }
-}
+fn external_reference_handle_parser_accepts_the_bounded_token_count() {
+    use crate::layout::extrefstream_handle_set_record as handle_set;
 
-#[test]
-fn external_reference_handle_ordering_charges_each_comparison() {
-    let payload = crate::test_support::test_streams::external_reference_stream();
-    let error = crate::test_support::resource_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "NX external reference handle order",
-        |ctx| {
-            let (records, storage, handles_storage) =
-                container::parse_extref_records(ctx, &payload)?;
-            drop(records);
-            drop(storage);
-            drop(handles_storage);
-            Ok(())
-        },
-    );
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("handle ordering must charge its first adjacent comparison");
-    };
-    assert_eq!(limit.additional, 1);
-    let comparison_work = cadmpeg_core::decode::u64_from_index(1 + 2 * std::mem::size_of::<u32>());
-    let exact_work = limit
-        .used
-        .checked_add(comparison_work)
-        .expect("one handle comparison fits the work budget");
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_work_units = exact_work,
-        |ctx| {
-            let (records, storage, handles_storage) =
-                container::parse_extref_records(ctx, &payload)
-                    .expect("the two-token order check fits exactly");
-            assert_eq!(records.len(), 1);
-            assert_eq!(records[0].handles.serialized(), [0x10, 0x20]);
-            assert_eq!(ctx.resource_refusal(), None);
-            drop(records);
-            drop(storage);
-            drop(handles_storage);
-        },
-    );
+    let mut payload = crate::test_support::test_streams::external_reference_handle_sets(1);
+    let record_start = 25 + 8 + 4;
+    let tokens_start = record_start + handle_set::LEN;
+    payload.truncate(tokens_start);
+    payload[record_start + handle_set::COUNT] = 255;
+    for handle in 0..254_u32 {
+        payload.push(0xe0);
+        payload.extend(handle.to_be_bytes());
+    }
+    payload.push(255);
+    payload.push(1);
+    payload.extend(0_u32.to_le_bytes());
+    crate::test_support::with_decode_context(|ctx| {
+        let (records, _storage, _handles_storage) =
+            container::parse_extref_records(ctx, &payload).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            records[0].handles.serialized(),
+            (0..254).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            records[0].handles.prefix_byte_len(),
+            handle_set::LEN + 254 * 5 + 1
+        );
+    });
 }
 
 #[test]
@@ -1195,22 +1137,6 @@ fn external_reference_record_parser_rejects_unsorted_handles() {
     let second = first + 5;
     payload[first + 1..first + 5].copy_from_slice(&0x20u32.to_be_bytes());
     payload[second + 1..second + 5].copy_from_slice(&0x10u32.to_be_bytes());
-
-    let error = crate::test_support::resource_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "NX external reference handle order",
-        |ctx| {
-            let (records, records_storage, handles_storage) =
-                container::parse_extref_records(ctx, &payload)?;
-            drop(records);
-            drop(records_storage);
-            drop(handles_storage);
-            Ok(())
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.operation == "NX external reference handle order" && limit.additional == 1));
 
     crate::test_support::with_decode_context(|ctx| {
         let (records, storage, handles_storage) = container::parse_extref_records(ctx, &payload)

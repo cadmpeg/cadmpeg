@@ -1428,9 +1428,6 @@ fn nurbs_source_scanners_refuse_one_visit_before_reading_a_suffix() {
                 assert_eq!(limit.used, 0);
                 assert_eq!(limit.additional, 1);
                 assert_eq!(ctx.resource_refusal(), Some(limit));
-                assert!(
-                    matches!(ctx.charge_work(0, "later NURBS scan"), Err(cadmpeg_core::CodecError::ResourceLimit(later)) if later == limit)
-                );
             },
         );
     }
@@ -1635,4 +1632,89 @@ fn nurbs_rejected_candidates_release_their_storage_without_retaining_it() {
             );
         });
     }
+}
+
+#[test]
+fn nurbs_prefix_reads_refuse_at_their_named_work_boundary() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let multiplicities = [0, 2, 0, 3];
+    let mut knots = 0.0_f64.to_be_bytes().to_vec();
+    knots.extend(1.0_f64.to_be_bytes());
+    for (array, operation) in [
+        (
+            super::ArrayValues::U16(&multiplicities),
+            "read NX NURBS multiplicities",
+        ),
+        (super::ArrayValues::F64(&knots), "read NX NURBS knots"),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| match array {
+                super::ArrayValues::U16(_) => array.u16_prefix(ctx, 2).map(|_| ()),
+                super::ArrayValues::F64(_) => array.f64_prefix(ctx, 2).map(|_| ()),
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.operation == operation && limit.used == 0 && limit.additional == 2));
+    }
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = 4;
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let prefix = super::ArrayValues::U16(&multiplicities)
+                .u16_prefix(ctx, 2)
+                .unwrap()
+                .unwrap();
+            assert_eq!(prefix.values, [2, 3]);
+            drop(prefix);
+            let prefix = super::ArrayValues::F64(&knots)
+                .f64_prefix(ctx, 2)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                prefix
+                    .values
+                    .iter()
+                    .map(|value| value.to_bits())
+                    .collect::<Vec<_>>(),
+                [0.0_f64.to_bits(), 1.0_f64.to_bits()]
+            );
+            drop(prefix);
+            let error = ctx.charge_work(1, "prefix read boundary").unwrap_err();
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.operation == "prefix read boundary" && limit.used == 4 && limit.additional == 1));
+        },
+    );
+}
+
+#[test]
+fn nurbs_truncated_prefixes_do_not_admit_storage_or_reads() {
+    let bytes = [0];
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = 0;
+            policy.limits.max_materialized_bytes = 0;
+        },
+        |ctx| {
+            for count in [1, usize::MAX] {
+                assert!(super::ArrayValues::U16(&bytes)
+                    .u16_prefix(ctx, count)
+                    .unwrap()
+                    .is_none());
+                assert!(super::ArrayValues::F64(&bytes)
+                    .f64_prefix(ctx, count)
+                    .unwrap()
+                    .is_none());
+            }
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
 }

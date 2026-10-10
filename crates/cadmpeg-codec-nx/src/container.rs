@@ -1158,15 +1158,7 @@ fn parse_extref_records<'ctx>(
             return Ok(None);
         }
         let handle_token_count = count - 1;
-        let mut token_indices = 0..handle_token_count;
-        while token_indices.len() != 0 {
-            let Some(handle_index) = ctx.next_charged(
-                &mut token_indices,
-                "validate NX external reference handle tokens",
-            )?
-            else {
-                break;
-            };
+        for handle_index in 0..handle_token_count {
             let token = handle_set::LEN + handle_index * 5;
             if bytes.get(token) != Some(&0xe0) || View::u32_be_at(bytes, token + 1).is_none() {
                 return Ok(None);
@@ -1177,20 +1169,14 @@ fn parse_extref_records<'ctx>(
         let mut handles = candidate_handles_storage.with_storage(|| {
             ctx.collection_vec(handle_token_count, "nx external reference handles")
         })?;
-        let mut token_indices = 0..handle_token_count;
-        while token_indices.len() != 0 {
-            let Some(handle_index) =
-                ctx.next_charged(&mut token_indices, "extract NX external reference handles")?
-            else {
-                break;
-            };
+        for handle_index in 0..handle_token_count {
             let token = handle_set::LEN + handle_index * 5;
             let Some(handle) = View::u32_be_at(bytes, token + 1) else {
                 return Ok(None);
             };
             handles.push(handle);
         }
-        let Ok(handles) = ExtrefHandles::new_with_admission(ctx, handles)? else {
+        let Ok(handles) = ExtrefHandles::new(handles) else {
             return Ok(None);
         };
         let prefix_byte_len = handles.prefix_byte_len();

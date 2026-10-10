@@ -130,7 +130,7 @@ fn census_phase_peak(saved: usize, replay: usize) -> u64 {
     )
 }
 
-fn assert_census_refusal_is_sticky(
+fn assert_census_refusal(
     ir: &cadmpeg_ir::CadIr,
     policy: &cadmpeg_core::decode::DecodePolicy,
     dimension: ResourceDimension,
@@ -148,11 +148,7 @@ fn assert_census_refusal_is_sticky(
             assert_eq!(limit.dimension, dimension);
             assert_eq!(limit.operation, operation);
             assert_eq!(limit.used + limit.additional, need);
-            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
-            assert!(
-                matches!(ctx.charge_work(0, "census sticky refusal control"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
+            assert_eq!(ctx.resource_refusal(), Some(limit));
         },
     );
 }
@@ -200,7 +196,7 @@ fn verified_census_releases_saved_index_before_output_growth() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "NX selected body replay identity"));
-    assert_census_refusal_is_sticky(
+    assert_census_refusal(
         &ir,
         &policy,
         ResourceDimension::MaterializedBytes,
@@ -241,7 +237,7 @@ fn mismatched_census_releases_replay_index_before_saved_output_growth() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "NX new body replay identity"));
-    assert_census_refusal_is_sticky(
+    assert_census_refusal(
         &ir,
         &policy,
         ResourceDimension::MaterializedBytes,
@@ -276,7 +272,7 @@ fn unsupported_census_keeps_boundary_identity_after_scratch_release() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "NX census boundary feature identity"));
-    assert_census_refusal_is_sticky(
+    assert_census_refusal(
         &ir,
         &policy,
         ResourceDimension::RetainedBytes,

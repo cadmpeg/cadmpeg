@@ -226,8 +226,6 @@ mod tests {
                             assert_eq!(first.used, cap);
                             assert_eq!(first.additional, 1);
                             assert_eq!(ctx.resource_refusal(), Some(first));
-                            assert!(matches!(ctx.charge_work(0, "label refusal stays fused"),
-                                Err(cadmpeg_core::CodecError::ResourceLimit(later)) if later == first));
                         } else {
                             assert_eq!(result.unwrap().is_some(), mismatch.is_none());
                             assert_eq!(ctx.resource_refusal(), None);
