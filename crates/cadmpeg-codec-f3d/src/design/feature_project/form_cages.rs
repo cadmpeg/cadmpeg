@@ -84,7 +84,8 @@ pub(crate) fn bind_form_cages(
                 let mut resolved = Vec::new();
                 let mut valid = true;
                 for object in cage_objects {
-                    let Some(surface) = form_class_325_cage_surface(ctx,bytes, &records, object)? else {
+                    let Some(surface) = form_class_325_cage_surface(ctx, bytes, &records, object)?
+                    else {
                         valid = false;
                         break;
                     };
@@ -139,7 +140,7 @@ pub(crate) fn bind_form_cages(
                 })
                 .count()
                 == 1
-            && form_class_328_envelope(ctx,bytes, &records, scope)?
+            && form_class_328_envelope(ctx, bytes, &records, scope)?
         {
             let serializers = form_cage_serializers(ctx, bytes, &records)?;
             let mut resolved = Vec::new();
@@ -277,134 +278,147 @@ pub(crate) fn bind_form_cages(
 /// The compact envelope identifies the sole cage object directly. The older
 /// owner envelope identifies one nested cage-object wrapper; its companion
 /// record carries generation-specific scalar data and is not a cage count.
-fn legacy_form_cage_count(ctx: &DecodeContext<'_>,
+fn legacy_form_cage_count(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     scope_record_index: u32,
 ) -> Result<Option<usize>, CodecError> {
     (|| {
-    if let Some(count) = match legacy_form_owner_count(ctx,bytes, records, record_index, scope_record_index) { Ok(value) => value, Err(error) => return Some(Err(error)) } {
-        return Some(Ok(count));
-    }
-    for (start, paired) in match records.frames(ctx,record_index) { Ok(value) => value, Err(error) => return Some(Err(error)) } {
-        if paired.checked_sub(start)? != form_compact_one_cage_list::LEN
-            || bytes.get(
-                start + form_compact_one_cage_list::ZERO_RUN_10
-                    ..start + form_compact_one_cage_list::OWNER_MARKER,
-            )? != [0; 10]
-            || bytes.get(start + form_compact_one_cage_list::OWNER_MARKER) != Some(&1)
-            || View::u64_le_at(
+        if let Some(count) =
+            match legacy_form_owner_count(ctx, bytes, records, record_index, scope_record_index) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            }
+        {
+            return Some(Ok(count));
+        }
+        for (start, paired) in match records.frames(ctx, record_index) {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        } {
+            if paired.checked_sub(start)? != form_compact_one_cage_list::LEN
+                || bytes.get(
+                    start + form_compact_one_cage_list::ZERO_RUN_10
+                        ..start + form_compact_one_cage_list::OWNER_MARKER,
+                )? != [0; 10]
+                || bytes.get(start + form_compact_one_cage_list::OWNER_MARKER) != Some(&1)
+                || View::u64_le_at(
+                    bytes,
+                    start + form_compact_one_cage_list::OWNER_SCOPE_RECORD_INDEX,
+                )? != u64::from(scope_record_index)
+                || bytes.get(
+                    start + form_compact_one_cage_list::ZERO_RUN_2
+                        ..start + form_compact_one_cage_list::CAGE_COUNT,
+                )? != [0; 2]
+            {
+                continue;
+            }
+            let count = usize::try_from(View::u32_le_at(
                 bytes,
-                start + form_compact_one_cage_list::OWNER_SCOPE_RECORD_INDEX,
-            )? != u64::from(scope_record_index)
-            || bytes.get(
-                start + form_compact_one_cage_list::ZERO_RUN_2
-                    ..start + form_compact_one_cage_list::CAGE_COUNT,
-            )? != [0; 2]
-        {
-            continue;
+                start + form_compact_one_cage_list::CAGE_COUNT,
+            )?)
+            .ok()?;
+            if count != 1 {
+                continue;
+            }
+            let member = start + form_compact_one_cage_list::MEMBER_MARKER;
+            if bytes.get(member) != Some(&1)
+                || bytes.get(
+                    start + form_compact_one_cage_list::MEMBER_ZERO
+                        ..start + form_compact_one_cage_list::MEMBER_FLAGS + 2,
+                )? != [0, 0, 0xfc, 0]
+            {
+                continue;
+            }
+            let object = u32::try_from(View::u64_le_at(
+                bytes,
+                start + form_compact_one_cage_list::CAGE_OBJECT_RECORD_INDEX,
+            )?)
+            .ok()?;
+            if records.offsets(object).is_empty() {
+                continue;
+            }
+            return Some(Ok(count));
         }
-        let count = usize::try_from(View::u32_le_at(
-            bytes,
-            start + form_compact_one_cage_list::CAGE_COUNT,
-        )?)
-        .ok()?;
-        if count != 1 {
-            continue;
-        }
-        let member = start + form_compact_one_cage_list::MEMBER_MARKER;
-        if bytes.get(member) != Some(&1)
-            || bytes.get(
-                start + form_compact_one_cage_list::MEMBER_ZERO
-                    ..start + form_compact_one_cage_list::MEMBER_FLAGS + 2,
-            )? != [0, 0, 0xfc, 0]
-        {
-            continue;
-        }
-        let object = u32::try_from(View::u64_le_at(
-            bytes,
-            start + form_compact_one_cage_list::CAGE_OBJECT_RECORD_INDEX,
-        )?)
-        .ok()?;
-        if records.offsets(object).is_empty() {
-            continue;
-        }
-        return Some(Ok(count));
-    }
-    None
-
-    })().transpose()
+        None
+    })()
+    .transpose()
 }
 
-fn legacy_form_owner_count(ctx: &DecodeContext<'_>,
+fn legacy_form_owner_count(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     scope_record_index: u32,
 ) -> Result<Option<usize>, CodecError> {
     (|| {
-    let mut frames = match records.frames(ctx,record_index) { Ok(value) => value, Err(error) => return Some(Err(error)) };
-    let (start, paired) = frames.next()?;
-    if frames.next().is_some() {
-        return None;
-    }
-    let owner_class = bytes.get(start + 4..start + 7)?;
-    let paired_class = bytes.get(paired + 4..paired + 7)?;
-    let nested_class: &[u8] = if owner_class == b"335" && paired_class == b"262" {
-        b"328"
-    } else if owner_class == b"395" && paired_class == b"264" {
-        b"329"
-    } else if owner_class == b"448" && paired_class == b"258" {
-        b"276"
-    } else if owner_class == b"295" && paired_class == b"258" {
-        b"274"
-    } else {
-        return None;
-    };
-    if paired.checked_sub(start)? != form_legacy_one_cage_owner::LEN
-        || View::u64_le_at(bytes, start + 7)? != u64::from(record_index)
-        || bytes.get(
-            start + form_legacy_one_cage_owner::ZERO_RUN_14
-                ..start + form_legacy_one_cage_owner::OWNER_MARKER,
-        )? != [0; 14]
-        || bytes.get(start + form_legacy_one_cage_owner::OWNER_MARKER) != Some(&1)
-        || View::u64_le_at(
+        let mut frames = match records.frames(ctx, record_index) {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
+        let (start, paired) = frames.next()?;
+        if frames.next().is_some() {
+            return None;
+        }
+        let owner_class = bytes.get(start + 4..start + 7)?;
+        let paired_class = bytes.get(paired + 4..paired + 7)?;
+        let nested_class: &[u8] = if owner_class == b"335" && paired_class == b"262" {
+            b"328"
+        } else if owner_class == b"395" && paired_class == b"264" {
+            b"329"
+        } else if owner_class == b"448" && paired_class == b"258" {
+            b"276"
+        } else if owner_class == b"295" && paired_class == b"258" {
+            b"274"
+        } else {
+            return None;
+        };
+        if paired.checked_sub(start)? != form_legacy_one_cage_owner::LEN
+            || View::u64_le_at(bytes, start + 7)? != u64::from(record_index)
+            || bytes.get(
+                start + form_legacy_one_cage_owner::ZERO_RUN_14
+                    ..start + form_legacy_one_cage_owner::OWNER_MARKER,
+            )? != [0; 14]
+            || bytes.get(start + form_legacy_one_cage_owner::OWNER_MARKER) != Some(&1)
+            || View::u64_le_at(
+                bytes,
+                start + form_legacy_one_cage_owner::OWNER_SCOPE_RECORD_INDEX,
+            )? != u64::from(scope_record_index)
+            || bytes.get(
+                start + form_legacy_one_cage_owner::ZERO_RUN_24
+                    ..start + form_legacy_one_cage_owner::NESTED_MARKER,
+            )? != [0; 24]
+            || bytes.get(start + form_legacy_one_cage_owner::NESTED_MARKER) != Some(&1)
+            || bytes.get(
+                start + form_legacy_one_cage_owner::NESTED_ZERO_RUN
+                    ..start + form_legacy_one_cage_owner::OWNER_REPEAT_MARKER,
+            )? != [0; 3]
+            || bytes.get(start + form_legacy_one_cage_owner::OWNER_REPEAT_MARKER) != Some(&1)
+            || View::u64_le_at(
+                bytes,
+                start + form_legacy_one_cage_owner::OWNER_REPEAT_SCOPE,
+            )? != u64::from(scope_record_index)
+            || bytes.get(
+                start + form_legacy_one_cage_owner::TAIL_ZERO_RUN
+                    ..start + form_legacy_one_cage_owner::LEN,
+            )? != [0; 2]
+        {
+            return None;
+        }
+        let nested_record = u32::try_from(View::u64_le_at(
             bytes,
-            start + form_legacy_one_cage_owner::OWNER_SCOPE_RECORD_INDEX,
-        )? != u64::from(scope_record_index)
-        || bytes.get(
-            start + form_legacy_one_cage_owner::ZERO_RUN_24
-                ..start + form_legacy_one_cage_owner::NESTED_MARKER,
-        )? != [0; 24]
-        || bytes.get(start + form_legacy_one_cage_owner::NESTED_MARKER) != Some(&1)
-        || bytes.get(
-            start + form_legacy_one_cage_owner::NESTED_ZERO_RUN
-                ..start + form_legacy_one_cage_owner::OWNER_REPEAT_MARKER,
-        )? != [0; 3]
-        || bytes.get(start + form_legacy_one_cage_owner::OWNER_REPEAT_MARKER) != Some(&1)
-        || View::u64_le_at(
-            bytes,
-            start + form_legacy_one_cage_owner::OWNER_REPEAT_SCOPE,
-        )? != u64::from(scope_record_index)
-        || bytes.get(
-            start + form_legacy_one_cage_owner::TAIL_ZERO_RUN
-                ..start + form_legacy_one_cage_owner::LEN,
-        )? != [0; 2]
-    {
-        return None;
-    }
-    let nested_record = u32::try_from(View::u64_le_at(
-        bytes,
-        start + form_legacy_one_cage_owner::NESTED_RECORD_INDEX,
-    )?)
-    .ok()?;
-    let [nested_at] = records.offsets(nested_record) else {
-        return None;
-    };
-    ((bytes.get(nested_at + 4..nested_at + 7) == Some(nested_class)).then_some(1)).map(Ok)
-
-    })().transpose()
+            start + form_legacy_one_cage_owner::NESTED_RECORD_INDEX,
+        )?)
+        .ok()?;
+        let [nested_at] = records.offsets(nested_record) else {
+            return None;
+        };
+        ((bytes.get(nested_at + 4..nested_at + 7) == Some(nested_class)).then_some(1)).map(Ok)
+    })()
+    .transpose()
 }
 
 fn form_class_328_envelope(
@@ -413,7 +427,8 @@ fn form_class_328_envelope(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Result<bool, CodecError> {
-    let Some((scope_start, scope_paired)) = one_indexed_frame(ctx,records, scope.record_index)? else {
+    let Some((scope_start, scope_paired)) = one_indexed_frame(ctx, records, scope.record_index)?
+    else {
         return Ok(false);
     };
     if scope_paired.checked_sub(scope_start) != Some(form_class_328_scope::LEN)
@@ -430,21 +445,35 @@ fn form_class_328_envelope(
         if records.frames(ctx, record_index)?.any(|(start, paired)| {
             bytes.get(start + 4..start + 7) == Some(b"417")
                 && bytes.get(paired + 4..paired + 7) == Some(b"267")
-        }) { group_record = Some(record_index); break; }
+        }) {
+            group_record = Some(record_index);
+            break;
+        }
     }
-    let Some(group_record) = group_record else { return Ok(false); };
+    let Some(group_record) = group_record else {
+        return Ok(false);
+    };
     let mut metadata_record = None;
     for record_index in scope.reference_members().values().copied() {
-        if record_index != group_record && records.frames(ctx, record_index)?.any(|(start, paired)| {
-            bytes.get(start + 4..start + 7) == Some(b"341")
-                && bytes.get(paired + 4..paired + 7) == Some(b"267")
-        }) { metadata_record = Some(record_index); break; }
+        if record_index != group_record
+            && records.frames(ctx, record_index)?.any(|(start, paired)| {
+                bytes.get(start + 4..start + 7) == Some(b"341")
+                    && bytes.get(paired + 4..paired + 7) == Some(b"267")
+            })
+        {
+            metadata_record = Some(record_index);
+            break;
+        }
     }
-    let Some(metadata_record) = metadata_record else { return Ok(false); };
-    let Some((group_start, group_paired)) = records.frames(ctx,group_record)?.find(|(start, paired)| {
-        bytes.get(*start + 4..*start + 7) == Some(b"417")
-            && bytes.get(*paired + 4..*paired + 7) == Some(b"267")
-    }) else {
+    let Some(metadata_record) = metadata_record else {
+        return Ok(false);
+    };
+    let Some((group_start, group_paired)) =
+        records.frames(ctx, group_record)?.find(|(start, paired)| {
+            bytes.get(*start + 4..*start + 7) == Some(b"417")
+                && bytes.get(*paired + 4..*paired + 7) == Some(b"267")
+        })
+    else {
         return Ok(false);
     };
     if group_paired.checked_sub(group_start) != Some(form_class_328_cage_group::LEN)
@@ -533,7 +562,7 @@ fn form_class_328_envelope(
             return Ok(false);
         }
         members[ordinal] = Some(member);
-        let Some((member_start, member_paired)) = one_indexed_frame(ctx,records, member)? else {
+        let Some((member_start, member_paired)) = one_indexed_frame(ctx, records, member)? else {
             return Ok(false);
         };
         if bytes.get(member_start + 4..member_start + 7) != Some(b"350")
@@ -563,10 +592,12 @@ fn form_class_328_envelope(
         }
     }
     let Some((metadata_start, metadata_paired)) =
-        records.frames(ctx,metadata_record)?.find(|(start, paired)| {
-            bytes.get(*start + 4..*start + 7) == Some(b"341")
-                && bytes.get(*paired + 4..*paired + 7) == Some(b"267")
-        })
+        records
+            .frames(ctx, metadata_record)?
+            .find(|(start, paired)| {
+                bytes.get(*start + 4..*start + 7) == Some(b"341")
+                    && bytes.get(*paired + 4..*paired + 7) == Some(b"267")
+            })
     else {
         return Ok(false);
     };
@@ -688,13 +719,20 @@ fn unique_record_has_class(
     bytes.get(*offset + 4..*offset + 7) == Some(class)
 }
 
-fn one_indexed_frame(ctx: &DecodeContext<'_>, records: &IndexedRecordOffsets, record_index: u32) -> Result<Option<(usize, usize)>, CodecError> {
+fn one_indexed_frame(
+    ctx: &DecodeContext<'_>,
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+) -> Result<Option<(usize, usize)>, CodecError> {
     (|| {
-    let mut frames = match records.frames(ctx,record_index) { Ok(value) => value, Err(error) => return Some(Err(error)) };
-    let frame = frames.next()?;
-    (frames.next().is_none().then_some(frame)).map(Ok)
-
-    })().transpose()
+        let mut frames = match records.frames(ctx, record_index) {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
+        let frame = frames.next()?;
+        (frames.next().is_none().then_some(frame)).map(Ok)
+    })()
+    .transpose()
 }
 
 fn form_class_325_cage_objects(
@@ -708,7 +746,10 @@ fn form_class_325_cage_objects(
         const CAGE_COUNT: usize = 32;
         const TYPE_DISCRIMINATOR_FIRST: u32 = 307;
 
-        let mut frames = match records.frames(ctx,scope_record_index) { Ok(value) => value, Err(error) => return Some(Err(error)) };
+        let mut frames = match records.frames(ctx, scope_record_index) {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
         let (start, paired) = frames.next()?;
         if frames.next().is_some() {
             return None;
@@ -800,9 +841,11 @@ fn form_class_325_cage_objects(
                 entry + form_class_325_cage_entry::COMPANION_RECORD_INDEX,
             )?)
             .ok()?;
-            let mut object_frames = (match records
-                .frames(ctx,object) { Ok(value) => value, Err(error) => return Some(Err(error)) })
-                .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"258"));
+            let mut object_frames = (match records.frames(ctx, object) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            })
+            .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"258"));
             let (object_at, _) = object_frames.next()?;
             if object_frames.next().is_some() {
                 return None;
@@ -822,40 +865,43 @@ fn form_class_325_cage_objects(
     parsed.transpose()
 }
 
-fn form_class_325_cage_surface(ctx: &DecodeContext<'_>,
+fn form_class_325_cage_surface(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     object_record: u32,
 ) -> Result<Option<u32>, CodecError> {
     (|| {
-    let mut frames = (match records
-        .frames(ctx,object_record) { Ok(value) => value, Err(error) => return Some(Err(error)) })
+        let mut frames = (match records.frames(ctx, object_record) {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        })
         .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"258"));
-    let (start, paired) = frames.next()?;
-    if frames.next().is_some() {
-        return None;
-    }
-    if bytes.get(start + 4..start + 7) != Some(b"289") {
-        return None;
-    }
-    let mut surface = None;
-    for at in start.checked_add(11)?..paired {
-        if bytes.get(at) != Some(&1) {
-            continue;
-        }
-        let target = View::u32_le_at(bytes, at + 1)?;
-        let [target_at] = records.offsets(target) else {
-            continue;
-        };
-        if bytes.get(target_at + 4..target_at + 7) == Some(b"310")
-            && surface.replace(target).is_some()
-        {
+        let (start, paired) = frames.next()?;
+        if frames.next().is_some() {
             return None;
         }
-    }
-    (surface).map(Ok)
-
-    })().transpose()
+        if bytes.get(start + 4..start + 7) != Some(b"289") {
+            return None;
+        }
+        let mut surface = None;
+        for at in start.checked_add(11)?..paired {
+            if bytes.get(at) != Some(&1) {
+                continue;
+            }
+            let target = View::u32_le_at(bytes, at + 1)?;
+            let [target_at] = records.offsets(target) else {
+                continue;
+            };
+            if bytes.get(target_at + 4..target_at + 7) == Some(b"310")
+                && surface.replace(target).is_some()
+            {
+                return None;
+            }
+        }
+        (surface).map(Ok)
+    })()
+    .transpose()
 }
 
 fn form_cage_objects(
@@ -866,9 +912,11 @@ fn form_cage_objects(
     scope_record_index: u32,
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let parsed = (|| {
-        let mut frames = (match records.frames(ctx,record_index) { Ok(value) => value, Err(error) => return Some(Err(error)) }).filter(|(_, paired)| {
-            matches!(bytes.get(paired + 4..paired + 7), Some(b"258" | b"264"))
-        });
+        let mut frames = (match records.frames(ctx, record_index) {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        })
+        .filter(|(_, paired)| matches!(bytes.get(paired + 4..paired + 7), Some(b"258" | b"264")));
         let (offset, paired) = frames.next()?;
         if frames.next().is_some() {
             return None;
@@ -886,7 +934,8 @@ fn form_cage_objects(
             return None;
         }
         Some(Ok((count, offset.checked_add(36)?)))
-    })().transpose()?;
+    })()
+    .transpose()?;
     let Some((count, mut cursor)) = parsed else {
         return Ok(None);
     };
@@ -939,62 +988,75 @@ fn form_cage_lists(
     Ok((lists, counts))
 }
 
-fn form_cage_surface(ctx: &DecodeContext<'_>,
+fn form_cage_surface(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     object_record: u32,
     scope_record: u32,
 ) -> Result<Option<u32>, CodecError> {
     (|| {
-    let [object_at] = records.offsets(object_record) else {
-        return None;
-    };
-    if bytes.get(object_at + 4..object_at + 7) != Some(b"301")
-        || (match next_indexed_record_offset(ctx,bytes, object_at + 1) { Ok(value) => value, Err(error) => return Some(Err(error)) })? != object_at + 200
-        || bytes.get(object_at + 189) != Some(&1)
-    {
-        return None;
-    }
-    let first_wrapper = u32::try_from(View::u64_le_at(bytes, object_at + 190)?).ok()?;
-    let [first_at] = records.offsets(first_wrapper) else {
-        return None;
-    };
-    if bytes.get(first_at + 4..first_at + 7) != Some(b"373")
-        || (match next_indexed_record_offset(ctx,bytes, first_at + 1) { Ok(value) => value, Err(error) => return Some(Err(error)) })? != first_at + 33
-        || bytes.get(first_at + 11..first_at + 21)? != [0; 10]
-        || bytes.get(first_at + 21) != Some(&1)
-        || bytes.get(first_at + 30..first_at + 33)? != [0; 3]
-    {
-        return None;
-    }
-    let second_wrapper = u32::try_from(View::u64_le_at(bytes, first_at + 22)?).ok()?;
-    let [second_at] = records.offsets(second_wrapper) else {
-        return None;
-    };
-    if bytes.get(second_at + 4..second_at + 7) != Some(b"362")
-        || (match next_indexed_record_offset(ctx,bytes, second_at + 1) { Ok(value) => value, Err(error) => return Some(Err(error)) })? != second_at + 29
-        || bytes.get(second_at + 11..second_at + 21)? != [0; 10]
-    {
-        return None;
-    }
-    let carrier = u32::try_from(View::u64_le_at(bytes, second_at + 21)?).ok()?;
-    let mut carrier_frames = match records.frames(ctx,carrier) { Ok(value) => value, Err(error) => return Some(Err(error)) };
-    let (carrier_at, carrier_paired) = carrier_frames.next()?;
-    if carrier_frames.next().is_some() {
-        return None;
-    }
-    if carrier_paired.checked_sub(carrier_at)? != 665
-        || bytes.get(carrier_at + 4..carrier_at + 7) != Some(b"457")
-        || bytes.get(carrier_paired + 4..carrier_paired + 7) != Some(b"264")
-        || bytes.get(carrier_at + 317) != Some(&1)
-        || View::u64_le_at(bytes, carrier_at + 318)? != u64::from(scope_record)
-        || bytes.get(carrier_at + 339) != Some(&1)
-    {
-        return None;
-    }
-    (u32::try_from(View::u64_le_at(bytes, carrier_at + 340)?).ok()).map(Ok)
-
-    })().transpose()
+        let [object_at] = records.offsets(object_record) else {
+            return None;
+        };
+        if bytes.get(object_at + 4..object_at + 7) != Some(b"301")
+            || (match next_indexed_record_offset(ctx, bytes, object_at + 1) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            })? != object_at + 200
+            || bytes.get(object_at + 189) != Some(&1)
+        {
+            return None;
+        }
+        let first_wrapper = u32::try_from(View::u64_le_at(bytes, object_at + 190)?).ok()?;
+        let [first_at] = records.offsets(first_wrapper) else {
+            return None;
+        };
+        if bytes.get(first_at + 4..first_at + 7) != Some(b"373")
+            || (match next_indexed_record_offset(ctx, bytes, first_at + 1) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            })? != first_at + 33
+            || bytes.get(first_at + 11..first_at + 21)? != [0; 10]
+            || bytes.get(first_at + 21) != Some(&1)
+            || bytes.get(first_at + 30..first_at + 33)? != [0; 3]
+        {
+            return None;
+        }
+        let second_wrapper = u32::try_from(View::u64_le_at(bytes, first_at + 22)?).ok()?;
+        let [second_at] = records.offsets(second_wrapper) else {
+            return None;
+        };
+        if bytes.get(second_at + 4..second_at + 7) != Some(b"362")
+            || (match next_indexed_record_offset(ctx, bytes, second_at + 1) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            })? != second_at + 29
+            || bytes.get(second_at + 11..second_at + 21)? != [0; 10]
+        {
+            return None;
+        }
+        let carrier = u32::try_from(View::u64_le_at(bytes, second_at + 21)?).ok()?;
+        let mut carrier_frames = match records.frames(ctx, carrier) {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
+        let (carrier_at, carrier_paired) = carrier_frames.next()?;
+        if carrier_frames.next().is_some() {
+            return None;
+        }
+        if carrier_paired.checked_sub(carrier_at)? != 665
+            || bytes.get(carrier_at + 4..carrier_at + 7) != Some(b"457")
+            || bytes.get(carrier_paired + 4..carrier_paired + 7) != Some(b"264")
+            || bytes.get(carrier_at + 317) != Some(&1)
+            || View::u64_le_at(bytes, carrier_at + 318)? != u64::from(scope_record)
+            || bytes.get(carrier_at + 339) != Some(&1)
+        {
+            return None;
+        }
+        (u32::try_from(View::u64_le_at(bytes, carrier_at + 340)?).ok()).map(Ok)
+    })()
+    .transpose()
 }
 
 fn form_cage_surfaces(
@@ -1006,7 +1068,8 @@ fn form_cage_surfaces(
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut surfaces = Vec::new();
     for object in objects {
-        let Some(surface) = form_cage_surface(ctx,bytes, records, *object, scope_record_index)? else {
+        let Some(surface) = form_cage_surface(ctx, bytes, records, *object, scope_record_index)?
+        else {
             return Ok(None);
         };
         ctx.push_vec(&mut surfaces, surface, "f3d form cage surface")?;
@@ -1064,7 +1127,7 @@ fn form_cage_serializers(
         {
             continue;
         }
-        let Some(next) = next_indexed_record_offset(ctx,bytes, offset + 1)? else {
+        let Some(next) = next_indexed_record_offset(ctx, bytes, offset + 1)? else {
             continue;
         };
         if next != offset + form_serializer_frame_132::LEN
