@@ -19,6 +19,15 @@ fn incidence_unused_selection_and_point_tables_do_not_allocate() {
         )
         .expect("unordered faces do not use selection"));
     });
+    crate::test_support::with_collection_limit(0, |ctx| {
+        assert!(!prune_ordered_face_endpoint_support(
+            ctx,
+            &[MeshFaceBoundaryDomain::Ordered(Vec::new())],
+            &mut choices,
+            &WorkBudget::new(100)
+        )
+        .expect("an empty ordered domain is rejected without selection storage"));
+    });
     crate::test_support::with_collection_limit(4, |ctx| {
         let outcome = advance_compact_boundary_domains(
             ctx,

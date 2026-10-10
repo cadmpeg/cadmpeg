@@ -25,13 +25,34 @@ fn relation_choice_sort_refuses_assignment_bytes() {
         edge_identity_evidence: &[],
         coordinate_gauge: None,
     };
-    let result =
-        crate::test_support::with_work_refusal("catia_relation_mapped_choices_sort", |ctx| {
-            map_endpoint_relation_state(ctx, &state, gauge, &[])
-        });
+    // Two empty-assignment keys have a one-byte discriminant each. Twice
+    // their sort bound admits construction but not two 128-usize key lanes.
+    let slot_bytes =
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<MeshEndpointRelationSelection>());
+    let cap = 2 * (4 + (2 * slot_bytes + 4) * 3 * 8);
+    let result = crate::test_support::with_work_limit(cap, |ctx| {
+        map_endpoint_relation_state(ctx, &state, gauge, &[])
+    });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "catia_relation_mapped_choices_sort"));
+    let short = (
+        vec![],
+        vec![vec![
+            MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![],
+                edge_pairs: vec![],
+            };
+            2
+        ]],
+    );
+    assert_eq!(
+        crate::test_support::with_work_limit(cap, |ctx| {
+            map_endpoint_relation_state(ctx, &short, gauge, &[])
+        })
+        .expect("short assignments fit the same finite limit"),
+        Some(short)
+    );
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
             map_endpoint_relation_state(ctx, &state, gauge, &[])
@@ -63,13 +84,56 @@ fn relation_row_sort_refuses_endpoint_signature_bytes() {
         vec![None; 2],
         vec![vec![MeshEndpointRelationSelection::Deferred; 128]],
     );
-    let result =
-        crate::test_support::with_work_refusal("catia_relation_ordered_rows_sort", |ctx| {
-            relation_row_gauge_mapping(ctx, &state, gauge, &[0, 1])
-        });
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+    // Two first-node insertions pay three node passes each; the target
+    // removal pays one. Three occupied-key probes compare one class key.
+    let index_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
+    let group_key_bytes =
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::MeshEdgeGaugeKey>());
+    let group_value_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Vec<usize>>());
+    let alignment = cadmpeg_core::decode::u64_from_index(
+        std::mem::align_of::<super::MeshEdgeGaugeKey>()
+            .max(std::mem::align_of::<Vec<usize>>())
+            .max(std::mem::align_of::<usize>()),
+    );
+    let node_bytes = 11 * (group_key_bytes + group_value_bytes) + 16 * index_bytes + 2 * alignment;
+    let class_key_bytes = 1
+        + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<EdgeBoundaryLayout>())
+        + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<MeshEdgeGeometry>())
+        + 5 * index_bytes;
+    // Four copied row indices and 64 fixed producer/projection steps bound
+    // class setup. Each long column visits one choice, two rows, its empty
+    // pair producer, and both keys' Option entries: six visits per column.
+    let setup = 7 * node_bytes + 3 * class_key_bytes + 4 * index_bytes + 64;
+    let slot_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+        Vec<Option<[usize; 2]>>,
+        usize,
+    )>());
+    // Each signature grows through capacities 4, 8, 16, 32, 64, 128,
+    // then 256. Growth moves the old capacity in bytes before allocation.
+    let relocated_slots = 4 + 8 + 16 + 32 + 64 + 128;
+    let relocation = 2
+        * relocated_slots
+        * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Option<[usize; 2]>>());
+    // The common cap admits setup, long-column visits and relocation plus
+    // the short two-key sort, but not the long keys' comparison bound.
+    let cap = setup + 6 * 128 + relocation + 6 + (2 * slot_bytes + 4 * (1 + index_bytes)) * 3 * 8;
+    let result = crate::test_support::with_work_limit(cap, |ctx| {
+        relation_row_gauge_mapping(ctx, &state, gauge, &[0, 1])
+    });
+    assert!(
+        matches!(&result, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "catia_relation_ordered_rows_sort"));
+            && limit.operation == "catia_relation_ordered_rows_sort"),
+        "{result:?}"
+    );
+    let short = (vec![None; 2], Vec::new());
+    assert_eq!(
+        crate::test_support::with_work_limit(cap, |ctx| {
+            relation_row_gauge_mapping(ctx, &short, gauge, &[0, 1])
+        })
+        .expect("short signatures fit the same finite limit"),
+        Some(vec![0, 1])
+    );
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
             relation_row_gauge_mapping(ctx, &state, gauge, &[0, 1])
@@ -77,6 +141,43 @@ fn relation_row_sort_refuses_endpoint_signature_bytes() {
         .expect("service work allowance"),
         Some(vec![0, 1])
     );
+}
+
+#[test]
+fn relation_rows_without_pair_columns_skip_signature_slots() {
+    let rows = std::array::from_fn::<_, 2, _>(|_| {
+        EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("nonempty handles")
+    });
+    let faces = [[0, 1]; 2];
+    let geometry = [MeshEdgeGeometry::Line; 2];
+    let candidates = [vec![[0, 1]], vec![[0, 1]]];
+    let evidence = [false; 2];
+    let gauge = MeshCandidateGauge {
+        edge_rows: &rows,
+        edge_faces: &faces,
+        edge_geometry: &geometry,
+        edge_candidates: &candidates,
+        edge_identity_evidence: &evidence,
+        coordinate_gauge: None,
+    };
+    // Two identity rows, four normalized pairs, six grouped key/member
+    // entries, five class-copy entries, and four signature entries.
+    const BASE_ITEMS: u64 = 2 + 4 + 6 + 5 + 4;
+    for choices in [0, 128] {
+        let state = (
+            vec![None; 2],
+            vec![vec![MeshEndpointRelationSelection::Deferred; choices]],
+        );
+        let items = BASE_ITEMS + 2 * cadmpeg_core::decode::u64_from_index(choices);
+        assert_eq!(
+            crate::test_support::with_collection_limit(items, |ctx| {
+                relation_row_gauge_mapping(ctx, &state, gauge, &[0, 1])
+            })
+            .expect("only row signatures need collection slots"),
+            Some(vec![0, 1])
+        );
+    }
 }
 
 #[test]
@@ -509,5 +610,32 @@ fn least_rotation_refuses_an_overflowing_bound_before_key_visits() {
         );
         assert!(!visited.get());
         assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn mesh_gauge_fixed_pair_normalization_uses_only_collection_steps() {
+    // Two producer values and the terminal step; allocation uses its own budget.
+    const WORK: u64 = 3;
+    crate::test_support::with_work_limit(WORK, |ctx| {
+        assert_eq!(
+            super::normalized_endpoint_options(ctx, &[[3, 2], [1, 0]])
+                .expect("fixed-key comparison and swap"),
+            vec![[0, 1], [2, 3]]
+        );
+    });
+    crate::test_support::with_work_limit(WORK, |ctx| {
+        assert_eq!(
+            super::normalized_endpoint_options(ctx, &[[3, 2], [2, 3]])
+                .expect("fixed-key comparison and duplicate removal"),
+            vec![[2, 3]]
+        );
+    });
+    crate::test_support::with_work_limit(WORK, |ctx| {
+        assert_eq!(
+            super::mapped_normalized_endpoint_options(ctx, &[[0, 1], [1, 0]], &[3, 2])
+                .expect("fixed mapped pairs"),
+            Some(vec![[2, 3]])
+        );
     });
 }
