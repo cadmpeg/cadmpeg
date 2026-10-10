@@ -510,34 +510,33 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
             "catia_port_deferred_domain",
         )? {
             let mut all_points = Vec::new();
+
+            let mut charged_visits = (edge_candidates).iter();
+            while let Some(candidates) =
+                ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
             {
-                let mut charged_visits = (edge_candidates).into_iter();
-                while let Some(candidates) =
+                let mut charged_visits = (candidates).iter();
+                while let Some(pair) =
                     ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
                 {
-                    {
-                        let mut charged_visits = (candidates).into_iter();
-                        while let Some(pair) =
-                            ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
-                        {
-                            for point in *pair {
-                                ctx.push_vec(&mut all_points, point, "catia_port_all_points")?;
-                            }
-                        }
+                    for point in *pair {
+                        ctx.push_vec(&mut all_points, point, "catia_port_all_points")?;
                     }
                 }
             }
+
             Some(point_domain(ctx, all_points, "catia_port_all_points")?)
         } else {
             None
         };
         let mut domains = Vec::new();
+
+        let mut charged_visits = (edge_candidates).iter().enumerate();
+        while let Some((edge, candidates)) =
+            ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
         {
-            let mut charged_visits = (edge_candidates).into_iter().enumerate();
-            while let Some((edge, candidates)) =
-                ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
-            {
-                let domain = if is_deferred(edge) {
+            let domain =
+                if is_deferred(edge) {
                     Rc::clone(all_points.as_ref().ok_or_else(|| {
                         CodecError::malformed("deferred edge has no global domain")
                     })?)
@@ -548,9 +547,9 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
                         "catia_port_candidate_domain",
                     )?
                 };
-                ctx.push_vec(&mut domains, domain, "catia_port_domains")?;
-            }
+            ctx.push_vec(&mut domains, domain, "catia_port_domains")?;
         }
+
         let mut quotient = MeshQuotient::from_edge_domains(ctx, &domains)?;
         let mut node_by_port = HashMap::new();
         {
@@ -578,14 +577,13 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
             edge_candidates.len(),
             "catia_port_constrained_edges",
         )?;
+
+        let mut charged_visits = (edge_candidates).iter();
+        while let Some(candidates) =
+            ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
         {
-            let mut charged_visits = (edge_candidates).into_iter();
-            while let Some(candidates) =
-                ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
-            {
-                constrained_candidates
-                    .push(ctx.copy_slice(candidates, "catia_port_constrained_pairs")?);
-            }
+            constrained_candidates
+                .push(ctx.copy_slice(candidates, "catia_port_constrained_pairs")?);
         }
 
         let mut charged_visits = (constrained_candidates).iter_mut().enumerate();
@@ -624,26 +622,26 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
                         "catia_port_domain_lookup",
                     )
                 };
+
+                let mut charged_visits = (candidates).iter();
+                while let Some(&pair) =
+                    ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
                 {
-                    let mut charged_visits = (candidates).into_iter();
-                    while let Some(&pair) =
-                        ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
-                    {
-                        let supported = if left == right {
-                            pair[0] == pair[1] && contains(left, pair[0])?
-                        } else {
-                            (contains(left, pair[0])? && contains(right, pair[1])?)
-                                || (contains(left, pair[1])? && contains(right, pair[0])?)
-                        };
-                        if supported {
-                            ctx.push_vec(
-                                &mut filtered,
-                                [pair[0].min(pair[1]), pair[0].max(pair[1])],
-                                "catia_port_filtered_pairs",
-                            )?;
-                        }
+                    let supported = if left == right {
+                        pair[0] == pair[1] && contains(left, pair[0])?
+                    } else {
+                        (contains(left, pair[0])? && contains(right, pair[1])?)
+                            || (contains(left, pair[1])? && contains(right, pair[0])?)
+                    };
+                    if supported {
+                        ctx.push_vec(
+                            &mut filtered,
+                            [pair[0].min(pair[1]), pair[0].max(pair[1])],
+                            "catia_port_filtered_pairs",
+                        )?;
                     }
                 }
+
                 if filtered.len() <= 2 {
                     if let [left, right] = filtered.as_slice() {
                         if left == right {
@@ -1121,46 +1119,40 @@ pub(super) fn classify_fbb_edge_layouts(
 
     let mut charged_visits = (cycles).iter();
     while let Some(face) = ctx.next_charged(&mut charged_visits, "catia_fbb_cycle_handle_index")? {
+        let mut charged_visits = (face).iter();
+        while let Some(cycle) =
+            ctx.next_charged(&mut charged_visits, "catia_fbb_cycle_handle_index")?
         {
-            let mut charged_visits = (face).into_iter();
-            while let Some(cycle) =
+            let cycle_index = indexed.len();
+
+            let mut charged_visits = (cycle).iter();
+            while let Some(&handle) =
                 ctx.next_charged(&mut charged_visits, "catia_fbb_cycle_handle_index")?
             {
-                let cycle_index = indexed.len();
+                if ctx
+                    .get_hash_map(&cycles_by_handle, &handle, "catia_fbb_cycle_handle_index")?
+                    .and_then(|values| values.last())
+                    != Some(&cycle_index)
                 {
-                    let mut charged_visits = (cycle).into_iter();
-                    while let Some(&handle) =
-                        ctx.next_charged(&mut charged_visits, "catia_fbb_cycle_handle_index")?
-                    {
-                        if ctx
-                            .get_hash_map(
-                                &cycles_by_handle,
-                                &handle,
-                                "catia_fbb_cycle_handle_index",
-                            )?
-                            .and_then(|values| values.last())
-                            != Some(&cycle_index)
-                        {
-                            storage.with_storage(|| {
-                                ctx.push_hash_group(
-                                    &mut cycles_by_handle,
-                                    handle,
-                                    cycle_index,
-                                    "catia_fbb_cycle_handle_index",
-                                    "catia_fbb_cycle_handle_index",
-                                )
-                            })?;
-                        }
-                    }
+                    storage.with_storage(|| {
+                        ctx.push_hash_group(
+                            &mut cycles_by_handle,
+                            handle,
+                            cycle_index,
+                            "catia_fbb_cycle_handle_index",
+                            "catia_fbb_cycle_handle_index",
+                        )
+                    })?;
                 }
-                let cycle = index_cycle(ctx, &mut storage, cycle)?;
-                ctx.push_scoped_vec(
-                    &mut storage,
-                    &mut indexed,
-                    cycle,
-                    "catia_fbb_cycle_handle_index",
-                )?;
             }
+
+            let cycle = index_cycle(ctx, &mut storage, cycle)?;
+            ctx.push_scoped_vec(
+                &mut storage,
+                &mut indexed,
+                cycle,
+                "catia_fbb_cycle_handle_index",
+            )?;
         }
     }
 
@@ -1270,22 +1262,22 @@ fn index_cycle<'a>(
     handles: &'a [u32],
 ) -> Result<IndexedCycle<'a>, CodecError> {
     let mut positions = HashMap::new();
+
+    let mut charged_visits = (handles).iter().enumerate();
+    while let Some((position, &handle)) =
+        ctx.next_charged(&mut charged_visits, "catia_fbb_cycle_handle_index")?
     {
-        let mut charged_visits = (handles).into_iter().enumerate();
-        while let Some((position, &handle)) =
-            ctx.next_charged(&mut charged_visits, "catia_fbb_cycle_handle_index")?
-        {
-            storage.with_storage(|| {
-                ctx.push_hash_group(
-                    &mut positions,
-                    handle,
-                    position,
-                    "catia_fbb_cycle_handle_index",
-                    "catia_fbb_cycle_handle_positions",
-                )
-            })?;
-        }
+        storage.with_storage(|| {
+            ctx.push_hash_group(
+                &mut positions,
+                handle,
+                position,
+                "catia_fbb_cycle_handle_index",
+                "catia_fbb_cycle_handle_positions",
+            )
+        })?;
     }
+
     Ok(IndexedCycle { handles, positions })
 }
 
@@ -1388,16 +1380,16 @@ pub(super) fn standard_fbb_groups(
     ranges: &[std::ops::Range<usize>],
 ) -> Result<Vec<FbbFaceRun>, CodecError> {
     let mut groups = Vec::new();
-    {
-        let mut charged_visits = (ranges).into_iter();
-        while let Some(range) = ctx.next_charged(&mut charged_visits, "catia_standard_iteration")? {
-            if let Some(group) =
-                parse_standard_group(ctx, bytes, range.start, range.len() / fbb_row::LEN)?
-            {
-                ctx.push_vec(&mut groups, group, "catia_standard_fbb_groups")?;
-            }
+
+    let mut charged_visits = (ranges).iter();
+    while let Some(range) = ctx.next_charged(&mut charged_visits, "catia_standard_iteration")? {
+        if let Some(group) =
+            parse_standard_group(ctx, bytes, range.start, range.len() / fbb_row::LEN)?
+        {
+            ctx.push_vec(&mut groups, group, "catia_standard_fbb_groups")?;
         }
     }
+
     Ok(groups)
 }
 
@@ -3258,21 +3250,21 @@ pub(super) fn row_pattern_ends(
         by_first: HashMap::new(),
         by_last: HashMap::new(),
     };
-    {
-        let mut charged_visits = (rows).into_iter().enumerate();
-        while let Some((row, value)) = ctx.next_charged(&mut charged_visits, OPERATION)? {
-            let Some(pattern) = value.boundary_pattern() else {
-                continue;
-            };
-            let (Some(&first), Some(&last)) = (pattern.first(), pattern.last()) else {
-                continue;
-            };
-            ctx.push_hash_group(&mut ends.by_first, first, row, OPERATION, OPERATION)?;
-            if last != first {
-                ctx.push_hash_group(&mut ends.by_last, last, row, OPERATION, OPERATION)?;
-            }
+
+    let mut charged_visits = (rows).iter().enumerate();
+    while let Some((row, value)) = ctx.next_charged(&mut charged_visits, OPERATION)? {
+        let Some(pattern) = value.boundary_pattern() else {
+            continue;
+        };
+        let (Some(&first), Some(&last)) = (pattern.first(), pattern.last()) else {
+            continue;
+        };
+        ctx.push_hash_group(&mut ends.by_first, first, row, OPERATION, OPERATION)?;
+        if last != first {
+            ctx.push_hash_group(&mut ends.by_last, last, row, OPERATION, OPERATION)?;
         }
     }
+
     Ok(ends)
 }
 

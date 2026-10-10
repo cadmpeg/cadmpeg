@@ -658,10 +658,13 @@ mod tests {
             let mut different = extrusion.clone();
             different.surface_object_id += 1;
             crate::test_support::with_work_limit(0, |ctx| {
-                assert!(
-                    !super::extrusions_equal(ctx, &extrusion, &different, "extrusion equality")
-                        .expect("fixed metadata mismatch")
+                assert!(!super::extrusions_equal(
+                    ctx,
+                    &extrusion,
+                    &different,
+                    "extrusion equality"
                 )
+                .expect("fixed metadata mismatch"));
             });
         }
     }
